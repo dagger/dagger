@@ -1,9 +1,9 @@
 module github.com/dagger/dagger/e2e/installers
 
-go 1.25.6
+go 1.26.1
 
 require (
-	dagger.io/dagger v0.21.0
+	dagger.io/dagger v0.21.4
 	github.com/containerd/platforms v1.0.0-rc.2
 	golang.org/x/mod v0.34.0
 )
@@ -14,6 +14,7 @@ require (
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect

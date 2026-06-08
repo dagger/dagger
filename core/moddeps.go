@@ -12,13 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 )
 
-const (
-	modMetaDirPath    = "/.daggermod"
-	modMetaOutputPath = "output.json"
-	modMetaErrorPath  = "error"
-
-	ModuleName = "daggercore"
-)
+const ModuleName = "daggercore"
 
 var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 

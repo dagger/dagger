@@ -31,6 +31,16 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
+/**
+ * A unique identifier for an object.
+ */
+export type AddressID = string & { __AddressID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type BindingID = string & { __BindingID: never }
+
 export type BuildArg = {
   /**
    * The build argument name.
@@ -96,6 +106,11 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
       return name as CacheSharingMode
   }
 }
+/**
+ * A unique identifier for an object.
+ */
+export type CacheVolumeID = string & { __CacheVolumeID: never }
+
 export type ChangesetWithChangesetOpts = {
   /**
    * What to do on a merge conflict
@@ -109,6 +124,11 @@ export type ChangesetWithChangesetsOpts = {
    */
   onConflict?: ChangesetsMergeConflict
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ChangesetID = string & { __ChangesetID: never }
 
 /**
  * Strategy to use when merging changesets with conflicting changes.
@@ -240,6 +260,28 @@ export type CheckGroupRunOpts = {
   failFast?: boolean
 }
 
+/**
+ * A unique identifier for an object.
+ */
+export type CheckGroupID = string & { __CheckGroupID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type CheckID = string & { __CheckID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ClientFilesyncMirrorID = string & {
+  __ClientFilesyncMirrorID: never
+}
+
+/**
+ * A unique identifier for an object.
+ */
+export type CloudID = string & { __CloudID: never }
+
 export type ContainerAsServiceOpts = {
   /**
    * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
@@ -316,6 +358,11 @@ export type ContainerExistsOpts = {
    * If specified, do not follow symlinks.
    */
   doNotFollowSymlinks?: boolean
+
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  expand?: boolean
 }
 
 export type ContainerExportOpts = {
@@ -883,6 +930,11 @@ export type ContainerWithoutUnixSocketOpts = {
   expand?: boolean
 }
 
+/**
+ * A unique identifier for an object.
+ */
+export type ContainerID = string & { __ContainerID: never }
+
 export type CurrentModuleGeneratorsOpts = {
   /**
    * Only include generators matching the specified patterns
@@ -906,6 +958,16 @@ export type CurrentModuleWorkdirOpts = {
    */
   gitignore?: boolean
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type CurrentModuleID = string & { __CurrentModuleID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type DiffStatID = string & { __DiffStatID: never }
 
 /**
  * The type of change for a diff stat entry.
@@ -1229,6 +1291,11 @@ export type DirectoryWithNewFileOpts = {
   permissions?: number
 }
 
+/**
+ * A unique identifier for an object.
+ */
+export type DirectoryID = string & { __DirectoryID: never }
+
 export type EngineCacheEntrySetOpts = {
   key?: string
 }
@@ -1259,6 +1326,36 @@ export type EngineCachePruneOpts = {
    */
   targetSpace?: string
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EngineCacheEntryID = string & { __EngineCacheEntryID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EngineCacheEntrySetID = string & { __EngineCacheEntrySetID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EngineCacheID = string & { __EngineCacheID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EngineID = string & { __EngineID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EnumTypeDefID = string & { __EnumTypeDefID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
 export type EnvChecksOpts = {
   /**
@@ -1292,6 +1389,31 @@ export type EnvFileVariablesOpts = {
    */
   raw?: boolean
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EnvFileID = string & { __EnvFileID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EnvID = string & { __EnvID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type EnvVariableID = string & { __EnvVariableID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ErrorID = string & { __ErrorID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ErrorValueID = string & { __ErrorValueID: never }
 
 /**
  * File type.
@@ -1346,6 +1468,16 @@ function ExistsTypeNameToValue(name: string): ExistsType {
       return name as ExistsType
   }
 }
+/**
+ * A unique identifier for an object.
+ */
+export type ExportableID = string & { __ExportableID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type FieldTypeDefID = string & { __FieldTypeDefID: never }
+
 export type FileAsEnvFileOpts = {
   /**
    * Replace "${VAR}" or "$VAR" with the value of other vars
@@ -1436,6 +1568,11 @@ export type FileWithReplacedOpts = {
    */
   firstFrom?: number
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type FileID = string & { __FileID: never }
 
 /**
  * File type.
@@ -1562,6 +1699,11 @@ export type FunctionWithDeprecatedOpts = {
 }
 
 /**
+ * A unique identifier for an object.
+ */
+export type FunctionArgID = string & { __FunctionArgID: never }
+
+/**
  * The behavior configured for function result caching.
  */
 export enum FunctionCachePolicy {
@@ -1603,12 +1745,44 @@ function FunctionCachePolicyNameToValue(name: string): FunctionCachePolicy {
       return name as FunctionCachePolicy
   }
 }
+/**
+ * A unique identifier for an object.
+ */
+export type FunctionCallArgValueID = string & {
+  __FunctionCallArgValueID: never
+}
+
+/**
+ * A unique identifier for an object.
+ */
+export type FunctionCallID = string & { __FunctionCallID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type FunctionID = string & { __FunctionID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type GeneratedCodeID = string & { __GeneratedCodeID: never }
+
 export type GeneratorGroupChangesOpts = {
   /**
    * Strategy to apply on conflicts between generators
    */
   onConflict?: ChangesetsMergeConflict
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type GeneratorGroupID = string & { __GeneratorGroupID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type GeneratorID = string & { __GeneratorID: never }
 
 export type GitRefTreeOpts = {
   /**
@@ -1627,6 +1801,11 @@ export type GitRefTreeOpts = {
   includeTags?: boolean
 }
 
+/**
+ * A unique identifier for an object.
+ */
+export type GitRefID = string & { __GitRefID: never }
+
 export type GitRepositoryBranchesOpts = {
   /**
    * Glob patterns (e.g., "refs/tags/v*").
@@ -1640,6 +1819,21 @@ export type GitRepositoryTagsOpts = {
    */
   patterns?: string[]
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type GitRepositoryID = string & { __GitRepositoryID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type HTTPStateID = string & { __HTTPStateID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type HealthcheckConfigID = string & { __HealthcheckConfigID: never }
 
 export type HostDirectoryOpts = {
   /**
@@ -1700,6 +1894,11 @@ export type HostTunnelOpts = {
    */
   ports?: PortForward[]
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type HostID = string & { __HostID: never }
 
 /**
  * A unique identifier for an object.
@@ -1796,6 +1995,16 @@ function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
   }
 }
 /**
+ * A unique identifier for an object.
+ */
+export type InputTypeDefID = string & { __InputTypeDefID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
+
+/**
  * An arbitrary JSON-encoded value.
  */
 export type JSON = string & { __JSON: never }
@@ -1811,6 +2020,31 @@ export type JSONValueContentsOpts = {
    */
   indent?: string
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type JSONValueID = string & { __JSONValueID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type LLMID = string & { __LLMID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type LLMTokenUsageID = string & { __LLMTokenUsageID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type LabelID = string & { __LabelID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ListTypeDefID = string & { __ListTypeDefID: never }
 
 export type ModuleChecksOpts = {
   /**
@@ -1851,6 +2085,16 @@ export type ModuleServicesOpts = {
 }
 
 /**
+ * A unique identifier for an object.
+ */
+export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ModuleID = string & { __ModuleID: never }
+
+/**
  * Experimental features of a module
  */
 export enum ModuleSourceExperimentalFeature {
@@ -1889,6 +2133,11 @@ function ModuleSourceExperimentalFeatureNameToValue(
       return name as ModuleSourceExperimentalFeature
   }
 }
+/**
+ * A unique identifier for an object.
+ */
+export type ModuleSourceID = string & { __ModuleSourceID: never }
+
 /**
  * The kind of module source.
  */
@@ -1971,6 +2220,11 @@ function NetworkProtocolNameToValue(name: string): NetworkProtocol {
       return name as NetworkProtocol
   }
 }
+/**
+ * A unique identifier for an object.
+ */
+export type ObjectTypeDefID = string & { __ObjectTypeDefID: never }
+
 export type PipelineLabel = {
   /**
    * Label name.
@@ -2006,6 +2260,11 @@ export type PortForward = {
    */
   protocol?: NetworkProtocol
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type PortID = string & { __PortID: never }
 
 export type ClientCacheVolumeOpts = {
   /**
@@ -2189,6 +2448,11 @@ export type ClientSecretOpts = {
 }
 
 /**
+ * A unique identifier for an object.
+ */
+export type RemoteGitMirrorID = string & { __RemoteGitMirrorID: never }
+
+/**
  * Expected return type of an execution
  */
 export enum ReturnType {
@@ -2241,6 +2505,31 @@ function ReturnTypeNameToValue(name: string): ReturnType {
       return name as ReturnType
   }
 }
+/**
+ * A unique identifier for an object.
+ */
+export type SDKConfigID = string & { __SDKConfigID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type SearchResultID = string & { __SearchResultID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type SearchSubmatchID = string & { __SearchSubmatchID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type SecretID = string & { __SecretID: never }
+
 export type ServiceEndpointOpts = {
   /**
    * The exposed port number for the endpoint
@@ -2277,6 +2566,36 @@ export type ServiceUpOpts = {
    */
   random?: boolean
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ServiceID = string & { __ServiceID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type SocketID = string & { __SocketID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type SourceMapID = string & { __SourceMapID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type StatID = string & { __StatID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type SyncerID = string & { __SyncerID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type TerminalID = string & { __TerminalID: never }
 
 export type TypeDefWithEnumOpts = {
   /**
@@ -2360,6 +2679,11 @@ export type TypeDefWithObjectOpts = {
 export type TypeDefWithScalarOpts = {
   description?: string
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type TypeDefID = string & { __TypeDefID: never }
 
 /**
  * Distinguishes the different kinds of TypeDefs.
@@ -2562,6 +2886,16 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
   }
 }
 /**
+ * A unique identifier for an object.
+ */
+export type UpGroupID = string & { __UpGroupID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type UpID = string & { __UpID: never }
+
+/**
  * The absence of a value.
  *
  * A Null Void is used as a placeholder for resolvers that do not return anything.
@@ -2578,6 +2912,11 @@ export type WorkspaceChecksOpts = {
    * When true, only return annotated check functions; exclude generate-as-checks
    */
   noGenerate?: boolean
+
+  /**
+   * When true, only return generate-as-checks; exclude annotated check functions
+   */
+  onlyGenerate?: boolean
 }
 
 export type WorkspaceDirectoryOpts = {
@@ -2617,6 +2956,11 @@ export type WorkspaceServicesOpts = {
    */
   include?: string[]
 }
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceID = string & { __WorkspaceID: never }
 
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
@@ -3889,7 +4233,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the value of the specified environment variable.
+   * Retrieves the value of the specified persistent environment variable.
    * @param name The name of the environment variable to retrieve (e.g., "PATH").
    */
   envVariable = async (name: string): Promise<string> => {
@@ -3905,7 +4249,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the list of environment variables passed to commands.
+   * Retrieves the list of persistent environment variables configured on the container.
    */
   envVariables = async (): Promise<EnvVariable[]> => {
     type envVariables = {
@@ -3926,6 +4270,7 @@ export class Container extends BaseClient {
    * @param path Path to check (e.g., "/file.txt").
    * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
    * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   exists = async (
     path: string,
@@ -4830,6 +5175,18 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+   *
+   * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+   * @param name Name of the volatile variable (e.g., "CI_RUN_ID").
+   * @param value Value of the volatile variable.
+   */
+  withVolatileVariable = (name: string, value: string): Container => {
+    const ctx = this._ctx.select("withVolatileVariable", { name, value })
+    return new Container(ctx)
+  }
+
+  /**
    * Change the container's working directory. Like WORKDIR in Dockerfile.
    * @param path The path to set as the working directory (e.g., "/app").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -5001,6 +5358,15 @@ export class Container extends BaseClient {
    */
   withoutUser = (): Container => {
     const ctx = this._ctx.select("withoutUser")
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieves this container minus the given volatile environment variable.
+   * @param name The name of the volatile environment variable (e.g., "CI_RUN_ID").
+   */
+  withoutVolatileVariable = (name: string): Container => {
+    const ctx = this._ctx.select("withoutVolatileVariable", { name })
     return new Container(ctx)
   }
 
@@ -12377,6 +12743,544 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Address from its ID.
+   */
+  loadAddressFromID = (id: AddressID): Address => {
+    const ctx = this._ctx.select("loadAddressFromID", { id })
+    return new Address(ctx)
+  }
+
+  /**
+   * Load a Binding from its ID.
+   */
+  loadBindingFromID = (id: BindingID): Binding => {
+    const ctx = this._ctx.select("loadBindingFromID", { id })
+    return new Binding(ctx)
+  }
+
+  /**
+   * Load a CacheVolume from its ID.
+   */
+  loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
+    const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
+    return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a Changeset from its ID.
+   */
+  loadChangesetFromID = (id: ChangesetID): Changeset => {
+    const ctx = this._ctx.select("loadChangesetFromID", { id })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Load a Check from its ID.
+   */
+  loadCheckFromID = (id: CheckID): Check => {
+    const ctx = this._ctx.select("loadCheckFromID", { id })
+    return new Check(ctx)
+  }
+
+  /**
+   * Load a CheckGroup from its ID.
+   */
+  loadCheckGroupFromID = (id: CheckGroupID): CheckGroup => {
+    const ctx = this._ctx.select("loadCheckGroupFromID", { id })
+    return new CheckGroup(ctx)
+  }
+
+  /**
+   * Load a ClientFilesyncMirror from its ID.
+   */
+  loadClientFilesyncMirrorFromID = (
+    id: ClientFilesyncMirrorID,
+  ): ClientFilesyncMirror => {
+    const ctx = this._ctx.select("loadClientFilesyncMirrorFromID", { id })
+    return new ClientFilesyncMirror(ctx)
+  }
+
+  /**
+   * Load a Cloud from its ID.
+   */
+  loadCloudFromID = (id: CloudID): Cloud => {
+    const ctx = this._ctx.select("loadCloudFromID", { id })
+    return new Cloud(ctx)
+  }
+
+  /**
+   * Load a Container from its ID.
+   */
+  loadContainerFromID = (id: ContainerID): Container => {
+    const ctx = this._ctx.select("loadContainerFromID", { id })
+    return new Container(ctx)
+  }
+
+  /**
+   * Load a CurrentModule from its ID.
+   */
+  loadCurrentModuleFromID = (id: CurrentModuleID): CurrentModule => {
+    const ctx = this._ctx.select("loadCurrentModuleFromID", { id })
+    return new CurrentModule(ctx)
+  }
+
+  /**
+   * Load a DiffStat from its ID.
+   */
+  loadDiffStatFromID = (id: DiffStatID): DiffStat => {
+    const ctx = this._ctx.select("loadDiffStatFromID", { id })
+    return new DiffStat(ctx)
+  }
+
+  /**
+   * Load a Directory from its ID.
+   */
+  loadDirectoryFromID = (id: DirectoryID): Directory => {
+    const ctx = this._ctx.select("loadDirectoryFromID", { id })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Load a EngineCacheEntry from its ID.
+   */
+  loadEngineCacheEntryFromID = (id: EngineCacheEntryID): EngineCacheEntry => {
+    const ctx = this._ctx.select("loadEngineCacheEntryFromID", { id })
+    return new EngineCacheEntry(ctx)
+  }
+
+  /**
+   * Load a EngineCacheEntrySet from its ID.
+   */
+  loadEngineCacheEntrySetFromID = (
+    id: EngineCacheEntrySetID,
+  ): EngineCacheEntrySet => {
+    const ctx = this._ctx.select("loadEngineCacheEntrySetFromID", { id })
+    return new EngineCacheEntrySet(ctx)
+  }
+
+  /**
+   * Load a EngineCache from its ID.
+   */
+  loadEngineCacheFromID = (id: EngineCacheID): EngineCache => {
+    const ctx = this._ctx.select("loadEngineCacheFromID", { id })
+    return new EngineCache(ctx)
+  }
+
+  /**
+   * Load a Engine from its ID.
+   */
+  loadEngineFromID = (id: EngineID): Engine => {
+    const ctx = this._ctx.select("loadEngineFromID", { id })
+    return new Engine(ctx)
+  }
+
+  /**
+   * Load a EnumTypeDef from its ID.
+   */
+  loadEnumTypeDefFromID = (id: EnumTypeDefID): EnumTypeDef => {
+    const ctx = this._ctx.select("loadEnumTypeDefFromID", { id })
+    return new EnumTypeDef(ctx)
+  }
+
+  /**
+   * Load a EnumValueTypeDef from its ID.
+   */
+  loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
+    const ctx = this._ctx.select("loadEnumValueTypeDefFromID", { id })
+    return new EnumValueTypeDef(ctx)
+  }
+
+  /**
+   * Load a EnvFile from its ID.
+   */
+  loadEnvFileFromID = (id: EnvFileID): EnvFile => {
+    const ctx = this._ctx.select("loadEnvFileFromID", { id })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Load a Env from its ID.
+   */
+  loadEnvFromID = (id: EnvID): Env => {
+    const ctx = this._ctx.select("loadEnvFromID", { id })
+    return new Env(ctx)
+  }
+
+  /**
+   * Load a EnvVariable from its ID.
+   */
+  loadEnvVariableFromID = (id: EnvVariableID): EnvVariable => {
+    const ctx = this._ctx.select("loadEnvVariableFromID", { id })
+    return new EnvVariable(ctx)
+  }
+
+  /**
+   * Load a Error from its ID.
+   */
+  loadErrorFromID = (id: ErrorID): Error => {
+    const ctx = this._ctx.select("loadErrorFromID", { id })
+    return new Error(ctx)
+  }
+
+  /**
+   * Load a ErrorValue from its ID.
+   */
+  loadErrorValueFromID = (id: ErrorValueID): ErrorValue => {
+    const ctx = this._ctx.select("loadErrorValueFromID", { id })
+    return new ErrorValue(ctx)
+  }
+
+  /**
+   * Load a Exportable from its ID.
+   */
+  loadExportableFromID = (id: ExportableID): Exportable => {
+    const ctx = this._ctx.select("loadExportableFromID", { id })
+    return new _ExportableClient(ctx)
+  }
+
+  /**
+   * Load a FieldTypeDef from its ID.
+   */
+  loadFieldTypeDefFromID = (id: FieldTypeDefID): FieldTypeDef => {
+    const ctx = this._ctx.select("loadFieldTypeDefFromID", { id })
+    return new FieldTypeDef(ctx)
+  }
+
+  /**
+   * Load a File from its ID.
+   */
+  loadFileFromID = (id: FileID): File => {
+    const ctx = this._ctx.select("loadFileFromID", { id })
+    return new File(ctx)
+  }
+
+  /**
+   * Load a FunctionArg from its ID.
+   */
+  loadFunctionArgFromID = (id: FunctionArgID): FunctionArg => {
+    const ctx = this._ctx.select("loadFunctionArgFromID", { id })
+    return new FunctionArg(ctx)
+  }
+
+  /**
+   * Load a FunctionCallArgValue from its ID.
+   */
+  loadFunctionCallArgValueFromID = (
+    id: FunctionCallArgValueID,
+  ): FunctionCallArgValue => {
+    const ctx = this._ctx.select("loadFunctionCallArgValueFromID", { id })
+    return new FunctionCallArgValue(ctx)
+  }
+
+  /**
+   * Load a FunctionCall from its ID.
+   */
+  loadFunctionCallFromID = (id: FunctionCallID): FunctionCall => {
+    const ctx = this._ctx.select("loadFunctionCallFromID", { id })
+    return new FunctionCall(ctx)
+  }
+
+  /**
+   * Load a Function from its ID.
+   */
+  loadFunctionFromID = (id: FunctionID): Function_ => {
+    const ctx = this._ctx.select("loadFunctionFromID", { id })
+    return new Function_(ctx)
+  }
+
+  /**
+   * Load a GeneratedCode from its ID.
+   */
+  loadGeneratedCodeFromID = (id: GeneratedCodeID): GeneratedCode => {
+    const ctx = this._ctx.select("loadGeneratedCodeFromID", { id })
+    return new GeneratedCode(ctx)
+  }
+
+  /**
+   * Load a Generator from its ID.
+   */
+  loadGeneratorFromID = (id: GeneratorID): Generator => {
+    const ctx = this._ctx.select("loadGeneratorFromID", { id })
+    return new Generator(ctx)
+  }
+
+  /**
+   * Load a GeneratorGroup from its ID.
+   */
+  loadGeneratorGroupFromID = (id: GeneratorGroupID): GeneratorGroup => {
+    const ctx = this._ctx.select("loadGeneratorGroupFromID", { id })
+    return new GeneratorGroup(ctx)
+  }
+
+  /**
+   * Load a GitRef from its ID.
+   */
+  loadGitRefFromID = (id: GitRefID): GitRef => {
+    const ctx = this._ctx.select("loadGitRefFromID", { id })
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Load a GitRepository from its ID.
+   */
+  loadGitRepositoryFromID = (id: GitRepositoryID): GitRepository => {
+    const ctx = this._ctx.select("loadGitRepositoryFromID", { id })
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Load a HTTPState from its ID.
+   */
+  loadHTTPStateFromID = (id: HTTPStateID): HTTPState => {
+    const ctx = this._ctx.select("loadHTTPStateFromID", { id })
+    return new HTTPState(ctx)
+  }
+
+  /**
+   * Load a HealthcheckConfig from its ID.
+   */
+  loadHealthcheckConfigFromID = (
+    id: HealthcheckConfigID,
+  ): HealthcheckConfig => {
+    const ctx = this._ctx.select("loadHealthcheckConfigFromID", { id })
+    return new HealthcheckConfig(ctx)
+  }
+
+  /**
+   * Load a Host from its ID.
+   */
+  loadHostFromID = (id: HostID): Host => {
+    const ctx = this._ctx.select("loadHostFromID", { id })
+    return new Host(ctx)
+  }
+
+  /**
+   * Load a InputTypeDef from its ID.
+   */
+  loadInputTypeDefFromID = (id: InputTypeDefID): InputTypeDef => {
+    const ctx = this._ctx.select("loadInputTypeDefFromID", { id })
+    return new InputTypeDef(ctx)
+  }
+
+  /**
+   * Load a InterfaceTypeDef from its ID.
+   */
+  loadInterfaceTypeDefFromID = (id: InterfaceTypeDefID): InterfaceTypeDef => {
+    const ctx = this._ctx.select("loadInterfaceTypeDefFromID", { id })
+    return new InterfaceTypeDef(ctx)
+  }
+
+  /**
+   * Load a JSONValue from its ID.
+   */
+  loadJSONValueFromID = (id: JSONValueID): JSONValue => {
+    const ctx = this._ctx.select("loadJSONValueFromID", { id })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Load a LLM from its ID.
+   */
+  loadLLMFromID = (id: LLMID): LLM => {
+    const ctx = this._ctx.select("loadLLMFromID", { id })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Load a LLMTokenUsage from its ID.
+   */
+  loadLLMTokenUsageFromID = (id: LLMTokenUsageID): LLMTokenUsage => {
+    const ctx = this._ctx.select("loadLLMTokenUsageFromID", { id })
+    return new LLMTokenUsage(ctx)
+  }
+
+  /**
+   * Load a Label from its ID.
+   */
+  loadLabelFromID = (id: LabelID): Label => {
+    const ctx = this._ctx.select("loadLabelFromID", { id })
+    return new Label(ctx)
+  }
+
+  /**
+   * Load a ListTypeDef from its ID.
+   */
+  loadListTypeDefFromID = (id: ListTypeDefID): ListTypeDef => {
+    const ctx = this._ctx.select("loadListTypeDefFromID", { id })
+    return new ListTypeDef(ctx)
+  }
+
+  /**
+   * Load a ModuleConfigClient from its ID.
+   */
+  loadModuleConfigClientFromID = (
+    id: ModuleConfigClientID,
+  ): ModuleConfigClient => {
+    const ctx = this._ctx.select("loadModuleConfigClientFromID", { id })
+    return new ModuleConfigClient(ctx)
+  }
+
+  /**
+   * Load a Module from its ID.
+   */
+  loadModuleFromID = (id: ModuleID): Module_ => {
+    const ctx = this._ctx.select("loadModuleFromID", { id })
+    return new Module_(ctx)
+  }
+
+  /**
+   * Load a ModuleSource from its ID.
+   */
+  loadModuleSourceFromID = (id: ModuleSourceID): ModuleSource => {
+    const ctx = this._ctx.select("loadModuleSourceFromID", { id })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Load a ObjectTypeDef from its ID.
+   */
+  loadObjectTypeDefFromID = (id: ObjectTypeDefID): ObjectTypeDef => {
+    const ctx = this._ctx.select("loadObjectTypeDefFromID", { id })
+    return new ObjectTypeDef(ctx)
+  }
+
+  /**
+   * Load a Port from its ID.
+   */
+  loadPortFromID = (id: PortID): Port => {
+    const ctx = this._ctx.select("loadPortFromID", { id })
+    return new Port(ctx)
+  }
+
+  /**
+   * Load a RemoteGitMirror from its ID.
+   */
+  loadRemoteGitMirrorFromID = (id: RemoteGitMirrorID): RemoteGitMirror => {
+    const ctx = this._ctx.select("loadRemoteGitMirrorFromID", { id })
+    return new RemoteGitMirror(ctx)
+  }
+
+  /**
+   * Load a SDKConfig from its ID.
+   */
+  loadSDKConfigFromID = (id: SDKConfigID): SDKConfig => {
+    const ctx = this._ctx.select("loadSDKConfigFromID", { id })
+    return new SDKConfig(ctx)
+  }
+
+  /**
+   * Load a ScalarTypeDef from its ID.
+   */
+  loadScalarTypeDefFromID = (id: ScalarTypeDefID): ScalarTypeDef => {
+    const ctx = this._ctx.select("loadScalarTypeDefFromID", { id })
+    return new ScalarTypeDef(ctx)
+  }
+
+  /**
+   * Load a SearchResult from its ID.
+   */
+  loadSearchResultFromID = (id: SearchResultID): SearchResult => {
+    const ctx = this._ctx.select("loadSearchResultFromID", { id })
+    return new SearchResult(ctx)
+  }
+
+  /**
+   * Load a SearchSubmatch from its ID.
+   */
+  loadSearchSubmatchFromID = (id: SearchSubmatchID): SearchSubmatch => {
+    const ctx = this._ctx.select("loadSearchSubmatchFromID", { id })
+    return new SearchSubmatch(ctx)
+  }
+
+  /**
+   * Load a Secret from its ID.
+   */
+  loadSecretFromID = (id: SecretID): Secret => {
+    const ctx = this._ctx.select("loadSecretFromID", { id })
+    return new Secret(ctx)
+  }
+
+  /**
+   * Load a Service from its ID.
+   */
+  loadServiceFromID = (id: ServiceID): Service => {
+    const ctx = this._ctx.select("loadServiceFromID", { id })
+    return new Service(ctx)
+  }
+
+  /**
+   * Load a Socket from its ID.
+   */
+  loadSocketFromID = (id: SocketID): Socket => {
+    const ctx = this._ctx.select("loadSocketFromID", { id })
+    return new Socket(ctx)
+  }
+
+  /**
+   * Load a SourceMap from its ID.
+   */
+  loadSourceMapFromID = (id: SourceMapID): SourceMap => {
+    const ctx = this._ctx.select("loadSourceMapFromID", { id })
+    return new SourceMap(ctx)
+  }
+
+  /**
+   * Load a Stat from its ID.
+   */
+  loadStatFromID = (id: StatID): Stat => {
+    const ctx = this._ctx.select("loadStatFromID", { id })
+    return new Stat(ctx)
+  }
+
+  /**
+   * Load a Syncer from its ID.
+   */
+  loadSyncerFromID = (id: SyncerID): Syncer => {
+    const ctx = this._ctx.select("loadSyncerFromID", { id })
+    return new _SyncerClient(ctx)
+  }
+
+  /**
+   * Load a Terminal from its ID.
+   */
+  loadTerminalFromID = (id: TerminalID): Terminal => {
+    const ctx = this._ctx.select("loadTerminalFromID", { id })
+    return new Terminal(ctx)
+  }
+
+  /**
+   * Load a TypeDef from its ID.
+   */
+  loadTypeDefFromID = (id: TypeDefID): TypeDef => {
+    const ctx = this._ctx.select("loadTypeDefFromID", { id })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Load a Up from its ID.
+   */
+  loadUpFromID = (id: UpID): Up => {
+    const ctx = this._ctx.select("loadUpFromID", { id })
+    return new Up(ctx)
+  }
+
+  /**
+   * Load a UpGroup from its ID.
+   */
+  loadUpGroupFromID = (id: UpGroupID): UpGroup => {
+    const ctx = this._ctx.select("loadUpGroupFromID", { id })
+    return new UpGroup(ctx)
+  }
+
+  /**
+   * Load a Workspace from its ID.
+   */
+  loadWorkspaceFromID = (id: WorkspaceID): Workspace => {
+    const ctx = this._ctx.select("loadWorkspaceFromID", { id })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Create a new module.
    */
   module_ = (): Module_ => {
@@ -13990,6 +14894,7 @@ export class Workspace extends BaseClient {
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
    * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
+   * @param opts.onlyGenerate When true, only return generate-as-checks; exclude annotated check functions
    */
   checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })

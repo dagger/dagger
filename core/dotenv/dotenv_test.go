@@ -180,6 +180,53 @@ func TestAllExpansion(t *testing.T) {
 			},
 		},
 		{
+			name: "export prefix",
+			environ: []string{
+				"export FOO=bar",
+			},
+			want: map[string]string{
+				"FOO": "bar",
+			},
+		},
+		{
+			name: "export prefix with quoted value",
+			environ: []string{
+				`export FOO="bar baz"`,
+			},
+			want: map[string]string{
+				"FOO": "bar baz",
+			},
+		},
+		{
+			name: "export prefix with expansion",
+			environ: []string{
+				"export FOO=bar",
+				"export BAZ=$FOO-baz",
+			},
+			want: map[string]string{
+				"FOO": "bar",
+				"BAZ": "bar-baz",
+			},
+		},
+		{
+			name: "export prefix with extra whitespace",
+			environ: []string{
+				"export   FOO=bar",
+			},
+			want: map[string]string{
+				"FOO": "bar",
+			},
+		},
+		{
+			name: "key named export-like is not stripped",
+			environ: []string{
+				"exportable=yes",
+			},
+			want: map[string]string{
+				"exportable": "yes",
+			},
+		},
+		{
 			name: "empty line",
 			environ: []string{
 				"",

@@ -6,14 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `Sub1ID` scalar type represents an identifier for an object of type Sub1.
-type Sub1ID string // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:3:6)
-
-// The `Sub1ObjID` scalar type represents an identifier for an object of type Sub1Obj.
-type Sub1ObjID string // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:9:6)
 
 // Retrieve the binding value, as type Sub1
 func (r *Binding) AsSub1() *Sub1 { // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:3:6)
@@ -81,26 +75,6 @@ func (r *Env) WithSub1Output(name string, description string) *Env { // sub1 (..
 	}
 }
 
-// Load a Sub1 from its ID.
-func (r *Query) LoadSub1FromID(id Sub1ID) *Sub1 { // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:3:6)
-	q := r.query.Select("loadSub1FromID")
-	q = q.Arg("id", id)
-
-	return &Sub1{
-		query: q,
-	}
-}
-
-// Load a Sub1Obj from its ID.
-func (r *Query) LoadSub1ObjFromID(id Sub1ObjID) *Sub1Obj { // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:9:6)
-	q := r.query.Select("loadSub1ObjFromID")
-	q = q.Arg("id", id)
-
-	return &Sub1Obj{
-		query: q,
-	}
-}
-
 func (r *Query) Sub1() *Sub1 { // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:3:6)
 	q := r.query.Select("sub1")
 
@@ -150,7 +124,7 @@ func (r *Sub1) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Sub1) XXX_GraphQLIDType() string {
-	return "Sub1ID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -175,8 +149,16 @@ func (r *Sub1) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadSub1FromID(Sub1ID(id))
+	*r = Sub1{query: selectNode(dag.query, id, "Sub1")}
 	return nil
+}
+
+// AsNode returns this Sub1 as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Sub1) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 type Sub1Obj struct { // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:9:6)
@@ -237,7 +219,7 @@ func (r *Sub1Obj) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Sub1Obj) XXX_GraphQLIDType() string {
-	return "Sub1ObjID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -262,6 +244,14 @@ func (r *Sub1Obj) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadSub1ObjFromID(Sub1ObjID(id))
+	*r = Sub1Obj{query: selectNode(dag.query, id, "Sub1Obj")}
 	return nil
+}
+
+// AsNode returns this Sub1Obj as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Sub1Obj) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

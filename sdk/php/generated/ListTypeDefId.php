@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
+ * A unique identifier for an object.
  */
-readonly class ListTypeDefId extends Client\AbstractId
+readonly class ListTypeDefId extends Client\AbstractScalar
 {
 }

@@ -19,6 +19,7 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 		name               string
 		mod                *Module
 		fn                 *Function
+		expectCallScope    bool
 		expectSessionScope bool
 	}{
 		{
@@ -53,6 +54,17 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 			},
 			expectSessionScope: true,
 		},
+		{
+			name: "explicit never policy",
+			mod: &Module{
+				NameField: "test",
+			},
+			fn: &Function{
+				Name:        "fn",
+				CachePolicy: FunctionCachePolicyNever,
+			},
+			expectCallScope: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			modRes, err := dagql.NewObjectResultForCall(
@@ -79,6 +91,12 @@ func TestModuleFunctionCacheImplicitInputs(t *testing.T) {
 			byName := mapImplicitInputsByName(inputs)
 			_, hasLegacyScopeInput := byName["moduleFunctionScope"]
 			require.False(t, hasLegacyScopeInput, "legacy module scope implicit input should not be present")
+
+			callInput, hasCallInput := byName[dagql.PerCallInput.Name]
+			require.Equal(t, tc.expectCallScope, hasCallInput)
+			if tc.expectCallScope {
+				require.NotEmpty(t, resolveImplicitInputString(t, callInput, sessionCtx))
+			}
 
 			sessionInput, hasSessionInput := byName[dagql.PerSessionInput.Name]
 			require.Equal(t, tc.expectSessionScope, hasSessionInput)

@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `GitReleaserID` scalar type represents an identifier for an object of type GitReleaser.
-type GitReleaserID string // git-releaser (../../../../modules/git-releaser/main.go:13:6)
 
 // Retrieve the binding value, as type GitReleaser
 func (r *Binding) AsGitReleaser() *GitReleaser { // git-releaser (../../../../modules/git-releaser/main.go:13:6)
@@ -49,7 +46,7 @@ type GitReleaser struct { // git-releaser (../../../../modules/git-releaser/main
 	query *querybuilder.Selection
 
 	dryRun  *Void
-	id      *GitReleaserID
+	id      *ID
 	release *Void
 }
 
@@ -98,13 +95,13 @@ func (r *GitReleaser) DryRun(ctx context.Context, sourceRepo *GitRepository, sou
 }
 
 // A unique identifier for this GitReleaser.
-func (r *GitReleaser) ID(ctx context.Context) (GitReleaserID, error) {
+func (r *GitReleaser) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GitReleaserID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -117,7 +114,7 @@ func (r *GitReleaser) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GitReleaser) XXX_GraphQLIDType() string {
-	return "GitReleaserID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -142,7 +139,7 @@ func (r *GitReleaser) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGitReleaserFromID(GitReleaserID(id))
+	*r = GitReleaser{query: selectNode(dag.query, id, "GitReleaser")}
 	return nil
 }
 
@@ -207,6 +204,14 @@ func (r *GitReleaser) Release(ctx context.Context, sourceRepo *GitRepository, so
 	return q.Execute(ctx)
 }
 
+// AsNode returns this GitReleaser as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitReleaser) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // GitReleaserOpts contains options for Query.GitReleaser
 type GitReleaserOpts struct {
 
@@ -222,16 +227,6 @@ func (r *Query) GitReleaser(opts ...GitReleaserOpts) *GitReleaser { // git-relea
 			q = q.Arg("alpineVersion", opts[i].AlpineVersion)
 		}
 	}
-
-	return &GitReleaser{
-		query: q,
-	}
-}
-
-// Load a GitReleaser from its ID.
-func (r *Query) LoadGitReleaserFromID(id GitReleaserID) *GitReleaser { // git-releaser (../../../../modules/git-releaser/main.go:13:6)
-	q := r.query.Select("loadGitReleaserFromID")
-	q = q.Arg("id", id)
 
 	return &GitReleaser{
 		query: q,

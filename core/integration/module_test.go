@@ -7531,6 +7531,24 @@ func (m *Test) ObjsWithNothing() ([]*Test, error) {
 	require.JSONEq(t, `{"objsWithNothing":[null,{"dirs":[null]}]}`, out)
 }
 
+func (ModuleSuite) TestNeverCacheModuleObjectReturn(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := modInit(t, c, "go", `package main
+
+type Test struct{}
+
+// +cache="never"
+func (m *Test) Touch() *Test {
+	return m
+}
+`)
+
+	out, err := modGen.With(daggerCall("touch")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Test@")
+}
+
 func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		sdk    string

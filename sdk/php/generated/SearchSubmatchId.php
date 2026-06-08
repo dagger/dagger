@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
+ * A unique identifier for an object.
  */
-readonly class SearchSubmatchId extends Client\AbstractId
+readonly class SearchSubmatchId extends Client\AbstractScalar
 {
 }

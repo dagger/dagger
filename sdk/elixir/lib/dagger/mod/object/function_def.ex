@@ -4,7 +4,7 @@ defmodule Dagger.Mod.Object.FunctionDef do
   # A function declaration from `Dagger.Mod.Object.defn/2`.
 
   @enforce_keys [:self, :args, :return]
-  defstruct @enforce_keys ++ [:cache_policy]
+  defstruct @enforce_keys ++ [:cache_policy, :check]
 
   @doc """
   Convert a `fun_def` into Dagger Function.
@@ -19,6 +19,7 @@ defmodule Dagger.Mod.Object.FunctionDef do
     |> maybe_with_description(Dagger.Mod.Object.get_function_doc(module, name))
     |> maybe_with_cache_policy(Dagger.Mod.Object.get_function_cache_policy(fun_def))
     |> maybe_with_deprecated(Dagger.Mod.Object.get_function_deprecated(module, name))
+    |> maybe_with_check(fun_def.check)
     |> with_args(fun_def.args, dag)
   end
 
@@ -40,6 +41,9 @@ defmodule Dagger.Mod.Object.FunctionDef do
 
   defp maybe_with_deprecated(function, {:deprecated, reason}),
     do: Dagger.Function.with_deprecated(function, reason: reason)
+
+  defp maybe_with_check(function, nil), do: function
+  defp maybe_with_check(function, true), do: Dagger.Function.with_check(function)
 
   defp maybe_with_cache_policy(function, nil), do: function
 

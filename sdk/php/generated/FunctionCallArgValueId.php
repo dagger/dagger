@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
+ * A unique identifier for an object.
  */
-readonly class FunctionCallArgValueId extends Client\AbstractId
+readonly class FunctionCallArgValueId extends Client\AbstractScalar
 {
 }

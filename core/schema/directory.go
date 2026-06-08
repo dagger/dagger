@@ -1046,13 +1046,13 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-type existsArgs struct {
+type directoryExistsArgs struct {
 	Path                string
 	ExpectedType        dagql.Optional[core.ExistsType]
 	DoNotFollowSymlinks bool `default:"false"`
 }
 
-func (s *directorySchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args existsArgs) (dagql.Boolean, error) {
+func (s *directorySchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryExistsArgs) (dagql.Boolean, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return false, err

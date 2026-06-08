@@ -6,14 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `HelloGreetingsID` scalar type represents an identifier for an object of type HelloGreetings.
-type HelloGreetingsID string // hello (../../../../../../../core/integration/testdata/test-blueprint/hello/main.go:40:6)
-
-// The `HelloID` scalar type represents an identifier for an object of type Hello.
-type HelloID string // hello (../../../../../../../core/integration/testdata/test-blueprint/hello/main.go:9:6)
 
 // Retrieve the binding value, as type Hello
 func (r *Binding) AsHello() *Hello { // hello (../../../../../../../core/integration/testdata/test-blueprint/hello/main.go:9:6)
@@ -187,7 +181,7 @@ func (r *Hello) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Hello) XXX_GraphQLIDType() string {
-	return "HelloID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -212,7 +206,7 @@ func (r *Hello) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadHelloFromID(HelloID(id))
+	*r = Hello{query: selectNode(dag.query, id, "Hello")}
 	return nil
 }
 
@@ -226,6 +220,14 @@ func (r *Hello) Message(ctx context.Context) (string, error) { // hello (../../.
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Hello as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Hello) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 type HelloGreetings struct { // hello (../../../../../../../core/integration/testdata/test-blueprint/hello/main.go:40:6)
@@ -261,7 +263,7 @@ func (r *HelloGreetings) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *HelloGreetings) XXX_GraphQLIDType() string {
-	return "HelloGreetingsID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -286,7 +288,7 @@ func (r *HelloGreetings) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadHelloGreetingsFromID(HelloGreetingsID(id))
+	*r = HelloGreetings{query: selectNode(dag.query, id, "HelloGreetings")}
 	return nil
 }
 
@@ -315,30 +317,18 @@ func (r *HelloGreetings) Planet(ctx context.Context, opts ...HelloGreetingsPlane
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this HelloGreetings as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *HelloGreetings) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 func (r *Query) Hello() *Hello { // hello (../../../../../../../core/integration/testdata/test-blueprint/hello/main.go:9:6)
 	q := r.query.Select("hello")
 
 	return &Hello{
-		query: q,
-	}
-}
-
-// Load a Hello from its ID.
-func (r *Query) LoadHelloFromID(id HelloID) *Hello { // hello (../../../../../../../core/integration/testdata/test-blueprint/hello/main.go:9:6)
-	q := r.query.Select("loadHelloFromID")
-	q = q.Arg("id", id)
-
-	return &Hello{
-		query: q,
-	}
-}
-
-// Load a HelloGreetings from its ID.
-func (r *Query) LoadHelloGreetingsFromID(id HelloGreetingsID) *HelloGreetings { // hello (../../../../../../../core/integration/testdata/test-blueprint/hello/main.go:40:6)
-	q := r.query.Select("loadHelloGreetingsFromID")
-	q = q.Arg("id", id)
-
-	return &HelloGreetings{
 		query: q,
 	}
 }

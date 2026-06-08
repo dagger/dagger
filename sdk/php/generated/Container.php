@@ -123,7 +123,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Retrieves the value of the specified environment variable.
+     * Retrieves the value of the specified persistent environment variable.
      */
     public function envVariable(string $name): string
     {
@@ -133,7 +133,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Retrieves the list of environment variables passed to commands.
+     * Retrieves the list of persistent environment variables configured on the container.
      */
     public function envVariables(): array
     {
@@ -144,8 +144,12 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * check if a file or directory exists
      */
-    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
-    {
+    public function exists(
+        string $path,
+        ?ExistsType $expectedType = null,
+        ?bool $doNotFollowSymlinks = false,
+        ?bool $expand = false,
+    ): bool {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $expectedType) {
@@ -153,6 +157,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $doNotFollowSymlinks) {
         $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        if (null !== $expand) {
+        $leafQueryBuilder->setArgument('expand', $expand);
         }
         return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
     }
@@ -1038,6 +1045,19 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+     *
+     * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+     */
+    public function withVolatileVariable(string $name, string $value): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolatileVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Change the container's working directory. Like WORKDIR in Dockerfile.
      */
     public function withWorkdir(string $path, ?bool $expand = false): Container
@@ -1216,6 +1236,16 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     public function withoutUser(): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUser');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container minus the given volatile environment variable.
+     */
+    public function withoutVolatileVariable(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutVolatileVariable');
+        $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

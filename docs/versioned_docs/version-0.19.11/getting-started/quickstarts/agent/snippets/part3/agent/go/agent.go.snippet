@@ -1,0 +1,42 @@
+// Develop with a Github issue as the assignment and open a pull request
+func (m *HelloDagger) DevelopIssue(
+	ctx context.Context,
+	// Github Token with permissions to write issues and contents
+	githubToken *dagger.Secret,
+	// Github issue number
+	issueID int,
+	// Github repository url
+	repository string,
+	// +defaultPath="/"
+	source *dagger.Directory,
+) (string, error) {
+	// Get the Github issue
+	issueClient := dag.GithubIssue(dagger.GithubIssueOpts{Token: githubToken})
+	issue := issueClient.Read(repository, issueID)
+
+	// Get information from the Github issue
+	assignment, err := issue.Body(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// Solve the issue with the Develop agent
+	feature, err := m.Develop(ctx, assignment, source)
+	if err != nil {
+		return "", err
+	}
+
+	// Open a pull request
+	title, err := issue.Title(ctx)
+	if err != nil {
+		return "", err
+	}
+	url, err := issue.URL(ctx)
+	if err != nil {
+		return "", err
+	}
+	body := assignment + "\n\nCloses " + url
+	pr := issueClient.CreatePullRequest(repository, title, body, feature)
+
+	return pr.URL(ctx)
+}

@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DotnetSdkDevID` scalar type represents an identifier for an object of type DotnetSdkDev.
-type DotnetSDKDevID string // dotnet-sdk-dev (../../../../:0:0)
 
 // Retrieve the binding value, as type DotnetSdkDev
 func (r *Binding) AsDotnetSDKDev() *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
@@ -25,7 +22,7 @@ type DotnetSDKDev struct { // dotnet-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
 	csharpier  *Void
-	id         *DotnetSDKDevID
+	id         *ID
 	sourcePath *string
 	test       *Void
 }
@@ -88,13 +85,13 @@ func (r *DotnetSDKDev) DevContainer() *Container { // dotnet-sdk-dev (../../../.
 }
 
 // A unique identifier for this DotnetSdkDev.
-func (r *DotnetSDKDev) ID(ctx context.Context) (DotnetSDKDevID, error) {
+func (r *DotnetSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DotnetSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -107,7 +104,7 @@ func (r *DotnetSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *DotnetSDKDev) XXX_GraphQLIDType() string {
-	return "DotnetSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -132,7 +129,7 @@ func (r *DotnetSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDotnetSDKDevFromID(DotnetSDKDevID(id))
+	*r = DotnetSDKDev{query: selectNode(dag.query, id, "DotnetSdkDev")}
 	return nil
 }
 
@@ -201,6 +198,14 @@ func (r *DotnetSDKDev) Workspace() *Directory { // dotnet-sdk-dev (../../../../:
 	}
 }
 
+// AsNode returns this DotnetSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DotnetSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Create or update a binding of type DotnetSdkDev in the environment
 func (r *Env) WithDotnetSDKDevInput(name string, value *DotnetSDKDev, description string) *Env { // dotnet-sdk-dev (../../../../:0:0)
 	assertNotNil("value", value)
@@ -249,16 +254,6 @@ func (r *Query) DotnetSDKDev(opts ...DotnetSDKDevOpts) *DotnetSDKDev { // dotnet
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
 	}
-
-	return &DotnetSDKDev{
-		query: q,
-	}
-}
-
-// Load a DotnetSdkDev from its ID.
-func (r *Query) LoadDotnetSDKDevFromID(id DotnetSDKDevID) *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
-	q := r.query.Select("loadDotnetSdkDevFromID")
-	q = q.Arg("id", id)
 
 	return &DotnetSDKDev{
 		query: q,

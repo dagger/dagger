@@ -7,17 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `GhaID` scalar type represents an identifier for an object of type Gha.
-type GhaID string // gha (../../../../../../modules/gha/main.go:12:6)
-
-// The `GhaJobID` scalar type represents an identifier for an object of type GhaJob.
-type GhaJobID string // gha (../../../../../../modules/gha/job.go:11:6)
-
-// The `GhaWorkflowID` scalar type represents an identifier for an object of type GhaWorkflow.
-type GhaWorkflowID string // gha (../../../../../../modules/gha/workflow.go:12:6)
 
 // Retrieve the binding value, as type Gha
 func (r *Binding) AsGha() *Gha { // gha (../../../../../../modules/gha/main.go:12:6)
@@ -121,7 +112,7 @@ func (r *Env) WithGhaWorkflowOutput(name string, description string) *Env { // g
 type Gha struct { // gha (../../../../../../modules/gha/main.go:12:6)
 	query *querybuilder.Selection
 
-	id *GhaID
+	id *ID
 }
 type WithGhaFunc func(r *Gha) *Gha
 
@@ -171,13 +162,13 @@ func (r *Gha) Generate(opts ...GhaGenerateOpts) *Directory { // gha (../../../..
 }
 
 // A unique identifier for this Gha.
-func (r *Gha) ID(ctx context.Context) (GhaID, error) {
+func (r *Gha) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GhaID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -190,7 +181,7 @@ func (r *Gha) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Gha) XXX_GraphQLIDType() string {
-	return "GhaID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -215,7 +206,7 @@ func (r *Gha) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGhaFromID(GhaID(id))
+	*r = Gha{query: selectNode(dag.query, id, "Gha")}
 	return nil
 }
 
@@ -618,7 +609,7 @@ func (r *Gha) Workflows(ctx context.Context) ([]GhaWorkflow, error) { // gha (..
 	q = q.Select("id")
 
 	type workflows struct {
-		Id GhaWorkflowID
+		Id ID
 	}
 
 	convert := func(fields []workflows) []GhaWorkflow {
@@ -626,7 +617,7 @@ func (r *Gha) Workflows(ctx context.Context) ([]GhaWorkflow, error) { // gha (..
 
 		for i := range fields {
 			val := GhaWorkflow{id: &fields[i].Id}
-			val.query = q.Root().Select("loadGhaWorkflowFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "GhaWorkflow")
 			out = append(out, val)
 		}
 
@@ -644,6 +635,14 @@ func (r *Gha) Workflows(ctx context.Context) ([]GhaWorkflow, error) { // gha (..
 	return convert(response), nil
 }
 
+// AsNode returns this Gha as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Gha) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type GhaJob struct { // gha (../../../../../../modules/gha/job.go:11:6)
 	query *querybuilder.Selection
 
@@ -652,7 +651,7 @@ type GhaJob struct { // gha (../../../../../../modules/gha/job.go:11:6)
 	condition      *string
 	daggerVersion  *string
 	debug          *bool
-	id             *GhaJobID
+	id             *ID
 	module         *string
 	name           *string
 	publicToken    *string
@@ -742,13 +741,13 @@ func (r *GhaJob) Env(ctx context.Context) ([]string, error) { // gha (../../../.
 }
 
 // A unique identifier for this GhaJob.
-func (r *GhaJob) ID(ctx context.Context) (GhaJobID, error) {
+func (r *GhaJob) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GhaJobID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -761,7 +760,7 @@ func (r *GhaJob) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GhaJob) XXX_GraphQLIDType() string {
-	return "GhaJobID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -786,7 +785,7 @@ func (r *GhaJob) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGhaJobFromID(GhaJobID(id))
+	*r = GhaJob{query: selectNode(dag.query, id, "GhaJob")}
 	return nil
 }
 
@@ -899,11 +898,19 @@ func (r *GhaJob) TimeoutMinutes(ctx context.Context) (int, error) { // gha (../.
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this GhaJob as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GhaJob) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type GhaWorkflow struct { // gha (../../../../../../modules/gha/workflow.go:12:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *GhaWorkflowID
+	id    *ID
 	name  *string
 }
 type WithGhaWorkflowFunc func(r *GhaWorkflow) *GhaWorkflow
@@ -943,13 +950,13 @@ func (r *GhaWorkflow) Check(ctx context.Context, opts ...GhaWorkflowCheckOpts) e
 }
 
 // A unique identifier for this GhaWorkflow.
-func (r *GhaWorkflow) ID(ctx context.Context) (GhaWorkflowID, error) {
+func (r *GhaWorkflow) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GhaWorkflowID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -962,7 +969,7 @@ func (r *GhaWorkflow) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GhaWorkflow) XXX_GraphQLIDType() string {
-	return "GhaWorkflowID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -987,7 +994,7 @@ func (r *GhaWorkflow) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGhaWorkflowFromID(GhaWorkflowID(id))
+	*r = GhaWorkflow{query: selectNode(dag.query, id, "GhaWorkflow")}
 	return nil
 }
 
@@ -997,7 +1004,7 @@ func (r *GhaWorkflow) Jobs(ctx context.Context) ([]GhaJob, error) { // gha (../.
 	q = q.Select("id")
 
 	type jobs struct {
-		Id GhaJobID
+		Id ID
 	}
 
 	convert := func(fields []jobs) []GhaJob {
@@ -1005,7 +1012,7 @@ func (r *GhaWorkflow) Jobs(ctx context.Context) ([]GhaJob, error) { // gha (../.
 
 		for i := range fields {
 			val := GhaJob{id: &fields[i].Id}
-			val.query = q.Root().Select("loadGhaJobFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "GhaJob")
 			out = append(out, val)
 		}
 
@@ -1045,6 +1052,14 @@ func (r *GhaWorkflow) WithJob(job *GhaJob) *GhaWorkflow { // gha (../../../../..
 	}
 }
 
+// AsNode returns this GhaWorkflow as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GhaWorkflow) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // GhaOpts contains options for Query.Gha
 type GhaOpts struct {
 	JobDefaults *GhaJob // gha (../../../../../../modules/gha/main.go:22:2)
@@ -1073,36 +1088,6 @@ func (r *Query) Gha(opts ...GhaOpts) *Gha { // gha (../../../../../../modules/gh
 	}
 
 	return &Gha{
-		query: q,
-	}
-}
-
-// Load a Gha from its ID.
-func (r *Query) LoadGhaFromID(id GhaID) *Gha { // gha (../../../../../../modules/gha/main.go:12:6)
-	q := r.query.Select("loadGhaFromID")
-	q = q.Arg("id", id)
-
-	return &Gha{
-		query: q,
-	}
-}
-
-// Load a GhaJob from its ID.
-func (r *Query) LoadGhaJobFromID(id GhaJobID) *GhaJob { // gha (../../../../../../modules/gha/job.go:11:6)
-	q := r.query.Select("loadGhaJobFromID")
-	q = q.Arg("id", id)
-
-	return &GhaJob{
-		query: q,
-	}
-}
-
-// Load a GhaWorkflow from its ID.
-func (r *Query) LoadGhaWorkflowFromID(id GhaWorkflowID) *GhaWorkflow { // gha (../../../../../../modules/gha/workflow.go:12:6)
-	q := r.query.Select("loadGhaWorkflowFromID")
-	q = q.Arg("id", id)
-
-	return &GhaWorkflow{
 		query: q,
 	}
 }

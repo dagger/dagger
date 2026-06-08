@@ -197,8 +197,9 @@ func s3Path(bucket string, path string, args ...any) string {
 
 // +check
 // Verify that the CLI builds without actually publishing anything
-func (cli *CliDev) ReleaseDryRun(ctx context.Context) error {
-	return parallel.New().
+func (cli *CliDev) ReleaseDryRun(ctx context.Context) (*dagger.Directory, error) {
+	binaries := cli.goreleaserBinaries()
+	err := parallel.New().
 		WithJob(
 			"dry-run build on all targets",
 			// TODO: ideally this would also use go releaser, but we want to run this
@@ -206,7 +207,7 @@ func (cli *CliDev) ReleaseDryRun(ctx context.Context) error {
 			// a key which is private. For now, this just builds the CLI for the same
 			// targets so there's at least some coverage
 			func(ctx context.Context) error {
-				_, err := cli.goreleaserBinaries().Sync(ctx)
+				_, err := binaries.Sync(ctx)
 				return err
 			}).
 		WithJob(
@@ -220,6 +221,10 @@ func (cli *CliDev) ReleaseDryRun(ctx context.Context) error {
 				return err
 			}).
 		Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return binaries, nil
 }
 
 func (cli *CliDev) goreleaserBinaries() *dagger.Directory {

@@ -19,7 +19,7 @@ import (
 
 	"dagger/cli-dev/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -384,7 +387,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*CliDev).ReleaseDryRun(&parent, ctx)
+			return (*CliDev).ReleaseDryRun(&parent, ctx)
 		case "":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -419,7 +422,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return New(ctx, runnerHost, source, base, version)
+			var imageTag string
+			if inputArgs["imageTag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["imageTag"]), &imageTag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg imageTag", err))
+				}
+			}
+			return New(ctx, runnerHost, source, base, version, imageTag)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

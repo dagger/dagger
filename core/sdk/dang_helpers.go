@@ -25,7 +25,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
-type dangSourceRunner func(context.Context, string) (dang.EvalEnv, error)
+type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
 
 func (r *DangRuntime) eval(
 	ctx context.Context,
@@ -38,9 +38,9 @@ func (r *DangRuntime) eval(
 	moduleContext dagql.ObjectResult[*core.Module],
 	envContext dagql.ObjectResult[*core.Env],
 ) ([]byte, error) {
-	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, envContext, func(ctx context.Context, modSrcDir string) (dang.EvalEnv, error) {
+	return evalDangSource(ctx, query, r.modSource, schemaFile, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, fnCall, moduleContext, envContext, func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
 		return dang.RunDir(ctx, modSrcDir, false)
-	}, func(ctx context.Context, env dang.EvalEnv) ([]byte, error) {
+	}, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		if fnCall.ParentName == "" {
 			srv, err := core.CurrentDagqlServer(ctx)
 			if err != nil {
@@ -78,7 +78,7 @@ func evalDangSource(
 	moduleContext dagql.ObjectResult[*core.Module],
 	envContext dagql.ObjectResult[*core.Env],
 	runSource dangSourceRunner,
-	withEnv func(context.Context, dang.EvalEnv) ([]byte, error),
+	withEnv func(context.Context, dang.ValueScope) ([]byte, error),
 ) ([]byte, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -132,7 +132,7 @@ func evalDangSource(
 	ctx = ioctx.StderrToContext(ctx, stdio.Stderr)
 
 	modCtx := modSource.Self().ContextDirectory
-	var env dang.EvalEnv
+	var env dang.ValueScope
 	err = modCtx.Self().Mount(ctx, modCtx, func(path string) error {
 		modSrcDir := filepath.Join(path, modSource.Self().SourceSubpath)
 		env, err = runSource(ctx, modSrcDir)
@@ -163,7 +163,7 @@ func checkDangServerError(srvErrCh <-chan error) error {
 	return nil
 }
 
-func runDangDirForModuleTypes(ctx context.Context, dirPath string) (dang.EvalEnv, error) {
+func runDangDirForModuleTypes(ctx context.Context, dirPath string) (dang.ValueScope, error) {
 	env, err := dang.DeclareDir(ctx, dirPath, false)
 	if err != nil {
 		return nil, fmt.Errorf("declare Dang module types: %w", err)
@@ -171,7 +171,7 @@ func runDangDirForModuleTypes(ctx context.Context, dirPath string) (dang.EvalEnv
 	return env, nil
 }
 
-func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.FunctionCall) (dang.Value, error) {
+func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.FunctionCall) (dang.Value, error) {
 	inputArgs := make(map[string][]byte, len(fnCall.InputArgs))
 	for _, arg := range fnCall.InputArgs {
 		inputArgs[arg.Name] = []byte(arg.Value)
@@ -193,7 +193,7 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 	}
 
 	parentConstructor := parentModBase.(*dang.ConstructorFunction)
-	parentModType := parentConstructor.ClassType
+	parentModType := parentConstructor.ObjectType
 
 	var fnType *hm.FunctionType
 	if fnCall.Name == "" {
@@ -246,7 +246,7 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 		return parentConstructor.Call(ctx, env, argMap)
 	}
 
-	parentModEnv := dang.NewModuleValue(parentModType)
+	parentModEnv := dang.NewObject(parentModType)
 
 	for name, value := range parentState {
 		scheme, found := parentModType.SchemeOf(name)
@@ -264,11 +264,11 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 		parentModEnv.Bind(name, dangVal, dang.PrivateVisibility)
 	}
 
-	bodyEnv := dang.CreateCompositeEnv(parentModEnv, env)
+	bodyEnv := dang.CreateOverlayValueScope(parentModEnv, env)
 	bodyEnv.EnterSelf(parentModEnv)
-	_, err = dang.EvaluateFormsWithPhases(ctx, parentConstructor.ClassBodyForms, bodyEnv)
+	_, err = dang.EvaluateFormsWithPhases(ctx, parentConstructor.ObjectBodyForms, bodyEnv)
 	if err != nil {
-		return nil, fmt.Errorf("evaluating class body for %s: %w", parentConstructor.ClassName, err)
+		return nil, fmt.Errorf("evaluating class body for %s: %w", parentConstructor.ObjectName, err)
 	}
 
 	call := &dang.FunCall{
@@ -282,19 +282,19 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 }
 
 type dangLocalTypes struct {
-	modules map[*dang.Module]struct{}
+	modules map[*dang.Type]struct{}
 }
 
-func dangEvalModule(env dang.EvalEnv) (dang.Env, bool) {
-	modVal, ok := env.(*dang.ModuleValue)
+func dangEvalModule(env dang.ValueScope) (dang.TypeScope, bool) {
+	modVal, ok := env.(*dang.Object)
 	if !ok {
 		return nil, false
 	}
 	return modVal.Mod, true
 }
 
-func collectDangLocalTypes(env dang.EvalEnv) dangLocalTypes {
-	local := dangLocalTypes{modules: map[*dang.Module]struct{}{}}
+func collectDangLocalTypes(env dang.ValueScope) dangLocalTypes {
+	local := dangLocalTypes{modules: map[*dang.Type]struct{}{}}
 	mod, ok := dangEvalModule(env)
 	if !ok {
 		return local
@@ -304,14 +304,14 @@ func collectDangLocalTypes(env dang.EvalEnv) dangLocalTypes {
 		if !found || origin.Kind != dang.BindingOriginLocal {
 			continue
 		}
-		if localMod, ok := namedType.(*dang.Module); ok {
+		if localMod, ok := namedType.(*dang.Type); ok {
 			local.modules[localMod] = struct{}{}
 		}
 	}
 	return local
 }
 
-func isDangLocalValueBinding(env dang.EvalEnv, name string) bool {
+func isDangLocalValueBinding(env dang.ValueScope, name string) bool {
 	mod, ok := dangEvalModule(env)
 	if !ok {
 		return true
@@ -320,7 +320,7 @@ func isDangLocalValueBinding(env dang.EvalEnv, name string) bool {
 	return !found || origin.Kind == dang.BindingOriginLocal
 }
 
-func (local dangLocalTypes) contains(mod *dang.Module) bool {
+func (local dangLocalTypes) contains(mod *dang.Type) bool {
 	_, ok := local.modules[mod]
 	return ok
 }
@@ -382,7 +382,7 @@ func markDangLocalType(ctx context.Context, srv *dagql.Server, typeDef dagql.Obj
 	}
 }
 
-func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (res dagql.ObjectResult[*core.Module], _ error) {
+func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope) (res dagql.ObjectResult[*core.Module], _ error) {
 	localTypes := collectDangLocalTypes(env)
 	sels := []dagql.Selector{
 		{
@@ -401,7 +401,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (r
 			if err != nil {
 				return res, fmt.Errorf("failed to create object %s: %w", binding.Key, err)
 			}
-			fnDef, err := createFunction(ctx, srv, val.ClassType, binding.Key, val.FnType, env, localTypes)
+			fnDef, err := createFunction(ctx, srv, val.ObjectType, binding.Key, val.FnType, env, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create constructor for %s: %w", binding.Key, err)
 			}
@@ -427,8 +427,8 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (r
 				Args:  []dagql.NamedInput{{Name: "object", Value: dagql.NewID[*core.TypeDef](objDefWithCtorID)}},
 			})
 
-		case *dang.ModuleValue:
-			mod, ok := val.Mod.(*dang.Module)
+		case *dang.Object:
+			mod, ok := val.Mod.(*dang.Type)
 			if !ok {
 				slog.Warn("skipping non-module module value", "name", binding.Key)
 				break
@@ -478,7 +478,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (r
 	return res, nil
 }
 
-func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, name string, fn *hm.FunctionType, env dang.EvalEnv, localTypes dangLocalTypes) (dagql.ObjectResult[*core.Function], error) {
+func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name string, fn *hm.FunctionType, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.Function], error) {
 	var res dagql.ObjectResult[*core.Function]
 
 	retTypeDef, err := dangTypeToTypeDef(ctx, srv, fn.Ret(false), localTypes)
@@ -568,7 +568,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 
 // functionDirectiveSelectors converts function-level directives (@check,
 // @generate, @up, @cache) into dagql selectors.
-func functionDirectiveSelectors(ctx context.Context, env dang.EvalEnv, directives []*dang.DirectiveApplication) ([]dagql.Selector, error) {
+func functionDirectiveSelectors(ctx context.Context, env dang.ValueScope, directives []*dang.DirectiveApplication) ([]dagql.Selector, error) {
 	var sels []dagql.Selector
 	for _, directive := range directives {
 		switch directive.Name {
@@ -590,7 +590,7 @@ func functionDirectiveSelectors(ctx context.Context, env dang.EvalEnv, directive
 }
 
 // cacheDirectiveSelector converts a @cache directive into a withCachePolicy selector.
-func cacheDirectiveSelector(ctx context.Context, env dang.EvalEnv, directive *dang.DirectiveApplication) (dagql.Selector, error) {
+func cacheDirectiveSelector(ctx context.Context, env dang.ValueScope, directive *dang.DirectiveApplication) (dagql.Selector, error) {
 	var policy core.FunctionCachePolicy
 	var ttl string
 	for _, arg := range directive.Args {
@@ -623,7 +623,7 @@ func cacheDirectiveSelector(ctx context.Context, env dang.EvalEnv, directive *da
 
 // applyArgDirectives processes argument-level directives (@defaultPath,
 // @ignorePatterns) and appends the resulting inputs to argArgs.
-func applyArgDirectives(ctx context.Context, env dang.EvalEnv, argArgs []dagql.NamedInput, argName string, allDirs []dang.Keyed[[]*dang.DirectiveApplication]) ([]dagql.NamedInput, error) {
+func applyArgDirectives(ctx context.Context, env dang.ValueScope, argArgs []dagql.NamedInput, argName string, allDirs []dang.Keyed[[]*dang.DirectiveApplication]) ([]dagql.NamedInput, error) {
 	for _, argDirs := range allDirs {
 		if argDirs.Key != argName {
 			continue
@@ -674,7 +674,7 @@ func applyArgDirectives(ctx context.Context, env dang.EvalEnv, argArgs []dagql.N
 
 // evalDirectiveArg evaluates a directive argument AST node through the Dang
 // runtime and converts the resulting Value to a plain Go value.
-func evalDirectiveArg(ctx context.Context, env dang.EvalEnv, node dang.Node) (any, error) {
+func evalDirectiveArg(ctx context.Context, env dang.ValueScope, node dang.Node) (any, error) {
 	val, err := dang.EvalNode(ctx, env, node)
 	if err != nil {
 		return nil, err
@@ -710,12 +710,12 @@ func dangValToGo(val dang.Value) (any, error) {
 	}
 }
 
-func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, module *dang.ConstructorFunction, env dang.EvalEnv, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
+func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, module *dang.ConstructorFunction, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
-	classMod := module.ClassType
+	classMod := module.ObjectType
 	withObjectArgs := []dagql.NamedInput{{Name: "name", Value: dagql.String(name)}}
-	if desc := classMod.GetModuleDocString(); desc != "" {
+	if desc := classMod.GetTypeDocString(); desc != "" {
 		withObjectArgs = append(withObjectArgs, dagql.NamedInput{Name: "description", Value: dagql.String(desc)})
 	}
 
@@ -727,8 +727,8 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		},
 	}
 
-	for _, form := range module.ClassBodyForms {
-		slot, ok := form.(*dang.SlotDecl)
+	for _, form := range module.ObjectBodyForms {
+		slot, ok := form.(*dang.FieldDecl)
 		if !ok || slot.Visibility < dang.PublicVisibility {
 			continue
 		}
@@ -838,7 +838,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 				{Name: "elementType", Value: dagql.NewID[*core.TypeDef](elemTypeDefID)},
 			},
 		})
-	case *dang.Module:
+	case *dang.Type:
 		switch t.Named {
 		case "String":
 			sels = append(sels, dagql.Selector{
@@ -893,7 +893,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
 		return res, fmt.Errorf("failed to select typedef: %w", err)
 	}
-	if mod, ok := dangType.(*dang.Module); ok && localTypes.contains(mod) {
+	if mod, ok := dangType.(*dang.Type); ok && localTypes.contains(mod) {
 		var err error
 		res, err = markDangLocalType(ctx, srv, res, mod.Named)
 		if err != nil {
@@ -904,7 +904,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 	return res, nil
 }
 
-func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enumMod *dang.ModuleValue, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
+func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enumMod *dang.Object, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
 	sels := []dagql.Selector{
@@ -928,7 +928,7 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
 		return res, fmt.Errorf("failed to create enum typedef: %w", err)
 	}
-	if mod, ok := enumMod.Mod.(*dang.Module); ok && localTypes.contains(mod) {
+	if mod, ok := enumMod.Mod.(*dang.Type); ok && localTypes.contains(mod) {
 		var err error
 		res, err = markDangLocalType(ctx, srv, res, name)
 		if err != nil {
@@ -939,12 +939,12 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 	return res, nil
 }
 
-func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, interfaceMod *dang.ModuleValue, env dang.EvalEnv, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
+func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, interfaceMod *dang.Object, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
-	mod, ok := interfaceMod.Mod.(*dang.Module)
+	mod, ok := interfaceMod.Mod.(*dang.Type)
 	if !ok {
-		return res, fmt.Errorf("expected *dang.Module for interface %s, got %T", name, interfaceMod.Mod)
+		return res, fmt.Errorf("expected *dang.Type for interface %s, got %T", name, interfaceMod.Mod)
 	}
 
 	sels := []dagql.Selector{
@@ -1011,7 +1011,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 	return res, nil
 }
 
-func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type) (dang.Value, error) {
+func anyToDang(ctx context.Context, env dang.ValueScope, val any, fieldType hm.Type) (dang.Value, error) {
 	if nonNull, ok := fieldType.(hm.NonNullType); ok {
 		return anyToDang(ctx, env, val, nonNull.Type)
 	}
@@ -1039,8 +1039,8 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 	}
 }
 
-func stringToDang(ctx context.Context, env dang.EvalEnv, val string, fieldType hm.Type) (dang.Value, error) {
-	modType, isMod := fieldType.(*dang.Module)
+func stringToDang(ctx context.Context, env dang.ValueScope, val string, fieldType hm.Type) (dang.Value, error) {
+	modType, isMod := fieldType.(*dang.Type)
 	if !isMod {
 		return dang.StringValue{Val: val}, nil
 	}
@@ -1058,7 +1058,7 @@ func stringToDang(ctx context.Context, env dang.EvalEnv, val string, fieldType h
 	}
 }
 
-func enumStringToDang(ctx context.Context, env dang.EvalEnv, val string, modType *dang.Module) (dang.Value, error) {
+func enumStringToDang(ctx context.Context, env dang.ValueScope, val string, modType *dang.Type) (dang.Value, error) {
 	enumVal, found, err := env.Lookup(ctx, modType.Named)
 	if err != nil {
 		return nil, fmt.Errorf("lookup enum type %s: %w", modType.Named, err)
@@ -1067,7 +1067,7 @@ func enumStringToDang(ctx context.Context, env dang.EvalEnv, val string, modType
 		return nil, fmt.Errorf("enum type %s not found in environment", modType.Named)
 	}
 
-	enumMod, ok := enumVal.(*dang.ModuleValue)
+	enumMod, ok := enumVal.(*dang.Object)
 	if !ok {
 		return nil, fmt.Errorf("enum type %s not found in environment", modType.Named)
 	}
@@ -1082,7 +1082,7 @@ func enumStringToDang(ctx context.Context, env dang.EvalEnv, val string, modType
 	return member, nil
 }
 
-func objectIDToDang(ctx context.Context, env dang.EvalEnv, id string, modType *dang.Module) (dang.Value, error) {
+func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType *dang.Type) (dang.Value, error) {
 	nodeVal, found, err := env.Lookup(ctx, "node")
 	if err != nil {
 		return nil, err
@@ -1114,12 +1114,12 @@ func objectIDToDang(ctx context.Context, env dang.EvalEnv, id string, modType *d
 		ValType:    hm.NonNullType{Type: modType},
 		Client:     nodeFn.Client,
 		Schema:     nodeFn.Schema,
-		TypeEnv:    nodeFn.TypeEnv,
+		TypeScope:  nodeFn.TypeScope,
 		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(modType.Named),
 	}, nil
 }
 
-func listToDang(ctx context.Context, env dang.EvalEnv, vals []any, fieldType hm.Type) (dang.Value, error) {
+func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType hm.Type) (dang.Value, error) {
 	listT, isList := fieldType.(dang.ListType)
 	if !isList {
 		return nil, fmt.Errorf("expected list type, got %T", fieldType)
@@ -1136,13 +1136,13 @@ func listToDang(ctx context.Context, env dang.EvalEnv, vals []any, fieldType hm.
 	return listVal, nil
 }
 
-func mapToDang(ctx context.Context, env dang.EvalEnv, vals map[string]any, fieldType hm.Type) (dang.Value, error) {
-	mod, isMod := fieldType.(dang.Env)
+func mapToDang(ctx context.Context, env dang.ValueScope, vals map[string]any, fieldType hm.Type) (dang.Value, error) {
+	mod, isMod := fieldType.(dang.TypeScope)
 	if !isMod {
 		return nil, fmt.Errorf("expected module type, got %T", fieldType)
 	}
 
-	modVal := dang.NewModuleValue(mod)
+	modVal := dang.NewObject(mod)
 	for name, val := range vals {
 		expectedT, found := mod.SchemeOf(name)
 		if !found {
@@ -1165,7 +1165,7 @@ func mapToDang(ctx context.Context, env dang.EvalEnv, vals map[string]any, field
 	return modVal, nil
 }
 
-func evaluateDangClassBody(ctx context.Context, env dang.EvalEnv, mod dang.Env, modVal *dang.ModuleValue) error {
+func evaluateDangClassBody(ctx context.Context, env dang.ValueScope, mod dang.TypeScope, modVal *dang.Object) error {
 	if mod.Name() == "" {
 		return nil
 	}
@@ -1183,9 +1183,9 @@ func evaluateDangClassBody(ctx context.Context, env dang.EvalEnv, mod dang.Env, 
 		return nil
 	}
 
-	bodyEnv := dang.CreateCompositeEnv(modVal, env)
+	bodyEnv := dang.CreateOverlayValueScope(modVal, env)
 	bodyEnv.EnterSelf(modVal)
-	_, err = dang.EvaluateFormsWithPhases(ctx, constructorFn.ClassBodyForms, bodyEnv)
+	_, err = dang.EvaluateFormsWithPhases(ctx, constructorFn.ObjectBodyForms, bodyEnv)
 	if err != nil {
 		return fmt.Errorf("evaluating class body for %s: %w", mod.Name(), err)
 	}

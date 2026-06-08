@@ -1,0 +1,12 @@
+{
+  "name": "test-interface",
+  "engineVersion": "v0.20.3",
+  "sdk": "dang",
+  "include": ["!dep"],
+  "dependencies": [
+    {
+      "name": "dep",
+      "source": "./dep"
+    }
+  ]
+}

@@ -7,11 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `AlpineID` scalar type represents an identifier for an object of type Alpine.
-type AlpineID string // alpine (../../../../modules/alpine/main.go:85:6)
 
 // An Alpine Linux configuration
 type Alpine struct { // alpine (../../../../modules/alpine/main.go:85:6)
@@ -20,7 +17,7 @@ type Alpine struct { // alpine (../../../../modules/alpine/main.go:85:6)
 	arch   *string
 	branch *string
 	distro *AlpineDistro
-	id     *AlpineID
+	id     *ID
 }
 
 func (r *Alpine) WithGraphQLQuery(q *querybuilder.Selection) *Alpine {
@@ -98,13 +95,13 @@ func (r *Alpine) ExtraRepositories(ctx context.Context) ([]string, error) { // a
 }
 
 // A unique identifier for this Alpine.
-func (r *Alpine) ID(ctx context.Context) (AlpineID, error) {
+func (r *Alpine) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response AlpineID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -117,7 +114,7 @@ func (r *Alpine) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Alpine) XXX_GraphQLIDType() string {
-	return "AlpineID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -142,7 +139,7 @@ func (r *Alpine) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadAlpineFromID(AlpineID(id))
+	*r = Alpine{query: selectNode(dag.query, id, "Alpine")}
 	return nil
 }
 
@@ -154,6 +151,14 @@ func (r *Alpine) Packages(ctx context.Context) ([]string, error) { // alpine (..
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Alpine as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Alpine) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // Retrieve the binding value, as type Alpine
@@ -250,16 +255,6 @@ func (r *Query) Alpine(opts ...AlpineOpts) *Alpine { // alpine (../../../../modu
 			q = q.Arg("distro", opts[i].Distro)
 		}
 	}
-
-	return &Alpine{
-		query: q,
-	}
-}
-
-// Load a Alpine from its ID.
-func (r *Query) LoadAlpineFromID(id AlpineID) *Alpine { // alpine (../../../../modules/alpine/main.go:85:6)
-	q := r.query.Select("loadAlpineFromID")
-	q = q.Arg("id", id)
 
 	return &Alpine{
 		query: q,

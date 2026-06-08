@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
+ * A unique identifier for an object.
  */
-readonly class UpGroupId extends Client\AbstractId
+readonly class UpGroupId extends Client\AbstractScalar
 {
 }

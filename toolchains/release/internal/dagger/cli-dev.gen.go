@@ -6,14 +6,11 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
-// The `CliDevID` scalar type represents an identifier for an object of type CliDev.
-type CliDevID string // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
-
 // Retrieve the binding value, as type CliDev
-func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
+func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:89:6)
 	q := r.query.Select("asCliDev")
 
 	return &CliDev{
@@ -21,12 +18,11 @@ func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-de
 	}
 }
 
-type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
+type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:89:6)
 	query *querybuilder.Selection
 
-	id              *CliDevID
+	id              *ID
 	publishMetadata *Void
-	releaseDryRun   *Void
 	tag             *string
 	version         *string
 }
@@ -39,11 +35,11 @@ func (r *CliDev) WithGraphQLQuery(q *querybuilder.Selection) *CliDev {
 
 // CliDevBinaryOpts contains options for CliDev.Binary
 type CliDevBinaryOpts struct {
-	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:93:2)
+	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:99:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:91:1)
+func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:97:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -59,12 +55,12 @@ func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../.
 
 // CliDevDevBinariesOpts contains options for CliDev.DevBinaries
 type CliDevDevBinariesOpts struct {
-	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:127:2)
+	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:133:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../../../toolchains/cli-dev/main.go:125:1)
+func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../../../toolchains/cli-dev/main.go:131:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -79,13 +75,13 @@ func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-
 }
 
 // A unique identifier for this CliDev.
-func (r *CliDev) ID(ctx context.Context) (CliDevID, error) {
+func (r *CliDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CliDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -98,7 +94,7 @@ func (r *CliDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *CliDev) XXX_GraphQLIDType() string {
-	return "CliDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -123,7 +119,7 @@ func (r *CliDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadCliDevFromID(CliDevID(id))
+	*r = CliDev{query: selectNode(dag.query, id, "CliDev")}
 	return nil
 }
 
@@ -211,15 +207,15 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 
 // CliDevReferenceOpts contains options for CliDev.Reference
 type CliDevReferenceOpts struct {
-	Frontmatter string // cli-dev (../../../../toolchains/cli-dev/main.go:105:2)
+	Frontmatter string // cli-dev (../../../../toolchains/cli-dev/main.go:111:2)
 	//
 	// Include experimental commands
 	//
-	IncludeExperimental bool // cli-dev (../../../../toolchains/cli-dev/main.go:108:2)
+	IncludeExperimental bool // cli-dev (../../../../toolchains/cli-dev/main.go:114:2)
 }
 
 // Generate a markdown CLI reference doc
-func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:103:1)
+func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:109:1)
 	q := r.query.Select("reference")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `frontmatter` optional argument
@@ -238,16 +234,15 @@ func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../.
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:200:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *CliDev) ReleaseDryRun() *Directory { // cli-dev (../../../../toolchains/cli-dev/publish.go:200:1)
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	return &Directory{
+		query: q,
+	}
 }
 
-func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:85:2)
+func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:91:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -259,7 +254,7 @@ func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:84:2)
+func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:90:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -271,8 +266,16 @@ func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../.
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this CliDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CliDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Create or update a binding of type CliDev in the environment
-func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
+func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:89:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withCliDevInput")
 	q = q.Arg("name", name)
@@ -285,7 +288,7 @@ func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *E
 }
 
 // Declare a desired CliDev output to be assigned in the environment
-func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
+func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:89:6)
 	q := r.query.Select("withCliDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -308,6 +311,10 @@ type CliDevOpts struct {
 	// Explicit version to set on the Dagger CLI.
 	//
 	Version string // cli-dev (../../../../toolchains/cli-dev/main.go:45:2)
+	//
+	// Explicit engine image tag to embed in the Dagger CLI.
+	//
+	ImageTag string // cli-dev (../../../../toolchains/cli-dev/main.go:49:2)
 }
 
 // Develop the Dagger CLI
@@ -330,17 +337,11 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../too
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
 		}
+		// `imageTag` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ImageTag) {
+			q = q.Arg("imageTag", opts[i].ImageTag)
+		}
 	}
-
-	return &CliDev{
-		query: q,
-	}
-}
-
-// Load a CliDev from its ID.
-func (r *Query) LoadCliDevFromID(id CliDevID) *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
-	q := r.query.Select("loadCliDevFromID")
-	q = q.Arg("id", id)
 
 	return &CliDev{
 		query: q,

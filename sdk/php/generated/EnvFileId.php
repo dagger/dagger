@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+ * A unique identifier for an object.
  */
-readonly class EnvFileId extends Client\AbstractId
+readonly class EnvFileId extends Client\AbstractScalar
 {
 }

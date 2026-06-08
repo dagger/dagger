@@ -2,14 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from '@docusaurus/types';
 
+type Options = {
+  docsPath?: string;
+};
+
 // Thanks to @jharrell and Prisma team. Apache-2.0 content
 // https://github.com/prisma/docs/commit/bc5b452b34ebdce8e89ccbe0c7f029e8b6ef1239
-const llmsTxtPlugin: Plugin = async function pluginLlmsTxt(context) {
+const llmsTxtPlugin = async function pluginLlmsTxt(
+  context,
+  options: Options = {}
+): Promise<Plugin> {
   return {
     name: "llms-txt-plugin",
     loadContent: async () => {
       const { siteDir } = context;
-      const contentDir = path.join(siteDir, "current_docs");
+      const contentDir = path.resolve(siteDir, options.docsPath ?? "current_docs");
       const allMdx: string[] = [];
 
       // recursive function to get all mdx files
@@ -73,9 +80,14 @@ const llmsTxtPlugin: Plugin = async function pluginLlmsTxt(context) {
       )[0];
 
       // docsPluginRouteConfig has a routes property has a record with the path "/" that contains all docs routes.
-      const allDocsRouteConfig = docsPluginRouteConfig.routes?.filter(
-        (route) => route.path === "/"
-      )[0];
+      const allDocsRouteConfig =
+        docsPluginRouteConfig.routes?.find((route) => {
+          const version = route.props?.version as { name?: string; versionName?: string } | undefined;
+          return version?.name === "current" || version?.versionName === "current";
+        }) ??
+        docsPluginRouteConfig.routes?.filter(
+          (route) => route.path === "/"
+        )[0];
 
       // A little type checking first
       if (!allDocsRouteConfig?.props?.version) {

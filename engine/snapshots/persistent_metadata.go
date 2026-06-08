@@ -3,7 +3,6 @@ package snapshots
 import (
 	"context"
 	stderrors "errors"
-	"slices"
 	"strings"
 	"time"
 
@@ -138,6 +137,9 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 		return stderrors.New("attach lease: empty snapshot ID")
 	}
 
+	cm.ownerLeaseLocker.Lock(leaseID)
+	defer cm.ownerLeaseLocker.Unlock(leaseID)
+
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -152,36 +154,43 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 		return pkgerrors.Wrapf(err, "create owner lease %s", leaseID)
 	}
 
-	_, err = cm.Snapshotter.Stat(ctx, snapshotID)
-	if err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return pkgerrors.Wrap(errNotFound, snapshotID)
+	snapshotIDs := []string{}
+	for currentSnapshotID := snapshotID; currentSnapshotID != ""; {
+		info, err := cm.Snapshotter.Stat(ctx, currentSnapshotID)
+		if err != nil {
+			if cerrdefs.IsNotFound(err) {
+				return pkgerrors.Wrap(errNotFound, currentSnapshotID)
+			}
+			return pkgerrors.Wrapf(err, "stat snapshot %s for owner lease %s", currentSnapshotID, leaseID)
 		}
-		return pkgerrors.Wrapf(err, "stat snapshot %s for owner lease %s", snapshotID, leaseID)
+		snapshotIDs = append(snapshotIDs, currentSnapshotID)
+		currentSnapshotID = info.Parent
 	}
 
-	err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
-		ID:   snapshotID,
-		Type: "snapshots/" + cm.Snapshotter.Name(),
-	})
-	if err != nil && !cerrdefs.IsAlreadyExists(err) {
-		return pkgerrors.Wrapf(err, "attach snapshot %s to owner lease %s", snapshotID, leaseID)
-	}
-
-	for dgst := range cm.snapshotContentDigests[snapshotID] {
+	for _, currentSnapshotID := range snapshotIDs {
 		err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
-			ID:   dgst.String(),
-			Type: "content",
+			ID:   currentSnapshotID,
+			Type: "snapshots/" + cm.Snapshotter.Name(),
 		})
 		if err != nil && !cerrdefs.IsAlreadyExists(err) {
-			return pkgerrors.Wrapf(err, "attach content %s to owner lease %s", dgst, leaseID)
+			return pkgerrors.Wrapf(err, "attach snapshot %s to owner lease %s", currentSnapshotID, leaseID)
 		}
-	}
 
-	if cm.snapshotOwnerLeases[snapshotID] == nil {
-		cm.snapshotOwnerLeases[snapshotID] = make(map[string]struct{})
+		for dgst := range cm.snapshotContentDigests[currentSnapshotID] {
+			err = cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+				ID:   dgst.String(),
+				Type: "content",
+			})
+			if err != nil && !cerrdefs.IsAlreadyExists(err) {
+				return pkgerrors.Wrapf(err, "attach content %s for snapshot %s to owner lease %s", dgst, currentSnapshotID, leaseID)
+			}
+		}
+
+		if cm.snapshotOwnerLeases[currentSnapshotID] == nil {
+			cm.snapshotOwnerLeases[currentSnapshotID] = make(map[string]struct{})
+		}
+		cm.snapshotOwnerLeases[currentSnapshotID][leaseID] = struct{}{}
 	}
-	cm.snapshotOwnerLeases[snapshotID][leaseID] = struct{}{}
 
 	return nil
 }
@@ -191,15 +200,8 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 		return nil
 	}
 
-	cm.mu.Lock()
-	affectedSnapshotIDs := make([]string, 0)
-	for snapshotID, leaseIDs := range cm.snapshotOwnerLeases {
-		if _, ok := leaseIDs[leaseID]; ok {
-			affectedSnapshotIDs = append(affectedSnapshotIDs, snapshotID)
-		}
-	}
-	cm.mu.Unlock()
-	slices.Sort(affectedSnapshotIDs)
+	cm.ownerLeaseLocker.Lock(leaseID)
+	defer cm.ownerLeaseLocker.Unlock(leaseID)
 
 	err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: leaseID})
 	if err != nil && !cerrdefs.IsNotFound(err) {

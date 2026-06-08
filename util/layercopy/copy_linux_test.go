@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/stretchr/testify/require"
 )
 
@@ -211,4 +212,45 @@ func TestCopyDirectoryOnlyCopiesSparsePaths(t *testing.T) {
 	require.Equal(t, "keep", string(got))
 	_, err = os.Stat(filepath.Join(dstRoot, "out", "a", "skip.txt"))
 	require.True(t, os.IsNotExist(err))
+}
+
+func TestCopyDirectoryFollowsOverlayDestSymlinkDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	viewRoot := filepath.Join(root, "view")
+	upperRoot := filepath.Join(root, "upper")
+	require.NoError(t, os.MkdirAll(filepath.Join(srcRoot, "usr", "lib64"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "usr", "lib64", "libfoo.so"), []byte("foo"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(viewRoot, "usr", "lib"), 0o755))
+	require.NoError(t, os.Symlink("lib", filepath.Join(viewRoot, "usr", "lib64")))
+	require.NoError(t, os.Mkdir(upperRoot, 0o755))
+
+	copier, err := NewCopier(Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type:    "overlay",
+			Options: []string{"upperdir=" + upperRoot},
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	err = copier.Copy(context.Background(), Mount{Root: srcRoot}, "/", "/", CopyOptions{
+		CopyDirContents: true,
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(filepath.Join(upperRoot, "usr", "lib", "libfoo.so"))
+	require.NoError(t, err)
+	require.Equal(t, "foo", string(got))
+	_, err = os.Lstat(filepath.Join(upperRoot, "usr", "lib64"))
+	require.True(t, os.IsNotExist(err))
+	link, err := os.Readlink(filepath.Join(viewRoot, "usr", "lib64"))
+	require.NoError(t, err)
+	require.Equal(t, "lib", link)
 }

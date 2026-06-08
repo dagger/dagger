@@ -562,6 +562,47 @@ CMD ["cat", "/copied.txt"]
 		require.Equal(t, "readonly-bind-data", strings.TrimSpace(copied))
 	})
 
+	t.Run("run-mount-bind-file", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("pyproject.toml", "[project]\nname = \"bind-file\"\n").
+			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
+FROM %s
+RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml sh -lc 'cat pyproject.toml > /copied.txt'
+CMD ["cat", "/copied.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "[project]\nname = \"bind-file\"", strings.TrimSpace(out))
+	})
+
+	t.Run("run-mount-bind-file-metadata", func(ctx context.Context, t *testctx.T) {
+		dir := c.Container().
+			From(alpineImage).
+			WithWorkdir("/ctx").
+			WithExec([]string{"sh", "-lc", `
+set -eu
+printf 'exec-file\n' > exec-file
+chmod 0755 exec-file
+printf 'setuid-file\n' > setuid-file
+chmod 4755 setuid-file
+printf 'readonly-file\n' > readonly.txt
+`}).
+			Directory("/ctx").
+			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
+FROM %s
+RUN --mount=type=bind,source=exec-file,target=/exec-file \
+    --mount=type=bind,source=setuid-file,target=/setuid-file \
+    --mount=type=bind,source=readonly.txt,target=/readonly.txt,readonly \
+    sh -lc '{ stat -c "%%a %%n" /exec-file /setuid-file; if sh -c "echo mutate > /readonly.txt" 2>/dev/null; then echo writable; else echo readonly; fi; } > /result.txt'
+CMD ["cat", "/result.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "755 /exec-file\n4755 /setuid-file\nreadonly", strings.TrimSpace(out))
+	})
+
 	t.Run("run-mount-bind-non-sticky", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().
 			WithNewFile("ctx.txt", "non-sticky-bind").

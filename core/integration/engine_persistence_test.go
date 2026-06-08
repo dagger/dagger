@@ -1148,6 +1148,173 @@ printf 'layered\n' > /work/layered.txt
 		require.Equal(t, randomB, randomCRestored, "engine-dev container build result should survive engine restart without the repo source change")
 	})
 
+	t.Run("release publish dry-run rebuilds version after main publish", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-release-tag-version-state-" + identity.NewID()
+		tag := "v9.9.9-repro"
+
+		cwd, err := os.Getwd()
+		require.NoError(t, err)
+		sourcePath := cwd
+		for {
+			_, err := os.Stat(filepath.Join(sourcePath, "toolchains", "release", "dagger.json"))
+			if err == nil {
+				break
+			}
+			parent := filepath.Dir(sourcePath)
+			require.NotEqual(t, sourcePath, parent, "could not find repository root from %s", cwd)
+			sourcePath = parent
+		}
+		releaseSource := c.Host().Directory(sourcePath, dagger.HostDirectoryOpts{
+			Exclude: []string{".git"},
+			NoCache: true,
+		}).WithNewFile(".release-cache-repro", identity.NewID()+"\n")
+
+		gitDir := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithDirectory("/root/repo", releaseSource).
+			WithNewFile("/root/create-release-repo.sh", `#!/bin/sh
+set -e -u -x
+
+git config --global user.email "test@dagger.io"
+git config --global user.name "Test User"
+git config --global init.defaultBranch main
+
+cd /root/repo
+git init
+git checkout -B main
+git add -A
+git commit -m "initial release source"
+
+mkdir -p /root/srv
+git clone --no-local --bare . /root/srv/repo.git
+git -C /root/srv/repo.git config http.receivepack true
+git -C /root/srv/repo.git update-server-info
+`).
+			WithExec([]string{"sh", "/root/create-release-repo.sh"}).
+			Directory("/root/srv")
+
+		hostname := identity.NewID() + ".test"
+		gitSvc, repoBaseURL := gitSmartHTTPServiceDirAuth(ctx, t, c, hostname, gitDir, "", nil)
+		repoURL := repoBaseURL + "/repo.git"
+		gitHost := moduleResolveServiceHost(t, repoURL)
+
+		gitSvc, err = gitSvc.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := gitSvc.Stop(ctx)
+			require.NoError(t, err)
+		})
+
+		gitClient := func() *dagger.Container {
+			return c.Container().
+				From(alpineImage).
+				WithExec([]string{"apk", "add", "git"}).
+				With(gitUserConfig).
+				WithServiceBinding(gitHost, gitSvc).
+				WithWorkdir("/src")
+		}
+		gitStdout := func(ctx context.Context, t *testctx.T, script string) string {
+			t.Helper()
+			out, err := gitClient().
+				WithEnvVariable("REPO_URL", repoURL).
+				WithEnvVariable("RELEASE_TAG", tag).
+				WithEnvVariable("GIT_CACHE_BUSTER", identity.NewID()).
+				WithExec([]string{"sh", "-ec", script}).
+				Stdout(ctx)
+			require.NoError(t, err, out)
+			return strings.TrimSpace(out)
+		}
+
+		commit := gitStdout(ctx, t, `git clone "$REPO_URL" .
+git rev-parse HEAD
+`)
+		require.NotEmpty(t, commit)
+		moduleRef := repoURL + "@" + commit
+
+		type startedReleaseEngine struct {
+			service  *dagger.Service
+			endpoint string
+		}
+
+		startReleaseEngine := func(ctx context.Context, t *testctx.T) *startedReleaseEngine {
+			t.Helper()
+
+			engineCtr := devEngineContainerWithStateKey(c, stateKey, engineWithPersistenceTestGC(ctx, t)).
+				WithServiceBinding(gitHost, gitSvc)
+			service := devEngineContainerAsService(engineCtr)
+
+			endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+			require.NoError(t, err)
+
+			return &startedReleaseEngine{
+				service:  service,
+				endpoint: endpoint,
+			}
+		}
+
+		stopReleaseEngine := func(ctx context.Context, t *testctx.T, engine *startedReleaseEngine) {
+			t.Helper()
+			if engine == nil || engine.service == nil {
+				return
+			}
+			_, err := engine.service.Stop(ctx)
+			require.NoError(t, err)
+		}
+
+		runReleasePublish := func(ctx context.Context, t *testctx.T, engine *startedReleaseEngine, releaseTag string) string {
+			t.Helper()
+
+			daggerCli := daggerCliFile(t, c)
+			script := `set +e
+/bin/dagger --progress=plain -m "$MODULE_REF" call release publish --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --dry-run=true markdown > /tmp/publish.log 2>&1
+status=$?
+cat /tmp/publish.log
+exit "$status"
+`
+			out, err := c.Container().From(alpineImage).
+				WithServiceBinding("dev-engine", engine.service).
+				WithServiceBinding(gitHost, gitSvc).
+				WithMountedFile("/bin/dagger", daggerCli).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine.endpoint).
+				WithWorkdir("/app").
+				WithEnvVariable("MODULE_REF", moduleRef).
+				WithEnvVariable("RELEASE_TAG", releaseTag).
+				WithEnvVariable("RELEASE_COMMIT", commit).
+				WithEnvVariable("PUBLISH_RUN_CACHE_BUSTER", identity.NewID()).
+				WithExec([]string{"sh", "-ec", script}).
+				Stdout(ctx)
+			require.NoError(t, err, out)
+			return out
+		}
+		tagsVisibleInPublishContainer := func(ctx context.Context, t *testctx.T) string {
+			t.Helper()
+			return gitStdout(ctx, t, `git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"`)
+		}
+
+		engine := startReleaseEngine(ctx, t)
+		t.Cleanup(func() { stopReleaseEngine(ctx, t, engine) })
+
+		require.NotContains(t, tagsVisibleInPublishContainer(ctx, t), tag, "release tag should not be visible before it is created")
+		initialOut := runReleasePublish(ctx, t, engine, "main")
+		require.Contains(t, initialOut, "- [x] 🚙 Engine", "initial main dry-run should build the engine")
+		require.Contains(t, initialOut, "- [x] 🚗 CLI", "initial main dry-run should build the CLI")
+
+		gitStdout(ctx, t, `git clone "$REPO_URL" .
+git tag "$RELEASE_TAG" "`+commit+`"
+git push origin "$RELEASE_TAG"
+git ls-remote --tags origin "$RELEASE_TAG"
+	`)
+
+		require.Contains(t, tagsVisibleInPublishContainer(ctx, t), tag, "release tag should be visible in the publish container before the second dry-run")
+		taggedOut := runReleasePublish(ctx, t, engine, tag)
+		require.Contains(t, taggedOut, fmt.Sprintf("- [x] 🚙 Engine ([`%s`]", tag), "release dry-run should validate built engine version")
+		require.Contains(t, taggedOut, fmt.Sprintf("- [x] 🚗 CLI ([`%s`]", tag), "release dry-run should validate built CLI version")
+		require.NotContains(t, taggedOut, "Error while publishing", "release dry-run should validate built engine and CLI versions")
+	})
+
 	t.Run("cache volume survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-cache-volume-state-" + identity.NewID()

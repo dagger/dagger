@@ -174,6 +174,18 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.NotContains(t, out, "non-empty-generate")
 	})
 
+	t.Run("list with generate only includes generators", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerExec("check", "-l", "--generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		// Should only list generators, no regular checks
+		require.Contains(t, out, "Generators")
+		require.Contains(t, out, "empty-generate")
+		require.Contains(t, out, "non-empty-generate")
+		require.NotContains(t, out, "passing-check")
+	})
+
 	t.Run("run empty generator passes", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
 			With(daggerExec("--progress=report", "check", "empty-generate")).
@@ -210,6 +222,25 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 		require.Regexp(t, `passing-check.*OK`, out)
 		require.NotContains(t, out, "empty-generate")
 		require.NotContains(t, out, "non-empty-generate")
+	})
+
+	t.Run("run with generate skips annotated checks", func(ctx context.Context, t *testctx.T) {
+		// Should fail because non-empty-generate produces changes
+		out, err := modGen.
+			With(daggerExecFail("--progress=report", "check", "--generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `empty-generate.*OK`, out)
+		require.Regexp(t, `non-empty-generate.*ERROR`, out)
+		require.NotContains(t, out, "passing-check")
+	})
+
+	t.Run("no-generate and generate are mutually exclusive", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerExecFail("check", "--no-generate", "--generate")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "if any flags in the group [no-generate generate] are set none of the others can be")
 	})
 }
 
