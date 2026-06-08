@@ -15,34 +15,36 @@
   --api-tint-hover: var(--color-blackAlpha-100);
   --api-popover-bg: var(--color-white);
   --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-200);
-  --api-return-scalar: var(--color-blue-200);
-  --api-return-other: var(--color-blue-300);
+  --api-return-scalar: var(--color-blue-400);
+  --api-return-other: var(--color-blue-500);
   --api-warning-text: var(--color-yellow-800);
   --api-warning-bg: var(--color-yellow-50);
   --api-warning-border: var(--color-yellow-300);
   --api-danger-text: var(--color-red-700);
   --api-danger-bg: var(--color-red-50);
   --api-danger-border: var(--color-red-300);
+  --api-card-heading-bg: var(--api-tint);
 }
 
 :global(html[data-theme="dark"]) .apiType {
   --api-border: var(--color-whiteAlpha-200);
   --api-muted: var(--color-gray-300);
-  --api-accent: var(--color-primaryDark);
+  --api-accent: var(--color-purple-200);
   --api-literal: var(--color-yellow-400);
   --api-type-name: var(--color-blue-200);
   --api-tint: var(--color-whiteAlpha-100);
   --api-tint-hover: var(--color-whiteAlpha-200);
   --api-popover-bg: var(--color-raisinBlack-700);
   --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-500);
-  --api-return-scalar: var(--color-blue-200);
-  --api-return-other: var(--color-blue-100);
+  --api-return-scalar: var(--color-purple-200);
+  --api-return-other: var(--color-purple-300);
   --api-warning-text: var(--color-yellow-200);
   --api-warning-bg: var(--color-yellow-900);
   --api-warning-border: var(--color-yellow-700);
   --api-danger-text: var(--color-red-200);
   --api-danger-bg: var(--color-red-900);
   --api-danger-border: var(--color-red-700);
+  --api-card-heading-bg: var(--ifm-background-color);
 }
 
 .typeDesc {
@@ -107,7 +109,7 @@
     background: transparent;
     padding: 0;
     color: var(--api-accent);
-    font-weight: 600;
+    font-size: 14px;
   }
 
   &[data-return="scalar"] code {
@@ -148,11 +150,11 @@
   align-items: baseline;
   gap: 0.5rem;
   margin: 0;
-  padding: 0.3rem 0.8rem;
-  background: transparent;
+  padding: 0.3rem 0.6rem;
+  background: var(--api-card-heading-bg);
   border: none;
   border-left: 3px solid var(--api-accent);
-  border-radius: 0;
+  border-radius: 6px;
   font-size: 1rem;
   font-weight: normal;
   line-height: 1.6;
@@ -175,7 +177,6 @@
 
 .fieldName {
   color: var(--api-accent);
-  font-weight: 700;
   text-decoration: none;
   text-underline-offset: 0.15em;
 
@@ -215,7 +216,6 @@
 }
 
 .typeLink {
-  font-weight: 600;
   color: var(--api-accent);
   text-decoration: none;
   text-underline-offset: 0.15em;
@@ -308,7 +308,7 @@
   flex-direction: column;
   margin: 0.85rem 0 1rem;
   padding: 0.65rem 0.75rem;
-  background: var(--api-tint);
+  background: var(--api-card-heading-bg);
   border-radius: var(--ifm-global-radius);
   font-size: 0.88rem;
   line-height: 1.45;
@@ -374,13 +374,13 @@
 
 /* ── inline docs for non-core type tokens ───────────────────────── */
 .typeToken {
-  display: inline-block;
   position: relative;
-  vertical-align: baseline;
+  display: inline-flex;
+  align-items: center;
 }
 
 .typeInfo {
-  display: inline-block;
+  display: inline-flex;
   position: relative;
   margin-left: 0.3rem;
   font-family: var(--ifm-font-family-base);
@@ -404,6 +404,8 @@
   font: inherit;
   line-height: 1.35;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 
   &::before {
     content: "";
@@ -411,7 +413,6 @@
     width: 0.3rem;
     height: 0.3rem;
     margin-right: 0.35rem;
-    margin-top: -0.1rem;
     border: solid currentColor;
     border-width: 0 1.5px 1.5px 0;
     transform: rotate(-45deg);
