@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "@docusaurus/Link";
-import { useApiModel, useApiType, typeHref } from "./data";
+import { orderedApiFields, useApiModel, useApiType, typeHref } from "./data";
 import Markdown from "./Markdown";
 import FieldIndex from "./FieldIndex";
 import FieldCard from "./FieldCard";
@@ -47,6 +47,7 @@ export default function ApiType({
   showDescription?: boolean;
 }): JSX.Element {
   const type = useApiType(name);
+  const fields = orderedApiFields(type.fields);
   return (
     <div className={`api-reference ${styles.apiType}`}>
       {showDescription && (
@@ -55,11 +56,11 @@ export default function ApiType({
       <ImplementsLine names={type.implements} />
 
       {type.fields.length > INDEX_THRESHOLD && (
-        <FieldIndex fields={type.fields} />
+        <FieldIndex fields={fields} />
       )}
 
       <div className={styles.fields}>
-        {type.fields.map((f) => (
+        {fields.map((f) => (
           <FieldCard key={f.name} field={f} />
         ))}
       </div>

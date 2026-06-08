@@ -16,7 +16,11 @@ import DocVersionBanner from "@theme/DocVersionBanner";
 import NavbarColorModeToggle from "@theme/Navbar/ColorModeToggle";
 import TOC from "@theme/TOC";
 import type { Props } from "@theme/DocItem/Layout";
-import { typeSlug, useApiModel } from "@site/src/components/api/data";
+import {
+  orderedApiFields,
+  typeSlug,
+  useApiModel,
+} from "@site/src/components/api/data";
 
 import styles from "./styles.module.css";
 
@@ -64,11 +68,13 @@ function useApiReferenceTOC(
 
     const apiReferenceLevel = filteredToc[apiReferenceIndex].level;
     const fieldLevel = apiReferenceLevel + 1;
-    const fieldItems: TOCItem[] = currentType.fields.map((field) => ({
-      value: field.name,
-      id: field.name,
-      level: fieldLevel,
-    }));
+    const fieldItems: TOCItem[] = orderedApiFields(currentType.fields).map(
+      (field) => ({
+        value: field.name,
+        id: field.name,
+        level: fieldLevel,
+      })
+    );
 
     return {
       toc: [

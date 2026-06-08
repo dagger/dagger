@@ -137,3 +137,19 @@ export function returnKind(type: TypeRef): ReturnKind {
   }
   return "scalar";
 }
+
+const RETURN_KIND_ORDER: Record<ReturnKind, number> = {
+  scalar: 0,
+  other: 1,
+};
+
+export function orderedApiFields(fields: readonly ApiField[]): ApiField[] {
+  return [...fields].sort((a, b) => {
+    const aKind = returnKind(a.type);
+    const bKind = returnKind(b.type);
+    return (
+      RETURN_KIND_ORDER[aKind] - RETURN_KIND_ORDER[bKind] ||
+      a.name.localeCompare(b.name)
+    );
+  });
+}

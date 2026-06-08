@@ -1,12 +1,7 @@
 import React from "react";
-import { returnKind, type ApiField, type ReturnKind } from "./data";
+import { orderedApiFields, returnKind, type ApiField } from "./data";
 import { MarkdownInline } from "./Markdown";
 import styles from "./styles.module.scss";
-
-const RETURN_KIND_ORDER: Record<ReturnKind, number> = {
-  scalar: 0,
-  other: 1,
-};
 
 // FieldIndex is the quick-scan glossary shown before the cards on a long type —
 // the same affordance as Dang's stdlib index (rendered past a threshold). It's
@@ -17,17 +12,10 @@ export default function FieldIndex({
 }: {
   fields: ApiField[];
 }): JSX.Element {
-  const indexedFields = fields
-    .map((field, index) => ({
-      field,
-      index,
-      kind: returnKind(field.type),
-    }))
-    .sort(
-      (a, b) =>
-        RETURN_KIND_ORDER[a.kind] - RETURN_KIND_ORDER[b.kind] ||
-        a.index - b.index
-    );
+  const indexedFields = orderedApiFields(fields).map((field) => ({
+    field,
+    kind: returnKind(field.type),
+  }));
 
   return (
     <dl className={styles.index}>
