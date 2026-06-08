@@ -157,6 +157,7 @@
   padding: 0.3rem 0.8rem;
   background: transparent;
   border: none;
+  border-left: 3px solid var(--api-accent);
   border-radius: 0;
   font-size: 1rem;
   font-weight: normal;
@@ -188,18 +189,27 @@
 }
 
 .card[data-return="scalar"] {
+  .cardHeading {
+    border-left-color: var(--api-return-scalar);
+  }
   .fieldName {
     color: var(--api-return-scalar);
   }
 }
 
 .card[data-return="other"] {
+  .cardHeading {
+    border-left-color: var(--api-return-other);
+  }
   .fieldName {
     color: var(--api-return-other);
   }
 }
 
 .card[data-return="same"] {
+  .cardHeading {
+    border-left-color: var(--api-return-same);
+  }
   .fieldName {
     color: var(--api-return-same);
   }
