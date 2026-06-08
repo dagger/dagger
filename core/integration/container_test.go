@@ -4045,11 +4045,7 @@ import (
 
 type Test struct{}
 
-func (m *Test) CheckHTTP(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
-	return publishAndRead(ctx, registry, ref)
-}
-
-func (m *Test) CheckHTTPS(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+func (m *Test) Check(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
 	return publishAndRead(ctx, registry, ref)
 }
 
@@ -4103,7 +4099,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string) (
 		out, err := module(ctx, t, devEngine).
 			WithServiceBinding("bound-registry", registry).
 			With(daggerNonNestedExec(
-				"call", "check-https",
+				"call", "check",
 				"--registry", "tcp://bound-registry:5000",
 				"--ref", ref,
 			)).
@@ -4112,7 +4108,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string) (
 		require.Equal(t, "hello", strings.TrimSpace(out))
 	})
 
-	t.Run("http engine config", func(ctx context.Context, t *testctx.T) {
+	t.Run("plain http engine config", func(ctx context.Context, t *testctx.T) {
 		registry := c.Container().
 			From("registry:3").
 			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-"+identity.NewID())).
@@ -4133,7 +4129,7 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string) (
 		out, err := module(ctx, t, devEngine).
 			WithServiceBinding("bound-registry", registry).
 			With(daggerNonNestedExec(
-				"call", "check-http",
+				"call", "check",
 				"--registry", "tcp://bound-registry:5000",
 				"--ref", ref,
 			)).
