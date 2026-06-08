@@ -4034,7 +4034,15 @@ func (ContainerSuite) TestPublishAndFromWithRegistryServiceBinding(ctx context.C
 	module := func(ctx context.Context, t *testctx.T, devEngine *dagger.Service) *dagger.Container {
 		return engineClientContainer(ctx, t, c, devEngine).
 			WithWorkdir("/work").
-			With(daggerNonNestedExec("init", "--sdk=go", "--source=.", "--name=test")).
+			WithNewFile("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
+			WithNewFile("dagger.toml", `[modules.test]
+source = "."
+entrypoint = true
+`).
+			WithNewFile("go.mod", `module dagger/test
+
+go 1.26.1
+`).
 			With(sdkSource("go", `package main
 
 import (
