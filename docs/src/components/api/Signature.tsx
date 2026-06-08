@@ -38,11 +38,16 @@ export default function Signature({ field }: { field: ApiField }): JSX.Element {
   // line, and the closing paren + return type get a line of their own. So a
   // wide signature reads as a proper block instead of `asService(   foo: 123)`.
   const multiline = field.args.length > 2;
+  const fieldLink = (
+    <a className={styles.fieldName} href={`#${field.name}`}>
+      {field.name}
+    </a>
+  );
 
   if (multiline) {
     return (
       <code className={`${styles.signature} ${styles.signatureMultiline}`}>
-        <span className={styles.fieldName}>{field.name}</span>
+        {fieldLink}
         <span className={styles.punct}>(</span>
         <span className={styles.argsBlock}>
           {field.args.map((arg, i) => (
@@ -61,7 +66,7 @@ export default function Signature({ field }: { field: ApiField }): JSX.Element {
 
   return (
     <code className={styles.signature}>
-      <span className={styles.fieldName}>{field.name}</span>
+      {fieldLink}
       {field.args.length > 0 && (
         <>
           <span className={styles.punct}>(</span>
