@@ -356,12 +356,11 @@ aside[class*="docSidebarContainer"] {
   box-shadow: none !important;
 
   @include desktop {
-    height: calc(
-      100vh - var(--ifm-navbar-height)
-    ) !important; /* Account for navbar height */
-    min-height: calc(100vh - var(--ifm-navbar-height)) !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    margin-top: 0 !important;
     position: sticky !important;
-    top: var(--ifm-navbar-height) !important; /* Start below navbar */
+    top: 0 !important;
     // overflow: auto !important; /* Prevent container from scrolling */
   }
 
@@ -565,6 +564,7 @@ html[data-theme="dark"] {
   border-bottom: none !important;
 
   @include desktop {
+    display: none !important;
     margin-bottom: 1.1rem;
   }
 }
@@ -940,6 +940,35 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
   }
 }
 
+@include desktop {
+  .docs-right-sidebar-cloud-button {
+    display: flex !important;
+  }
+
+  .docs-sidebar-search {
+    margin-top: 0.75rem;
+
+    .DocSearch.DocSearch-Button {
+      width: 100% !important;
+      min-width: 0 !important;
+      justify-content: space-between !important;
+      padding: 0 0.75rem !important;
+    }
+
+    .DocSearch-Button-Container {
+      min-width: 0 !important;
+    }
+
+    .DocSearch-Button-Placeholder {
+      display: inline !important;
+    }
+
+    .DocSearch-Button-Keys {
+      display: flex !important;
+    }
+  }
+}
+
 // Ensure images don't get skewed and maintain aspect ratio
 .markdown img {
   max-width: 100%;
@@ -1194,7 +1223,7 @@ main[class*="docMainContainer"] {
 
   .row > .col:has(.theme-doc-markdown) {
     background: var(--doc-sheet-bg);
-    min-height: calc(100vh - var(--ifm-navbar-height));
+    min-height: 100vh;
     // even 2rem inset on all sides
     padding: 2rem;
     border-radius: var(--doc-sheet-radius);
