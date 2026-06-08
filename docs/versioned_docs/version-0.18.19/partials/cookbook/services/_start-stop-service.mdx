@@ -1,0 +1,46 @@
+### Start and stop services
+
+The following Dagger Function demonstrates how to control a service's lifecycle by explicitly starting and stopping a service. This example uses a Redis service.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../extending/modules/snippets/services/start-stop-services/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../extending/modules/snippets/services/start-stop-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../extending/modules/snippets/services/start-stop-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Start and stop a Redis service:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c redis-service
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+redis-service
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call redis-service
+```
+</TabItem>
+</Tabs>

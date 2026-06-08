@@ -1,0 +1,38 @@
+---
+title: "Enums and Validation"
+slug: /extending/type-system/enums-and-validation
+description: "Represent closed choices and validate open-ended values."
+---
+
+# Enums and Validation
+
+Use enums when callers must choose from a known set of values. Use validation and clear errors when values are open-ended but constrained.
+
+## Enums
+
+Enums are useful for:
+
+- Environments.
+- Output formats.
+- Severity levels.
+- Deployment targets.
+- Package managers.
+- Runtime choices.
+
+Enums teach valid choices through help output and generated clients. They also let invalid values fail before expensive work starts.
+
+## Validation
+
+Validation should be early, specific, and written in caller language.
+
+Good validation:
+
+- Names the invalid input.
+- States the accepted shape.
+- Does not start expensive work first.
+- Avoids leaking secrets.
+- Preserves useful lower-level context.
+
+## Writing Assignment
+
+TODO: Add examples of values that should be enums, values that should stay strings, and values that need custom validation.

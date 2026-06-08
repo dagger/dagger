@@ -1,0 +1,20 @@
+version: 2.1
+jobs:
+  hello:
+    docker:
+      - image: cimg/base:2024.09
+    steps:
+      - setup_remote_docker
+      - run:
+          name: Install Dagger CLI
+          command: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      - run:
+          name: Call Dagger Function
+          command: dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting="bonjour" --name="monde"
+workflows:
+  dagger:
+    jobs:
+      - hello
+
+# assumes the Dagger Cloud token is
+# in a project environment variable named DAGGER_CLOUD_TOKEN

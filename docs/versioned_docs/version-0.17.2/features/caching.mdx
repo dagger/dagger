@@ -1,0 +1,42 @@
+---
+slug: /features/caching
+description: "Speed up pipelines with built-in intelligent caching"
+---
+
+# Caching
+
+One of Dagger's most powerful features is its ability to cache data across pipeline runs.
+
+Dagger caches two types of data:
+
+1. Layers: This refers to build instructions and the results of some API calls. This cache is implemented by Buildkit.
+2. Volumes: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions. It is implemented by Dagger (distinct from Buildkit).
+
+## Layer caching
+
+"Layers" are the step-wise instructions and arguments that go into building a container image, including the result of each step. As container images are built by Dagger, Dagger automatically caches the layer involved for future use.
+
+When Dagger executes a function, it first checks if it already has the layers required by that function. If it does, these layers are automatically reused by Dagger if their inputs remain unchanged.
+
+## Volume caching
+
+Volume caching involves caching specific parts of the filesystem and reusing them on subsequent function calls if they are unchanged. This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every session is inefficient and time-consuming.
+
+For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between sessions. By using a cache volume for this data, Dagger can reuse the cached contents across pipeline runs and reduce execution time.
+
+## Best practices
+
+### Layer caching
+
+- Layers are cached in sequence, and a change in any one layer invalidates that and all subsequent layers. Pay attention to the order of your build operations, and sequence non-volatile operations before volatile ones to avoid invalidating the cache early.
+- It may sometimes be necessary to explicitly force execution of specific pipeline operations, bypassing the Dagger layer cache. The typical approach for this is to [invalidate the Dagger layer cache](../cookbook/cookbook.mdx#invalidate-cache) by introducing a volatile time variable at a specific point in the Dagger pipeline
+
+### Volume caching
+
+- Cache the tool's own cache directory instead of caching the installed dependencies directory. For example, with `node` and `npm`, use a cache volume for the  `~/.npm` cache directory and not for the project's `node_modules` directory.
+
+## Learn more
+
+- [Create and use cache volumes](../api/cache-volumes.mdx)
+- [Invalidate the layer cache](../cookbook/cookbook.mdx#invalidate-cache)
+- [Inspect and prune the cache](../configuration/cache.mdx)

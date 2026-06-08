@@ -1,0 +1,46 @@
+### Execute functions concurrently
+
+The following Dagger Function demonstrates how to use native-language concurrency features ([errgroups](https://pkg.go.dev/golang.org/x/sync/errgroup) in Go, [task groups](https://anyio.readthedocs.io/en/stable/tasks.html) in Python), and [promises](https://basarat.gitbook.io/typescript/future-javascript/promise) in TypeScript to execute other Dagger Functions concurrently. If any of the concurrently-running functions fails, the remaining ones will be immediately cancelled.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/execute-concurrently/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/execute-concurrently/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/execute-concurrently/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Execute a Dagger Function which performs different types of tests by executing other Dagger Functions concurrently.
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'my-module $(host | directory .) | run-all-tests'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    my-module $(host | directory .) | run-all-tests
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call --source=. run-all-tests
+    ```
+    </TabItem>
+    </Tabs>

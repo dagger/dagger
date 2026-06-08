@@ -1,0 +1,46 @@
+### Add OCI labels to image
+
+The following Dagger Function adds [OpenContainer Initiative (OCI) labels](https://github.com/opencontainers/image-spec/blob/main/config.md) to an image.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/builds/oci-labels/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/builds/oci-labels/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/builds/oci-labels/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Build and publish an image with OCI labels:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c build
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+build
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call build
+```
+</TabItem>
+</Tabs>

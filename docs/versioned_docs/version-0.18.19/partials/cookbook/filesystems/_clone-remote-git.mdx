@@ -1,0 +1,125 @@
+
+### Clone a remote Git repository into a container
+
+The following Dagger Function accepts a Git repository URL and a Git reference. It copies the repository at the specified reference to the `/src` path in a container and returns the modified container.
+
+:::note
+For examples of SSH-based cloning, including private or public Git repositories with an SSH reference format, select the `SSH` tabs below. This approach requires explicitly forwarding the host `SSH_AUTH_SOCK` to the Dagger Function. Learn more about this in Dagger's [sandboxed runtime model](../../../introduction/features/sandbox.mdx).
+:::
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/clone-git-repository/go/main.go
+```
+
+</TabItem>
+<TabItem value="Go (SSH)">
+
+```go file=../../../cookbook/snippets/clone-git-repository-ssh/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/clone-git-repository/python/main.py
+```
+
+</TabItem>
+<TabItem value="Python (SSH)">
+
+```python file=../../../cookbook/snippets/clone-git-repository-ssh/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/clone-git-repository/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="TypeScript (SSH)">
+
+```typescript file=../../../cookbook/snippets/clone-git-repository-ssh/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/clone-git-repository/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+**Examples**
+
+Clone the public `dagger/dagger` GitHub repository to `/src` in the container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'clone https://github.com/dagger/dagger 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    clone https://github.com/dagger/dagger 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call clone --repository=https://github.com/dagger/dagger --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5
+    ```
+    </TabItem>
+    </Tabs>
+
+Clone the public `dagger/dagger` GitHub repository at reference `196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5` to `/src` in the container and open an interactive terminal to inspect the container filesystem:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    clone https://github.com/dagger/dagger 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 |
+      terminal
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    clone https://github.com/dagger/dagger 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 | terminal
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      clone --repository=https://github.com/dagger/dagger --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 \
+      terminal
+    ```
+    </TabItem>
+    </Tabs>
+
+Clone over SSH with socket forwarding:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    clone-with-ssh git@github.com:dagger/dagger.git 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 $SSH_AUTH_SOCK |
+      terminal
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    clone-with-ssh git@github.com:dagger/dagger.git 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 $SSH_AUTH_SOCK | terminal
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      clone-with-ssh --repository=git@github.com:dagger/dagger.git --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 --sock=$SSH_AUTH_SOCK \
+      terminal
+    ```
+    </TabItem>
+    </Tabs>

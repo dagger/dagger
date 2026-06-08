@@ -1,0 +1,224 @@
+
+### Mount or copy a local or remote file to a container
+
+The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../../../extending/modules/remote-repositories.mdx). It mounts the specified file to a container in the `/src/` directory and returns the modified container.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/mount-file/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/mount-file/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/mount-file/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/mount-file/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+An alternative option is to copy the target file to the container. The difference between these two approaches is that mounts only take effect within your workflow invocation; they are not copied to, or included, in the final image. In addition, any changes to mounted files and/or directories will only be reflected in the target directory and not in the mount sources.
+
+:::tip
+Besides helping with the final image size, mounts are more performant and resource-efficient. The rule of thumb should be to always use mounts where possible.
+:::
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/copy-file/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/copy-file/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/copy-file/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/copy-file/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+
+**Examples**
+
+Mount the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-file /home/admin/archives.zip'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-file /home/admin/archives.zip
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-file --f=/home/admin/archives.zip
+    ```
+    </TabItem>
+    </Tabs>
+
+Mount the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'mount-file https://github.com/dagger/dagger.git#main:README.md'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-file https://github.com/dagger/dagger.git#main:README.md
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call mount-file --f=https://github.com/dagger/dagger.git#main:README.md
+    ```
+    </TabItem>
+    </Tabs>
+
+Mount the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container and display its contents:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    mount-file https://github.com/dagger/dagger.git#main:README.md |
+      file /src/README.md |
+      contents
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    mount-file https://github.com/dagger/dagger.git#main:README.md | file /src/README.md | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      mount-file --f=https://github.com/dagger/dagger.git#main:README.md \
+      file --path=/src/README.md \
+      contents
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-file /home/admin/archives.zip'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file /home/admin/archives.zip
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-file --f=/home/admin/archives.zip
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and list the contents of the directory:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-file /home/admin/archives.zip | directory /src | entries'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file /home/admin/archives.zip | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-file --f=/home/admin/archives.zip \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-file https://github.com/dagger/dagger.git#main:README.md'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file https://github.com/dagger/dagger.git#main:README.md
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-file --f=https://github.com/dagger/dagger.git#main:README.md
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container and display its contents:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    copy-file https://github.com/dagger/dagger.git#main:README.md |
+      file /src/README.md |
+      contents
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-file https://github.com/dagger/dagger.git#main:README.md | file /src/README.md | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-file --f=https://github.com/dagger/dagger.git#main:README.md \
+      file --path=/src/README.md \
+      contents
+    ```
+    </TabItem>
+    </Tabs>
