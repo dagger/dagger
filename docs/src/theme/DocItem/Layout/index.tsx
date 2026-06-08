@@ -1,6 +1,8 @@
 import React, { type ReactNode } from "react";
 import clsx from "clsx";
 import Link from "@docusaurus/Link";
+import { useLocation } from "@docusaurus/router";
+import type { TOCItem } from "@docusaurus/mdx-loader";
 import { useDoc } from "@docusaurus/plugin-content-docs/client";
 import { ThemeClassNames, useWindowSize } from "@docusaurus/theme-common";
 import ContentVisibility from "@theme/ContentVisibility";
@@ -14,21 +16,98 @@ import DocVersionBanner from "@theme/DocVersionBanner";
 import NavbarColorModeToggle from "@theme/Navbar/ColorModeToggle";
 import TOC from "@theme/TOC";
 import type { Props } from "@theme/DocItem/Layout";
+import { typeSlug, useApiModel } from "@site/src/components/api/data";
 
 import styles from "./styles.module.css";
+
+type DocTOC = {
+  toc: readonly TOCItem[];
+  minHeadingLevel?: number;
+  maxHeadingLevel?: number;
+};
+
+const DEFAULT_MIN_HEADING_LEVEL = 2;
+const DEFAULT_MAX_HEADING_LEVEL = 3;
+
+function normalizePath(pathname: string): string {
+  return pathname.replace(/\/+$/, "");
+}
+
+function useApiReferenceTOC(
+  toc: readonly TOCItem[],
+  minHeadingLevel?: number,
+  maxHeadingLevel?: number
+): DocTOC {
+  const model = useApiModel();
+  const { pathname } = useLocation();
+  const resolvedMin = minHeadingLevel ?? DEFAULT_MIN_HEADING_LEVEL;
+  const resolvedMax = maxHeadingLevel ?? DEFAULT_MAX_HEADING_LEVEL;
+
+  return React.useMemo(() => {
+    const filteredToc = toc.filter(
+      (item) => item.level >= resolvedMin && item.level <= resolvedMax
+    );
+    const path = normalizePath(pathname);
+    const currentType = Object.values(model.types).find((type) =>
+      path.endsWith(`/extending/types/${typeSlug(type.name)}`)
+    );
+    if (!currentType) {
+      return { toc: filteredToc, minHeadingLevel, maxHeadingLevel };
+    }
+
+    const apiReferenceIndex = filteredToc.findIndex(
+      (item) => item.id === "api-reference"
+    );
+    if (apiReferenceIndex === -1 || currentType.fields.length === 0) {
+      return { toc: filteredToc, minHeadingLevel, maxHeadingLevel };
+    }
+
+    const apiReferenceLevel = filteredToc[apiReferenceIndex].level;
+    const fieldLevel = apiReferenceLevel + 1;
+    const fieldItems: TOCItem[] = currentType.fields.map((field) => ({
+      value: field.name,
+      id: field.name,
+      level: fieldLevel,
+    }));
+
+    return {
+      toc: [
+        ...filteredToc.slice(0, apiReferenceIndex + 1),
+        ...fieldItems,
+        ...filteredToc.slice(apiReferenceIndex + 1),
+      ],
+      minHeadingLevel,
+      maxHeadingLevel: Math.max(resolvedMax, fieldLevel),
+    };
+  }, [
+    maxHeadingLevel,
+    minHeadingLevel,
+    model.types,
+    pathname,
+    resolvedMax,
+    resolvedMin,
+    toc,
+  ]);
+}
 
 function useDocTOC() {
   const { frontMatter, toc } = useDoc();
   const windowSize = useWindowSize();
 
   const hidden = frontMatter.hide_table_of_contents;
+  const desktopToc = useApiReferenceTOC(
+    toc,
+    frontMatter.toc_min_heading_level,
+    frontMatter.toc_max_heading_level
+  );
   const canRender = !hidden && toc.length > 0;
+  const canRenderDesktop = !hidden && desktopToc.toc.length > 0;
 
   const mobile = canRender ? <DocItemTOCMobile /> : undefined;
 
   const desktop =
     !hidden && (windowSize === "desktop" || windowSize === "ssr") ? (
-      <DocRightSidebar showToc={canRender} />
+      <DocRightSidebar showToc={canRenderDesktop} docTOC={desktopToc} />
     ) : undefined;
 
   return {
@@ -38,9 +117,13 @@ function useDocTOC() {
   };
 }
 
-function DocRightSidebar({ showToc }: { showToc: boolean }): JSX.Element {
-  const { frontMatter, toc } = useDoc();
-
+function DocRightSidebar({
+  showToc,
+  docTOC,
+}: {
+  showToc: boolean;
+  docTOC: DocTOC;
+}): JSX.Element {
   return (
     <aside className={styles.rightSidebar}>
       <div className={styles.rightSidebarControls} aria-label="Page actions">
@@ -59,9 +142,9 @@ function DocRightSidebar({ showToc }: { showToc: boolean }): JSX.Element {
       </div>
       {showToc && (
         <TOC
-          toc={toc}
-          minHeadingLevel={frontMatter.toc_min_heading_level}
-          maxHeadingLevel={frontMatter.toc_max_heading_level}
+          toc={docTOC.toc}
+          minHeadingLevel={docTOC.minHeadingLevel}
+          maxHeadingLevel={docTOC.maxHeadingLevel}
           className={ThemeClassNames.docs.docTocDesktop}
         />
       )}
