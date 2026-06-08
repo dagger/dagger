@@ -1,0 +1,36 @@
+@media (min-width: 997px) {
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding-top: 0;
+    width: var(--doc-sidebar-width);
+  }
+
+  .sidebarHeader {
+    flex: 0 0 auto;
+    padding: 1rem var(--ifm-navbar-padding-horizontal) 0.75rem;
+  }
+
+  .sidebarLogo {
+    display: flex !important;
+    align-items: center;
+    min-height: 2.5rem;
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+
+  .sidebarLogo img {
+    margin-right: 0.5rem;
+    height: 2rem;
+  }
+
+  .sidebarHidden {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.sidebarLogo {
+  display: none;
+}

@@ -140,7 +140,7 @@
 .card {
   position: relative;
   overflow: visible; // allow inline type popovers to escape the card body
-  scroll-margin-top: var(--ifm-navbar-height);
+  scroll-margin-top: 1rem;
 }
 
 .cardHeading {
