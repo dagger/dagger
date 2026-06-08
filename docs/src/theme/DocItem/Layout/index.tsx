@@ -108,11 +108,13 @@ function useDocTOC() {
   );
   const canRender = !hidden && toc.length > 0;
   const canRenderDesktop = !hidden && desktopToc.toc.length > 0;
+  const canRenderRightSidebar =
+    windowSize === "desktop" || windowSize === "ssr";
 
   const mobile = canRender ? <DocItemTOCMobile /> : undefined;
 
   const desktop =
-    !hidden && (windowSize === "desktop" || windowSize === "ssr") ? (
+    canRenderRightSidebar ? (
       <DocRightSidebar showToc={canRenderDesktop} docTOC={desktopToc} />
     ) : undefined;
 
@@ -164,7 +166,7 @@ export default function DocItemLayout({ children }: Props): ReactNode {
 
   return (
     <div className="row">
-      <div className={clsx("col", !docTOC.hidden && styles.docItemCol)}>
+      <div className={clsx("col", docTOC.desktop && styles.docItemCol)}>
         <ContentVisibility metadata={metadata} />
         <DocVersionBanner />
         <div className={styles.docItemContainer}>
