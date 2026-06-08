@@ -248,8 +248,8 @@ html[data-theme="dark"] {
       $inkberry-color,
       $lightness: 13%
     )};
-  --ifm-color-primary-light: #57c7e3;
-  --ifm-color-primary: #57c7e3;
+  --ifm-color-primary-light: var(--color-purple-100);
+  --ifm-color-primary: var(--color-purple-200);
   --ifm-heading-color: white;
   --ifm-hover-overlay: #2b2f46;
   --ifm-menu-color-active: #57c7e3;
