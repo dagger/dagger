@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
@@ -882,6 +883,74 @@ func (m *Test) ContextGitRef(
 
 		randomB := runChain(ctx, t, engineClientB, hostFileB)
 		require.Equal(t, randomA, randomB, "withExec output should survive engine restart for equivalent host-mounted file input")
+	})
+
+	t.Run("container child exec during concurrent mounted directory parent eval", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-mounted-dir-parent-eval-race-state-" + identity.NewID()
+
+		hostDir := t.TempDir()
+		gitDir := filepath.Join(hostDir, ".git")
+		require.NoError(t, os.MkdirAll(gitDir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600))
+
+		upstreamSvc, engineSvc, engineClient := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvc, engineSvc, engineClient) })
+
+		base := engineClient.Container().From(alpineImage)
+		for i := range 24 {
+			src := engineClient.Directory().WithNewFile("file.txt", fmt.Sprintf("slow-clone-%d\n", i))
+			base = base.WithMountedDirectory(fmt.Sprintf("/slow/%02d", i), src)
+		}
+		var err error
+		base, err = base.Sync(ctx)
+		require.NoError(t, err)
+
+		secret := engineClient.SetSecret("mounted-dir-parent-eval-race-"+identity.NewID(), "secret")
+		source := engineClient.Host().Directory(gitDir)
+
+		for attempt := range 50 {
+			parent := base.
+				WithMountedCache("/root/.cache/uv", engineClient.CacheVolume("phase7-race-uv-"+identity.NewID())).
+				WithMountedCache("/var/cache/foobar/plugins", engineClient.CacheVolume("phase7-race-foobar-"+identity.NewID())).
+				WithWorkdir("/work").
+				WithMountedDirectory(".git", source).
+				WithSecretVariable("FOOBAR_TOKEN", secret)
+
+			parentID, err := parent.ID(ctx)
+			require.NoError(t, err)
+
+			start := make(chan struct{})
+			var eg errgroup.Group
+			eg.Go(func() error {
+				<-start
+				_, err := dagger.Ref[*dagger.Container](engineClient, parentID).Sync(ctx)
+				return err
+			})
+			for worker := range 8 {
+				worker := worker
+				eg.Go(func() error {
+					<-start
+					if worker > 0 {
+						time.Sleep(time.Duration(worker) * time.Millisecond)
+					}
+					out, err := dagger.Ref[*dagger.Container](engineClient, parentID).
+						WithEnvVariable("CACHE_BUSTER", fmt.Sprintf("%d-%d", attempt, worker)).
+						WithExec([]string{"sh", "-ec", "cat .git/HEAD"}).
+						Stdout(ctx)
+					if err != nil {
+						return fmt.Errorf("attempt %d worker %d: %w", attempt, worker, err)
+					}
+					if out != "ref: refs/heads/main\n" {
+						return fmt.Errorf("attempt %d worker %d: unexpected HEAD contents %q", attempt, worker, out)
+					}
+					return nil
+				})
+			}
+			close(start)
+
+			require.NoError(t, eg.Wait(), "attempt %d", attempt)
+		}
 	})
 
 	t.Run("git repository and ref survive restart", func(ctx context.Context, t *testctx.T) {
