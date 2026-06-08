@@ -156,10 +156,6 @@
   font-size: 1rem;
   font-weight: normal;
   line-height: 1.6;
-
-  &:hover .hash-link::before {
-    opacity: 1;
-  }
 }
 
 .cardBody {
@@ -180,6 +176,12 @@
 .fieldName {
   color: var(--api-accent);
   font-weight: 700;
+  text-decoration: none;
+  text-underline-offset: 0.15em;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 
 .card[data-return="scalar"] {

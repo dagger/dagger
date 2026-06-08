@@ -8,8 +8,7 @@ import styles from "./styles.module.scss";
 
 // FieldCard is one anchored entry: a syntax-highlighted signature heading, any
 // directive badges, the field's description, and a per-argument breakdown.
-// The heading carries the field name as its id so it gets a stable anchor and
-// a hover copy-link (the .hash-link affordance Docusaurus styles site-wide).
+// The heading carries the field name as its id so it gets a stable anchor.
 export default function FieldCard({
   field,
 }: {
@@ -22,12 +21,6 @@ export default function FieldCard({
     >
       <h3 id={field.name} className={styles.cardHeading}>
         <Signature field={field} />
-        <a
-          className="hash-link"
-          href={`#${field.name}`}
-          aria-label={`Direct link to ${field.name}`}
-          title={`Direct link to ${field.name}`}
-        />
       </h3>
 
       <div className={styles.cardBody}>
