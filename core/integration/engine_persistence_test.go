@@ -11,7 +11,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,17 +24,6 @@ import (
 
 	"dagger.io/dagger"
 )
-
-func moduleResolveServiceHost(t *testctx.T, rawURL string) string {
-	t.Helper()
-
-	parsed, err := url.Parse(rawURL)
-	require.NoError(t, err)
-
-	host := parsed.Hostname()
-	require.NotEmpty(t, host)
-	return host
-}
 
 func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *testctx.T) {
 	const persistenceTestGCThresholdBytes = "1000000000000000"
