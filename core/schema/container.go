@@ -989,6 +989,7 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 	},
 }
 
+//nolint:gocyclo
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
