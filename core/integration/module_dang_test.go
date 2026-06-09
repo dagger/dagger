@@ -255,7 +255,7 @@ func (DangSuite) TestInterfaces(_ context.Context, t *testctx.T) {
 
 		out, err := goGitBase(t, c).
 			WithWorkdir("/work").
-			With(withModInitAt("moduleA", "dang", `
+			With(withDangModInitAt("moduleA", `
 type ModuleA {
   pub use(container: Dagger.Container!, overlay: Overlay!): String! {
     overlay.apply(container).file("/marker").contents
@@ -266,7 +266,7 @@ interface Overlay {
   pub apply(container: Dagger.Container!): Dagger.Container!
 }
 `)).
-			With(withModInitAt("moduleB", "dang", `
+			With(withDangModInitAt("moduleB", `
 type ModuleB {
   pub fileOverlay(path: String!, contents: String!): FileOverlay! {
     FileOverlay(path, contents)
@@ -282,7 +282,7 @@ type FileOverlay {
   }
 }
 `)).
-			With(withModInit("dang", `
+			With(withDangModInit(`
 type Test {
   pub run: String! {
     moduleA.use(
@@ -337,6 +337,27 @@ func (DangSuite) TestVersionedSyntax(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "new syntax", strings.TrimSpace(out))
 	})
+}
+
+func withDangModInit(contents string) dagger.WithContainerFunc {
+	return withDangModInitAt(".", contents)
+}
+
+func withDangModInitAt(dir, contents string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		name := filepath.Base(dir)
+		if name == "." {
+			name = "test"
+		}
+		args := []string{"dagger", "init", "--sdk=dang", "--name=" + name, "--source=" + dir, dir}
+		ctr = ctr.WithExec(args, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+		if contents == "" {
+			return ctr
+		}
+		return ctr.WithNewFile(filepath.Join(dir, "main.dang"), contents)
+	}
 }
 
 func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
