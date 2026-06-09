@@ -692,6 +692,13 @@ type Container implements Exportable & Node & Syncer {
     Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
     """
     address: String!
+
+    """
+    Service to use as the registry endpoint for the image address.
+
+    The service will be started only for this pull.
+    """
+    registryService: ID @expectedType(name: "Service")
   ): Container!
 
   """A unique identifier for this Container."""
@@ -766,6 +773,13 @@ type Container implements Exportable & Node & Syncer {
     "Docker" may be needed for older registries without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
+
+    """
+    Service to use as the registry endpoint for the image address.
+
+    The service will be started only for this push.
+    """
+    registryService: ID @expectedType(name: "Service")
   ): String!
 
   """

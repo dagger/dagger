@@ -21,6 +21,8 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/auth"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
@@ -65,17 +67,27 @@ type Opts struct {
 type ResolveImageConfigOpts struct {
 	Platform    *ocispecs.Platform
 	ResolveMode ResolveMode
+	Network     NetworkConfig
 }
 
 type PullOpts struct {
 	Platform    ocispecs.Platform
 	ResolveMode ResolveMode
 	LayerLimit  *int
+	Network     NetworkConfig
 }
 
 type PushOpts struct {
 	Insecure bool
 	ByDigest bool
+	Network  NetworkConfig
+}
+
+// NetworkConfig carries the Dagger DNS view used by registry operations for a
+// container with service bindings.
+type NetworkConfig struct {
+	DNS         *oci.DNSConfig
+	HostAliases map[string]string
 }
 
 type PushedImage struct {
@@ -156,7 +168,7 @@ func (r *Resolver) ResolveImageConfig(
 	}
 	key += fmt.Sprintf(":%d", opts.ResolveMode)
 
-	resolved, err := r.resolveConfigG.Do(ctx, key, func(ctx context.Context) (*resolveImageConfigResult, error) {
+	resolve := func(ctx context.Context) (*resolveImageConfigResult, error) {
 		if opts.ResolveMode == ResolveModeDefault {
 			if resolvedRef, dgst, configBytes, found, err := r.tryLocalCanonicalConfig(ctx, ref, opts); err != nil {
 				return nil, err
@@ -169,7 +181,7 @@ func (r *Resolver) ResolveImageConfig(
 			}
 		}
 
-		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref)
+		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network)
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +218,20 @@ func (r *Resolver) ResolveImageConfig(
 			digest: rootDesc.Digest,
 			config: configBytes,
 		}, nil
-	})
+	}
+
+	var resolved *resolveImageConfigResult
+	var err error
+	if len(opts.Network.HostAliases) > 0 {
+		// Normal registry refs can be shared through singleflight because the
+		// same ref, platform, and resolve mode go to the same registry endpoint.
+		// Service-bound refs are different: "registry:5000/app:latest" may point
+		// to registryServiceA for one caller and registryServiceB for another, so
+		// the ref string alone is not enough to share an in-flight resolve.
+		resolved, err = resolve(ctx)
+	} else {
+		resolved, err = r.resolveConfigG.Do(ctx, key, resolve)
+	}
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -247,7 +272,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		}
 	}
 
-	resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref)
+	resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network)
 	if err != nil {
 		return nil, err
 	}
@@ -358,9 +383,9 @@ type localizedImageClosure struct {
 	Nonlayers    []ocispecs.Descriptor
 }
 
-func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig) (string, ocispecs.Descriptor, remotes.Resolver, error) {
 	resolver := docker.NewResolver(docker.ResolverOptions{
-		Hosts: r.registryHosts(),
+		Hosts: r.registryHosts(network),
 	})
 	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
 	if err != nil {
@@ -576,7 +601,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	resolver := docker.NewResolver(docker.ResolverOptions{
-		Hosts: r.pushRegistryHosts(opts.Insecure),
+		Hosts: r.pushRegistryHosts(opts.Insecure, opts.Network),
 	})
 	pusher, err := buildkitpush.Pusher(ctx, resolver, ref)
 	if err != nil {
@@ -692,13 +717,14 @@ func (s *sessionAuthSource) Credentials(ctx context.Context, host string) (Crede
 	}, nil
 }
 
-func (r *Resolver) registryHosts() docker.RegistryHosts {
+func (r *Resolver) registryHosts(network NetworkConfig) docker.RegistryHosts {
 	authorizers := newRegistryHostAuthorizerCache()
 	return func(domain string) ([]docker.RegistryHost, error) {
 		hosts, err := r.registryHostConfigs(domain)
 		if err != nil {
 			return nil, err
 		}
+		hosts = withRegistryHostNetwork(hosts, network)
 		return r.withRegistryHostAuthorizers(hosts, authorizers), nil
 	}
 }
@@ -949,6 +975,37 @@ func resolveLocalManifestDescriptor(
 	}
 }
 
+func withRegistryHostNetwork(hosts []docker.RegistryHost, network NetworkConfig) []docker.RegistryHost {
+	out := cloneRegistryHosts(hosts)
+	for i := range out {
+		// Registry hosts are cached and reused; copy the client before replacing
+		// its transport for this operation's service bindings.
+		client := cloneHTTPClient(out[i].Client)
+		transport := client.Transport
+		if transport == nil {
+			transport = http.DefaultTransport
+		}
+		if len(network.HostAliases) > 0 {
+			if httpTransport, ok := transport.(*http.Transport); ok {
+				transport = netconfhttp.NewDialTransportWithHostAliases(httpTransport, network.DNS, network.HostAliases)
+			}
+		}
+		// Add tracing after any per-call transport changes so the concrete
+		// *http.Transport stays available while service DNS is installed.
+		client.Transport = tracing.NewTransport(transport)
+		out[i].Client = client
+	}
+	return out
+}
+
+func cloneHTTPClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	copied := *client
+	return &copied
+}
+
 func resolveManifestDescriptor(
 	ctx context.Context,
 	provider content.Provider,
@@ -1015,7 +1072,7 @@ func hydratePulledDescriptor(desc ocispecs.Descriptor) ocispecs.Descriptor {
 	return desc
 }
 
-func (r *Resolver) pushRegistryHosts(insecure bool) docker.RegistryHosts {
+func (r *Resolver) pushRegistryHosts(insecure bool, network NetworkConfig) docker.RegistryHosts {
 	authorizers := newRegistryHostAuthorizerCache()
 	return func(domain string) ([]docker.RegistryHost, error) {
 		hosts, err := r.registryHostConfigs(domain)
@@ -1025,16 +1082,9 @@ func (r *Resolver) pushRegistryHosts(insecure bool) docker.RegistryHosts {
 		if insecure {
 			for i := range hosts {
 				hosts[i].Scheme = "http"
-				if hosts[i].Client != nil {
-					hosts[i].Client = &http.Client{
-						Transport:     hosts[i].Client.Transport,
-						CheckRedirect: hosts[i].Client.CheckRedirect,
-						Jar:           hosts[i].Client.Jar,
-						Timeout:       hosts[i].Client.Timeout,
-					}
-				}
 			}
 		}
+		hosts = withRegistryHostNetwork(hosts, network)
 		return r.withRegistryHostAuthorizers(hosts, authorizers), nil
 	}
 }
