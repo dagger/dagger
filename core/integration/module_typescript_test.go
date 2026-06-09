@@ -1749,25 +1749,9 @@ func (TypescriptSuite) TestGenerateEntrypointTypedefOnlyDoesNotConnect(ctx conte
 func (TypescriptSuite) TestGeneratedEntrypointDefaultExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("version")).
-		With(daggerExec("core", "version")).
-		With(daggerExec("init", "--name=test", "--sdk=typescript")).
-		With(sdkSource("typescript", `
-import { func, object } from "@dagger.io/dagger"
-
-@object()
-export default class Test {
-  @func()
-  hello(): string {
-    return "hello"
-  }
-}
-`))
-
-	out, err := modGen.With(daggerCall("hello")).Stdout(ctx)
+	out, err := moduleFixture(t, c, "typescript/entrypoint-default-export").
+		With(daggerCall("hello")).
+		Stdout(ctx)
 
 	require.NoError(t, err)
 	require.Equal(t, `hello\n`, out)
@@ -1776,29 +1760,9 @@ export default class Test {
 func (TypescriptSuite) TestNullableArgumentOmissionPassesNull(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=typescript")).
-		With(sdkSource("typescript", `
-import { func, object } from "@dagger.io/dagger"
-
-@object()
-export class Test {
-  @func()
-  nullableValue(x: string | null): string {
-    if (x === null) {
-      return "null"
-    }
-    if (x === undefined) {
-      return "undefined"
-    }
-    return x
-  }
-}
-`))
-
-	out, err := modGen.With(daggerQuery(`{nullableValue}`)).Stdout(ctx)
+	out, err := moduleFixture(t, c, "typescript/entrypoint-nullable-arg-omission").
+		With(daggerQuery(`{nullableValue}`)).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"nullableValue":"null"}`, out)
 }
@@ -1807,23 +1771,9 @@ func (TypescriptSuite) TestGeneratedEntrypointVariadicArguments(ctx context.Cont
 	t.Run("omitted_variadic_args_default_to_empty_array", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=typescript")).
-			With(sdkSource("typescript", `
-import { func, object } from "@dagger.io/dagger"
-
-@object()
-export class Test {
-  @func()
-  words(...words: string[]): string {
-    return words.length.toString()
-  }
-}
-`))
-
-		out, err := modGen.With(daggerQuery(`{words}`)).Stdout(ctx)
+		out, err := moduleFixture(t, c, "typescript/entrypoint-variadic-args").
+			With(daggerQuery(`{words}`)).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"words":"0"}`, out)
 	})
@@ -1833,31 +1783,9 @@ func (TypescriptSuite) TestGeneratedEntrypointUserClassImports(ctx context.Conte
 	t.Run("class_name_collides_with_sdk_binding", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=typescript")).
-			With(sdkSource("typescript", `
-import { func, object } from "@dagger.io/dagger"
-
-@object()
-export class Test {
-  @func()
-  makeContext(): Context {
-    return new Context()
-  }
-}
-
-@object()
-export class Context {
-  @func()
-  value(): string {
-    return "ok"
-  }
-}
-`))
-
-		out, err := modGen.With(daggerQuery(`{makeContext{value}}`)).Stdout(ctx)
+		out, err := moduleFixture(t, c, "typescript/entrypoint-class-name-collision").
+			With(daggerQuery(`{makeContext{value}}`)).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"makeContext":{"value":"ok"}}`, out)
 	})
