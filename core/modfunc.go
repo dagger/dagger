@@ -688,12 +688,12 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		// Process "contextual arguments", aka objects with a `defaultPath`
 		ctxArgVals := make([]*argInput, len(ctxArgs))
 		for i, arg := range ctxArgs {
+			i, arg := i, arg
 			eg.Go(func() error {
 				ctxVal, err := fn.loadContextualArg(ctx, srv, arg)
 				if err != nil {
 					return fmt.Errorf("load contextual arg %q: %w", arg.Name, err)
 				}
-
 				ctxArgVals[i] = &argInput{
 					argName: arg.Name,
 					val:     ctxVal,
@@ -706,12 +706,12 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		// Process workspace arguments - automatically inject workspace when not set
 		workspaceArgVals := make([]*argInput, len(workspaceArgs))
 		for i, arg := range workspaceArgs {
+			i, arg := i, arg
 			eg.Go(func() error {
 				wsVal, err := fn.loadWorkspaceArg(ctx, srv)
 				if err != nil {
 					return fmt.Errorf("load workspace arg %q: %w", arg.Name, err)
 				}
-
 				workspaceArgVals[i] = &argInput{
 					argName: arg.Name,
 					val:     wsVal,

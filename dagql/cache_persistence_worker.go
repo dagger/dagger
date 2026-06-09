@@ -84,6 +84,33 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 		})
 	}
 
+	for _, termID := range termIDs {
+		termResults := c.termResults[termID]
+		if len(termResults) == 0 {
+			continue
+		}
+		resultIDs := make([]sharedResultID, 0, len(termResults))
+		for resultID := range termResults {
+			resultIDs = append(resultIDs, resultID)
+		}
+		slices.Sort(resultIDs)
+		for _, resultID := range resultIDs {
+			if c.resultsByID[resultID] == nil {
+				continue
+			}
+			depsJSON, err := json.Marshal(termResults[resultID].runtimeDepSets)
+			if err != nil {
+				c.egraphMu.RUnlock()
+				return persistStateSnapshot{}, fmt.Errorf("persist result-term assoc (%d,%d): runtime deps JSON: %w", termID, resultID, err)
+			}
+			snapshot.resultTermAssocs = append(snapshot.resultTermAssocs, persistdb.MirrorResultTermAssoc{
+				TermID:          int64(termID),
+				ResultID:        int64(resultID),
+				RuntimeDepsJSON: string(depsJSON),
+			})
+		}
+	}
+
 	resultIDs := make([]sharedResultID, 0, len(c.resultsByID))
 	for resultID := range c.resultsByID {
 		resultIDs = append(resultIDs, resultID)
@@ -307,6 +334,12 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 		if err := q.InsertMirrorTermInput(ctx, row); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("insert term_input (%d,%d): %w", row.TermID, row.Position, err)
+		}
+	}
+	for _, row := range snapshot.resultTermAssocs {
+		if err := q.InsertMirrorResultTermAssoc(ctx, row); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("insert result_term_assoc (%d,%d): %w", row.TermID, row.ResultID, err)
 		}
 	}
 	for _, row := range snapshot.resultOutputEqClasses {

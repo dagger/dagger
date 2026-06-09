@@ -1,6 +1,8 @@
 package dagql
 
-import "context"
+import (
+	"context"
+)
 
 // CallRequest is the mutable planning-time wrapper around the semantic
 // ResultCall shape, plus request-only cache policy that does not belong in

@@ -279,8 +279,8 @@ type changesetJSONEnvelope struct {
 }
 
 type persistedChangesetPayload struct {
-	BeforeResultID uint64 `json:"beforeResultID,omitempty"`
-	AfterResultID  uint64 `json:"afterResultID,omitempty"`
+	BeforeResultID uint64 `json:"beforeResultID"`
+	AfterResultID  uint64 `json:"afterResultID"`
 }
 
 // MarshalJSON implements custom JSON marshaling that stores directory IDs
@@ -362,7 +362,12 @@ func (*Changeset) DecodePersistedObject(
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted changeset payload: %w", err)
 	}
-
+	if persisted.BeforeResultID == 0 {
+		return nil, fmt.Errorf("decode persisted changeset: missing before result")
+	}
+	if persisted.AfterResultID == 0 {
+		return nil, fmt.Errorf("decode persisted changeset: missing after result")
+	}
 	before, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.BeforeResultID, "changeset before")
 	if err != nil {
 		return nil, err
@@ -411,9 +416,9 @@ func (*Changeset) TypeDescription() string {
 }
 
 var _ Syncable = (*Changeset)(nil)
+var _ dagql.HasDependencyResults = (*Changeset)(nil)
 var _ dagql.PersistedObject = (*Changeset)(nil)
 var _ dagql.PersistedObjectDecoder = (*Changeset)(nil)
-var _ dagql.HasDependencyResults = (*Changeset)(nil)
 
 func (ch *Changeset) Evaluate(context.Context) error {
 	return nil

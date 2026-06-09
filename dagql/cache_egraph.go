@@ -53,15 +53,13 @@ const (
 )
 
 // egraphResultTermAssoc stores metadata for one result<->term association.
-// Today this is just per-input provenance indicating whether each input slot
-// was result-backed or digest-only when the association was created.
-//
-// NOTE: we intentionally assume for now that a congruent term will not be
-// observed with conflicting provenance for the same input slot. If that ever
-// does happen, the most recently observed provenance simply replaces the older
-// one.
+// Input provenance indicates whether each input slot was result-backed or
+// digest-only when the association was created. Runtime dependency sets are
+// the live-source freshness conditions observed for this exact call/result
+// association; they do not belong to the globally canonical shared payload.
 type egraphResultTermAssoc struct {
 	inputProvenance []egraphInputProvenanceKind
+	runtimeDepSets  []runtimeResultDependencySet
 }
 
 func sameInputProvenance(a, b []egraphInputProvenanceKind) bool {
@@ -70,6 +68,45 @@ func sameInputProvenance(a, b []egraphInputProvenanceKind) bool {
 	}
 	for i := range a {
 		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneRuntimeResultDependencySet(deps runtimeResultDependencySet) runtimeResultDependencySet {
+	if len(deps) == 0 {
+		return nil
+	}
+	cp := make(runtimeResultDependencySet, 0, len(deps))
+	for _, dep := range deps {
+		cp = append(cp, runtimeResultDependency{
+			ResultID:    dep.ResultID,
+			Frame:       dep.Frame.clone(),
+			FrameDigest: dep.FrameDigest,
+			Digest:      dep.Digest,
+		})
+	}
+	return cp
+}
+
+func cloneRuntimeResultDependencySets(depSets []runtimeResultDependencySet) []runtimeResultDependencySet {
+	if len(depSets) == 0 {
+		return nil
+	}
+	cp := make([]runtimeResultDependencySet, 0, len(depSets))
+	for _, deps := range depSets {
+		cp = append(cp, cloneRuntimeResultDependencySet(deps))
+	}
+	return cp
+}
+
+func sameRuntimeResultDependencySet(a, b runtimeResultDependencySet) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if runtimeResultDependencyValidationKey(a[i]) != runtimeResultDependencyValidationKey(b[i]) {
 			return false
 		}
 	}
@@ -643,14 +680,56 @@ func (c *Cache) sessionSatisfiesResourceRequirementsLocked(sessionID string, res
 	return available.Subset(res.requiredSessionResources)
 }
 
-func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidates *set.TreeSet[*sharedResult]) *sharedResult {
+func (c *Cache) selectLookupCandidateForSessionLocked(
+	sessionID string,
+	candidates *set.TreeSet[*sharedResult],
+	skip map[sharedResultID]struct{},
+) *sharedResult {
 	if candidates == nil {
 		return nil
 	}
 	for res := range candidates.Items() {
+		if _, skipped := skip[res.id]; skipped {
+			continue
+		}
 		if c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
 			return res
 		}
+	}
+	return nil
+}
+
+func (c *Cache) runtimeDepSetsForRequestAssociationLocked(
+	resID sharedResultID,
+	requestSelf digest.Digest,
+	requestInputs []digest.Digest,
+) []runtimeResultDependencySet {
+	if resID == 0 || requestSelf == "" {
+		return nil
+	}
+	inputEqIDs := make([]eqClassID, len(requestInputs))
+	for i, inDig := range requestInputs {
+		classID, ok := c.egraphDigestToClass[inDig.String()]
+		if !ok {
+			return nil
+		}
+		root := c.findEqClassLocked(classID)
+		if root == 0 {
+			return nil
+		}
+		inputEqIDs[i] = root
+	}
+	termDigest := calcEgraphTermDigest(requestSelf, inputEqIDs)
+	termSet := c.egraphTermsByTermDigest[termDigest]
+	if termSet == nil {
+		return nil
+	}
+	for termID := range termSet.Items() {
+		assoc, ok := c.termResults[termID][resID]
+		if !ok {
+			continue
+		}
+		return cloneRuntimeResultDependencySets(assoc.runtimeDepSets)
 	}
 	return nil
 }
@@ -809,55 +888,29 @@ func (c *Cache) lookupCacheForRequestLocked(
 	requestDigest digest.Digest,
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
-	requestInputRefs []ResultCallStructuralInputRef,
-) (AnyResult, bool, error) {
+	skip map[sharedResultID]struct{},
+) (AnyResult, []runtimeResultDependencySet, bool) {
 	if req == nil || req.ResultCall == nil {
-		return nil, false, nil
+		return nil, nil, false
 	}
 	now := time.Now()
 	nowUnix := now.Unix()
 	match := c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
-	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
+	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates, skip)
 
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, requestDigest.String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
-		return nil, false, nil
+		return nil, nil, false
 	}
+	runtimeDepSets := c.runtimeDepSetsForRequestAssociationLocked(hitRes.id, requestSelf, requestInputs)
 
-	// fast-path: if we got a very simple recipe-digest hit we can skip trying to teach the egraph anything new
-	if requestDigest != "" && len(req.ResultCall.ExtraDigests) == 0 && req.TTL == 0 && !req.IsPersistable && match.hitRecipeDigest {
-		touchSharedResultLastUsed(hitRes, now.UnixNano())
-		retRes := Result[Typed]{
-			shared:   hitRes,
-			hitCache: true,
-		}
-		c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
-		return retRes, true, nil
-	}
-
-	// We have a cache hit. Teach this request identity onto the existing shared
-	// result so any raw ID we hand back is itself resolvable by the cache later.
-	res := hitRes
-	// A TTL-bearing call can alias an existing result on lookup; apply the same
-	// conservative expiry merge policy here so TTL remains effective on hits.
-	res.expiresAtUnix = mergeSharedResultExpiryUnix(
-		res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(nowUnix, req.TTL),
-	)
-	touchSharedResultLastUsed(res, now.UnixNano())
-	if req.IsPersistable {
-		c.upsertPersistedEdgeLocked(ctx, res, candidateSharedResultExpiryUnix(nowUnix, req.TTL), false)
-	}
-	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-		return nil, false, err
-	}
 	retRes := Result[Typed]{
-		shared:   res,
+		shared:   hitRes,
 		hitCache: true,
 	}
-	c.traceLookupHit(ctx, requestDigest.String(), res, match.termDigest)
-	return retRes, true, nil
+	c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
+	return retRes, runtimeDepSets, true
 }
 
 func (c *Cache) lookupCacheForRequest(
@@ -869,74 +922,91 @@ func (c *Cache) lookupCacheForRequest(
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
-) (AnyResult, bool, error) {
+) (AnyResult, runtimeResultDependencySet, bool, error) {
 	if sessionID == "" {
-		return nil, false, errors.New("lookup cache for request: empty session ID")
+		return nil, nil, false, errors.New("lookup cache for request: empty session ID")
 	}
 	if resolver == nil {
-		return nil, false, errors.New("lookup cache for request: type resolver is nil")
+		return nil, nil, false, errors.New("lookup cache for request: type resolver is nil")
 	}
 	if req == nil || req.ResultCall == nil {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 
-	c.egraphMu.Lock()
-	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
-	if err != nil || !hit {
-		c.egraphMu.Unlock()
-		return retRes, hit, err
-	}
-
-	hitShared := retRes.cacheSharedResult()
-	if hitShared == nil || hitShared.id == 0 {
-		c.egraphMu.Unlock()
-		return nil, false, fmt.Errorf("lookup cache for request: hit missing shared result ID")
-	}
-
-	trackedCount := 0
-	alreadyTracked := false
-	c.sessionMu.Lock()
-	if c.sessionResultIDsBySession == nil {
-		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
-	}
-	if c.sessionResultIDsBySession[sessionID] == nil {
-		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
-	}
-	if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
-		alreadyTracked = true
-	} else {
-		c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
-		c.incrementIncomingOwnershipLocked(ctx, hitShared)
-	}
-	trackedCount = len(c.sessionResultIDsBySession[sessionID])
-	c.sessionMu.Unlock()
-	c.egraphMu.Unlock()
-
-	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
-	if err != nil {
+	skipped := map[sharedResultID]struct{}{}
+	for {
 		c.egraphMu.Lock()
-		c.sessionMu.Lock()
-		if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
-			delete(resultIDs, hitShared.id)
-			if len(resultIDs) == 0 {
-				delete(c.sessionResultIDsBySession, sessionID)
-			}
+		retRes, runtimeDepSets, hit := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, skipped)
+		if !hit {
+			c.egraphMu.Unlock()
+			return retRes, nil, hit, nil
 		}
-		c.sessionMu.Unlock()
-		queue := []*sharedResult(nil)
-		var decErr error
-		if !alreadyTracked {
-			queue, decErr = c.decrementIncomingOwnershipLocked(ctx, hitShared, nil)
-		}
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
-		c.egraphMu.Unlock()
-		return nil, false, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
-	}
 
-	if c.traceEnabled() {
-		c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
+		hitShared := retRes.cacheSharedResult()
+		if hitShared == nil || hitShared.id == 0 {
+			c.egraphMu.Unlock()
+			return nil, nil, false, fmt.Errorf("lookup cache for request: hit missing shared result ID")
+		}
+
+		trackedCount := 0
+		alreadyTracked := false
+		c.sessionMu.Lock()
+		if c.sessionResultIDsBySession == nil {
+			c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
+		}
+		if c.sessionResultIDsBySession[sessionID] == nil {
+			c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
+		}
+		if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
+			alreadyTracked = true
+		} else {
+			c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
+			c.incrementIncomingOwnershipLocked(ctx, hitShared)
+		}
+		trackedCount = len(c.sessionResultIDsBySession[sessionID])
+		c.sessionMu.Unlock()
+		c.egraphMu.Unlock()
+
+		loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
+		if err != nil {
+			return nil, nil, false, c.rollbackTrackedHit(ctx, sessionID, hitShared, alreadyTracked, err)
+		}
+		matchedRuntimeDeps, err := c.validateRuntimeDependencySets(ctx, runtimeDepSets)
+		if err != nil {
+			if errors.Is(err, ErrCacheValidationFailed) {
+				if cleanupErr := c.rollbackTrackedHit(ctx, sessionID, hitShared, alreadyTracked, nil); cleanupErr != nil {
+					return nil, nil, false, cleanupErr
+				}
+				skipped[hitShared.id] = struct{}{}
+				continue
+			}
+			return nil, nil, false, c.rollbackTrackedHit(ctx, sessionID, hitShared, alreadyTracked, err)
+		}
+		c.egraphMu.Lock()
+		if c.resultsByID[hitShared.id] != hitShared {
+			c.egraphMu.Unlock()
+			return nil, nil, false, c.rollbackTrackedHit(ctx, sessionID, hitShared, alreadyTracked, fmt.Errorf("lookup cache for request: hit result %d no longer indexed", hitShared.id))
+		}
+		nowUnix := time.Now().Unix()
+		hitShared.expiresAtUnix = mergeSharedResultExpiryUnix(
+			hitShared.expiresAtUnix,
+			candidateSharedResultExpiryUnix(nowUnix, req.TTL),
+		)
+		touchSharedResultLastUsed(hitShared, time.Now().UnixNano())
+		if req.IsPersistable {
+			c.upsertPersistedEdgeLocked(ctx, hitShared, candidateSharedResultExpiryUnix(nowUnix, req.TTL), false)
+		}
+		if err := c.teachResultIdentityLocked(ctx, hitShared, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs, matchedRuntimeDeps); err != nil {
+			c.egraphMu.Unlock()
+			return nil, nil, false, c.rollbackTrackedHit(ctx, sessionID, hitShared, alreadyTracked, err)
+		}
+		c.egraphMu.Unlock()
+
+		if c.traceEnabled() {
+			c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
+		}
+		return loadedHit, matchedRuntimeDeps, true, nil
 	}
-	return loadedHit, true, nil
 }
 
 func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID string, frame *ResultCall, res AnyResult) error {
@@ -982,7 +1052,7 @@ func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID strin
 
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
-	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs)
+	return c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs, nil)
 }
 
 func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDigest digest.Digest) error {
@@ -1057,7 +1127,7 @@ func (c *Cache) TeachContentDigest(ctx context.Context, res AnyResult, contentDi
 			continue
 		}
 		c.traceTeachContentDigest(ctx, shared, oldContentDigest.String(), contentDigest.String(), requestDigest.String(), requestSelf.String(), requestInputs, frame)
-		if err := c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
+		if err := c.teachResultIdentityLocked(ctx, shared, frame, requestDigest, requestSelf, requestInputs, requestInputRefs, nil); err != nil {
 			c.egraphMu.Unlock()
 			return err
 		}
@@ -1204,6 +1274,7 @@ func (c *Cache) associateResultWithTermLocked(
 	res *sharedResult,
 	termID egraphTermID,
 	inputProvenance []egraphInputProvenanceKind,
+	runtimeDeps runtimeResultDependencySet,
 ) {
 	if res == nil || res.id == 0 || termID == 0 {
 		return
@@ -1246,15 +1317,38 @@ func (c *Cache) associateResultWithTermLocked(
 	}
 	assoc, ok := termResults[res.id]
 	if ok {
+		updated := false
 		if !sameInputProvenance(assoc.inputProvenance, inputProvenance) {
 			assoc.inputProvenance = slices.Clone(inputProvenance)
-			termResults[res.id] = assoc
+			updated = true
 			c.traceResultTermAssocUpdated(ctx, res.id, termID, inputProvenance)
+		}
+		if len(runtimeDeps) > 0 {
+			seen := false
+			for _, existing := range assoc.runtimeDepSets {
+				if sameRuntimeResultDependencySet(existing, runtimeDeps) {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				assoc.runtimeDepSets = append(assoc.runtimeDepSets, cloneRuntimeResultDependencySet(runtimeDeps))
+				updated = true
+			}
+		}
+		if updated {
+			termResults[res.id] = assoc
 		}
 		return
 	}
 	termResults[res.id] = egraphResultTermAssoc{
 		inputProvenance: slices.Clone(inputProvenance),
+		runtimeDepSets: func() []runtimeResultDependencySet {
+			if len(runtimeDeps) == 0 {
+				return nil
+			}
+			return []runtimeResultDependencySet{cloneRuntimeResultDependencySet(runtimeDeps)}
+		}(),
 	}
 	resultTerms[termID] = struct{}{}
 	c.traceResultTermAssocAdded(ctx, res.id, termID, inputProvenance)
@@ -1269,6 +1363,7 @@ func (c *Cache) teachResultIdentityLocked(
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
+	runtimeDeps runtimeResultDependencySet,
 ) error {
 	if res == nil || res.id == 0 || requestFrame == nil {
 		return nil
@@ -1318,13 +1413,19 @@ func (c *Cache) teachResultIdentityLocked(
 
 	switch {
 	case c.termForResultByDigestLocked(res.id, termDigest) != nil:
+		resultTerm := c.termForResultByDigestLocked(res.id, termDigest)
+		inputProvenance, err := c.inputProvenanceForRefs(requestInputRefs)
+		if err != nil {
+			return fmt.Errorf("derive input provenance for request term %s: %w", requestSelf, err)
+		}
+		c.associateResultWithTermLocked(ctx, res, resultTerm.id, inputProvenance, runtimeDeps)
 		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 	case existingTerm != nil:
 		inputProvenance, err := c.inputProvenanceForRefs(requestInputRefs)
 		if err != nil {
 			return fmt.Errorf("derive input provenance for request term %s: %w", requestSelf, err)
 		}
-		c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
+		c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance, runtimeDeps)
 		c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 	default:
 		mergedOutputEqID := c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
@@ -1365,7 +1466,7 @@ func (c *Cache) teachResultIdentityLocked(
 		}
 		outputTerms[termID] = struct{}{}
 
-		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
+		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance, runtimeDeps)
 	}
 
 	if err := c.indexResultDigestsLocked(res, requestFrame, nil); err != nil {
@@ -1411,6 +1512,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 	resultTermInputRefs []ResultCallStructuralInputRef,
 	hasResultTerm bool,
 	res *sharedResult,
+	runtimeDeps runtimeResultDependencySet,
 ) error {
 	c.initEgraphLocked()
 
@@ -1487,11 +1589,13 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		selfDigest   digest.Digest
 		inputDigests []digest.Digest
 		inputRefs    []ResultCallStructuralInputRef
+		runtimeDeps  runtimeResultDependencySet
 	}{
 		{
 			selfDigest:   requestSelf,
 			inputDigests: requestInputs,
 			inputRefs:    requestInputRefs,
+			runtimeDeps:  runtimeDeps,
 		},
 	}
 	// Only index both input+return terms if they are actually different
@@ -1504,6 +1608,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			selfDigest   digest.Digest
 			inputDigests []digest.Digest
 			inputRefs    []ResultCallStructuralInputRef
+			runtimeDeps  runtimeResultDependencySet
 		}{
 			selfDigest:   resultTermSelf,
 			inputDigests: resultTermInputs,
@@ -1525,6 +1630,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			// we already setup this res with this term, just ensure that the output eq class
 			// (which is the merged eq class containing all input req digests + return val digests)
 			// is associated as the output eq class for this term; doing a merge+replair if needed.
+			c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance, term.runtimeDeps)
 			c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 			continue
 		}
@@ -1532,7 +1638,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 			// we ended up with a duplicate term that has the same digest; just associate this
 			// result with that term and merge the output eq class as needed, no need to create
 			// a new term
-			c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance)
+			c.associateResultWithTermLocked(ctx, res, existingTerm.id, inputProvenance, term.runtimeDeps)
 			c.mergeOutputsForTermDigestLocked(ctx, termDigest, outputEqID)
 			continue
 		}
@@ -1578,7 +1684,7 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 		}
 		outputTerms[termID] = struct{}{}
 
-		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance)
+		c.associateResultWithTermLocked(ctx, res, termID, inputProvenance, term.runtimeDeps)
 	}
 
 	if err := c.indexResultDigestsLocked(res, requestFrame, responseFrame); err != nil {

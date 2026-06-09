@@ -111,7 +111,7 @@ func (sdk *dangSDK) ModuleTypes(
 		return inst, fmt.Errorf("current query: %w", err)
 	}
 
-	clientMetadata, nestedClientMetadata, err := newDangNestedClientMetadata(ctx)
+	clientMetadata, nestedClientMetadata, err := newDangNestedClientMetadata(ctx, nil)
 	if err != nil {
 		return inst, err
 	}
@@ -136,7 +136,7 @@ func (sdk *dangSDK) ModuleTypes(
 	return inst, nil
 }
 
-func newDangNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, error) {
+func newDangNestedClientMetadata(ctx context.Context, execMD *engineutil.ExecutionMetadata) (*engine.ClientMetadata, *engine.ClientMetadata, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -150,6 +150,9 @@ func newDangNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, *
 		ClientVersion:     engine.Version,
 		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
 		LockMode:          clientMetadata.LockMode,
+	}
+	if execMD != nil {
+		nestedClientMetadata.RuntimeCallDigest = execMD.CallDigest
 	}
 
 	return clientMetadata, nestedClientMetadata, nil
@@ -168,7 +171,7 @@ func (r *DangRuntime) AsContainer() (dagql.ObjectResult[*core.Container], bool) 
 
 func (r *DangRuntime) Call(
 	ctx context.Context,
-	_ *engineutil.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 	envContext dagql.ObjectResult[*core.Env],
@@ -179,7 +182,7 @@ func (r *DangRuntime) Call(
 		}
 	}()
 
-	clientMetadata, nestedClientMetadata, err := newDangNestedClientMetadata(ctx)
+	clientMetadata, nestedClientMetadata, err := newDangNestedClientMetadata(ctx, execMD)
 	if err != nil {
 		return err
 	}
