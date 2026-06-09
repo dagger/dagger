@@ -13,6 +13,14 @@ type moduleSourceAttachTestSDK struct {
 	dep dagql.AnyResult
 }
 
+type moduleSourceSelfCallsTestSDK struct {
+	moduleSourceAttachTestSDK
+}
+
+func (sdk *moduleSourceSelfCallsTestSDK) AlwaysEnablesSelfCalls() bool {
+	return true
+}
+
 func (sdk *moduleSourceAttachTestSDK) AsRuntime() (Runtime, bool) {
 	return nil, false
 }
@@ -68,6 +76,26 @@ func TestModuleSourceAttachDependencyResultsRetainsSDKImpl(t *testing.T) {
 	require.Len(t, deps, 1)
 	require.Equal(t, attachedDep.Unwrap(), deps[0].Unwrap())
 	require.Equal(t, attachedDep.Unwrap(), sdk.dep.Unwrap())
+}
+
+func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	src := &ModuleSource{
+		SDK:     &SDKConfig{Source: "dang"},
+		SDKImpl: &moduleSourceSelfCallsTestSDK{},
+	}
+	require.True(t, src.SelfCallsEnabled())
+
+	encoded, err := src.EncodePersistedObject(ctx, nil)
+	require.NoError(t, err)
+
+	decoded, err := (&ModuleSource{}).DecodePersistedObject(ctx, nil, 0, nil, encoded.JSON)
+	require.NoError(t, err)
+	decodedSrc, ok := decoded.(*ModuleSource)
+	require.True(t, ok)
+	require.True(t, decodedSrc.SelfCallsEnabled())
 }
 
 func TestGitModuleSourceSymbolic(t *testing.T) {

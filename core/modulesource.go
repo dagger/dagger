@@ -433,6 +433,7 @@ type persistedModuleSourceSDKCapabilities struct {
 	ModuleTypes     bool `json:"moduleTypes,omitempty"`
 	CodeGenerator   bool `json:"codeGenerator,omitempty"`
 	ClientGenerator bool `json:"clientGenerator,omitempty"`
+	SelfCallsAlways bool `json:"selfCallsAlways,omitempty"`
 }
 
 type persistedModuleSourcePayload struct {
@@ -474,6 +475,11 @@ type persistedModuleSourceLazySDK struct {
 }
 
 var _ SDK = (*persistedModuleSourceLazySDK)(nil)
+var _ selfCallsAlwaysEnabler = (*persistedModuleSourceLazySDK)(nil)
+
+func (sdk *persistedModuleSourceLazySDK) AlwaysEnablesSelfCalls() bool {
+	return sdk != nil && sdk.capabilities.SelfCallsAlways
+}
 
 func (sdk *persistedModuleSourceLazySDK) load(ctx context.Context) (SDK, error) {
 	if sdk == nil || sdk.config == nil {
@@ -669,11 +675,16 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
 		_, hasCodeGenerator := src.SDKImpl.AsCodeGenerator()
 		_, hasClientGenerator := src.SDKImpl.AsClientGenerator()
+		selfCallsAlways := false
+		if sc, ok := src.SDKImpl.(selfCallsAlwaysEnabler); ok && sc.AlwaysEnablesSelfCalls() {
+			selfCallsAlways = true
+		}
 		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
 			Runtime:         hasRuntime,
 			ModuleTypes:     hasModuleTypes,
 			CodeGenerator:   hasCodeGenerator,
 			ClientGenerator: hasClientGenerator,
+			SelfCallsAlways: selfCallsAlways,
 		}
 	}
 	if src.ContextDirectory.Self() != nil {
