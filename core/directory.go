@@ -3097,6 +3097,9 @@ type Stat struct {
 	Permissions int      `field:"true" doc:"permission bits"`
 }
 
+var _ dagql.PersistedObject = (*Stat)(nil)
+var _ dagql.PersistedObjectDecoder = (*Stat)(nil)
+
 func (*Stat) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Stat",
@@ -3106,6 +3109,25 @@ func (*Stat) Type() *ast.Type {
 
 func (*Stat) TypeDescription() string {
 	return "A file or directory status object."
+}
+
+func (s *Stat) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	if s == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted stat: nil stat")
+	}
+	return encodePersistedObjectPayload(s)
+}
+
+func (*Stat) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var s Stat
+	if err := json.Unmarshal(payload, &s); err != nil {
+		return nil, fmt.Errorf("decode persisted stat payload: %w", err)
+	}
+	return &s, nil
 }
 
 func (s *Stat) IsDir() bool {
