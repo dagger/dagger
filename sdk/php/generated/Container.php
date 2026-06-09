@@ -283,10 +283,13 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Download a container image, and apply it to the container state. All previous state will be lost.
      */
-    public function from(string $address): Container
+    public function from(string $address, ?Service $registryService = null): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('from');
         $innerQueryBuilder->setArgument('address', $address);
+        if (null !== $registryService) {
+        $innerQueryBuilder->setArgument('registryService', $registryService);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -368,6 +371,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
+        ?Service $registryService = null,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
         $leafQueryBuilder->setArgument('address', $address);
@@ -379,6 +383,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        if (null !== $registryService) {
+        $leafQueryBuilder->setArgument('registryService', $registryService);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
     }

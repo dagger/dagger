@@ -423,6 +423,15 @@ export type ContainerFileOpts = {
   expand?: boolean
 }
 
+export type ContainerFromOpts = {
+  /**
+   * Service to use as the registry endpoint for the image address.
+   *
+   * The service will be started only for this pull.
+   */
+  registryService?: Service
+}
+
 export type ContainerImportOpts = {
   /**
    * Identifies the tag to import from the archive, if the archive bundles multiple tags.
@@ -451,6 +460,13 @@ export type ContainerPublishOpts = {
    * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Service to use as the registry endpoint for the image address.
+   *
+   * The service will be started only for this push.
+   */
+  registryService?: Service
 }
 
 export type ContainerStatOpts = {
@@ -4627,9 +4643,12 @@ export class Container extends BaseClient {
   /**
    * Download a container image, and apply it to the container state. All previous state will be lost.
    * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+   * @param opts.registryService Service to use as the registry endpoint for the image address.
+   *
+   * The service will be started only for this pull.
    */
-  from = (address: string): Container => {
-    const ctx = this._ctx.select("from", { address })
+  from = (address: string, opts?: ContainerFromOpts): Container => {
+    const ctx = this._ctx.select("from", { address, ...opts })
     return new Container(ctx)
   }
 
@@ -4731,6 +4750,9 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the published image's layers.
    *
    * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
+   * @param opts.registryService Service to use as the registry endpoint for the image address.
+   *
+   * The service will be started only for this push.
    */
   publish = async (
     address: string,

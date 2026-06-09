@@ -1640,6 +1640,13 @@ pub struct ContainerFileOpts {
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerFromOpts {
+    /// Service to use as the registry endpoint for the image address.
+    /// The service will be started only for this pull.
+    #[builder(setter(into, strip_option), default)]
+    pub registry_service: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerImportOpts<'a> {
     /// Identifies the tag to import from the archive, if the archive bundles multiple tags.
     #[builder(setter(into, strip_option), default)]
@@ -1659,6 +1666,10 @@ pub struct ContainerPublishOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
+    /// Service to use as the registry endpoint for the image address.
+    /// The service will be started only for this push.
+    #[builder(setter(into, strip_option), default)]
+    pub registry_service: Option<Id>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerStatOpts {
@@ -2403,9 +2414,28 @@ impl Container {
     /// # Arguments
     ///
     /// * `address` - Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn from(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("from");
         query = query.arg("address", address.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Download a container image, and apply it to the container state. All previous state will be lost.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn from_opts(&self, address: impl Into<String>, opts: ContainerFromOpts) -> Container {
+        let mut query = self.selection.select("from");
+        query = query.arg("address", address.into());
+        if let Some(registry_service) = opts.registry_service {
+            query = query.arg("registryService", registry_service);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2546,6 +2576,9 @@ impl Container {
         }
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
+        }
+        if let Some(registry_service) = opts.registry_service {
+            query = query.arg("registryService", registry_service);
         }
         query.execute(self.graphql_client.clone()).await
     }
