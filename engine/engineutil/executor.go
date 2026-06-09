@@ -103,10 +103,6 @@ type ExecutionMetadata struct {
 	// core->executor hand-off is an in-process pointer, so excluding it from
 	// JSON cannot drop it before use.
 	UserFacingSpanCtx trace.SpanContext `json:"-"`
-
-	// Forwarded so the engine can emit telemetry to Cloud and refresh the user's token as needed.
-	// When the token is refreshed, the old one becomes invalid, so the credentials file must be updated.
-	CredentialsPath string
 }
 
 func (c *Client) Run(

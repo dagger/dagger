@@ -955,10 +955,11 @@ func (srv *Server) initializeDaggerClient(
 	// time they attach below.
 	sess := client.daggerSession
 	if md := client.clientMetadata; client.clientID == sess.mainClientCallerID && md.CloudAuth != nil {
+		// OTel invokes exporters from background goroutines whose contexts
+		// carry no Dagger session state, so capture everything token refresh
+		// needs (the main client's metadata and query) at creation time.
 		refreshCtx := cloudRefreshContext(ctx, client)
 		tokenRefresh := func(context.Context) (*oauth2.Token, error) {
-			refreshCtx, cancel := context.WithTimeout(refreshCtx, cloudTokenRefreshTimeout)
-			defer cancel()
 			return refreshAndPersistCredentials(refreshCtx, srv, md.CredentialsPath, md.ClientID)
 		}
 		sess.cloudSpans, sess.cloudLogs, sess.cloudMetrics, err = enginetel.NewCloudExporters(ctx, md.CloudAuth, tokenRefresh, md.CloudURL)
@@ -1108,8 +1109,9 @@ func (client *daggerClient) resolveHostServiceCaller(
 	return client.getClientCaller(ctx, id)
 }
 
-const cloudTokenRefreshTimeout = 5 * time.Second
-
+// cloudRefreshContext returns the context the cloud exporters' token refresh
+// runs on: the client's query and metadata captured at exporter creation,
+// decoupled from the request's cancellation.
 func cloudRefreshContext(ctx context.Context, client *daggerClient) context.Context {
 	return core.ContextWithQuery(
 		engine.ContextWithClientMetadata(context.WithoutCancel(ctx), client.clientMetadata),
@@ -1117,6 +1119,11 @@ func cloudRefreshContext(ctx context.Context, client *daggerClient) context.Cont
 	)
 }
 
+// refreshAndPersistCredentials refreshes an expired OAuth token by reading the
+// credentials file from the client's host, and writes the refreshed token back
+// (refreshing invalidates the old one). It is called from OTel exporter
+// goroutines, so ctx must be the context captured when the exporters were
+// created, not the export context.
 func refreshAndPersistCredentials(ctx context.Context, srv *Server, credentialsPath, sourceClientID string) (*oauth2.Token, error) {
 	if credentialsPath == "" || sourceClientID == "" {
 		return nil, fmt.Errorf("no credentials path or client id available")
@@ -1682,8 +1689,6 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 
 const InstrumentationLibrary = "dagger.io/engine.server"
 
-type serverCtxKey struct{}
-
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	if srv.isShuttingDown() {
 		switch r.URL.Path {
@@ -1695,8 +1700,6 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	}
 
 	ctx := srv.withShutdownCancel(r.Context())
-
-	ctx = context.WithValue(ctx, serverCtxKey{}, srv)
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(fmt.Errorf("http request done for client %q", opts.ClientID))
@@ -2155,6 +2158,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 
+		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host)
+		sess.beginClosing()
+
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop. Stop errors are not surfaced
 		// (matching prior behavior), so the phase always returns nil.
@@ -2203,12 +2209,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	if flushErr != nil {
 		slog.Error("failed to flush telemetry", "error", flushErr)
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
-	}
-
-	if client.clientID == sess.mainClientCallerID {
-		// This must be done after lockfile and telemetry flushing, since both
-		// can use attachables to write data back to the client host.
-		sess.beginClosing()
 	}
 
 	client.closeShutdownOnce.Do(func() {
