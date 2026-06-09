@@ -422,14 +422,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			var imageTag string
-			if inputArgs["imageTag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["imageTag"]), &imageTag)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg imageTag", err))
-				}
-			}
-			return New(ctx, runnerHost, source, base, version, imageTag)
+			return New(ctx, runnerHost, source, base, version)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

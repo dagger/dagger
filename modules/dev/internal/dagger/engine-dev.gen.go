@@ -279,7 +279,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../to
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
-func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:362:1)
+func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:353:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)
 
@@ -295,8 +295,6 @@ type EngineDevContainerOpts struct {
 	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:149:2)
 
 	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:151:2)
-
-	Tag string // engine-dev (../../../../toolchains/engine-dev/main.go:153:2)
 }
 
 // Build the engine container
@@ -315,10 +313,6 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
 		}
-		// `tag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Tag) {
-			q = q.Arg("tag", opts[i].Tag)
-		}
 	}
 
 	return &Container{
@@ -328,7 +322,7 @@ func (r *EngineDev) Container(opts ...EngineDevContainerOpts) *Container { // en
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchains/engine-dev/main.go:377:1)
+func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchains/engine-dev/main.go:368:1)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -338,11 +332,11 @@ func (r *EngineDev) Generate() *Changeset { // engine-dev (../../../../toolchain
 
 // EngineDevGraphqlSchemaOpts contains options for EngineDev.GraphqlSchema
 type EngineDevGraphqlSchemaOpts struct {
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:336:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:327:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:333:1)
+func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:324:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -418,13 +412,13 @@ type EngineDevInstallClientOpts struct {
 	//
 	// The engine service to bind
 	//
-	Service *Service // engine-dev (../../../../toolchains/engine-dev/main.go:278:2)
+	Service *Service // engine-dev (../../../../toolchains/engine-dev/main.go:269:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:280:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:271:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:272:1)
+func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallClientOpts) *Container { // engine-dev (../../../../toolchains/engine-dev/main.go:263:1)
 	assertNotNil("client", client)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -446,7 +440,7 @@ func (r *EngineDev) InstallClient(client *Container, opts ...EngineDevInstallCli
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:320:1)
+func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:311:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -455,7 +449,7 @@ func (r *EngineDev) IntrospectionJSON() *File { // engine-dev (../../../../toolc
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:354:1)
+func (r *EngineDev) IntrospectionTool() *File { // engine-dev (../../../../toolchains/engine-dev/main.go:345:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -571,17 +565,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:459:2)
+	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:450:2)
 
-	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:464:2)
+	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:455:2)
 
-	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:467:2)
+	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:458:2)
 
-	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:469:2)
+	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:460:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:454:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:445:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -609,7 +603,7 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:440:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:431:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -620,17 +614,17 @@ func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (..
 
 // EngineDevServiceOpts contains options for EngineDev.Service
 type EngineDevServiceOpts struct {
-	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:215:2)
+	GpuSupport bool // engine-dev (../../../../toolchains/engine-dev/main.go:210:2)
 
-	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:217:2)
+	SharedCache bool // engine-dev (../../../../toolchains/engine-dev/main.go:212:2)
 
-	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:219:2)
+	Metrics bool // engine-dev (../../../../toolchains/engine-dev/main.go:214:2)
 
-	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:221:2)
+	Version string // engine-dev (../../../../toolchains/engine-dev/main.go:216:2)
 }
 
 // Create a test engine service
-func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../toolchains/engine-dev/main.go:211:1)
+func (r *EngineDev) Service(name string, opts ...EngineDevServiceOpts) *Service { // engine-dev (../../../../toolchains/engine-dev/main.go:206:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
@@ -670,49 +664,49 @@ type EngineDevTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:26:2)
+	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:25:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:29:2)
+	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:28:2)
 
 	// Default: "./..."
-	Pkg string // engine-dev (../../../../toolchains/engine-dev/test.go:32:2)
+	Pkg string // engine-dev (../../../../toolchains/engine-dev/test.go:31:2)
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:35:2)
+	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:34:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:38:2)
+	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:37:2)
 	//
 	// How long before timing out the test run
 	//
-	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:41:2)
+	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:40:2)
 
-	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:43:2)
+	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:42:2)
 
 	// Default: 1
-	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:46:2)
+	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:45:2)
 
-	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:48:2)
+	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:47:2)
 	//
 	// Enable verbose output
 	//
-	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:51:2)
+	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:50:2)
 	//
 	// Update golden files
 	//
-	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:54:2)
+	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:53:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:57:2)
+	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:56:2)
 }
 
 // Run core engine tests
-func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../../../toolchains/engine-dev/test.go:22:1)
+func (r *EngineDev) Test(ctx context.Context, opts ...EngineDevTestOpts) error { // engine-dev (../../../../toolchains/engine-dev/test.go:21:1)
 	if r.test != nil {
 		return nil
 	}
@@ -900,36 +894,36 @@ type EngineDevTestTelemetryOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:87:2)
+	Run string // engine-dev (../../../../toolchains/engine-dev/test.go:86:2)
 	//
 	// Skip these tests
 	//
-	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:90:2)
+	Skip string // engine-dev (../../../../toolchains/engine-dev/test.go:89:2)
 
-	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:92:2)
+	Update bool // engine-dev (../../../../toolchains/engine-dev/test.go:91:2)
 
-	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:94:2)
+	Failfast bool // engine-dev (../../../../toolchains/engine-dev/test.go:93:2)
 
-	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:96:2)
+	Parallel int // engine-dev (../../../../toolchains/engine-dev/test.go:95:2)
 
-	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:98:2)
+	Timeout string // engine-dev (../../../../toolchains/engine-dev/test.go:97:2)
 
-	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:100:2)
+	Race bool // engine-dev (../../../../toolchains/engine-dev/test.go:99:2)
 
 	// Default: 1
-	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:102:2)
+	Count int // engine-dev (../../../../toolchains/engine-dev/test.go:101:2)
 
-	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:104:2)
+	EnvFile *Secret // engine-dev (../../../../toolchains/engine-dev/test.go:103:2)
 
-	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:106:2)
+	TestVerbose bool // engine-dev (../../../../toolchains/engine-dev/test.go:105:2)
 	//
 	// Enable the given ebpf progs in the engine during tests
 	//
-	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:109:2)
+	EbpfProgs []string // engine-dev (../../../../toolchains/engine-dev/test.go:108:2)
 }
 
 // Run telemetry tests
-func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../toolchains/engine-dev/test.go:83:1)
+func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset { // engine-dev (../../../../toolchains/engine-dev/test.go:82:1)
 	q := r.query.Select("testTelemetry")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `run` optional argument
@@ -984,7 +978,7 @@ func (r *EngineDev) TestTelemetry(opts ...EngineDevTestTelemetryOpts) *Changeset
 }
 
 // List all core engine tests
-func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/test.go:16:1)
+func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (../../../../toolchains/engine-dev/test.go:15:1)
 	if r.tests != nil {
 		return *r.tests, nil
 	}
