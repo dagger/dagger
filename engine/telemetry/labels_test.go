@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -93,58 +94,86 @@ func TestLoadGitLabels(t *testing.T) {
 	}
 }
 
-func TestLoadGitRefEnvLabels(t *testing.T) {
-	normalRepo := setupRepo(t)
-	run(t, "git", "-C", normalRepo, "commit", "--allow-empty", "-m", "second")
-	run(t, "git", "-C", normalRepo, "commit", "--allow-empty", "-m", "third")
-	repoHead1 := run(t, "git", "-C", normalRepo, "rev-parse", "HEAD~")
-	repoHead2 := run(t, "git", "-C", normalRepo, "rev-parse", "HEAD~~")
-	run(t, "git", "-C", normalRepo, "update-ref", "refs/pull/1/head", repoHead2)
-	run(t, "git", "-C", normalRepo, "update-ref", "refs/pull/1/merge", repoHead1)
+func TestLoadGitRefEnvLabelsForGitHubPullRequestRefs(t *testing.T) {
+	t.Run("head ref fetches pull request head", func(t *testing.T) {
+		repo := setupRepo(t)
+		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "second")
+		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "third")
 
-	cloneRepo := cloneRepo(t, normalRepo)
+		prHead := run(t, "git", "-C", repo, "rev-parse", "HEAD~~")
+		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/head", prHead)
 
-	type Example struct {
-		Name   string
-		Repo   string
-		Env    []string
-		Labels map[string]string
-	}
+		worktree := cloneRepo(t, repo, true)
+		t.Setenv("GITHUB_REF", "refs/pull/1/head")
 
-	for _, example := range []Example{
-		{
-			Name: "normal branch state",
-			Repo: cloneRepo,
-			Env: []string{
-				// GITHUB_REF overrides the git ref to point to this PR
-				"GITHUB_REF=refs/pull/1/head",
-			},
-			Labels: map[string]string{
-				"dagger.io/git.ref": repoHead2,
-			},
-		},
-		{
-			Name: "normal branch state",
-			Repo: cloneRepo,
-			Env: []string{
-				// same as above, but still use the /head
-				"GITHUB_REF=refs/pull/1/merge",
-			},
-			Labels: map[string]string{
-				"dagger.io/git.ref": repoHead2,
-			},
-		},
-	} {
-		t.Run(example.Name, func(t *testing.T) {
-			for _, e := range example.Env {
-				k, v, _ := strings.Cut(e, "=")
-				t.Setenv(k, v)
-			}
+		labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(worktree)
 
-			labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(example.Repo)
-			require.Subset(t, labels.AsMap(), example.Labels)
-		})
-	}
+		require.Equal(t, prHead, labels.AsMap()["dagger.io/git.ref"])
+	})
+
+	t.Run("checked out synthetic merge uses local second parent", func(t *testing.T) {
+		repo := setupRepo(t)
+
+		run(t, "git", "-C", repo, "checkout", "-b", "pr")
+		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "pr commit")
+
+		prHead := run(t, "git", "-C", repo, "rev-parse", "HEAD")
+		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/head", prHead)
+
+		run(t, "git", "-C", repo, "checkout", "main")
+		run(t, "git", "-C", repo, "merge", "--no-ff", "-m", "synthetic pr merge", "pr")
+
+		syntheticMerge := run(t, "git", "-C", repo, "rev-parse", "HEAD")
+		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/merge", syntheticMerge)
+
+		// If the synthetic merge commit and its parents are already present, this
+		// should not need to fetch refs/pull/1/head from origin.
+		run(t, "git", "-C", repo, "remote", "remove", "origin")
+
+		t.Setenv("GITHUB_REF", "refs/pull/1/merge")
+		t.Setenv("GITHUB_SHA", syntheticMerge)
+
+		labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(repo)
+
+		isShallow, err := strconv.ParseBool(run(t, "git", "-C", repo, "rev-parse", "--is-shallow-repository"))
+
+		require.Nil(t, err)
+		require.False(t, isShallow, "repository should not be shallow")
+		require.Equal(t, prHead, labels.AsMap()["dagger.io/git.ref"])
+		require.Equal(t, "pr commit", labels.AsMap()["dagger.io/git.title"])
+	})
+
+	t.Run("checked out pull request head merge commit stays on pull request head", func(t *testing.T) {
+		repo := setupRepo(t)
+
+		run(t, "git", "-C", repo, "checkout", "-b", "side")
+		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "side commit")
+
+		run(t, "git", "-C", repo, "checkout", "main")
+		run(t, "git", "-C", repo, "checkout", "-b", "pr")
+		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "pr commit")
+		run(t, "git", "-C", repo, "merge", "--no-ff", "-m", "merge side into pr", "side")
+
+		prHead := run(t, "git", "-C", repo, "rev-parse", "HEAD")
+		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/head", prHead)
+
+		run(t, "git", "-C", repo, "checkout", "main")
+		run(t, "git", "-C", repo, "merge", "--no-ff", "-m", "synthetic pr merge", "pr")
+
+		syntheticMerge := run(t, "git", "-C", repo, "rev-parse", "HEAD")
+		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/merge", syntheticMerge)
+
+		worktree := cloneRepo(t, repo, false)
+		run(t, "git", "-C", worktree, "checkout", prHead)
+
+		t.Setenv("GITHUB_REF", "refs/pull/1/merge")
+		t.Setenv("GITHUB_SHA", syntheticMerge)
+
+		labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(worktree)
+
+		require.Equal(t, prHead, labels.AsMap()["dagger.io/git.ref"])
+		require.Equal(t, "merge side into pr", labels.AsMap()["dagger.io/git.title"])
+	})
 }
 
 type mapEnv map[string]string
@@ -516,8 +545,13 @@ func setupRepo(t *testing.T) string {
 	return repo
 }
 
-func cloneRepo(t *testing.T, src string) string {
+func cloneRepo(t *testing.T, src string, shallow bool) string {
 	repo := t.TempDir()
-	run(t, "git", "clone", "file://"+src, repo)
+	args := []string{"clone"}
+	if shallow {
+		args = append(args, "--depth=1")
+	}
+	args = append(args, "file://"+src, repo)
+	run(t, "git", args...)
 	return repo
 }
