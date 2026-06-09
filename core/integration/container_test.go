@@ -4060,15 +4060,17 @@ func (m *Test) Check(ctx context.Context, registry *dagger.Service, ref string) 
 func publishAndRead(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
 	_, err := dag.Container().
 		WithNewFile("/hello.txt", "hello").
-		WithServiceBinding("bound-registry", registry).
-		Publish(ctx, ref)
+		Publish(ctx, ref, dagger.ContainerPublishOpts{
+			RegistryService: registry,
+		})
 	if err != nil {
 		return "", err
 	}
 
 	return dag.Container().
-		WithServiceBinding("bound-registry", registry).
-		From(ref).
+		From(ref, dagger.ContainerFromOpts{
+			RegistryService: registry,
+		}).
 		File("/hello.txt").
 		Contents(ctx)
 }
