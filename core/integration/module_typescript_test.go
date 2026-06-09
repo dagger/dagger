@@ -1801,7 +1801,6 @@ export class Test {
 	require.JSONEq(t, `{"nullableValue":"null"}`, out)
 }
 
-
 func (TypescriptSuite) TestGeneratedEntrypointVariadicArguments(ctx context.Context, t *testctx.T) {
 	t.Run("omitted_variadic_args_default_to_empty_array", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
