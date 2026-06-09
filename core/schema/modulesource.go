@@ -2422,7 +2422,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 }
 
 func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
-	return src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
+	return src.Self().SelfCallsEnabled()
 }
 
 func (s *moduleSourceSchema) runCodegen(
@@ -2449,10 +2449,18 @@ func (s *moduleSourceSchema) runCodegen(
 	// part of the code generation.
 	// This is not really a dependency as it's the module itself, but that will allow to generate
 	// the types.
+	//
+	// This is gated on the explicit SELF_CALLS flag rather than SelfCallsEnabled:
+	// it transforms the source into a module (eagerly type-checking it) purely to
+	// feed code generation, so it only applies to SDKs that opt in for codegen.
+	// SDKs that always enable self calls only for their runtime (e.g. Dang, whose
+	// codegen is a no-op) must not pay this cost — doing so would fail when the
+	// source is uninitialized or references not-yet-installed dependencies.
 	if srcInst.Self().SDK != nil {
 		// Only if the SDK implements a specific function to get module type definitions.
 		// If not, we will have circular dependency issues.
-		if _, ok := srcInst.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(srcInst) {
+		if _, ok := srcInst.Self().SDKImpl.AsModuleTypes(); ok &&
+			srcInst.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls) {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
