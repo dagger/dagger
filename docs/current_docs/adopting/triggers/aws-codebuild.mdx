@@ -9,7 +9,7 @@ description: "Learn how to use Dagger with AWS CodeBuild."
 Dagger runs your checks in AWS CodeBuild via `dagger check`, so the same checks you run locally run on every build — without rewriting your pipeline. You keep your existing CodeBuild project and `buildspec.yml`, and simply invoke the Dagger CLI from it.
 
 :::tip
-For checks with no buildspec at all, enable [Cloud Checks](/adopting/triggers) with `dagger ws autocheck on`. The buildspec below is the hybrid-mode alternative for when you want to drive Dagger from your existing AWS CodeBuild setup.
+For checks with no buildspec at all, enable [Cloud Checks](./index.mdx) with `dagger ws autocheck on`. The buildspec below is the hybrid-mode alternative for when you want to drive Dagger from your existing AWS CodeBuild setup.
 :::
 
 ## How it works
@@ -26,7 +26,7 @@ When running a CI pipeline with Dagger using AWS CodeBuild, the general workflow
 ## Prerequisites
 
 - An AWS CodeBuild project connected with a source code repository in GitLab, GitHub, BitBucket or any other supported provider
-- A repository with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](/adopting/workspace-setup).
+- A repository with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](../workspace-setup.mdx).
 
 ## Example
 

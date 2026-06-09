@@ -10,7 +10,7 @@ A workspace is configured by a `dagger.toml` file. It records the modules instal
 
 For more information, refer to the [schema for the Dagger workspace configuration file](https://docs.dagger.io/reference/dagger-workspace.schema.json).
 
-Create it with `dagger workspace init`, or let `dagger mod install` create it on first install. To convert a legacy `dagger.json` project, run `dagger migrate`. See [Workspace Setup](/adopting/workspace-setup) to get started.
+Create it with `dagger workspace init`, or let `dagger mod install` create it on first install. To convert a legacy `dagger.json` project, run `dagger migrate`. See [Workspace Setup](../../adopting/workspace-setup.mdx) to get started.
 
 ## Modules
 
@@ -30,7 +30,7 @@ packageManager = "yarn"
 | `entrypoint` | bool | Marks this module as the workspace entrypoint. |
 | `settings` | table | Module settings (see [Settings](#settings)). |
 
-Discover and manage modules with the catalog commands (see [Workspace Setup](/adopting/workspace-setup)): `dagger mod recommend` and `dagger mod search` to find modules, `dagger mod install <ref>` and `dagger mod uninstall <name>` to add or remove them. Dagger may also record additional managed keys (for example, migration-compatibility flags).
+Discover and manage modules with the catalog commands (see [Workspace Setup](../../adopting/workspace-setup.mdx)): `dagger mod recommend` and `dagger mod search` to find modules, `dagger mod install <ref>` and `dagger mod uninstall <name>` to add or remove them. Dagger may also record additional managed keys (for example, migration-compatibility flags).
 
 ### Settings
 
@@ -56,7 +56,7 @@ The same applies to `[modules.<name>.generate]` and `[modules.<name>.up]`.
 
 ## Environments
 
-An [environment](/using-dagger/environments) is a named overlay applied with the global `--env` flag. Overrides are stored under `[env.<name>...]` and layered on top of the base configuration:
+An [environment](../../using-dagger/environments.mdx) is a named overlay applied with the global `--env` flag. Overrides are stored under `[env.<name>...]` and layered on top of the base configuration:
 
 ```toml
 [env.staging.modules.eslint.settings]
@@ -75,4 +75,4 @@ Write overlays with `dagger settings --env <name> <module> <key> <value>` (or `d
 
 ## Lockfile
 
-Resolved runtime lookups, such as container image references and Git references, are recorded in `dagger.lock` alongside the config. Module loading follows the same runtime lookup policy and does not add a separate `modules.resolve` entry. Refresh the lock with `dagger workspace update` or `dagger lock update`. See [Lockfiles](/reference/cli/lockfiles) for lock modes and policies.
+Resolved runtime lookups, such as container image references and Git references, are recorded in `dagger.lock` alongside the config. Module loading follows the same runtime lookup policy and does not add a separate `modules.resolve` entry. Refresh the lock with `dagger workspace update` or `dagger lock update`. See [Lockfiles](../cli/lockfiles.mdx) for lock modes and policies.
