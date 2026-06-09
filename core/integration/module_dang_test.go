@@ -224,20 +224,6 @@ func (DangSuite) TestScalars(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, out, "example.com")
 	})
-
-	t.Run("namespaced custom scalar arg", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		// The module name "module-a" namespaces scalar "Token" to "ModuleAToken",
-		// which is not a strcase.ToCamel fixed-point (it collapses to
-		// "ModuleAtoken"). A reconstruction that re-normalizes the name would
-		// diverge from the served scalar.
-		out, err := dangModule(t, c, "test-scalar-ns").
-			With(daggerCall("echo", "--token", "abc123")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "abc123")
-	})
 }
 
 func (DangSuite) TestInterfaces(_ context.Context, t *testctx.T) {

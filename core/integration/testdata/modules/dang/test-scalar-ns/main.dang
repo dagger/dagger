@@ -1,7 +1,0 @@
-scalar Token
-
-type ModuleA {
-  pub echo(token: Token!): String! {
-    toJSON(token)
-  }
-}

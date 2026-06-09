@@ -107,6 +107,14 @@ func withFinalTypeNameWithServer(ctx context.Context, dag *dagql.Server, td dagq
 		}
 		return out, nil
 	case TypeDefKindScalar:
+		// Speculative: Dagger modules don't yet expose custom scalars as distinct
+		// module-namespaced types — a Dang `scalar Foo` currently resolves to
+		// String, and the only scalars in a schema are core ones whose names are
+		// already ToCamel fixed-points. So this branch isn't reachable with a
+		// manglable name today and can't be exercised by a test. It's kept so the
+		// helper stays correct for every kind SelectReferenceTypeDef accepts
+		// (coremod.go reconstructs scalars via withScalar) once module-defined
+		// custom scalars land.
 		var renamed dagql.ObjectResult[*ScalarTypeDef]
 		if err := dag.Select(ctx, td.Self().AsScalar.Value, &renamed, rename); err != nil {
 			return td, err
