@@ -1750,7 +1750,7 @@ func (TypescriptSuite) TestGeneratedEntrypointDefaultExport(ctx context.Context,
 	c := connect(ctx, t)
 
 	out, err := moduleFixture(t, c, "typescript/entrypoint-default-export").
-		With(daggerCall("hello")).
+		With(daggerQuery("{hello}")).
 		Stdout(ctx)
 
 	require.NoError(t, err)
