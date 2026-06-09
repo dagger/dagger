@@ -55,6 +55,13 @@ func (d DocsDev) Site() *dagger.Directory {
 	return dag.Docusaurus(d.Source, opts).Build()
 }
 
+// Check the docs website build
+// +check
+func (d DocsDev) Check(ctx context.Context) error {
+	_, err := d.Site().Sync(ctx)
+	return err
+}
+
 // Build the docs server
 func (d DocsDev) Server() *dagger.Container {
 	return dag.
