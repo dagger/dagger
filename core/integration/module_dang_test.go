@@ -249,6 +249,56 @@ func (DangSuite) TestInterfaces(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hi, world", strings.TrimSpace(out))
 	})
+
+	t.Run("consume structural interface value across dependencies", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goGitBase(t, c).
+			WithWorkdir("/work").
+			With(withModInitAt("moduleA", "dang", `
+type ModuleA {
+  pub use(container: Dagger.Container!, overlay: Overlay!): String! {
+    overlay.apply(container).file("/marker").contents
+  }
+}
+
+interface Overlay {
+  pub apply(container: Dagger.Container!): Dagger.Container!
+}
+`)).
+			With(withModInitAt("moduleB", "dang", `
+type ModuleB {
+  pub fileOverlay(path: String!, contents: String!): FileOverlay! {
+    FileOverlay(path, contents)
+  }
+}
+
+type FileOverlay {
+  pub path: String!
+  pub contents: String!
+
+  pub apply(container: Dagger.Container!): Dagger.Container! {
+    container.withNewFile(path, contents)
+  }
+}
+`)).
+			With(withModInit("dang", `
+type Test {
+  pub run: String! {
+    moduleA.use(
+      Dagger.container.from("alpine:3.20"),
+      moduleB.fileOverlay("/marker", "ok"),
+    )
+  }
+}
+`)).
+			With(daggerExec("install", "./moduleA")).
+			With(daggerExec("install", "./moduleB")).
+			With(daggerCall("run")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ok", strings.TrimSpace(out))
+	})
 }
 
 // TestVersionedSyntax covers the Dang major version routing: modules pinned

@@ -1,6 +1,6 @@
 type TestInterface {
   # Implement an interface defined by a dependency, then use the
-  # implementation. Conforming to `DepGreeter` must not require providing
+  # implementation. Conforming to `Dep_Greeter` must not require providing
   # the synthesized `id: ID!` field that Dagger adds to every interface.
   pub run: String! {
     Hi.greet("world")
@@ -19,7 +19,7 @@ type TestInterface {
 # Implements an interface imported from the `dep` dependency. The Dagger
 # schema synthesizes `id: ID!` on every interface; the implementer must
 # not be required to provide it (Dagger supplies it).
-type Hi implements DepGreeter {
+type Hi implements Dep_Greeter {
   pub greet(name: String!): String! {
     "hi, " + name
   }
