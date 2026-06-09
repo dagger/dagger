@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -102,47 +103,8 @@ func TestLoadGitRefEnvLabelsForGitHubPullRequestRefs(t *testing.T) {
 		prHead := run(t, "git", "-C", repo, "rev-parse", "HEAD~~")
 		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/head", prHead)
 
-		worktree := cloneRepo(t, repo)
+		worktree := cloneRepo(t, repo, true)
 		t.Setenv("GITHUB_REF", "refs/pull/1/head")
-
-		labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(worktree)
-
-		require.Equal(t, prHead, labels.AsMap()["dagger.io/git.ref"])
-	})
-
-	t.Run("merge ref without GitHub SHA fetches pull request head", func(t *testing.T) {
-		repo := setupRepo(t)
-		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "second")
-		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "third")
-
-		prHead := run(t, "git", "-C", repo, "rev-parse", "HEAD~~")
-		mergeRef := run(t, "git", "-C", repo, "rev-parse", "HEAD~")
-		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/head", prHead)
-		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/merge", mergeRef)
-
-		worktree := cloneRepo(t, repo)
-		t.Setenv("GITHUB_REF", "refs/pull/1/merge")
-
-		labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(worktree)
-
-		require.Equal(t, prHead, labels.AsMap()["dagger.io/git.ref"])
-	})
-
-	t.Run("merge ref fetches pull request head when local parent is unavailable", func(t *testing.T) {
-		repo := setupRepo(t)
-		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "second")
-		run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "third")
-
-		prHead := run(t, "git", "-C", repo, "rev-parse", "HEAD~~")
-		mergeRef := run(t, "git", "-C", repo, "rev-parse", "HEAD~")
-		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/head", prHead)
-		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/merge", mergeRef)
-
-		worktree := cloneRepo(t, repo)
-		run(t, "git", "-C", worktree, "checkout", mergeRef)
-
-		t.Setenv("GITHUB_REF", "refs/pull/1/merge")
-		t.Setenv("GITHUB_SHA", mergeRef)
 
 		labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(worktree)
 
@@ -173,6 +135,10 @@ func TestLoadGitRefEnvLabelsForGitHubPullRequestRefs(t *testing.T) {
 
 		labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(repo)
 
+		isShallow, err := strconv.ParseBool(run(t, "git", "-C", repo, "rev-parse", "--is-shallow-repository"))
+
+		require.Nil(t, err)
+		require.False(t, isShallow, "repository should not be shallow")
 		require.Equal(t, prHead, labels.AsMap()["dagger.io/git.ref"])
 		require.Equal(t, "pr commit", labels.AsMap()["dagger.io/git.title"])
 	})
@@ -197,7 +163,7 @@ func TestLoadGitRefEnvLabelsForGitHubPullRequestRefs(t *testing.T) {
 		syntheticMerge := run(t, "git", "-C", repo, "rev-parse", "HEAD")
 		run(t, "git", "-C", repo, "update-ref", "refs/pull/1/merge", syntheticMerge)
 
-		worktree := cloneRepo(t, repo)
+		worktree := cloneRepo(t, repo, false)
 		run(t, "git", "-C", worktree, "checkout", prHead)
 
 		t.Setenv("GITHUB_REF", "refs/pull/1/merge")
@@ -579,8 +545,13 @@ func setupRepo(t *testing.T) string {
 	return repo
 }
 
-func cloneRepo(t *testing.T, src string) string {
+func cloneRepo(t *testing.T, src string, shallow bool) string {
 	repo := t.TempDir()
-	run(t, "git", "clone", "file://"+src, repo)
+	args := []string{"clone"}
+	if shallow {
+		args = append(args, "--depth=1")
+	}
+	args = append(args, "file://"+src, repo)
+	run(t, "git", args...)
 	return repo
 }

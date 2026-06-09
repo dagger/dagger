@@ -207,6 +207,7 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 		switch {
 		case isSyntheticMergeCheckout:
 			// GitHub checked out refs/pull/N/merge. Parent 2 is refs/pull/N/head.
+			// This only works checkout is not a shallow clone.
 			refCommit, err = prHeadFromMerge(commit)
 			if err != nil {
 				refCommit, err = fetchPRHead(repo, workdir, ref)
@@ -570,9 +571,6 @@ func (labels Labels) isCI() bool {
 // as its first parent and the PR head as its second parent, so the head commit
 // (equivalent to refs/pull/N/head) can be directly....
 func prHeadFromMerge(merge *object.Commit) (*object.Commit, error) {
-	if merge.NumParents() < 2 {
-		return nil, fmt.Errorf("commit %s is not a merge commit", merge.Hash)
-	}
 	return merge.Parent(1)
 }
 
