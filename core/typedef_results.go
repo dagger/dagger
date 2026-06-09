@@ -24,19 +24,20 @@ func SelectTypeDefWithServer(ctx context.Context, dag *dagql.Server, sels ...dag
 	return inst, nil
 }
 
-// withFinalTypeName overrides the name of an object/interface/enum typedef,
-// storing it verbatim instead of re-normalizing it.
+// withFinalTypeName overrides the name of an object/interface/enum/scalar
+// typedef, storing it verbatim instead of re-normalizing it.
 //
 // Callers that *reconstruct* a typedef referencing a type by its already-final,
-// module-namespaced GraphQL name (e.g. "ModuleA_Overlay") — whether to serve it
+// module-namespaced GraphQL name (e.g. "ModuleAOverlay") — whether to serve it
 // or to look it up via Deps.ModTypeFor — build it with the public
-// withObject/withInterface/withEnum fields, which run the name through
-// strcase.ToCamel. That is correct when an SDK supplies a raw type name, but
-// wrong for an already-final name: ToCamel is not idempotent and collapses the
-// "_" namespace separator, so "ModuleA_Overlay" becomes "ModuleAOverlay",
-// diverging from the installed type and breaking cross-module references and
-// matching. This re-applies the intended name with no normalization (the
-// __withName fields store verbatim; see (*ObjectTypeDef).WithName).
+// withObject/withInterface/withEnum/withScalar fields, which run the name
+// through strcase.ToCamel. That is correct when an SDK supplies a raw type name,
+// but wrong for an already-final name: ToCamel is not idempotent, so a name
+// whose camelCased form ends in a lone capital abutting a PascalCase word (e.g.
+// "ModuleAOverlay") gets lowercased to "ModuleAoverlay", diverging from the
+// installed type and breaking cross-module references and matching. This
+// re-applies the intended name with no normalization (the __withName fields
+// store verbatim; see (*ObjectTypeDef).WithName).
 func withFinalTypeName(ctx context.Context, td dagql.ObjectResult[*TypeDef], name string) (dagql.ObjectResult[*TypeDef], error) {
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -105,6 +106,23 @@ func withFinalTypeNameWithServer(ctx context.Context, dag *dagql.Server, td dagq
 			return td, err
 		}
 		return out, nil
+	case TypeDefKindScalar:
+		var renamed dagql.ObjectResult[*ScalarTypeDef]
+		if err := dag.Select(ctx, td.Self().AsScalar.Value, &renamed, rename); err != nil {
+			return td, err
+		}
+		id, err := ResultIDInput(renamed)
+		if err != nil {
+			return td, err
+		}
+		var out dagql.ObjectResult[*TypeDef]
+		if err := dag.Select(ctx, td, &out, dagql.Selector{
+			Field: "__withScalarTypeDef",
+			Args:  []dagql.NamedInput{{Name: "scalarTypeDef", Value: id}},
+		}); err != nil {
+			return td, err
+		}
+		return out, nil
 	default:
 		return td, nil
 	}
@@ -112,9 +130,10 @@ func withFinalTypeNameWithServer(ctx context.Context, dag *dagql.Server, td dagq
 
 // SelectReferenceTypeDef builds a typedef that references an existing type by
 // its already-final GraphQL name, preserving that name verbatim. Use this
-// instead of a bare withObject/withInterface/withEnum selector whenever the name
-// is a final (possibly module-namespaced) type name rather than a raw SDK name.
-// See withFinalTypeName for why re-normalization must be avoided.
+// instead of a bare withObject/withInterface/withEnum/withScalar selector
+// whenever the name is a final (possibly module-namespaced) type name rather
+// than a raw SDK name. See withFinalTypeName for why re-normalization must be
+// avoided.
 func SelectReferenceTypeDef(ctx context.Context, field, argName, name string, extraArgs ...dagql.NamedInput) (dagql.ObjectResult[*TypeDef], error) {
 	args := append([]dagql.NamedInput{{Name: argName, Value: dagql.String(name)}}, extraArgs...)
 	td, err := SelectTypeDef(ctx, dagql.Selector{Field: field, Args: args})

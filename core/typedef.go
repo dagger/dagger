@@ -1795,6 +1795,15 @@ func (typeDef ScalarTypeDef) Clone() *ScalarTypeDef {
 	return &typeDef
 }
 
+// WithName renames the scalar to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
+func (typeDef *ScalarTypeDef) WithName(name string) *ScalarTypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Name = name
+	return typeDef
+}
+
 type ListTypeDef struct {
 	ElementTypeDef dagql.ObjectResult[*TypeDef]
 }
