@@ -1752,6 +1752,8 @@ func (TypescriptSuite) TestGeneratedEntrypointDefaultExport(ctx context.Context,
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
+		With(daggerExec("version")).
+		With(daggerExec("core", "version")).
 		With(daggerExec("init", "--name=test", "--sdk=typescript")).
 		With(sdkSource("typescript", `
 import { func, object } from "@dagger.io/dagger"
@@ -1765,10 +1767,10 @@ export default class Test {
 }
 `))
 
-	out, err := modGen.With(daggerQuery(`{hello}`)).Stdout(ctx)
+	out, err := modGen.With(daggerCall("hello")).Stdout(ctx)
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"hello":"hello"}`, out)
+	require.Equal(t, `hello\n`, out)
 }
 
 func (TypescriptSuite) TestNullableArgumentOmissionPassesNull(ctx context.Context, t *testctx.T) {
