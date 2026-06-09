@@ -38,12 +38,16 @@ func SelectTypeDefWithServer(ctx context.Context, dag *dagql.Server, sels ...dag
 // matching. This re-applies the intended name with no normalization (the
 // __withName fields store verbatim; see (*ObjectTypeDef).WithName).
 func withFinalTypeName(ctx context.Context, td dagql.ObjectResult[*TypeDef], name string) (dagql.ObjectResult[*TypeDef], error) {
-	if td.Self() == nil || td.Self().Name == name {
-		return td, nil
-	}
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return td, err
+	}
+	return withFinalTypeNameWithServer(ctx, dag, td, name)
+}
+
+func withFinalTypeNameWithServer(ctx context.Context, dag *dagql.Server, td dagql.ObjectResult[*TypeDef], name string) (dagql.ObjectResult[*TypeDef], error) {
+	if td.Self() == nil || td.Self().Name == name {
+		return td, nil
 	}
 	rename := dagql.Selector{
 		Field: "__withName",
@@ -118,6 +122,19 @@ func SelectReferenceTypeDef(ctx context.Context, field, argName, name string, ex
 		return td, err
 	}
 	return withFinalTypeName(ctx, td, name)
+}
+
+// SelectReferenceTypeDefWithServer is SelectReferenceTypeDef against an explicit
+// server, for callers reconstructing typedefs on a schema other than the current
+// call's server (e.g. a module's dependency schema when rebuilding the Query
+// typedef from live introspection).
+func SelectReferenceTypeDefWithServer(ctx context.Context, dag *dagql.Server, field, argName, name string, extraArgs ...dagql.NamedInput) (dagql.ObjectResult[*TypeDef], error) {
+	args := append([]dagql.NamedInput{{Name: argName, Value: dagql.String(name)}}, extraArgs...)
+	td, err := SelectTypeDefWithServer(ctx, dag, dagql.Selector{Field: field, Args: args})
+	if err != nil {
+		return td, err
+	}
+	return withFinalTypeNameWithServer(ctx, dag, td, name)
 }
 
 func SelectFunctionWithServer(ctx context.Context, dag *dagql.Server, name string, returnType dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*Function], error) {
