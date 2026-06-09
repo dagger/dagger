@@ -23,6 +23,26 @@ import (
 
 type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
 
+// dangModuleName carries the executing module's name so that local type
+// references (e.g. a module-local interface "Overlay") can be resolved to their
+// namespaced schema names ("ModuleA_Overlay") when marshaling values into
+// GraphQL queries at runtime.
+type dangModuleName struct {
+	name         string
+	originalName string
+}
+
+type dangModuleNameKey struct{}
+
+func withDangModuleName(ctx context.Context, name, originalName string) context.Context {
+	return context.WithValue(ctx, dangModuleNameKey{}, dangModuleName{name: name, originalName: originalName})
+}
+
+func dangModuleNameFromContext(ctx context.Context) (dangModuleName, bool) {
+	v, ok := ctx.Value(dangModuleNameKey{}).(dangModuleName)
+	return v, ok
+}
+
 func (r *runtime) eval(
 	ctx context.Context,
 	query *core.Query,
@@ -47,6 +67,10 @@ func (r *runtime) eval(
 				return nil, fmt.Errorf("init module: %w", err)
 			}
 			return json.Marshal(dagMod)
+		}
+
+		if moduleContext.Self() != nil {
+			ctx = withDangModuleName(ctx, moduleContext.Self().Name(), moduleContext.Self().OriginalName)
 		}
 
 		result, err := callDangFunction(ctx, env, fnCall)
@@ -1051,28 +1075,53 @@ func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType
 		return nil, fmt.Errorf("node field is %T, not dang.GraphQLFunction", nodeVal)
 	}
 
+	// A module's own types are local in its source (e.g. "Overlay") but
+	// module-namespaced in the schema it queries against ("ModuleA_Overlay").
+	// Resolve the local name to its namespaced schema name so the node query and
+	// inline fragment reference a type that actually exists in the schema.
+	schemaName := schemaTypeNameForLocal(ctx, nodeFn.Schema, modType.Named)
+
 	field := *nodeFn.Field
 	field.TypeRef = &introspection.TypeRef{
 		Kind: introspection.TypeKindNonNull,
 		OfType: &introspection.TypeRef{
 			Kind: introspection.TypeKindObject,
-			Name: modType.Named,
+			Name: schemaName,
 		},
 	}
-	if schemaType := nodeFn.Schema.Types.Get(modType.Named); schemaType != nil {
+	if schemaType := nodeFn.Schema.Types.Get(schemaName); schemaType != nil {
 		field.TypeRef.OfType.Kind = schemaType.Kind
 	}
 
 	return dang.GraphQLValue{
 		Name:       "node",
-		TypeName:   modType.Named,
+		TypeName:   schemaName,
 		Field:      &field,
 		ValType:    hm.NonNullType{Type: modType},
 		Client:     nodeFn.Client,
 		Schema:     nodeFn.Schema,
 		TypeScope:  nodeFn.TypeScope,
-		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(modType.Named),
+		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(schemaName),
 	}, nil
+}
+
+// schemaTypeNameForLocal maps a (possibly module-local) type name to the name it
+// has in the given schema. If the name already exists it's returned as-is (e.g. a
+// dependency type, already namespaced). Otherwise, when the executing module's
+// name is known, it's the module's own local type and is namespaced to match
+// what the engine installed (requires the SELF_CALLS feature so the module's own
+// types are present in its runtime schema).
+func schemaTypeNameForLocal(ctx context.Context, schema *introspection.Schema, name string) string {
+	if schema != nil && schema.Types.Get(name) != nil {
+		return name
+	}
+	if mod, ok := dangModuleNameFromContext(ctx); ok {
+		namespaced := core.NamespaceObject(name, mod.name, mod.originalName)
+		if schema == nil || schema.Types.Get(namespaced) != nil {
+			return namespaced
+		}
+	}
+	return name
 }
 
 func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType hm.Type) (dang.Value, error) {
