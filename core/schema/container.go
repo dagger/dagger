@@ -71,6 +71,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("address").Doc(
 					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
 				),
+				dagql.Arg("registryService").Doc(
+					`Service to use as the registry endpoint for the image address.`,
+					`The service will be started only for this pull.`),
 			),
 		dagql.NodeFunc("build", s.build).
 			View(BeforeVersion("v0.19.0")).
@@ -705,6 +708,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Defaults to "OCI", which is compatible with most recent
 				registries, but "Docker" may be needed for older registries without OCI
 				support.`),
+				dagql.Arg("registryService").Doc(
+					`Service to use as the registry endpoint for the image address.`,
+					`The service will be started only for this push.`),
 			),
 
 		dagql.NodeFunc("platform", s.platform).
@@ -941,7 +947,8 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 }
 
 type containerFromArgs struct {
-	Address string
+	Address         string
+	RegistryService dagql.Optional[core.ServiceID]
 }
 
 const lockContainerFromOperation = "container.from"
@@ -982,6 +989,7 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 	},
 }
 
+//nolint:gocyclo
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -996,6 +1004,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, fmt.Errorf("failed to get registry resolver: %w", err)
 	}
 	platform := parent.Self().Platform
+	var registryServices core.ServiceBindings
 
 	refName, err := reference.ParseNormalizedNamed(args.Address)
 	if err != nil {
@@ -1003,6 +1012,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 	// add a default :latest if no tag or digest, otherwise this is a no-op
 	refName = reference.TagNameOnly(refName)
+	if args.RegistryService.Valid {
+		service, err := args.RegistryService.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, err
+		}
+		registryServices, err = core.ContainerRegistryServiceBinding(ctx, refName.String(), service)
+		if err != nil {
+			return inst, err
+		}
+	}
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
 		clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
@@ -1033,9 +1052,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 
 		refStr := refName.String()
+		network, detach, err := core.ContainerRegistryNetwork(ctx, registryServices)
+		if err != nil {
+			return inst, err
+		}
+		defer detach()
+
 		_, _, cfgBytes, err := rslvr.ResolveImageConfig(ctx, refStr, serverresolver.ResolveImageConfigOpts{
 			Platform:    ptr(platform.Spec()),
 			ResolveMode: serverresolver.ResolveModeDefault,
+			Network:     network,
 		})
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
@@ -1050,13 +1076,14 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		ctr.ImageRef = refStr
 		ctr.Platform = core.Platform(platforms.Normalize(imgSpec.Platform))
 		ctr.Lazy = &core.ContainerFromImageRefLazy{
-			Parent:       parent,
-			LazyState:    core.NewLazyState(),
-			CanonicalRef: refStr,
-			Config:       core.CloneContainerImageConfig(ctr.Config),
-			ImageRef:     ctr.ImageRef,
-			Platform:     ctr.Platform,
-			ResolveMode:  serverresolver.ResolveModeDefault,
+			Parent:           parent,
+			LazyState:        core.NewLazyState(),
+			CanonicalRef:     refStr,
+			Config:           core.CloneContainerImageConfig(ctr.Config),
+			ImageRef:         ctr.ImageRef,
+			Platform:         ctr.Platform,
+			ResolveMode:      serverresolver.ResolveModeDefault,
+			RegistryServices: registryServices,
 		}
 
 		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -1087,12 +1114,18 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 
 	var lookupLock *workspaceLookupLock
 	var rawLock *workspace.Lock
-	lockMode, lookupLock, err := lookupLockForMode(ctx, query, lockContainerFromOperation)
-	if err != nil {
-		return inst, err
-	}
-	if lockMode != workspace.LockModeDisabled {
-		rawLock = lookupLock.lock
+	lockMode := workspace.LockModeDisabled
+	// A ref like "registry:5000/app:latest" can point to different images
+	// depending on registryService, so disable workspace lock entries when
+	// registryService is set.
+	if len(registryServices) == 0 {
+		lockMode, lookupLock, err = lookupLockForMode(ctx, query, lockContainerFromOperation)
+		if err != nil {
+			return inst, err
+		}
+		if lockMode != workspace.LockModeDisabled {
+			rawLock = lookupLock.lock
+		}
 	}
 
 	lockInputs := []any{refName.String(), platform.Format()}
@@ -1124,9 +1157,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, fmt.Errorf("failed to get registry resolver: %w", err)
 		}
+		network, detach, err := core.ContainerRegistryNetwork(ctx, registryServices)
+		if err != nil {
+			return inst, err
+		}
+		defer detach()
+
 		_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
 			Platform:    ptr(platform.Spec()),
 			ResolveMode: serverresolver.ResolveModeDefault,
+			Network:     network,
 		})
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
@@ -1156,12 +1196,22 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	)
 	defer telemetry.EndWithCause(span, nil)
 
+	// We resolved the tag to a digest. Call from again with that digest so the
+	// container ID is stable, and keep registryService so the final pull still
+	// uses the same local registry.
+	fromArgs := []dagql.NamedInput{
+		{Name: "address", Value: dagql.String(refName.String())},
+	}
+	if args.RegistryService.Valid {
+		fromArgs = append(fromArgs, dagql.NamedInput{
+			Name:  "registryService",
+			Value: dagql.Opt(args.RegistryService.Value),
+		})
+	}
 	err = srv.Select(ctx, parent, &inst,
 		dagql.Selector{
 			Field: "from",
-			Args: []dagql.NamedInput{
-				{Name: "address", Value: dagql.String(refName.String())},
-			},
+			Args:  fromArgs,
 		},
 	)
 	if err != nil {
@@ -2351,6 +2401,7 @@ type containerPublishArgs struct {
 	PlatformVariants  []core.ContainerID `default:"[]"`
 	ForcedCompression dagql.Optional[core.ImageLayerCompression]
 	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+	RegistryService   dagql.Optional[core.ServiceID]
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerPublishArgs) (dagql.String, error) {
@@ -2376,6 +2427,17 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 	if err := cache.Evaluate(ctx, evals...); err != nil {
 		return "", err
 	}
+	var registryServices core.ServiceBindings
+	if args.RegistryService.Valid {
+		service, err := args.RegistryService.Value.Load(ctx, srv)
+		if err != nil {
+			return "", err
+		}
+		registryServices, err = core.ContainerRegistryServiceBinding(ctx, args.Address.String(), service)
+		if err != nil {
+			return "", err
+		}
+	}
 	variants := make([]*core.Container, 0, len(variantResults))
 	for _, variant := range variantResults {
 		if variant.Self() != nil {
@@ -2388,6 +2450,7 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 		variants,
 		args.ForcedCompression.Value,
 		args.MediaTypes,
+		registryServices,
 	)
 	if err != nil {
 		return "", err

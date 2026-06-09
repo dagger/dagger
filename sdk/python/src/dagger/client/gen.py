@@ -2377,7 +2377,12 @@ class Container(Type):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    def from_(self, address: str) -> Self:
+    def from_(
+        self,
+        address: str,
+        *,
+        registry_service: "Service | None" = None,
+    ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
 
@@ -2386,9 +2391,13 @@ class Container(Type):
         address:
             Address of the container image to download, in standard OCI ref
             format. Example:"registry.dagger.io/engine:latest"
+        registry_service:
+            Service to use as the registry endpoint for the image address.
+            The service will be started only for this pull.
         """
         _args = [
             Arg("address", address),
+            Arg("registryService", registry_service, None),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -2550,6 +2559,7 @@ class Container(Type):
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        registry_service: "Service | None" = None,
     ) -> str:
         """Package the container state as an OCI image, and publish it to a
         registry
@@ -2579,6 +2589,9 @@ class Container(Type):
             Defaults to "OCI", which is compatible with most recent
             registries, but "Docker" may be needed for older registries
             without OCI support.
+        registry_service:
+            Service to use as the registry endpoint for the image address.
+            The service will be started only for this push.
 
         Returns
         -------
@@ -2603,6 +2616,7 @@ class Container(Type):
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("registryService", registry_service, None),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)

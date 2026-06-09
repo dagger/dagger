@@ -355,10 +355,20 @@ defmodule Dagger.Container do
   @doc """
   Download a container image, and apply it to the container state. All previous state will be lost.
   """
-  @spec from(t(), String.t()) :: Dagger.Container.t()
-  def from(%__MODULE__{} = container, address) do
+  @spec from(t(), String.t(), [{:registry_service, Dagger.Service.t() | nil}]) ::
+          Dagger.Container.t()
+  def from(%__MODULE__{} = container, address, optional_args \\ []) do
     query_builder =
-      container.query_builder |> QB.select("from") |> QB.put_arg("address", address)
+      container.query_builder
+      |> QB.select("from")
+      |> QB.put_arg("address", address)
+      |> QB.maybe_put_arg(
+        "registryService",
+        if(optional_args[:registry_service],
+          do: Dagger.ID.id!(optional_args[:registry_service]),
+          else: nil
+        )
+      )
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -469,7 +479,8 @@ defmodule Dagger.Container do
   @spec publish(t(), String.t(), [
           {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
-          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+          {:media_types, Dagger.ImageMediaTypes.t() | nil},
+          {:registry_service, Dagger.Service.t() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
   def publish(%__MODULE__{} = container, address, optional_args \\ []) do
     query_builder =
@@ -485,6 +496,13 @@ defmodule Dagger.Container do
       )
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+      |> QB.maybe_put_arg(
+        "registryService",
+        if(optional_args[:registry_service],
+          do: Dagger.ID.id!(optional_args[:registry_service]),
+          else: nil
+        )
+      )
 
     Client.execute(container.client, query_builder)
   end

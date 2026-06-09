@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -689,11 +690,12 @@ type persistedContainerWithDefaultTerminalCmdLazy struct {
 }
 
 type persistedContainerFromLazy struct {
-	ParentResultID uint64                          `json:"parentResultID"`
-	CanonicalRef   string                          `json:"canonicalRef"`
-	Config         dockerspec.DockerOCIImageConfig `json:"config"`
-	ImageRef       string                          `json:"imageRef,omitempty"`
-	Platform       Platform                        `json:"platform"`
+	ParentResultID   uint64                          `json:"parentResultID"`
+	CanonicalRef     string                          `json:"canonicalRef"`
+	Config           dockerspec.DockerOCIImageConfig `json:"config"`
+	ImageRef         string                          `json:"imageRef,omitempty"`
+	Platform         Platform                        `json:"platform"`
+	RegistryServices []persistedServiceBinding       `json:"registryServices,omitempty"`
 }
 
 type persistedContainerWithRootFSLazy struct {
@@ -4559,7 +4561,7 @@ func decodePersistedContainerLazy(
 		if err != nil {
 			return err
 		}
-		container.Lazy = &ContainerFromImageRefLazy{
+		lazy := &ContainerFromImageRefLazy{
 			Parent:       parent,
 			LazyState:    NewLazyState(),
 			CanonicalRef: persisted.CanonicalRef,
@@ -4568,6 +4570,14 @@ func decodePersistedContainerLazy(
 			Platform:     persisted.Platform,
 			ResolveMode:  serverresolver.ResolveModeDefault,
 		}
+		if len(persisted.RegistryServices) > 0 {
+			services, err := decodePersistedServiceBindings(ctx, dag, "container from registry", persisted.RegistryServices)
+			if err != nil {
+				return err
+			}
+			lazy.RegistryServices = services
+		}
+		container.Lazy = lazy
 		return nil
 	case "withRootfs":
 		var persisted persistedContainerWithRootFSLazy
@@ -4967,9 +4977,16 @@ func (container *Container) FromCanonicalRef(
 	if err != nil {
 		return fmt.Errorf("failed to get registry resolver: %w", err)
 	}
+	network, detach, err := ContainerRegistryNetwork(ctx, container.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
 	pulled, err := rslvr.Pull(ctx, refStr, serverresolver.PullOpts{
 		Platform:    platform.Spec(),
 		ResolveMode: serverresolver.ResolveModeDefault,
+		Network:     network,
 	})
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", refStr, err)
@@ -6353,6 +6370,7 @@ func (container *Container) Publish(
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
+	registryServices ServiceBindings,
 ) (string, error) {
 	variants := filterEmptyContainers(append([]*Container{container}, platformVariants...))
 	inputByPlatform, err := getVariantRefs(ctx, variants)
@@ -6368,8 +6386,13 @@ func (container *Container) Publish(
 	if err != nil {
 		return "", fmt.Errorf("failed to get engine client: %w", err)
 	}
+	network, detach, err := ContainerRegistryNetwork(ctx, registryServices)
+	if err != nil {
+		return "", err
+	}
+	defer detach()
 
-	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), network)
 	if err != nil {
 		return "", err
 	}
@@ -6594,6 +6617,82 @@ func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Ob
 	})
 
 	return container, nil
+}
+
+// ContainerRegistryNetwork starts service bindings for a registry operation and
+// returns the Dagger DNS view that should apply while that operation is running.
+func ContainerRegistryNetwork(ctx context.Context, bindings ServiceBindings) (serverresolver.NetworkConfig, func(), error) {
+	if len(bindings) == 0 {
+		return serverresolver.NetworkConfig{}, func() {}, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, bindings)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+
+	dns, err := DNSConfig(ctx)
+	if err != nil {
+		detach()
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+
+	hostAliases := map[string]string{}
+	for _, binding := range bindings {
+		// Registry refs use the caller's binding aliases, while Dagger DNS knows
+		// the service by its canonical hostname.
+		hostAliases[binding.Hostname] = binding.Hostname
+		aliases := slices.Clone(binding.Aliases)
+		slices.Sort(aliases)
+		for _, alias := range aliases {
+			hostAliases[alias] = binding.Hostname
+		}
+	}
+
+	return serverresolver.NetworkConfig{
+		DNS:         dns,
+		HostAliases: hostAliases,
+	}, detach, nil
+}
+
+func ContainerRegistryServiceBinding(ctx context.Context, ref string, service dagql.ObjectResult[*Service]) (ServiceBindings, error) {
+	if service.Self() == nil {
+		return nil, nil
+	}
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image address %s: %w", ref, err)
+	}
+	host := reference.Domain(refName)
+	alias := host
+	// The image ref may include a port, like "registry:5000/app:latest".
+	// Dagger DNS only aliases the hostname, so bind "registry" while leaving
+	// the original ref as "registry:5000/app:latest".
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		alias = h
+	}
+
+	svcDig, err := service.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcHost, err := service.Self().Hostname(ctx, svcDig)
+	if err != nil {
+		return nil, err
+	}
+	return ServiceBindings{{
+		Service:  service,
+		Hostname: svcHost,
+		Aliases:  AliasSet{alias},
+	}}, nil
 }
 
 func (container *Container) ImageRefOrErr(ctx context.Context) (string, error) {

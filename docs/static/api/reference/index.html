@@ -3106,6 +3106,11 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>address</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Address of the container image to download, in standard OCI ref format. Example:&quot;registry.dagger.io/engine:latest&quot;</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>registryService</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID</code></a></span></h6>
+                                <p>Service to use as the registry endpoint for the image address.</p>
+                                <p>The service will be started only for this pull.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -3199,6 +3204,11 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
                                 <p>Use the specified media types for the published image&#39;s layers.</p>
                                 <p>Defaults to &quot;OCI&quot;, which is compatible with most recent registries, but &quot;Docker&quot; may be needed for older registries without OCI support.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>registryService</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID</code></a></span></h6>
+                                <p>Service to use as the registry endpoint for the image address.</p>
+                                <p>The service will be started only for this push.</p>
                               </div>
                             </div>
                           </div>
