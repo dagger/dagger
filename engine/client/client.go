@@ -1565,6 +1565,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		SingleQuery:                    c.SingleQuery,
 		SuppressCompatWorkspaceWarning: c.SuppressCompatWorkspaceWarning,
 		CloudAuth:                      c.CloudAuth,
+		CloudURL:                       os.Getenv("DAGGER_CLOUD_URL"),
 		CredentialsPath:                auth.CredentialsFile(),
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
