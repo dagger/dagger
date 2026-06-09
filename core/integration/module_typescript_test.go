@@ -1755,7 +1755,6 @@ func (TypescriptSuite) TestGeneratedEntrypointDefaultExport(ctx context.Context,
 
 	require.NoError(t, err)
 	require.JSONEq(t, `{"hello":"hello"}`, out)
-
 }
 
 func (TypescriptSuite) TestNullableArgumentOmissionPassesNull(ctx context.Context, t *testctx.T) {
