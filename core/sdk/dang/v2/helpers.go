@@ -25,7 +25,7 @@ type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
 
 // dangModuleName carries the executing module's name so that local type
 // references (e.g. a module-local interface "Overlay") can be resolved to their
-// namespaced schema names ("ModuleA_Overlay") when marshaling values into
+// namespaced schema names ("ModuleAOverlay") when marshaling values into
 // GraphQL queries at runtime.
 type dangModuleName struct {
 	name         string
@@ -1076,7 +1076,7 @@ func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType
 	}
 
 	// A module's own types are local in its source (e.g. "Overlay") but
-	// module-namespaced in the schema it queries against ("ModuleA_Overlay").
+	// module-namespaced in the schema it queries against ("ModuleAOverlay").
 	// Resolve the local name to its namespaced schema name so the node query and
 	// inline fragment reference a type that actually exists in the schema.
 	schemaName := schemaTypeNameForLocal(ctx, nodeFn.Schema, modType.Named)
