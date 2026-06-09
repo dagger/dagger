@@ -17,6 +17,9 @@ type Error struct {
 	Values  []*ErrorValue `field:"true" doc:"The extensions of the error."`
 }
 
+var _ dagql.PersistedObject = (*Error)(nil)
+var _ dagql.PersistedObjectDecoder = (*Error)(nil)
+
 func NewError(message string) *Error {
 	return &Error{
 		Message: message,
@@ -99,6 +102,25 @@ func (e *Error) Type() *ast.Type {
 	}
 }
 
+func (e *Error) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	if e == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted error: nil error")
+	}
+	return encodePersistedObjectPayload(e)
+}
+
+func (*Error) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var e Error
+	if err := json.Unmarshal(payload, &e); err != nil {
+		return nil, fmt.Errorf("decode persisted error payload: %w", err)
+	}
+	return &e, nil
+}
+
 var _ error = (*Error)(nil)
 
 func (e *Error) Error() string {
@@ -122,9 +144,31 @@ type ErrorValue struct {
 	Value JSON   `field:"true" doc:"The value."`
 }
 
+var _ dagql.PersistedObject = (*ErrorValue)(nil)
+var _ dagql.PersistedObjectDecoder = (*ErrorValue)(nil)
+
 func (e *ErrorValue) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "ErrorValue",
 		NonNull:   true,
 	}
+}
+
+func (e *ErrorValue) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	if e == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted error value: nil error value")
+	}
+	return encodePersistedObjectPayload(e)
+}
+
+func (*ErrorValue) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var e ErrorValue
+	if err := json.Unmarshal(payload, &e); err != nil {
+		return nil, fmt.Errorf("decode persisted error value payload: %w", err)
+	}
+	return &e, nil
 }
