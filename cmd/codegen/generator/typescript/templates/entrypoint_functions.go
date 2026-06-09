@@ -69,16 +69,50 @@ func (c *entrypointFuncCtx) isExportedClass(obj *TypedefObject) bool {
 	return obj.Kind == "class" && obj.IsExported
 }
 
+// entrypointReservedBindings are the module-scope identifiers the generated
+// entrypoint imports from the SDK or declares itself. A user class whose name
+// matches one of these must be imported under an alias, otherwise it shadows
+// the entrypoint's own binding (e.g. a user `Context` class vs the SDK's
+// `Context`).
+var entrypointReservedBindings = map[string]bool{
+	// SDK imports
+	"Context":             true,
+	"DaggerError":         true,
+	"FunctionCachePolicy": true,
+	"TypeDefKind":         true,
+	"connection":          true,
+	"dag":                 true,
+	"getRegisteredClass":  true,
+	"__dagger":            true,
+	"telemetry":           true,
+	// entrypoint-internal declarations
+	"__loadCoreObject": true,
+	"formatError":      true,
+	"invoke":           true,
+	"dispatch":         true,
+	"register":         true,
+}
+
+// classBinding returns the local identifier an exported user class is imported
+// under: the class name, unless it collides with a reserved entrypoint binding,
+// in which case it's aliased.
+func (c *entrypointFuncCtx) classBinding(name string) string {
+	if entrypointReservedBindings[name] {
+		return "__UserClass_" + name
+	}
+	return name
+}
+
 func (c *entrypointFuncCtx) classRuntimeRef(obj *TypedefObject) string {
 	if obj.Kind == "class" && !obj.IsExported {
 		return "__cls_" + obj.Name
 	}
-	return obj.Name
+	return c.classBinding(obj.Name)
 }
 
 func (c *entrypointFuncCtx) classTypeRef(obj *TypedefObject) string {
 	if obj.Kind == "class" && obj.IsExported {
-		return obj.Name
+		return c.classBinding(obj.Name)
 	}
 	return "any"
 }
@@ -292,12 +326,17 @@ func (c *entrypointFuncCtx) argCoercionLine(arg *TypedefArgument) string {
 	if hasDefault(arg) && isPrimitive(arg.Type) {
 		return fmt.Sprintf("const %s = %s", v, c.coerceExpr(access, arg.Type))
 	}
-	// An omitted arg has no key in inputArgs, so `access` is undefined. For a
-	// nullable arg with no default, normalize that (and an explicit null) to
-	// null, matching the runtime loader contract — user code typed `T | null`
-	// must receive null, not undefined.
+	// An omitted arg has no key in inputArgs, so `access` is undefined.
+	// Normalize that (and an explicit null) to a sensible default matching the
+	// runtime loader contract:
+	//   - a variadic arg defaults to an empty array so the `...` spread is safe
+	//   - a nullable arg with no default becomes null (user code typed
+	//     `T | null` must receive null, not undefined)
 	fallback := access
-	if arg.IsNullable && !hasDefault(arg) {
+	switch {
+	case arg.IsVariadic:
+		fallback = "[]"
+	case arg.IsNullable && !hasDefault(arg):
 		fallback = "null"
 	}
 	return fmt.Sprintf(
@@ -351,9 +390,15 @@ func (c *entrypointFuncCtx) plannedImports() []importLine {
 		}
 		switch {
 		case obj.IsDefaultExport:
-			g.Default = obj.Name
+			// A default import binds whatever local name we choose, so just use
+			// the (possibly aliased) binding directly.
+			g.Default = c.classBinding(obj.Name)
 		case obj.IsExported:
-			g.Names = append(g.Names, obj.Name)
+			if binding := c.classBinding(obj.Name); binding != obj.Name {
+				g.Names = append(g.Names, obj.Name+" as "+binding)
+			} else {
+				g.Names = append(g.Names, obj.Name)
+			}
 		default:
 			g.SideEffect = true
 		}
