@@ -25,19 +25,28 @@ func (r Release) githubRelease(
 	// GitHub token for authentication
 	// +optional
 	token *dagger.Secret,
+	// GitHub host for release creation
+	// +optional
+	githubHost string,
+	// Additional CA certificate for the GitHub host
+	// +optional
+	githubCACert *dagger.File,
 	// Whether to perform a dry run without creating the release
 	// +optional
 	dryRun bool,
 ) error {
-	githubRepo, err := githubRepo(repository)
+	githubRepo, err := githubRepo(repository, githubHost)
 	if err != nil {
 		return err
+	}
+	if githubHost == "" {
+		githubHost = "github.com"
 	}
 
 	if dryRun {
 		// Check that the src commit is in the repo
 		_, err = dag.
-			Git(fmt.Sprintf("https://github.com/%s", githubRepo)).
+			Git(fmt.Sprintf("https://%s/%s", githubHost, githubRepo)).
 			Commit(src).
 			Tree().
 			Sync(ctx)
@@ -56,8 +65,10 @@ func (r Release) githubRelease(
 	}
 
 	gh := dag.Gh(dagger.GhOpts{
-		Repo:  githubRepo,
-		Token: token,
+		Repo:   githubRepo,
+		Token:  token,
+		Host:   githubHost,
+		CaCert: githubCACert,
 	})
 	return gh.Release().Create(
 		ctx,
@@ -71,13 +82,16 @@ func (r Release) githubRelease(
 	)
 }
 
-func githubRepo(repo string) (string, error) {
+func githubRepo(repo, githubHost string) (string, error) {
 	u, err := url.Parse(repo)
 	if err != nil {
 		return "", err
 	}
-	if (u.Host != "") && (u.Host != "github.com") {
-		return "", fmt.Errorf("git repo must be on github.com")
+	if githubHost == "" {
+		githubHost = "github.com"
+	}
+	if (u.Host != "") && (u.Host != githubHost) {
+		return "", fmt.Errorf("git repo must be on %s", githubHost)
 	}
 	return strings.TrimPrefix(strings.TrimSuffix(u.Path, ".git"), "/"), nil
 }

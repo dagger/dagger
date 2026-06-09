@@ -30,12 +30,13 @@ func (r *Binding) AsDaggerEngineLoadedEngine() *DaggerEngineLoadedEngine { // da
 type DaggerEngine struct { // dagger-engine (../../../../toolchains/engine-dev/main.go:63:6)
 	query *querybuilder.Selection
 
-	benchmark   *Void
-	id          *ID
-	networkCidr *string
-	publish     *Void
-	test        *Void
-	tests       *string
+	benchmark     *Void
+	id            *ID
+	networkCidr   *string
+	publish       *Void
+	releaseDryRun *Void
+	test          *Void
+	tests         *string
 }
 type WithDaggerEngineFunc func(r *DaggerEngine) *DaggerEngine
 
@@ -570,17 +571,17 @@ type DaggerEnginePublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // dagger-engine (../../../../toolchains/engine-dev/main.go:468:2)
+	Image string // dagger-engine (../../../../toolchains/engine-dev/main.go:459:2)
 
-	DryRun bool // dagger-engine (../../../../toolchains/engine-dev/main.go:473:2)
+	DryRun bool // dagger-engine (../../../../toolchains/engine-dev/main.go:464:2)
 
-	RegistryUsername string // dagger-engine (../../../../toolchains/engine-dev/main.go:476:2)
+	RegistryUsername string // dagger-engine (../../../../toolchains/engine-dev/main.go:467:2)
 
-	RegistryPassword *Secret // dagger-engine (../../../../toolchains/engine-dev/main.go:478:2)
+	RegistryPassword *Secret // dagger-engine (../../../../toolchains/engine-dev/main.go:469:2)
 }
 
 // Publish all engine images to a registry
-func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...DaggerEnginePublishOpts) error { // dagger-engine (../../../../toolchains/engine-dev/main.go:463:1)
+func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...DaggerEnginePublishOpts) error { // dagger-engine (../../../../toolchains/engine-dev/main.go:454:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -608,47 +609,13 @@ func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...Dagger
 	return q.Execute(ctx)
 }
 
-// DaggerEngineReleaseDryRunOpts contains options for DaggerEngine.ReleaseDryRun
-type DaggerEngineReleaseDryRunOpts struct {
-	Tag string // dagger-engine (../../../../toolchains/engine-dev/main.go:443:2)
-}
-
-func (r *DaggerEngine) ReleaseDryRun(ctx context.Context, opts ...DaggerEngineReleaseDryRunOpts) ([]Container, error) { // dagger-engine (../../../../toolchains/engine-dev/main.go:440:1)
+func (r *DaggerEngine) ReleaseDryRun(ctx context.Context) error { // dagger-engine (../../../../toolchains/engine-dev/main.go:440:1)
+	if r.releaseDryRun != nil {
+		return nil
+	}
 	q := r.query.Select("releaseDryRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `tag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Tag) {
-			q = q.Arg("tag", opts[i].Tag)
-		}
-	}
 
-	q = q.Select("id")
-
-	type releaseDryRun struct {
-		Id ID
-	}
-
-	convert := func(fields []releaseDryRun) []Container {
-		out := []Container{}
-
-		for i := range fields {
-			val := Container{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Container")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []releaseDryRun
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
+	return q.Execute(ctx)
 }
 
 // DaggerEngineServiceOpts contains options for DaggerEngine.Service

@@ -30,12 +30,13 @@ func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine { // engine-d
 type EngineDev struct { // engine-dev (../../../../toolchains/engine-dev/main.go:63:6)
 	query *querybuilder.Selection
 
-	benchmark   *Void
-	id          *ID
-	networkCidr *string
-	publish     *Void
-	test        *Void
-	tests       *string
+	benchmark     *Void
+	id            *ID
+	networkCidr   *string
+	publish       *Void
+	releaseDryRun *Void
+	test          *Void
+	tests         *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
 
@@ -570,17 +571,17 @@ type EngineDevPublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:468:2)
+	Image string // engine-dev (../../../../toolchains/engine-dev/main.go:459:2)
 
-	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:473:2)
+	DryRun bool // engine-dev (../../../../toolchains/engine-dev/main.go:464:2)
 
-	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:476:2)
+	RegistryUsername string // engine-dev (../../../../toolchains/engine-dev/main.go:467:2)
 
-	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:478:2)
+	RegistryPassword *Secret // engine-dev (../../../../toolchains/engine-dev/main.go:469:2)
 }
 
 // Publish all engine images to a registry
-func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:463:1)
+func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDevPublishOpts) error { // engine-dev (../../../../toolchains/engine-dev/main.go:454:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -608,47 +609,13 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-// EngineDevReleaseDryRunOpts contains options for EngineDev.ReleaseDryRun
-type EngineDevReleaseDryRunOpts struct {
-	Tag string // engine-dev (../../../../toolchains/engine-dev/main.go:443:2)
-}
-
-func (r *EngineDev) ReleaseDryRun(ctx context.Context, opts ...EngineDevReleaseDryRunOpts) ([]Container, error) { // engine-dev (../../../../toolchains/engine-dev/main.go:440:1)
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:440:1)
+	if r.releaseDryRun != nil {
+		return nil
+	}
 	q := r.query.Select("releaseDryRun")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `tag` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Tag) {
-			q = q.Arg("tag", opts[i].Tag)
-		}
-	}
 
-	q = q.Select("id")
-
-	type releaseDryRun struct {
-		Id ID
-	}
-
-	convert := func(fields []releaseDryRun) []Container {
-		out := []Container{}
-
-		for i := range fields {
-			val := Container{id: &fields[i].Id}
-			val.query = selectNode(q.Root(), fields[i].Id, "Container")
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []releaseDryRun
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
+	return q.Execute(ctx)
 }
 
 // EngineDevServiceOpts contains options for EngineDev.Service

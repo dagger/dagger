@@ -152,6 +152,10 @@ type ElixirSDKDevPublishOpts struct {
 	//
 	HexAPIKey *Secret // elixir-sdk-dev (../../../../:0:0)
 	//
+	// Hex.pm API URL to publish to
+	//
+	HexAPIURL string // elixir-sdk-dev (../../../../:0:0)
+	//
 	// Execute a dry-run release, with no side effects
 	//
 	DryRun bool // elixir-sdk-dev (../../../../:0:0)
@@ -167,6 +171,10 @@ func (r *ElixirSDKDev) Publish(ctx context.Context, tag string, opts ...ElixirSD
 		// `hexApiKey` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HexAPIKey) {
 			q = q.Arg("hexApiKey", opts[i].HexAPIKey)
+		}
+		// `hexApiUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HexAPIURL) {
+			q = q.Arg("hexApiUrl", opts[i].HexAPIURL)
 		}
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {

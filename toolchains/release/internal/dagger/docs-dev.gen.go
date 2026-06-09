@@ -110,6 +110,8 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
 	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:169:2)
+
+	APIURL string // docs-dev (../../../../toolchains/docs-dev/main.go:171:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
@@ -123,6 +125,10 @@ func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...Doc
 		// `deployment` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Deployment) {
 			q = q.Arg("deployment", opts[i].Deployment)
+		}
+		// `apiUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].APIURL) {
+			q = q.Arg("apiUrl", opts[i].APIURL)
 		}
 	}
 	q = q.Arg("netlifyToken", netlifyToken)

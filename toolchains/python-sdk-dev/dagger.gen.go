@@ -475,6 +475,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pypiRepo", err))
 				}
 			}
+			var pypiUrl string
+			if inputArgs["pypiURL"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["pypiURL"]), &pypiUrl)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pypiURL", err))
+				}
+			}
 			var pypiToken *dagger.Secret
 			if inputArgs["pypiToken"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["pypiToken"]), &pypiToken)
@@ -482,7 +489,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pypiToken", err))
 				}
 			}
-			return nil, (*PythonSdkDev).Release(&parent, ctx, sourceTag, dryRun, pypiRepo, pypiToken)
+			return nil, (*PythonSdkDev).Release(&parent, ctx, sourceTag, dryRun, pypiRepo, pypiUrl, pypiToken)
 		case "ReleaseDryRun":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)

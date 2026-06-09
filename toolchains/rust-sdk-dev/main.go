@@ -25,6 +25,8 @@ const (
 	rustSdkCrate     = "dagger-sdk"
 	cargoEditVersion = "0.13.0"
 	cargoChefVersion = "0.1.62"
+
+	mockCargoRegistryName = "mock"
 )
 
 // Develop the Dagger Rust SDK (experimental)
@@ -250,6 +252,10 @@ func (t *RustSdkDev) Release(
 	sourceTag string,
 
 	cargoRegistryToken *dagger.Secret,
+
+	// Cargo registry index URL to publish to instead of crates.io.
+	// +optional
+	cargoRegistryIndex string,
 ) (err error) {
 	version := strings.TrimPrefix(sourceTag, "sdk/rust/")
 	versionFlag := strings.TrimPrefix(version, "v")
@@ -257,9 +263,21 @@ func (t *RustSdkDev) Release(
 		return fmt.Errorf("invalid version %q", version)
 	}
 
-	_, err = t.releaseContainer(versionFlag).
-		WithSecretVariable("CARGO_REGISTRY_TOKEN", cargoRegistryToken).
-		WithExec([]string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features"}).
+	ctr := t.releaseContainer(versionFlag)
+	args := []string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features"}
+	if cargoRegistryIndex != "" {
+		// Cargo alternate registries are configured through
+		// CARGO_REGISTRIES_<NAME>_* environment variables.
+		ctr = ctr.
+			WithEnvVariable("CARGO_REGISTRIES_MOCK_INDEX", cargoRegistryIndex).
+			WithSecretVariable("CARGO_REGISTRIES_MOCK_TOKEN", cargoRegistryToken)
+		args = append(args, "--registry", mockCargoRegistryName)
+	} else {
+		ctr = ctr.WithSecretVariable("CARGO_REGISTRY_TOKEN", cargoRegistryToken)
+	}
+
+	_, err = ctr.
+		WithExec(args).
 		Sync(ctx)
 
 	return err

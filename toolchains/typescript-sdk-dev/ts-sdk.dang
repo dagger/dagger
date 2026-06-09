@@ -129,7 +129,8 @@ type TypescriptSdkDev {
     release(
       dryRun: true,
       sourceTag: "HEAD",
-      npmToken: setSecret("npm-token", ""),
+      npmToken: null,
+      npmRegistryURL: "",
     )
   }
 
@@ -146,6 +147,10 @@ type TypescriptSdkDev {
     Execute a dry-run release, with no side effects
     """
     dryRun: Boolean,
+    """
+    NPM registry URL to publish to.
+    """
+    npmRegistryURL: String! = "",
   ): Void {
     let version = versionFromTag(sourceTag)
     let versionFlag = if (isSemver(version)) {
@@ -166,9 +171,15 @@ type TypescriptSdkDev {
       # branches, which gets awkward here
       null
     } else if (npmToken != null) {
+      let registry = if (npmRegistryURL != "") {
+        npmRegistryURL.trimRight("/") + "/"
+      } else {
+        "https://registry.npmjs.org/"
+      }
+      let registryAuthHost = registry.trimPrefix("https://").trimPrefix("http://")
       let npmrc = [
-        "//registry.npmjs.org/:_authToken=" + npmToken.plaintext,
-        "registry=https://registry.npmjs.org/",
+        "//" + registryAuthHost + ":_authToken=" + npmToken.plaintext,
+        "registry=" + registry,
         "always-auth=true",
       ].join("\n")
       build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))

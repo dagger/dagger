@@ -111,24 +111,34 @@ func (r *Release) Publish( //nolint:gocyclo
 	registryUsername string, // +optional
 	registryPassword *dagger.Secret, // +optional
 
-	goreleaserKey *dagger.Secret, // +optional
-
 	githubToken *dagger.Secret, // +optional
 	githubOrgName string, // +optional
+	githubHost string, // +optional
+	githubCaCert *dagger.File, // +optional
 
 	netlifyToken *dagger.Secret, // +optional
+	netlifyAPIURL string, // +optional
 	pypiToken *dagger.Secret, // +optional
 	pypiRepo string, // +optional
+	pypiURL string, // +optional
 	npmToken *dagger.Secret, // +optional
+	npmRegistryURL string, // +optional
 	hexAPIKey *dagger.Secret, // +optional
+	hexAPIURL string, // +optional
 	cargoRegistryToken *dagger.Secret, // +optional
+	cargoRegistryIndex string, // +optional
+	goSdkDestRemote string, // +optional
+	phpSdkDestRemote string, // +optional
 
 	awsAccessKeyID *dagger.Secret, // +optional
 	awsSecretAccessKey *dagger.Secret, // +optional
 	awsRegion string, // +optional
 	awsBucket string, // +optional
 	awsCloudfrontDistribution string, // +optional
+	awsEndpointURL string, // +optional
 	artefactsFQDN string, // +optional
+
+	helmRegistry string, // +optional
 
 	discordWebhook *dagger.Secret, // +optional
 ) (*ReleaseReport, error) {
@@ -155,27 +165,14 @@ func (r *Release) Publish( //nolint:gocyclo
 		// this is a public release
 		tags = append(tags, "latest")
 	}
-	if dryRun {
-		engineArtifacts, err := dag.EngineDev().ReleaseDryRun(ctx, dagger.EngineDevReleaseDryRunOpts{
-			Tag: tag,
-		})
-		if err != nil {
-			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
-		}
-		if version != "" && len(artifact.Errors) == 0 {
-			if err := r.validateEngineDryRunVersion(ctx, engineArtifacts, version); err != nil {
-				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
-			}
-		}
-	} else {
-		err := dag.EngineDev().Publish(ctx, tags, dagger.EngineDevPublishOpts{
-			Image:            registryImage,
-			RegistryUsername: registryUsername,
-			RegistryPassword: registryPassword,
-		})
-		if err != nil {
-			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
-		}
+	err := dag.EngineDev().Publish(ctx, tags, dagger.EngineDevPublishOpts{
+		Image:            registryImage,
+		RegistryUsername: registryUsername,
+		RegistryPassword: registryPassword,
+		DryRun:           dryRun,
+	})
+	if err != nil {
+		artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 	}
 	report.Artifacts = append(report.Artifacts, artifact)
 
@@ -183,38 +180,37 @@ func (r *Release) Publish( //nolint:gocyclo
 		Name: "🚗 CLI",
 		Tag:  tag,
 	}
-	cliDev := dag.CliDev()
+	cliDevOpts := dagger.CliDevOpts{}
 	if version != "" {
-		cliDev = dag.CliDev(dagger.CliDevOpts{
-			Version:  version,
-			ImageTag: version,
-		})
+		cliDevOpts.Version = version
+		cliDevOpts.ImageTag = version
 	}
+	cliDev := dag.CliDev(cliDevOpts)
 	if !dryRun {
 		_, err := cliDev.
-			Publish(tag, goreleaserKey, githubOrgName, dagger.CliDevPublishOpts{
+			Publish(tag, commit, githubOrgName, dagger.CliDevPublishOpts{
 				GithubToken:        githubToken,
+				GithubHost:         githubHost,
+				GithubCaCert:       githubCaCert,
 				AwsAccessKeyID:     awsAccessKeyID,
 				AwsSecretAccessKey: awsSecretAccessKey,
 				AwsRegion:          awsRegion,
 				AwsBucket:          awsBucket,
 				ArtefactsFqdn:      artefactsFQDN,
+				AwsEndpointURL:     awsEndpointURL,
 			}).
 			Sync(ctx)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
-		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
+		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, dagger.CliDevPublishMetadataOpts{
+			AwsEndpointURL: awsEndpointURL,
+		})
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	} else {
-		cliArtifacts := cliDev.ReleaseDryRun()
-		if version != "" {
-			if err := r.validateCLIDryRunVersion(ctx, cliArtifacts, version); err != nil {
-				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
-			}
-		} else if _, err := cliArtifacts.Entries(ctx); err != nil {
+		if err := cliDev.ReleaseDryRun(ctx); err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	}
@@ -237,7 +233,9 @@ func (r *Release) Publish( //nolint:gocyclo
 			Link: "https://docs.dagger.io",
 		}
 		if !dryRun {
-			if err := dag.DocsDev().Publish(ctx, netlifyToken); err != nil {
+			if err := dag.DocsDev().Publish(ctx, netlifyToken, dagger.DocsDevPublishOpts{
+				APIURL: netlifyAPIURL,
+			}); err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 			}
 		}
@@ -262,6 +260,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return dag.GoSDKDev().Release(ctx, tag, dagger.GoSDKDevReleaseOpts{
 					GithubToken: githubToken,
+					DestRemote:  goSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
@@ -276,6 +275,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return dag.PythonSDKDev().Release(ctx, tag, dagger.PythonSDKDevReleaseOpts{
 					PypiRepo:  pypiRepo,
+					PypiURL:   pypiURL,
 					PypiToken: pypiToken,
 				})
 			},
@@ -290,7 +290,8 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
 				return dag.TypescriptSDKDev().Release(ctx, tag, dagger.TypescriptSDKDevReleaseOpts{
-					NpmToken: npmToken,
+					NpmToken:       npmToken,
+					NpmRegistryURL: npmRegistryURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
@@ -305,6 +306,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return dag.ElixirSDKDev().Publish(ctx, tag, dagger.ElixirSDKDevPublishOpts{
 					HexAPIKey: hexAPIKey,
+					HexAPIURL: hexAPIURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
@@ -317,7 +319,9 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/rust/",
 			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.RustSDKDev().Release(ctx, tag, cargoRegistryToken)
+				return dag.RustSDKDev().Release(ctx, tag, cargoRegistryToken, dagger.RustSDKDevReleaseOpts{
+					CargoRegistryIndex: cargoRegistryIndex,
+				})
 			},
 			dryRun: func(ctx context.Context) error {
 				return dag.RustSDKDev().ReleaseDryRun(ctx)
@@ -332,6 +336,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return dag.PhpSDKDev().Release(ctx, tag, dagger.PhpSDKDevReleaseOpts{
 					GithubToken: githubToken,
+					Dest:        phpSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
@@ -346,7 +351,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			// Helm publishing was inlined from helm-dev so release owns the
 			// package/push step without reintroducing that module dependency.
 			release: func(ctx context.Context) error {
-				return r.helmPublish(ctx, tag, githubToken, false)
+				return r.helmPublish(ctx, tag, githubToken, helmRegistry, false)
 			},
 			dryRun: func(ctx context.Context) error {
 				return r.helmReleaseDryRun(ctx)
@@ -398,7 +403,11 @@ func (r *Release) Publish( //nolint:gocyclo
 
 				if semver.IsValid(version) {
 					notes := dag.Changelog().LookupEntry(component.path, version)
-					if err := r.githubRelease(ctx, "https://github.com/dagger/dagger", commit, target, notes, githubToken, dryRun); err != nil {
+					repo := "https://github.com/dagger/dagger"
+					if githubHost != "" {
+						repo = "https://" + githubHost + "/dagger/dagger"
+					}
+					if err := r.githubRelease(ctx, repo, commit, target, notes, githubToken, githubHost, githubCaCert, dryRun); err != nil {
 						artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 						return nil
 					}
@@ -452,77 +461,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	return &report, nil
 }
 
-func (r *Release) validateEngineDryRunVersion(ctx context.Context, artifacts []dagger.Container, expected string) error {
-	for _, ctr := range artifacts {
-		platform, err := ctr.Platform(ctx)
-		if err != nil {
-			return fmt.Errorf("validate engine dry-run version: read artifact platform: %w", err)
-		}
-		if platform != "linux/amd64" {
-			continue
-		}
-
-		out, err := ctr.
-			WithExec([]string{"/usr/local/bin/dagger-engine", "--version"}).
-			Stdout(ctx)
-		if err != nil {
-			return fmt.Errorf("validate engine dry-run version: %w", err)
-		}
-		fields := strings.Fields(strings.TrimSpace(out))
-		if len(fields) < 2 {
-			return fmt.Errorf("validate engine dry-run version: unexpected output %q", out)
-		}
-		if fields[0] != expected {
-			return fmt.Errorf("engine dry-run binary version mismatch: expected %s, got %s", expected, fields[0])
-		}
-		if fields[1] != expected {
-			return fmt.Errorf("engine dry-run binary tag mismatch: expected %s, got %s", expected, fields[1])
-		}
-		return nil
-	}
-	return fmt.Errorf("validate engine dry-run version: no linux/amd64 engine artifact returned")
-}
-
-func (r *Release) validateCLIDryRunVersion(ctx context.Context, artifacts *dagger.Directory, expected string) error {
-	expectedDir := fmt.Sprintf("dagger_%s_linux_amd64", expected)
-	entries, err := artifacts.Entries(ctx)
-	if err != nil {
-		return fmt.Errorf("validate CLI dry-run version: read artifact entries: %w", err)
-	}
-	found := false
-	for _, entry := range entries {
-		if strings.TrimSuffix(entry, "/") == expectedDir {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("validate CLI dry-run version: missing %s in dry-run artifacts: %s", expectedDir, strings.Join(entries, ", "))
-	}
-
-	out, err := dag.Container(dagger.ContainerOpts{Platform: "linux/amd64"}).
-		From("alpine:latest").
-		WithFile("/usr/local/bin/dagger", artifacts.File(expectedDir+"/dagger"), dagger.ContainerWithFileOpts{
-			Permissions: 0o755,
-		}).
-		WithExec([]string{"/usr/local/bin/dagger", "version"}).
-		Stdout(ctx)
-	if err != nil {
-		return fmt.Errorf("validate CLI dry-run version: %w", err)
-	}
-	fields := strings.Fields(strings.TrimSpace(out))
-	if len(fields) < 2 {
-		return fmt.Errorf("validate CLI dry-run version: unexpected output %q", out)
-	}
-	if fields[1] != expected {
-		return fmt.Errorf("CLI dry-run binary version mismatch: expected %s, got %s", expected, fields[1])
-	}
-	if !strings.Contains(out, ":"+expected+")") {
-		return fmt.Errorf("CLI dry-run runner host tag mismatch: expected %s in %q", expected, out)
-	}
-	return nil
-}
-
 // +cache="session"
 func (r Release) Notify(
 	ctx context.Context,
@@ -541,7 +479,7 @@ func (r Release) Notify(
 	// +optional
 	dryRun bool,
 ) error {
-	githubRepo, err := githubRepo(repository)
+	githubRepo, err := githubRepo(repository, "")
 	if err != nil {
 		return err
 	}
