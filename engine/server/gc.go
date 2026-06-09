@@ -19,6 +19,12 @@ import (
 
 type dagqlCachePrunePolicy = dagql.CachePrunePolicy
 
+const (
+	localCacheSessionGCThrottle      = time.Minute
+	localCacheDiskPressureCheckEvery = 5 * time.Second
+	localCacheDiskPressureGCThrottle = 30 * time.Second
+)
+
 func (srv *Server) EngineLocalCachePolicy() *dagqlCachePrunePolicy {
 	return srv.workerDefaultGCPolicy
 }
@@ -182,6 +188,23 @@ func (srv *Server) gc() {
 	srv.gcmu.Lock()
 	defer srv.gcmu.Unlock()
 
+	srv.gcLocked(context.Background())
+}
+
+func (srv *Server) gcIfDiskPressure() {
+	ctx := context.Background()
+
+	srv.gcmu.Lock()
+	defer srv.gcmu.Unlock()
+
+	if !srv.diskPressureGCNeeded(ctx) {
+		return
+	}
+
+	srv.gcLocked(ctx)
+}
+
+func (srv *Server) gcLocked(ctx context.Context) {
 	if srv.isShuttingDown() {
 		return
 	}
@@ -192,7 +215,7 @@ func (srv *Server) gc() {
 
 	dstat, err := disk.GetDiskStat(srv.rootDir)
 	if err != nil {
-		bklog.G(context.Background()).Warnf("gc skipped: failed to get disk stats: %+v", err)
+		bklog.G(ctx).Warnf("gc skipped: failed to get disk stats: %+v", err)
 		return
 	}
 
@@ -203,13 +226,62 @@ func (srv *Server) gc() {
 		prunePolicies[i].CurrentFreeSpace = dstat.Available
 	}
 
-	report, err := srv.engineCache.Prune(context.Background(), prunePolicies)
+	report, err := srv.engineCache.Prune(ctx, prunePolicies)
 	if err != nil {
-		bklog.G(context.Background()).Errorf("gc error: %+v", err)
+		bklog.G(ctx).Errorf("gc error: %+v", err)
 	}
 	if report.ReclaimedBytes > 0 {
-		bklog.G(context.Background()).Debugf("gc cleaned up %d bytes", report.ReclaimedBytes)
+		bklog.G(ctx).Debugf("gc cleaned up %d bytes", report.ReclaimedBytes)
 	}
+}
+
+func (srv *Server) startDiskPressureGCMonitor() {
+	if srv.engineCache == nil || len(srv.workerGCPolicies) == 0 {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(localCacheDiskPressureCheckEvery)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-srv.shutdownCtx.Done():
+				return
+			case <-ticker.C:
+				if srv.diskPressureGCNeeded(context.Background()) {
+					srv.throttledDiskPressureGC()
+				}
+			}
+		}
+	}()
+}
+
+func (srv *Server) diskPressureGCNeeded(ctx context.Context) bool {
+	if srv.isShuttingDown() {
+		return false
+	}
+
+	if len(srv.workerGCPolicies) == 0 {
+		return false
+	}
+
+	dstat, err := disk.GetDiskStat(srv.rootDir)
+	if err != nil {
+		bklog.G(ctx).Warnf("disk pressure gc skipped: failed to get disk stats: %+v", err)
+		return false
+	}
+
+	return localCacheDiskPressureGCNeeded(srv.workerGCPolicies, dstat)
+}
+
+func localCacheDiskPressureGCNeeded(policies []dagqlCachePrunePolicy, dstat disk.DiskStat) bool {
+	for _, policy := range policies {
+		if policy.MinFreeSpace > 0 && dstat.Available < policy.MinFreeSpace {
+			return true
+		}
+	}
+	return false
 }
 
 func getDagqlGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []dagqlCachePrunePolicy {

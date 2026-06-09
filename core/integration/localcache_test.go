@@ -382,6 +382,155 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const (
+		engineRootSizeBytes = 1536 * 1024 * 1024
+		minFreeBytes        = 900 * 1024 * 1024
+		seedMB              = 192
+		pressureMB          = 512
+		seedSignalBytes     = 96 * 1024 * 1024
+	)
+
+	engine := devEngineContainer(c,
+		engineWithConfig(ctx, t, engineConfigWithGC(
+			"0",
+			fmt.Sprint(minFreeBytes),
+			"4GB",
+			"",
+		)),
+	).WithMountedTemp("/var/lib/dagger", dagger.ContainerWithMountedTempOpts{
+		Size: engineRootSizeBytes,
+	})
+
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	newNestedClient := func() *dagger.Client {
+		t.Helper()
+
+		client, err := dagger.Connect(
+			ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		require.NoError(t, err)
+		return client
+	}
+
+	observer := newNestedClient()
+	t.Cleanup(func() { _ = observer.Close() })
+
+	getUsedBytes := func() int {
+		t.Helper()
+
+		usedBytes, err := observer.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		require.NoError(t, err)
+		return usedBytes
+	}
+
+	dumpCacheSummary := func() {
+		t.Helper()
+
+		entryCount, err := observer.Engine().LocalCache().EntrySet().EntryCount(ctx)
+		if err != nil {
+			t.Logf("failed to get cache entry count for debugging: %v", err)
+			return
+		}
+		t.Logf("cache entry count: %d", entryCount)
+	}
+
+	waitForUsageAtLeast := func(label string, target int, timeout time.Duration) int {
+		t.Helper()
+
+		deadline := time.Now().Add(timeout)
+		var usedBytes int
+		for {
+			usedBytes = getUsedBytes()
+			if usedBytes >= target {
+				return usedBytes
+			}
+			if time.Now().After(deadline) {
+				dumpCacheSummary()
+				t.Fatalf("%s: expected local cache usage >= %d bytes, got %d", label, target, usedBytes)
+			}
+			t.Logf("%s: local cache usage %d < %d, waiting", label, usedBytes, target)
+			time.Sleep(time.Second)
+		}
+	}
+
+	waitForUsageBelow := func(label string, target int, timeout time.Duration) int {
+		t.Helper()
+
+		deadline := time.Now().Add(timeout)
+		var usedBytes int
+		for {
+			usedBytes = getUsedBytes()
+			if usedBytes < target {
+				return usedBytes
+			}
+			if time.Now().After(deadline) {
+				dumpCacheSummary()
+				t.Fatalf("%s: expected local cache usage < %d bytes, got %d", label, target, usedBytes)
+			}
+			t.Logf("%s: local cache usage %d >= %d, waiting for disk-pressure GC", label, usedBytes, target)
+			time.Sleep(time.Second)
+		}
+	}
+
+	baselineUsedBytes := getUsedBytes()
+
+	seedClient := newNestedClient()
+	_, err = seedClient.
+		Container().
+		From(alpineImage).
+		WithEnvVariable("GC_PRESSURE_SEED", identity.NewID()).
+		WithExec([]string{
+			"sh", "-ec",
+			fmt.Sprintf("dd if=/dev/zero of=/seed bs=1M count=%d status=none", seedMB),
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, seedClient.Close())
+
+	usedAfterSeed := waitForUsageAtLeast("seed cache", baselineUsedBytes+seedSignalBytes, 30*time.Second)
+
+	// Let the no-pressure session-end GC run before introducing disk pressure.
+	time.Sleep(10 * time.Second)
+	usedAfterNoPressureGC := getUsedBytes()
+	require.GreaterOrEqual(t, usedAfterNoPressureGC, usedAfterSeed-seedSignalBytes/2, "seed should not be pruned before disk pressure exists")
+
+	activeClient := newNestedClient()
+	t.Cleanup(func() { _ = activeClient.Close() })
+
+	pressureSvc, err := activeClient.
+		Container().
+		From(alpineImage).
+		WithEnvVariable("GC_PRESSURE_ACTIVE", identity.NewID()).
+		WithExec([]string{
+			"sh", "-ec",
+			fmt.Sprintf("dd if=/dev/zero of=/pressure bs=1M count=%d status=none", pressureMB),
+		}).
+		WithDefaultArgs([]string{"sh", "-ec", "sleep 300"}).
+		AsService().
+		Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = pressureSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+
+	usedWithPressure := waitForUsageAtLeast("active pressure cache", usedAfterNoPressureGC+seedSignalBytes, 30*time.Second)
+
+	waitForUsageBelow(
+		"disk-pressure gc with active session",
+		usedWithPressure-seedSignalBytes,
+		45*time.Second,
+	)
+}
+
 func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	setup := func(ctx context.Context, t *testctx.T) (endpoint string, c2 *dagger.Client, addCacheBlock func(*testctx.T, string, int), getUsedBytes func(*testctx.T) int) {

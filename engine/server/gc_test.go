@@ -109,6 +109,25 @@ func TestResolveEngineLocalCachePrunePoliciesUsesAvailableSpaceForMinFree(t *tes
 	require.GreaterOrEqual(t, dstat.Free, prunePolicies[0].MinFreeSpace)
 }
 
+func TestLocalCacheDiskPressureGCNeeded(t *testing.T) {
+	dstat := disk.DiskStat{Available: 100}
+
+	require.False(t, localCacheDiskPressureGCNeeded(nil, dstat))
+	require.False(t, localCacheDiskPressureGCNeeded([]dagqlCachePrunePolicy{
+		{MinFreeSpace: 100},
+	}, dstat))
+	require.True(t, localCacheDiskPressureGCNeeded([]dagqlCachePrunePolicy{
+		{MinFreeSpace: 101},
+	}, dstat))
+	require.True(t, localCacheDiskPressureGCNeeded([]dagqlCachePrunePolicy{
+		{MinFreeSpace: 0},
+		{MinFreeSpace: 101},
+	}, dstat))
+	require.False(t, localCacheDiskPressureGCNeeded([]dagqlCachePrunePolicy{
+		{MaxUsedSpace: 1},
+	}, dstat))
+}
+
 func TestResolveEngineLocalCachePrunePoliciesInvalidSpaceValue(t *testing.T) {
 	dstat := disk.DiskStat{Total: 100 * 1e9}
 
