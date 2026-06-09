@@ -115,7 +115,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	githubOrgName string, // +optional
 	githubHost string, // +optional
 	githubCaCert *dagger.File, // +optional
-	githubReleaseToken *dagger.Secret, // +optional
 
 	netlifyToken *dagger.Secret, // +optional
 	netlifyAPIURL string, // +optional
@@ -146,9 +145,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	version := ""
 	if semver.IsValid(tag) {
 		version = tag
-	}
-	if githubReleaseToken == nil {
-		githubReleaseToken = githubToken
 	}
 
 	report := ReleaseReport{
@@ -411,7 +407,7 @@ func (r *Release) Publish( //nolint:gocyclo
 					if githubHost != "" {
 						repo = "https://" + githubHost + "/dagger/dagger"
 					}
-					if err := r.githubRelease(ctx, repo, commit, target, notes, githubReleaseToken, githubHost, githubCaCert, dryRun); err != nil {
+					if err := r.githubRelease(ctx, repo, commit, target, notes, githubToken, githubHost, githubCaCert, dryRun); err != nil {
 						artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 						return nil
 					}

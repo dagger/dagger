@@ -352,7 +352,6 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --registry-username "` + publishCheckRegistryUser + `" \
   --registry-password=env:REGISTRY_PASSWORD \
   --github-token=env:FAKE_GITHUB_TOKEN \
-  --github-release-token=env:FAKE_GITHUB_TOKEN \
   --github-org-name "dagger" \
   --github-host "github.test" \
   --github-ca-cert "/github-ca.pem" \

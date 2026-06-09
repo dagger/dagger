@@ -469,13 +469,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg githubCaCert", err))
 				}
 			}
-			var githubReleaseToken *dagger.Secret
-			if inputArgs["githubReleaseToken"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["githubReleaseToken"]), &githubReleaseToken)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg githubReleaseToken", err))
-				}
-			}
 			var netlifyToken *dagger.Secret
 			if inputArgs["netlifyToken"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["netlifyToken"]), &netlifyToken)
@@ -630,7 +623,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg discordWebhook", err))
 				}
 			}
-			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, githubToken, githubOrgName, githubHost, githubCaCert, githubReleaseToken, netlifyToken, netlifyApiurl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApikey, hexApiurl, cargoRegistryToken, cargoRegistryIndex, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
+			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, githubToken, githubOrgName, githubHost, githubCaCert, netlifyToken, netlifyApiurl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApikey, hexApiurl, cargoRegistryToken, cargoRegistryIndex, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
 		case "PublishWithMockEndpoints":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
