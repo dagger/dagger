@@ -197,6 +197,46 @@ func (*Viztest) ManyLines(n int) {
 	}
 }
 
+// PartialProgress emits synthetic streaming-progress log records (the
+// dagger.io/progress.* convention) with hard-coded values that never reach
+// completion, so the final frame deterministically renders partially filled
+// braille bars: complete, in-flight at various fractions, untouched, and
+// indeterminate (unknown total). A child span overflows the per-row item
+// cap to exercise +N truncation.
+// +cache="session"
+func (*Viztest) PartialProgress(ctx context.Context) {
+	emit := func(ctx context.Context, item string, current, total int64) {
+		rec := log.Record{}
+		rec.SetTimestamp(time.Now())
+		// explicit empty body: progress records are not log text, and an
+		// unset body does not survive the OTLP round-trip
+		rec.SetBody(log.StringValue(""))
+		rec.AddAttributes(
+			log.String("dagger.io/progress.item", item),
+			log.Int64("dagger.io/progress.current", current),
+			log.Int64("dagger.io/progress.total", total),
+			log.String("dagger.io/progress.unit", "bytes"),
+		)
+		telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
+	}
+
+	// one cell per fill state on the function's own span
+	emit(ctx, "layer-complete", 10_000_000, 10_000_000)
+	emit(ctx, "layer-almost", 9_000_000, 10_000_000)
+	emit(ctx, "layer-half", 5_000_000, 10_000_000)
+	emit(ctx, "layer-started", 1_000_000, 10_000_000)
+	emit(ctx, "layer-untouched", 0, 10_000_000)
+	emit(ctx, "layer-indeterminate", 5_000_000, 0)
+
+	func() {
+		ctx, span := Tracer().Start(ctx, "overflow")
+		defer span.End()
+		for i := range 50 {
+			emit(ctx, fmt.Sprintf("item-%d", i), 1024, 1024)
+		}
+	}()
+}
+
 // +cache="session"
 func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
 	ctx, span := Tracer().Start(ctx, "custom span")
