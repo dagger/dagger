@@ -257,7 +257,7 @@ func currentModuleSourceForEdit(ctx context.Context, dag *dagger.Client) (*dagge
 }
 
 func init() {
-	moduleCmd.AddCommand(moduleDepsCmd, moduleEngineCmd)
+	moduleCmd.AddCommand(moduleDepsCmd, moduleEngineCmd, moduleSdkCmd)
 	moduleDepsCmd.AddCommand(moduleDepsAddCmd, moduleDepsRmCmd, moduleDepsListCmd)
 	moduleEngineCmd.AddCommand(
 		moduleEngineRequiredCmd,
