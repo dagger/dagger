@@ -96,8 +96,9 @@ func ParseRuntimeCompatWorkspaceAt(data []byte, configPath string) (*CompatWorks
 
 // ParseMigrationCompatWorkspaceAt parses a legacy dagger.json for migration
 // planning. Unlike runtime loading, migration may need to plan a best-effort
-// diff for a module that requires a newer engine so `dagger migrate --force`
-// can still write reviewable workspace files.
+// diff for a module that requires a newer engine so `dagger setup` (with
+// the migration step's --force flow) can still write reviewable workspace
+// files.
 func ParseMigrationCompatWorkspaceAt(data []byte, configPath string) (*CompatWorkspace, error) {
 	cfg, err := parseLegacyConfig(data)
 	if err != nil {

@@ -968,7 +968,7 @@ func (src *ModuleSource) NestedLegacyWorkspaceLoadError() error {
 	ref := src.AsString()
 	if src.Kind == ModuleSourceKindLocal {
 		return fmt.Errorf(
-			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger migrate` in %q, then update this source to point at one of the migrated modules under %q",
+			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger setup` in %q, then update this source to point at one of the migrated modules under %q",
 			ref,
 			fields,
 			ref,
