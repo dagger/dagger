@@ -23,6 +23,7 @@ import (
 
 type currentTypeDefsTestServer struct {
 	deps             *core.SchemaBuilder
+	dag              *dagql.Server
 	workspaceLock    *workspace.Lock
 	workspaceLockOK  bool
 	workspaceLockErr error
@@ -81,7 +82,7 @@ func (s *currentTypeDefsTestServer) TelemetrySeenKeyStore(context.Context) (dagq
 }
 
 func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, error) {
-	return nil, nil
+	return s.dag, nil
 }
 
 func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Handler) error {

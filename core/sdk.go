@@ -337,6 +337,12 @@ type SDK interface {
 	// Transform the SDK into a ClientGenerator if it implements it.
 	AsClientGenerator() (ClientGenerator, bool)
 
+	// CloneForModuleSource returns an SDK implementation copy owned by the cloned
+	// ModuleSource. SDK implementations may hold cache-backed result wrappers and
+	// rewrite them during AttachDependencyResults, so ModuleSource clones must not
+	// share mutable SDK implementation state.
+	CloneForModuleSource(*ModuleSource) SDK
+
 	// AttachDependencyResults attaches any cache-backed results embedded in the
 	// SDK implementation and returns the results the owning ModuleSource must
 	// retain.
