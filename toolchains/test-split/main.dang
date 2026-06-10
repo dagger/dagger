@@ -42,7 +42,7 @@ type TestSplit {
   """
   pub testBase: Void @check {
     testSkip(
-      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestCachePersistence", "TestLocalCache", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
+      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestCachePersistence", "TestLocalCache", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace", "TestCollection$"],
       pkg: "./...",
       race: true,
     )
@@ -137,5 +137,17 @@ type TestSplit {
   """
   pub testWorkspaces: Void @check {
     testSpecific(["TestWorkspace"])
+  }
+
+  """
+  Test Collections
+
+  Runs the collection integration suite. Each test boots a nested dev
+  engine, which is too slow for the race-enabled base shard. The skip
+  pattern is anchored so the collection unit tests stay in the base
+  shard.
+  """
+  pub testCollections: Void @check {
+    testSpecific(["TestCollection$"])
   }
 }
