@@ -103,7 +103,8 @@ func (d DocsDev) References(
 	withAPIReference := dag.Docusaurus(withGqlSchema, opts).
 		Base().
 		WithExec([]string{"node", "plugins/dagger-api-reference/generate-stubs.js"}).
-		Directory("/src")
+		Directory("/src").
+		WithoutDirectory("docs/node_modules")
 	// 3. Generate CLI reference
 	withCliReference := src.WithFile("docs/current_docs/reference/cli/index.mdx", dag.DaggerCli().Reference(
 		dagger.DaggerCliReferenceOpts{
