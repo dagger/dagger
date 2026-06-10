@@ -121,15 +121,13 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 		return nil
 	}
 
-	if !confirm(cmd, "  Migrate legacy dagger.json project to the workspace format?") {
-		fmt.Fprintln(out, "  Skipped.")
-		return nil
-	}
-
 	exportPath, err := currentWorkspaceExportPath(ctx, ws)
 	if err != nil {
 		return err
 	}
+	// handleChangesetResponseAt owns the apply prompt via a huh form when
+	// autoApply is false — we don't run our own confirm() here, otherwise
+	// the user would face two prompts back-to-back for the same action.
 	return handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath)
 }
 
@@ -140,7 +138,9 @@ func setupStepRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Cli
 	fmt.Fprintln(out, "\nStep 3: Recommended modules")
 
 	recs, err := runRecommend(ctx, dag)
-	if errors.Is(err, errCloudNotAuthenticated) || strings.Contains(fmt.Sprint(err), "context canceled") {
+	if errors.Is(err, errCloudNotAuthenticated) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
 		// Login or context issues shouldn't fail setup as a whole.
 		fmt.Fprintf(out, "  Skipped: %v\n", err)
 		return nil
@@ -230,6 +230,11 @@ func workspaceRootFromCwd(wd, workspaceCwd string) (string, error) {
 // With --auto-apply, returns true without prompting.
 // In non-interactive mode (no TTY on stdin), returns false (the safe default
 // — skip rather than mutate state silently).
+//
+// The read is performed on a goroutine and races against ctx.Done() so a
+// SIGINT during the prompt cancels cleanly rather than blocking on stdin
+// forever. A read error other than EOF is reported to stderr instead of
+// being silently treated as "user said no."
 func confirm(cmd *cobra.Command, question string) bool {
 	if autoApply {
 		return true
@@ -239,11 +244,29 @@ func confirm(cmd *cobra.Command, question string) bool {
 		return false
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s [Y/n] ", question)
-	reader := bufio.NewReader(cmd.InOrStdin())
-	line, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return false
+
+	type readResult struct {
+		line string
+		err  error
 	}
-	line = strings.TrimSpace(strings.ToLower(line))
-	return line == "" || line == "y" || line == "yes"
+	done := make(chan readResult, 1)
+	go func() {
+		reader := bufio.NewReader(cmd.InOrStdin())
+		line, err := reader.ReadString('\n')
+		done <- readResult{line: line, err: err}
+	}()
+
+	ctx := cmd.Context()
+	select {
+	case <-ctx.Done():
+		fmt.Fprintln(cmd.OutOrStdout())
+		return false
+	case r := <-done:
+		if r.err != nil && !errors.Is(r.err, io.EOF) {
+			fmt.Fprintf(cmd.ErrOrStderr(), "prompt read error: %v\n", r.err)
+			return false
+		}
+		line := strings.TrimSpace(strings.ToLower(r.line))
+		return line == "" || line == "y" || line == "yes"
+	}
 }

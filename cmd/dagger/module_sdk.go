@@ -2,13 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/spf13/cobra"
 )
 
@@ -16,14 +18,20 @@ import (
 //
 // Form: `dagger module sdk <subcommand> [args...]`
 //
-// Reads the SDK identifier from the cwd module's config (today: the SDK
-// field on the ModuleSource). Translates that into the workspace-installed
-// name of the SDK module (last path segment, version-stripped), and runs
-// `dagger call <sdk-name> <subcommand> [args...]` via os/exec. Stdin /
-// stdout / stderr are inherited.
+// Locates the cwd module's dagger-module.toml (walking up to the workspace
+// root), reads its SDK declaration, derives the workspace-installed name
+// (last path segment, version-stripped), and runs
+// `dagger call <sdk-name> <subcommand> [args...]` via exec.CommandContext.
+// Stdin / stdout / stderr / env are inherited.
 //
 // The available subcommands depend entirely on what the SDK exposes —
 // there's no CLI-side contract beyond "you're an installed module."
+//
+// Implementation note: this wrapper deliberately does NOT open its own
+// engine session for the SDK lookup. The spawned `dagger call` opens its
+// own session; opening a parallel one in the parent would double-bootstrap
+// the engine and have two Frontends fighting over the same terminal. The
+// SDK declaration is read directly from dagger-module.toml on disk.
 var moduleSdkCmd = &cobra.Command{
 	Use:   "sdk <subcommand> [args...]",
 	Short: "Run SDK-specific commands against this module's SDK",
@@ -63,47 +71,76 @@ func runModuleSdk(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	}
 
-	return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, ec *client.Client) error {
-		sdkName, err := currentModuleSDKName(ctx, ec.Dagger())
-		if err != nil {
-			return err
-		}
+	sdkName, err := currentModuleSDKName()
+	if err != nil {
+		return err
+	}
 
-		// Dispatch as `dagger call <sdk-name> <args...>`. Forwarding through
-		// the CLI binary keeps the engine session, flag plumbing, and
-		// changeset apply flow consistent with what users would type
-		// directly.
-		fullArgs := append([]string{"call", sdkName}, args...)
-		sub := exec.Command(os.Args[0], fullArgs...)
-		sub.Stdin = os.Stdin
-		sub.Stdout = os.Stdout
-		sub.Stderr = os.Stderr
-		sub.Env = os.Environ()
-		return sub.Run()
-	})
+	ctx := cmd.Context()
+	fullArgs := append([]string{"call", sdkName}, args...)
+	sub := exec.CommandContext(ctx, os.Args[0], fullArgs...)
+	sub.Stdin = os.Stdin
+	sub.Stdout = os.Stdout
+	sub.Stderr = os.Stderr
+	sub.Env = os.Environ()
+
+	if err := sub.Run(); err != nil {
+		// Propagate the child's exit code so CI / shell pipelines see
+		// the real outcome instead of a flat 1.
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return idtui.ExitError{OriginalCode: exitErr.ExitCode()}
+		}
+		if errors.Is(err, context.Canceled) {
+			return idtui.ExitError{OriginalCode: 2}
+		}
+		return err
+	}
+	return nil
 }
 
-// currentModuleSDKName resolves the workspace-installed name of the SDK
-// for the module reachable from cwd. It reads ModuleSource(".").SDK().Source(),
-// which today returns either a short SDK identifier ("go") or a full module
-// ref ("github.com/dagger/go-sdk"). Either way, the conventional install
-// name is the final path segment (version stripped) — same convention
-// `dagger module init` uses when auto-installing an SDK.
-func currentModuleSDKName(ctx context.Context, dag *dagger.Client) (string, error) {
-	modSrc := dag.ModuleSource(".")
-	exists, err := modSrc.ConfigExists(ctx)
+// currentModuleSDKName locates the dagger-module.toml (or legacy dagger.json)
+// reachable from cwd and returns the workspace-installed name of its SDK.
+// Reads from disk; no engine session needed.
+func currentModuleSDKName() (string, error) {
+	configPath, err := findModuleConfigUpward()
 	if err != nil {
-		return "", fmt.Errorf("load module from cwd: %w", err)
+		return "", err
 	}
-	if !exists {
-		return "", fmt.Errorf("no dagger-module.toml found in current directory; run `dagger module sdk` from inside a module")
-	}
-	sdkSource, err := modSrc.SDK().Source(ctx)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return "", fmt.Errorf("read module SDK: %w", err)
+		return "", fmt.Errorf("read module config %q: %w", configPath, err)
 	}
-	if strings.TrimSpace(sdkSource) == "" {
-		return "", fmt.Errorf("this module has no SDK declared in dagger-module.toml")
+	cfg, err := modules.ParseModuleConfigForFilename(data, configPath)
+	if err != nil {
+		return "", fmt.Errorf("parse module config %q: %w", configPath, err)
 	}
-	return conventionalSDKModuleName(sdkSource), nil
+	if cfg.SDK == nil || strings.TrimSpace(cfg.SDK.Source) == "" {
+		return "", fmt.Errorf("module %q has no SDK declared in its config", configPath)
+	}
+	return conventionalSDKModuleName(cfg.SDK.Source), nil
+}
+
+// findModuleConfigUpward walks from cwd toward the filesystem root looking
+// for a dagger-module.toml or dagger.json. Returns the first match.
+func findModuleConfigUpward() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("getwd: %w", err)
+	}
+	dir := cwd
+	for {
+		for _, name := range modules.ConfigFilenames() {
+			candidate := filepath.Join(dir, name)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", fmt.Errorf("no dagger-module.toml found from %q upward; run `dagger module sdk` from inside a module", cwd)
 }
