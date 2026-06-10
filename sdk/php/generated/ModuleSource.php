@@ -290,6 +290,17 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
+     * The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
+     *
+     * Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
+     */
+    public function updatedConfigDirectory(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('updatedConfigDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * User-defined defaults read from local .env files
      */
     public function userDefaults(): EnvFile

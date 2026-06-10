@@ -6192,6 +6192,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::updatedConfigDirectory",
+			"p": "Dagger/ModuleSource.html#method_updatedConfigDirectory",
+			"d": "<p>The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::userDefaults",
 			"p": "Dagger/ModuleSource.html#method_userDefaults",
 			"d": "<p>User-defined defaults read from local .env files</p>"

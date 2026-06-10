@@ -30,7 +30,7 @@ import (
 var runCmd = &cobra.Command{
 	Use:     "exec [options] <command>...",
 	Aliases: []string{"run", "r"},
-	Short:   "Execute a command in a Dagger session",
+	Short:   "Run a command with a connected Dagger session (DAGGER_SESSION_PORT/TOKEN injected)",
 	Long: strings.ReplaceAll(
 		`Executes the specified command in a Dagger Session and displays
 live progress in a TUI.

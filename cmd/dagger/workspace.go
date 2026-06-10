@@ -32,6 +32,13 @@ var workspaceCmd = &cobra.Command{
 	Short:   "Inspect or configure your workspace (cwd, remotes, config, etc.)",
 	Long: `Inspect or configure your workspace.
 
+A workspace is a project configured to use Dagger — a directory holding
+a dagger.toml that records installed modules, environment overlays, and
+settings. Most commands (install, check, generate, up, settings, ...)
+operate on the workspace reachable from the current directory. The -W
+flag selects a different workspace (local path or git ref); --env
+applies a named overlay; dagger.toml is the source of truth.
+
 Run with no subcommand to print a digest of workspace state (cwd, root,
 current remote, installed modules summary).`,
 	Annotations: map[string]string{
