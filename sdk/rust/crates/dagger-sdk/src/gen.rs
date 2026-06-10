@@ -13121,11 +13121,16 @@ pub struct QueryContainerOpts {
     pub platform: Option<Platform>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryCurrentTypeDefsOpts {
+pub struct QueryCurrentTypeDefsOpts<'a> {
     /// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
     /// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
     #[builder(setter(into, strip_option), default)]
     pub hide_core: Option<bool>,
+    /// Narrow workspace module loading to the named modules (and their dependencies) before computing typedefs.
+    /// Each pattern is a workspace module name or "module:item"; a pattern that does not name a workspace module is ignored and every module is loaded.
+    /// Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
     /// Return the full referenced typedef closure instead of only top-level served typedefs.
     #[builder(setter(into, strip_option), default)]
     pub return_all_types: Option<bool>,
@@ -13407,9 +13412,9 @@ impl Query {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn current_type_defs_opts(
+    pub async fn current_type_defs_opts<'a>(
         &self,
-        opts: QueryCurrentTypeDefsOpts,
+        opts: QueryCurrentTypeDefsOpts<'a>,
     ) -> Result<Vec<TypeDef>, DaggerError> {
         let mut query = self.selection.select("currentTypeDefs");
         if let Some(return_all_types) = opts.return_all_types {
@@ -13417,6 +13422,9 @@ impl Query {
         }
         if let Some(hide_core) = opts.hide_core {
             query = query.arg("hideCore", hide_core);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
         }
         let query = query.select("id");
         let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;

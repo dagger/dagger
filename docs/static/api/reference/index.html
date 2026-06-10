@@ -590,6 +590,16 @@
                           <p>Core types (Container, Directory, etc.) are kept so return types and method chaining still work.</p>
                         </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span>
+                        </td>
+                        <td>
+                          <p>Narrow workspace module loading to the named modules (and their dependencies) before computing typedefs.</p>
+                          <p>Each pattern is a workspace module name or &quot;module:item&quot;; a pattern that does not name a workspace module is ignored and every module is loaded.</p>
+                          <p>Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.</p>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>

@@ -2336,6 +2336,15 @@ export type ClientCurrentTypeDefsOpts = {
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
   hideCore?: boolean
+
+  /**
+   * Narrow workspace module loading to the named modules (and their dependencies) before computing typedefs.
+   *
+   * Each pattern is a workspace module name or "module:item"; a pattern that does not name a workspace module is ignored and every module is loaded.
+   *
+   * Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.
+   */
+  include?: string[]
 }
 
 export type ClientEnvOpts = {
@@ -12961,6 +12970,11 @@ export class Client extends BaseClient {
    * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
    *
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+   * @param opts.include Narrow workspace module loading to the named modules (and their dependencies) before computing typedefs.
+   *
+   * Each pattern is a workspace module name or "module:item"; a pattern that does not name a workspace module is ignored and every module is loaded.
+   *
+   * Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.
    */
   currentTypeDefs = async (
     opts?: ClientCurrentTypeDefsOpts,
