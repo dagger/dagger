@@ -26,16 +26,11 @@ type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
 // dangModule identifies the module currently being evaluated. It lets the
 // runtime map the module's own local type names (e.g. an interface "Overlay")
 // to the namespaced names present in its runtime schema (e.g. "ModuleAOverlay")
-// when marshaling received values back into GraphQL queries. The zero value
-// means the executing module is unknown, in which case local names are used
-// as-is.
+// when marshaling received values back into GraphQL queries.
 type dangModule struct {
 	name         string // installed, namespaced module name
 	originalName string // module name as written in source
 }
-
-// known reports whether the executing module's identity is available.
-func (m dangModule) known() bool { return m.name != "" }
 
 func (r *runtime) eval(
 	ctx context.Context,
@@ -63,10 +58,8 @@ func (r *runtime) eval(
 			return json.Marshal(dagMod)
 		}
 
-		var module dangModule
-		if self := moduleContext.Self(); self != nil {
-			module = dangModule{name: self.Name(), originalName: self.OriginalName}
-		}
+		self := moduleContext.Self()
+		module := dangModule{name: self.Name(), originalName: self.OriginalName}
 
 		result, err := callDangFunction(ctx, env, fnCall, module)
 		if err != nil {
@@ -1114,19 +1107,17 @@ func (c dangConverter) convertObjectID(ctx context.Context, id string, modType *
 
 // schemaTypeName maps a (possibly module-local) type name to the name it has in
 // the given schema. A name already present is returned as-is (e.g. a dependency
-// type, already namespaced). Otherwise, if the executing module is known, the
-// name is one of its own local types and is namespaced to match what the engine
-// installed (requires the SELF_CALLS feature so the module's own types are
-// present in its runtime schema).
+// type, already namespaced). Otherwise it's one of the executing module's own
+// local types and is namespaced to match what the engine installed (requires
+// the SELF_CALLS feature so the module's own types are present in its runtime
+// schema).
 func (c dangConverter) schemaTypeName(schema *introspection.Schema, name string) string {
 	if schema != nil && schema.Types.Get(name) != nil {
 		return name
 	}
-	if c.module.known() {
-		namespaced := core.NamespaceObject(name, c.module.name, c.module.originalName)
-		if schema == nil || schema.Types.Get(namespaced) != nil {
-			return namespaced
-		}
+	namespaced := core.NamespaceObject(name, c.module.name, c.module.originalName)
+	if schema == nil || schema.Types.Get(namespaced) != nil {
+		return namespaced
 	}
 	return name
 }
