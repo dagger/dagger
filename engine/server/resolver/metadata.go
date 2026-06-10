@@ -58,7 +58,7 @@ func (r *Resolver) tryLocalCanonicalConfigMetadata(
 		return "", "", nil, found, err
 	}
 
-	manifestDesc, manifest, found, err := tryResolveLocalManifestDescriptor(ctx, r.contentStore, rootDesc, imageConfigPlatformMatcher(opts.Platform))
+	manifestDesc, manifest, found, err := tryResolveLocalManifestDescriptor(ctx, r.contentStore, rootDesc, imageConfigPlatformMatcher(opts.Platform), false)
 	if err != nil || !found {
 		return "", "", nil, false, err
 	}
@@ -89,6 +89,7 @@ func (r *Resolver) ensureImageConfigMetadata(
 	rootDesc ocispecs.Descriptor,
 	fetcher remotes.Fetcher,
 	matcher platforms.MatchComparer,
+	checkRootManifestPlatform bool,
 ) (_ *imageConfigMetadata, rerr error) {
 	ctx = contentutil.RegisterContentPayloadTypes(ctx)
 	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
@@ -139,7 +140,7 @@ func (r *Resolver) ensureImageConfigMetadata(
 		return nil, err
 	}
 
-	manifestDesc, manifest, err := resolveManifestDescriptor(leaseCtx, r.contentStore, rootDesc, matcher)
+	manifestDesc, manifest, err := resolveManifestDescriptor(leaseCtx, r.contentStore, rootDesc, matcher, checkRootManifestPlatform)
 	if err != nil {
 		return nil, err
 	}
