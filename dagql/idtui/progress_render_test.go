@@ -137,6 +137,53 @@ func TestRenderProgressTrack(t *testing.T) {
 	}
 }
 
+// TestRenderProgressObjectUnit covers non-byte units (e.g. a git fetch
+// counting objects): the summary shows raw counts with the unit name
+// instead of humanized byte sizes.
+func TestRenderProgressObjectUnit(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	fetchID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:        fetchID,
+			TraceID:   prettyTestTraceID(),
+			ParentID:  rootID,
+			Name:      "fetching github.com/dagger/dagger",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	db.Spans.Map[fetchID].Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+		{Name: "objects", Current: 1234, Total: 2900, Unit: "objects"},
+	}}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.ExpandCompleted = true
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	got := strings.Join(fe.tui.RenderLines(), "\n")
+	if want := "fetching github.com/dagger/dagger 1.0s █████░░░░░░░ 1234/2900 objects"; !strings.Contains(got, want) {
+		t.Errorf("render missing object-unit track %q:\n%s", want, got)
+	}
+}
+
 // TestRenderProgressSpanRows covers encapsulated descendants that report
 // progress: each renders as its own labeled bar-first row — revealed in the
 // tree when its ancestors are expanded, rolled up beneath the nearest

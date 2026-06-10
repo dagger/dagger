@@ -35,9 +35,10 @@ func DisplayRef(ref string) string {
 const ProgressEmitInterval = 100 * time.Millisecond
 
 // EmitProgress sends one streaming-progress log record for the named item,
-// attributed to the current span via ctx. See engine/telemetryattrs for the
+// attributed to the current span via ctx. The unit names what current/total
+// count, e.g. "bytes" or "objects"; see engine/telemetryattrs for the
 // conventions.
-func EmitProgress(ctx context.Context, item string, current, total int64) {
+func EmitProgress(ctx context.Context, item string, current, total int64, unit string) {
 	rec := log.Record{}
 	rec.SetTimestamp(time.Now())
 	// Explicit empty body: log consumers skip empty-bodied records as text,
@@ -48,8 +49,10 @@ func EmitProgress(ctx context.Context, item string, current, total int64) {
 		log.String(telemetryattrs.ProgressItemAttr, item),
 		log.Int64(telemetryattrs.ProgressCurrentAttr, current),
 		log.Int64(telemetryattrs.ProgressTotalAttr, total),
-		log.String(telemetryattrs.ProgressUnitAttr, "bytes"),
 	)
+	if unit != "" {
+		rec.AddAttributes(log.String(telemetryattrs.ProgressUnitAttr, unit))
+	}
 	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
 }
 
@@ -71,7 +74,7 @@ func newProgressTracker(ctx context.Context, item string, total int64) *progress
 		item:  item,
 		total: total,
 	}
-	EmitProgress(ctx, item, 0, total)
+	EmitProgress(ctx, item, 0, total, "bytes")
 	return pt
 }
 
@@ -85,11 +88,11 @@ func (pt *progressTracker) update(current int64) {
 	}
 	pt.lastEmit = now
 	pt.mu.Unlock()
-	EmitProgress(pt.ctx, pt.item, current, pt.total)
+	EmitProgress(pt.ctx, pt.item, current, pt.total, "bytes")
 }
 
 func (pt *progressTracker) finish() {
-	EmitProgress(pt.ctx, pt.item, pt.total, pt.total)
+	EmitProgress(pt.ctx, pt.item, pt.total, pt.total, "bytes")
 }
 
 // NewProgressReader wraps r to stream its read progress as one item via the
@@ -139,5 +142,5 @@ func (pr *progressReader) emitFinal() {
 	if total <= 0 {
 		total = pr.read
 	}
-	EmitProgress(pr.tracker.ctx, pr.tracker.item, pr.read, total)
+	EmitProgress(pr.tracker.ctx, pr.tracker.item, pr.read, total, "bytes")
 }

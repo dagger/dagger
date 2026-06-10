@@ -94,5 +94,5 @@ func (pw *progressWriter) emit(force bool) {
 	pw.lastEmit = now
 	current := pw.offset
 	pw.mu.Unlock()
-	snapshots.EmitProgress(pw.ctx, pw.item, current, pw.total)
+	snapshots.EmitProgress(pw.ctx, pw.item, current, pw.total, "bytes")
 }

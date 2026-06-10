@@ -3650,10 +3650,19 @@ func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) s
 	}
 
 	current, total := span.Progress.Totals()
-	if items[0].Unit == "bytes" && total > 0 {
-		summary := humanizeBytes(current)
-		if current < total {
-			summary += "/" + humanizeBytes(total)
+	if unit := items[0].Unit; unit != "" && total > 0 {
+		var summary string
+		if unit == "bytes" {
+			summary = humanizeBytes(current)
+			if current < total {
+				summary += "/" + humanizeBytes(total)
+			}
+		} else {
+			summary = strconv.FormatInt(current, 10)
+			if current < total {
+				summary += "/" + strconv.FormatInt(total, 10)
+			}
+			summary += " " + unit
 		}
 		sb.WriteString(out.String(" " + summary).Faint().String())
 	}
