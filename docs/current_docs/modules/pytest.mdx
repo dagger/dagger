@@ -27,7 +27,7 @@ dagger check pytest:test # run Pytest against the project source
 
 ## Test options
 
-The `pytest:test` check runs with default options. Call the `test` function directly with `dagger function call` to override them:
+The `pytest:test` check runs with default options. Call the `test` function directly with `dagger api call` to override them:
 
 - **`version`** (default `3.14`): the Python version the default container provisions, such as `3.13` or `3.12`. Ignored when a custom `container` is set, since that container's Python is used as-is.
 - **`args`** (default `["-v"]`): arguments passed straight to `pytest`, such as `["-x", "--tb=short"]`.

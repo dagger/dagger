@@ -10930,6 +10930,13 @@
                         </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-updatedConfigDirectory" href="#ModuleSource-updatedConfigDirectory"><code>updatedConfigDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td>
+                          <p>The module&#39;s dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source&#39;s context directory.</p>
+                          <p>Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.</p>
+                        </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-userDefaults" href="#ModuleSource-userDefaults"><code>userDefaults</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
                         <td> User-defined defaults read from local .env files </td>
                       </tr>

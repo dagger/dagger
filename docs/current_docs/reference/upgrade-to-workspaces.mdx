@@ -42,10 +42,10 @@ goVersion = "1.22"
 No. Backwards compatibility will infer a workspace from your existing `dagger.json`. You'll see a warning, but everything will continue to work. When you're ready:
 
 ```shell
-dagger migrate
+dagger setup
 ```
 
-This automatically converts workspace fields from legacy `dagger.json` into `dagger.toml`, and converts plain module-shaped `dagger.json` files to `dagger-module.toml`. If anything needs manual attention, it creates `.dagger/migration-report.md` with instructions.
+`dagger setup` walks through three steps with per-step prompts; the middle step converts workspace fields from legacy `dagger.json` into `dagger.toml`, and converts plain module-shaped `dagger.json` files to `dagger-module.toml`. If anything needs manual attention, it creates `.dagger/migration-report.md` with instructions.
 
 ## What happened to module-management commands?
 
