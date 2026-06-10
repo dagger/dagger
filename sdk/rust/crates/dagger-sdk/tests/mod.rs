@@ -300,6 +300,25 @@ async fn test_container_sync_roundtrip() {
 }
 
 #[tokio::test]
+async fn test_deeply_chained_calls() {
+    // regression test for https://github.com/dagger/dagger/issues/13397:
+    // responses nest one JSON level per chained call, which used to exceed
+    // serde_json's default 128-level recursion limit
+    connect(|client| async move {
+        let mut container = client.container().from("alpine:3.16.2");
+        for i in 0..150 {
+            container = container.with_env_variable(format!("V{i}"), "x");
+        }
+        let out = container.with_exec(vec!["echo", "ok"]).stdout().await?;
+
+        assert_eq!(out, "ok\n".to_string());
+        Ok(())
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn test_env_variables() {
     connect(|client| async move {
         let envs = client

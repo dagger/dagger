@@ -186,9 +186,50 @@ struct RequestBody<T: Serialize> {
 }
 
 #[derive(Deserialize, Debug)]
-struct GraphQLResponse<T> {
-    data: Option<T>,
-    errors: Option<Vec<GraphQLErrorMessage>>,
+pub(crate) struct GraphQLResponse<T> {
+    pub(crate) data: Option<T>,
+    pub(crate) errors: Option<Vec<GraphQLErrorMessage>>,
+}
+
+/// Dagger responses nest one JSON level per chained call, which exceeds
+/// serde_json's default 128-level recursion limit on long lazy chains, so
+/// parse with the limit disabled and a dynamically growing stack instead.
+pub(crate) fn parse_graphql_response<K>(body: &str) -> Result<GraphQLResponse<K>, serde_json::Error>
+where
+    K: for<'de> Deserialize<'de>,
+{
+    let mut deserializer = serde_json::Deserializer::from_str(body);
+    deserializer.disable_recursion_limit();
+    let response =
+        GraphQLResponse::deserialize(serde_stacker::Deserializer::new(&mut deserializer))?;
+    // from_str rejects trailing data after the value; keep that behavior
+    deserializer.end()?;
+    Ok(response)
+}
+
+fn parse_response_error(err: serde_json::Error, body: &str) -> GraphQLError {
+    const MAX_BODY_BYTES: usize = 1024;
+    let prefix = truncate_to_char_boundary(body, MAX_BODY_BYTES);
+    let truncation_note = if prefix.len() < body.len() {
+        format!(" ... (truncated, {} bytes total)", body.len())
+    } else {
+        String::new()
+    };
+    GraphQLError::with_text(format!(
+        "Failed to parse response: {:?}. The response body is: {}{}",
+        err, prefix, truncation_note
+    ))
+}
+
+fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 impl GQLClient {
@@ -368,13 +409,8 @@ impl GQLClient {
                 .await
                 .map_err(|e| GraphQLError::with_text(format!("Can not get response: {:?}", e)))?;
 
-            let json: GraphQLResponse<K> =
-                serde_json::from_str(&response_body_text).map_err(|e| {
-                    GraphQLError::with_text(format!(
-                        "Failed to parse response: {:?}. The response body is: {}",
-                        e, response_body_text
-                    ))
-                })?;
+            let json: GraphQLResponse<K> = parse_graphql_response(&response_body_text)
+                .map_err(|e| parse_response_error(e, &response_body_text))?;
 
             if !status.is_success() {
                 return Err(GraphQLError::with_message_and_json(
@@ -397,5 +433,66 @@ impl GQLClient {
 
             return Ok(json.data);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn nested_response_body(depth: usize) -> String {
+        let mut body = String::from(r#"{"data":"#);
+        for _ in 0..depth {
+            body.push_str(r#"{"a":"#);
+        }
+        body.push_str(r#"{"stdout":"ok"}"#);
+        body.push_str(&"}".repeat(depth));
+        body.push('}');
+        body
+    }
+
+    #[test]
+    fn parses_response_nested_past_default_recursion_limit() {
+        let depth = 500;
+        let resp = parse_graphql_response::<serde_json::Value>(&nested_response_body(depth))
+            .expect("deeply nested response should parse");
+
+        let mut data = resp.data.expect("data should be present");
+        for _ in 0..depth {
+            data = data["a"].take();
+        }
+        assert_eq!(data["stdout"], "ok");
+    }
+
+    #[test]
+    fn parse_error_truncates_body_at_char_boundary() {
+        // a leading 1-byte char shifts every two-byte char off even offsets,
+        // so the 1024-byte cut lands mid-char and must back off to 1023
+        let body = format!("x{}", "é".repeat(700));
+        let err =
+            parse_graphql_response::<serde_json::Value>(&body).expect_err("body is not valid json");
+
+        let message = parse_response_error(err, &body).message().to_string();
+        assert!(message.contains(&format!("(truncated, {} bytes total)", body.len())));
+        assert!(message.contains(&format!("x{}", "é".repeat(511))));
+        assert!(!message.contains(&"é".repeat(512)));
+    }
+
+    #[test]
+    fn parse_rejects_trailing_garbage() {
+        let err = parse_graphql_response::<serde_json::Value>(r#"{"data":null} trailing"#)
+            .expect_err("trailing data should be rejected");
+        assert!(err.to_string().contains("trailing characters"));
+    }
+
+    #[test]
+    fn parse_error_keeps_short_body_intact() {
+        let body = "not json";
+        let err =
+            parse_graphql_response::<serde_json::Value>(body).expect_err("body is not valid json");
+
+        let message = parse_response_error(err, body).message().to_string();
+        assert!(message.contains("The response body is: not json"));
+        assert!(!message.contains("truncated"));
     }
 }
