@@ -784,14 +784,22 @@ func (span *Span) Hidden(opts FrontendOpts) bool {
 		// internal spans are hidden by default
 		return true
 	}
-	if span.ParentSpan != nil &&
+	return span.EncapsulationHidden(opts)
+}
+
+// EncapsulationHidden reports whether the span is hidden as an encapsulated
+// internal detail of a parent that didn't fail. Encapsulated steps are
+// hidden - even on error, e.g. a registry's routine 401 auth challenge -
+// unless their parent errors.
+func (span *Span) EncapsulationHidden(opts FrontendOpts) bool {
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	return span.ParentSpan != nil &&
 		(span.Encapsulated || span.ParentSpan.Encapsulate) &&
 		!span.ParentSpan.IsFailed() &&
-		verbosity < ShowEncapsulatedVerbosity {
-		// encapsulated steps are hidden (even on error) unless their parent errors
-		return true
-	}
-	return false
+		verbosity < ShowEncapsulatedVerbosity
 }
 
 func (span *Span) IsRunning() bool {

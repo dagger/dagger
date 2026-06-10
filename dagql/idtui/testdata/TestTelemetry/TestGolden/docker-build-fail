@@ -3,7 +3,7 @@ Expected stderr:
 ✔ connect X.Xs
 ├╴✔ starting engine X.Xs
 ├╴✔ connecting to engine X.Xs
-│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+│ ┃ XX:XX:XX INF connected name=bbd7a7bcae27 client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
 
 ✔ load workspace: . X.Xs
@@ -22,8 +22,6 @@ $ viztest: Viztest! X.Xs CACHED
   │ ! stat .dockerignore: no such file or directory
   │
   ├╴✔ resolving docker.io/library/busybox:1.34 X.Xs
-  │ ╰╴✔ remotes.docker.resolver.HTTPRequest X.Xs
-  │   ╰╴✔ HTTP HEAD X.Xs
   │
   ├╴$ Container.from(address: "docker.io/library/busybox:1.34@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Container! X.Xs CACHED
   │
