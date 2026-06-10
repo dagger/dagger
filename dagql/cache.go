@@ -28,6 +28,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -2803,6 +2804,12 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 			shared.lazyEvalErr = nil
 		}
 		shared.lazyMu.Unlock()
+		// Tag the failure with the result it belongs to so that an enclosing
+		// lazy callback's resume span can tell "a prerequisite failed" apart
+		// from "my own deferred work failed". See blockedOnPrerequisite.
+		if waitErr != nil {
+			waitErr = &prerequisiteEvalError{err: waitErr, resultID: shared.id}
+		}
 	case <-ctx.Done():
 		waitErr = context.Cause(ctx)
 		shared.lazyMu.Lock()
@@ -2817,37 +2824,27 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 	return waitErr
 }
 
-// evaluateLivenessDeps forces all of resultID's parent.deps before its own
-// lazy callback fires. This keeps chained downstream calls pending instead
-// of firing redundant resume spans when an upstream prerequisite fails:
-// the failing dep's resume span attributes via its install_spans, and our
-// own resume span never starts to forward the cascaded error.
-func (c *Cache) evaluateLivenessDeps(ctx context.Context, resultID sharedResultID) error {
-	if c == nil || resultID == 0 {
-		return nil
+// prerequisiteEvalError wraps a lazy-evaluation failure with the identity of
+// the result whose evaluation failed. It does not change the error message;
+// it only carries provenance so enclosing evaluations can classify cascaded
+// failures without forcing prerequisite evaluation order.
+type prerequisiteEvalError struct {
+	err      error
+	resultID sharedResultID
+}
+
+func (e *prerequisiteEvalError) Error() string { return e.err.Error() }
+func (e *prerequisiteEvalError) Unwrap() error { return e.err }
+
+// blockedOnPrerequisite reports whether err originated from evaluating a
+// result other than selfID — i.e. the current result's lazy callback was
+// blocked by a failing prerequisite rather than failing its own work.
+func blockedOnPrerequisite(err error, selfID sharedResultID) bool {
+	var prereq *prerequisiteEvalError
+	if !errors.As(err, &prereq) {
+		return false
 	}
-	c.egraphMu.RLock()
-	res := c.resultsByID[resultID]
-	if res == nil || len(res.deps) == 0 {
-		c.egraphMu.RUnlock()
-		return nil
-	}
-	deps := make([]AnyResult, 0, len(res.deps))
-	for depID := range res.deps {
-		dep := c.resultsByID[depID]
-		if dep == nil {
-			c.egraphMu.RUnlock()
-			return fmt.Errorf("evaluate liveness dep: result %d depends on missing result %d", resultID, depID)
-		}
-		deps = append(deps, Result[Typed]{shared: dep})
-	}
-	c.egraphMu.RUnlock()
-	for _, dep := range deps {
-		if err := c.evaluateOne(ctx, dep); err != nil {
-			return err
-		}
-	}
-	return nil
+	return prereq.resultID != selfID
 }
 
 func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
@@ -2900,16 +2897,6 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		return nil
 	}
 	shared.lazyMu.Unlock()
-
-	// Preflight liveness deps before claiming the lazy state. Each parent.deps
-	// edge is a prerequisite: if it fails, our lazy callback shouldn't fire
-	// (and shouldn't create a resume span that mis-attributes the cascade).
-	// Attribution is direct lookup against install_spans, so the failing dep
-	// is responsible for cause-linking its own owners — no need to fire a
-	// resume span here just to forward the same error.
-	if err := c.evaluateLivenessDeps(stackCtx, shared.id); err != nil {
-		return err
-	}
 
 	shared.lazyMu.Lock()
 	currentLazyEval := lazyEvalFuncOfResult(res)
@@ -2985,7 +2972,19 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		// race with the caller's flush/read of exported spans.
 		runEval := func() {
 			if resumeSpan != nil {
-				defer telemetry.EndWithCause(resumeSpan, &err)
+				defer func() {
+					// If the callback failed only because a prerequisite
+					// result's evaluation failed, this result's own deferred
+					// work never ran. Mark the resume span blocked so the UI
+					// returns the owning API spans to pending instead of
+					// marking them caused-failed with the cascaded error. The
+					// failing prerequisite's own resume span carries the real
+					// failure and its install-span cause links.
+					if err != nil && blockedOnPrerequisite(err, shared.id) {
+						resumeSpan.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
+					}
+					telemetry.EndWithCause(resumeSpan, &err)
+				}()
 			}
 
 			leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))

@@ -15,10 +15,12 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine"
 	snapshots "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -511,6 +513,184 @@ func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
 	}
 	assert.Assert(t, sawChild, "expected nested lazy child span to be recorded")
 	assert.Assert(t, sawResume, "expected hidden resume span to be recorded")
+}
+
+// When a lazy callback fails only because a prerequisite result's evaluation
+// failed, the callback's own resume span must be marked blocked
+// (dagger.io/dag.blocked) so the UI returns the owning API spans to pending.
+// The prerequisite's own resume span carries the real failure unmarked.
+func TestEvaluateLazyPrerequisiteFailureMarksResumeBlocked(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, cacheIface)
+	c := cacheIface
+	srv := cacheTestServer(t)
+
+	spanExporter := &cacheTestSpanExporter{}
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+	defer tracerProvider.Shutdown(t.Context())
+
+	originalCtx, originalSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "original")
+
+	depErr := errors.New("dep exploded")
+	depCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "lazyDep",
+	}
+	depRes, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: depCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, depCall, &cacheTestObject{
+			Value: 1,
+			lazyEval: func(context.Context) error {
+				return depErr
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	tipCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "lazyTip",
+	}
+	tipRes, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: tipCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, tipCall, &cacheTestObject{
+			Value: 2,
+			lazyEval: func(ctx context.Context) error {
+				return c.Evaluate(ctx, depRes)
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	triggerCtx, triggerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "trigger")
+	evalErr := c.Evaluate(triggerCtx, tipRes)
+	assert.Assert(t, evalErr != nil)
+	assert.ErrorContains(t, evalErr, "dep exploded")
+	triggerSpan.End()
+	originalSpan.End()
+
+	assert.NilError(t, tracerProvider.ForceFlush(t.Context()))
+
+	spanExporter.mu.Lock()
+	spans := append([]sdktrace.ReadOnlySpan(nil), spanExporter.spans...)
+	spanExporter.mu.Unlock()
+
+	spanBlocked := func(span sdktrace.ReadOnlySpan) bool {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == telemetryattrs.DagBlockedAttr {
+				return attr.Value.AsBool()
+			}
+		}
+		return false
+	}
+
+	var sawTipResume, sawDepResume bool
+	for _, span := range spans {
+		switch span.Name() {
+		case "resume lazyTip":
+			sawTipResume = true
+			assert.Equal(t, span.Status().Code, codes.Error)
+			assert.Assert(t, spanBlocked(span), "tip resume span should be marked blocked")
+		case "resume lazyDep":
+			sawDepResume = true
+			assert.Equal(t, span.Status().Code, codes.Error)
+			assert.Assert(t, !spanBlocked(span), "dep resume span carries the real failure and must not be blocked")
+			assert.Equal(t, span.Status().Description, "dep exploded")
+		}
+	}
+	assert.Assert(t, sawTipResume, "expected tip resume span to be recorded")
+	assert.Assert(t, sawDepResume, "expected dep resume span to be recorded")
+}
+
+// A lazy callback that fails its own work (no prerequisite involved) must not
+// be classified as blocked, even when other evaluations happened earlier.
+func TestEvaluateLazyOwnFailureNotMarkedBlocked(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, cacheIface)
+	c := cacheIface
+	srv := cacheTestServer(t)
+
+	spanExporter := &cacheTestSpanExporter{}
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+	defer tracerProvider.Shutdown(t.Context())
+
+	originalCtx, originalSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "original")
+
+	depCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "okDep",
+	}
+	depRes, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: depCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, depCall, &cacheTestObject{
+			Value: 1,
+			lazyEval: func(context.Context) error {
+				return nil
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	tipCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "ownFailTip",
+	}
+	tipRes, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: tipCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, tipCall, &cacheTestObject{
+			Value: 2,
+			lazyEval: func(ctx context.Context) error {
+				if err := c.Evaluate(ctx, depRes); err != nil {
+					return err
+				}
+				return errors.New("my own work failed")
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	triggerCtx, triggerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "trigger")
+	evalErr := c.Evaluate(triggerCtx, tipRes)
+	assert.Assert(t, evalErr != nil)
+	assert.ErrorContains(t, evalErr, "my own work failed")
+	triggerSpan.End()
+	originalSpan.End()
+
+	assert.NilError(t, tracerProvider.ForceFlush(t.Context()))
+
+	spanExporter.mu.Lock()
+	spans := append([]sdktrace.ReadOnlySpan(nil), spanExporter.spans...)
+	spanExporter.mu.Unlock()
+
+	var sawTipResume bool
+	for _, span := range spans {
+		if span.Name() != "resume ownFailTip" {
+			continue
+		}
+		sawTipResume = true
+		assert.Equal(t, span.Status().Code, codes.Error)
+		for _, attr := range span.Attributes() {
+			assert.Assert(t, string(attr.Key) != telemetryattrs.DagBlockedAttr,
+				"own failure must not be marked blocked")
+		}
+	}
+	assert.Assert(t, sawTipResume, "expected tip resume span to be recorded")
 }
 
 func (*cacheTestObject) Type() *ast.Type {
