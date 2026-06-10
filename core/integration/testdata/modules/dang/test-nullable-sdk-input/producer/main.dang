@@ -1,11 +1,11 @@
 type Foo {
-  pub file: File
-  pub secret: Secret
-  pub note: String
+  file: File
+  secret: Secret
+  note: String
 }
 
 type Producer {
-  pub make(
+  make(
     file: File = null,
     secret: Secret = null,
     note: String = null,
@@ -13,7 +13,7 @@ type Producer {
     Foo(file, secret, note)
   }
 
-  pub use(foo: Foo!): String! {
+  use(foo: Foo!): String! {
     "ok"
   }
 }
