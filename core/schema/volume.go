@@ -59,6 +59,16 @@ func (s *volumeSchema) sshfsVolume(ctx context.Context, parent dagql.ObjectResul
 	}
 
 	endpoint := args.Endpoint
+	// On success the backing service must keep running for as long as the
+	// sshfs volume is mounted: the engine-managed mount and every exec that
+	// later mounts the volume far outlive this resolver call, so the service
+	// binding is intentionally NOT detached here. Detaching would stop the
+	// service after DetachGracePeriod, leaving the persistent sshfs mount
+	// pointing at a dead remote (EIO on subsequent execs). The binding is
+	// released by normal session cleanup. detachOnErr is only invoked on a
+	// failure path below so we don't leak the service if registration never
+	// completes.
+	detachOnErr := func() {}
 	if args.ExperimentalServiceHost.Valid {
 		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, srv)
 		if err != nil {
@@ -83,18 +93,21 @@ func (s *volumeSchema) sshfsVolume(ctx context.Context, parent dagql.ObjectResul
 		if err != nil {
 			return i, err
 		}
-		defer detach()
+		detachOnErr = detach
 		if len(running) == 0 || running[0] == nil {
+			detach()
 			return i, fmt.Errorf("resolve running service for sshfs host")
 		}
 		endpoint, err = withSSHFSRunningHost(endpoint, running[0].Host)
 		if err != nil {
+			detach()
 			return i, err
 		}
 	}
 
 	vol, err := query.Server.RegisterSSHFSVolume(ctx, endpoint, privateKey.Self(), publicKey.Self())
 	if err != nil {
+		detachOnErr()
 		return i, fmt.Errorf("register sshfs volume: %w", err)
 	}
 

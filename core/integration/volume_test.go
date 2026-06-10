@@ -31,9 +31,12 @@ func TestVolume(t *testing.T) {
 //   - Worker.setupHostMounts binds the volume's MountPath rw into each exec
 //
 // Flow: stand up sshd-in-container, register the sshfs volume against that
-// service, then exercise it three times: (1) read pre-seeded content,
-// (2) write a file from inside the container, (3) a fresh container reads
-// the written file back. If any link drops read/write state, step 3 fails.
+// service, then exercise it: (1) read pre-seeded content, (2) write a file
+// from inside the container, (3) a fresh container reads the written file
+// back, (4) re-register the same endpoint and confirm the independent handle
+// observes the same state (refcount-by-id), (5) round-trip a 1GiB file to
+// confirm large transfers stream intact. If any link drops read/write state,
+// these steps fail.
 func (VolumeSuite) TestSSHFSVolume(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -192,4 +195,46 @@ sleep infinity
 	require.NoError(t, err)
 	t.Logf("Third container read shows: %q", strings.TrimSpace(output2))
 	require.Contains(t, output2, "other")
+
+	// 4) Repeat against the same mounted volume: a fresh container reusing the
+	// existing handle must still observe both the seed content and the earlier
+	// write, confirming the mount stays usable across independent execs.
+	repeatOut, err := c.Container().
+		From(alpineImage).
+		WithVolumeMount("/mnt/repo", sshfsVolume).
+		WithExec([]string{"sh", "-c", "cat /mnt/repo/test.txt /mnt/repo/other.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, repeatOut, "test")
+	require.Contains(t, repeatOut, "other")
+
+	// 5) A large (1GiB) file must round-trip through the sshfs mount intact.
+	// Write random data and capture its checksum in one container, then read
+	// it back in a fresh container and require the size and checksum match.
+	const bigFileMiB = 1024
+	const bigFileBytes = bigFileMiB * 1024 * 1024
+
+	writeBig, err := c.Container().
+		From(alpineImage).
+		WithVolumeMount("/mnt/repo", sshfsVolume).
+		WithExec([]string{"sh", "-c", fmt.Sprintf(
+			"dd if=/dev/urandom of=/mnt/repo/big.bin bs=1M count=%d 2>/dev/null && sha256sum /mnt/repo/big.bin | cut -d' ' -f1",
+			bigFileMiB,
+		)}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	writeSum := strings.TrimSpace(writeBig)
+	require.Len(t, writeSum, 64, "expected a sha256 hex digest from the writer")
+
+	readBig, err := c.Container().
+		From(alpineImage).
+		WithVolumeMount("/mnt/repo", sshfsVolume).
+		WithExec([]string{"sh", "-c", "printf '%s %s' \"$(stat -c %s /mnt/repo/big.bin)\" \"$(sha256sum /mnt/repo/big.bin | cut -d' ' -f1)\""}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	fields := strings.Fields(readBig)
+	require.Len(t, fields, 2, "expected '<size> <sha256>' from the reader, got %q", readBig)
+	require.Equal(t, fmt.Sprintf("%d", bigFileBytes), fields[0], "1GiB file size mismatch across sshfs round-trip")
+	require.Equal(t, writeSum, fields[1], "1GiB file checksum mismatch across sshfs round-trip")
 }
