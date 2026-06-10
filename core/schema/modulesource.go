@@ -211,6 +211,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
+		dagql.NodeFunc("updatedConfigDirectory", s.moduleSourceUpdatedConfigDirectory).
+			Doc(`The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.`,
+				`Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.`),
+
 		dagql.NodeFunc("generatedContextChangeset", s.moduleSourceGeneratedContextChangeset).
 			Doc(`The generated files and directories made on top of the module source's context directory, returned as a Changeset.`),
 
@@ -2345,7 +2349,37 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 	return s.moduleSourceRemoveItems(ctx, parentSrc, args.Dependencies, accessor)
 }
 
+// loadModuleSourceConfig builds the module config from the in-memory
+// ModuleSource and validates that the resulting engine version is loadable by
+// the running engine. Use buildModuleConfig directly to obtain the config
+// without that gate (e.g. when only persisting a declared engine version
+// requirement via updatedConfigDirectory).
 func (s *moduleSourceSchema) loadModuleSourceConfig(
+	src *core.ModuleSource,
+) (*modules.ModuleConfigWithUserFields, error) {
+	modCfg, err := s.buildModuleConfig(src)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check version compatibility.
+	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
+		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
+	}
+	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
+	}
+
+	return modCfg, nil
+}
+
+// buildModuleConfig converts the in-memory ModuleSource into a serializable
+// ModuleConfigWithUserFields. It does NOT validate the engine version against
+// the running engine — callers that need to write the config without loading
+// the module (e.g. declaring a required engine version newer than what they
+// currently run) use this directly. loadModuleSourceConfig is the validating
+// wrapper used by runGeneratedContext and other load/serve paths.
+func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
 	// construct the module config based on any config read during load and any settings changed via with* APIs
@@ -2379,14 +2413,6 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	}
 	if format == modules.ConfigFormatLegacy {
 		modCfg.Toolchains = src.ConfigToolchains
-	}
-
-	// Check version compatibility.
-	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
-		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
-	}
-	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
-		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
 	}
 
 	// Load the module config source based on sourcePath.
@@ -2792,6 +2818,72 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 			Field: "diff",
 			Args: []dagql.NamedInput{
 				{Name: "other", Value: dagql.NewID[*core.Directory](genDirInstID)},
+			},
+		},
+	)
+	if err != nil {
+		return res, fmt.Errorf("failed to get context dir diff: %w", err)
+	}
+
+	return res, nil
+}
+
+// moduleSourceUpdatedConfigDirectory returns the source's context directory
+// with an updated dagger.json reflecting any in-memory edits applied via with*
+// APIs, as a diff relative to the original context directory. Unlike
+// generatedContextDirectory it does NOT run codegen and does NOT validate the
+// engine version against the running engine, so it can be used to declare an
+// engine version newer than the running engine (the load/serve check at
+// moduleSourceAsModule still gates actually using such a module).
+func (s *moduleSourceSchema) moduleSourceUpdatedConfigDirectory(
+	ctx context.Context,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (res dagql.ObjectResult[*core.Directory], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	modCfg, err := s.buildModuleConfig(srcInst.Self())
+	if err != nil {
+		return res, fmt.Errorf("failed to build module source config: %w", err)
+	}
+
+	modCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
+	if err != nil {
+		return res, fmt.Errorf("failed to encode module config: %w", err)
+	}
+	modCfgBytes = append(modCfgBytes, '\n')
+	modCfgPath := filepath.Join(srcInst.Self().SourceRootSubpath, modules.Filename)
+
+	originalCtxDir := srcInst.Self().ContextDirectory
+	var updatedCtxDir dagql.ObjectResult[*core.Directory]
+	err = dag.Select(ctx, originalCtxDir, &updatedCtxDir,
+		dagql.Selector{
+			Field: "withNewFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(modCfgPath)},
+				{Name: "contents", Value: dagql.String(modCfgBytes)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
+			},
+		},
+	)
+	if err != nil {
+		return res, fmt.Errorf("failed to apply updated dagger.json: %w", err)
+	}
+
+	updatedCtxDirID, err := updatedCtxDir.ID()
+	if err != nil {
+		return res, fmt.Errorf("failed to get updated context directory ID: %w", err)
+	}
+
+	// Return just the diff so the caller's Export only writes dagger.json.
+	err = dag.Select(ctx, originalCtxDir, &res,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*core.Directory](updatedCtxDirID)},
 			},
 		},
 	)
