@@ -1,6 +1,0 @@
-kind: Added
-body: Added expand option to container.exists
-time: 2026-06-03T09:24:56.956732171-07:00
-custom:
-    Author: alexcb
-    PR: "13310"

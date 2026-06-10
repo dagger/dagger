@@ -8012,7 +8012,7 @@ func (m *Test) Fn(
 ) (*dagger.Directory, error) {
     return m.Dep.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
 }
-`), 0644)
+`), 0o644)
 		require.NoError(t, err)
 
 		// Create git commit
@@ -8027,9 +8027,9 @@ func (m *Test) Fn(
 		require.NoError(t, err, string(gitOutput))
 
 		// Create directories and config file
-		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "crap"), 0755))
-		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "config"), 0755))
-		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("1"), 0644))
+		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "crap"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "config"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("1"), 0o644))
 
 		// Run first dagger call
 		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "fn")
@@ -8037,7 +8037,7 @@ func (m *Test) Fn(
 		require.NoError(t, err, string(callOutput))
 
 		// Update config file
-		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("2"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("2"), 0o644))
 
 		// Run second dagger call
 		callCmd = hostDaggerCommand(ctx, t, modDir, "call", "fn")
@@ -8267,6 +8267,27 @@ func fileContents(path, contents string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithNewFile(path, heredoc.Doc(contents))
 	}
+}
+
+func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc {
+	t.Helper()
+	return withTestdataFixture(t, c, dst, "modules", fixture)
+}
+
+func withTestdataFixture(t testing.TB, c *dagger.Client, dst string, elems ...string) dagger.WithContainerFunc {
+	t.Helper()
+	fixturePath := testDataPath(t, elems...)
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithDirectory(dst, c.Host().Directory(fixturePath))
+	}
+}
+
+func testDataPath(t testing.TB, elems ...string) string {
+	t.Helper()
+	pathElems := append([]string{"testdata"}, elems...)
+	absPath, err := filepath.Abs(filepath.Join(pathElems...))
+	require.NoError(t, err)
+	return absPath
 }
 
 func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerFunc {
