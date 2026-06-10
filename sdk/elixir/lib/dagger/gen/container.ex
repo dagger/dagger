@@ -355,8 +355,11 @@ defmodule Dagger.Container do
   @doc """
   Download a container image, and apply it to the container state. All previous state will be lost.
   """
-  @spec from(t(), String.t(), [{:registry_service, Dagger.Service.t() | nil}]) ::
-          Dagger.Container.t()
+  @spec from(t(), String.t(), [
+          {:registry_service, Dagger.Service.t() | nil},
+          {:protocol, Dagger.RegistryProtocol.t() | nil},
+          {:insecure_skip_tls_verify, boolean() | nil}
+        ]) :: Dagger.Container.t()
   def from(%__MODULE__{} = container, address, optional_args \\ []) do
     query_builder =
       container.query_builder
@@ -369,6 +372,8 @@ defmodule Dagger.Container do
           else: nil
         )
       )
+      |> QB.maybe_put_arg("protocol", optional_args[:protocol])
+      |> QB.maybe_put_arg("insecureSkipTLSVerify", optional_args[:insecure_skip_tls_verify])
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -480,7 +485,9 @@ defmodule Dagger.Container do
           {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil},
-          {:registry_service, Dagger.Service.t() | nil}
+          {:registry_service, Dagger.Service.t() | nil},
+          {:protocol, Dagger.RegistryProtocol.t() | nil},
+          {:insecure_skip_tls_verify, boolean() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
   def publish(%__MODULE__{} = container, address, optional_args \\ []) do
     query_builder =
@@ -503,6 +510,8 @@ defmodule Dagger.Container do
           else: nil
         )
       )
+      |> QB.maybe_put_arg("protocol", optional_args[:protocol])
+      |> QB.maybe_put_arg("insecureSkipTLSVerify", optional_args[:insecure_skip_tls_verify])
 
     Client.execute(container.client, query_builder)
   end

@@ -1641,6 +1641,13 @@ pub struct ContainerFileOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFromOpts {
+    /// Allow HTTPS registry communication without verifying the server certificate.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_skip_tls_verify: Option<bool>,
+    /// Protocol to use for registry communication.
+    /// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+    #[builder(setter(into, strip_option), default)]
+    pub protocol: Option<RegistryProtocol>,
     /// Service to use as the registry endpoint for the image address.
     /// The service will be started only for this pull.
     #[builder(setter(into, strip_option), default)]
@@ -1658,6 +1665,9 @@ pub struct ContainerPublishOpts {
     /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
+    /// Allow HTTPS registry communication without verifying the server certificate.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_skip_tls_verify: Option<bool>,
     /// Use the specified media types for the published image's layers.
     /// Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
     #[builder(setter(into, strip_option), default)]
@@ -1666,6 +1676,10 @@ pub struct ContainerPublishOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<Id>>,
+    /// Protocol to use for registry communication.
+    /// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+    #[builder(setter(into, strip_option), default)]
+    pub protocol: Option<RegistryProtocol>,
     /// Service to use as the registry endpoint for the image address.
     /// The service will be started only for this push.
     #[builder(setter(into, strip_option), default)]
@@ -2436,6 +2450,12 @@ impl Container {
         if let Some(registry_service) = opts.registry_service {
             query = query.arg("registryService", registry_service);
         }
+        if let Some(protocol) = opts.protocol {
+            query = query.arg("protocol", protocol);
+        }
+        if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
+            query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2579,6 +2599,12 @@ impl Container {
         }
         if let Some(registry_service) = opts.registry_service {
             query = query.arg("registryService", registry_service);
+        }
+        if let Some(protocol) = opts.protocol {
+            query = query.arg("protocol", protocol);
+        }
+        if let Some(insecure_skip_tls_verify) = opts.insecure_skip_tls_verify {
+            query = query.arg("insecureSkipTLSVerify", insecure_skip_tls_verify);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -17862,6 +17888,13 @@ pub enum NetworkProtocol {
     Tcp,
     #[serde(rename = "UDP")]
     Udp,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum RegistryProtocol {
+    #[serde(rename = "HTTP")]
+    Http,
+    #[serde(rename = "HTTPS")]
+    Https,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ReturnType {

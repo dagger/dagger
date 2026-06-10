@@ -2334,6 +2334,12 @@ type ContainerFromOpts struct {
 	//
 	// The service will be started only for this pull.
 	RegistryService *Service
+	// Protocol to use for registry communication.
+	//
+	// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+	Protocol RegistryProtocol
+	// Allow HTTPS registry communication without verifying the server certificate.
+	InsecureSkipTLSVerify bool
 }
 
 // Download a container image, and apply it to the container state. All previous state will be lost.
@@ -2343,6 +2349,14 @@ func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 		// `registryService` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
 			q = q.Arg("registryService", opts[i].RegistryService)
+		}
+		// `protocol` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+		}
+		// `insecureSkipTLSVerify` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
+			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
 		}
 	}
 	q = q.Arg("address", address)
@@ -2518,6 +2532,12 @@ type ContainerPublishOpts struct {
 	//
 	// The service will be started only for this push.
 	RegistryService *Service
+	// Protocol to use for registry communication.
+	//
+	// Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+	Protocol RegistryProtocol
+	// Allow HTTPS registry communication without verifying the server certificate.
+	InsecureSkipTLSVerify bool
 }
 
 // Package the container state as an OCI image, and publish it to a registry
@@ -2544,6 +2564,14 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		// `registryService` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
 			q = q.Arg("registryService", opts[i].RegistryService)
+		}
+		// `protocol` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+		}
+		// `insecureSkipTLSVerify` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
+			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
 		}
 	}
 	q = q.Arg("address", address)
@@ -18461,6 +18489,61 @@ const (
 	NetworkProtocolTcp NetworkProtocol = "TCP"
 
 	NetworkProtocolUdp NetworkProtocol = "UDP"
+)
+
+// Transport protocol to use for registry operations.
+type RegistryProtocol string
+
+func (RegistryProtocol) IsEnum() {}
+
+func (v RegistryProtocol) Name() string {
+	switch v {
+	case RegistryProtocolHttps:
+		return "HTTPS"
+	case RegistryProtocolHttp:
+		return "HTTP"
+	default:
+		return ""
+	}
+}
+
+func (v RegistryProtocol) Value() string {
+	return string(v)
+}
+
+func (v *RegistryProtocol) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *RegistryProtocol) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "HTTP":
+		*v = RegistryProtocolHttp
+	case "HTTPS":
+		*v = RegistryProtocolHttps
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	RegistryProtocolHttps RegistryProtocol = "HTTPS"
+
+	RegistryProtocolHttp RegistryProtocol = "HTTP"
 )
 
 // Expected return type of an execution

@@ -137,6 +137,7 @@
               <li><a href="#definition-Platform">Platform</a></li>
               <li><a href="#definition-Port">Port</a></li>
               <li><a href="#definition-PortForward">PortForward</a></li>
+              <li><a href="#definition-RegistryProtocol">RegistryProtocol</a></li>
               <li><a href="#definition-RemoteGitMirror">RemoteGitMirror</a></li>
               <li><a href="#definition-ReturnType">ReturnType</a></li>
               <li><a href="#definition-SDKConfig">SDKConfig</a></li>
@@ -3111,6 +3112,15 @@
                                 <p>Service to use as the registry endpoint for the image address.</p>
                                 <p>The service will be started only for this pull.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>protocol</code></span> - <span class="property-type"><a href="#definition-RegistryProtocol"><code>RegistryProtocol</code></a></span></h6>
+                                <p>Protocol to use for registry communication.</p>
+                                <p>Defaults to &quot;HTTPS&quot;. Use &quot;HTTP&quot; only for plain HTTP registries.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>insecureSkipTLSVerify</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Allow HTTPS registry communication without verifying the server certificate.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -3209,6 +3219,15 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>registryService</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID</code></a></span></h6>
                                 <p>Service to use as the registry endpoint for the image address.</p>
                                 <p>The service will be started only for this push.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>protocol</code></span> - <span class="property-type"><a href="#definition-RegistryProtocol"><code>RegistryProtocol</code></a></span></h6>
+                                <p>Protocol to use for registry communication.</p>
+                                <p>Defaults to &quot;HTTPS&quot;. Use &quot;HTTP&quot; only for plain HTTP registries.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>insecureSkipTLSVerify</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Allow HTTPS registry communication without verifying the server certificate.</p>
                               </div>
                             </div>
                           </div>
@@ -12010,6 +12029,54 @@
                 <div class="example-section example-section-is-code">
                   <h5>Example</h5>
                   <pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-RegistryProtocol" class="definition definition-enum" data-traverse-target="definition-RegistryProtocol">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">RegistryProtocol</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Transport protocol to use for registry operations.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>HTTPS</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>HTTP</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"HTTPS"</span>
 </code></pre>
                 </div>
               </div>

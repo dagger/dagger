@@ -283,12 +283,22 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Download a container image, and apply it to the container state. All previous state will be lost.
      */
-    public function from(string $address, ?Service $registryService = null): Container
-    {
+    public function from(
+        string $address,
+        ?Service $registryService = null,
+        ?RegistryProtocol $protocol = null,
+        ?bool $insecureSkipTLSVerify = false,
+    ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('from');
         $innerQueryBuilder->setArgument('address', $address);
         if (null !== $registryService) {
         $innerQueryBuilder->setArgument('registryService', $registryService);
+        }
+        if (null !== $protocol) {
+        $innerQueryBuilder->setArgument('protocol', $protocol);
+        }
+        if (null !== $insecureSkipTLSVerify) {
+        $innerQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -372,6 +382,8 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
         ?Service $registryService = null,
+        ?RegistryProtocol $protocol = null,
+        ?bool $insecureSkipTLSVerify = false,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
         $leafQueryBuilder->setArgument('address', $address);
@@ -386,6 +398,12 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $registryService) {
         $leafQueryBuilder->setArgument('registryService', $registryService);
+        }
+        if (null !== $protocol) {
+        $leafQueryBuilder->setArgument('protocol', $protocol);
+        }
+        if (null !== $insecureSkipTLSVerify) {
+        $leafQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
     }
