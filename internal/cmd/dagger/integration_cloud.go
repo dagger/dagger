@@ -16,7 +16,11 @@ var githubOpen bool
 
 const githubOAuthRedirect = "https://dagger.cloud/github/callback"
 
-var integrationCmd = &cobra.Command{
+// cloudIntegrationCmd is the `dagger cloud integration` group. The original
+// top-level `dagger integration` was singleton-shaped (one provider per type,
+// list its accounts). This is the mutable form: each configured integration
+// is a discrete entry; list enumerates them, create adds one, rm removes one.
+var cloudIntegrationCmd = &cobra.Command{
 	Use:   "integration",
 	Short: "Manage Dagger Cloud integration providers",
 	Args:  cobra.NoArgs,
@@ -25,25 +29,36 @@ var integrationCmd = &cobra.Command{
 	},
 }
 
-var integrationSetupCmd = &cobra.Command{
-	Use:   "setup <provider>",
-	Short: "Set up a Dagger Cloud integration provider",
-	Args:  cobra.ExactArgs(1),
-	RunE:  cloudCLI.IntegrationSetup,
+var cloudIntegrationCreateCmd = &cobra.Command{
+	Use:     "create <provider>",
+	Short:   "Create a new integration of the given provider type",
+	Example: "dagger cloud integration create github",
+	Args:    cobra.ExactArgs(1),
+	RunE:    cloudCLI.IntegrationSetup,
 }
 
-var integrationAccountsCmd = &cobra.Command{
-	Use:   "accounts <provider>",
-	Short: "List accounts visible to a Dagger Cloud integration provider",
+var cloudIntegrationRmCmd = &cobra.Command{
+	Use:   "rm <id>",
+	Short: "Remove a configured integration",
 	Args:  cobra.ExactArgs(1),
-	RunE:  cloudCLI.IntegrationAccounts,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// TODO(cli-1.0): wire to cloud API once a delete endpoint exists.
+		return fmt.Errorf("dagger cloud integration rm: not yet implemented (needs cloud API support)")
+	},
+}
+
+var cloudIntegrationListCmd = &cobra.Command{
+	Use:   "list [type]",
+	Short: "List configured integrations (optionally filtered by provider type)",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  cloudCLI.IntegrationList,
 }
 
 func init() {
-	integrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
-	integrationSetupCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the setup URL in a browser")
-	integrationCmd.AddCommand(integrationSetupCmd, integrationAccountsCmd)
-	rootCmd.AddCommand(integrationCmd)
+	cloudIntegrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
+	cloudIntegrationCreateCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the setup URL in a browser")
+	cloudIntegrationCmd.AddCommand(cloudIntegrationCreateCmd, cloudIntegrationListCmd, cloudIntegrationRmCmd)
+	cloudCmd.AddCommand(cloudIntegrationCmd)
 }
 
 type integrationAccountEntry struct {
@@ -71,16 +86,9 @@ func (cli *CloudCLI) IntegrationSetup(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func (cli *CloudCLI) IntegrationAccounts(cmd *cobra.Command, args []string) error {
-	switch strings.ToLower(args[0]) {
-	case "github":
-		return cli.integrationAccountsGitHub(cmd)
-	default:
-		return unsupportedIntegrationProvider(args[0])
-	}
-}
-
-func (cli *CloudCLI) integrationAccountsGitHub(cmd *cobra.Command) error {
+// IntegrationList lists configured integrations. With no arg, all are listed;
+// with one arg, results are filtered by provider type (e.g., "github").
+func (cli *CloudCLI) IntegrationList(cmd *cobra.Command, args []string) error {
 	client, _, err := cli.cloudClient(cmd.Context())
 	if err != nil {
 		return err
@@ -90,12 +98,20 @@ func (cli *CloudCLI) integrationAccountsGitHub(cmd *cobra.Command) error {
 		return err
 	}
 	entries := integrationAccountEntriesFromSources(sources)
-	entries = filterIntegrationAccountEntries(entries, "GitHub")
+
+	filter := ""
+	if len(args) == 1 {
+		filter = canonicalProviderName(args[0])
+		if filter == "" {
+			return unsupportedIntegrationProvider(args[0])
+		}
+		entries = filterIntegrationAccountEntries(entries, filter)
+	}
 
 	if cloudJSON {
 		return writeCloudJSON(cmd, entries)
 	}
-	printIntegrationAccounts(cmd, "GitHub", entries)
+	printIntegrationAccounts(cmd, filter, entries)
 	return nil
 }
 
@@ -140,13 +156,19 @@ func openGitHubSetupURL(cmd *cobra.Command, setupURL string) {
 func printIntegrationAccounts(cmd *cobra.Command, provider string, entries []integrationAccountEntry) {
 	out := cmd.OutOrStdout()
 	if len(entries) == 0 {
-		fmt.Fprintf(out, "No %s accounts found. Set up %s with: dagger integration setup %s\n", provider, provider, strings.ToLower(provider))
+		if provider != "" {
+			fmt.Fprintf(out, "No %s integrations configured. Run: dagger cloud integration create %s\n", provider, strings.ToLower(provider))
+		} else {
+			fmt.Fprintln(out, "No integrations configured. Run: dagger cloud integration create <provider>")
+		}
 		return
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ACCOUNT\tTYPE\tDAGGER ORG\tAUTOCHECK\tCONFIG URL")
+	fmt.Fprintln(w, "ID\tPROVIDER\tACCOUNT\tTYPE\tDAGGER ORG\tAUTOCHECK\tCONFIG URL")
 	for _, entry := range entries {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			entry.ID,
+			entry.Provider,
 			entry.Account,
 			entry.Type,
 			entry.Org,
@@ -183,6 +205,21 @@ func filterIntegrationAccountEntries(entries []integrationAccountEntry, provider
 		}
 	}
 	return filtered
+}
+
+// canonicalProviderName normalizes user-supplied provider names ("github",
+// "GitHub", "GITHUB") to the canonical form used in entry.Provider.
+// Returns "" if the input doesn't match any supported provider.
+func canonicalProviderName(input string) string {
+	switch strings.ToLower(input) {
+	case "github":
+		return "GitHub"
+	case "gitlab":
+		return "GitLab"
+	case "bitbucket":
+		return "Bitbucket"
+	}
+	return ""
 }
 
 func unsupportedIntegrationProvider(provider string) error {
