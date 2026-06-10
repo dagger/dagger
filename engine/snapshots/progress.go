@@ -2,6 +2,7 @@ package snapshots
 
 import (
 	"context"
+	"io"
 	"sync"
 	"time"
 
@@ -52,10 +53,10 @@ func EmitProgress(ctx context.Context, item string, current, total int64) {
 	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
 }
 
-// applyProgress streams compressed-bytes-read progress for one layer blob
-// while it is decompressed and applied onto a snapshot, keyed by blob
-// digest like the fetch emitter so the two phases line up cell for cell.
-type applyProgress struct {
+// progressTracker streams one item's absolute progress with throttled
+// updates; an initial zero state is emitted immediately so the item appears
+// as soon as work begins, and finish emits the converged final state.
+type progressTracker struct {
 	ctx   context.Context
 	item  string
 	total int64
@@ -64,29 +65,79 @@ type applyProgress struct {
 	lastEmit time.Time
 }
 
-func newApplyProgress(ctx context.Context, item string, total int64) *applyProgress {
-	ap := &applyProgress{
+func newProgressTracker(ctx context.Context, item string, total int64) *progressTracker {
+	pt := &progressTracker{
 		ctx:   ctx,
 		item:  item,
 		total: total,
 	}
 	EmitProgress(ctx, item, 0, total)
-	return ap
+	return pt
 }
 
-func (ap *applyProgress) update(read int64) {
-	ap.mu.Lock()
+func (pt *progressTracker) update(current int64) {
+	pt.mu.Lock()
 	now := time.Now()
 	// purely throttled: finish guarantees the final state
-	if now.Sub(ap.lastEmit) < ProgressEmitInterval {
-		ap.mu.Unlock()
+	if now.Sub(pt.lastEmit) < ProgressEmitInterval {
+		pt.mu.Unlock()
 		return
 	}
-	ap.lastEmit = now
-	ap.mu.Unlock()
-	EmitProgress(ap.ctx, ap.item, read, ap.total)
+	pt.lastEmit = now
+	pt.mu.Unlock()
+	EmitProgress(pt.ctx, pt.item, current, pt.total)
 }
 
-func (ap *applyProgress) finish() {
-	EmitProgress(ap.ctx, ap.item, ap.total, ap.total)
+func (pt *progressTracker) finish() {
+	EmitProgress(pt.ctx, pt.item, pt.total, pt.total)
+}
+
+// NewProgressReader wraps r to stream its read progress as one item via the
+// telemetry convention, attributed to the span carried by ctx. A total <= 0
+// means the size is unknown (indeterminate). The final state is emitted
+// when the reader sees EOF or is closed.
+func NewProgressReader(ctx context.Context, item string, total int64, r io.ReadCloser) io.ReadCloser {
+	return &progressReader{
+		r:       r,
+		tracker: newProgressTracker(ctx, item, max(total, 0)),
+	}
+}
+
+type progressReader struct {
+	r       io.ReadCloser
+	tracker *progressTracker
+
+	read int64
+	done bool
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.r.Read(p)
+	if n > 0 {
+		pr.read += int64(n)
+		pr.tracker.update(pr.read)
+	}
+	if err == io.EOF {
+		pr.emitFinal()
+	}
+	return n, err
+}
+
+func (pr *progressReader) Close() error {
+	pr.emitFinal()
+	return pr.r.Close()
+}
+
+// emitFinal emits the converged final state once: everything read, against
+// the known total if there is one.
+func (pr *progressReader) emitFinal() {
+	if pr.done {
+		return
+	}
+	pr.done = true
+	total := pr.tracker.total
+	if total <= 0 {
+		total = pr.read
+	}
+	EmitProgress(pr.tracker.ctx, pr.tracker.item, pr.read, total)
 }

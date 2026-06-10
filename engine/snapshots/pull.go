@@ -246,9 +246,9 @@ func (cm *snapshotManager) importImageLayer(
 		return nil, err
 	}
 	var applyOpts []diff.ApplyOpt
-	var unpack *applyProgress
+	var unpack *progressTracker
 	if desc.Size > 0 {
-		unpack = newApplyProgress(ctx, desc.Digest.String(), desc.Size)
+		unpack = newProgressTracker(ctx, desc.Digest.String(), desc.Size)
 		applyOpts = append(applyOpts, diff.WithProgress(func(_ ocispecs.Descriptor, read int64) {
 			unpack.update(read)
 		}))
