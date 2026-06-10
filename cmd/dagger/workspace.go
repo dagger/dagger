@@ -206,13 +206,6 @@ var workspaceRemoteCmd = &cobra.Command{
 	RunE:  WorkspaceRemote,
 }
 
-var workspaceAutocheckCmd = &cobra.Command{
-	Use:   "autocheck [on|off]",
-	Short: "Get or set autocheck for the selected workspace remote",
-	Args:  validateWorkspaceAutocheckArgs,
-	RunE:  WorkspaceAutocheck,
-}
-
 // activityCmd is the top-level activity command (hoisted from what was
 // `dagger workspace activity`).
 var activityCmd = &cobra.Command{
@@ -228,7 +221,6 @@ func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
-	workspaceCmd.AddCommand(workspaceAutocheckCmd)
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
@@ -398,52 +390,6 @@ func WorkspaceRemote(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	_, err = fmt.Fprintln(cmd.OutOrStdout(), address)
-	return err
-}
-
-func validateWorkspaceAutocheckArgs(_ *cobra.Command, args []string) error {
-	if len(args) > 1 {
-		return fmt.Errorf("expected 0 or 1 arguments, got %d", len(args))
-	}
-	if len(args) == 1 {
-		switch args[0] {
-		case "on", "off":
-		default:
-			return fmt.Errorf("expected autocheck state to be on or off, got %q", args[0])
-		}
-	}
-	return nil
-}
-
-func WorkspaceAutocheck(cmd *cobra.Command, args []string) error {
-	remote, _, err := selectedRemoteWorkspaceAddress(cmd.Context(), "workspace autocheck")
-	if err != nil {
-		return err
-	}
-	if len(args) == 1 {
-		enabled := args[0] == "on"
-		state, err := setWorkspaceAutocheckState(cmd.Context(), remote, enabled)
-		if errors.Is(err, errCloudNotAuthenticated) {
-			return fmt.Errorf("not authenticated; run 'dagger login' to update workspace autocheck")
-		}
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), workspaceAutocheckStateString(state))
-		return err
-	}
-
-	state, ok, err := loadWorkspaceAutocheckState(cmd.Context(), remote)
-	if errors.Is(err, errCloudNotAuthenticated) {
-		return fmt.Errorf("not authenticated; run 'dagger login' to view workspace autocheck")
-	}
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("workspace autocheck state not found for %s", remote.CloneRef)
-	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), workspaceAutocheckStateString(state))
 	return err
 }
 
