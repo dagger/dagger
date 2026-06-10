@@ -158,6 +158,7 @@ func init() {
 		moduleDepInstallCmd,
 		moduleDepUninstallCmd,
 		moduleUpdateCmd,
+		setupCmd,
 		searchCmd,
 		installedCmd,
 		activityCmd,

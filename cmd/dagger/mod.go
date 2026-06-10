@@ -80,6 +80,11 @@ type registryModule struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Repo        string `json:"repo"`
+	// Recommend lists the globs (e.g. "**/go.mod") used by `dagger setup`
+	// to suggest this module based on files present in the workspace.
+	// The module is recommended when any pattern matches at least one file.
+	// An empty list means never recommended.
+	Recommend []string `json:"recommend,omitempty"`
 }
 
 // embeddedModuleRegistry is the registry baked in at build time.
