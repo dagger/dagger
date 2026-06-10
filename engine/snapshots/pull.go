@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	telemetry "github.com/dagger/otel-go"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -31,6 +34,18 @@ func (cm *snapshotManager) ImportImage(
 		if rerr != nil && current != nil {
 			_ = current.Release(context.WithoutCancel(ctx))
 		}
+	}()
+
+	// Encapsulated like the resolver's "pulling" span: hidden unless it
+	// fails, with its streaming progress surfacing on visible ancestors
+	// (e.g. the originating Container.from call).
+	name := opts.ImageRef
+	if name == "" {
+		name = img.Ref
+	}
+	span, ctx := tracing.StartSpan(ctx, "unpacking "+name, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
 	}()
 
 	for _, layer := range img.Layers {
@@ -230,9 +245,20 @@ func (cm *snapshotManager) importImageLayer(
 	if err != nil {
 		return nil, err
 	}
-	if _, err := cm.Applier.Apply(ctx, desc, mounts); err != nil {
+	var applyOpts []diff.ApplyOpt
+	var unpack *applyProgress
+	if desc.Size > 0 {
+		unpack = newApplyProgress(ctx, desc.Digest.String(), desc.Size)
+		applyOpts = append(applyOpts, diff.WithProgress(func(_ ocispecs.Descriptor, read int64) {
+			unpack.update(read)
+		}))
+	}
+	if _, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...); err != nil {
 		_ = unmount()
 		return nil, err
+	}
+	if unpack != nil {
+		unpack.finish()
 	}
 	if err := unmount(); err != nil {
 		return nil, err

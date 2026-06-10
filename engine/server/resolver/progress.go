@@ -7,35 +7,9 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
-	"github.com/dagger/dagger/engine/telemetryattrs"
-	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/dagger/engine/snapshots"
 	digest "github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/log"
 )
-
-// progressEmitInterval throttles streaming progress records; the final
-// record for an item is always emitted so consumers converge on the true
-// completed state.
-const progressEmitInterval = 100 * time.Millisecond
-
-// emitProgress sends one streaming-progress log record for the named item,
-// attributed to the current span via ctx. See engine/telemetryattrs for the
-// conventions.
-func emitProgress(ctx context.Context, item string, current, total int64) {
-	rec := log.Record{}
-	rec.SetTimestamp(time.Now())
-	// Explicit empty body: log consumers skip empty-bodied records as text,
-	// and an unset body does not survive the OTLP round-trip (nil AnyValue
-	// triggers conversion errors on the receiving side).
-	rec.SetBody(log.StringValue(""))
-	rec.AddAttributes(
-		log.String(telemetryattrs.ProgressItemAttr, item),
-		log.Int64(telemetryattrs.ProgressCurrentAttr, current),
-		log.Int64(telemetryattrs.ProgressTotalAttr, total),
-		log.String(telemetryattrs.ProgressUnitAttr, "bytes"),
-	)
-	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
-}
 
 // progressIngester wraps a content.Ingester so that layer blobs written
 // through it (e.g. by remotes.FetchHandler) stream download progress as
@@ -113,12 +87,12 @@ func (pw *progressWriter) Commit(ctx context.Context, size int64, expected diges
 func (pw *progressWriter) emit(force bool) {
 	pw.mu.Lock()
 	now := time.Now()
-	if !force && now.Sub(pw.lastEmit) < progressEmitInterval && pw.offset < pw.total {
+	if !force && now.Sub(pw.lastEmit) < snapshots.ProgressEmitInterval && pw.offset < pw.total {
 		pw.mu.Unlock()
 		return
 	}
 	pw.lastEmit = now
 	current := pw.offset
 	pw.mu.Unlock()
-	emitProgress(pw.ctx, pw.item, current, pw.total)
+	snapshots.EmitProgress(pw.ctx, pw.item, current, pw.total)
 }

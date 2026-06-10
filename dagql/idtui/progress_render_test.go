@@ -90,3 +90,85 @@ func TestRenderProgressBarFills(t *testing.T) {
 		t.Errorf("render missing overflow bar %q:\n%s", want, got)
 	}
 }
+
+// TestRenderProgressBarSegments covers a visible span whose hidden
+// (encapsulated) descendants each report progress: every source renders as
+// its own segment with its own byte count, rather than summing — a pull's
+// fetch and unpack read the same compressed bytes, so a single sum would
+// double the apparent transfer size.
+func TestRenderProgressBarSegments(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	fromID := prettyTestSpanID(2)
+	pullingID := prettyTestSpanID(3)
+	unpackingID := prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:        fromID,
+			TraceID:   prettyTestTraceID(),
+			ParentID:  rootID,
+			Name:      "Container.from",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:           pullingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "pulling nginx",
+			Encapsulated: true,
+			StartTime:    start,
+			EndTime:      end,
+			Final:        true,
+		},
+		{
+			ID:           unpackingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "unpacking nginx",
+			Encapsulated: true,
+			StartTime:    start,
+			EndTime:      end,
+			Final:        true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	pulling := db.Spans.Map[pullingID]
+	pulling.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+		{Name: "layer-1", Current: 10_000_000, Total: 10_000_000, Unit: "bytes"},
+		{Name: "layer-2", Current: 10_000_000, Total: 10_000_000, Unit: "bytes"},
+	}}
+	unpacking := db.Spans.Map[unpackingID]
+	unpacking.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+		{Name: "layer-1", Current: 10_000_000, Total: 10_000_000, Unit: "bytes"},
+		{Name: "layer-2", Current: 5_000_000, Total: 10_000_000, Unit: "bytes"},
+	}}
+	from := db.Spans.Map[fromID]
+	from.ProgressSpans.Add(pulling)
+	from.ProgressSpans.Add(unpacking)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.ExpandCompleted = true
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	got := strings.Join(fe.tui.RenderLines(), "\n")
+
+	if want := "⣿⣿ 20 MB ⣿⡇ 15 MB/20 MB"; !strings.Contains(got, want) {
+		t.Errorf("render missing per-source segments %q:\n%s", want, got)
+	}
+}

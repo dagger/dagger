@@ -3566,64 +3566,74 @@ const maxProgressItems = 40
 // per item, filling from 1 dot (started) to 8 dots (complete), plus an
 // aggregate byte count. It renders progress reported by the span itself,
 // and progress from descendant spans when this row is the one representing
-// them (collapsed, or the descendants are hidden).
+// them (collapsed, or the descendants are hidden). Each source renders as
+// its own segment with its own byte count: a pull's fetch and unpack both
+// read the same compressed bytes, so summing across sources would double
+// the apparent transfer size.
 func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span, row *dagui.TraceRow) string {
-	var items []*dagui.ProgressItem
-	if span.Progress != nil {
-		items = append(items, span.Progress.Order...)
+	var groups [][]*dagui.ProgressItem
+	if span.Progress != nil && len(span.Progress.Order) > 0 {
+		groups = append(groups, span.Progress.Order)
 	}
 	for _, src := range span.ProgressSpans.Order {
-		if src == span || src.Progress == nil {
+		if src == span || src.Progress == nil || len(src.Progress.Order) == 0 {
 			continue
 		}
 		if row.Expanded && fe.spanRendersOwnProgress(src, span) {
 			// a deeper visible row renders this progress; don't repeat it
 			continue
 		}
-		items = append(items, src.Progress.Order...)
+		groups = append(groups, src.Progress.Order)
 	}
-	if len(items) == 0 {
+	if len(groups) == 0 {
 		return ""
 	}
 
 	var sb strings.Builder
-	shown := items
-	if len(shown) > maxProgressItems {
-		shown = shown[:maxProgressItems]
-	}
-	var current, total int64
-	unit := ""
-	for _, item := range items {
-		current += item.Current
-		total += item.Total
-		if unit == "" {
-			unit = item.Unit
+	budget := maxProgressItems
+	for i, items := range groups {
+		if i > 0 {
+			sb.WriteString(" ")
 		}
-	}
-	for _, item := range shown {
-		dots := 1
-		if item.Total > 0 {
-			dots = int((item.Current*8 + item.Total - 1) / item.Total) // ceil
-			dots = max(min(dots, 8), 1)
+		shown := items
+		if len(shown) > budget {
+			shown = shown[:budget]
 		}
-		color := termenv.ANSIYellow
-		switch {
-		case item.Complete():
-			color = termenv.ANSIGreen
-		case item.Current == 0:
-			color = termenv.ANSIBrightBlack
+		budget -= len(shown)
+		var current, total int64
+		unit := ""
+		for _, item := range items {
+			current += item.Current
+			total += item.Total
+			if unit == "" {
+				unit = item.Unit
+			}
 		}
-		sb.WriteString(out.String(string(brailleDots[dots])).Foreground(color).String())
-	}
-	if rest := len(items) - len(shown); rest > 0 {
-		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).Faint().String())
-	}
-	if unit == "bytes" && total > 0 {
-		summary := humanizeBytes(current)
-		if current < total {
-			summary += "/" + humanizeBytes(total)
+		for _, item := range shown {
+			dots := 1
+			if item.Total > 0 {
+				dots = int((item.Current*8 + item.Total - 1) / item.Total) // ceil
+				dots = max(min(dots, 8), 1)
+			}
+			color := termenv.ANSIYellow
+			switch {
+			case item.Complete():
+				color = termenv.ANSIGreen
+			case item.Current == 0:
+				color = termenv.ANSIBrightBlack
+			}
+			sb.WriteString(out.String(string(brailleDots[dots])).Foreground(color).String())
 		}
-		sb.WriteString(out.String(" " + summary).Faint().String())
+		if rest := len(items) - len(shown); rest > 0 {
+			sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).Faint().String())
+		}
+		if unit == "bytes" && total > 0 {
+			summary := humanizeBytes(current)
+			if current < total {
+				summary += "/" + humanizeBytes(total)
+			}
+			sb.WriteString(out.String(" " + summary).Faint().String())
+		}
 	}
 	return sb.String()
 }
