@@ -58,6 +58,15 @@ the following base distributions:
 - Alpine
 - Debian-based (e.g. `debian` and `ubuntu`)
 - Redhat-based (e.g. `rhel`, `fedora`, `centos`, etc.)
+- NixOS-style (NixOS itself, plus Nix-built distroless images that opt in by
+  creating an `/etc/NIXOS` marker file or declaring `ID=nixos`/`ID_LIKE=nixos`
+  in `/etc/os-release`)
+
+For NixOS-style images, Dagger looks at `$SSL_CERT_FILE` to locate the bundle
+(only when `update-ca-certificates` isn't installed), falling back to
+`/etc/ssl/certs/ca-certificates.crt`. This handles Nix-built images that put
+the bundle at a non-canonical path (e.g. under `/nix/store` or
+`/nix/var/nix/profiles/default/...`) without any image-side configuration.
 
 If custom CAs are installed and Dagger detects that one of these base images is
 being used, it will attempt to install the custom CAs into the container before
