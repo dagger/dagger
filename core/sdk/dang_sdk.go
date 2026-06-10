@@ -2,24 +2,51 @@ package sdk
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"slices"
-	"sort"
 
 	"github.com/dagger/dagger/core"
+	dangv1 "github.com/dagger/dagger/core/sdk/dang/v1"
+	dangv2 "github.com/dagger/dagger/core/sdk/dang/v2"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/vektah/gqlparser/v2/gqlerror"
-	"github.com/vito/dang/pkg/dang"
 )
 
 type dangSDK struct {
 	root      *core.Query
 	rawConfig map[string]any
+}
+
+// dangImpl is implemented by each supported Dang major version
+// (core/sdk/dang/v1, v2, ...). Unlike core.ModuleTypes, ModuleTypes takes
+// already-scoped values: the scoping helpers are unexported in this package
+// and the version packages can't import it (cycle), so the dispatcher scopes
+// before delegating.
+type dangImpl interface {
+	ModuleTypes(
+		ctx context.Context,
+		deps *core.SchemaBuilder,
+		scopedSrc dagql.ObjectResult[*core.ModuleSource],
+		scopedMod dagql.ObjectResult[*core.Module],
+	) (dagql.ObjectResult[*core.Module], error)
+
+	Runtime(
+		ctx context.Context,
+		deps *core.SchemaBuilder,
+		source dagql.ObjectResult[*core.ModuleSource],
+	) (core.ModuleRuntime, error)
+}
+
+// dangImplFor picks the Dang major version matching the module's engine
+// version: modules pinned before a major's gate keep the semantics they were
+// written against. Newest-first ladder; adding a future major is one case.
+func dangImplFor(src *core.ModuleSource) dangImpl {
+	if engine.CheckVersionCompatibility(
+		engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion)),
+		engine.MinimumDangV2ModuleVersion,
+	) {
+		return dangv2.Impl{}
+	}
+	return dangv1.Impl{}
 }
 
 func (sdk *dangSDK) AsRuntime() (core.Runtime, bool) {
@@ -74,10 +101,7 @@ func (sdk *dangSDK) Runtime(
 	deps *core.SchemaBuilder,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (core.ModuleRuntime, error) {
-	return &DangRuntime{
-		deps:      deps,
-		modSource: source,
-	}, nil
+	return dangImplFor(source.Self()).Runtime(ctx, deps, source)
 }
 
 func (sdk *dangSDK) ModuleTypes(
@@ -101,123 +125,5 @@ func (sdk *dangSDK) ModuleTypes(
 		return inst, fmt.Errorf("failed to scope module for dang module sdk module types: %w", err)
 	}
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during dang module sdk module types: %w", err)
-	}
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("current query: %w", err)
-	}
-
-	clientMetadata, nestedClientMetadata, err := newDangNestedClientMetadata(ctx)
-	if err != nil {
-		return inst, err
-	}
-
-	runner := dangSourceRunner(func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
-		return dang.RunDir(ctx, modSrcDir, false)
-	})
-	if src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls) {
-		runner = runDangDirForModuleTypes
-	}
-
-	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, nil, scopedMod, dagql.ObjectResult[*core.Env]{}, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
-		inst, err = initDangModule(ctx, dag, env)
-		if err != nil {
-			return nil, fmt.Errorf("init module: %w", err)
-		}
-		return nil, nil
-	})
-	if err != nil {
-		return inst, err
-	}
-	return inst, nil
-}
-
-func newDangNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, *engine.ClientMetadata, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	nestedClientMetadata := &engine.ClientMetadata{
-		ClientID:          identity.NewID(),
-		ClientSecretToken: identity.NewID(),
-		SessionID:         clientMetadata.SessionID,
-		ClientStableID:    identity.NewID(),
-		ClientVersion:     engine.Version,
-		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
-		LockMode:          clientMetadata.LockMode,
-	}
-
-	return clientMetadata, nestedClientMetadata, nil
-}
-
-// DangRuntime is a native Dang runtime that doesn't use containers
-type DangRuntime struct {
-	deps      *core.SchemaBuilder
-	modSource dagql.ObjectResult[*core.ModuleSource]
-}
-
-func (r *DangRuntime) AsContainer() (dagql.ObjectResult[*core.Container], bool) {
-	// Dang runtime doesn't use containers
-	return dagql.ObjectResult[*core.Container]{}, false
-}
-
-func (r *DangRuntime) Call(
-	ctx context.Context,
-	_ *engineutil.ExecutionMetadata,
-	fnCall *core.FunctionCall,
-	moduleContext dagql.ObjectResult[*core.Module],
-	envContext dagql.ObjectResult[*core.Env],
-) (rerr error) {
-	defer func() {
-		if rerr != nil {
-			rerr = convertError(rerr)
-		}
-	}()
-
-	clientMetadata, nestedClientMetadata, err := newDangNestedClientMetadata(ctx)
-	if err != nil {
-		return err
-	}
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return fmt.Errorf("current query: %w", err)
-	}
-	schemaJSONFile, err := r.deps.SchemaIntrospectionJSONFileForModule(ctx)
-	if err != nil {
-		return fmt.Errorf("get schema introspection: %w", err)
-	}
-	outputBytes, err := r.eval(ctx, query, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, fnCall, moduleContext, envContext)
-	if err != nil {
-		return err
-	}
-	return fnCall.ReturnValue(ctx, core.JSON(outputBytes))
-}
-
-func convertError(rerr error) *core.Error {
-	var gqlErr *gqlerror.Error
-	if errors.As(rerr, &gqlErr) {
-		dagErr := core.NewError(gqlErr.Message)
-		if gqlErr.Extensions != nil {
-			keys := make([]string, 0, len(gqlErr.Extensions))
-			for k := range gqlErr.Extensions {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				val, err := json.Marshal(gqlErr.Extensions[k])
-				if err != nil {
-					fmt.Println("failed to marshal error value:", err)
-				}
-				dagErr = dagErr.WithValue(k, core.JSON(val))
-			}
-		}
-		return dagErr
-	}
-	return core.NewError(rerr.Error())
+	return dangImplFor(src.Self()).ModuleTypes(ctx, deps, src, scopedMod)
 }
