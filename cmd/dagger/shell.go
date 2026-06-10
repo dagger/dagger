@@ -227,7 +227,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		}
 	}
 
-	// Could be `--no-mod` or module not found from current dir
+	// Could be `--no-load-module` or module not found from current dir
 	if def == nil {
 		def, err = initializeCore(ctx, h.dag)
 		if err != nil {

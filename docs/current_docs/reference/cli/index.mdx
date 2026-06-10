@@ -24,10 +24,10 @@ dagger [options] [subcommand | file...]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
-  -m, --mod string                   Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)
+  -m, --load-module string           Use a one-off module (local path or git ref)
       --model string                 LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
   -E, --no-exit                      Leave the TUI running after completion
-  -M, --no-mod                       Don't automatically load a module (mutually exclusive with --mod)
+  -M, --no-load-module           Don't load any module for this command
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -123,8 +123,8 @@ EOF
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --doc string          Read query from file (defaults to reading from stdin)
       --eager-runtime       load module runtime eagerly
-  -m, --mod string          Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)
-  -M, --no-mod              Don't automatically load a module (mutually exclusive with --mod)
+  -m, --load-module string  Use a one-off module (local path or git ref)
+  -M, --no-load-module  Don't load any module for this command
       --var strings         List of query variables, in key=value format
       --var-json string     Query variables in JSON format (overrides --var)
 ```
@@ -180,7 +180,7 @@ dagger check [options] [pattern...]
       --failfast            Cancel remaining checks on first failure
       --generate            Only run generate-as-checks, skip annotated check functions
   -l, --list                List available checks
-  -m, --mod string          Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)
+  -m, --load-module string  Use a one-off module (local path or git ref)
       --no-generate         Only run annotated check functions, skip generate-as-checks
       --no-past             Disable past Cloud Checks lookup
       --past                Only replay past Cloud Checks results
@@ -813,8 +813,8 @@ dagger function call [options] [function]...
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --eager-runtime       load module runtime eagerly
   -j, --json                Present result as JSON
-  -m, --mod string          Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)
-  -M, --no-mod              Don't automatically load a module (mutually exclusive with --mod)
+  -m, --load-module string  Use a one-off module (local path or git ref)
+  -M, --no-load-module  Don't load any module for this command
   -o, --output string       Save the result to a local file or directory
 ```
 
@@ -870,7 +870,7 @@ dagger function list [options] [function]...
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --eager-runtime       load module runtime eagerly
-  -m, --mod string          Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)
+  -m, --load-module string  Use a one-off module (local path or git ref)
 ```
 
 ### Options inherited from parent commands
