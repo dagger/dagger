@@ -1,6 +1,6 @@
 # CLI 1.0: Top-level command surface
 
-A redesign of the Dagger CLI's user-facing command surface for 1.0. Collapses the workspace/module namespace duality, hoists daily-use verbs to top-level, introduces a dedicated module-authoring lane, and renames a load-bearing flag to remove a long-standing semantic conflation.
+A redesign of the Dagger CLI's user-facing command surface for 1.0. Untangles the workspace/module namespace duality, hoists daily-use verbs to top-level, introduces a dedicated module-authoring lane, and renames a load-bearing flag to remove a long-standing semantic conflation.
 
 ## Table of Contents
 - [Problem](#problem)
@@ -27,7 +27,7 @@ A redesign of the Dagger CLI's user-facing command surface for 1.0. Collapses th
 
 ## Solution
 
-Adopt a flat top-level verb surface for the consumer hot path. Eliminate `dagger mod` from the visible tree and slim `dagger workspace` to plumbing only. Introduce `dagger module` as the dedicated authoring lane. Introduce `dagger setup` as the idempotent "ensure environment works" verb. Rename `--mod`/`-m` to `--load-module`/`-m`.
+Adopt a flat top-level verb surface for the consumer hot path. Eliminate `dagger mod` from the visible tree and slim `dagger workspace` to plumbing only. Introduce `dagger module` as the dedicated authoring lane (subcommands: `init`, `deps`, `engine`). Introduce `dagger setup` as the idempotent "ensure environment works" verb. Rename `--mod`/`-m` to `--load-module`/`-m`.
 
 Organize the top-level surface into five visually separated groups, each with one coherent theme. Use descriptions, not noun-prefixes, to disambiguate.
 
@@ -90,6 +90,8 @@ OPTIONS
 Visual separation does the disambiguation work that noun-prefix grouping (`dagger workspace X`, `dagger mod Y`) tried to do structurally. Group 4 clusters the four major namespaces — `api`, `module`, `cloud`, `workspace` — each with its own subcommand surface. Group 5 is utility; group 3 is the daily-loop module verbs; group 2 is the three shipping fundamentals plus activity.
 
 ## Flag rename: `--mod` → `--load-module`
+
+The old `--mod` carried two unrelated meanings: "load a module for this invocation" (consumer) and "select a module to operate on" (author). That conflation is what caused PR #13226's deps/engine commands to be cut. The rename names the actual job; authoring commands take no module-targeting flag at all (see [decision context](#per-command-decision-context)).
 
 | Before | After |
 |--------|-------|
@@ -182,6 +184,8 @@ AVAILABLE COMMANDS
 #### `dagger module deps`
 
 ```
+Manage this module's dependencies, as declared in dagger.json.
+
 AVAILABLE COMMANDS
   add   Add one or more dependencies to the module
   rm    Remove one or more dependencies from the module
@@ -191,6 +195,8 @@ AVAILABLE COMMANDS
 #### `dagger module engine`
 
 ```
+Manage the engine version this module requires.
+
 AVAILABLE COMMANDS
   require          Set the module's required engine version
   require-current  Set the required engine version to the currently running engine
@@ -201,6 +207,8 @@ AVAILABLE COMMANDS
 ### `dagger cloud`
 
 ```
+Manage Dagger Cloud.
+
 AVAILABLE COMMANDS
   login        Log in to Dagger Cloud
   logout       Log out of Dagger Cloud
@@ -213,6 +221,9 @@ AVAILABLE COMMANDS
 #### `dagger cloud integration`
 
 ```
+Manage Cloud integration providers. Mutable shape — configured providers
+come and go.
+
 AVAILABLE COMMANDS
   create    Create a new integration
   rm        Remove an integration
@@ -223,6 +234,8 @@ AVAILABLE COMMANDS
 #### `dagger cloud check`
 
 ```
+Manage Cloud-side automated checks for this workspace.
+
 AVAILABLE COMMANDS
   on      Enable a Cloud-side check (by name)
   off     Disable a Cloud-side check (by name)
