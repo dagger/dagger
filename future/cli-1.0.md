@@ -10,6 +10,7 @@ A redesign of the Dagger CLI's user-facing command surface for 1.0. Untangles th
 - [Flag rename: `--mod` → `--load-module`](#flag-rename---mod---load-module)
 - [Per-command decision context](#per-command-decision-context)
 - [Subcommand structures](#subcommand-structures)
+- [SDK module interface](#sdk-module-interface)
 - [Discrete changes from current CLI](#discrete-changes-from-current-cli)
 - [Status](#status)
 
@@ -121,8 +122,9 @@ What we considered, debated, changed, and decided for each command. Not a descri
 | `settings` | Initial conflation with `config` was corrected. They are not the same: `settings` is schema-aware editor for module-declared settings paths (`modules.<m>.settings.<k>`); `config` is raw `dagger.toml` editor for any path. Different audiences. Resolution is namespace, not verb rename: raw `config` moves to `dagger workspace config` (clearly signaled as advanced by the prefix), and `settings` stays at top-level as the daily verb. `--env <name>` scopes the write to that env's overlay. |
 | `api` | Initial push to sharpen "Interact with the Dagger API" was rejected. "Dagger has an API → you can query it" is common knowledge for the audience that should be reaching for `api`; and the group has multiple modes (raw query, function call, introspection), so any specific framing would either mislead or pile up nouns. Resolution: top-level mockup gets `(advanced)` tag for signal-and-skip; cobra Long description carries a teaching beat ("Every Dagger command runs against a GraphQL API served by the engine, combining Dagger's core types with module schema extensions") plus a docs link. Two layers, two audiences. |
 | `module` | Original Dagger `mod` group was the *consumer* plural ("modules in the ecosystem"). The redesign nuked it and reintroduced singular `dagger module` as the *authoring* lane ("the module under my cursor"). Singular vs plural carries the consumer/author distinction; the verbs underneath differ accordingly. Considered `mod dev` as a nested sub-group inside the old plural — pivoted to the cleaner singular-noun split. |
-| `module init` | Requested explicitly. Replaces a top-level `dagger init` that briefly existed in early drafts (workspace creation goes implicit on first install instead). `dagger module init` matches `cargo init` / `npm init` muscle memory for scaffolding. |
-| `module deps` / `module engine` | Restored from PR #13226's pre-rollback state. The original work was rolled back because there was no clean home for it under the old `dagger mod` — adding it created the consumer/author conflation problem. The redesign's whole architecture (separate `dagger module` group, `--load-module` rename, no module-targeting flag on authoring commands) is what makes restoring them honest. |
+| `module init` | Requested explicitly. Replaces a top-level `dagger init` that briefly existed in early drafts (workspace creation goes implicit on first install instead). `dagger module init` matches `cargo init` / `npm init` muscle memory for scaffolding. **Implementation depends on the SDK module interface — see [SDK module interface](#sdk-module-interface).** Form: `dagger module init <name> --sdk=<name> [--path=<dir>]`. No SDK-specific configuration flags at init time — kept minimal. Auto-installs the SDK if not already in the workspace; uses a SDK-internal template convention to scaffold. Post-init SDK-specific operations live under `dagger module sdk` (below). |
+| `module deps` / `module engine` | Restored from PR #13226's pre-rollback state. The original work was rolled back because there was no clean home for it under the old `dagger mod` — adding it created the consumer/author conflation problem. The redesign's whole architecture (separate `dagger module` group, `--load-module` rename, no module-targeting flag on authoring commands) is what makes restoring them honest. The rebalance principle (CLI owns shared operations, SDK owns specialized ones — see [SDK module interface](#sdk-module-interface)) puts `deps` and `engine` clearly on the CLI side: editing dagger-module.toml's deps list or engineVersion is 100% identical across SDKs, so duplicating it inside each SDK would be the kind of duplication the new architecture is meant to avoid. |
+| `module sdk` | Thin wrapper that dispatches to the current module's SDK. Form: `dagger module sdk <subcommand> <args>`. Reads cwd's `dagger-module.toml`, finds the `sdk` field, and effectively runs `dagger call <sdk-ref> <subcommand> <args>`. Available subcommands depend entirely on what the current module's SDK exposes — no CLI-side contract beyond "you're an installed module with functions." Examples: `dagger module sdk python-version 3.13`, `dagger module sdk setup-template legacy`, `dagger module sdk go-mod-tidy`. This is the per-module escape hatch for SDK-specific operations; the CLI provides discovery and orchestration, the SDK provides everything else. |
 | `cloud` | Initially in group 5 (meta) with `login`/`logout` as top-level peers. Moved login/logout *under* cloud (rare-use verbs nest). Then `cloud` itself moved from group 5 to group 4 — it's structurally a major namespace, not a meta verb. |
 | `cloud integration` | Original `dagger integration` was singleton-shaped (`accounts`, `setup`). Requested redesign to mutable shape (`create`, `rm`, `list`, `accounts`). Folded under `cloud` per usefulness × simplicity — integrations are configured occasionally, so they nest. |
 | `cloud check` | Replaces `dagger workspace autocheck` (which was just on/off for the selected remote). Mutable shape `{on, off, list, status NAME}` proposed during the cloud restructure. Naming intentionally overlaps with top-level `check`: different concepts at different levels — top-level = run local checks, `cloud check` = manage Cloud-side automated runs. Acceptable. |
@@ -173,12 +175,14 @@ AVAILABLE COMMANDS
 
 ```
 Author a module: scaffold, edit dependencies, engine version, etc.
-Operates on the dagger.json reachable from the current directory.
+Operates on the dagger-module.toml reachable from the current directory.
 
 AVAILABLE COMMANDS
-  init    Initialize a new module in the current directory
-  deps    Manage this module's dependencies
-  engine  Manage this module's required engine version
+  init      Initialize a new module in the current directory (requires --sdk)
+  deps      Manage this module's dependencies
+  engine    Manage this module's required engine version
+  sdk       Run SDK-specific commands against this module (dispatched to the
+            module's declared SDK)
 ```
 
 #### `dagger module deps`
@@ -243,6 +247,113 @@ AVAILABLE COMMANDS
   status  Show the status of a Cloud-side check (by name)
 ```
 
+## SDK module interface
+
+Authoring a Dagger module requires an SDK. SDKs are themselves Dagger modules (e.g., `github.com/dagger/go-sdk`), installed into the workspace with `dagger install`. The CLI doesn't ship SDK-specific knowledge; the SDK provides everything language-specific. The CLI provides orchestration that's the same across all SDKs.
+
+The line between CLI-owned and SDK-owned operations:
+
+| Operation | Owner | Why |
+|---|---|---|
+| `generate` | SDK | 100% SDK-specific (each language emits its own bindings); `dagger generate` discovers and dispatches to every installed SDK's generate function automatically |
+| `deps`, `engine` | CLI | 100% identical across SDKs (just editing dagger-module.toml fields); SDK duplication would be the kind the new architecture is meant to avoid |
+| `init` (orchestration) | CLI | Shared: install SDK if needed, create dagger-module.toml, hook up workspace |
+| `init` (templates) | SDK convention | SDK-internal; CLI doesn't ship per-SDK templates |
+| SDK-specific operations (e.g., `python-version`, `go-mod-tidy`) | SDK | Routed through `dagger module sdk <subcommand>` wrapper |
+
+### Module declares its SDK
+
+Each module's `dagger-module.toml` carries two fields:
+
+```toml
+# dagger-module.toml
+name = "api"
+runtime = "go"                            # for the engine: which runtime executes this module
+sdk = "github.com/dagger/go-sdk"          # for tooling: which SDK manages authoring
+engineVersion = "v1.0.0"
+
+[[dependencies]]
+source = "github.com/dagger/wolfi"
+```
+
+- `runtime` answers the engine's question: how do I execute this?
+- `sdk` answers the tooling's question: who manages authoring for this?
+
+Splitting these resolves the conflation that `next`'s `runtime.source` had. The same SDK can target different runtimes over time; multiple SDKs can target the same runtime; neither case breaks anything because the two fields are independent.
+
+The `sdk` field stores the **canonical full ref**. Short forms like `--sdk=go` are resolved to the canonical ref at parse time and never propagate further.
+
+### SDK alias registry
+
+A separate registry file (working name: `sdks.json`, distinct from the general module registry that powers `dagger search`) maps short names to canonical SDK refs:
+
+```json
+[
+  { "name": "go",     "repo": "github.com/dagger/go-sdk",     "aliases": ["golang"] },
+  { "name": "python", "repo": "github.com/dagger/python-sdk", "aliases": ["py"] }
+]
+```
+
+Resolution rules for `--sdk=<value>`:
+- Contains `/` or `@` → full ref, no resolution.
+- Otherwise → look up name (then aliases) in `sdks.json`.
+- 0 / 1 / >1 matches: error / resolve / ambiguous-error.
+
+Aliases are a **CLI-side, parse-time** mechanism. `dagger.toml`, the engine, and SDK modules themselves never see the alias — only canonical refs. Adding a new SDK alias is a registry data change, not a CLI release.
+
+The SDK registry is separate from the general module registry to keep the namespaces clean (e.g., `github.com/dagger/go` the toolchain and `github.com/dagger/go-sdk` the SDK can both legitimately want the short name "go" depending on the context; scoping the SDK alias mechanism to its own registry avoids that collision entirely).
+
+### `dagger module init`
+
+```bash
+dagger module init <name> --sdk=<sdk-name-or-ref> [--path=<dir>]
+```
+
+Steps:
+1. Resolve `--sdk` via `sdks.json` if a short name; otherwise treat as a full ref.
+2. If the SDK isn't already installed in this workspace, install it (pinned to a resolved version, just like `dagger install` would). Output narrates the resolution: `"Installing github.com/dagger/go-sdk@v1.2.3..."`.
+3. Create `<path>/dagger-module.toml` with `name`, `runtime` (derived from the SDK), `sdk` (canonical full ref), and a starting `engineVersion`.
+4. Apply the SDK's template convention to scaffold language-specific source files.
+5. Result is returned as a Changeset and applied through the standard changeset apply flow (with `--auto-apply` honored).
+
+`--path` defaults to `.dagger/modules/<name>`. No SDK-specific config flags exist on `init` itself; per-module SDK operations happen post-init via `dagger module sdk`.
+
+**Workspace creation cascade.** If there's no workspace yet, `dagger module init` also creates one (same implicit-workspace behavior as `dagger install`'s first run). Net: a fresh directory + `dagger module init my-mod --sdk=go` = workspace, SDK install, and module scaffold in one command.
+
+### Workspace-scoped SDK settings
+
+The SDK can declare workspace-level settings (defaults applied to new modules of that SDK, or other workspace-wide config):
+
+```bash
+dagger settings python-sdk default-python-version 3.13
+dagger settings go-sdk strict-build true
+```
+
+These are stored under `[modules."<sdk>".settings]` in `dagger.toml`. Same mechanism that all `dagger settings` already uses; no schema invention needed beyond what's already there.
+
+### Per-module SDK operations: `dagger module sdk`
+
+The wrapper for SDK-specific operations on the current module:
+
+```bash
+dagger module sdk python-version 3.13          # current module's SDK
+dagger module sdk setup-template legacy
+dagger module sdk go-mod-tidy
+```
+
+Internally: read cwd's `dagger-module.toml`, find `sdk`, dispatch `dagger call <that-sdk> <subcommand> <args>`. Available subcommands depend entirely on what the SDK exposes. The CLI surface is therefore *dynamic per module* — `dagger module sdk --help` invoked in a Go module shows go-sdk's functions; same command in a Python module shows python-sdk's. That dynamism is OK because it's bounded to one wrapper command; users learn the structure once.
+
+### What's *not* in this interface
+
+- No CLI-side schema introspection at init time. The CLI doesn't read SDK schemas to generate dynamic flags. If an SDK needs a setting tuned, the user runs `dagger module sdk <verb>` after init.
+- No standard per-module SDK settings location in `dagger-module.toml`. SDKs decide where to put their state (in their own files inside the module, in dagger-module.toml itself, wherever). The CLI doesn't reserve a section.
+- No `dagger module settings` verb. Workspace-level SDK settings live under `dagger settings <sdk>`; per-module SDK operations live under `dagger module sdk`. No third verb for "per-module SDK settings."
+
+### Open questions in this section
+
+- Exact template convention (how does the SDK tell `init` "here's the source skeleton"). Two reasonable shapes: a SDK function returning a Directory, or a SDK function that takes a path and writes directly. Pinning this is a Phase-2-or-later decision.
+- Whether `dagger search` surfaces SDKs alongside other modules. Tentative: yes.
+
 ## Discrete changes from current CLI
 
 Implementation checklist. Items grouped by type; each is a discrete unit of work.
@@ -251,7 +362,9 @@ Implementation checklist. Items grouped by type; each is a discrete unit of work
 
 - [ ] **`dagger setup`** — top-level idempotent doctor verb. Ensures workspace config exists, auth is valid, engine is reachable. Safe to re-run.
 - [ ] **`dagger installed`** — top-level. Lists installed modules from `dagger.toml`. Likely a thin wrapper over existing workspace introspection.
-- [ ] **`dagger module init`** — scaffolds a new module's `dagger.json` (and source skeleton). Replaces what earlier Dagger versions called `dagger develop` for scaffolding.
+- [ ] **`dagger module init`** — scaffolds a new module: requires `--sdk=<name>`, auto-installs the SDK if needed, writes `dagger-module.toml` with `runtime`+`sdk` fields, applies the SDK's template convention. See [SDK module interface](#sdk-module-interface).
+- [ ] **`dagger module sdk`** — wrapper that dispatches `dagger call <current-module's-sdk> <subcommand>`. New verb. See [SDK module interface](#sdk-module-interface).
+- [ ] **`sdks.json` registry + alias resolver** — new CLI-side data file and resolver function. Used by `--sdk=` flag. See [SDK module interface](#sdk-module-interface).
 - [ ] **`dagger cloud integration create`** — new (currently only `setup` exists, which becomes `create`).
 - [ ] **`dagger cloud integration rm`** — new.
 - [ ] **`dagger cloud integration list`** — new.
