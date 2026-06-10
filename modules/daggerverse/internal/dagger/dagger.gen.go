@@ -2127,6 +2127,8 @@ type ContainerExistsOpts struct {
 	ExpectedType ExistsType
 	// If specified, do not follow symlinks.
 	DoNotFollowSymlinks bool
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	Expand bool
 }
 
 // check if a file or directory exists
@@ -2143,6 +2145,10 @@ func (r *Container) Exists(ctx context.Context, path string, opts ...ContainerEx
 		// `doNotFollowSymlinks` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
 			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
 		}
 	}
 	q = q.Arg("path", path)
