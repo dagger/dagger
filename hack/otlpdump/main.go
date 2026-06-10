@@ -241,7 +241,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer f.Close()
 	w = f
 
 	mux := http.NewServeMux()
@@ -250,5 +249,7 @@ func main() {
 	mux.HandleFunc("/v1/metrics", handleMetrics)
 
 	log.Printf("listening on %s, writing to %s", *addr, *out)
-	log.Fatal(http.ListenAndServe(*addr, mux))
+	err = http.ListenAndServe(*addr, mux)
+	f.Close()
+	log.Fatal(err)
 }
