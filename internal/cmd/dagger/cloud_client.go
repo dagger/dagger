@@ -9,6 +9,7 @@ import (
 
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/mattn/go-isatty"
 )
 
 var (
@@ -35,6 +36,14 @@ func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*clo
 			return nil, nil, errCloudNotAuthenticated
 		}
 		if cloudJSON {
+			return nil, nil, errCloudNotAuthenticated
+		}
+		// Browser-based OAuth login can't complete without a terminal to
+		// echo the device code / open the URL. Without this guard the call
+		// hangs forever in CI or any non-interactive context. Surface the
+		// same not-authenticated error the JSON path uses; callers already
+		// handle it.
+		if !isatty.IsTerminal(os.Stdin.Fd()) || !isatty.IsTerminal(os.Stderr.Fd()) {
 			return nil, nil, errCloudNotAuthenticated
 		}
 		if err := cloudauth.Login(ctx, os.Stderr, cloudauth.WithAuthGate()); err != nil {
