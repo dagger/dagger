@@ -19,7 +19,7 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"install"})
 	require.NoError(t, err)
 	require.True(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
@@ -27,20 +27,20 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err = rootCmd.Find([]string{"workspace", "install"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 
 	cmd, _, err = rootCmd.Find([]string{"update"})
 	require.NoError(t, err)
 	require.True(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 
 	cmd, _, err = rootCmd.Find([]string{"workspace", "update"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 }
 
@@ -405,7 +405,7 @@ func TestConfigAliasFlags(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"config"})
 	require.NoError(t, err)
 	require.Same(t, configCmd, cmd)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("json"))
 }
 
