@@ -38,7 +38,7 @@ Install the TypeScript SDK into your workspace, then scaffold a new module with
 its `init` function:
 
 ```shell
-dagger mod install github.com/dagger/typescript-sdk
+dagger install github.com/dagger/typescript-sdk
 dagger call typescript-sdk init --name=my-module
 ```
 
@@ -930,7 +930,7 @@ version (a tag, branch, or commit):
 
 ```shell
 # In a consumer module's workspace
-dagger mod install github.com/you/my-module@v1.0.0
+dagger install github.com/you/my-module@v1.0.0
 ```
 
 This adds the dependency to the consumer's `dagger-module.toml`. Tag releases (e.g.
