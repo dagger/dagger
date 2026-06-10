@@ -147,7 +147,7 @@
 
 .cardHeading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.5rem;
   margin: 0;
   padding: 0.3rem 0.6rem;
@@ -161,6 +161,7 @@
 }
 
 .cardHeadingSignature {
+  display: flex;
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -170,7 +171,6 @@
   flex: 0 0 auto;
   gap: 0.4rem;
   margin-left: auto;
-  padding-top: 0.22rem;
 }
 
 .cardBody {
