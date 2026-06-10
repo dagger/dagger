@@ -15,12 +15,15 @@ import (
 	cache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
+	telemetry "github.com/dagger/otel-go"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
 	simplelru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/moby/locker"
 	"github.com/moby/patternmatcher"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var errNotFound = errors.Errorf("not found")
@@ -143,7 +146,7 @@ func (cm *cacheManager) SetCacheContext(ctx context.Context, md cache.RefMetadat
 			linkMap:  map[string][][]byte{},
 		}
 	}
-	if err := cc.save(); err != nil {
+	if err := cc.save(ctx); err != nil {
 		return err
 	}
 	cm.lruMu.Lock()
@@ -254,12 +257,15 @@ func (cc *cacheContext) load() error {
 	return nil
 }
 
-func (cc *cacheContext) save() error {
+func (cc *cacheContext) save(ctx context.Context) (rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "contenthash.save")
+	defer telemetry.EndWithCause(span, &rerr)
+
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
 	if cc.txn != nil {
-		cc.commitActiveTransaction()
+		cc.commitActiveTransaction(ctx)
 	}
 
 	var l CacheRecords
@@ -271,12 +277,14 @@ func (cc *cacheContext) save() error {
 		})
 		return false
 	})
+	span.SetAttributes(attribute.Int("contenthash.record_count", len(l.Paths)))
 
 	dt, err := l.Marshal()
 	if err != nil {
 		return err
 	}
 
+	span.SetAttributes(attribute.Int("contenthash.serialized_bytes", len(dt)))
 	return cc.md.SetContentHash(dt)
 }
 
@@ -406,18 +414,30 @@ func (cc *cacheContext) HandleChange(kind fsutil.ChangeKind, p string, fi os.Fil
 	return nil
 }
 
-func (cc *cacheContext) Checksum(ctx context.Context, mountable cache.Mountable, p string, opts ChecksumOpts) (digest.Digest, error) {
+func (cc *cacheContext) Checksum(ctx context.Context, mountable cache.Mountable, p string, opts ChecksumOpts) (_ digest.Digest, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "contenthash.checksum", trace.WithAttributes(
+		attribute.String("contenthash.path", p),
+		attribute.Bool("contenthash.follow_links", opts.FollowLinks),
+		attribute.Bool("contenthash.wildcard", opts.Wildcard),
+		attribute.Int("contenthash.include_pattern_count", len(opts.IncludePatterns)),
+		attribute.Int("contenthash.exclude_pattern_count", len(opts.ExcludePatterns)),
+	))
+	defer telemetry.EndWithCause(span, &rerr)
+
 	m := &mount{mountable: mountable}
 	defer m.clean()
 
 	if !opts.Wildcard && len(opts.IncludePatterns) == 0 && len(opts.ExcludePatterns) == 0 {
+		span.SetAttributes(attribute.Bool("contenthash.lazy", true))
 		return cc.lazyChecksum(ctx, m, p, opts.FollowLinks)
 	}
 
+	span.SetAttributes(attribute.Bool("contenthash.lazy", false))
 	includedPaths, err := cc.includedPaths(ctx, m, p, opts)
 	if err != nil {
 		return "", err
 	}
+	span.SetAttributes(attribute.Int("contenthash.included_path_count", len(includedPaths)))
 
 	if opts.FollowLinks {
 		for i, w := range includedPaths {
@@ -450,12 +470,21 @@ func (cc *cacheContext) Checksum(ctx context.Context, mountable cache.Mountable,
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (cc *cacheContext) includedPaths(ctx context.Context, m *mount, p string, opts ChecksumOpts) ([]*includedPath, error) {
+func (cc *cacheContext) includedPaths(ctx context.Context, m *mount, p string, opts ChecksumOpts) (_ []*includedPath, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "contenthash.included-paths", trace.WithAttributes(
+		attribute.String("contenthash.path", p),
+		attribute.Bool("contenthash.follow_links", opts.FollowLinks),
+		attribute.Bool("contenthash.wildcard", opts.Wildcard),
+		attribute.Int("contenthash.include_pattern_count", len(opts.IncludePatterns)),
+		attribute.Int("contenthash.exclude_pattern_count", len(opts.ExcludePatterns)),
+	))
+	defer telemetry.EndWithCause(span, &rerr)
+
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
 	if cc.txn != nil {
-		cc.commitActiveTransaction()
+		cc.commitActiveTransaction(ctx)
 	}
 
 	root := cc.tree.Root()
@@ -463,6 +492,7 @@ func (cc *cacheContext) includedPaths(ctx context.Context, m *mount, p string, o
 	if err != nil {
 		return nil, err
 	}
+	span.SetAttributes(attribute.Bool("contenthash.scan_needed", scan))
 	if scan {
 		if err := cc.scanPath(ctx, m, "", false); err != nil {
 			return nil, err
@@ -471,7 +501,7 @@ func (cc *cacheContext) includedPaths(ctx context.Context, m *mount, p string, o
 
 	defer func() {
 		if cc.dirty {
-			go cc.save()
+			go cc.save(context.WithoutCancel(ctx))
 			cc.dirty = false
 		}
 	}()
@@ -673,6 +703,7 @@ func (cc *cacheContext) includedPaths(ctx context.Context, m *mount, p string, o
 	cc.tree = txn.Commit()
 	cc.dirty = updated
 
+	span.SetAttributes(attribute.Int("contenthash.included_path_count", len(includedPaths)))
 	return includedPaths, nil
 }
 
@@ -774,7 +805,13 @@ func containsWildcards(name string) bool {
 	return false
 }
 
-func (cc *cacheContext) lazyChecksum(ctx context.Context, m *mount, p string, followTrailing bool) (digest.Digest, error) {
+func (cc *cacheContext) lazyChecksum(ctx context.Context, m *mount, p string, followTrailing bool) (_ digest.Digest, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "contenthash.lazy-checksum", trace.WithAttributes(
+		attribute.String("contenthash.path", p),
+		attribute.Bool("contenthash.follow_trailing", followTrailing),
+	))
+	defer telemetry.EndWithCause(span, &rerr)
+
 	p = keyPath(p)
 	k := convertPathToKey(p)
 
@@ -789,22 +826,24 @@ func (cc *cacheContext) lazyChecksum(ctx context.Context, m *mount, p string, fo
 			return "", err
 		}
 		if cr != nil && cr.Digest != "" {
+			span.SetAttributes(attribute.Bool("contenthash.fast_lookup_hit", true))
 			return cr.Digest, nil
 		}
 	} else {
 		cc.mu.RUnlock()
 	}
+	span.SetAttributes(attribute.Bool("contenthash.fast_lookup_hit", false))
 
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 
 	if cc.txn != nil {
-		cc.commitActiveTransaction()
+		cc.commitActiveTransaction(ctx)
 	}
 
 	defer func() {
 		if cc.dirty {
-			go cc.save()
+			go cc.save(context.WithoutCancel(ctx))
 			cc.dirty = false
 		}
 	}()
@@ -816,10 +855,18 @@ func (cc *cacheContext) lazyChecksum(ctx context.Context, m *mount, p string, fo
 	return cr.Digest, nil
 }
 
-func (cc *cacheContext) commitActiveTransaction() {
+func (cc *cacheContext) commitActiveTransaction(ctx context.Context) {
+	_, span := Tracer(ctx).Start(ctx, "contenthash.commit-active-transaction")
+	defer span.End()
+
+	dirtyBeforeParentExpansion := len(cc.dirtyMap)
 	for d := range cc.dirtyMap {
 		addParentToMap(d, cc.dirtyMap)
 	}
+	span.SetAttributes(
+		attribute.Int("contenthash.dirty_path_count", dirtyBeforeParentExpansion),
+		attribute.Int("contenthash.dirty_path_count_with_parents", len(cc.dirtyMap)),
+	)
 	for d := range cc.dirtyMap {
 		k := convertPathToKey(d)
 		if _, ok := cc.txn.Get(k); ok {
@@ -832,12 +879,19 @@ func (cc *cacheContext) commitActiveTransaction() {
 	cc.txn = nil
 }
 
-func (cc *cacheContext) scanChecksum(ctx context.Context, m *mount, p string, followTrailing bool) (*CacheRecord, error) {
+func (cc *cacheContext) scanChecksum(ctx context.Context, m *mount, p string, followTrailing bool) (_ *CacheRecord, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "contenthash.scan-checksum", trace.WithAttributes(
+		attribute.String("contenthash.path", p),
+		attribute.Bool("contenthash.follow_trailing", followTrailing),
+	))
+	defer telemetry.EndWithCause(span, &rerr)
+
 	root := cc.tree.Root()
 	scan, err := cc.needsScan(root, p, followTrailing)
 	if err != nil {
 		return nil, err
 	}
+	span.SetAttributes(attribute.Bool("contenthash.scan_needed", scan))
 	if scan {
 		if err := cc.scanPath(ctx, m, p, followTrailing); err != nil {
 			return nil, err
@@ -1009,6 +1063,12 @@ var (
 )
 
 func (cc *cacheContext) scanPath(ctx context.Context, m *mount, p string, followTrailing bool) (retErr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "contenthash.scan-path", trace.WithAttributes(
+		attribute.String("contenthash.path", p),
+		attribute.Bool("contenthash.follow_trailing", followTrailing),
+	))
+	defer telemetry.EndWithCause(span, &retErr)
+
 	p = path.Join("/", p)
 
 	mp, err := m.mount(ctx)
@@ -1039,7 +1099,9 @@ func (cc *cacheContext) scanPath(ctx context.Context, m *mount, p string, follow
 		scanPath = resolvedPath
 	}
 
+	var walked int
 	err = filepath.Walk(scanPath, func(itemPath string, fi os.FileInfo, err error) error {
+		walked++
 		if scanCounterEnable {
 			scanCounter.Add(1)
 		}
@@ -1082,6 +1144,7 @@ func (cc *cacheContext) scanPath(ctx context.Context, m *mount, p string, follow
 	if err != nil {
 		return err
 	}
+	span.SetAttributes(attribute.Int("contenthash.walked_count", walked))
 
 	cc.tree = txn.Commit()
 	return nil

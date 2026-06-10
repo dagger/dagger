@@ -3,8 +3,6 @@ package filesync
 import (
 	"encoding/binary"
 	"hash"
-	"slices"
-	"strings"
 	"sync"
 
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
@@ -48,21 +46,6 @@ func (h *statHash) Reset() {
 	buf = binary.LittleEndian.AppendUint64(buf, uint64(h.stat.Devmajor))
 	buf = binary.LittleEndian.AppendUint64(buf, uint64(h.stat.Devminor))
 	buf = append(buf, []byte("\x00"+h.stat.Linkname+"\x00")...)
-
-	xattrs := make([]string, 0, len(h.stat.Xattrs))
-	for k, v := range h.stat.Xattrs {
-		if strings.HasPrefix(k, "system.") {
-			continue
-		}
-		if strings.HasPrefix(k, "security.") && k != "security.capability" {
-			continue
-		}
-		xattrs = append(xattrs, k+string(v))
-	}
-	slices.Sort(xattrs)
-	for _, xattr := range xattrs {
-		buf = append(buf, []byte("\x00"+xattr+"\x00")...)
-	}
 
 	h.Write(buf)
 	statHashBufPool.Put(&buf)

@@ -9,8 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/snapshots"
+	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 )
 
@@ -27,16 +31,48 @@ func NewCopier(dest Mount) (*Copier, error) {
 	return &Copier{dest: d}, nil
 }
 
-func (c *Copier) Copy(ctx context.Context, src Mount, srcPath, destPath string, opts CopyOptions) error {
+func (c *Copier) Copy(ctx context.Context, src Mount, srcPath, destPath string, opts CopyOptions) (rerr error) {
+	stats := opts.Stats
+	if stats == nil {
+		stats = &CopyStats{}
+		opts.Stats = stats
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "layercopy.copy", trace.WithAttributes(
+		attribute.String("layercopy.src_path", srcPath),
+		attribute.String("layercopy.dest_path", destPath),
+		attribute.Bool("layercopy.copy_dir_contents", opts.CopyDirContents),
+		attribute.Bool("layercopy.replace_existing", opts.ReplaceExisting),
+		attribute.Bool("layercopy.disable_hardlinks", opts.DisableHardlinks),
+		attribute.Bool("layercopy.disable_source_hardlinks", opts.DisableSourceHardlinks),
+		attribute.Int("layercopy.only_count", len(opts.Filter.Only)),
+		attribute.Int("layercopy.include_pattern_count", len(opts.Filter.Include)),
+		attribute.Int("layercopy.exclude_pattern_count", len(opts.Filter.Exclude)),
+	))
+	defer func() {
+		span.SetAttributes(copyStatsAttributes(stats)...)
+		telemetry.EndWithCause(span, &rerr)
+	}()
+
+	var s *source
+	_, setupSourceSpan := Tracer(ctx).Start(ctx, "layercopy.setup-source")
 	s, err := newSource(src)
+	setupSourceErr := err
+	telemetry.EndWithCause(setupSourceSpan, &setupSourceErr)
 	if err != nil {
 		return err
 	}
+	_, setupMatcherSpan := Tracer(ctx).Start(ctx, "layercopy.setup-matcher")
 	m, err := newMatcher(s.root, opts.Filter)
+	setupMatcherErr := err
+	telemetry.EndWithCause(setupMatcherSpan, &setupMatcherErr)
 	if err != nil {
 		return err
 	}
-	return c.copy(ctx, s, m, srcPath, destPath, opts)
+	_, copyTreeSpan := Tracer(ctx).Start(ctx, "layercopy.walk-and-copy")
+	err = c.copy(ctx, s, m, srcPath, destPath, opts)
+	copyTreeErr := err
+	telemetry.EndWithCause(copyTreeSpan, &copyTreeErr)
+	return err
 }
 
 func (c *Copier) CopyFile(ctx context.Context, src Mount, srcPath, destPath string, opts CopyOptions) error {
@@ -99,7 +135,12 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 		if _, _, err := c.dest.ensureDir(destPath, &root, opts, false); err != nil {
 			return err
 		}
+		start := time.Now()
 		entries, err := src.readDir("")
+		if opts.Stats != nil {
+			opts.Stats.ReadDirCalls++
+			opts.Stats.ReadDirDuration += time.Since(start)
+		}
 		if err != nil {
 			return err
 		}
@@ -176,9 +217,29 @@ func (c *Copier) copyEntry(
 	default:
 	}
 
+	if opts.Stats != nil {
+		opts.Stats.EntriesVisited++
+	}
 	include, state, err := matcher.includePath(ent.Rel, ent.ViewPath, ent.Info, parentState)
 	if err != nil {
 		return err
+	}
+	if opts.Stats != nil {
+		switch {
+		case ent.Info.IsDir():
+			opts.Stats.Dirs++
+		case ent.Info.Mode().Type() == 0:
+			opts.Stats.RegularFiles++
+		case ent.Info.Mode()&os.ModeSymlink != 0:
+			opts.Stats.Symlinks++
+		case ent.Info.Mode()&(os.ModeDevice|os.ModeNamedPipe|os.ModeSocket) != 0:
+			opts.Stats.SpecialFiles++
+		}
+		if include {
+			opts.Stats.Included++
+		} else {
+			opts.Stats.Skipped++
+		}
 	}
 
 	if ent.Info.IsDir() {
@@ -207,7 +268,12 @@ func (c *Copier) copyEntry(
 			return nil
 		}
 
+		start := time.Now()
 		children, err := src.readDir(ent.Rel)
+		if opts.Stats != nil {
+			opts.Stats.ReadDirCalls++
+			opts.Stats.ReadDirDuration += time.Since(start)
+		}
 		if err != nil {
 			return err
 		}
@@ -311,7 +377,14 @@ func (c *Copier) copyRegular(ent sourceEntry, realPath string, opts CopyOptions)
 		}
 	}
 
-	if err := copyFileContent(realPath, ent.RealPath); err != nil {
+	start := time.Now()
+	written, err := copyFileContent(realPath, ent.RealPath)
+	if opts.Stats != nil {
+		opts.Stats.ContentCopyCalls++
+		opts.Stats.ContentCopyDuration += time.Since(start)
+		opts.Stats.BytesCopied += written
+	}
+	if err != nil {
 		return err
 	}
 	if !opts.DisableHardlinks {
@@ -324,23 +397,55 @@ func isHardlinkFallback(err error) bool {
 	return err != nil && (os.IsExist(err) || err == unix.EXDEV || err == unix.EMLINK || err == syscall.EXDEV || err == syscall.EMLINK)
 }
 
-func copyFileContent(dstPath, srcPath string) error {
+func copyFileContent(dstPath, srcPath string) (int64, error) {
 	src, err := os.Open(srcPath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer src.Close()
 
 	dst, err := os.Create(dstPath)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	_, copyErr := io.Copy(dst, src)
+	written, copyErr := io.Copy(dst, src)
 	closeErr := dst.Close()
 	if copyErr != nil {
-		return copyErr
+		return written, copyErr
 	}
-	return closeErr
+	return written, closeErr
+}
+
+func copyStatsAttributes(stats *CopyStats) []attribute.KeyValue {
+	if stats == nil {
+		return nil
+	}
+	return []attribute.KeyValue{
+		attribute.Int64("layercopy.entries_visited", stats.EntriesVisited),
+		attribute.Int64("layercopy.included", stats.Included),
+		attribute.Int64("layercopy.skipped", stats.Skipped),
+		attribute.Int64("layercopy.dirs", stats.Dirs),
+		attribute.Int64("layercopy.regular_files", stats.RegularFiles),
+		attribute.Int64("layercopy.symlinks", stats.Symlinks),
+		attribute.Int64("layercopy.special_files", stats.SpecialFiles),
+		attribute.Int64("layercopy.read_dir_calls", stats.ReadDirCalls),
+		attribute.Int64("layercopy.read_dir_duration_ms", stats.ReadDirDuration.Milliseconds()),
+		attribute.Int64("layercopy.ensure_dir_calls", stats.EnsureDirCalls),
+		attribute.Int64("layercopy.ensure_dir_duration_ms", stats.EnsureDirDuration.Milliseconds()),
+		attribute.Int64("layercopy.created_dirs", stats.CreatedDirs),
+		attribute.Int64("layercopy.materialized_dirs", stats.MaterializedDirs),
+		attribute.Int64("layercopy.remove_calls", stats.RemoveCalls),
+		attribute.Int64("layercopy.remove_duration_ms", stats.RemoveDuration.Milliseconds()),
+		attribute.Int64("layercopy.content_copy_calls", stats.ContentCopyCalls),
+		attribute.Int64("layercopy.content_copy_duration_ms", stats.ContentCopyDuration.Milliseconds()),
+		attribute.Int64("layercopy.bytes_copied", stats.BytesCopied),
+		attribute.Int64("layercopy.metadata_calls", stats.MetadataCalls),
+		attribute.Int64("layercopy.metadata_duration_ms", stats.MetadataDuration.Milliseconds()),
+		attribute.Int64("layercopy.xattr_list_calls", stats.XAttrListCalls),
+		attribute.Int64("layercopy.xattr_get_calls", stats.XAttrGetCalls),
+		attribute.Int64("layercopy.xattr_set_calls", stats.XAttrSetCalls),
+		attribute.Int64("layercopy.xattr_duration_ms", stats.XAttrDuration.Milliseconds()),
+	}
 }
 
 func mknod(dstPath string, info os.FileInfo) error {

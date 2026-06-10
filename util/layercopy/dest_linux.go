@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
@@ -122,7 +123,15 @@ func (d *destination) ensureParent(destPath string) (string, error) {
 	return rel, err
 }
 
-func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOptions, overwriteMetadata bool) (string, bool, error) {
+func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOptions, overwriteMetadata bool) (_ string, _ bool, rerr error) {
+	if opts.Stats != nil {
+		start := time.Now()
+		opts.Stats.EnsureDirCalls++
+		defer func() {
+			opts.Stats.EnsureDirDuration += time.Since(start)
+		}()
+	}
+
 	destPath = cleanContainerPath(destPath)
 	if destPath == "/" {
 		return "", false, nil
@@ -167,7 +176,7 @@ func (d *destination) ensureExistingDir(destPath string, src *sourceEntry, opts 
 			return "", false, err
 		}
 	}
-	realPath, materialized, err := d.materializeExistingDir(rel, viewPath)
+	realPath, materialized, err := d.materializeExistingDir(rel, viewPath, opts.Stats)
 	if err != nil {
 		return "", false, err
 	}
@@ -230,6 +239,9 @@ func (d *destination) createDir(destPath string, src *sourceEntry, opts CopyOpti
 	if err := d.applyMetadataPath(realPath, src, opts); err != nil {
 		return "", false, err
 	}
+	if opts.Stats != nil {
+		opts.Stats.CreatedDirs++
+	}
 	return rel, true, nil
 }
 
@@ -267,7 +279,7 @@ func mkdirMode(src *sourceEntry, opts CopyOptions) os.FileMode {
 	return mode
 }
 
-func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool, error) {
+func (d *destination) materializeExistingDir(rel, viewPath string, stats *CopyStats) (string, bool, error) {
 	realPath := filepath.Join(d.writeRoot, rel)
 	if info, err := os.Lstat(realPath); err == nil {
 		if !info.IsDir() {
@@ -285,8 +297,11 @@ func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool
 	if err := os.Mkdir(realPath, info.Mode().Perm()); err != nil && !os.IsExist(err) {
 		return "", false, err
 	}
-	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil); err != nil {
+	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil, false, stats); err != nil {
 		return "", false, err
+	}
+	if stats != nil {
+		stats.MaterializedDirs++
 	}
 	return realPath, true, nil
 }
@@ -319,7 +334,7 @@ func (d *destination) statView(destPath string) (os.FileInfo, bool, error) {
 	return nil, false, err
 }
 
-func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opts CopyOptions) error {
+func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opts CopyOptions) (rerr error) {
 	if !opts.ReplaceExisting {
 		return nil
 	}
@@ -336,7 +351,13 @@ func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opt
 	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(realPath); err != nil {
+	start := time.Now()
+	err = os.RemoveAll(realPath)
+	if opts.Stats != nil {
+		opts.Stats.RemoveCalls++
+		opts.Stats.RemoveDuration += time.Since(start)
+	}
+	if err != nil {
 		return err
 	}
 	if d.overlay && srcInfo.IsDir() && !destInfo.IsDir() {
@@ -357,7 +378,7 @@ func (d *destination) applyMetadataPath(dstPath string, src *sourceEntry, opts C
 		info = src.Info
 		srcPath = src.RealPath
 	}
-	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr, opts.XAttrErrorHandler)
+	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr, opts.XAttrErrorHandler, opts.DisableXAttrs, opts.Stats)
 }
 
 func (d *destination) flush() error {
@@ -394,7 +415,15 @@ func (d *destination) usage() (snapshots.Usage, error) {
 	return usage, err
 }
 
-func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool, xattrErrorHandler XAttrErrorHandler) error {
+func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool, xattrErrorHandler XAttrErrorHandler, disableXAttrs bool, stats *CopyStats) (rerr error) {
+	if stats != nil {
+		start := time.Now()
+		stats.MetadataCalls++
+		defer func() {
+			stats.MetadataDuration += time.Since(start)
+		}()
+	}
+
 	if srcInfo != nil {
 		st, ok := srcInfo.Sys().(*syscall.Stat_t)
 		if !ok {
@@ -418,8 +447,8 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 			}
 		}
 
-		if srcPath != "" {
-			if err := copyXattrs(dstPath, srcPath, userxattr, xattrErrorHandler); err != nil {
+		if srcPath != "" && !disableXAttrs {
+			if err := copyXattrs(dstPath, srcPath, userxattr, xattrErrorHandler, stats); err != nil {
 				return err
 			}
 		}
@@ -445,8 +474,13 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 	return nil
 }
 
-func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHandler) error {
+func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHandler, stats *CopyStats) error {
+	start := time.Now()
 	xattrs, err := sysx.LListxattr(srcPath)
+	if stats != nil {
+		stats.XAttrListCalls++
+		stats.XAttrDuration += time.Since(start)
+	}
 	if err != nil {
 		if errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.ENODATA) {
 			return nil
@@ -460,7 +494,12 @@ func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHan
 		if xattr == "trusted.overlay.opaque" || xattr == "user.overlay.opaque" {
 			continue
 		}
+		start := time.Now()
 		val, err := sysx.LGetxattr(srcPath, xattr)
+		if stats != nil {
+			stats.XAttrGetCalls++
+			stats.XAttrDuration += time.Since(start)
+		}
 		if err != nil {
 			if errors.Is(err, unix.ENODATA) {
 				continue
@@ -473,7 +512,13 @@ func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHan
 			}
 			return fmt.Errorf("failed to get xattr %q on %s: %w", xattr, srcPath, err)
 		}
-		if err := sysx.LSetxattr(dstPath, xattr, val, 0); err != nil && xattrErrorHandler != nil {
+		start = time.Now()
+		err = sysx.LSetxattr(dstPath, xattr, val, 0)
+		if stats != nil {
+			stats.XAttrSetCalls++
+			stats.XAttrDuration += time.Since(start)
+		}
+		if err != nil && xattrErrorHandler != nil {
 			if err := xattrErrorHandler(dstPath, srcPath, xattr, err); err != nil {
 				return err
 			}
