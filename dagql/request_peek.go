@@ -13,14 +13,15 @@ import (
 )
 
 type peekGraphQLRequest struct {
-	Query         string `json:"query"`
-	OperationName string `json:"operationName"`
+	Query         string         `json:"query"`
+	OperationName string         `json:"operationName"`
+	Variables     map[string]any `json:"variables"`
 }
 
 // PeekRootFields returns the top-level field names selected by a GraphQL-over-HTTP
 // request while preserving the request body for the real server.
 func PeekRootFields(r *http.Request) (bool, []string, error) {
-	query, operationName, ok, err := peekGraphQLRequestBody(r)
+	query, operationName, _, ok, err := peekGraphQLRequestBody(r)
 	if err != nil || !ok {
 		return ok, nil, err
 	}
@@ -68,7 +69,7 @@ var workspaceIncludeSelectorFields = map[string]struct{}{
 // root field selecting only one of those fields with a literal include list
 // returns false, so loading falls back to all modules.
 func PeekWorkspaceSelectorInclude(r *http.Request) (bool, []string, error) {
-	query, operationName, ok, err := peekGraphQLRequestBody(r)
+	query, operationName, vars, ok, err := peekGraphQLRequestBody(r)
 	if err != nil || !ok {
 		return false, nil, err
 	}
@@ -96,7 +97,49 @@ func PeekWorkspaceSelectorInclude(r *http.Request) (bool, []string, error) {
 		return false, nil, nil
 	}
 
-	include, ok := stringListArgument(selector.Arguments, "include")
+	include, ok := stringListArgument(selector.Arguments, "include", vars)
+	if !ok {
+		return false, nil, nil
+	}
+	return true, include, nil
+}
+
+// PeekWorkspaceTypeDefsInclude reports whether a GraphQL-over-HTTP request is a
+// typedefs introspection of the shape
+//
+//	{ currentTypeDefs(… include: [...]) … }
+//
+// and, if so, returns the literal include patterns while preserving the request
+// body for the real server. `dagger call` and `dagger functions` build their
+// command tree from currentTypeDefs, which otherwise loads every workspace
+// module; recognizing this shape lets the engine narrow module loading to the
+// targeted module so an unrelated broken/stale module cannot block a call. The
+// include argument may be a literal list or a query variable. It is deliberately
+// conservative: anything other than a single currentTypeDefs root field with a
+// resolvable string-list include returns false, so loading falls back to all
+// modules.
+func PeekWorkspaceTypeDefsInclude(r *http.Request) (bool, []string, error) {
+	query, operationName, vars, ok, err := peekGraphQLRequestBody(r)
+	if err != nil || !ok {
+		return false, nil, err
+	}
+
+	doc, err := parser.ParseQuery(&ast.Source{Input: query})
+	if err != nil {
+		return false, nil, err
+	}
+
+	op, ok := peekOperation(doc, operationName)
+	if !ok || op.Operation != ast.Query {
+		return false, nil, nil
+	}
+
+	root := singleConcreteField(op.SelectionSet)
+	if root == nil || root.Name != "currentTypeDefs" {
+		return false, nil, nil
+	}
+
+	include, ok := stringListArgument(root.Arguments, "include", vars)
 	if !ok {
 		return false, nil, nil
 	}
@@ -125,16 +168,33 @@ func singleConcreteField(set ast.SelectionSet) *ast.Field {
 	return found
 }
 
-// stringListArgument returns the values of a named argument when it is a literal
-// list of strings. Missing, non-list, variable, or non-string arguments return
-// false so callers do not narrow on something they can't resolve statically.
-func stringListArgument(args ast.ArgumentList, name string) ([]string, bool) {
+// stringListArgument returns the values of a named argument when it resolves to
+// a non-empty list of strings, either as a literal list or a query variable
+// resolved against vars. Missing, non-list, unresolved-variable, or non-string
+// arguments return false so callers do not narrow on something they can't
+// resolve statically.
+func stringListArgument(args ast.ArgumentList, name string, vars map[string]any) ([]string, bool) {
 	arg := args.ForName(name)
-	if arg == nil || arg.Value == nil || arg.Value.Kind != ast.ListValue {
+	if arg == nil || arg.Value == nil {
 		return nil, false
 	}
-	values := make([]string, 0, len(arg.Value.Children))
-	for _, child := range arg.Value.Children {
+	switch arg.Value.Kind {
+	case ast.ListValue:
+		return stringListFromLiteral(arg.Value)
+	case ast.Variable:
+		raw, ok := vars[arg.Value.Raw]
+		if !ok {
+			return nil, false
+		}
+		return stringListFromAny(raw)
+	default:
+		return nil, false
+	}
+}
+
+func stringListFromLiteral(value *ast.Value) ([]string, bool) {
+	values := make([]string, 0, len(value.Children))
+	for _, child := range value.Children {
 		if child.Value == nil || child.Value.Kind != ast.StringValue {
 			return nil, false
 		}
@@ -146,54 +206,81 @@ func stringListArgument(args ast.ArgumentList, name string) ([]string, bool) {
 	return values, true
 }
 
-func peekGraphQLRequestBody(r *http.Request) (string, string, bool, error) {
+func stringListFromAny(raw any) ([]string, bool) {
+	list, ok := raw.([]any)
+	if !ok || len(list) == 0 {
+		return nil, false
+	}
+	values := make([]string, 0, len(list))
+	for _, item := range list {
+		s, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		values = append(values, s)
+	}
+	return values, true
+}
+
+func peekGraphQLRequestBody(r *http.Request) (string, string, map[string]any, bool, error) {
 	switch r.Method {
 	case http.MethodGet:
 		query := r.URL.Query().Get("query")
 		if query == "" {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
-		return query, r.URL.Query().Get("operationName"), true, nil
+		return query, r.URL.Query().Get("operationName"), parseVariablesParam(r.URL.Query().Get("variables")), true, nil
 	case http.MethodPost:
 		if r.Body == nil {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			return "", "", false, err
+			return "", "", nil, false, err
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil && r.Header.Get("Content-Type") != "" {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
 		if mediaType == "application/graphql" {
 			query := string(body)
 			if strings.TrimSpace(query) == "" {
-				return "", "", false, nil
+				return "", "", nil, false, nil
 			}
-			return query, r.URL.Query().Get("operationName"), true, nil
+			return query, r.URL.Query().Get("operationName"), nil, true, nil
 		}
 		if mediaType != "" && mediaType != "application/json" {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
 
 		trimmed := bytes.TrimSpace(body)
 		if len(trimmed) == 0 || trimmed[0] == '[' {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
 		var payload peekGraphQLRequest
 		if err := json.Unmarshal(trimmed, &payload); err != nil {
-			return "", "", false, err
+			return "", "", nil, false, err
 		}
 		if strings.TrimSpace(payload.Query) == "" {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
-		return payload.Query, payload.OperationName, true, nil
+		return payload.Query, payload.OperationName, payload.Variables, true, nil
 	default:
-		return "", "", false, nil
+		return "", "", nil, false, nil
 	}
+}
+
+func parseVariablesParam(s string) map[string]any {
+	if s == "" {
+		return nil
+	}
+	var vars map[string]any
+	if err := json.Unmarshal([]byte(s), &vars); err != nil {
+		return nil
+	}
+	return vars
 }
 
 func peekOperation(doc *ast.QueryDocument, operationName string) (*ast.OperationDefinition, bool) {

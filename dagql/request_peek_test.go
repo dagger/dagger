@@ -164,3 +164,77 @@ func TestPeekWorkspaceSelectorIncludeExtraRootField(t *testing.T) {
 	require.False(t, ok)
 	require.Nil(t, include)
 }
+
+func TestPeekWorkspaceTypeDefsIncludeLiteral(t *testing.T) {
+	t.Parallel()
+
+	body := `{"query":"{ typeDefs: currentTypeDefs(returnAllTypes: true, include: [\"good\"]) { name } }"}`
+	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	ok, include, err := dagql.PeekWorkspaceTypeDefsInclude(req)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []string{"good"}, include)
+
+	restored, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.Equal(t, body, string(restored))
+}
+
+func TestPeekWorkspaceTypeDefsIncludeVariable(t *testing.T) {
+	t.Parallel()
+
+	// The CLI sends include as a query variable (like hideCore), so the peek
+	// must resolve it from the request variables.
+	body := `{"query":"query TypeDefs($include: [String!]) { currentTypeDefs(returnAllTypes: true, include: $include) { name } }","variables":{"include":["good"]}}`
+	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	ok, include, err := dagql.PeekWorkspaceTypeDefsInclude(req)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []string{"good"}, include)
+}
+
+func TestPeekWorkspaceTypeDefsIncludeUnresolvedVariable(t *testing.T) {
+	t.Parallel()
+
+	// include is a variable but absent from variables (e.g. null) -> cannot
+	// narrow, so loading falls back to all modules.
+	body := `{"query":"query TypeDefs($include: [String!]) { currentTypeDefs(returnAllTypes: true, include: $include) { name } }","variables":{}}`
+	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	ok, include, err := dagql.PeekWorkspaceTypeDefsInclude(req)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, include)
+}
+
+func TestPeekWorkspaceTypeDefsIncludeWithoutIncludeArg(t *testing.T) {
+	t.Parallel()
+
+	// The unscoped introspection (no include) must not narrow.
+	req := httptest.NewRequest(http.MethodPost, "/query",
+		strings.NewReader(`{"query":"{ currentTypeDefs(returnAllTypes: true) { name } }"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	ok, include, err := dagql.PeekWorkspaceTypeDefsInclude(req)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, include)
+}
+
+func TestPeekWorkspaceTypeDefsIncludeExtraRootField(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, "/query",
+		strings.NewReader(`{"query":"{ currentTypeDefs(include: [\"good\"]) { name } version }"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	ok, include, err := dagql.PeekWorkspaceTypeDefsInclude(req)
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, include)
+}
