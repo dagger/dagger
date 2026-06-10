@@ -38,7 +38,12 @@ so existing modules keep the language semantics they were written against.
 ## Adding support for a new Dang major (vN+1)
 
 1. Upstream: tag `vN+1.0.0` on a module path with the new major suffix; keep
-   a maintenance branch for the now-frozen prior major.
+   a maintenance branch for the now-frozen prior major. On that maintenance
+   branch, rename the tree-sitter grammar's exported C symbols with a `_vN`
+   suffix (see `pkg/dang/danglang/danglang.go` on `release/v1`): C symbols
+   share one global namespace, so two majors with identical symbol names
+   fail to link into the same binary. The canonical `tree_sitter_dang` names
+   always stay with the living major so editor integrations keep working.
 2. Copy the living package to a dir for the new major (e.g. `cp -r v2 v3`),
    then in `v3/` rewrite the dang import paths to the new major and the
    package clause to `dangv3`. `v2/` is now frozen — update its package doc to

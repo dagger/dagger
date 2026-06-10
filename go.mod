@@ -152,7 +152,7 @@ require (
 	github.com/urfave/cli v1.22.17
 	github.com/vektah/gqlparser/v2 v2.5.32
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang v1.0.0
+	github.com/vito/dang v1.0.1
 	github.com/vito/dang/v2 v2.0.0
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
