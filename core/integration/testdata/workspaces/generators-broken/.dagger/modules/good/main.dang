@@ -1,18 +1,16 @@
 type Good {
-  pub workdir: Directory! @defaultPath(path: ".")
-
   """
   Regenerate by writing a marker file. Used to prove the module loaded.
   """
-  pub generate: Changeset! @generate {
+  pub generate(workdir: Directory! @defaultPath(path: ".")): Changeset! @generate {
     workdir.withNewFile("generated.txt", "hello from good").changes(workdir)
   }
 
   """
-  A trivial check. Used to prove the module loaded for `dagger check`.
+  A trivial check. Used to prove the module loaded for `dagger check` and
+  `dagger call`.
   """
   pub verify: Void @check {
-    workdir.sync
     null
   }
 

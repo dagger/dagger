@@ -337,6 +337,40 @@ func (GeneratorsSuite) TestWorkspaceUpNarrowsToRequestedModule(ctx context.Conte
 	})
 }
 
+// TestWorkspaceCallNarrowsToRequestedModule mirrors
+// TestWorkspaceGenerateNarrowsToRequestedModule for `dagger call`: targeting a
+// healthy module's function must not load every workspace module just to build
+// the command tree, so an unrelated broken/stale module cannot block the call.
+func (GeneratorsSuite) TestWorkspaceCallNarrowsToRequestedModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generators-broken")
+
+	t.Run("calling a healthy module's function skips the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("call", "good", "verify", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("listing the healthy module's functions skips the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("functions", "good", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("listing all workspace functions still loads the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("functions")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bad")
+	})
+}
+
 func (GeneratorsSuite) TestWorkspaceGenerateSkip(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
