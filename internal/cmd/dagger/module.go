@@ -54,8 +54,6 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 }
 
 func init() {
-	workspaceCmd.AddCommand(workspaceInstallCmd, workspaceUninstallCmd, workspaceUpdateCmd)
-
 	moduleAddFlags(apiCallCmd.Command(), apiCallCmd.Command().PersistentFlags(), true)
 	moduleAddFlags(callModCmd.Command(), callModCmd.Command().PersistentFlags(), true)
 
@@ -73,20 +71,14 @@ func init() {
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
 
-	addWorkspaceInstallFlags(workspaceInstallCmd)
 	addWorkspaceInstallFlags(moduleDepInstallCmd)
-	addWorkspaceHereFlag(workspaceUninstallCmd)
 	addWorkspaceHereFlag(moduleDepUninstallCmd)
 
-	setWorkspaceFlagPolicy(workspaceUpdateCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleUpdateCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(workspaceInstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(workspaceUninstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepUninstallCmd, workspaceFlagPolicyLocalOnly)
 }
 
-var workspaceUpdateCmd = newWorkspaceUpdateCmd(false)
 var moduleUpdateCmd = newWorkspaceUpdateCmd(false)
 
 func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
@@ -103,7 +95,6 @@ Refreshes entries already recorded in dagger.lock.`,
 	}
 }
 
-var workspaceInstallCmd = newWorkspaceInstallCmd(false, nil)
 var moduleDepInstallCmd = newWorkspaceInstallCmd(false, []string{"i"})
 
 func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
@@ -122,7 +113,6 @@ Use --here to create the workspace config at the workspace cwd instead.`,
 	}
 }
 
-var workspaceUninstallCmd = newWorkspaceUninstallCmd(false, nil)
 var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, []string{"un"})
 
 func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {

@@ -122,45 +122,25 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, sessionAliasCmd, cmd)
 	require.True(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"workspace", "migrate"})
-	require.NoError(t, err)
-	require.Same(t, workspaceMigrateCmd, cmd)
-	require.False(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"migrate"})
-	require.NoError(t, err)
-	require.Same(t, migrateCmd, cmd)
-	require.True(t, cmd.Hidden)
-
 	cmd, _, err = rootCmd.Find([]string{"workspace", "config"})
 	require.NoError(t, err)
 	require.Same(t, workspaceConfigCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"config"})
-	require.NoError(t, err)
-	require.Same(t, configCmd, cmd)
-	require.True(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"workspace", "settings"})
-	require.NoError(t, err)
-	require.Same(t, workspaceSettingsCmd, cmd)
-	require.False(t, cmd.Hidden)
-
 	cmd, _, err = rootCmd.Find([]string{"settings"})
 	require.NoError(t, err)
 	require.Same(t, settingsCmd, cmd)
-	require.True(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"workspace", "uninstall"})
-	require.NoError(t, err)
-	require.Same(t, workspaceUninstallCmd, cmd)
 	require.False(t, cmd.Hidden)
 
 	cmd, _, err = rootCmd.Find([]string{"uninstall"})
 	require.NoError(t, err)
 	require.Same(t, moduleDepUninstallCmd, cmd)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"installed"})
+	require.NoError(t, err)
+	require.Same(t, installedCmd, cmd)
+	require.False(t, cmd.Hidden)
 
 	cmd, _, err = rootCmd.Find([]string{"lock"})
 	require.NoError(t, err)
@@ -382,14 +362,6 @@ func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
 	require.Equal(t, "./ws", workspaceRef)
 }
 
-func TestConfigAliasFlags(t *testing.T) {
-	cmd, _, err := rootCmd.Find([]string{"config"})
-	require.NoError(t, err)
-	require.Same(t, configCmd, cmd)
-	require.Nil(t, cmd.Flags().Lookup("load-module"))
-	require.Nil(t, cmd.Flags().Lookup("json"))
-}
-
 func TestWorkspaceFlagPolicy(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	oldWorkspaceEnv := workspaceEnv
@@ -399,27 +371,18 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	})
 
 	workspaceRef = "github.com/acme/ws"
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil), "must be a local path")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(migrateCmd, nil), "not supported")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceMigrateCmd, nil), "not supported")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source", "x"}), "must be a local path")
-	require.NoError(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source"}))
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}), "must be a local path")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(envRmCmd, []string{"ci"}), "must be a local path")
 
 	workspaceRef = "./local-workspace"
-	require.NoError(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(apiCallCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}))
-	require.NoError(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}))
 }
 
 func TestApplyWorkspaceClientParams(t *testing.T) {
