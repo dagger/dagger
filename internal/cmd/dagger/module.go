@@ -56,11 +56,10 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 func init() {
 	workspaceCmd.AddCommand(workspaceInstallCmd, workspaceUninstallCmd, workspaceUpdateCmd)
 
-	moduleAddFlags(functionCallCmd.Command(), functionCallCmd.Command().PersistentFlags(), true)
+	moduleAddFlags(apiCallCmd.Command(), apiCallCmd.Command().PersistentFlags(), true)
 	moduleAddFlags(callModCmd.Command(), callModCmd.Command().PersistentFlags(), true)
 
-	moduleAddFlags(functionListCmd, functionListCmd.PersistentFlags(), false)
-	moduleAddFlags(funcListCmd, funcListCmd.PersistentFlags(), false)
+	moduleAddFlags(apiFunctionsCmd, apiFunctionsCmd.PersistentFlags(), false)
 	moduleAddFlags(apiListenCmd, apiListenCmd.PersistentFlags(), true)
 	moduleAddFlags(listenCmd, listenCmd.PersistentFlags(), true)
 	moduleAddFlags(apiQueryCmd, apiQueryCmd.PersistentFlags(), true)
