@@ -8,23 +8,7 @@ description: "Apply named configuration overlays for staging, production, and mo
 
 An environment is a named overlay on top of your workspace configuration. Use environments when the same checks, generators, or services need different settings in different contexts — for example a different base image in `staging` than in `production`.
 
-## Create an environment
-
-```shell
-dagger env create staging
-```
-
-## List environments
-
-```shell
-dagger env list
-```
-
-## Remove an environment
-
-```shell
-dagger env rm staging
-```
+Environments are path prefixes in your workspace configuration (`env.<name>.*` in `dagger.toml`). They aren't first-class commands; you create one implicitly by writing to its overlay, list them by inspecting workspace config, and remove one by deleting the keys.
 
 ## Apply an environment
 
@@ -43,6 +27,8 @@ Most per-environment differences are module settings — a base image, a package
 dagger settings --env staging eslint baseImageAddress node:22-alpine
 ```
 
+Writing to a setting under `--env=<name>` is also how the environment gets created. The first write creates the overlay; subsequent writes update it.
+
 Reads with `--env` show the *effective* view — the base settings with the overlay applied:
 
 ```shell
@@ -51,4 +37,12 @@ dagger settings --env staging eslint
 
 Without `--env`, you read and write the base configuration, which every environment inherits.
 
-For configuration that isn't a module setting, `dagger config` is the lower-level key/value interface to `dagger.toml` and follows the same `--env` overlay rules.
+## Lower-level access
+
+For configuration that isn't a module-declared setting, edit the raw config file:
+
+```shell
+dagger workspace config env.staging.<some-key> <value>
+```
+
+`dagger workspace config` is the lower-level key/value interface to `dagger.toml`. It follows the same `--env` overlay rules.
