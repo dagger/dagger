@@ -3,6 +3,7 @@
 A redesign of the Dagger CLI's user-facing command surface for 1.0. Untangles the workspace/module namespace duality, hoists daily-use verbs to top-level, introduces a dedicated module-authoring lane, and renames a load-bearing flag to remove a long-standing semantic conflation.
 
 ## Table of Contents
+
 - [Problem](#problem)
 - [Solution](#solution)
 - [Target `--help`](#target---help)
@@ -52,7 +53,6 @@ AVAILABLE COMMANDS
   uninstall, un Uninstall a module from your workspace
   installed     List installed modules
   update        Refresh installed-module state
-  list, ls      List artifacts (types, tests, etc.) — see modules-v2
   search        Search for modules you can install
   settings      Get or set module settings (use --env for an env overlay)
 
@@ -61,7 +61,7 @@ AVAILABLE COMMANDS
   cloud           Manage Dagger Cloud (login, integrations, etc.)
   workspace, ws   Inspect or configure your workspace (cwd, remotes, config, etc.)
 
-  exec         Execute a command in a Dagger session
+  exec         Run a command with a connected Dagger session (DAGGER_SESSION_PORT/TOKEN injected)
   help         Help about any command
   version      Print dagger version
 
@@ -84,7 +84,7 @@ OPTIONS
 |-------|-------|----------|
 | 1 | First contact | `setup` |
 | 2 | Daily project flow | `check`, `generate`, `up`, `activity` |
-| 3 | Workspace management | `install`, `uninstall`, `installed`, `update`, `list`, `search`, `settings` |
+| 3 | Workspace management | `install`, `uninstall`, `installed`, `update`, `search`, `settings` |
 | 4 | Specialized toolboxes | `api`, `module`, `cloud`, `workspace` |
 | 5 | Utility / meta | `exec`, `help`, `version` |
 
@@ -115,9 +115,9 @@ What we considered, debated, changed, and decided for each command. Not a descri
 | `up` | Adversarial reviewer flagged collision with `docker compose up` semantics. Collision is intentional — `dagger up` does mean what `docker compose up` means. Description names local-development as the use case to distinguish from `check`. |
 | `activity` | Originally lived as `dagger workspace activity`. Hoisted to top-level after asking what happened to it during the workspace-plumbing punt. Proposed `dagger cloud activity` (cluster with Cloud) — rejected: OSS/Cloud purity is not load-bearing for placement. This established the broader **usefulness × simplicity** principle: hot Cloud verbs surface at top-level, rare ones nest under `cloud`. |
 | `install` / `uninstall` | Bikeshed: `install` / `uninstall` vs `add` / `rm`. Initial argument: `add` / `rm` for symmetry with `module deps add`. Reversed after weighing the cold-read first-instinct reach for `install` (npm muscle memory). The asymmetry is actually honest — consumer verbs match consumer ecosystems (npm/pip/apt), authoring verbs match authoring ecosystems (cargo/yarn). Aliased to `i` and `un` to match `npm i` / `npm un`. |
-| `installed` | Started as `dagger modules` (plural). Killed for typing collision with `module` (singular) — adjacent groups + tab completion at `mod<TAB>`. Tried to subsume into `dagger list` (modules-v2) — overreach: `dagger list` is for filter-flag vocabulary discovery, not installed-module enumeration. Tried `dagger status --modules` — burying a daily read under a multi-purpose verb is wrong. Past-participle `installed` reads as "show me what's installed" — precedent in `pip list`, `gem list --installed`. |
+| `installed` | Started as `dagger modules` (plural). Killed for typing collision with `module` (singular) — adjacent groups + tab completion at `mod<TAB>`. Tried to subsume into a `dagger list` slot (modules-v2 was at one point going to own it) — both ideas dropped. Tried `dagger status --modules` — burying a daily read under a multi-purpose verb is wrong. Past-participle `installed` reads as "show me what's installed" — precedent in `pip list`, `gem list --installed`. |
 | `update` | Cold-read flagged ambiguity (update modules? update Dagger CLI?). Resolved structurally: `setup` owns environment maintenance, so `update` is strictly module-version refresh. |
-| `list` / `ls` | Owned by modules-v2 (PR #12900) for general-purpose enumeration over the artifacts framework. Workshopped renaming to free the slot: `select` (SQL-shaped, exact semantic match against the spec's relational grid), `find`, `filter`. All rejected once the actual use case surfaced — `list` is filter-flag *vocabulary discovery* ("what values can I plug into `--go-test=...`?"), not column projection. `list` is the right verb. **The "see modules-v2" pointer in the current description is a known dangling reference; needs self-contained replacement before this lands.** |
+| `list` / `ls` (cut) | Was reserved earlier in the redesign for the modules-v2 artifacts framework (PR #12900) — general-purpose enumeration over filter dimensions. Cut from this proposal: the modules-v2 work owns that verb and slot on its own timeline; bundling a placeholder here added a dangling pointer (`"see modules-v2"`) with nothing self-contained for users to read. If modules-v2 lands, it can claim the slot directly; if it changes shape, nothing here needs revisiting. |
 | `search` | Verb-as-action. Uncontested. |
 | `settings` | Initial conflation with `config` was corrected. They are not the same: `settings` is schema-aware editor for module-declared settings paths (`modules.<m>.settings.<k>`); `config` is raw `dagger.toml` editor for any path. Different audiences. Resolution is namespace, not verb rename: raw `config` moves to `dagger workspace config` (clearly signaled as advanced by the prefix), and `settings` stays at top-level as the daily verb. `--env <name>` scopes the write to that env's overlay. |
 | `api` | Initial push to sharpen "Interact with the Dagger API" was rejected. "Dagger has an API → you can query it" is common knowledge for the audience that should be reaching for `api`; and the group has multiple modes (raw query, function call, introspection), so any specific framing would either mislead or pile up nouns. Resolution: top-level mockup gets `(advanced)` tag for signal-and-skip; cobra Long description carries a teaching beat ("Every Dagger command runs against a GraphQL API served by the engine, combining Dagger's core types with module schema extensions") plus a docs link. Two layers, two audiences. |
@@ -294,6 +294,7 @@ A separate registry file (working name: `sdks.json`, distinct from the general m
 ```
 
 Resolution rules for `--sdk=<value>`:
+
 - Contains `/` or `@` → full ref, no resolution.
 - Otherwise → look up name (then aliases) in `sdks.json`.
 - 0 / 1 / >1 matches: error / resolve / ambiguous-error.
@@ -309,6 +310,7 @@ dagger module init <name> --sdk=<sdk-name-or-ref> [--path=<dir>]
 ```
 
 Steps:
+
 1. Resolve `--sdk` via `sdks.json` if a short name; otherwise treat as a full ref.
 2. If the SDK isn't already installed in this workspace, install it (pinned to a resolved version, just like `dagger install` would). Output narrates the resolution: `"Installing github.com/dagger/go-sdk@v1.2.3..."`.
 3. Create `<path>/dagger-module.toml` with `name`, `runtime` (derived from the SDK), `sdk` (canonical full ref), and a starting `engineVersion`.
@@ -453,7 +455,7 @@ Flag descriptions:
 
 ### Known unfixed items before this lands
 
-- [ ] **`list, ls` description has a dangling "see modules-v2" pointer.** Users won't have that doc available. Needs self-contained text.
+- [x] **`list, ls`** cut from the proposal. The modules-v2 effort owns that slot on its own timeline.
 - [ ] **Workspace concept is referenced everywhere (`--env`, `setup`, `-W`) but never defined.** Cold-read v2 and v3 both flagged that newcomers can't form a mental model from the top-level help alone. Likely fix: one-sentence definition at the top of `dagger workspace --help`.
 - [ ] **`exec` description ("Execute a command in a Dagger session") is too vague.** "Session in what?" Needs sharpening.
 

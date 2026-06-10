@@ -12294,6 +12294,20 @@ class ModuleSource(Type):
         _ctx = self._select("toolchains", _args)
         return await _ctx.execute_object_list(ModuleSource)
 
+    def updated_config_directory(self) -> Directory:
+        """The module's dagger.json with any in-memory edits from with* APIs
+        applied, as a diff relative to the source's context directory.
+
+        Unlike generatedContextDirectory, this does not run codegen and does
+        not validate the engine version against the running engine, so it can
+        be used to declare an engine requirement newer than the running
+        engine. Loading or serving such a module still fails at
+        moduleSource.asModule.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("updatedConfigDirectory", _args)
+        return Directory(_ctx)
+
     def user_defaults(self) -> EnvFile:
         """User-defined defaults read from local .env files"""
         _args: list[Arg] = []

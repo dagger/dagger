@@ -12581,6 +12581,16 @@ impl ModuleSource {
             })
             .collect())
     }
+    /// The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
+    /// Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
+    pub fn updated_config_directory(&self) -> Directory {
+        let query = self.selection.select("updatedConfigDirectory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// User-defined defaults read from local .env files
     pub fn user_defaults(&self) -> EnvFile {
         let query = self.selection.select("userDefaults");
