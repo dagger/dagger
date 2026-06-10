@@ -3679,7 +3679,7 @@ func (fe *frontendPretty) renderProgressCells(out TermOutput, sb *strings.Builde
 		case item.Current == 0:
 			color = termenv.ANSIBrightBlack
 		}
-		sb.WriteString(out.String(string(verticalEighths[level])).Foreground(color).String())
+		sb.WriteString(out.String(string(verticalEighths[level])).Foreground(color).Faint().String())
 	}
 	if rest := len(items) - len(shown); rest > 0 {
 		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).Faint().String())
@@ -3697,13 +3697,13 @@ func (fe *frontendPretty) renderProgressTrack(out TermOutput, sb *strings.Builde
 		color = termenv.ANSIGreen
 	}
 	if full > 0 {
-		sb.WriteString(out.String(strings.Repeat(string(verticalEighths[8]), full)).Foreground(color).String())
+		sb.WriteString(out.String(strings.Repeat(string(verticalEighths[8]), full)).Foreground(color).Faint().String())
 	}
 	if rem > 0 {
-		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(color).String())
+		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(color).Faint().String())
 	}
 	if empty := progressTrackWidth - full - min(rem, 1); empty > 0 {
-		sb.WriteString(out.String(strings.Repeat("░", empty)).Foreground(termenv.ANSIBrightBlack).String())
+		sb.WriteString(out.String(strings.Repeat("░", empty)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 }
 
