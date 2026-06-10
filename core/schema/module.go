@@ -606,7 +606,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The type of the elements in the list.`),
 		dagql.Func("__withElementTypeDef", s.listTypeDefWithElementTypeDef),
 	}.Install(dag)
-	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ScalarTypeDef]{
+		dagql.Func("__withName", s.scalarTypeDefWithName),
+	}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", s.enumTypeDefValues).
 			Deprecated("use members instead").
@@ -1953,6 +1955,12 @@ func (s *moduleSchema) enumTypeDefWithName(ctx context.Context, enum *core.EnumT
 	Name string
 }) (*core.EnumTypeDef, error) {
 	return enum.WithName(args.Name), nil
+}
+
+func (s *moduleSchema) scalarTypeDefWithName(ctx context.Context, scalar *core.ScalarTypeDef, args struct {
+	Name string
+}) (*core.ScalarTypeDef, error) {
+	return scalar.WithName(args.Name), nil
 }
 
 func (s *moduleSchema) enumTypeDefWithSourceMap(ctx context.Context, enum *core.EnumTypeDef, args struct {

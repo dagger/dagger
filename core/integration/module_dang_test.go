@@ -238,6 +238,16 @@ func (DangSuite) TestInterfaces(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hi, world", strings.TrimSpace(out))
 	})
+
+	t.Run("consume structural interface value across dependencies", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-interface/cross-dep").
+			With(daggerCall("run")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ok", strings.TrimSpace(out))
+	})
 }
 
 // TestVersionedSyntax covers the Dang major version routing: modules pinned

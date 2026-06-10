@@ -2223,7 +2223,7 @@ func (mod *userMod) install(ctx context.Context, dag *dagql.Server, opts ...Inst
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			if src := self.GetSource(); src != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
+			if src := self.GetSource(); src != nil && src.SelfCallsEnabled() {
 				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
 			} else {
 				return fmt.Errorf("type %q is already defined by module %q", objDef.Name, modType.SourceMod().Name())

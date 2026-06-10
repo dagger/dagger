@@ -71,10 +71,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		typeName := value.Type().Name()
 		loadedImpl := &loadedIfaceImpl{val: value}
 		var err error
-		objTypeDef, err := SelectTypeDef(ctx, dagql.Selector{
-			Field: "withObject",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
-		})
+		objTypeDef, err := SelectReferenceTypeDef(ctx, "withObject", "name", typeName)
 		if err != nil {
 			return nil, fmt.Errorf("resolve interface implementation object type def: %w", err)
 		}
@@ -83,10 +80,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 			return nil, fmt.Errorf("resolve interface implementation type: %w", err)
 		}
 		if loadedImpl.valType == nil {
-			ifaceTypeDef, err := SelectTypeDef(ctx, dagql.Selector{
-				Field: "withInterface",
-				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
-			})
+			ifaceTypeDef, err := SelectReferenceTypeDef(ctx, "withInterface", "name", typeName)
 			if err != nil {
 				return nil, fmt.Errorf("resolve interface implementation interface type def: %w", err)
 			}
@@ -167,10 +161,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 
 	var modType ModType
 	var found bool
-	objTypeDef, err := SelectTypeDef(ctx, dagql.Selector{
-		Field: "withObject",
-		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
-	})
+	objTypeDef, err := SelectReferenceTypeDef(ctx, "withObject", "name", typeName)
 	if err != nil {
 		return nil, fmt.Errorf("build object type def for %q: %w", typeName, err)
 	}
@@ -178,10 +169,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	// try first as an object, then as an interface
 	modType, found, err = deps.ModTypeFor(ctx, objTypeDef.Self())
 	if err != nil || !found {
-		ifaceTypeDef, ifaceErr := SelectTypeDef(ctx, dagql.Selector{
-			Field: "withInterface",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(typeName)}},
-		})
+		ifaceTypeDef, ifaceErr := SelectReferenceTypeDef(ctx, "withInterface", "name", typeName)
 		if ifaceErr != nil {
 			return nil, fmt.Errorf("build interface type def for %q: %w", typeName, ifaceErr)
 		}
@@ -253,15 +241,11 @@ func (iface *InterfaceType) TypeDef(ctx context.Context) (dagql.ObjectResult[*Ty
 			return dagql.ObjectResult[*TypeDef]{}, err
 		}
 	}
-	return SelectTypeDef(ctx, dagql.Selector{
-		Field: "withInterface",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(iface.typeDef.Name)},
-			{Name: "description", Value: dagql.String(iface.typeDef.Description)},
-			{Name: "sourceMap", Value: sourceMap},
-			{Name: "sourceModuleName", Value: OptSourceModuleName(iface.typeDef.SourceModuleName)},
-		},
-	})
+	return SelectReferenceTypeDef(ctx, "withInterface", "name", iface.typeDef.Name,
+		dagql.NamedInput{Name: "description", Value: dagql.String(iface.typeDef.Description)},
+		dagql.NamedInput{Name: "sourceMap", Value: sourceMap},
+		dagql.NamedInput{Name: "sourceModuleName", Value: OptSourceModuleName(iface.typeDef.SourceModuleName)},
+	)
 }
 
 func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) error {
@@ -273,7 +257,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	}
 
 	ifaceTypeDef := iface.typeDef
-	ifaceName := gqlObjectName(ifaceTypeDef.Name)
+	// Name is already a final GraphQL type name (normalized at creation,
+	// module-namespaced at assembly). Don't re-run gqlObjectName/strcase.ToCamel
+	// on it: ToCamel isn't idempotent and would corrupt already-cased multi-word
+	// names (e.g. "ModuleAOverlay" -> "ModuleAoverlay"). This mirrors how objects
+	// are installed (see ModuleObject.TypeDefinition, which uses TypeDef.Name as-is).
+	ifaceName := ifaceTypeDef.Name
 	moduleID, err := NewUserMod(iface.mod).ResultCallModule(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve module identity for interface %q: %w", ifaceName, err)
