@@ -7,8 +7,8 @@ import Badge from "./Badge";
 import Markdown, { MarkdownInline } from "./Markdown";
 import styles from "./styles.module.scss";
 
-// FieldCard is one anchored entry: a syntax-highlighted signature heading, any
-// directive badges, the field's description, and a per-argument breakdown.
+// FieldCard is one anchored entry: a syntax-highlighted signature heading,
+// directive status, the field's description, and a per-argument breakdown.
 // The heading carries the field name as its id so it gets a stable anchor.
 export default function FieldCard({
   field,
@@ -16,6 +16,7 @@ export default function FieldCard({
   field: ApiField;
 }): JSX.Element {
   const brokenLinks = useBrokenLinks();
+  const hasBadges = field.experimental || field.deprecated;
   brokenLinks.collectAnchor(field.name);
 
   return (
@@ -24,19 +25,20 @@ export default function FieldCard({
       data-return={returnKind(field.type)}
     >
       <h3 id={field.name} className={styles.cardHeading}>
-        <Signature field={field} />
-      </h3>
-
-      <div className={styles.cardBody}>
-        {(field.experimental || field.deprecated) && (
-          <div className={styles.badges}>
+        <span className={styles.cardHeadingSignature}>
+          <Signature field={field} />
+        </span>
+        {hasBadges && (
+          <span className={styles.cardHeadingBadges}>
             {field.experimental && (
               <Badge variant="experimental">Experimental</Badge>
             )}
             {field.deprecated && <Badge variant="deprecated">Deprecated</Badge>}
-          </div>
+          </span>
         )}
+      </h3>
 
+      <div className={styles.cardBody}>
         <Markdown className={styles.cardDesc}>{field.description}</Markdown>
 
         {field.notes.map((note, i) => (

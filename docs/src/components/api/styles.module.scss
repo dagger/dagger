@@ -147,7 +147,7 @@
 
 .cardHeading {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 0.5rem;
   margin: 0;
   padding: 0.3rem 0.6rem;
@@ -158,6 +158,19 @@
   font-size: 1rem;
   font-weight: normal;
   line-height: 1.6;
+}
+
+.cardHeadingSignature {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cardHeadingBadges {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  margin-left: auto;
+  padding-top: 0.22rem;
 }
 
 .cardBody {
@@ -254,12 +267,6 @@
 }
 
 /* ── badges ─────────────────────────────────────────────────────── */
-.badges {
-  display: flex;
-  gap: 0.4rem;
-  margin: 0.1rem 0 0.6rem;
-}
-
 .badge {
   display: inline-block;
   font-size: 0.7rem;
