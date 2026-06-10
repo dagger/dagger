@@ -401,35 +401,75 @@ func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
 		SpanID:  trace.SpanID{1},
 	})
 
-	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB)
-	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxA)
-	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB, false)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxA, false)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB, false)
 
 	got := c.sessionResultInstallSpanContexts("test-session", 1)
 	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
 }
 
-func TestTransitiveDepIDsLockedUpdatesAncestors(t *testing.T) {
+// Install-span lookups walk dep edges upward: a result sees its own direct
+// install spans plus closure-owning (module API call return) install spans of
+// results that transitively depend on it. Non-owning installs on ancestors
+// (plain chained API calls) must not propagate downward.
+func TestInstallSpanLookupWalksClosureOwnersUpward(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
 	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
-	parent := &sharedResult{id: 1}
-	child := &sharedResult{id: 2}
-	grandchild := &sharedResult{id: 3}
-	c.resultsByID[parent.id] = parent
-	c.resultsByID[child.id] = child
-	c.resultsByID[grandchild.id] = grandchild
+	moduleReturn := &sharedResult{id: 1}
+	chained := &sharedResult{id: 2}
+	leaf := &sharedResult{id: 3}
+	c.resultsByID[moduleReturn.id] = moduleReturn
+	c.resultsByID[chained.id] = chained
+	c.resultsByID[leaf.id] = leaf
 
 	c.egraphMu.Lock()
-	assert.NilError(t, c.addExplicitDependencyLocked(ctx, parent, child, "test"))
-	assert.NilError(t, c.addExplicitDependencyLocked(ctx, child, grandchild, "test"))
-	parentDeps := c.transitiveDepIDsLocked(parent.id)
-	childDeps := c.transitiveDepIDsLocked(child.id)
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, moduleReturn, chained, "test"))
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, chained, leaf, "test"))
+	moduleReturnAncestors := c.installAncestorIDsLocked(moduleReturn.id)
+	leafAncestors := c.installAncestorIDsLocked(leaf.id)
 	c.egraphMu.Unlock()
 
-	assert.DeepEqual(t, parentDeps, []sharedResultID{child.id, grandchild.id})
-	assert.DeepEqual(t, childDeps, []sharedResultID{grandchild.id})
+	assert.DeepEqual(t, moduleReturnAncestors, []sharedResultID(nil))
+	assert.DeepEqual(t, leafAncestors, []sharedResultID{chained.id, moduleReturn.id})
+
+	moduleSpanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+	chainedSpanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{2},
+		SpanID:  trace.SpanID{2},
+	})
+	leafSpanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{3},
+		SpanID:  trace.SpanID{3},
+	})
+
+	// The module API call returned moduleReturn: closure-owning install.
+	c.recordSessionResultInstallSpanLocked("test-session", moduleReturn.id, moduleSpanCtx, true)
+	// chained was returned by a plain API call: direct install only.
+	c.recordSessionResultInstallSpanLocked("test-session", chained.id, chainedSpanCtx, false)
+	// leaf was returned by a plain API call too.
+	c.recordSessionResultInstallSpanLocked("test-session", leaf.id, leafSpanCtx, false)
+
+	// leaf sees its own install plus the module span via closure ownership,
+	// but not the chained result's plain install.
+	assert.DeepEqual(t,
+		c.sessionResultInstallSpanContexts("test-session", leaf.id),
+		[]trace.SpanContext{moduleSpanCtx, leafSpanCtx})
+
+	// chained likewise sees itself plus the module span.
+	assert.DeepEqual(t,
+		c.sessionResultInstallSpanContexts("test-session", chained.id),
+		[]trace.SpanContext{moduleSpanCtx, chainedSpanCtx})
+
+	// moduleReturn has no ancestors; it sees only its own install.
+	assert.DeepEqual(t,
+		c.sessionResultInstallSpanContexts("test-session", moduleReturn.id),
+		[]trace.SpanContext{moduleSpanCtx})
 }
 
 func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {

@@ -495,59 +495,82 @@ func (c *Cache) captureSessionResultInstallSpan(ctx context.Context, sessionID s
 		return
 	}
 
-	// Direct install: this call returned this result.
-	c.recordSessionResultInstallSpanLocked(sessionID, shared.id, spanCtx)
-
-	// If this is a module API call return, propagate the install span to the
-	// entire transitive liveness closure. Module-returned values are typically
-	// constructed by inner SDK calls whose own install spans aren't visible to
-	// the user; attributing failures anywhere in the construction chain back to
-	// the module API span is the right thing.
+	// Module API call returns own their result's entire transitive dep
+	// closure: module-returned values are typically constructed by inner SDK
+	// calls whose own install spans aren't visible to the user, so failures
+	// anywhere in the construction chain attribute back to the module API
+	// span. Closure ownership is recorded once on the returned result and
+	// resolved on demand by walking dep edges upward from the result being
+	// evaluated (installAncestorIDsLocked), rather than eagerly fanning the
+	// span out across every result in the closure.
 	call := CurrentCall(ctx)
-	if call == nil || call.Module == nil {
-		return
-	}
-
-	c.egraphMu.RLock()
-	depIDs := c.transitiveDepIDsLocked(shared.id)
-	c.egraphMu.RUnlock()
-
-	for _, depID := range depIDs {
-		c.recordSessionResultInstallSpanLocked(sessionID, depID, spanCtx)
-	}
+	ownsClosure := call != nil && call.Module != nil
+	c.recordSessionResultInstallSpanLocked(sessionID, shared.id, spanCtx, ownsClosure)
 }
 
-func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext) {
+// sessionResultInstallSpan is one recorded install site for a result in a
+// session: the span context of the API call that returned/owns the result,
+// plus whether that ownership extends over the result's transitive dep
+// closure (module API call returns).
+type sessionResultInstallSpan struct {
+	spanCtx     trace.SpanContext
+	ownsClosure bool
+}
+
+func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, ownsClosure bool) {
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
 	if c.sessionResultInstallSpans == nil {
-		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]trace.SpanContext)
+		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]sessionResultInstallSpan)
 	}
 	bySession := c.sessionResultInstallSpans[sessionID]
 	if bySession == nil {
-		bySession = make(map[sharedResultID]map[string]trace.SpanContext)
+		bySession = make(map[sharedResultID]map[string]sessionResultInstallSpan)
 		c.sessionResultInstallSpans[sessionID] = bySession
 	}
 	byResult := bySession[resultID]
 	if byResult == nil {
-		byResult = make(map[string]trace.SpanContext)
+		byResult = make(map[string]sessionResultInstallSpan)
 		bySession[resultID] = byResult
 	}
-	byResult[spanContextKey(spanCtx)] = spanCtx
+	key := spanContextKey(spanCtx)
+	install := byResult[key]
+	install.spanCtx = spanCtx
+	install.ownsClosure = install.ownsClosure || ownsClosure
+	byResult[key] = install
 }
 
-// transitiveDepIDsLocked returns the cached liveness closure of rootID via
-// parent.deps, excluding rootID itself. Caller must hold egraphMu at least for
-// read. The returned IDs are sorted for deterministic install-span recording.
-func (c *Cache) transitiveDepIDsLocked(rootID sharedResultID) []sharedResultID {
+// installAncestorIDsLocked returns the IDs of results that transitively
+// depend on rootID, found by walking direct dep edges upward via depParents.
+// rootID itself is excluded. Caller must hold egraphMu at least for read.
+func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID {
 	if rootID == 0 {
 		return nil
 	}
-	res := c.resultsByID[rootID]
-	if res == nil || res.transitiveDeps == nil || res.transitiveDeps.Empty() {
+	root := c.resultsByID[rootID]
+	if root == nil || root.depParents == nil || root.depParents.Empty() {
 		return nil
 	}
-	return res.transitiveDeps.Slice()
+	seen := map[sharedResultID]struct{}{rootID: {}}
+	queue := []sharedResultID{rootID}
+	var out []sharedResultID
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		res := c.resultsByID[id]
+		if res == nil || res.depParents == nil {
+			continue
+		}
+		for parentID := range res.depParents.Items() {
+			if _, ok := seen[parentID]; ok {
+				continue
+			}
+			seen[parentID] = struct{}{}
+			out = append(out, parentID)
+			queue = append(queue, parentID)
+		}
+	}
+	return out
 }
 
 // ResultInstallSpans returns install span contexts recorded for res in the
@@ -566,11 +589,18 @@ func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.Span
 }
 
 // sessionResultInstallSpanContexts returns the install span contexts for
-// resultID in the given session. Direct map lookup — no graph walk.
+// resultID in the given session: the spans recorded directly for the result,
+// plus closure-owning install spans (module API call returns) recorded for
+// any result that transitively depends on it. The upward walk happens here,
+// on demand, instead of eagerly materializing the closure at install time.
 func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID sharedResultID) []trace.SpanContext {
 	if c == nil || sessionID == "" || resultID == 0 {
 		return nil
 	}
+
+	c.egraphMu.RLock()
+	ancestorIDs := c.installAncestorIDsLocked(resultID)
+	c.egraphMu.RUnlock()
 
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
@@ -578,15 +608,29 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 	if byResult == nil {
 		return nil
 	}
-	spans := byResult[resultID]
-	if len(spans) == 0 {
-		return nil
-	}
-	out := make([]trace.SpanContext, 0, len(spans))
-	for _, spanCtx := range spans {
-		if spanCtx.IsValid() {
-			out = append(out, spanCtx)
+	seen := make(map[string]struct{})
+	var out []trace.SpanContext
+	appendInstalls := func(id sharedResultID, closureOwnersOnly bool) {
+		for key, install := range byResult[id] {
+			if closureOwnersOnly && !install.ownsClosure {
+				continue
+			}
+			if !install.spanCtx.IsValid() {
+				continue
+			}
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, install.spanCtx)
 		}
+	}
+	appendInstalls(resultID, false)
+	for _, ancestorID := range ancestorIDs {
+		appendInstalls(ancestorID, true)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	slices.SortFunc(out, compareSpanContexts)
 	return out
@@ -901,7 +945,6 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		}
 		res.deps = nil
 		res.depParents = nil
-		res.transitiveDeps = nil
 
 		for _, depID := range depIDs {
 			c.forgetDependencyEdgeLocked(res.id, depID)
@@ -1273,13 +1316,14 @@ type Cache struct {
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
 	// sessionResultInstallSpans records which API spans returned/own which
-	// results in a session. On lazy failure, the resume span cause-links the
-	// install spans of the failed result so dagui marks them caused-failed.
-	// Membership is expanded eagerly at install time over the owned-dependency
-	// closure (HasDependencyResults / HasDependencyResultsKinds with Owned=true),
-	// and over the cached transitive parent.deps closure for module API call
-	// returns — no graph walk at install or failure time.
-	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]trace.SpanContext
+	// results in a session. Lazy resume spans cause-link the install spans of
+	// the result being evaluated so dagui can resolve pending state and mark
+	// owners caused-failed. Direct installs are recorded per result (owned
+	// dependency edges copy the owning span onto the dep at attach time);
+	// module API call returns are recorded once on the returned result with
+	// ownsClosure set, and lookups resolve closure ownership on demand by
+	// walking dep edges upward via depParents.
+	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]sessionResultInstallSpan
 	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
 	sessionVolatileVarsBySession map[string]map[string]string
@@ -1416,11 +1460,10 @@ type sharedResult struct {
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
 	// during materialization.
 	deps map[sharedResultID]struct{}
-	// depParents is the reverse index for direct deps. transitiveDeps caches the
-	// full parent.deps closure so module-return install-span propagation can copy
-	// a sorted set instead of re-walking the egraph under lock on every return.
-	depParents     *set.TreeSet[sharedResultID]
-	transitiveDeps *set.TreeSet[sharedResultID]
+	// depParents is the reverse index for direct deps. It lets install-span
+	// lookups walk dep edges upward on demand to find closure-owning installs
+	// (module API call returns) for the result being evaluated.
+	depParents *set.TreeSet[sharedResultID]
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened
 	// transitive set of handle requirements for cache-hit validation.
@@ -2040,41 +2083,6 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 		depRes.depParents = newSharedResultIDSet()
 	}
 	depRes.depParents.Insert(parentRes.id)
-
-	delta := newSharedResultIDSet()
-	delta.Insert(depRes.id)
-	if depRes.transitiveDeps != nil {
-		delta.InsertSet(depRes.transitiveDeps)
-	}
-	c.propagateTransitiveDepDeltaLocked(parentRes, delta)
-}
-
-func (c *Cache) propagateTransitiveDepDeltaLocked(res *sharedResult, delta *set.TreeSet[sharedResultID]) {
-	if res == nil || delta == nil || delta.Empty() {
-		return
-	}
-	if res.transitiveDeps == nil {
-		res.transitiveDeps = newSharedResultIDSet()
-	}
-	inserted := newSharedResultIDSet()
-	for depID := range delta.Items() {
-		if depID == 0 || depID == res.id {
-			continue
-		}
-		if res.transitiveDeps.Insert(depID) {
-			inserted.Insert(depID)
-		}
-	}
-	if inserted.Empty() || res.depParents == nil || res.depParents.Empty() {
-		return
-	}
-	for parentID := range res.depParents.Items() {
-		parent := c.resultsByID[parentID]
-		if parent == nil {
-			continue
-		}
-		c.propagateTransitiveDepDeltaLocked(parent, inserted)
-	}
 }
 
 func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
