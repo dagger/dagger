@@ -32,8 +32,12 @@ import (
 )
 
 const (
-	hashXattrKey = "user.daggerContentHash"
+	hashXattrKey = "user.daggerContentHash.v2"
 )
+
+func isMissingContentHashXattr(err error) bool {
+	return errors.Is(err, unix.ENODATA)
+}
 
 // localFSSharedState is the state shared between all syncs for a given client.
 type localFSSharedState struct {
@@ -597,6 +601,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 				// Only copy files that we know about changes for.
 				Only: localCopyOnlyPaths(only, local.copyPath),
 			},
+			DisableXAttrs:          true,
 			CopyDirContents:        true,
 			DisableSourceHardlinks: true,
 			XAttrErrorHandler: func(dst, src, key string, err error) error {
@@ -698,7 +703,34 @@ func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *
 		if isRegular {
 			dgstBytes, err := sysx.Getxattr(fullPath, hashXattrKey)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get content hash xattr: %w", err)
+				if !isMissingContentHashXattr(err) {
+					return nil, fmt.Errorf("failed to get content hash xattr: %w", err)
+				}
+				f, err := os.Open(fullPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to open file %q for content hash repair: %w", path, err)
+				}
+				defer f.Close()
+
+				h := newHashFromStat(stat)
+				copyBuf := copyBufferPool.Get().(*[]byte)
+				_, err = io.CopyBuffer(h, f, *copyBuf)
+				copyBufferPool.Put(copyBuf)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read file %q for content hash repair: %w", path, err)
+				}
+
+				dgst := digest.NewDigest(hashutil.XXH3, h)
+				if err := sysx.Setxattr(fullPath, hashXattrKey, []byte(dgst.String()), 0); err != nil {
+					return nil, fmt.Errorf("failed to set repaired content hash xattr: %w", err)
+				}
+				return &ChangeWithStat{
+					kind: ChangeKindNone,
+					stat: &HashedStatInfo{
+						StatInfo: StatInfo{stat},
+						dgst:     dgst,
+					},
+				}, nil
 			}
 			return &ChangeWithStat{
 				kind: ChangeKindNone,
@@ -949,10 +981,6 @@ func (local *localFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFu
 }
 
 func rewriteMetadata(p string, upperStat *types.Stat) error {
-	for key, value := range upperStat.Xattrs {
-		sysx.Setxattr(p, key, value, 0)
-	}
-
 	if err := os.Lchown(p, int(upperStat.Uid), int(upperStat.Gid)); err != nil {
 		return fmt.Errorf("failed to change owner: %w", err)
 	}
