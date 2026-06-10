@@ -23,25 +23,19 @@ import (
 
 type dangSourceRunner func(context.Context, string) (dang.ValueScope, error)
 
-// dangModuleName carries the executing module's name so that local type
-// references (e.g. a module-local interface "Overlay") can be resolved to their
-// namespaced schema names ("ModuleAOverlay") when marshaling values into
-// GraphQL queries at runtime.
-type dangModuleName struct {
-	name         string
-	originalName string
+// dangModule identifies the module currently being evaluated. It lets the
+// runtime map the module's own local type names (e.g. an interface "Overlay")
+// to the namespaced names present in its runtime schema (e.g. "ModuleAOverlay")
+// when marshaling received values back into GraphQL queries. The zero value
+// means the executing module is unknown, in which case local names are used
+// as-is.
+type dangModule struct {
+	name         string // installed, namespaced module name
+	originalName string // module name as written in source
 }
 
-type dangModuleNameKey struct{}
-
-func withDangModuleName(ctx context.Context, name, originalName string) context.Context {
-	return context.WithValue(ctx, dangModuleNameKey{}, dangModuleName{name: name, originalName: originalName})
-}
-
-func dangModuleNameFromContext(ctx context.Context) (dangModuleName, bool) {
-	v, ok := ctx.Value(dangModuleNameKey{}).(dangModuleName)
-	return v, ok
-}
+// known reports whether the executing module's identity is available.
+func (m dangModule) known() bool { return m.name != "" }
 
 func (r *runtime) eval(
 	ctx context.Context,
@@ -69,11 +63,12 @@ func (r *runtime) eval(
 			return json.Marshal(dagMod)
 		}
 
-		if moduleContext.Self() != nil {
-			ctx = withDangModuleName(ctx, moduleContext.Self().Name(), moduleContext.Self().OriginalName)
+		var module dangModule
+		if self := moduleContext.Self(); self != nil {
+			module = dangModule{name: self.Name(), originalName: self.OriginalName}
 		}
 
-		result, err := callDangFunction(ctx, env, fnCall)
+		result, err := callDangFunction(ctx, env, fnCall, module)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +143,7 @@ func runDangDirForModuleTypes(ctx context.Context, dirPath string) (dang.ValueSc
 	return env, nil
 }
 
-func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.FunctionCall) (dang.Value, error) {
+func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.FunctionCall, module dangModule) (dang.Value, error) {
 	inputArgs := make(map[string][]byte, len(fnCall.InputArgs))
 	for _, arg := range fnCall.InputArgs {
 		inputArgs[arg.Name] = []byte(arg.Value)
@@ -174,6 +169,10 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 	// Use the class file's captured env so rehydrated method calls keep the
 	// imports that were in scope when the type was declared.
 	parentClosure := parentConstructor.Closure
+
+	// Argument and parent-state values are converted against the captured
+	// closure and the executing module's identity (for local-type namespacing).
+	conv := dangConverter{env: parentClosure, module: module}
 
 	var fnType *hm.FunctionType
 	if fnCall.Name == "" {
@@ -211,7 +210,7 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		if err := dec.Decode(&val); err != nil {
 			return nil, fmt.Errorf("unmarshal arg %s: %w", arg.Key, err)
 		}
-		dangVal, err := anyToDang(ctx, parentClosure, val, argType)
+		dangVal, err := conv.convert(ctx, val, argType)
 		if err != nil {
 			return nil, fmt.Errorf("convert arg %s: %w", arg.Key, err)
 		}
@@ -237,7 +236,7 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		if !isMono {
 			return nil, fmt.Errorf("non-monotype field %s", name)
 		}
-		dangVal, err := anyToDang(ctx, parentClosure, value, fieldType)
+		dangVal, err := conv.convert(ctx, value, fieldType)
 		if err != nil {
 			return nil, fmt.Errorf("convert field %s: %w", name, err)
 		}
@@ -991,13 +990,24 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 	return res, nil
 }
 
-func anyToDang(ctx context.Context, env dang.ValueScope, val any, fieldType hm.Type) (dang.Value, error) {
+// dangConverter converts the JSON values decoded from a function call's
+// arguments and parent state into Dang values. It resolves names against a
+// fixed scope (the parent type's captured closure) and carries the executing
+// module's identity, so a module's own local type names can be mapped to the
+// namespaced names its runtime schema actually exposes.
+type dangConverter struct {
+	env    dang.ValueScope
+	module dangModule
+}
+
+// convert turns a decoded JSON value into the Dang value expected by fieldType.
+func (c dangConverter) convert(ctx context.Context, val any, fieldType hm.Type) (dang.Value, error) {
 	if nonNull, ok := fieldType.(hm.NonNullType); ok {
-		return anyToDang(ctx, env, val, nonNull.Type)
+		return c.convert(ctx, val, nonNull.Type)
 	}
 	switch v := val.(type) {
 	case string:
-		return stringToDang(ctx, env, v, fieldType)
+		return c.convertString(ctx, v, fieldType)
 	case int:
 		return dang.IntValue{Val: v}, nil
 	case json.Number:
@@ -1009,9 +1019,9 @@ func anyToDang(ctx context.Context, env dang.ValueScope, val any, fieldType hm.T
 	case bool:
 		return dang.BoolValue{Val: v}, nil
 	case []any:
-		return listToDang(ctx, env, v, fieldType)
+		return c.convertList(ctx, v, fieldType)
 	case map[string]any:
-		return mapToDang(ctx, env, v, fieldType)
+		return c.convertObject(ctx, v, fieldType)
 	case nil:
 		return dang.NullValue{}, nil
 	default:
@@ -1019,27 +1029,24 @@ func anyToDang(ctx context.Context, env dang.ValueScope, val any, fieldType hm.T
 	}
 }
 
-func stringToDang(ctx context.Context, env dang.ValueScope, val string, fieldType hm.Type) (dang.Value, error) {
+func (c dangConverter) convertString(ctx context.Context, val string, fieldType hm.Type) (dang.Value, error) {
 	modType, isMod := fieldType.(*dang.Type)
-	if !isMod {
-		return dang.StringValue{Val: val}, nil
-	}
-	if modType == dang.StringType {
+	if !isMod || modType == dang.StringType {
 		return dang.StringValue{Val: val}, nil
 	}
 
 	switch modType.Kind {
 	case dang.EnumKind:
-		return enumStringToDang(ctx, env, val, modType)
+		return c.convertEnum(ctx, val, modType)
 	case dang.ScalarKind:
 		return dang.ScalarValue{Val: val, ScalarType: modType}, nil
 	default:
-		return objectIDToDang(ctx, env, val, modType)
+		return c.convertObjectID(ctx, val, modType)
 	}
 }
 
-func enumStringToDang(ctx context.Context, env dang.ValueScope, val string, modType *dang.Type) (dang.Value, error) {
-	enumVal, found, err := env.Lookup(ctx, modType.Named)
+func (c dangConverter) convertEnum(ctx context.Context, val string, modType *dang.Type) (dang.Value, error) {
+	enumVal, found, err := c.env.Lookup(ctx, modType.Named)
 	if err != nil {
 		return nil, fmt.Errorf("lookup enum type %s: %w", modType.Named, err)
 	}
@@ -1062,8 +1069,8 @@ func enumStringToDang(ctx context.Context, env dang.ValueScope, val string, modT
 	return member, nil
 }
 
-func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType *dang.Type) (dang.Value, error) {
-	nodeVal, found, err := env.Lookup(ctx, "node")
+func (c dangConverter) convertObjectID(ctx context.Context, id string, modType *dang.Type) (dang.Value, error) {
+	nodeVal, found, err := c.env.Lookup(ctx, "node")
 	if err != nil {
 		return nil, err
 	}
@@ -1079,7 +1086,7 @@ func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType
 	// module-namespaced in the schema it queries against ("ModuleAOverlay").
 	// Resolve the local name to its namespaced schema name so the node query and
 	// inline fragment reference a type that actually exists in the schema.
-	schemaName := schemaTypeNameForLocal(ctx, nodeFn.Schema, modType.Named)
+	schemaName := c.schemaTypeName(nodeFn.Schema, modType.Named)
 
 	field := *nodeFn.Field
 	field.TypeRef = &introspection.TypeRef{
@@ -1105,18 +1112,18 @@ func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType
 	}, nil
 }
 
-// schemaTypeNameForLocal maps a (possibly module-local) type name to the name it
-// has in the given schema. If the name already exists it's returned as-is (e.g. a
-// dependency type, already namespaced). Otherwise, when the executing module's
-// name is known, it's the module's own local type and is namespaced to match
-// what the engine installed (requires the SELF_CALLS feature so the module's own
-// types are present in its runtime schema).
-func schemaTypeNameForLocal(ctx context.Context, schema *introspection.Schema, name string) string {
+// schemaTypeName maps a (possibly module-local) type name to the name it has in
+// the given schema. A name already present is returned as-is (e.g. a dependency
+// type, already namespaced). Otherwise, if the executing module is known, the
+// name is one of its own local types and is namespaced to match what the engine
+// installed (requires the SELF_CALLS feature so the module's own types are
+// present in its runtime schema).
+func (c dangConverter) schemaTypeName(schema *introspection.Schema, name string) string {
 	if schema != nil && schema.Types.Get(name) != nil {
 		return name
 	}
-	if mod, ok := dangModuleNameFromContext(ctx); ok {
-		namespaced := core.NamespaceObject(name, mod.name, mod.originalName)
+	if c.module.known() {
+		namespaced := core.NamespaceObject(name, c.module.name, c.module.originalName)
 		if schema == nil || schema.Types.Get(namespaced) != nil {
 			return namespaced
 		}
@@ -1124,7 +1131,7 @@ func schemaTypeNameForLocal(ctx context.Context, schema *introspection.Schema, n
 	return name
 }
 
-func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType hm.Type) (dang.Value, error) {
+func (c dangConverter) convertList(ctx context.Context, vals []any, fieldType hm.Type) (dang.Value, error) {
 	listT, isList := fieldType.(dang.ListType)
 	if !isList {
 		return nil, fmt.Errorf("expected list type, got %T", fieldType)
@@ -1132,7 +1139,7 @@ func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType 
 
 	listVal := dang.ListValue{ElemType: listT}
 	for _, item := range vals {
-		itemVal, err := anyToDang(ctx, env, item, listT.Type)
+		itemVal, err := c.convert(ctx, item, listT.Type)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert list item: %w", err)
 		}
@@ -1141,7 +1148,7 @@ func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType 
 	return listVal, nil
 }
 
-func mapToDang(ctx context.Context, env dang.ValueScope, vals map[string]any, fieldType hm.Type) (dang.Value, error) {
+func (c dangConverter) convertObject(ctx context.Context, vals map[string]any, fieldType hm.Type) (dang.Value, error) {
 	mod, isMod := fieldType.(dang.TypeScope)
 	if !isMod {
 		return nil, fmt.Errorf("expected module type, got %T", fieldType)
@@ -1157,14 +1164,14 @@ func mapToDang(ctx context.Context, env dang.ValueScope, vals map[string]any, fi
 		if !isMono {
 			return nil, fmt.Errorf("expected monomorphic type, got %T", t)
 		}
-		dangVal, err := anyToDang(ctx, env, val, t)
+		dangVal, err := c.convert(ctx, val, t)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert map item %q: %w", name, err)
 		}
 		modVal.Bind(name, dangVal, dang.PrivateVisibility)
 	}
 
-	if err := evaluateDangClassBody(ctx, env, mod, modVal); err != nil {
+	if err := evaluateDangClassBody(ctx, c.env, mod, modVal); err != nil {
 		return nil, err
 	}
 	return modVal, nil
