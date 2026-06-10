@@ -238,7 +238,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"lock",
 		"login",
 		"logout",
-		"migrate",
 		"org",
 		"query",
 		"run",
