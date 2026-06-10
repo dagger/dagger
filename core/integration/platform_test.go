@@ -76,6 +76,32 @@ func (PlatformSuite) TestEmulatedExecAndPush(ctx context.Context, t *testctx.T) 
 	}
 }
 
+func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	for _, platform := range []dagger.Platform{"linux/amd64", "linux/arm64"} {
+		platform := platform
+		t.Run(string(platform), func(ctx context.Context, t *testctx.T) {
+			marker := "hello from " + string(platform)
+			ref := registryRef("platform-single-tag-" + strings.ReplaceAll(string(platform), "/", "-"))
+
+			_, err := c.Container(dagger.ContainerOpts{Platform: platform}).
+				WithRootfs(c.Directory().WithNewFile("platform.txt", marker)).
+				Publish(ctx, ref)
+			require.NoError(t, err)
+
+			ctr := c.Container().From(ref)
+			ctrPlatform, err := ctr.Platform(ctx)
+			require.NoError(t, err)
+			require.Equal(t, platform, ctrPlatform)
+
+			contents, err := ctr.File("/platform.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, marker, contents)
+		})
+	}
+}
+
 func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir("../.."))
 
