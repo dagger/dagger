@@ -113,7 +113,11 @@ export function typeSlug(name: string): string {
 }
 
 export function typeHref(name: string): string {
-  return `/extending/types/${typeSlug(name)}`;
+  // Keep generated type links within the active docs version. Docusaurus does
+  // not rewrite root URL paths like /extending/types/foo for /next or
+  // /<version>/ docs routes, but relative URLs resolve from the current type
+  // page to the matching page in the same version.
+  return `./${typeSlug(name)}`;
 }
 
 function namedType(type: TypeRef): Extract<TypeRef, { kind: "named" }> {
