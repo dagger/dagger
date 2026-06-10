@@ -107,6 +107,11 @@ Steps:
   2. Install the SDK module into the workspace if it isn't already.
   3. Create <path>/dagger-module.toml with the module name and SDK
      declaration.
+  4. If --path was not set (i.e. using the default .dagger/modules/<name>
+     layout), also install the new module into the workspace so it
+     shows up in workspace config and is callable. Skipped when --path
+     is explicit — that's the signal that the user is managing the
+     layout themselves.
 
 Source scaffolding is NOT done here. After init, run codegen via
 ` + "`dagger generate`" + ` (the SDK's generate function picks up the
@@ -134,8 +139,11 @@ func runModuleInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// An empty --path means "use the default layout"; remember that distinction
+	// so we can decide whether to auto-install the new module afterward.
+	usingDefaultPath := moduleInitPath == ""
 	path := moduleInitPath
-	if path == "" {
+	if usingDefaultPath {
 		path = filepath.Join(".dagger", "modules", name)
 	}
 
@@ -154,6 +162,18 @@ func runModuleInit(cmd *cobra.Command, args []string) error {
 		// Step 2: write dagger-module.toml at the requested path.
 		if err := writeModuleConfig(out, path, name, sdkRef); err != nil {
 			return fmt.Errorf("write module config: %w", err)
+		}
+
+		// Step 3: with the default layout, also install the new module into
+		// the workspace so it's registered in dagger.toml. With a custom
+		// --path, leave layout decisions to the user.
+		if usingDefaultPath {
+			fmt.Fprintf(out, "Installing module: %s ...\n", name)
+			if err := installWorkspaceModule(ctx, out, dag, path, name, false); err != nil {
+				return fmt.Errorf("install new module: %w", err)
+			}
+		} else {
+			fmt.Fprintln(out, "Skipping workspace install (custom --path; manage it yourself with `dagger install`).")
 		}
 
 		fmt.Fprintf(out,
