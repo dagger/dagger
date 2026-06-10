@@ -106,7 +106,7 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 	}, ext.Extensions())
 	require.EqualError(t,
 		local.NestedLegacyWorkspaceLoadError(),
-		"workspace module source \"/work/repo-b\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nrun `dagger migrate` in \"/work/repo-b\", then update this source to point at one of the migrated modules under \"/work/repo-b/.dagger/modules\"",
+		"workspace module source \"/work/repo-b\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint, toolchains\"\n\nrun `dagger setup` in \"/work/repo-b\", then update this source to point at one of the migrated modules under \"/work/repo-b/.dagger/modules\"",
 	)
 
 	remote := &core.ModuleSource{

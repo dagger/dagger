@@ -19,7 +19,7 @@ func (s *workspaceSchema) uninstall(
 	args workspaceUninstallArgs,
 ) (dagql.String, error) {
 	if parent.CompatWorkspace() != nil {
-		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
 	}
 	if args.Name == "" {
 		return "", fmt.Errorf("module name is required")
