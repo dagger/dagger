@@ -109,7 +109,7 @@ What we considered, debated, changed, and decided for each command. Not a descri
 
 | Command | Notes |
 |---|---|
-| `setup` | Considered `doctor` (per `brew doctor` / `npm doctor` / `flutter doctor` precedent). Vetoed — the precedent doesn't feel intuitive enough. Final framing: idempotent doctor command, not a one-shot wizard. "Ensure" implies safe to run anytime. `setup` owning environment maintenance is what lets `update` be unambiguously about module versions (resolves "does update mean update Dagger?"). |
+| `setup` | Considered `doctor` (per `brew doctor` / `npm doctor` / `flutter doctor` precedent). Vetoed — the precedent doesn't feel intuitive enough. Final framing: idempotent doctor command, not a one-shot wizard. "Ensure" implies safe to run anytime. `setup` owning environment maintenance is what lets `update` be unambiguously about module versions (resolves "does update mean update Dagger?"). Concrete shape (phase 5): three sequential steps, each independently prompted — (1) Cloud login if not authenticated, (2) workspace migration if a legacy dagger.json is present, (3) module recommendations based on workspace files (resurrecting the recommend scan logic that was previously a standalone `dagger mod recommend`). Skippable per-step at the prompt; `--auto-apply` accepts all; non-interactive default is to skip mutating steps. |
 | `check` | Cold-read first-instinct reached for `run` / `ci` / `test`. Pushback held: GitHub "Checks" is universal CI vocabulary (required status checks, the Checks API, red/green PR gates), so the muscle memory exists even when not first-instinct. Description was sharpened to that vocabulary. `checks` alias dropped — one name per concept. |
 | `generate` | Cold-read flagged "Generate assets of your project" as opaque ("codegen? static site assets? module bindings?"). Sharpened to name "derived files" with concrete examples. Part of the three-shipping-fundamentals framing (`check` = verify, `generate` = derive, `up` = serve) — verbs that every shop maps to regardless of stack. |
 | `up` | Adversarial reviewer flagged collision with `docker compose up` semantics. Collision is intentional — `dagger up` does mean what `docker compose up` means. Description names local-development as the use case to distinguish from `check`. |
@@ -359,7 +359,7 @@ Implementation checklist. Items grouped by type; each is a discrete unit of work
 
 ### New commands (need implementation)
 
-- [ ] **`dagger setup`** — top-level idempotent doctor verb. Ensures workspace config exists, auth is valid, engine is reachable. Safe to re-run.
+- [x] **`dagger setup`** — top-level idempotent doctor verb. Three steps with per-step confirmation: Cloud login, workspace migration, recommended modules.
 - [ ] **`dagger installed`** — top-level. Lists installed modules from `dagger.toml`. Likely a thin wrapper over existing workspace introspection.
 - [ ] **`dagger module init`** — scaffolds a new module: requires `--sdk=<name>`, auto-installs the SDK if needed, writes `dagger-module.toml` with `runtime`+`sdk` fields, applies the SDK's template convention. See [SDK module interface](#sdk-module-interface).
 - [ ] **`dagger module sdk`** — wrapper that dispatches `dagger call <current-module's-sdk> <subcommand>`. New verb. See [SDK module interface](#sdk-module-interface).
