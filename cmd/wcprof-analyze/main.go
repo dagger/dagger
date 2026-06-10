@@ -11,6 +11,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -29,8 +30,9 @@ func main() {
 	)
 	flag.Parse()
 
-	if flag.NArg() != 1 {
-		fmt.Fprintf(os.Stderr, "usage: wcprof-analyze [flags] <dump-file>\n")
+	if flag.NArg() < 1 {
+		fmt.Fprintf(os.Stderr, "usage: wcprof-analyze [flags] <dump-file> [more-dump-files...]\n")
+		fmt.Fprintf(os.Stderr, "multiple dumps from periodic drains of the same engine run are merged\n")
 		flag.PrintDefaults()
 		os.Exit(2)
 	}
@@ -45,7 +47,7 @@ func main() {
 		factors = append(factors, f)
 	}
 
-	if err := run(flag.Arg(0), wcanalyze.ReportOptions{
+	if err := run(flag.Args(), wcanalyze.ReportOptions{
 		TopClasses:     *topClasses,
 		WhatIfFactors:  factors,
 		MinClassSelfNS: int64(*minSelf),
@@ -57,16 +59,20 @@ func main() {
 	}
 }
 
-func run(path string, opts wcanalyze.ReportOptions) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
+func run(paths []string, opts wcanalyze.ReportOptions) error {
+	readers := make([]io.Reader, 0, len(paths))
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		readers = append(readers, f)
 	}
-	defer f.Close()
 
-	graph, err := wcanalyze.Load(f)
+	graph, err := wcanalyze.LoadMulti(readers)
 	if err != nil {
-		return fmt.Errorf("load dump: %w", err)
+		return fmt.Errorf("load dumps: %w", err)
 	}
 	return wcanalyze.WriteReport(os.Stdout, graph, opts)
 }

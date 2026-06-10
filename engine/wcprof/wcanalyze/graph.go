@@ -8,6 +8,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"sync"
 
 	"github.com/dagger/dagger/engine/wcprof"
 )
@@ -72,6 +73,10 @@ type Graph struct {
 	// TraceStartNS/TraceEndNS bound all recorded activity.
 	TraceStartNS int64
 	TraceEndNS   int64
+
+	// prog is the compiled replay program, built once on first simulation.
+	progOnce sync.Once
+	prog     *replayProgram
 }
 
 // ClassKey identifies an operation class for aggregation: ops are grouped by
@@ -92,6 +97,48 @@ func Load(r io.Reader) (*Graph, error) {
 		return nil, err
 	}
 	return Build(header, events)
+}
+
+// LoadMulti reads multiple dumps taken from the same recorder (periodic
+// drains of one engine run) and reconstructs one combined op graph.
+//
+// This relies on recorder guarantees across flushes: the string table only
+// grows (IDs are stable), op IDs are globally unique, the epoch is fixed,
+// and the dropped-event counter is cumulative. The merge keeps the header
+// with the longest string table and latest open-ops view, and concatenates
+// all events.
+func LoadMulti(readers []io.Reader) (*Graph, error) {
+	if len(readers) == 0 {
+		return nil, fmt.Errorf("no dumps to load")
+	}
+	var (
+		merged    *wcprof.DumpHeader
+		allEvents []wcprof.DumpEvent
+	)
+	for i, r := range readers {
+		header, events, err := wcprof.ReadDump(r)
+		if err != nil {
+			return nil, fmt.Errorf("dump %d: %w", i, err)
+		}
+		if merged == nil {
+			merged = header
+		} else {
+			if header.EpochUnixNano != merged.EpochUnixNano {
+				return nil, fmt.Errorf("dump %d: epoch mismatch (%d != %d): dumps are from different recorder runs", i, header.EpochUnixNano, merged.EpochUnixNano)
+			}
+			if len(header.Strings) >= len(merged.Strings) {
+				merged.Strings = header.Strings
+			}
+			if header.DumpedUnixNano >= merged.DumpedUnixNano {
+				merged.DumpedUnixNano = header.DumpedUnixNano
+				merged.OpenOps = header.OpenOps
+			}
+			merged.DroppedEvents = max(merged.DroppedEvents, header.DroppedEvents)
+		}
+		allEvents = append(allEvents, events...)
+	}
+	merged.EventCount = len(allEvents)
+	return Build(merged, allEvents)
 }
 
 // Build reconstructs the op graph from parsed dump data.

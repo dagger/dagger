@@ -2,6 +2,9 @@ package wcanalyze
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -302,6 +305,80 @@ func TestRunWhatIfsRanking(t *testing.T) {
 	if bySaving["Container.from"] != 300*ms || bySaving["Container.withExec"] != 200*ms {
 		t.Fatalf("unexpected what-if savings: %+v", bySaving)
 	}
+}
+
+func TestLoadMultiMergesDrains(t *testing.T) {
+	// simulate two periodic drains of one recorder: the second drain has a
+	// longer string table (superset) and the op events split across drains
+	s := newFixtureStrings()
+	events1 := []wcprof.DumpEvent{
+		opEvent(s, 1, 0, "session_phase", "session.query", "", "ok", 0, 1000*ms),
+		opEvent(s, 2, 1, "call", "Container.withExec", "d1", "executed", 0, 400*ms),
+		opEvent(s, 3, 2, "call_exec", "Container.withExec", "d1", "ok", 0, 400*ms),
+		waitEvent(s, 2, 3, "", "call_exec", 0, 400*ms),
+	}
+	strings1 := append([]string(nil), s.values...)
+	events2 := []wcprof.DumpEvent{
+		opEvent(s, 4, 1, "call", "Container.from", "d2", "executed", 400*ms, 1000*ms),
+		opEvent(s, 5, 4, "call_exec", "Container.from", "d2", "ok", 400*ms, 1000*ms),
+		waitEvent(s, 4, 5, "", "call_exec", 400*ms, 1000*ms),
+	}
+
+	var buf1, buf2 bytes.Buffer
+	enc := func(buf *bytes.Buffer, header wcprof.DumpHeader, events []wcprof.DumpEvent) {
+		t.Helper()
+		raw, err := jsonMarshalLines(header, events)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf.WriteString(raw)
+	}
+	enc(&buf1, wcprof.DumpHeader{
+		SchemaVersion: wcprof.DumpSchemaVersion, EpochUnixNano: 42,
+		DumpedUnixNano: 100, Strings: strings1, EventCount: len(events1),
+	}, events1)
+	enc(&buf2, wcprof.DumpHeader{
+		SchemaVersion: wcprof.DumpSchemaVersion, EpochUnixNano: 42,
+		DumpedUnixNano: 200, Strings: s.values, EventCount: len(events2),
+	}, events2)
+
+	g, err := LoadMulti([]io.Reader{&buf1, &buf2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Ops) != 5 {
+		t.Fatalf("merged ops = %d, want 5", len(g.Ops))
+	}
+	sim := NewSimulation(g, nil)
+	makespan, err := sim.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if makespan != 1000*ms {
+		t.Fatalf("merged baseline = %v, want 1s", time.Duration(makespan))
+	}
+
+	// mismatched epochs must be rejected
+	var buf3, buf4 bytes.Buffer
+	enc(&buf3, wcprof.DumpHeader{SchemaVersion: wcprof.DumpSchemaVersion, EpochUnixNano: 42, Strings: strings1}, nil)
+	enc(&buf4, wcprof.DumpHeader{SchemaVersion: wcprof.DumpSchemaVersion, EpochUnixNano: 43, Strings: strings1}, nil)
+	if _, err := LoadMulti([]io.Reader{&buf3, &buf4}); err == nil {
+		t.Fatal("expected epoch mismatch error")
+	}
+}
+
+func jsonMarshalLines(header wcprof.DumpHeader, events []wcprof.DumpEvent) (string, error) {
+	var sb strings.Builder
+	enc := json.NewEncoder(&sb)
+	if err := enc.Encode(header); err != nil {
+		return "", err
+	}
+	for _, ev := range events {
+		if err := enc.Encode(ev); err != nil {
+			return "", err
+		}
+	}
+	return sb.String(), nil
 }
 
 func TestReportRenders(t *testing.T) {
