@@ -2,10 +2,12 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -138,6 +140,38 @@ func TestCoreModTypeDefs(t *testing.T) {
 	require.Equal(t, "allowParentDirPath", exportFnAllowParentDirPathArg.Name)
 	require.Equal(t, core.TypeDefKindBoolean, exportFnAllowParentDirPathArg.TypeDef.Self().Kind)
 	require.True(t, exportFnAllowParentDirPathArg.TypeDef.Self().Optional)
+}
+
+func TestModuleDirectivesIncludeDangCollections(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "module-directives-client",
+		SessionID: "module-directives-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	schemaJSON, err := getSchemaJSON(nil, "", dag)
+	require.NoError(t, err)
+	var response codegenintrospection.Response
+	require.NoError(t, json.Unmarshal(schemaJSON, &response))
+
+	byName := map[string]*codegenintrospection.DirectiveDef{}
+	for _, directive := range response.Schema.Directives {
+		byName[directive.Name] = directive
+	}
+	for _, name := range []string{"keys", "get"} {
+		directive, ok := byName[name]
+		require.Truef(t, ok, "missing directive %q", name)
+		require.Contains(t, directive.Locations, string(dagql.DirectiveLocationFieldDefinition))
+	}
 }
 
 func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {

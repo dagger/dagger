@@ -39,6 +39,14 @@ func (s *moduleSchema) typeDefAsObject(
 	return typeDef.AsObject, nil
 }
 
+func (s *moduleSchema) typeDefAsCollection(
+	ctx context.Context,
+	typeDef *core.TypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.CollectionTypeDef]], error) {
+	return typeDef.AsCollection, nil
+}
+
 func (s *moduleSchema) typeDefAsInterface(
 	ctx context.Context,
 	typeDef *core.TypeDef,
@@ -109,6 +117,30 @@ func (s *moduleSchema) objectTypeDefConstructor(
 	_ struct{},
 ) (dagql.Nullable[dagql.ObjectResult[*core.Function]], error) {
 	return obj.Constructor, nil
+}
+
+func (s *moduleSchema) collectionTypeDefKeyType(
+	ctx context.Context,
+	collection *core.CollectionTypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.TypeDef]], error) {
+	return collection.KeyType, nil
+}
+
+func (s *moduleSchema) collectionTypeDefValueType(
+	ctx context.Context,
+	collection *core.CollectionTypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.TypeDef]], error) {
+	return collection.ValueType, nil
+}
+
+func (s *moduleSchema) collectionTypeDefBatchType(
+	ctx context.Context,
+	collection *core.CollectionTypeDef,
+	_ struct{},
+) (dagql.Nullable[dagql.ObjectResult[*core.TypeDef]], error) {
+	return collection.BatchType, nil
 }
 
 func (s *moduleSchema) interfaceTypeDefFunctions(

@@ -131,6 +131,22 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		},
 	},
 	{
+		Name:        "keys",
+		Description: dagql.FormatDescription(`Marks a Dang object field as the keys field for a collection.`),
+		Args:        dagql.NewInputSpecs(),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		Name:        "get",
+		Description: dagql.FormatDescription(`Marks a Dang object function as the lookup function for a collection.`),
+		Args:        dagql.NewInputSpecs(),
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+	{
 		Name:        "check",
 		Description: dagql.FormatDescription(`Indicates that this function is a check.`),
 		Args:        dagql.NewInputSpecs(),
@@ -202,6 +218,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("__enumValueTypeDef", s.enumValueTypeDef),
 		dagql.Func("__listTypeDef", s.listTypeDef),
 		dagql.Func("__objectTypeDef", s.objectTypeDef),
+		dagql.Func("__collectionTypeDef", s.collectionTypeDef),
 		dagql.Func("__interfaceTypeDef", s.interfaceTypeDef),
 		dagql.Func("__inputTypeDef", s.inputTypeDef),
 		dagql.Func("__scalarTypeDef", s.scalarTypeDef),
@@ -493,6 +510,21 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceModuleName").Doc(`The module owning this object type.`).Internal(),
 			),
 
+		dagql.Func("withCollection", s.typeDefWithCollection).
+			Doc(`Marks this Object TypeDef as a collection.`),
+
+		dagql.Func("withCollectionKeys", s.typeDefWithCollectionKeys).
+			Doc(`Overrides the effective keys field used by a collection TypeDef.`).
+			Args(
+				dagql.Arg("name").Doc(`The field that enumerates collection keys.`),
+			),
+
+		dagql.Func("withCollectionGet", s.typeDefWithCollectionGet).
+			Doc(`Overrides the effective get function used by a collection TypeDef.`).
+			Args(
+				dagql.Arg("name").Doc(`The function that resolves one collection item by key.`),
+			),
+
 		dagql.Func("withInterface", s.typeDefWithInterface).
 			Doc(`Returns a TypeDef of kind Interface with the provided name.`).
 			Args(
@@ -548,6 +580,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 		dagql.Func("__withListTypeDef", s.typeDefWithListTypeDef),
 		dagql.Func("__withObjectTypeDef", s.typeDefWithObjectTypeDef),
+		dagql.Func("__withCollectionTypeDef", s.typeDefWithCollectionTypeDef),
 		dagql.Func("__withInterfaceTypeDef", s.typeDefWithInterfaceTypeDef),
 		dagql.Func("__withInputTypeDef", s.typeDefWithInputTypeDef),
 		dagql.Func("__withScalarTypeDef", s.typeDefWithScalarTypeDef),
@@ -558,6 +591,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.`),
 		dagql.Func("asObject", s.typeDefAsObject).
 			Doc(`If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.`),
+		dagql.Func("asCollection", s.typeDefAsCollection).
+			Doc(`If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.`),
 		dagql.Func("asInterface", s.typeDefAsInterface).
 			Doc(`If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.`),
 		dagql.Func("asInput", s.typeDefAsInput).
@@ -581,6 +616,23 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("__withField", s.objectTypeDefWithField),
 		dagql.Func("__withFunction", s.objectTypeDefWithFunction),
 		dagql.Func("__withConstructor", s.objectTypeDefWithConstructor),
+	}.Install(dag)
+	dagql.Fields[*core.CollectionTypeDef]{
+		dagql.Func("keyType", s.collectionTypeDefKeyType).
+			Doc(`Type accepted by get(key) and subset(keys: ...).`),
+		dagql.Func("valueType", s.collectionTypeDefValueType).
+			Doc(`Type returned by get() and enumerated by list.`),
+		dagql.Func("batchType", s.collectionTypeDefBatchType).
+			Doc(`Synthetic batch namespace type for collection-level operations, if any.`),
+		dagql.Func("__withKeysFieldNameOverride", s.collectionTypeDefWithKeysFieldNameOverride),
+		dagql.Func("__withGetFunctionNameOverride", s.collectionTypeDefWithGetFunctionNameOverride),
+		dagql.Func("__withKeyType", s.collectionTypeDefWithKeyType),
+		dagql.Func("__withValueType", s.collectionTypeDefWithValueType),
+		dagql.Func("__withBatchType", s.collectionTypeDefWithBatchType),
+		dagql.Func("__withBackingType", s.collectionTypeDefWithBackingType),
+		dagql.Func("__withKeysFieldName", s.collectionTypeDefWithKeysFieldName),
+		dagql.Func("__withGetFunctionName", s.collectionTypeDefWithGetFunctionName),
+		dagql.Func("__withGetArgName", s.collectionTypeDefWithGetArgName),
 	}.Install(dag)
 	dagql.Fields[*core.InterfaceTypeDef]{
 		dagql.Func("functions", s.interfaceTypeDefFunctions).
@@ -873,6 +925,10 @@ func (s *moduleSchema) objectTypeDef(ctx context.Context, _ *core.Query, args st
 	return obj, nil
 }
 
+func (s *moduleSchema) collectionTypeDef(ctx context.Context, _ *core.Query, _ struct{}) (*core.CollectionTypeDef, error) {
+	return &core.CollectionTypeDef{}, nil
+}
+
 func (s *moduleSchema) interfaceTypeDef(ctx context.Context, _ *core.Query, args struct {
 	Name             string
 	Description      string `default:""`
@@ -1040,6 +1096,61 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 		return nil, err
 	}
 	return def.WithObject(obj), nil
+}
+
+func (s *moduleSchema) typeDefWithCollection(ctx context.Context, def *core.TypeDef, _ struct{}) (*core.TypeDef, error) {
+	if def.Kind != core.TypeDefKindObject || !def.AsObject.Valid {
+		return nil, fmt.Errorf("cannot mark %s type as a collection", def.Kind)
+	}
+	if def.AsCollection.Valid {
+		return def, nil
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	var collection dagql.ObjectResult[*core.CollectionTypeDef]
+	if err := dag.Select(ctx, dag.Root(), &collection, dagql.Selector{Field: "__collectionTypeDef"}); err != nil {
+		return nil, err
+	}
+	return def.WithCollection(collection), nil
+}
+
+func (s *moduleSchema) typeDefWithCollectionKeys(ctx context.Context, def *core.TypeDef, args struct {
+	Name string
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("collection keys field name must not be empty")
+	}
+	return s.typeDefWithCollectionOverride(ctx, def, "__withKeysFieldNameOverride", args.Name)
+}
+
+func (s *moduleSchema) typeDefWithCollectionGet(ctx context.Context, def *core.TypeDef, args struct {
+	Name string
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("collection get function name must not be empty")
+	}
+	return s.typeDefWithCollectionOverride(ctx, def, "__withGetFunctionNameOverride", args.Name)
+}
+
+func (s *moduleSchema) typeDefWithCollectionOverride(ctx context.Context, def *core.TypeDef, overrideField, name string) (*core.TypeDef, error) {
+	def, err := s.typeDefWithCollection(ctx, def, struct{}{})
+	if err != nil {
+		return nil, err
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	var collection dagql.ObjectResult[*core.CollectionTypeDef]
+	if err := dag.Select(ctx, def.AsCollection.Value, &collection, dagql.Selector{
+		Field: overrideField,
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(name)}},
+	}); err != nil {
+		return nil, err
+	}
+	return def.WithCollectionTypeDef(collection), nil
 }
 
 //nolint:dupl // symmetric with typeDefWithEnum; sharing hides the Interface vs Enum kinds
@@ -1347,6 +1458,20 @@ func (s *moduleSchema) typeDefWithObjectTypeDef(ctx context.Context, def *core.T
 		return nil, fmt.Errorf("failed to decode object type def: %w", err)
 	}
 	return def.WithObjectTypeDef(obj), nil
+}
+
+func (s *moduleSchema) typeDefWithCollectionTypeDef(ctx context.Context, def *core.TypeDef, args struct {
+	CollectionTypeDef core.CollectionTypeDefID
+}) (*core.TypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	collection, err := args.CollectionTypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode collection type def: %w", err)
+	}
+	return def.WithCollectionTypeDef(collection), nil
 }
 
 func (s *moduleSchema) typeDefWithInterfaceTypeDef(ctx context.Context, def *core.TypeDef, args struct {
@@ -1846,6 +1971,92 @@ func (s *moduleSchema) objectTypeDefWithConstructor(ctx context.Context, obj *co
 	return obj.WithConstructor(fn), nil
 }
 
+func (s *moduleSchema) collectionTypeDefWithKeysFieldNameOverride(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	Name string
+}) (*core.CollectionTypeDef, error) {
+	return collection.WithKeysFieldNameOverride(args.Name), nil
+}
+
+func (s *moduleSchema) collectionTypeDefWithGetFunctionNameOverride(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	Name string
+}) (*core.CollectionTypeDef, error) {
+	return collection.WithGetFunctionNameOverride(args.Name), nil
+}
+
+func (s *moduleSchema) collectionTypeDefWithKeyType(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	TypeDef core.TypeDefID
+}) (*core.CollectionTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode collection key type: %w", err)
+	}
+	return collection.WithKeyType(typeDef), nil
+}
+
+func (s *moduleSchema) collectionTypeDefWithValueType(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	TypeDef core.TypeDefID
+}) (*core.CollectionTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode collection value type: %w", err)
+	}
+	return collection.WithValueType(typeDef), nil
+}
+
+func (s *moduleSchema) collectionTypeDefWithBatchType(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	TypeDef core.TypeDefID
+}) (*core.CollectionTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode collection batch type: %w", err)
+	}
+	return collection.WithBatchType(typeDef), nil
+}
+
+func (s *moduleSchema) collectionTypeDefWithBackingType(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	TypeDef core.TypeDefID
+}) (*core.CollectionTypeDef, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	typeDef, err := args.TypeDef.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode collection backing type: %w", err)
+	}
+	return collection.WithBackingType(typeDef), nil
+}
+
+func (s *moduleSchema) collectionTypeDefWithKeysFieldName(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	Name string
+}) (*core.CollectionTypeDef, error) {
+	return collection.WithKeysFieldName(args.Name), nil
+}
+
+func (s *moduleSchema) collectionTypeDefWithGetFunctionName(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	Name string
+}) (*core.CollectionTypeDef, error) {
+	return collection.WithGetFunctionName(args.Name), nil
+}
+
+func (s *moduleSchema) collectionTypeDefWithGetArgName(ctx context.Context, collection *core.CollectionTypeDef, args struct {
+	Name string
+}) (*core.CollectionTypeDef, error) {
+	return collection.WithGetArgName(args.Name), nil
+}
+
 func (s *moduleSchema) interfaceTypeDefWithFunction(ctx context.Context, iface *core.InterfaceTypeDef, args struct {
 	Function core.FunctionID
 }) (*core.InterfaceTypeDef, error) {
@@ -2284,6 +2495,24 @@ func expandTypeDefClosure(
 		case core.TypeDefKindObject:
 			if !typeDefSelf.AsObject.Valid || typeDefSelf.AsObject.Value.Self() == nil {
 				continue
+			}
+			if typeDefSelf.AsCollection.Valid && typeDefSelf.AsCollection.Value.Self() != nil {
+				collection := typeDefSelf.AsCollection.Value.Self()
+				if collection.KeyType.Valid {
+					if err := enqueue(collection.KeyType.Value); err != nil {
+						return nil, err
+					}
+				}
+				if collection.ValueType.Valid {
+					if err := enqueue(collection.ValueType.Value); err != nil {
+						return nil, err
+					}
+				}
+				if collection.BatchType.Valid {
+					if err := enqueue(collection.BatchType.Value); err != nil {
+						return nil, err
+					}
+				}
 			}
 			obj := typeDefSelf.AsObject.Value.Self()
 			for _, field := range obj.Fields {

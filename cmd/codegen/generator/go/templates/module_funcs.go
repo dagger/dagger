@@ -69,6 +69,17 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		}
 	}
 
+	if v, ok := docPragmas["get"]; ok {
+		if v == nil {
+			spec.isCollectionGet = true
+		} else {
+			spec.isCollectionGet, ok = v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("get pragma %q, must be a valid boolean", v)
+			}
+		}
+	}
+
 	if v, ok := docPragmas["deprecated"]; ok {
 		if v == nil {
 			spec.deprecated = nil
@@ -144,13 +155,14 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 }
 
 type funcTypeSpec struct {
-	name        string
-	doc         string
-	sourceMap   *sourceMap
-	cachePolicy string
-	isCheck     bool
-	isGenerator bool
-	isUp        bool
+	name            string
+	doc             string
+	sourceMap       *sourceMap
+	cachePolicy     string
+	isCheck         bool
+	isGenerator     bool
+	isUp            bool
+	isCollectionGet bool
 
 	argSpecs []paramSpec
 

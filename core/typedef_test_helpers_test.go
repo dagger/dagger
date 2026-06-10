@@ -14,6 +14,7 @@ func installTypeDefTestClasses(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*FunctionArg]{Typed: &FunctionArg{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ListTypeDef]{Typed: &ListTypeDef{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ObjectTypeDef]{Typed: &ObjectTypeDef{}}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*CollectionTypeDef]{Typed: &CollectionTypeDef{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*InterfaceTypeDef]{Typed: &InterfaceTypeDef{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*InputTypeDef]{Typed: &InputTypeDef{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*ScalarTypeDef]{Typed: &ScalarTypeDef{}}))
@@ -21,6 +22,7 @@ func installTypeDefTestClasses(srv *dagql.Server) {
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*FieldTypeDef]{Typed: &FieldTypeDef{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*EnumMemberTypeDef]{Typed: &EnumMemberTypeDef{}}))
 	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*SourceMap]{Typed: &SourceMap{}}))
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Module]{Typed: &Module{}}))
 
 	dagql.Fields[*Query]{
 		dagql.Func("typeDef", func(context.Context, *Query, struct{}) (*TypeDef, error) {

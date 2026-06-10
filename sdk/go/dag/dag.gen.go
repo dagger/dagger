@@ -218,6 +218,24 @@ func LoadAddressFromID(id dagger.AddressID) *dagger.Address {
 	return client.LoadAddressFromID(id)
 }
 
+// Load a ArtifactDimension from its ID.
+func LoadArtifactDimensionFromID(id dagger.ArtifactDimensionID) *dagger.ArtifactDimension {
+	client := initClient()
+	return client.LoadArtifactDimensionFromID(id)
+}
+
+// Load a Artifact from its ID.
+func LoadArtifactFromID(id dagger.ArtifactID) *dagger.Artifact {
+	client := initClient()
+	return client.LoadArtifactFromID(id)
+}
+
+// Load a Artifacts from its ID.
+func LoadArtifactsFromID(id dagger.ArtifactsID) *dagger.Artifacts {
+	client := initClient()
+	return client.LoadArtifactsFromID(id)
+}
+
 // Load a Binding from its ID.
 func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 	client := initClient()
@@ -258,6 +276,12 @@ func LoadClientFilesyncMirrorFromID(id dagger.ClientFilesyncMirrorID) *dagger.Cl
 func LoadCloudFromID(id dagger.CloudID) *dagger.Cloud {
 	client := initClient()
 	return client.LoadCloudFromID(id)
+}
+
+// Load a CollectionTypeDef from its ID.
+func LoadCollectionTypeDefFromID(id dagger.CollectionTypeDefID) *dagger.CollectionTypeDef {
+	client := initClient()
+	return client.LoadCollectionTypeDefFromID(id)
 }
 
 // Load a Container from its ID.
