@@ -43,6 +43,7 @@ type CopyOptions struct {
 	Chown             *Ownership
 	Mode              *os.FileMode
 	XAttrErrorHandler XAttrErrorHandler
+	DisableXAttrs     bool
 	CopyDirContents   bool
 	ReplaceExisting   bool
 	DestPathHintIsDir bool

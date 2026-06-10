@@ -285,7 +285,7 @@ func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool
 	if err := os.Mkdir(realPath, info.Mode().Perm()); err != nil && !os.IsExist(err) {
 		return "", false, err
 	}
-	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil); err != nil {
+	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil, false); err != nil {
 		return "", false, err
 	}
 	return realPath, true, nil
@@ -357,7 +357,7 @@ func (d *destination) applyMetadataPath(dstPath string, src *sourceEntry, opts C
 		info = src.Info
 		srcPath = src.RealPath
 	}
-	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr, opts.XAttrErrorHandler)
+	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr, opts.XAttrErrorHandler, opts.DisableXAttrs)
 }
 
 func (d *destination) flush() error {
@@ -394,7 +394,7 @@ func (d *destination) usage() (snapshots.Usage, error) {
 	return usage, err
 }
 
-func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool, xattrErrorHandler XAttrErrorHandler) error {
+func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool, xattrErrorHandler XAttrErrorHandler, disableXAttrs bool) error {
 	if srcInfo != nil {
 		st, ok := srcInfo.Sys().(*syscall.Stat_t)
 		if !ok {
@@ -418,7 +418,7 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 			}
 		}
 
-		if srcPath != "" {
+		if srcPath != "" && !disableXAttrs {
 			if err := copyXattrs(dstPath, srcPath, userxattr, xattrErrorHandler); err != nil {
 				return err
 			}
