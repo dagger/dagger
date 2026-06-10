@@ -754,7 +754,7 @@ func legacyWorkspaceCompatMessage(cwd, cfgPath string) string {
 	if rel, err := filepath.Rel(cwd, cfgPath); err == nil {
 		relPath = rel
 	}
-	return fmt.Sprintf("No workspace config found, inferring from %s.\nRun 'dagger migrate' when ready. More info: https://docs.dagger.io/reference/upgrade-to-workspaces", relPath)
+	return fmt.Sprintf("No workspace config found, inferring from %s.\nRun 'dagger setup' when ready. More info: https://docs.dagger.io/reference/upgrade-to-workspaces", relPath)
 }
 
 // buildCoreWorkspace converts the internal workspace detection result into
