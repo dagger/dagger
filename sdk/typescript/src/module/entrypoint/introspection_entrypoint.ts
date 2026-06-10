@@ -3,6 +3,7 @@ import * as path from "path"
 
 import { connection } from "../../connect.js"
 import { scan } from "../introspector/index.js"
+import { serializeModule } from "../introspector/typedef_json.js"
 import { Register } from "./register.js"
 
 async function introspection(files: string[], moduleName: string) {
@@ -56,6 +57,19 @@ async function main() {
   if (process.env.DRY_RUN) {
     console.log(JSON.stringify(result, null, 2))
     process.exit(0)
+  }
+
+  // When EMIT_TYPEDEF_JSON_FILE is set, write the parsed DaggerModule as a
+  // stable JSON typedef. The Go-side `cmd/codegen generate-entrypoint`
+  // subcommand consumes that JSON to render the static dispatch
+  // __dagger.entrypoint.ts file.
+  const typedefJsonPath = process.env.EMIT_TYPEDEF_JSON_FILE
+  if (typedefJsonPath) {
+    const json = serializeModule(result)
+    await fs.promises.writeFile(typedefJsonPath, JSON.stringify(json))
+    if (!process.env.TYPEDEF_OUTPUT_FILE) {
+      return
+    }
   }
 
   // TODO(TomChv): move that logic inside the engine at some point

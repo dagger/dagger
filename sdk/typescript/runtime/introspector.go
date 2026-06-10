@@ -54,3 +54,58 @@ func (i *Introspector) AsEntrypoint(
 		WithEnvVariable("TYPEDEF_OUTPUT_FILE", outputFilePath).
 		WithEntrypoint([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
 }
+
+// EmitEntrypoint runs the introspector binary in typedef-JSON mode and then
+// invokes the Go-side `cmd/codegen generate-entrypoint` subcommand to render
+// the static dispatch `__dagger.entrypoint.ts` file. Returns that file.
+//
+// The split lets the emitter logic live in Go (alongside the rest of
+// cmd/codegen) while keeping the TypeScript-specific introspection in TS.
+func (i *Introspector) EmitEntrypoint(
+	moduleName string,
+
+	sourceCode *dagger.Directory,
+
+	clientBindings *dagger.File,
+
+	sdkSourceDir *dagger.Directory,
+) *dagger.File {
+	const typedefPath = "/work/typedef.json"
+
+	sdkPkg := dag.Directory().
+		WithFile("client.gen.ts", clientBindings).
+		WithNewFile("index.ts", tsutils.StaticBundleModuleIndexTS).
+		WithNewFile("core.d.ts", tsutils.StaticBundleCoreDTS).
+		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS)
+
+	// Step 1: run the introspector to write the typedef JSON.
+	withTypedef := i.Ctr.
+		WithWorkdir("/work").
+		WithMountedDirectory("/work/src", sourceCode).
+		WithMountedDirectory("/work/node_modules/@dagger.io/dagger", sdkPkg).
+		WithMountedDirectory("/work/sdk", sdkPkg).
+		WithEnvVariable("EMIT_TYPEDEF_JSON_FILE", typedefPath).
+		WithExec([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
+
+	// Step 2: hand the typedef JSON to `cmd/codegen generate-entrypoint`.
+	const entrypointFile = "__dagger.entrypoint.ts"
+	return dag.Container().
+		From(tsdistconsts.DefaultBunImageRef).
+		WithMountedFile(codegenBinPath, sdkSourceDir.File("/codegen")).
+		WithMountedFile(typedefPath, withTypedef.File(typedefPath)).
+		WithWorkdir("/work").
+		WithExec([]string{
+			codegenBinPath,
+			"--lang", "typescript",
+			"--output", "/work",
+			"generate-entrypoint",
+			"--typedef-json-path", typedefPath,
+			"--output-file", entrypointFile,
+			"--module-root", "/work",
+			"--sdk-import", "@dagger.io/dagger",
+			"--source-dir", "src",
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		File("/work/" + entrypointFile)
+}

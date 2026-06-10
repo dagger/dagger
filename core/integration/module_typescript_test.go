@@ -1699,3 +1699,94 @@ class Test {
 		"Encountered an unknown error",
 	)
 }
+
+func (TypescriptSuite) TestGenerateEntrypointTypedefOnlyDoesNotConnect(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().From(golangImage).
+		With(goCache(c)).
+		WithExec([]string{"apk", "add", "git"}).
+		WithMountedDirectory("/src", c.Host().Directory("../..")).
+		WithWorkdir("/src").
+		WithExec([]string{"go", "build", "-o", "/work/codegen", "./cmd/codegen"}).
+		WithWorkdir("/work").
+		WithNewFile("/work/typedef.json", `{
+  "name": "Test",
+  "objects": {
+  "Test": {
+      "name": "Test",
+      "kind": "class",
+      "isExported": true,
+      "description": "",
+      "location": {"filepath": "/work/src/index.ts", "line": 1, "column": 14},
+      "methods": {},
+      "properties": {}
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}`).
+		WithExec([]string{"mkdir", "-p", "/work/out"}).
+		WithoutEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN").
+		WithoutEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST").
+		WithExec([]string{
+			"/work/codegen",
+			"--lang", "typescript",
+			"--output", "/work/out",
+			"generate-entrypoint",
+			"--typedef-json-path", "/work/typedef.json",
+			"--output-file", "__dagger.entrypoint.ts",
+			"--module-root", "/work",
+			"--sdk-import", "@dagger.io/dagger",
+			"--source-dir", "src",
+		})
+
+	entrypoint, err := ctr.File("/work/out/__dagger.entrypoint.ts").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entrypoint, "async function dispatch()")
+}
+
+func (TypescriptSuite) TestGeneratedEntrypointDefaultExport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := moduleFixture(t, c, "typescript/entrypoint-default-export").
+		With(daggerQuery("{hello}")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"hello":"hello"}`, out)
+}
+
+func (TypescriptSuite) TestNullableArgumentOmissionPassesNull(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := moduleFixture(t, c, "typescript/entrypoint-nullable-arg-omission").
+		With(daggerQuery(`{nullableValue}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"nullableValue":"null"}`, out)
+}
+
+func (TypescriptSuite) TestGeneratedEntrypointVariadicArguments(ctx context.Context, t *testctx.T) {
+	t.Run("omitted_variadic_args_default_to_empty_array", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := moduleFixture(t, c, "typescript/entrypoint-variadic-args").
+			With(daggerQuery(`{words}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"words":"0"}`, out)
+	})
+}
+
+func (TypescriptSuite) TestGeneratedEntrypointUserClassImports(ctx context.Context, t *testctx.T) {
+	t.Run("class_name_collides_with_sdk_binding", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := moduleFixture(t, c, "typescript/entrypoint-class-name-collision").
+			With(daggerQuery(`{makeContext{value}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"makeContext":{"value":"ok"}}`, out)
+	})
+}
