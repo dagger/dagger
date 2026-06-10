@@ -96,6 +96,10 @@
   text-align: right;
   white-space: nowrap;
 
+  // Align baseline with description text (different fonts)
+  position: relative;
+  top: -1px;
+
   a {
     text-decoration: none;
   }
