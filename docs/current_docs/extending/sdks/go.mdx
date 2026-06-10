@@ -8,11 +8,11 @@ description: "Develop Dagger modules in Go: create modules with the Go SDK modul
 
 The Go SDK lets you write Dagger modules in Go. You define plain Go structs and methods; the SDK turns them into Dagger objects and functions that anyone can call from the CLI, from another module, or over the API. In return, your module gets a generated, fully-typed Go client (`dag`) for the entire Dagger API — containers, directories, files, secrets, services, and every module you depend on.
 
-This page is a standalone guide to the Go SDK. It assumes you already understand the platform concepts covered in the [Module Developer Guide](/extending):
+This page is a standalone guide to the Go SDK. It assumes you already understand the platform concepts covered in the [Module Developer Guide](../index.mdx):
 
-- [Type system](/extending/type-system) — how SDK types map to the Dagger API
-- [Checks](/extending/how-dagger-works/checks) — functions that validate your code
-- [Changesets](/using-dagger/changesets) — how generators and tooling return diffs for you to apply
+- [Type system](../type-system/index.mdx) — how SDK types map to the Dagger API
+- [Checks](../how-dagger-works/checks.mdx) — functions that validate your code
+- [Changesets](../../using-dagger/changesets.mdx) — how generators and tooling return diffs for you to apply
 
 A useful, reusable module provides at least one of the three first-class function types — a **check**, a **generator**, or a **service**. See [Checks, generators, services, directives, and ignore patterns](#checks-generators-services-directives-and-ignore-patterns) for the Go syntax.
 
@@ -39,7 +39,7 @@ dagger mod install github.com/dagger/go-sdk
 dagger call go-sdk init --name my-module
 ```
 
-Like every Dagger tool that modifies your workspace, `init` returns a [changeset](/using-dagger/changesets) — a structured diff of the files to create — which Dagger shows you to review before anything is written to disk.
+Like every Dagger tool that modifies your workspace, `init` returns a [changeset](../../using-dagger/changesets.mdx) — a structured diff of the files to create — which Dagger shows you to review before anything is written to disk.
 
 ### Where the module is created
 
@@ -679,7 +679,7 @@ source = "../wolfi"
 
 A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, e.g. `github.com/shykes/daggerverse/hello@v0.3.0`.
 
-Manage dependencies with the SDK module's `mod deps` operations rather than hand-editing `dagger-module.toml`. Each returns a [changeset](/using-dagger/changesets) for you to review and apply.
+Manage dependencies with the SDK module's `mod deps` operations rather than hand-editing `dagger-module.toml`. Each returns a [changeset](../../using-dagger/changesets.mdx) for you to review and apply.
 
 Add a dependency (`--source` required, `--name` optional alias):
 
@@ -746,7 +746,7 @@ You can also regenerate *every* Go module discovered in the workspace at once:
 dagger call go-sdk generate-all
 ```
 
-`dagger generate` (the user-facing command described in [Generating Code](/using-dagger/generating)) discovers and runs your module's generators, which for a Go module includes this binding regeneration. Both paths produce a [changeset](/using-dagger/changesets) you review and apply.
+`dagger generate` (the user-facing command described in [Generating Code](../../using-dagger/generating.mdx)) discovers and runs your module's generators, which for a Go module includes this binding regeneration. Both paths produce a [changeset](../../using-dagger/changesets.mdx) you review and apply.
 
 :::note
 A module (or an ancestor) can carry a "skip generate" marker; when present, `mod generate` returns an empty changeset. Check whether a marker is in effect with `dagger call go-sdk mod skip-generate`.
@@ -783,7 +783,7 @@ Bumping the engine version usually means the generated bindings should change to
 
 ## Checks, generators, services, directives, and ignore patterns
 
-A useful, reusable module provides at least one of the three first-class function types — a **check**, a **generator**, or a **service** — so that the platform verbs (`dagger check`, `dagger generate`, `dagger up`) have something to run. These work the same in Go as in any SDK; see the [Module Developer Guide](/extending) for the full treatment. In Go, you mark each one with a doc-comment **pragma** on the function:
+A useful, reusable module provides at least one of the three first-class function types — a **check**, a **generator**, or a **service** — so that the platform verbs (`dagger check`, `dagger generate`, `dagger up`) have something to run. These work the same in Go as in any SDK; see the [Module Developer Guide](../index.mdx) for the full treatment. In Go, you mark each one with a doc-comment **pragma** on the function:
 
 | Pragma | Return type | Run by | Purpose |
 |---|---|---|---|
@@ -822,7 +822,7 @@ func New(ws *dagger.Workspace) *MyModule {
 
 ### Checks {#checks}
 
-Mark a function with the `// +check` pragma to make it a **check** — a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it returns a non-nil `error`, or when it returns a `*dagger.Container` whose execution exits non-zero. The platform model is described in [Checks](/extending/how-dagger-works/checks).
+Mark a function with the `// +check` pragma to make it a **check** — a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it returns a non-nil `error`, or when it returns a `*dagger.Container` whose execution exits non-zero. The platform model is described in [Checks](../how-dagger-works/checks.mdx).
 
 ```go
 // Lint the project.
@@ -850,7 +850,7 @@ The pragma may be placed on its own line within the doc comment (a blank `//` li
 
 ### Generators {#generators}
 
-Mark a function with the `// +generate` pragma to make it a **generator**. It returns a `*dagger.Changeset`: it runs a tool, captures the resulting directory, and diffs it against the source. `dagger generate` discovers and runs every generator and presents the combined [changeset](/using-dagger/changesets) for you to review and apply.
+Mark a function with the `// +generate` pragma to make it a **generator**. It returns a `*dagger.Changeset`: it runs a tool, captures the resulting directory, and diffs it against the source. `dagger generate` discovers and runs every generator and presents the combined [changeset](../../using-dagger/changesets.mdx) for you to review and apply.
 
 ```go
 // Format the source.
@@ -871,7 +871,7 @@ func (m *MyModule) Format() *dagger.Changeset {
 This author-written `// +generate` function is distinct from regenerating the SDK's own client bindings. Binding regeneration is the SDK module's `mod generate` operation, covered under [Regenerate bindings](#regenerate-bindings-and-generated-files); the user-facing `dagger generate` runs both your `// +generate` functions and (for a Go module) the binding regeneration.
 :::
 
-See [Generating Code](/using-dagger/generating) and [Changesets](/using-dagger/changesets).
+See [Generating Code](../../using-dagger/generating.mdx) and [Changesets](../../using-dagger/changesets.mdx).
 
 ### Services {#up-services}
 
@@ -1018,7 +1018,7 @@ or by adding it to their `dagger-module.toml` `dependencies` and regenerating. A
 
 ## Next steps
 
-- [Module Developer Guide](/extending) — platform concepts that apply to every SDK
-- [Type system](/extending/type-system)
-- [Checks](/extending/how-dagger-works/checks)
-- [Generating Code](/using-dagger/generating) and [Changesets](/using-dagger/changesets)
+- [Module Developer Guide](../index.mdx) — platform concepts that apply to every SDK
+- [Type system](../type-system/index.mdx)
+- [Checks](../how-dagger-works/checks.mdx)
+- [Generating Code](../../using-dagger/generating.mdx) and [Changesets](../../using-dagger/changesets.mdx)

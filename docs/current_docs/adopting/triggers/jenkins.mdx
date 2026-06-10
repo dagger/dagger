@@ -9,7 +9,7 @@ description: "Learn how to use Dagger with Jenkins."
 Dagger runs your checks in Jenkins via `dagger check`, so the same checks you run locally run on every job — without rewriting your pipeline. You keep all of your existing Jenkins infrastructure and `Jenkinsfile`, and simply invoke the Dagger CLI from it.
 
 :::tip
-For checks with no `Jenkinsfile` changes at all, enable [Cloud Checks](/adopting/triggers) with `dagger ws autocheck on`. The `Jenkinsfile` below is the hybrid-mode alternative for when you want to drive Dagger from your existing Jenkins setup.
+For checks with no `Jenkinsfile` changes at all, enable [Cloud Checks](./index.mdx) with `dagger ws autocheck on`. The `Jenkinsfile` below is the hybrid-mode alternative for when you want to drive Dagger from your existing Jenkins setup.
 :::
 
 ## How it works
@@ -32,7 +32,7 @@ Running the examples shown below requires:
 1. At least one Jenkins agent with the `dagger` label
 1. A Docker engine that is able to run containers (can be `docker:dind`)
 1. The `docker` client installed on your Jenkins agent
-1. A repository with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](/adopting/workspace-setup).
+1. A repository with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](../workspace-setup.mdx).
 
 ## Example
 

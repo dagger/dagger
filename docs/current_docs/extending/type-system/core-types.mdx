@@ -21,11 +21,11 @@ A string can name a directory, a credential, or a service endpoint, but the engi
 
 ## Types every module author should know
 
-Each type below links to its [reference page](/extending/types) for the full field listing. The guidance here is about *design*: when to accept it, when to return it, and the mistake to avoid.
+Each type below links to its [reference page](../types/index.mdx) for the full field listing. The guidance here is about *design*: when to accept it, when to return it, and the mistake to avoid.
 
 ### `Container`
 
-A filesystem, environment, execution, and publish pipeline in one value. See [`Container`](/extending/types/container).
+A filesystem, environment, execution, and publish pipeline in one value. See [`Container`](../types/container.mdx).
 
 - **Accept** when a function operates on an already-built image — to test it, scan it, or add a layer.
 - **Return** when the caller may still run, publish, export, or inspect the result. This is usually richer than returning a digest or a "build succeeded" string.
@@ -33,7 +33,7 @@ A filesystem, environment, execution, and publish pipeline in one value. See [`C
 
 ### `Directory`
 
-A content-addressed tree. See [`Directory`](/extending/types/directory).
+A content-addressed tree. See [`Directory`](../types/directory.mdx).
 
 - **Accept** for source code, build context, or any input the function reads from the host or another module.
 - **Return** for build outputs, generated trees, or filtered subsets of an input.
@@ -41,7 +41,7 @@ A content-addressed tree. See [`Directory`](/extending/types/directory).
 
 ### `File`
 
-A content-addressed file. See [`File`](/extending/types/file).
+A content-addressed file. See [`File`](../types/file.mdx).
 
 - **Accept** for a single artifact: a config file, a binary, a certificate.
 - **Return** when the meaningful output is one file — a compiled binary, a report, a lockfile.
@@ -49,7 +49,7 @@ A content-addressed file. See [`File`](/extending/types/file).
 
 ### `Secret`
 
-Sensitive data passed without exposing plaintext. See [`Secret`](/extending/types/secret).
+Sensitive data passed without exposing plaintext. See [`Secret`](../types/secret.mdx).
 
 - **Accept** for every credential: tokens, passwords, keys, registry logins.
 - **Return** rarely — a module usually consumes secrets rather than producing them.
@@ -57,7 +57,7 @@ Sensitive data passed without exposing plaintext. See [`Secret`](/extending/type
 
 ### `Service`
 
-A long-running endpoint for other work to use. See [`Service`](/extending/types/service).
+A long-running endpoint for other work to use. See [`Service`](../types/service.mdx).
 
 - **Accept** when a function needs a live dependency — a database, a registry, an API to test against.
 - **Return** when the module's job is to stand up an endpoint other steps will bind to.
@@ -65,7 +65,7 @@ A long-running endpoint for other work to use. See [`Service`](/extending/types/
 
 ### `Changeset`
 
-A proposed diff against a directory or workspace. See [Changesets](/using-dagger/changesets).
+A proposed diff against a directory or workspace. See [Changesets](../../using-dagger/changesets.mdx).
 
 - **Accept** rarely; most modules produce changesets rather than consume them.
 - **Return** whenever a function edits source — codegen, formatting, dependency bumps. The change becomes reviewable and composable instead of a silent write.
@@ -73,7 +73,7 @@ A proposed diff against a directory or workspace. See [Changesets](/using-dagger
 
 ### `Env`
 
-A set of typed inputs and outputs that can pass through a workflow, including to an LLM. See [`Env`](/extending/types/env).
+A set of typed inputs and outputs that can pass through a workflow, including to an LLM. See [`Env`](../types/env.mdx).
 
 - **Accept** when a function bundles several typed resources to hand to a model or a downstream step.
 - **Return** when a function assembles that context for a caller to extend.
@@ -81,7 +81,7 @@ A set of typed inputs and outputs that can pass through a workflow, including to
 
 ### `LLM`
 
-Model interaction when enabled for a module. See [`LLM`](/extending/types/llm).
+Model interaction when enabled for a module. See [`LLM`](../types/llm.mdx).
 
 - **Accept** when a function delegates a step to a model.
 - **Return** when the module exposes a configured model interaction for the caller to drive.
@@ -99,4 +99,4 @@ Model interaction when enabled for a module. See [`LLM`](/extending/types/llm).
 
 ## Reference boundary
 
-This chapter teaches how module authors should think with core types. It does not list every field — that is the job of the [Types Reference](/extending/types). When deciding *whether* to accept or return a type, stay here; when deciding *which field* to call, go there.
+This chapter teaches how module authors should think with core types. It does not list every field — that is the job of the [Types Reference](../types/index.mdx). When deciding *whether* to accept or return a type, stay here; when deciding *which field* to call, go there.

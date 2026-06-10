@@ -126,6 +126,10 @@ const config: Config = {
             resolve: {
               alias: {
                 "@components": path.resolve(__dirname, "src/components"),
+                "@daggerTypes": path.resolve(
+                  __dirname,
+                  "current_docs/partials/types",
+                ),
               },
             },
           };
