@@ -192,7 +192,7 @@ func (r *Resolver) ResolveImageConfig(
 
 		platformMatcher := imageConfigPlatformMatcher(opts.Platform)
 		if opts.ResolveMode == ResolveModeDefault {
-			metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher)
+			metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher, false)
 			if err != nil {
 				return nil, err
 			}
@@ -283,7 +283,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	var manifestDesc ocispecs.Descriptor
 	var manifest ocispecs.Manifest
 	if opts.ResolveMode == ResolveModeDefault {
-		metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher)
+		metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher, true)
 		if err != nil {
 			return nil, err
 		}
@@ -292,7 +292,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	} else {
 		provider := contentutil.FromFetcher(fetcher)
 		var err error
-		manifestDesc, manifest, err = resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher)
+		manifestDesc, manifest, err = resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher, true)
 		if err != nil {
 			return nil, err
 		}
@@ -414,7 +414,7 @@ func (r *Resolver) tryLocalCanonicalClosure(
 		return nil, found, nil, err
 	}
 
-	manifestDesc, manifest, found, err := tryResolveLocalManifestDescriptor(ctx, r.contentStore, rootDesc, matcher)
+	manifestDesc, manifest, found, err := tryResolveLocalManifestDescriptor(ctx, r.contentStore, rootDesc, matcher, true)
 	if err != nil || !found {
 		return nil, false, nil, err
 	}
@@ -880,8 +880,9 @@ func tryResolveLocalManifestDescriptor(
 	provider content.Provider,
 	desc ocispecs.Descriptor,
 	matcher platforms.MatchComparer,
+	checkRootManifestPlatform bool,
 ) (ocispecs.Descriptor, ocispecs.Manifest, bool, error) {
-	manifestDesc, manifest, status, err := resolveLocalManifestDescriptor(ctx, provider, desc, matcher)
+	manifestDesc, manifest, status, err := resolveLocalManifestDescriptor(ctx, provider, desc, matcher, checkRootManifestPlatform)
 	if err != nil {
 		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, err
 	}
@@ -902,6 +903,7 @@ func resolveLocalManifestDescriptor(
 	provider content.Provider,
 	desc ocispecs.Descriptor,
 	matcher platforms.MatchComparer,
+	checkManifestPlatform bool,
 ) (ocispecs.Descriptor, ocispecs.Manifest, localManifestResolutionStatus, error) {
 	switch {
 	case images.IsManifestType(desc.MediaType):
@@ -916,10 +918,10 @@ func resolveLocalManifestDescriptor(
 		if err := json.Unmarshal(p, &manifest); err != nil {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
 		}
-		if desc.Platform != nil && !matcher.Match(*desc.Platform) {
+		if checkManifestPlatform && desc.Platform != nil && !matcher.Match(*desc.Platform) {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
 		}
-		if desc.Platform == nil {
+		if checkManifestPlatform && desc.Platform == nil {
 			imagePlatform, err := images.ConfigPlatform(ctx, provider, manifest.Config)
 			if err != nil {
 				if cerrdefs.IsNotFound(err) {
@@ -951,7 +953,7 @@ func resolveLocalManifestDescriptor(
 		}
 		incomplete := false
 		for _, candidate := range candidates {
-			manifestDesc, manifest, status, err := resolveLocalManifestDescriptor(ctx, provider, candidate, matcher)
+			manifestDesc, manifest, status, err := resolveLocalManifestDescriptor(ctx, provider, candidate, matcher, true)
 			if err != nil {
 				return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
 			}
@@ -1011,6 +1013,7 @@ func resolveManifestDescriptor(
 	provider content.Provider,
 	desc ocispecs.Descriptor,
 	matcher platforms.MatchComparer,
+	checkManifestPlatform bool,
 ) (ocispecs.Descriptor, ocispecs.Manifest, error) {
 	switch {
 	case images.IsManifestType(desc.MediaType):
@@ -1022,10 +1025,10 @@ func resolveManifestDescriptor(
 		if err := json.Unmarshal(p, &manifest); err != nil {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, err
 		}
-		if desc.Platform != nil && !matcher.Match(*desc.Platform) {
+		if checkManifestPlatform && desc.Platform != nil && !matcher.Match(*desc.Platform) {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, fmt.Errorf("manifest %s does not match requested platform", desc.Digest)
 		}
-		if desc.Platform == nil {
+		if checkManifestPlatform && desc.Platform == nil {
 			imagePlatform, err := images.ConfigPlatform(ctx, provider, manifest.Config)
 			if err != nil {
 				return ocispecs.Descriptor{}, ocispecs.Manifest{}, err
@@ -1050,7 +1053,7 @@ func resolveManifestDescriptor(
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, fmt.Errorf("no manifest matches requested platform for %s", desc.Digest)
 		}
 		for _, candidate := range candidates {
-			manifestDesc, manifest, err := resolveManifestDescriptor(ctx, provider, candidate, matcher)
+			manifestDesc, manifest, err := resolveManifestDescriptor(ctx, provider, candidate, matcher, true)
 			if err == nil {
 				return manifestDesc, manifest, nil
 			}
