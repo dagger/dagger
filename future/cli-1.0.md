@@ -8,29 +8,26 @@ A redesign of the Dagger CLI's user-facing command surface for 1.0. Collapses th
 - [Target `--help`](#target---help)
 - [Group rationale](#group-rationale)
 - [Flag rename: `--mod` → `--load-module`](#flag-rename---mod---load-module)
-- [Module authoring lane: `dagger module`](#module-authoring-lane-dagger-module)
-- [Removed, demoted, and renamed](#removed-demoted-and-renamed)
-- [Notes on individual verbs](#notes-on-individual-verbs)
+- [Per-command decision context](#per-command-decision-context)
 - [Subcommand structures](#subcommand-structures)
+- [Discrete changes from current CLI](#discrete-changes-from-current-cli)
 - [Status](#status)
 
 ## Problem
 
 1. **`dagger mod` carries two meanings.** Its subcommands mix workspace-consumer verbs (`install`, `uninstall`, `list`, `search`, `recommend`) with module-authoring verbs (`deps add`, `engine require`) — the same noun, two unrelated subjects. The `--mod` flag's overloaded role (load a module vs. select a module to edit) is the load-bearing evidence; this is what caused the deps/engine work to be rolled back from PR #13226 before merge.
 
-2. **`dagger workspace` is redundant for the hot path.** Most workspace commands map to operations users run constantly (install, uninstall, update). Burying them behind a `workspace` noun-prefix is taxation on every invocation and runs against the precedent of cargo, npm, and git, which all leave the project noun implicit.
+2. **`dagger workspace` is redundant for the hot path.** Most workspace commands map to operations users run constantly (install, uninstall, update). Burying them behind a `workspace` noun-prefix is taxation on every invocation and runs against the precedent of cargo, npm, and git.
 
 3. **No authoring lane exists.** The CLI has no clean home for commands that mutate a single `dagger.json`. The deps/engine work had nowhere to go, so it was crammed into `dagger mod` and ultimately cut.
 
 4. **`--mod`/`-m` predates the workspace concept.** It was named when "the module" was the only operating subject. With workspaces and modules-under-authorship now distinct concepts, the flag actively misleads.
 
-5. **`init` lives under `workspace`** with a meaning that pre-empts the more natural "scaffold a new module" reading users reach for from npm/cargo muscle memory.
-
-6. **Generic verb risk is unmanaged.** Naked top-level verbs (`install`, `update`, `search`) read out of context until the user reads the help text. Today's CLI mitigates this by noun-prefix grouping. A flat redesign has to do that work elsewhere — in verb naming, description text, and visual grouping.
+5. **Generic verb risk is unmanaged.** Naked top-level verbs (`install`, `update`, `search`) read out of context until the user reads the help text. Today's CLI mitigates this by noun-prefix grouping. A flat redesign has to do that work elsewhere — verb naming, description text, visual grouping.
 
 ## Solution
 
-Adopt a flat top-level verb surface for the consumer hot path. Eliminate `dagger mod` and `dagger workspace` from the visible command tree. Introduce `dagger module` as the dedicated authoring lane, with `init`, `deps`, and `engine` subcommands. Introduce `dagger setup` (write side of workspace state — ensure the environment works) and `dagger status` (read side — show workspace state) as paired inspection/maintenance verbs. Rename `--mod`/`-m` to `--load-module`/`-m` to name the flag's actual job.
+Adopt a flat top-level verb surface for the consumer hot path. Eliminate `dagger mod` from the visible tree and slim `dagger workspace` to plumbing only. Introduce `dagger module` as the dedicated authoring lane. Introduce `dagger setup` as the idempotent "ensure environment works" verb. Rename `--mod`/`-m` to `--load-module`/`-m`.
 
 Organize the top-level surface into five visually separated groups, each with one coherent theme. Use descriptions, not noun-prefixes, to disambiguate.
 
@@ -90,9 +87,7 @@ OPTIONS
 | 4 | Specialized toolboxes | `api`, `module`, `cloud`, `workspace` |
 | 5 | Utility / meta | `exec`, `help`, `version` |
 
-Visual separation does the disambiguation work that noun-prefix grouping (`dagger workspace X`, `dagger mod Y`) tried to do structurally. The result: fewer keystrokes per invocation and one source of truth for command discovery (the top-level `--help`).
-
-The most prominent two groups (2 and 3) cover the daily loop. Group 4 is the more deliberate "I'm reaching for something specific" lane. Group 5 is meta — about the user's session and tool state, not the project.
+Visual separation does the disambiguation work that noun-prefix grouping (`dagger workspace X`, `dagger mod Y`) tried to do structurally. Group 4 clusters the four major namespaces — `api`, `module`, `cloud`, `workspace` — each with its own subcommand surface. Group 5 is utility; group 3 is the daily-loop module verbs; group 2 is the three shipping fundamentals plus activity.
 
 ## Flag rename: `--mod` → `--load-module`
 
@@ -101,92 +96,45 @@ The most prominent two groups (2 and 3) cover the daily loop. Group 4 is the mor
 | `-m`, `--mod string` | `-m`, `--load-module string` |
 | `-M`, `--no-mod` | `-M`, `--no-load-module` |
 
-The old name conflated "load a module for this invocation" with "select a module to operate on." `--load-module` names the flag's actual job: load a module so its functions are available to the current command. It cannot be misread as authoring-related.
+`--load-module` was chosen over `--with-module` because Dagger's `WithX` API methods are chainable — `--with-module X --with-module Y` would carry a "load both" implication the flag cannot honor (it is single-valued). `--load-module` is verb-form and singular by reading.
 
-`--load-module` was chosen over `--with-module` because Dagger's `WithX` API methods are chainable; `--with-module X --with-module Y` would carry a "load both" implication that the flag cannot honor (it is single-valued). `--load-module` is verb-form and singular by reading, removing the implication.
+Authoring commands (`dagger module deps`, `dagger module engine`) take **no** module-targeting flag. They operate on the `dagger.json` reachable from cwd. To target a sibling, `cd` first. This matches `cargo add` / `npm install` / `go get`.
 
-Short form `-m` is preserved for muscle memory. The flag is wired through `moduleAddFlags` in `cmd/dagger/module.go`; the rename is a single funnel-point change plus reference updates in docs and tests.
+## Per-command decision context
 
-Authoring commands (`dagger module deps`, `dagger module engine`) take **no** module-targeting flag. They operate on the `dagger.json` reachable from cwd. To target a sibling, `cd` first. This matches `cargo add` / `npm install` / `go get` and keeps the authoring lane's semantics airtight: it only ever edits the module that is *here*, never a remote ref, never `core`.
+What we considered, debated, changed, and decided for each command. Not a description; an account of design pressure.
 
-## Module authoring lane: `dagger module`
-
-The `dagger module` group is the dedicated authoring lane. It operates on a single local `dagger.json` (cwd default).
-
-```
-dagger module init
-dagger module deps   { add, rm, list }
-dagger module engine { require, require-current, require-latest, required }
-```
-
-Future authoring commands extend here without further namespace churn: `dagger module sdk`, `dagger module codegen`, etc.
-
-There is no `dagger modules` (plural) command. Listing installed modules is part of `dagger status` output — this avoids the typing-risk a singular/plural pair would have introduced, and keeps the listing alongside the rest of workspace state.
-
-## Removed, demoted, and renamed
-
-| Command | Disposition | Why |
-|---------|-------------|-----|
-| `dagger mod` (group) | Removed | Conflated two subjects; verbs hoisted flat |
-| `dagger workspace` (group, hot-path) | Reshaped | Hot-path verbs (`install`, `uninstall`, `update`) hoisted flat; plumbing (`config`, `cwd`, `migrate`, etc.) kept under a slimmer `dagger workspace` — namespace acts as a "this is advanced" signal |
-| `dagger init` | Removed | Workspace creation goes implicit; module scaffolding lives at `dagger module init` |
-| `dagger status` | Removed | Bare `dagger workspace` (no args) prints the digest; individual fields are subcommands (`dagger workspace cwd`, etc.) |
-| `dagger migrate` | Removed | Legacy migration is past the point where any visibility is justified |
-| `dagger config` (hidden top-level alias) | Removed | Now `dagger workspace config` (visible, properly signaled as advanced) |
-| `dagger env` (group) | Removed | `env` is a path prefix in workspace config (`env.<name>.modules.<m>.settings.<k>`), not a first-class concept. Create/edit via `dagger settings --env <name>`; list/inspect via `dagger workspace config env`; remove via `dagger workspace config --rm env.<name>` |
-| `dagger recommend` | Removed | Generic verb without clear subject at top-level; users reach `search` first anyway |
-| `dagger checks` (alias) | Removed | One name (`check`) per concept; aligns with GitHub "Checks" vocabulary |
-| `dagger modules` | Removed | Listing installed modules lives in `dagger installed` (past-participle reads as "show me what's installed"); avoids the typing collision with `dagger module` (singular, authoring). The top-level `list` slot is reserved by modules-v2 / artifacts.md for *artifact* dimensions, which do not include installed modules themselves |
-| `dagger function` (group) | Removed | `function call` folded into `dagger api call` (with hidden top-level alias `dagger call`); `function list` folded into `dagger api functions` |
-| `dagger integration` (top-level) | Moved | Now `dagger cloud integration` (with mutable shape: `create`, `rm`, `list`, `accounts`) |
-| `dagger call` | Hidden | Top-level alias for `dagger api call`; reserves the top-level slot for a future `dagger do` |
-| `dagger shell` | Hidden | Reachable at top-level but absent from `--help`; promote or deprecate later |
-| `--mod`, `--no-mod` (flags) | Renamed | `--load-module`, `--no-load-module` |
-
-Workspace plumbing lives in the slimmer `dagger workspace` namespace:
-- `cwd`, `root`, `config-file`, `remote`, `remotes` → individual `dagger workspace <field>` subcommands (and rolled up in bare `dagger workspace` digest)
-- `config` → `dagger workspace config` (raw `dagger.toml` editing; distinct from `settings`, which manages module-declared knobs — the namespace IS the disambiguator)
-- `autocheck` → moved to `dagger cloud check` (mutable shape: `on`, `off`, `list`, `status`)
-
-## Notes on individual verbs
-
-**`setup`** — Idempotent doctor command, not a one-shot wizard. "Ensure" implies it can be run anytime: it does whatever's needed to bring the workspace into a working state, and no-ops what's already fine. Owning "make sure the environment works" also resolves the `update` ambiguity (see below). `setup` is the *write* side of workspace state; `workspace` is the *read* side and the home for advanced workspace plumbing.
-
-**`workspace`** (alias `ws`) — Inspection and plumbing for the workspace itself. Bare invocation (`dagger workspace`) prints a digest of cwd, root, current remote, and installed modules. Subcommands provide scriptable single-field reads (`dagger workspace cwd`, `dagger workspace remotes`, etc.) and admin writes (`dagger workspace config`, `dagger workspace migrate`). The namespace itself does load-bearing work: it signals "you're poking at workspace internals," which keeps `dagger workspace config` clearly distinct from `dagger settings` (module-declared knobs) without needing the verbs alone to disambiguate.
-
-**`installed`** — Lists installed modules in the workspace. Past-participle reads as "show me what's installed" — precedent in `pip list`, `gem list --installed`. Top-level because it's a daily-frequency read; named `installed` rather than `modules` (plural) to avoid the typing-risk with `module` (singular authoring group).
-
-**`list`** (alias `ls`) — General-purpose enumeration over the artifacts framework defined in [modules-v2 / artifacts.md](https://github.com/dagger/dagger/pull/12900). Form: `dagger list <dimension>`. Built-in: `dagger list types`. Per-dimension: `dagger list go-test`, `dagger list go-module`, etc. Dimensions are *artifacts extracted from module schemas* (tests, Go modules referenced by your Dagger modules, etc.) — **not** the installed Dagger modules themselves. To enumerate installed modules, use `dagger status --modules`. The top-level `list` slot is named here because modules-v2 owns it; the cli-1.0 redesign does not redefine it.
-
-**`check` / `generate` / `up` — the three shipping fundamentals.** Every software shop, no matter how esoteric the stack or workflow, performs three categories of operation: verifying code (`check`), producing derived artifacts (`generate`), and running services for development (`up`). These verbs are top-level because they name those categories universally; the module ecosystem provides the per-stack implementations. `check` specifically aligns with GitHub Checks vocabulary (the red/green gates on every PR), so CI integration reads naturally. The "your project" phrasing across all three descriptions reinforces the universality: this is *your* shop's stuff, mapped through Dagger.
-
-**`update`** — Scoped strictly to refreshing installed-module state (lockfile, pinned refs). Self-upgrade of the Dagger CLI is *not* this command — `setup` owns whatever environment maintenance is needed. The clean split between `setup` (environment) and `update` (module versions) removes the "does `update` mean update Dagger?" trap.
-
-**`install`** — Module installation into the workspace, not Dagger installation. Description must make this unambiguous; the verb alone carries package-manager baggage from npm/apt/pip. Aliased to `i` to match `npm i` muscle memory. `uninstall` is similarly aliased to `un`.
-
-**`module`** — Authoring group. Always operates on cwd's `dagger.json`. Subcommands: `init` (scaffold a new module), `deps` (manage dependencies), `engine` (manage required engine version). `init` lives here, not top-level: workspace creation is implicit, and module scaffolding is the npm-init/cargo-init muscle memory users reach for first.
-
-**`search`** — Searches the module registry. Verb-as-action; near-universal CLI idiom (`apt search`, `brew search`).
-
-**`api`** — Every Dagger command ultimately runs against a GraphQL API served by the engine, combining Dagger's core types with schema extensions loaded from modules. This group surfaces direct access for scripting and advanced automation. Three subcommands: `query` (raw GraphQL), `call` (function call porcelain — clusters here rather than a near-empty `function` group), `functions` (introspection). Top-level mockup keeps the `(advanced)` tag for signal-and-skip; the teaching beat lives in the cobra Long description so it only appears when someone curious clicks through. Most users will never type these.
-
-**`call`** — Hidden top-level alias for `dagger api call`. Preserves muscle memory for users who type `dagger call <fn>` daily, without burning the top-level slot. The slot is intentionally reserved for a future `dagger do` command (a higher-level porcelain that `call` is currently doing the work of).
-
-**`shell`** — Hidden top-level. Reachable but absent from `--help`. Keeping the slot open lets us promote or deprecate later based on usage.
-
-**`exec`** — Execute a command in a Dagger session. Niche but useful; lives in group 5 (utility) where its low-traffic status doesn't crowd the daily-loop verbs above.
-
-**`settings`** — Module-declared settings. Form: `dagger settings [module] [key] [value]`. Each installed module exposes its own settings schema; this is the verb that tunes them. With `--env <name>`, scopes the write to that env's overlay (i.e., stores at `env.<name>.modules.<m>.settings.<k>` instead of the base `modules.<m>.settings.<k>`). Distinct from `dagger workspace config` — `settings` is the friendly, schema-aware path; `workspace config` is the raw editor for the whole tree.
-
-**`activity`** — Shows recent runs/traces for this workspace. Promoted to top-level because it is a daily observation verb. Requires Cloud, but that fact is not load-bearing for placement (see principle below).
-
-**Design principle: usefulness wins over OSS/Cloud purity.** Cloud-requiring commands (`activity`) live at top-level when they earn the slot by frequency or importance, not by being part of a Cloud namespace. The reverse also holds: rarely-used Cloud verbs (`login`, `logout`, `integration`, `check`) nest under `cloud` because they are infrequent in practice, not because they are Cloud-specific. The placement axis is *usefulness × simplicity*, not *OSS vs Cloud*.
-
-**`cloud`** — Manages Dagger Cloud. Subcommands include auth (`login`, `logout`), `billing`, `org`, `integration` (configure Cloud integration providers — mutable shape: `create`, `rm`, `list`, `accounts`), and `check` (Cloud-side automated checks — mutable shape: `on`, `off`, `list`, `status`). All live here because they are configured occasionally rather than invoked daily.
+| Command | Notes |
+|---|---|
+| `setup` | Considered `doctor` (per `brew doctor` / `npm doctor` / `flutter doctor` precedent). Vetoed — the precedent doesn't feel intuitive enough. Final framing: idempotent doctor command, not a one-shot wizard. "Ensure" implies safe to run anytime. `setup` owning environment maintenance is what lets `update` be unambiguously about module versions (resolves "does update mean update Dagger?"). |
+| `check` | Cold-read first-instinct reached for `run` / `ci` / `test`. Pushback held: GitHub "Checks" is universal CI vocabulary (required status checks, the Checks API, red/green PR gates), so the muscle memory exists even when not first-instinct. Description was sharpened to that vocabulary. `checks` alias dropped — one name per concept. |
+| `generate` | Cold-read flagged "Generate assets of your project" as opaque ("codegen? static site assets? module bindings?"). Sharpened to name "derived files" with concrete examples. Part of the three-shipping-fundamentals framing (`check` = verify, `generate` = derive, `up` = serve) — verbs that every shop maps to regardless of stack. |
+| `up` | Adversarial reviewer flagged collision with `docker compose up` semantics. Collision is intentional — `dagger up` does mean what `docker compose up` means. Description names local-development as the use case to distinguish from `check`. |
+| `activity` | Originally lived as `dagger workspace activity`. Hoisted to top-level after asking what happened to it during the workspace-plumbing punt. Proposed `dagger cloud activity` (cluster with Cloud) — rejected: OSS/Cloud purity is not load-bearing for placement. This established the broader **usefulness × simplicity** principle: hot Cloud verbs surface at top-level, rare ones nest under `cloud`. |
+| `install` / `uninstall` | Bikeshed: `install` / `uninstall` vs `add` / `rm`. Initial argument: `add` / `rm` for symmetry with `module deps add`. Reversed after weighing the cold-read first-instinct reach for `install` (npm muscle memory). The asymmetry is actually honest — consumer verbs match consumer ecosystems (npm/pip/apt), authoring verbs match authoring ecosystems (cargo/yarn). Aliased to `i` and `un` to match `npm i` / `npm un`. |
+| `installed` | Started as `dagger modules` (plural). Killed for typing collision with `module` (singular) — adjacent groups + tab completion at `mod<TAB>`. Tried to subsume into `dagger list` (modules-v2) — overreach: `dagger list` is for filter-flag vocabulary discovery, not installed-module enumeration. Tried `dagger status --modules` — burying a daily read under a multi-purpose verb is wrong. Past-participle `installed` reads as "show me what's installed" — precedent in `pip list`, `gem list --installed`. |
+| `update` | Cold-read flagged ambiguity (update modules? update Dagger CLI?). Resolved structurally: `setup` owns environment maintenance, so `update` is strictly module-version refresh. |
+| `list` / `ls` | Owned by modules-v2 (PR #12900) for general-purpose enumeration over the artifacts framework. Workshopped renaming to free the slot: `select` (SQL-shaped, exact semantic match against the spec's relational grid), `find`, `filter`. All rejected once the actual use case surfaced — `list` is filter-flag *vocabulary discovery* ("what values can I plug into `--go-test=...`?"), not column projection. `list` is the right verb. **The "see modules-v2" pointer in the current description is a known dangling reference; needs self-contained replacement before this lands.** |
+| `search` | Verb-as-action. Uncontested. |
+| `settings` | Initial conflation with `config` was corrected. They are not the same: `settings` is schema-aware editor for module-declared settings paths (`modules.<m>.settings.<k>`); `config` is raw `dagger.toml` editor for any path. Different audiences. Resolution is namespace, not verb rename: raw `config` moves to `dagger workspace config` (clearly signaled as advanced by the prefix), and `settings` stays at top-level as the daily verb. `--env <name>` scopes the write to that env's overlay. |
+| `api` | Initial push to sharpen "Interact with the Dagger API" was rejected. "Dagger has an API → you can query it" is common knowledge for the audience that should be reaching for `api`; and the group has multiple modes (raw query, function call, introspection), so any specific framing would either mislead or pile up nouns. Resolution: top-level mockup gets `(advanced)` tag for signal-and-skip; cobra Long description carries a teaching beat ("Every Dagger command runs against a GraphQL API served by the engine, combining Dagger's core types with module schema extensions") plus a docs link. Two layers, two audiences. |
+| `module` | Original Dagger `mod` group was the *consumer* plural ("modules in the ecosystem"). The redesign nuked it and reintroduced singular `dagger module` as the *authoring* lane ("the module under my cursor"). Singular vs plural carries the consumer/author distinction; the verbs underneath differ accordingly. Considered `mod dev` as a nested sub-group inside the old plural — pivoted to the cleaner singular-noun split. |
+| `module init` | Requested explicitly. Replaces a top-level `dagger init` that briefly existed in early drafts (workspace creation goes implicit on first install instead). `dagger module init` matches `cargo init` / `npm init` muscle memory for scaffolding. |
+| `module deps` / `module engine` | Restored from PR #13226's pre-rollback state. The original work was rolled back because there was no clean home for it under the old `dagger mod` — adding it created the consumer/author conflation problem. The redesign's whole architecture (separate `dagger module` group, `--load-module` rename, no module-targeting flag on authoring commands) is what makes restoring them honest. |
+| `cloud` | Initially in group 5 (meta) with `login`/`logout` as top-level peers. Moved login/logout *under* cloud (rare-use verbs nest). Then `cloud` itself moved from group 5 to group 4 — it's structurally a major namespace, not a meta verb. |
+| `cloud integration` | Original `dagger integration` was singleton-shaped (`accounts`, `setup`). Requested redesign to mutable shape (`create`, `rm`, `list`, `accounts`). Folded under `cloud` per usefulness × simplicity — integrations are configured occasionally, so they nest. |
+| `cloud check` | Replaces `dagger workspace autocheck` (which was just on/off for the selected remote). Mutable shape `{on, off, list, status NAME}` proposed during the cloud restructure. Naming intentionally overlaps with top-level `check`: different concepts at different levels — top-level = run local checks, `cloud check` = manage Cloud-side automated runs. Acceptable. |
+| `workspace` (group) | Killed in the first flat-redesign sweep, then reintroduced after observing that the namespace itself does load-bearing work: `dagger workspace config` reads as "advanced workspace plumbing" without the verbs having to carry the signal alone. Slimmed to plumbing only (config, cwd, root, config-file, remote, remotes). Bare invocation prints a digest — this absorbed and dropped a briefly-proposed `dagger status` verb. Moved from group 1 to group 4 because it's structurally a namespace, not a single inspection verb. |
+| `exec` | Initially hidden as "niche." Pushback restored it to visible in group 5 (utility) where its low traffic doesn't crowd the daily-loop verbs above. Hidden ≠ niche — group 5 is exactly where niche-but-real verbs belong. |
+| `call` (hidden) | `dagger function call` was killed when the `function` group was dissolved. `dagger api call` makes the most semantic sense (it's "an API call" and clusters with `query` and `functions`). `dagger call` kept as a hidden top-level alias for muscle memory — and to keep the top-level `call` slot reserved for a future higher-level porcelain (tentative name: `dagger do`). |
+| `shell` (hidden) | Kept reachable, absent from `--help`. Slot stays open to promote or deprecate later based on usage. |
+| `env` (removed) | Originally a top-level group with `create` / `list` / `rm`. Removed entirely after recognizing that `env` is *strictly a path prefix in workspace config* (`env.<name>.modules.<m>.settings.<k>`), not a first-class concept. CRUD happens via `dagger settings --env <name>` (typed) and `dagger workspace config` (raw). Discoverability moves into the `--env` flag's description, which names the file path explicitly. This eliminates one corner of the "workspace vs env vs --env vs settings" four-way confusion cold-read v2 flagged. |
+| `--load-module` / `-m` | The old `--mod` carried two unrelated meanings (load a module vs. select a module to edit). This is what caused the PR #13226 deps/engine work to be cut — they reused `--mod` to mean "module to edit," which collided. Workshopped: `--load-module`, `--with-module`, `--from-module`. `--with-module` rejected — Dagger's `WithX` API methods are chainable, readers would expect `--with-module X --with-module Y` to compose, but the flag is single-valued. `--load-module` chosen as "safer" — no chain implication, no overload, explicit verb. `-m` short form preserved. |
+| `--env` (flag) | Description rewritten to teach the overlay model: envs are paths under `env.<name>.*` in workspace config. The flag description doubles as the discovery affordance for env overlays now that the top-level `env` group is gone. |
 
 ## Subcommand structures
 
-Each top-level group that owns its own leaf commands. Verb-only commands (`install`, `check`, `setup`, `status`, etc.) take no subcommands and are not listed here.
+The four group commands (`api`, `module`, `cloud`, `workspace`) each own their own subcommand surface.
 
 ### `dagger api`
 
@@ -210,9 +158,6 @@ AVAILABLE COMMANDS
 ```
 Inspect or configure your workspace. Bare invocation prints a digest.
 
-USAGE
-  dagger workspace [command]
-
 AVAILABLE COMMANDS
   cwd          Print the workspace cwd
   root         Print the workspace root
@@ -226,7 +171,6 @@ AVAILABLE COMMANDS
 
 ```
 Author a module: scaffold, edit dependencies, engine version, etc.
-
 Operates on the dagger.json reachable from the current directory.
 
 AVAILABLE COMMANDS
@@ -238,8 +182,6 @@ AVAILABLE COMMANDS
 #### `dagger module deps`
 
 ```
-Manage this module's dependencies, as declared in dagger.json.
-
 AVAILABLE COMMANDS
   add   Add one or more dependencies to the module
   rm    Remove one or more dependencies from the module
@@ -249,8 +191,6 @@ AVAILABLE COMMANDS
 #### `dagger module engine`
 
 ```
-Manage the engine version this module requires.
-
 AVAILABLE COMMANDS
   require          Set the module's required engine version
   require-current  Set the required engine version to the currently running engine
@@ -261,8 +201,6 @@ AVAILABLE COMMANDS
 ### `dagger cloud`
 
 ```
-Manage Dagger Cloud.
-
 AVAILABLE COMMANDS
   login        Log in to Dagger Cloud
   logout       Log out of Dagger Cloud
@@ -275,8 +213,6 @@ AVAILABLE COMMANDS
 #### `dagger cloud integration`
 
 ```
-Manage Cloud integration providers (mutable: configured providers come and go).
-
 AVAILABLE COMMANDS
   create    Create a new integration
   rm        Remove an integration
@@ -287,14 +223,114 @@ AVAILABLE COMMANDS
 #### `dagger cloud check`
 
 ```
-Manage Cloud-side automated checks for this workspace.
-
 AVAILABLE COMMANDS
   on      Enable a Cloud-side check (by name)
   off     Disable a Cloud-side check (by name)
   list    List Cloud-side checks for this workspace
   status  Show the status of a Cloud-side check (by name)
 ```
+
+## Discrete changes from current CLI
+
+Implementation checklist. Items grouped by type; each is a discrete unit of work.
+
+### New commands (need implementation)
+
+- [ ] **`dagger setup`** — top-level idempotent doctor verb. Ensures workspace config exists, auth is valid, engine is reachable. Safe to re-run.
+- [ ] **`dagger installed`** — top-level. Lists installed modules from `dagger.toml`. Likely a thin wrapper over existing workspace introspection.
+- [ ] **`dagger module init`** — scaffolds a new module's `dagger.json` (and source skeleton). Replaces what earlier Dagger versions called `dagger develop` for scaffolding.
+- [ ] **`dagger cloud integration create`** — new (currently only `setup` exists, which becomes `create`).
+- [ ] **`dagger cloud integration rm`** — new.
+- [ ] **`dagger cloud integration list`** — new.
+- [ ] **`dagger cloud check {on, off, list, status}`** — new shape. Today's `autocheck` is just on/off for the selected remote; new shape lets you address checks by name and list/inspect.
+- [ ] **`dagger workspace` (bare, no subcommand)** — new behavior: print digest of workspace state (cwd, root, current remote, installed modules summary). Today, bare `dagger workspace` prints help.
+
+### Restore from PR #13226 pre-rollback
+
+- [ ] **`dagger module deps {add, rm, list}`** — restore from commit `89054a4` (PR #13226's "move deps add/rm to updatedConfigDirectory api"). Already present on local experimental branch.
+- [ ] **`dagger module engine {require, require-current, require-latest, required}`** — restore from same commit.
+
+### Hoists (existing functionality, new top-level location)
+
+- [ ] `dagger workspace install` → `dagger install` (visible top-level, with `i` alias). Today a hidden shim `moduleDepInstallCmd` exists; promote, alias, and remove the workspace subcommand.
+- [ ] `dagger workspace uninstall` → `dagger uninstall` (with `un` alias). Same pattern as `install`.
+- [ ] `dagger workspace update` → `dagger update`. Hidden shim `moduleUpdateCmd` exists; promote.
+- [ ] `dagger workspace activity` → `dagger activity`.
+- [ ] `dagger workspace settings` (hidden) → `dagger settings` (visible, canonical). The visible top-level `settings` already exists as a hidden alias; just unhide.
+- [ ] `dagger mod search` → `dagger search`.
+
+### Moves (reparenting within the tree)
+
+- [ ] `dagger function call` → `dagger api call`. Subcommand moves from `function` group to `api` group.
+- [ ] `dagger function list` → `dagger api functions`. Move + rename to plural noun (matches the listing-from-the-loaded-module semantic).
+- [ ] `dagger integration accounts` → `dagger cloud integration accounts`. Move from top-level `integration` to under `cloud`.
+- [ ] `dagger integration setup` → `dagger cloud integration create`. Move + rename (matches the new mutable shape).
+- [ ] `dagger workspace autocheck` → `dagger cloud check`. Move + expand from boolean to mutable shape (see "New commands" above).
+
+### Removals (from visible surface)
+
+- [ ] **`dagger mod`** (alias group) — remove. Was the consumer-plural group; replaced by singular `dagger module` (different content). Note: `dagger module` as the *consumer* plural alias to `dagger mod` also goes — the noun gets reassigned.
+- [ ] **`dagger function` / `dagger fn`** — remove the group entirely. Subcommands moved.
+- [ ] **`dagger env`** — remove the group entirely. Env is a path prefix in workspace config; CRUD via `dagger settings --env` and `dagger workspace config`. The flag `--env` survives and its description teaches the model.
+- [ ] **`dagger integration`** (top-level) — remove. Moved under `cloud`.
+- [ ] **`dagger workspace init`** — remove. Workspace creation goes implicit on first `install`.
+- [ ] **`dagger workspace migrate`** — remove. Legacy migration is past the point where any visibility is justified.
+- [ ] **`dagger recommend`** — remove. Generic verb without clear subject at top-level; users reach `search` first.
+- [ ] **`dagger checks`** alias — remove. One name (`check`) per concept.
+- [ ] **`dagger config`** (hidden top-level alias) — remove. Replaced by visible `dagger workspace config`.
+- [ ] **`dagger modules`** (plural, briefly considered) — never lands. Listing handled by `dagger installed`.
+- [ ] **`dagger status`** (briefly considered) — never lands. Workspace digest handled by bare `dagger workspace`.
+
+### Hidden top-level aliases (already hidden today; confirm or set)
+
+- [ ] **`dagger call`** — keep hidden; alias to `dagger api call`. Today's behavior: not in visible `--help`. Verify it still routes correctly after `function call` → `api call` move.
+- [ ] **`dagger shell`** — keep hidden; reachable, absent from `--help`.
+
+### Flag renames
+
+- [ ] **`--mod` → `--load-module`** in `moduleAddFlags` (`cmd/dagger/module.go:39`). Single funnel-point change.
+- [ ] **`--no-mod` → `--no-load-module`** in the same funnel.
+- [ ] **Update references in docs and tests** for both flag names.
+- [ ] **Verify `-m` and `-M` short forms** still work post-rename.
+
+### Description updates
+
+Top-level mockup (Short descriptions in cobra):
+
+- [ ] `check`: "Verify your project — tests, linters, type checks, security scans, etc."
+- [ ] `generate`: "Generate derived files for your project — code, SDKs, types, docs, etc."
+- [ ] `up`: "Run your project's services for local development — databases, APIs, dev servers, etc."
+- [ ] `install`: "Install a module into your workspace"
+- [ ] `uninstall`: "Uninstall a module from your workspace"
+- [ ] `installed`: "List installed modules"
+- [ ] `update`: "Refresh installed-module state"
+- [ ] `search`: "Search for modules you can install"
+- [ ] `settings`: "Get or set module settings (use --env for an env overlay)"
+- [ ] `activity`: "Show recent activity (runs, traces, etc.) for this workspace"
+- [ ] `module`: "Author a module: edit dependencies, engine version, etc."
+- [ ] `workspace`: "Inspect or configure your workspace (cwd, remotes, config, etc.)"
+- [ ] `cloud`: "Manage Dagger Cloud (login, integrations, etc.)"
+- [ ] `api`: "Interact with the Dagger API (advanced)"
+- [ ] `setup`: "Ensure Dagger is properly set up and operational in the workspace"
+
+Long descriptions (cobra Long, shown in `dagger X --help`):
+
+- [ ] `api` Long: teaching beat + docs link (see Subcommand structures section above).
+- [ ] `workspace` Long: clarify bare-invocation digest behavior and distinguish from `settings`.
+- [ ] `module` Long: clarify cwd-based targeting (no `--mod` flag for authoring).
+- [ ] `settings` Long: clarify `--env <name>` scoping and distinguish from `workspace config`.
+
+Flag descriptions:
+
+- [ ] `--load-module`: "Use a one-off module (local path or git ref)"
+- [ ] `--no-load-module`: "Don't load any module for this command"
+- [ ] `--env`: rewrite to name the file-path model (`env.<name>.*` in workspace config) and point at `dagger workspace config env` for inspection.
+
+### Known unfixed items before this lands
+
+- [ ] **`list, ls` description has a dangling "see modules-v2" pointer.** Users won't have that doc available. Needs self-contained text.
+- [ ] **Workspace concept is referenced everywhere (`--env`, `setup`, `-W`) but never defined.** Cold-read v2 and v3 both flagged that newcomers can't form a mental model from the top-level help alone. Likely fix: one-sentence definition at the top of `dagger workspace --help`.
+- [ ] **`exec` description ("Execute a command in a Dagger session") is too vague.** "Session in what?" Needs sharpening.
 
 ## Status
 
