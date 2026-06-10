@@ -49,6 +49,26 @@ func newModuleSDK(
 	return sdk, nil
 }
 
+func (sdk *module) CloneForModuleSource(*core.ModuleSource) core.SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	if sdk.rawConfig != nil {
+		cp.rawConfig = make(map[string]any, len(sdk.rawConfig))
+		for k, v := range sdk.rawConfig {
+			cp.rawConfig[k] = v
+		}
+	}
+	if sdk.funcs != nil {
+		cp.funcs = make(map[string]*core.Function, len(sdk.funcs))
+		for k, v := range sdk.funcs {
+			cp.funcs[k] = v
+		}
+	}
+	return &cp
+}
+
 func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
 	dag, err := dagql.NewServer(ctx, sdk.root)
 	if err != nil {

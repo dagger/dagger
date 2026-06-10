@@ -274,6 +274,10 @@ func (src ModuleSource) Clone() *ModuleSource {
 	src.ConfigClients = make([]*modules.ModuleConfigClient, len(oriConfigClients))
 	copy(src.ConfigClients, oriConfigClients)
 
+	if src.SDKImpl != nil {
+		src.SDKImpl = src.SDKImpl.CloneForModuleSource(&src)
+	}
+
 	return &src
 }
 
@@ -454,6 +458,18 @@ type persistedModuleSourceLazySDK struct {
 
 var _ SDK = (*persistedModuleSourceLazySDK)(nil)
 var _ selfCallsAlwaysEnabler = (*persistedModuleSourceLazySDK)(nil)
+
+func (sdk *persistedModuleSourceLazySDK) CloneForModuleSource(src *ModuleSource) SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	if sdk.config != nil {
+		cp.config = sdk.config.Clone()
+	}
+	cp.src = src
+	return &cp
+}
 
 func (sdk *persistedModuleSourceLazySDK) AlwaysEnablesSelfCalls() bool {
 	return sdk != nil && sdk.capabilities.SelfCallsAlways

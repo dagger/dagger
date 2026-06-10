@@ -2984,7 +2984,7 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, src.Self())
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, src.Self().Clone())
 	if err != nil {
 		return inst, err
 	}

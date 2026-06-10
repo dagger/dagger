@@ -50,6 +50,20 @@ type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
 
+func (sdk *goSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	if sdk.rawConfig != nil {
+		cp.rawConfig = make(map[string]any, len(sdk.rawConfig))
+		for k, v := range sdk.rawConfig {
+			cp.rawConfig[k] = v
+		}
+	}
+	return &cp
+}
+
 func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
 	return sdk, true
 }
