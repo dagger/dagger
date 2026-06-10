@@ -48,7 +48,7 @@ var callModCmd = &FuncCommand{
 	},
 }
 
-var functionCallCmd = &FuncCommand{
+var apiCallCmd = &FuncCommand{
 	Name:  "call [options] [function]...",
 	Short: "Call one or more functions, interconnected into a pipeline",
 	Annotations: map[string]string{
@@ -57,21 +57,7 @@ var functionCallCmd = &FuncCommand{
 	},
 }
 
-var functionCmd = &cobra.Command{
-	Use:     "function",
-	Aliases: []string{"fn"},
-	Short:   "Work with module functions",
-	Annotations: map[string]string{
-		visibleAliasesAnnotation: "fn",
-	},
-}
-
-var functionListCmd = newFunctionListCmd("list [options] [function]...", false)
-var funcListCmd = newFunctionListCmd("functions [options] [function]...", true)
-
-func init() {
-	functionCmd.AddCommand(functionListCmd, functionCallCmd.Command())
-}
+var apiFunctionsCmd = newFunctionListCmd("functions [options] [function]...", false)
 
 func newFunctionListCmd(use string, hidden bool) *cobra.Command {
 	return &cobra.Command{
