@@ -342,7 +342,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	childrenHandler := images.ChildrenHandler(r.contentStore)
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(r.contentStore, fetcher),
+		remotes.FetchHandler(progressIngester{r.contentStore}, fetcher),
 		childrenHandler,
 		dslHandler,
 	)

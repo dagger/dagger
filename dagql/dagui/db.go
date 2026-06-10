@@ -250,6 +250,10 @@ type DBLogExporter struct {
 
 func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
+		if db.ingestProgress(log) {
+			// streaming progress data, not log text
+			continue
+		}
 		if log.Body().AsString() == "" {
 			// eof; ignore
 			continue
@@ -382,6 +386,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		FailedLinks:     NewSpanSet(),
 		CanceledLinks:   NewSpanSet(),
 		ErrorOrigins:    NewSpanSet(),
+		ProgressSpans:   NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
 		db:              db,

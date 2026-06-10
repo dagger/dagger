@@ -99,6 +99,13 @@ type Span struct {
 	RevealedSpans SpanSet `json:"-"`
 	ErrorOrigins  SpanSet `json:"-"`
 
+	// Progress holds streaming-progress items attributed directly to this
+	// span; ProgressSpans tracks descendant spans carrying progress, so rows
+	// representing a subtree (collapsed, or with hidden descendants) can
+	// render it.
+	Progress      *SpanProgress `json:"-"`
+	ProgressSpans SpanSet       `json:"-"`
+
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 

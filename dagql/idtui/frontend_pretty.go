@@ -3369,6 +3369,13 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 			}
 		}
 
+		// Render streaming progress (e.g. image layer downloads) reported by
+		// this span or by hidden/collapsed descendants
+		if bars := fe.renderProgressBars(out, span, row); bars != "" {
+			fmt.Fprint(out, " ")
+			fmt.Fprint(out, bars)
+		}
+
 		fe.renderStatus(out, span)
 		r.renderMetrics(out, span)
 
@@ -3549,6 +3556,88 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 	renderGroup(state.PendingCount, termenv.ANSIBrightBlack)
 
 	return result.String()
+}
+
+// maxProgressItems caps how many per-item braille cells a single row may
+// render before summarizing the remainder.
+const maxProgressItems = 40
+
+// renderProgressBars renders streaming-progress state as one braille cell
+// per item, filling from 1 dot (started) to 8 dots (complete), plus an
+// aggregate byte count. It renders progress reported by the span itself,
+// and progress from descendant spans when this row is the one representing
+// them (collapsed, or the descendants are hidden).
+func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span, row *dagui.TraceRow) string {
+	var items []*dagui.ProgressItem
+	if span.Progress != nil {
+		items = append(items, span.Progress.Order...)
+	}
+	for _, src := range span.ProgressSpans.Order {
+		if src == span || src.Progress == nil {
+			continue
+		}
+		if row.Expanded && fe.spanRendersOwnProgress(src, span) {
+			// a deeper visible row renders this progress; don't repeat it
+			continue
+		}
+		items = append(items, src.Progress.Order...)
+	}
+	if len(items) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	shown := items
+	if len(shown) > maxProgressItems {
+		shown = shown[:maxProgressItems]
+	}
+	var current, total int64
+	unit := ""
+	for _, item := range items {
+		current += item.Current
+		total += item.Total
+		if unit == "" {
+			unit = item.Unit
+		}
+	}
+	for _, item := range shown {
+		dots := 1
+		if item.Total > 0 {
+			dots = int((item.Current*8 + item.Total - 1) / item.Total) // ceil
+			dots = max(min(dots, 8), 1)
+		}
+		color := termenv.ANSIYellow
+		switch {
+		case item.Complete():
+			color = termenv.ANSIGreen
+		case item.Current == 0:
+			color = termenv.ANSIBrightBlack
+		}
+		sb.WriteString(out.String(string(brailleDots[dots])).Foreground(color).String())
+	}
+	if rest := len(items) - len(shown); rest > 0 {
+		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).Faint().String())
+	}
+	if unit == "bytes" && total > 0 {
+		summary := humanizeBytes(current)
+		if current < total {
+			summary += "/" + humanizeBytes(total)
+		}
+		sb.WriteString(out.String(" " + summary).Faint().String())
+	}
+	return sb.String()
+}
+
+// spanRendersOwnProgress reports whether src's progress will already be
+// rendered by some visible span at or below limit's subtree - i.e. src
+// itself or an ancestor strictly between src and limit is shown.
+func (fe *frontendPretty) spanRendersOwnProgress(src, limit *dagui.Span) bool {
+	for s := src; s != nil && s != limit; s = s.ParentSpan {
+		if fe.FrontendOpts.ShouldShow(fe.db, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // statusIcon returns an icon indicating the span's status, and a bool
