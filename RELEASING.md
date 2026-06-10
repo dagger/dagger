@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%2026,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June%2010,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -69,7 +69,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 - [ ] Update the date in the shields.io badge, first line in this file.
 
   ```console
-  badge_url=$(echo "https://img.shields.io/badge/Last updated on-$(date +'%B %-d, %Y')-success?style=flat-square" | sed -E 's/ /%20/g')
+  badge_url=$(echo "https://img.shields.io/badge/Last updated on-$(env LC_TIME=en_US.UTF-8 date +'%B %-d, %Y')-success?style=flat-square" | sed -E 's/ /%20/g')
   sed "1s#https://.*#${badge_url})#" RELEASING.md > "$RELEASING_DOC"
   ```
 
@@ -141,7 +141,7 @@ to dagger.
       update it now!
 
   ```console
-  grep -Fx "$ENGINE_VERSION" .changes/.next || { echo "ENGINE_VERSION env var does not match what's in .changes/.next"; false }
+  grep -Fx "$ENGINE_VERSION" .changes/.next || { echo "ENGINE_VERSION env var does not match what is in .changes/.next"; false; }
   ```
 
 - [ ] Create the target release notes branch for a PR.
@@ -164,15 +164,15 @@ to dagger.
 
   If Linux:
 
-     ```console
-     sed -i -E "s#^((const |\t)goSDKLibVersion = \")[0-9a-f]{40}\" // v.*#\1${GO_SDK_COMMIT}\" // ${ENGINE_VERSION}#" core/sdk/go_sdk.go
-     ```
+  ```console
+  sed -i -E "s#^((const |\t)goSDKLibVersion = \")[0-9a-f]{40}\" // v.*#\1${GO_SDK_COMMIT}\" // ${ENGINE_VERSION}#" core/sdk/go_sdk.go
+  ```
 
   If MacOS (sed -i is different compared to Linux):
 
-     ```console
-     sed -i '' -E "s#^((const |\t)goSDKLibVersion = \")[0-9a-f]{40}\" // v.*#\1${GO_SDK_COMMIT}\" // ${ENGINE_VERSION}#" core/sdk/go_sdk.go
-     ```
+  ```console
+  sed -i '' -E "s#^((const |\t)goSDKLibVersion = \")[0-9a-f]{40}\" // v.*#\1${GO_SDK_COMMIT}\" // ${ENGINE_VERSION}#" core/sdk/go_sdk.go
+  ```
 
 - [ ] Commit
 
@@ -210,15 +210,14 @@ to dagger.
 > [!NOTE]
 >
 > We need to rethink SDK-specific changelogs, they're not really used anymore other than bumping engine versions.
->
 
-  ```console
-  changie merge
-  find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
-  find . -name .changes -type d -exec git add {} \;
-  find . -name CHANGELOG.md -type f -exec git add {} \;
-  git commit -s -m "chore: add release notes for $ENGINE_VERSION"
-  ```
+```console
+changie merge
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
+find . -name .changes -type d -exec git add {} \;
+find . -name CHANGELOG.md -type f -exec git add {} \;
+git commit -s -m "chore: add release notes for $ENGINE_VERSION"
+```
 
 - [ ] Update `.changes/.next` with the next release number if known and commit it -
       otherwise, make the file empty (but don't remove it).
@@ -257,7 +256,6 @@ to dagger.
 > [!NOTE]
 >
 > CI on main currently has the MacOS workflow failing, it needs fixing.
->
 
 ## 🚀 Release
 
@@ -275,9 +273,8 @@ to dagger.
 > [!NOTE]
 >
 > We should probably sign the git tag before pushing.
->
 
-  This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml) which publishes:
+This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml) which publishes:
 
 - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
 - Go packages to [🐙 dagger.io/dagger](https://pkg.go.dev/dagger.io/dagger) via [github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
@@ -306,7 +303,6 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 > [!NOTE]
 >
 > Checks in workflow should already handle verifying the new versions.
->
 
 - [ ] Double-check that all the above packages have been correctly published
       and updated to their latest versions.
@@ -358,7 +354,7 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 
   ```console
   # Run dagger develop in docs/recorder{,2}, and everywhere else but not tests to make sure we do test backwards compat.
-  find . -name dagger.json \( -path "./docs/recorder*" -o -not -path "./docs/*" \) -not -path '*/tests/*' -not -path '*/testdata/*' -not -path '*/viztest/*' -not -path './core/integration/*' -execdir dagger develop \;
+  find . -name dagger.json \( -path "./docs/recorder*" -o -not -path "./docs/*" \) -not -path '*/tests/*' -not -path '*/testdata/*' -not -path '*/viztest/*' -not -path './core/integration/*' -not -path ./dagger.json -execdir dagger develop \;
 
   # update deps and run go mod tidy on all go modules that were updated
   find . -name go.mod \( -path "./docs/recorder*" -o -not -path "./docs/*" \) -not -path '*/tests/*' -not -path '*/testdata/*' -not -path '*/viztest/*' -not -path './core/integration/*' -execdir sh -c 'for dep in dagger.io/dagger github.com/dagger/dagger/engine/distconsts; do git grep -qF "$dep " go.mod && go get "${dep}@${ENGINE_VERSION}"; done; go mod tidy' \;
