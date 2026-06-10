@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -2114,4 +2115,43 @@ class Test {
 	out2, err := modGen.With(daggerCall("version", "--ctr=alpine:3.18")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out2, "3.18")
+}
+
+func (TypescriptSuite) TestExecErrorSurfacing(ctx context.Context, t *testctx.T) {
+	src := `import { Container, object, func, argument } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  async version(
+    @argument({ defaultAddress: "alpine:3.19" }) ctr: Container,
+  ): Promise<Container> {
+    return ctr.withExec(["sh", "-c", "exit 1"]).sync()
+  }
+}
+`
+
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(withModuleFixture(t, c, ".", "typescript/base-test")).
+		WithNewFile("package.json", fmt.Sprintf(`{
+  "type": "module",
+  "dependencies": { "typescript": "^5.5.4" },
+  "dagger": { "runtime": %q }
+}`, "bun")).
+		With(sdkSource("typescript", src))
+
+	_, err := modGen.With(daggerCallAt(".", "version")).Sync(ctx)
+	requireErrOut(t, err, "exit code: 1")
+
+	var execErr *dagger.ExecError
+	require.ErrorAs(t, err, &execErr)
+	require.NotContains(
+		t,
+		fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr),
+		"Encountered an unknown error",
+	)
 }

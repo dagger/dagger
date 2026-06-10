@@ -6,7 +6,7 @@ import {
   RequestInit as NodeFetchRequestInit,
 } from "node-fetch"
 
-import { isDeno } from "../utils.js"
+import { isBun, isDeno } from "../utils.js"
 
 const createFetchWithTimeout =
   (timeout: number) =>
@@ -27,7 +27,11 @@ const createFetchWithTimeout =
       // Edge case for Deno that doesn't work as expected with node-fetch and would
       // rather rely on its native fetch implementation
       // See: https://github.com/dagger/dagger/issues/10546
-      if (isDeno()) {
+      // Bun must also use its native fetch: the bundled node-fetch Headers class
+      // extends URLSearchParams, and Bun's non-standard URLSearchParams.prototype.toJSON
+      // brand check makes JSON.stringify throw on it, breaking ClientError construction
+      // (errors surface as UnknownDaggerError instead of ExecError).
+      if (isDeno() || isBun()) {
         return await fetch(input as RequestInfo, {
           ...(init as RequestInit),
           signal: controller.signal,
