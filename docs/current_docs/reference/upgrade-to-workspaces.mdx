@@ -19,7 +19,7 @@ In previous versions, `dagger.json` served double duty: it defined both your mod
 
 ## What happened to toolchains?
 
-They're now just modules installed in your workspace. `dagger mod install github.com/foo/bar` adds a module to `dagger.toml`. Same functionality, simpler model.
+They're now just modules installed in your workspace. `dagger install github.com/foo/bar` adds a module to `dagger.toml`. Same functionality, simpler model.
 
 ## What happened to blueprints?
 
@@ -49,7 +49,7 @@ This automatically converts workspace fields from legacy `dagger.json` into `dag
 
 ## What happened to module-management commands?
 
-Workspace modules are managed with module commands. Use `dagger mod recommend` to detect modules for a project, `dagger mod install <module>` and `dagger mod uninstall <module>` to update `dagger.toml`, and `dagger mod list` and `dagger mod search` to inspect available modules.
+Workspace modules are managed with the top-level commands. Use `dagger search` to find modules, `dagger install <module>` and `dagger uninstall <module>` to update `dagger.toml`.
 
 Module source metadata moves to `dagger-module.toml`. Create or edit that file directly when authoring a module or adding code dependencies.
 
@@ -58,7 +58,7 @@ Module source metadata moves to `dagger-module.toml`. Create or edit that file d
 | Before | Now |
 |---|---|
 | `dagger -m <ref>` (with toolchains) | `dagger -W <ref>` |
-| `dagger toolchain install <module>` | `dagger mod install <module>` |
+| `dagger toolchain install <module>` | `dagger install <module>` |
 | `dagger install <dep>` (module code dependency) | Add the dependency to `[[dependencies]]` in `dagger-module.toml` |
 | `toolchains` array in `dagger.json` | `[modules.*]` in `dagger.toml` |
 | `blueprint` in `dagger.json` | `entrypoint = true` in `dagger.toml` |
