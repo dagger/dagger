@@ -35,12 +35,12 @@ func addWorkspaceInstallFlags(cmd *cobra.Command) {
 }
 
 // moduleAddFlags adds common module-loading flags to a command.
-// If optional is true, it also adds the --no-mod flag and marks --mod and --no-mod as mutually exclusive.
+// If optional is true, it also adds the --no-load-module flag and marks --load-module and --no-load-module as mutually exclusive.
 func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
-	flags.StringVarP(&moduleURL, "mod", "m", "", "Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)")
+	flags.StringVarP(&moduleURL, "load-module", "m", "", "Use a one-off module (local path or git ref)")
 	if optional {
-		flags.BoolVarP(&moduleNoURL, "no-mod", "M", false, "Don't automatically load a module (mutually exclusive with --mod)")
-		cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
+		flags.BoolVarP(&moduleNoURL, "no-load-module", "M", false, "Don't load any module for this command")
+		cmd.MarkFlagsMutuallyExclusive("load-module", "no-load-module")
 	}
 
 	var defaultAllowLLM []string
@@ -184,7 +184,7 @@ func getModuleSourceRefWithDefault() (string, error) {
 		return v, nil
 	}
 	if moduleNoURL {
-		return "", fmt.Errorf("cannot use default module source with --no-mod")
+		return "", fmt.Errorf("cannot use default module source with --no-load-module")
 	}
 	return moduleURLDefault, nil
 }
