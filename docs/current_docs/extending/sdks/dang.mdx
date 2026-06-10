@@ -790,8 +790,7 @@ pub generateProto: Changeset @generate {
 A service function returns a long-running `Service!`. Mark it with `@up` and `dagger up` will start it. Build the service from a container with `.asService`, exposing the ports it should listen on:
 
 ```dang
-@up
-pub web: Service! {
+pub web: Service! @up {
   container
     .from("nginx:alpine")
     .withExposedPort(80)
