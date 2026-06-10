@@ -126,7 +126,7 @@ What we considered, debated, changed, and decided for each command. Not a descri
 | `module deps` / `module engine` | Restored from PR #13226's pre-rollback state. The original work was rolled back because there was no clean home for it under the old `dagger mod` — adding it created the consumer/author conflation problem. The redesign's whole architecture (separate `dagger module` group, `--load-module` rename, no module-targeting flag on authoring commands) is what makes restoring them honest. The rebalance principle (CLI owns shared operations, SDK owns specialized ones — see [SDK module interface](#sdk-module-interface)) puts `deps` and `engine` clearly on the CLI side: editing dagger-module.toml's deps list or engineVersion is 100% identical across SDKs, so duplicating it inside each SDK would be the kind of duplication the new architecture is meant to avoid. |
 | `module sdk` | Thin wrapper that dispatches to the current module's SDK. Form: `dagger module sdk <subcommand> <args>`. Reads cwd's `dagger-module.toml`, finds the `sdk` field, and effectively runs `dagger call <sdk-ref> <subcommand> <args>`. Available subcommands depend entirely on what the current module's SDK exposes — no CLI-side contract beyond "you're an installed module with functions." Examples: `dagger module sdk python-version 3.13`, `dagger module sdk setup-template legacy`, `dagger module sdk go-mod-tidy`. This is the per-module escape hatch for SDK-specific operations; the CLI provides discovery and orchestration, the SDK provides everything else. |
 | `cloud` | Initially in group 5 (meta) with `login`/`logout` as top-level peers. Moved login/logout *under* cloud (rare-use verbs nest). Then `cloud` itself moved from group 5 to group 4 — it's structurally a major namespace, not a meta verb. |
-| `cloud integration` | Original `dagger integration` was singleton-shaped (`accounts`, `setup`). Requested redesign to mutable shape (`create`, `rm`, `list`, `accounts`). Folded under `cloud` per usefulness × simplicity — integrations are configured occasionally, so they nest. |
+| `cloud integration` | Original `dagger integration` was singleton-shaped (`accounts`, `setup`) — one provider type, list its accounts. Requested redesign to mutable shape (`create`, `rm`, `list`): each configured integration is a discrete entry; `list` enumerates them (optionally filtered by type), replacing the old "list accounts of provider X" framing. Folded under `cloud` per usefulness × simplicity — integrations are configured occasionally, so they nest. |
 | `cloud check` | Replaces `dagger workspace autocheck` (which was just on/off for the selected remote). Mutable shape `{on, off, list, status NAME}` proposed during the cloud restructure. Naming intentionally overlaps with top-level `check`: different concepts at different levels — top-level = run local checks, `cloud check` = manage Cloud-side automated runs. Acceptable. |
 | `workspace` (group) | Killed in the first flat-redesign sweep, then reintroduced after observing that the namespace itself does load-bearing work: `dagger workspace config` reads as "advanced workspace plumbing" without the verbs having to carry the signal alone. Slimmed to plumbing only (config, cwd, root, config-file, remote, remotes). Bare invocation prints a digest — this absorbed and dropped a briefly-proposed `dagger status` verb. Moved from group 1 to group 4 because it's structurally a namespace, not a single inspection verb. |
 | `exec` | Initially hidden as "niche." Pushback restored it to visible in group 5 (utility) where its low traffic doesn't crowd the daily-loop verbs above. Hidden ≠ niche — group 5 is exactly where niche-but-real verbs belong. |
@@ -231,8 +231,7 @@ come and go.
 AVAILABLE COMMANDS
   create    Create a new integration
   rm        Remove an integration
-  list      List configured integrations
-  accounts  List accounts visible to an integration
+  list      List configured integrations (optionally filtered by type)
 ```
 
 #### `dagger cloud check`
@@ -389,7 +388,7 @@ Implementation checklist. Items grouped by type; each is a discrete unit of work
 
 - [ ] `dagger function call` → `dagger api call`. Subcommand moves from `function` group to `api` group.
 - [ ] `dagger function list` → `dagger api functions`. Move + rename to plural noun (matches the listing-from-the-loaded-module semantic).
-- [ ] `dagger integration accounts` → `dagger cloud integration accounts`. Move from top-level `integration` to under `cloud`.
+- [ ] `dagger integration accounts` → folded into `dagger cloud integration list` (the mutable model lists integration entries, replacing the singleton "list accounts of provider X" semantic).
 - [ ] `dagger integration setup` → `dagger cloud integration create`. Move + rename (matches the new mutable shape).
 - [ ] `dagger workspace autocheck` → `dagger cloud check`. Move + expand from boolean to mutable shape (see "New commands" above).
 

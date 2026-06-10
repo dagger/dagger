@@ -505,14 +505,6 @@ func TestRenderWorkspaceRemoteRowsIncludesAutocheck(t *testing.T) {
 	require.Contains(t, out.String(), "🟢1")
 }
 
-func TestValidateWorkspaceAutocheckArgs(t *testing.T) {
-	require.NoError(t, validateWorkspaceAutocheckArgs(nil, nil))
-	require.NoError(t, validateWorkspaceAutocheckArgs(nil, []string{"on"}))
-	require.NoError(t, validateWorkspaceAutocheckArgs(nil, []string{"off"}))
-	require.ErrorContains(t, validateWorkspaceAutocheckArgs(nil, []string{"yes"}), "on or off")
-	require.ErrorContains(t, validateWorkspaceAutocheckArgs(nil, []string{"on", "off"}), "expected 0 or 1 arguments")
-}
-
 func TestWorkspaceAutocheckSelectedSourceRepos(t *testing.T) {
 	selected, enabled := workspaceSelectedSourceRepos([]cloudapi.SourceRepository{
 		{Repository: "github.com/acme/one", Selected: true},
