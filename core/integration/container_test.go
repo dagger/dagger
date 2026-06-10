@@ -4054,14 +4054,40 @@ import (
 type Test struct{}
 
 func (m *Test) Check(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
-	return publishAndRead(ctx, registry, ref)
+	return publishAndRead(ctx, registry, ref, registryOptions{})
 }
 
-func publishAndRead(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+func (m *Test) CheckHTTP(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+	return publishAndRead(ctx, registry, ref, registryOptions{
+		protocol: dagger.RegistryProtocolHttp,
+	})
+}
+
+func (m *Test) CheckInsecureTLS(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+	return publishAndRead(ctx, registry, ref, registryOptions{
+		insecureSkipTLSVerify: true,
+	})
+}
+
+func (m *Test) CheckHttpWithInsecureTLS(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+	return publishAndRead(ctx, registry, ref, registryOptions{
+		protocol:              dagger.RegistryProtocolHttp,
+		insecureSkipTLSVerify: true,
+	})
+}
+
+type registryOptions struct {
+	protocol              dagger.RegistryProtocol
+	insecureSkipTLSVerify bool
+}
+
+func publishAndRead(ctx context.Context, registry *dagger.Service, ref string, opts registryOptions) (string, error) {
 	_, err := dag.Container().
 		WithNewFile("/hello.txt", "hello").
 		Publish(ctx, ref, dagger.ContainerPublishOpts{
-			RegistryService: registry,
+			RegistryService:       registry,
+			Protocol:              opts.protocol,
+			InsecureSkipTLSVerify: opts.insecureSkipTLSVerify,
 		})
 	if err != nil {
 		return "", err
@@ -4069,7 +4095,9 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string) (
 
 	return dag.Container().
 		From(ref, dagger.ContainerFromOpts{
-			RegistryService: registry,
+			RegistryService:       registry,
+			Protocol:              opts.protocol,
+			InsecureSkipTLSVerify: opts.insecureSkipTLSVerify,
 		}).
 		File("/hello.txt").
 		Contents(ctx)
@@ -4146,6 +4174,81 @@ func publishAndRead(ctx context.Context, registry *dagger.Service, ref string) (
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello", strings.TrimSpace(out))
+	})
+
+	t.Run("registry api option plain http", func(ctx context.Context, t *testctx.T) {
+		registry := c.Container().
+			From("registry:3").
+			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-api-"+identity.NewID())).
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService()
+
+		devEngine := devEngineContainerAsService(devEngineContainer(c))
+
+		ref := "bound-registry:5000/service-binding-http-api:" + identity.NewID()
+
+		out, err := module(ctx, t, devEngine).
+			WithServiceBinding("bound-registry", registry).
+			With(daggerNonNestedExec(
+				"call", "check-http",
+				"--registry", "tcp://bound-registry:5000",
+				"--ref", ref,
+			)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello", strings.TrimSpace(out))
+	})
+
+	t.Run("registry api option https self signed", func(ctx context.Context, t *testctx.T) {
+		certGen := newGeneratedCerts(c, "ca")
+		registryCert, registryKey := certGen.newServerCerts("bound-registry")
+		registry := c.Container().
+			From("registry:3").
+			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-https-insecure-api-"+identity.NewID())).
+			WithFile("/certs/domain.crt", registryCert).
+			WithFile("/certs/domain.key", registryKey).
+			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
+			WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService()
+
+		devEngine := devEngineContainerAsService(devEngineContainer(c))
+
+		ref := "bound-registry:5000/service-binding-https-insecure-api:" + identity.NewID()
+
+		out, err := module(ctx, t, devEngine).
+			WithServiceBinding("bound-registry", registry).
+			With(daggerNonNestedExec(
+				"call", "check-insecure-tls",
+				"--registry", "tcp://bound-registry:5000",
+				"--ref", ref,
+			)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello", strings.TrimSpace(out))
+	})
+
+	t.Run("registry api option rejects http with insecure skip tls verify", func(ctx context.Context, t *testctx.T) {
+		registry := c.Container().
+			From("registry:3").
+			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-invalid-api-"+identity.NewID())).
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService()
+
+		devEngine := devEngineContainerAsService(devEngineContainer(c))
+
+		ref := "bound-registry:5000/service-binding-http-invalid-api:" + identity.NewID()
+
+		stderr, err := module(ctx, t, devEngine).
+			WithServiceBinding("bound-registry", registry).
+			With(daggerNonNestedExecFail(
+				"call", "check-http-with-insecure-tls",
+				"--registry", "tcp://bound-registry:5000",
+				"--ref", ref,
+			)).
+			Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stderr, "insecureSkipTLSVerify cannot be used with HTTP registry protocol")
 	})
 }
 

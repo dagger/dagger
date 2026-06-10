@@ -153,9 +153,9 @@ func (p resolverPusher) PushImage(
 		Provider:          img.Provider,
 		SourceAnnotations: img.SourceAnnotations,
 	}, ref, serverresolver.PushOpts{
-		Insecure: opts.Insecure,
-		ByDigest: opts.PushByDigest,
-		Network:  p.network,
+		RegistryTransport: opts.RegistryTransport,
+		ByDigest:          opts.PushByDigest,
+		Network:           p.network,
 	})
 }
 
@@ -166,6 +166,7 @@ func (c *Client) PublishContainerImage(
 	useOCIMediaTypes bool,
 	forceCompression string,
 	network serverresolver.NetworkConfig,
+	registryTransport serverresolver.RegistryTransport,
 ) (*imageexport.ExportResponse, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
@@ -192,9 +193,10 @@ func (c *Client) PublishContainerImage(
 			network:  network,
 		},
 	}, req, imageexport.ExportOpts{
-		Names:  []string{refName},
-		Push:   true,
-		Commit: commitOpts,
+		Names:             []string{refName},
+		Push:              true,
+		RegistryTransport: registryTransport,
+		Commit:            commitOpts,
 	})
 }
 

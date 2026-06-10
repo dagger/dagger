@@ -56,3 +56,28 @@ pub mod loadable {
         ) -> Self;
     }
 }
+
+#[cfg(all(test, feature = "gen"))]
+mod tests {
+    use crate::{ContainerFromOpts, ContainerPublishOpts, RegistryProtocol};
+
+    #[test]
+    fn registry_protocol_options_use_owned_enum_values() {
+        let from_opts = ContainerFromOpts {
+            insecure_skip_tls_verify: Some(true),
+            protocol: Some(RegistryProtocol::Https),
+            registry_service: None,
+        };
+        let publish_opts = ContainerPublishOpts {
+            forced_compression: None,
+            insecure_skip_tls_verify: Some(false),
+            media_types: None,
+            platform_variants: None,
+            protocol: Some(RegistryProtocol::Http),
+            registry_service: None,
+        };
+
+        assert_eq!(from_opts.protocol, Some(RegistryProtocol::Https));
+        assert_eq!(publish_opts.protocol, Some(RegistryProtocol::Http));
+    }
+}
