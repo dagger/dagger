@@ -37,6 +37,19 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 //
 // The CLI consumes workspace entrypoint methods and module constructors
 // directly from the engine schema's Query root.
+// workspaceModuleScope returns the leading positional token as a
+// currentTypeDefs include hint. Only the first token can name a workspace
+// module (later tokens are functions/arguments within it), so an unrelated
+// broken/stale module is not loaded just to introspect the targeted one. The
+// engine ignores the hint when it does not name a workspace module (e.g. an
+// entrypoint-proxied function or no args), loading every module as before.
+func workspaceModuleScope(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	return args[:1]
+}
+
 func initializeWorkspace(ctx context.Context, dag *dagger.Client, opts ...loadTypeDefsOpts) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load workspace: .")
 	defer telemetry.EndWithCause(span, &rerr)
@@ -293,6 +306,12 @@ type loadTypeDefsOpts struct {
 	// HideCore strips core API functions from the Query type, leaving
 	// only module-sourced functions (constructors, entrypoint proxies).
 	HideCore bool
+
+	// Include narrows workspace module loading to the named modules (and their
+	// dependencies) before introspecting, so a single unrelated broken or stale
+	// module cannot block building the command tree. A pattern that does not
+	// name a workspace module is ignored server-side and every module loads.
+	Include []string
 }
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
@@ -309,9 +328,13 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		TypeDefs []*modTypeDef
 	}
 
+	vars := map[string]any{"hideCore": o.HideCore}
+	if len(o.Include) > 0 {
+		vars["include"] = o.Include
+	}
 	err := dag.Do(ctx, &dagger.Request{
 		Query:     loadTypeDefsQuery,
-		Variables: map[string]any{"hideCore": o.HideCore},
+		Variables: vars,
 	}, &dagger.Response{
 		Data: &res,
 	})

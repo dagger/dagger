@@ -30,8 +30,8 @@ fragment FieldParts on FieldTypeDef {
   }
 }
 
-query TypeDefs($hideCore: Boolean) {
-	typeDefs: currentTypeDefs(returnAllTypes: true, hideCore: $hideCore) {
+query TypeDefs($hideCore: Boolean, $include: [String!]) {
+	typeDefs: currentTypeDefs(returnAllTypes: true, hideCore: $hideCore, include: $include) {
 		name
 		kind
 		optional

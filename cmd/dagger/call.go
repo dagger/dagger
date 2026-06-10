@@ -108,7 +108,7 @@ func runFunctionList(cmd *cobra.Command, args []string) error {
 			mod, err = initializeCore(ctx, engineClient.Dagger())
 		} else {
 			// -m modules are loaded at engine connect time as extra modules.
-			mod, err = initializeWorkspace(ctx, engineClient.Dagger(), loadTypeDefsOpts{HideCore: true})
+			mod, err = initializeWorkspace(ctx, engineClient.Dagger(), loadTypeDefsOpts{HideCore: true, Include: workspaceModuleScope(args)})
 		}
 		if err != nil {
 			return err
