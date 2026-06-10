@@ -41,6 +41,16 @@ defmodule Dagger.Codegen.Introspection.Types.TypeRef do
       ),
       do: true
 
+  # List with nullable elements, e.g. [String]!.
+  def is_list_of?(
+        %__MODULE__{
+          kind: "LIST",
+          of_type: %__MODULE__{kind: of_kind}
+        },
+        of_kind
+      ),
+      do: true
+
   def is_list_of?(_, _), do: false
 
   # TODO: refactor me.

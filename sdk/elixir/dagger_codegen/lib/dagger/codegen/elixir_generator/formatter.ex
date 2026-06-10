@@ -95,6 +95,14 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
     "[#{format_type(type, false)}]"
   end
 
+  # List with nullable elements, e.g. [String]!: each element may be nil.
+  def format_type(%TypeRef{
+        kind: "LIST",
+        of_type: %TypeRef{} = type
+      }) do
+    "[#{format_type(type, true)}]"
+  end
+
   def format_type(%TypeRef{kind: "NON_NULL", of_type: type}) do
     if type.kind == "LIST" do
       format_type(type)
