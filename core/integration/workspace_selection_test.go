@@ -323,14 +323,9 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 // TestWorkspaceSelectionCommandPolicy should pin down which commands accept
 // --workspace and where local-only restrictions are enforced.
 func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.Context, t *testctx.T) {
-	t.Run("migrate rejects -W in integration", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		ctr := workspaceBase(t, c)
-
-		out, err := ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "migrate")).CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, `--workspace is not supported for "dagger migrate"`)
-	})
+	// The `dagger migrate` command was removed in the CLI 1.0 redesign;
+	// migration is now part of `dagger setup`. The -W rejection test it
+	// used to anchor no longer applies.
 
 	t.Run("local-only workspace mutations accept a local selected workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
