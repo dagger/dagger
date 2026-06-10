@@ -14,6 +14,15 @@ namespace Dagger;
 class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.
+     */
+    public function asCollection(): CollectionTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCollection');
+        return new \Dagger\CollectionTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
      */
     public function asEnum(): EnumTypeDef
@@ -101,6 +110,35 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('optional');
         return (bool)$this->queryLeaf($leafQueryBuilder, 'optional');
+    }
+
+    /**
+     * Marks this Object TypeDef as a collection.
+     */
+    public function withCollection(): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollection');
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Overrides the effective get function used by a collection TypeDef.
+     */
+    public function withCollectionGet(string $name): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollectionGet');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Overrides the effective keys field used by a collection TypeDef.
+     */
+    public function withCollectionKeys(string $name): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollectionKeys');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

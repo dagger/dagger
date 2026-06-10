@@ -30,6 +30,48 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Artifact
+  """
+  @spec as_artifact(t()) :: Dagger.Artifact.t()
+  def as_artifact(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asArtifact")
+
+    %Dagger.Artifact{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type ArtifactDimension
+  """
+  @spec as_artifact_dimension(t()) :: Dagger.ArtifactDimension.t()
+  def as_artifact_dimension(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asArtifactDimension")
+
+    %Dagger.ArtifactDimension{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Artifacts
+  """
+  @spec as_artifacts(t()) :: Dagger.Artifacts.t()
+  def as_artifacts(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asArtifacts")
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type CacheVolume
   """
   @spec as_cache_volume(t()) :: Dagger.CacheVolume.t()
@@ -94,6 +136,20 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asCloud")
 
     %Dagger.Cloud{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type CollectionTypeDef
+  """
+  @spec as_collection_type_def(t()) :: Dagger.CollectionTypeDef.t()
+  def as_collection_type_def(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCollectionTypeDef")
+
+    %Dagger.CollectionTypeDef{
       query_builder: query_builder,
       client: binding.client
     }

@@ -16,6 +16,18 @@ class AddressID(Scalar):
     """A unique identifier for an object."""
 
 
+class ArtifactDimensionID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ArtifactID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ArtifactsID(Scalar):
+    """A unique identifier for an object."""
+
+
 class BindingID(Scalar):
     """A unique identifier for an object."""
 
@@ -41,6 +53,10 @@ class ClientFilesyncMirrorID(Scalar):
 
 
 class CloudID(Scalar):
+    """A unique identifier for an object."""
+
+
+class CollectionTypeDefID(Scalar):
     """A unique identifier for an object."""
 
 
@@ -574,6 +590,18 @@ class TypeDefKind(Enum):
 
 @typecheck
 @dataclass(slots=True)
+class ArtifactFilter(Input):
+    """A coordinate filter on one artifact dimension."""
+
+    dimension: str
+    """Dimension to filter."""
+
+    values: list[str]
+    """Allowed coordinate values."""
+
+
+@typecheck
+@dataclass(slots=True)
 class BuildArg(Input):
     """Key value object that represents a build argument."""
 
@@ -903,12 +931,263 @@ class Address(Type):
 
 
 @typecheck
+class Artifact(Type):
+    """One artifact in a workspace artifact scope."""
+
+    async def coordinate(self, name: str) -> str | None:
+        """Convenience lookup for one coordinate by dimension name.
+
+        Parameters
+        ----------
+        name:
+            Dimension name.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("coordinate", _args)
+        return await _ctx.execute(str | None)
+
+    async def coordinates(self) -> list[str | None]:
+        """Ordered coordinate row for this artifact.
+
+        Returns
+        -------
+        list[str | None]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("coordinates", _args)
+        return await _ctx.execute(list[str | None])
+
+    async def id(self) -> str:
+        """A unique identifier for this Artifact.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def scope(self) -> "Artifacts":
+        """The Artifacts scope that produced this row."""
+        _args: list[Arg] = []
+        _ctx = self._select("scope", _args)
+        return Artifacts(_ctx)
+
+
+@typecheck
+class ArtifactDimension(Type):
+    """A filterable axis of the artifact graph."""
+
+    async def id(self) -> str:
+        """A unique identifier for this ArtifactDimension.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def key_type(self) -> "TypeDef":
+        """Type of this dimension's keys."""
+        _args: list[Arg] = []
+        _ctx = self._select("keyType", _args)
+        return TypeDef(_ctx)
+
+    async def name(self) -> str:
+        """Filter name as used in CLI flags and table headers.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class Artifacts(Type):
+    """A scoped, filterable view over workspace artifacts."""
+
+    async def dimensions(self) -> list[ArtifactDimension]:
+        """Ordered filterable dimensions for the current scope."""
+        _args: list[Arg] = []
+        _ctx = self._select("dimensions", _args)
+        return await _ctx.execute_object_list(ArtifactDimension)
+
+    def filter_coordinates(self, dimension: str, values: list[str]) -> Self:
+        """Keep rows whose coordinate for the given dimension matches one of the
+        provided values.
+
+        Parameters
+        ----------
+        dimension:
+            Dimension to filter.
+        values:
+            Allowed coordinate values.
+        """
+        _args = [
+            Arg("dimension", dimension),
+            Arg("values", values),
+        ]
+        _ctx = self._select("filterCoordinates", _args)
+        return Artifacts(_ctx)
+
+    def filter_dimension(self, dimension: str) -> Self:
+        """Keep rows whose coordinate row has a non-null cell for the given
+        dimension.
+
+        Parameters
+        ----------
+        dimension:
+            Dimension to require.
+        """
+        _args = [
+            Arg("dimension", dimension),
+        ]
+        _ctx = self._select("filterDimension", _args)
+        return Artifacts(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this Artifacts.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def items(self) -> list[Artifact]:
+        """Artifacts matching the current filters."""
+        _args: list[Arg] = []
+        _ctx = self._select("items", _args)
+        return await _ctx.execute_object_list(Artifact)
+
+    def with_(self, cb: Callable[["Artifacts"], "Artifacts"]) -> "Artifacts":
+        """Call the provided callable with current Artifacts.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class Binding(Type):
     def as_address(self) -> Address:
         """Retrieve the binding value, as type Address"""
         _args: list[Arg] = []
         _ctx = self._select("asAddress", _args)
         return Address(_ctx)
+
+    def as_artifact(self) -> Artifact:
+        """Retrieve the binding value, as type Artifact"""
+        _args: list[Arg] = []
+        _ctx = self._select("asArtifact", _args)
+        return Artifact(_ctx)
+
+    def as_artifact_dimension(self) -> ArtifactDimension:
+        """Retrieve the binding value, as type ArtifactDimension"""
+        _args: list[Arg] = []
+        _ctx = self._select("asArtifactDimension", _args)
+        return ArtifactDimension(_ctx)
+
+    def as_artifacts(self) -> Artifacts:
+        """Retrieve the binding value, as type Artifacts"""
+        _args: list[Arg] = []
+        _ctx = self._select("asArtifacts", _args)
+        return Artifacts(_ctx)
 
     def as_cache_volume(self) -> "CacheVolume":
         """Retrieve the binding value, as type CacheVolume"""
@@ -939,6 +1218,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asCloud", _args)
         return Cloud(_ctx)
+
+    def as_collection_type_def(self) -> "CollectionTypeDef":
+        """Retrieve the binding value, as type CollectionTypeDef"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCollectionTypeDef", _args)
+        return CollectionTypeDef(_ctx)
 
     def as_container(self) -> "Container":
         """Retrieve the binding value, as type Container"""
@@ -1883,6 +2168,60 @@ class Cloud(Type):
         _args: list[Arg] = []
         _ctx = self._select("traceURL", _args)
         return await _ctx.execute(str)
+
+
+@typecheck
+class CollectionTypeDef(Type):
+    """A definition of collection semantics layered on top of an object
+    type."""
+
+    def batch_type(self) -> "TypeDef":
+        """Synthetic batch namespace type for collection-level operations, if
+        any.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("batchType", _args)
+        return TypeDef(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this CollectionTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def key_type(self) -> "TypeDef":
+        """Type accepted by get(key) and subset(keys: ...)."""
+        _args: list[Arg] = []
+        _ctx = self._select("keyType", _args)
+        return TypeDef(_ctx)
+
+    def value_type(self) -> "TypeDef":
+        """Type returned by get() and enumerated by list."""
+        _args: list[Arg] = []
+        _ctx = self._select("valueType", _args)
+        return TypeDef(_ctx)
 
 
 @typecheck
@@ -6233,6 +6572,134 @@ class Env(Type):
         _ctx = self._select("withAddressOutput", _args)
         return Env(_ctx)
 
+    def with_artifact_dimension_input(
+        self,
+        name: str,
+        value: ArtifactDimension,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type ArtifactDimension in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The ArtifactDimension value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withArtifactDimensionInput", _args)
+        return Env(_ctx)
+
+    def with_artifact_dimension_output(self, name: str, description: str) -> Self:
+        """Declare a desired ArtifactDimension output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withArtifactDimensionOutput", _args)
+        return Env(_ctx)
+
+    def with_artifact_input(
+        self,
+        name: str,
+        value: Artifact,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Artifact in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Artifact value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withArtifactInput", _args)
+        return Env(_ctx)
+
+    def with_artifact_output(self, name: str, description: str) -> Self:
+        """Declare a desired Artifact output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withArtifactOutput", _args)
+        return Env(_ctx)
+
+    def with_artifacts_input(
+        self,
+        name: str,
+        value: Artifacts,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Artifacts in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Artifacts value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withArtifactsInput", _args)
+        return Env(_ctx)
+
+    def with_artifacts_output(self, name: str, description: str) -> Self:
+        """Declare a desired Artifacts output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withArtifactsOutput", _args)
+        return Env(_ctx)
+
     def with_cache_volume_input(
         self,
         name: str,
@@ -6441,6 +6908,50 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withCloudOutput", _args)
+        return Env(_ctx)
+
+    def with_collection_type_def_input(
+        self,
+        name: str,
+        value: CollectionTypeDef,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type CollectionTypeDef in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The CollectionTypeDef value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCollectionTypeDefInput", _args)
+        return Env(_ctx)
+
+    def with_collection_type_def_output(self, name: str, description: str) -> Self:
+        """Declare a desired CollectionTypeDef output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCollectionTypeDefOutput", _args)
         return Env(_ctx)
 
     def with_container_input(
@@ -13586,6 +14097,32 @@ class Query(Root):
         _ctx = self._select("loadAddressFromID", _args)
         return Address(_ctx)
 
+    def load_artifact_dimension_from_id(
+        self, id: ArtifactDimensionID
+    ) -> ArtifactDimension:
+        """Load a ArtifactDimension from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadArtifactDimensionFromID", _args)
+        return ArtifactDimension(_ctx)
+
+    def load_artifact_from_id(self, id: ArtifactID) -> Artifact:
+        """Load a Artifact from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadArtifactFromID", _args)
+        return Artifact(_ctx)
+
+    def load_artifacts_from_id(self, id: ArtifactsID) -> Artifacts:
+        """Load a Artifacts from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadArtifactsFromID", _args)
+        return Artifacts(_ctx)
+
     def load_binding_from_id(self, id: BindingID) -> Binding:
         """Load a Binding from its ID."""
         _args = [
@@ -13643,6 +14180,16 @@ class Query(Root):
         ]
         _ctx = self._select("loadCloudFromID", _args)
         return Cloud(_ctx)
+
+    def load_collection_type_def_from_id(
+        self, id: CollectionTypeDefID
+    ) -> CollectionTypeDef:
+        """Load a CollectionTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCollectionTypeDefFromID", _args)
+        return CollectionTypeDef(_ctx)
 
     def load_container_from_id(self, id: ContainerID) -> Container:
         """Load a Container from its ID."""
@@ -15406,6 +15953,14 @@ class Terminal(Type):
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
+    def as_collection(self) -> CollectionTypeDef:
+        """If kind is OBJECT and this object is a collection, the collection-
+        specific type definition. Otherwise this will be null.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asCollection", _args)
+        return CollectionTypeDef(_ctx)
+
     def as_enum(self) -> EnumTypeDef:
         """If kind is ENUM, the enum-specific type definition. If kind is not
         ENUM, this will be null.
@@ -15540,6 +16095,40 @@ class TypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("optional", _args)
         return await _ctx.execute(bool)
+
+    def with_collection(self) -> Self:
+        """Marks this Object TypeDef as a collection."""
+        _args: list[Arg] = []
+        _ctx = self._select("withCollection", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_get(self, name: str) -> Self:
+        """Overrides the effective get function used by a collection TypeDef.
+
+        Parameters
+        ----------
+        name:
+            The function that resolves one collection item by key.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionGet", _args)
+        return TypeDef(_ctx)
+
+    def with_collection_keys(self, name: str) -> Self:
+        """Overrides the effective keys field used by a collection TypeDef.
+
+        Parameters
+        ----------
+        name:
+            The field that enumerates collection keys.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withCollectionKeys", _args)
+        return TypeDef(_ctx)
 
     def with_constructor(self, function: Function) -> Self:
         """Adds a function for constructing a new instance of an Object TypeDef,
@@ -15977,12 +16566,29 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
+    def artifacts(self, *, enumerate: bool | None = True) -> Artifacts:
+        """A filterable view of all artifacts in this workspace.
+
+        Parameters
+        ----------
+        enumerate:
+            Resolve collection items by running module code.
+            When false, only dimensions and top-level artifacts are returned,
+            without executing any module functions.
+        """
+        _args = [
+            Arg("enumerate", enumerate, True),
+        ]
+        _ctx = self._select("artifacts", _args)
+        return Artifacts(_ctx)
+
     def checks(
         self,
         *,
         include: list[str] | None = None,
         no_generate: bool | None = None,
         only_generate: bool | None = None,
+        dimensions: list[ArtifactFilter] | None = None,
     ) -> CheckGroup:
         """Return all checks from modules loaded in the workspace.
 
@@ -15996,11 +16602,17 @@ class Workspace(Type):
         only_generate:
             When true, only return generate-as-checks; exclude annotated check
             functions
+        dimensions:
+            Narrow checks by artifact dimension coordinates.
+            Collection items expand only for matching keys, and batch
+            operations run over the narrowed subset. Checks that do not carry
+            every filtered dimension are excluded.
         """
         _args = [
             Arg("include", include, None),
             Arg("noGenerate", no_generate, None),
             Arg("onlyGenerate", only_generate, None),
+            Arg("dimensions", dimensions, None),
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
@@ -17021,6 +17633,13 @@ __all__ = [
     "LLMID",
     "Address",
     "AddressID",
+    "Artifact",
+    "ArtifactDimension",
+    "ArtifactDimensionID",
+    "ArtifactFilter",
+    "ArtifactID",
+    "Artifacts",
+    "ArtifactsID",
     "Binding",
     "BindingID",
     "BuildArg",
@@ -17040,6 +17659,8 @@ __all__ = [
     "ClientFilesyncMirrorID",
     "Cloud",
     "CloudID",
+    "CollectionTypeDef",
+    "CollectionTypeDefID",
     "Container",
     "ContainerID",
     "CurrentModule",

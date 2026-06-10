@@ -28,6 +28,76 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Artifact",
+			"p": "Dagger/Artifact.html",
+			"d": "<p>One artifact in a workspace artifact scope.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ArtifactDimension",
+			"p": "Dagger/ArtifactDimension.html",
+			"d": "<p>A filterable axis of the artifact graph.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ArtifactDimensionId",
+			"p": "Dagger/ArtifactDimensionId.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ArtifactFilter",
+			"p": "Dagger/ArtifactFilter.html",
+			"d": "<p>A coordinate filter on one artifact dimension.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ArtifactId",
+			"p": "Dagger/ArtifactId.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\Artifacts",
+			"p": "Dagger/Artifacts.html",
+			"d": "<p>A scoped, filterable view over workspace artifacts.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ArtifactsId",
+			"p": "Dagger/ArtifactsId.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Attribute\\DaggerFunction",
 			"p": "Dagger/Attribute/DaggerFunction.html",
 			"d": null,
@@ -340,6 +410,26 @@
 			"t": "C",
 			"n": "Dagger\\CloudId",
 			"p": "Dagger/CloudId.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CollectionTypeDef",
+			"p": "Dagger/CollectionTypeDef.html",
+			"d": "<p>A definition of collection semantics layered on top of an object type.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CollectionTypeDefId",
+			"p": "Dagger/CollectionTypeDefId.html",
 			"d": "<p>A unique identifier for an object.</p>",
 			"f": {
 				"n": "Dagger",
@@ -1854,6 +1944,84 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Artifact::coordinate",
+			"p": "Dagger/Artifact.html#method_coordinate",
+			"d": "<p>Convenience lookup for one coordinate by dimension name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Artifact::coordinates",
+			"p": "Dagger/Artifact.html#method_coordinates",
+			"d": "<p>Ordered coordinate row for this artifact.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Artifact::id",
+			"p": "Dagger/Artifact.html#method_id",
+			"d": "<p>A unique identifier for this Artifact.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Artifact::scope",
+			"p": "Dagger/Artifact.html#method_scope",
+			"d": "<p>The Artifacts scope that produced this row.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ArtifactDimension::id",
+			"p": "Dagger/ArtifactDimension.html#method_id",
+			"d": "<p>A unique identifier for this ArtifactDimension.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ArtifactDimension::keyType",
+			"p": "Dagger/ArtifactDimension.html#method_keyType",
+			"d": "<p>Type of this dimension's keys.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ArtifactDimension::name",
+			"p": "Dagger/ArtifactDimension.html#method_name",
+			"d": "<p>Filter name as used in CLI flags and table headers.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ArtifactFilter::__construct",
+			"p": "Dagger/ArtifactFilter.html#method___construct",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Artifacts::dimensions",
+			"p": "Dagger/Artifacts.html#method_dimensions",
+			"d": "<p>Ordered filterable dimensions for the current scope.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Artifacts::filterCoordinates",
+			"p": "Dagger/Artifacts.html#method_filterCoordinates",
+			"d": "<p>Keep rows whose coordinate for the given dimension matches one of the provided values.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Artifacts::filterDimension",
+			"p": "Dagger/Artifacts.html#method_filterDimension",
+			"d": "<p>Keep rows whose coordinate row has a non-null cell for the given dimension.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Artifacts::id",
+			"p": "Dagger/Artifacts.html#method_id",
+			"d": "<p>A unique identifier for this Artifacts.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Artifacts::items",
+			"p": "Dagger/Artifacts.html#method_items",
+			"d": "<p>Artifacts matching the current filters.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Attribute\\DefaultPath::__construct",
 			"p": "Dagger/Attribute/DefaultPath.html#method___construct",
 			"d": null
@@ -1890,6 +2058,24 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asArtifact",
+			"p": "Dagger/Binding.html#method_asArtifact",
+			"d": "<p>Retrieve the binding value, as type Artifact</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asArtifactDimension",
+			"p": "Dagger/Binding.html#method_asArtifactDimension",
+			"d": "<p>Retrieve the binding value, as type ArtifactDimension</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asArtifacts",
+			"p": "Dagger/Binding.html#method_asArtifacts",
+			"d": "<p>Retrieve the binding value, as type Artifacts</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asCacheVolume",
 			"p": "Dagger/Binding.html#method_asCacheVolume",
 			"d": "<p>Retrieve the binding value, as type CacheVolume</p>"
@@ -1917,6 +2103,12 @@
 			"n": "Dagger\\Binding::asCloud",
 			"p": "Dagger/Binding.html#method_asCloud",
 			"d": "<p>Retrieve the binding value, as type Cloud</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asCollectionTypeDef",
+			"p": "Dagger/Binding.html#method_asCollectionTypeDef",
+			"d": "<p>Retrieve the binding value, as type CollectionTypeDef</p>"
 		},
 		{
 			"t": "M",
@@ -2520,6 +2712,24 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadArtifactDimensionFromID",
+			"p": "Dagger/Client.html#method_loadArtifactDimensionFromID",
+			"d": "<p>Load a ArtifactDimension from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadArtifactFromID",
+			"p": "Dagger/Client.html#method_loadArtifactFromID",
+			"d": "<p>Load a Artifact from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadArtifactsFromID",
+			"p": "Dagger/Client.html#method_loadArtifactsFromID",
+			"d": "<p>Load a Artifacts from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadBindingFromID",
 			"p": "Dagger/Client.html#method_loadBindingFromID",
 			"d": "<p>Load a Binding from its ID.</p>"
@@ -2559,6 +2769,12 @@
 			"n": "Dagger\\Client::loadCloudFromID",
 			"p": "Dagger/Client.html#method_loadCloudFromID",
 			"d": "<p>Load a Cloud from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadCollectionTypeDefFromID",
+			"p": "Dagger/Client.html#method_loadCollectionTypeDefFromID",
+			"d": "<p>Load a CollectionTypeDef from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -3105,6 +3321,30 @@
 			"n": "Dagger\\Cloud::traceURL",
 			"p": "Dagger/Cloud.html#method_traceURL",
 			"d": "<p>The trace URL for the current session</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CollectionTypeDef::batchType",
+			"p": "Dagger/CollectionTypeDef.html#method_batchType",
+			"d": "<p>Synthetic batch namespace type for collection-level operations, if any.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CollectionTypeDef::id",
+			"p": "Dagger/CollectionTypeDef.html#method_id",
+			"d": "<p>A unique identifier for this CollectionTypeDef.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CollectionTypeDef::keyType",
+			"p": "Dagger/CollectionTypeDef.html#method_keyType",
+			"d": "<p>Type accepted by get(key) and subset(keys: ...).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CollectionTypeDef::valueType",
+			"p": "Dagger/CollectionTypeDef.html#method_valueType",
+			"d": "<p>Type returned by get() and enumerated by list.</p>"
 		},
 		{
 			"t": "M",
@@ -4230,6 +4470,42 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withArtifactDimensionInput",
+			"p": "Dagger/Env.html#method_withArtifactDimensionInput",
+			"d": "<p>Create or update a binding of type ArtifactDimension in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withArtifactDimensionOutput",
+			"p": "Dagger/Env.html#method_withArtifactDimensionOutput",
+			"d": "<p>Declare a desired ArtifactDimension output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withArtifactInput",
+			"p": "Dagger/Env.html#method_withArtifactInput",
+			"d": "<p>Create or update a binding of type Artifact in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withArtifactOutput",
+			"p": "Dagger/Env.html#method_withArtifactOutput",
+			"d": "<p>Declare a desired Artifact output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withArtifactsInput",
+			"p": "Dagger/Env.html#method_withArtifactsInput",
+			"d": "<p>Create or update a binding of type Artifacts in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withArtifactsOutput",
+			"p": "Dagger/Env.html#method_withArtifactsOutput",
+			"d": "<p>Declare a desired Artifacts output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withCacheVolumeInput",
 			"p": "Dagger/Env.html#method_withCacheVolumeInput",
 			"d": "<p>Create or update a binding of type CacheVolume in the environment</p>"
@@ -4287,6 +4563,18 @@
 			"n": "Dagger\\Env::withCloudOutput",
 			"p": "Dagger/Env.html#method_withCloudOutput",
 			"d": "<p>Declare a desired Cloud output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCollectionTypeDefInput",
+			"p": "Dagger/Env.html#method_withCollectionTypeDefInput",
+			"d": "<p>Create or update a binding of type CollectionTypeDef in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCollectionTypeDefOutput",
+			"p": "Dagger/Env.html#method_withCollectionTypeDefOutput",
+			"d": "<p>Declare a desired CollectionTypeDef output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6756,6 +7044,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\TypeDef::asCollection",
+			"p": "Dagger/TypeDef.html#method_asCollection",
+			"d": "<p>If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\TypeDef::asEnum",
 			"p": "Dagger/TypeDef.html#method_asEnum",
 			"d": "<p>If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.</p>"
@@ -6813,6 +7107,24 @@
 			"n": "Dagger\\TypeDef::optional",
 			"p": "Dagger/TypeDef.html#method_optional",
 			"d": "<p>Whether this type can be set to null. Defaults to false.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TypeDef::withCollection",
+			"p": "Dagger/TypeDef.html#method_withCollection",
+			"d": "<p>Marks this Object TypeDef as a collection.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TypeDef::withCollectionGet",
+			"p": "Dagger/TypeDef.html#method_withCollectionGet",
+			"d": "<p>Overrides the effective get function used by a collection TypeDef.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TypeDef::withCollectionKeys",
+			"p": "Dagger/TypeDef.html#method_withCollectionKeys",
+			"d": "<p>Overrides the effective keys field used by a collection TypeDef.</p>"
 		},
 		{
 			"t": "M",
@@ -6945,6 +7257,12 @@
 			"n": "Dagger\\Workspace::address",
 			"p": "Dagger/Workspace.html#method_address",
 			"d": "<p>Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::artifacts",
+			"p": "Dagger/Workspace.html#method_artifacts",
+			"d": "<p>A filterable view of all artifacts in this workspace.</p>"
 		},
 		{
 			"t": "M",

@@ -42,8 +42,14 @@ directive @experimental(
 """Indicates that this function is a generate function."""
 directive @generate on FIELD_DEFINITION
 
+"""Marks a Dang object function as the lookup function for a collection."""
+directive @get on FIELD_DEFINITION
+
 """Filter directory contents using .gitignore-style glob patterns."""
 directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
+
+"""Marks a Dang object field as the keys field for a collection."""
+directive @keys on FIELD_DEFINITION
 
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
@@ -88,9 +94,88 @@ type Address implements Node {
   value: String!
 }
 
+"""One artifact in a workspace artifact scope."""
+type Artifact implements Node {
+  """Convenience lookup for one coordinate by dimension name."""
+  coordinate(
+    """Dimension name."""
+    name: String!
+  ): String
+
+  """Ordered coordinate row for this artifact."""
+  coordinates: [String]!
+
+  """A unique identifier for this Artifact."""
+  id: ID!
+
+  """The Artifacts scope that produced this row."""
+  scope: Artifacts!
+}
+
+"""A filterable axis of the artifact graph."""
+type ArtifactDimension implements Node {
+  """A unique identifier for this ArtifactDimension."""
+  id: ID!
+
+  """Type of this dimension's keys."""
+  keyType: TypeDef!
+
+  """Filter name as used in CLI flags and table headers."""
+  name: String!
+}
+
+"""A coordinate filter on one artifact dimension."""
+input ArtifactFilter {
+  """Dimension to filter."""
+  dimension: String!
+
+  """Allowed coordinate values."""
+  values: [String!]!
+}
+
+"""A scoped, filterable view over workspace artifacts."""
+type Artifacts implements Node {
+  """Ordered filterable dimensions for the current scope."""
+  dimensions: [ArtifactDimension!]!
+
+  """
+  Keep rows whose coordinate for the given dimension matches one of the provided values.
+  """
+  filterCoordinates(
+    """Dimension to filter."""
+    dimension: String!
+
+    """Allowed coordinate values."""
+    values: [String!]!
+  ): Artifacts!
+
+  """
+  Keep rows whose coordinate row has a non-null cell for the given dimension.
+  """
+  filterDimension(
+    """Dimension to require."""
+    dimension: String!
+  ): Artifacts!
+
+  """A unique identifier for this Artifacts."""
+  id: ID!
+
+  """Artifacts matching the current filters."""
+  items: [Artifact!]!
+}
+
 type Binding implements Node {
   """Retrieve the binding value, as type Address"""
   asAddress: Address!
+
+  """Retrieve the binding value, as type Artifact"""
+  asArtifact: Artifact!
+
+  """Retrieve the binding value, as type ArtifactDimension"""
+  asArtifactDimension: ArtifactDimension!
+
+  """Retrieve the binding value, as type Artifacts"""
+  asArtifacts: Artifacts!
 
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
@@ -106,6 +191,9 @@ type Binding implements Node {
 
   """Retrieve the binding value, as type Cloud"""
   asCloud: Cloud!
+
+  """Retrieve the binding value, as type CollectionTypeDef"""
+  asCollectionTypeDef: CollectionTypeDef!
 
   """Retrieve the binding value, as type Container"""
   asContainer: Container!
@@ -428,6 +516,23 @@ type Cloud implements Node {
 
   """The trace URL for the current session"""
   traceURL: String!
+}
+
+"""A definition of collection semantics layered on top of an object type."""
+type CollectionTypeDef implements Node {
+  """
+  Synthetic batch namespace type for collection-level operations, if any.
+  """
+  batchType: TypeDef
+
+  """A unique identifier for this CollectionTypeDef."""
+  id: ID!
+
+  """Type accepted by get(key) and subset(keys: ...)."""
+  keyType: TypeDef
+
+  """Type returned by get() and enumerated by list."""
+  valueType: TypeDef
 }
 
 """An OCI-compatible container, also known as a Docker container."""
@@ -2473,6 +2578,73 @@ type Env implements Node {
     description: String!
   ): Env!
 
+  """
+  Create or update a binding of type ArtifactDimension in the environment
+  """
+  withArtifactDimensionInput(
+    """The name of the binding"""
+    name: String!
+
+    """The ArtifactDimension value to assign to the binding"""
+    value: ID! @expectedType(name: "ArtifactDimension")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired ArtifactDimension output to be assigned in the environment
+  """
+  withArtifactDimensionOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Artifact in the environment"""
+  withArtifactInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Artifact value to assign to the binding"""
+    value: ID! @expectedType(name: "Artifact")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Artifact output to be assigned in the environment"""
+  withArtifactOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Artifacts in the environment"""
+  withArtifactsInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Artifacts value to assign to the binding"""
+    value: ID! @expectedType(name: "Artifacts")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Artifacts output to be assigned in the environment"""
+  withArtifactsOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type CacheVolume in the environment"""
   withCacheVolumeInput(
     """The name of the binding"""
@@ -2571,6 +2743,31 @@ type Env implements Node {
 
   """Declare a desired Cloud output to be assigned in the environment"""
   withCloudOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """
+  Create or update a binding of type CollectionTypeDef in the environment
+  """
+  withCollectionTypeDefInput(
+    """The name of the binding"""
+    name: String!
+
+    """The CollectionTypeDef value to assign to the binding"""
+    value: ID! @expectedType(name: "CollectionTypeDef")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired CollectionTypeDef output to be assigned in the environment
+  """
+  withCollectionTypeDefOutput(
     """The name of the binding"""
     name: String!
 
@@ -5488,6 +5685,11 @@ type Terminal implements Node & Syncer {
 """A definition of a parameter or return type in a Module."""
 type TypeDef implements Node {
   """
+  If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.
+  """
+  asCollection: CollectionTypeDef
+
+  """
   If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
   """
   asEnum: EnumTypeDef
@@ -5528,6 +5730,21 @@ type TypeDef implements Node {
 
   """Whether this type can be set to null. Defaults to false."""
   optional: Boolean!
+
+  """Marks this Object TypeDef as a collection."""
+  withCollection: TypeDef!
+
+  """Overrides the effective get function used by a collection TypeDef."""
+  withCollectionGet(
+    """The function that resolves one collection item by key."""
+    name: String!
+  ): TypeDef!
+
+  """Overrides the effective keys field used by a collection TypeDef."""
+  withCollectionKeys(
+    """The field that enumerates collection keys."""
+    name: String!
+  ): TypeDef!
 
   """
   Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
@@ -5805,6 +6022,16 @@ type Workspace implements Node {
   """
   address: String!
 
+  """A filterable view of all artifacts in this workspace."""
+  artifacts(
+    """
+    Resolve collection items by running module code.
+
+    When false, only dimensions and top-level artifacts are returned, without executing any module functions.
+    """
+    enumerate: Boolean = true
+  ): Artifacts!
+
   """Return all checks from modules loaded in the workspace."""
   checks(
     """Only include checks matching the specified patterns"""
@@ -5819,6 +6046,15 @@ type Workspace implements Node {
     When true, only return generate-as-checks; exclude annotated check functions
     """
     onlyGenerate: Boolean
+
+    """
+    Narrow checks by artifact dimension coordinates.
+
+    Collection items expand only for matching keys, and batch operations run
+    over the narrowed subset. Checks that do not carry every filtered dimension
+    are excluded.
+    """
+    dimensions: [ArtifactFilter!]
   ): CheckGroup!
 
   """The client ID that owns this workspace's host filesystem."""

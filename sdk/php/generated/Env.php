@@ -118,6 +118,75 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Create or update a binding of type ArtifactDimension in the environment
+     */
+    public function withArtifactDimensionInput(string $name, ArtifactDimension $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifactDimensionInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired ArtifactDimension output to be assigned in the environment
+     */
+    public function withArtifactDimensionOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifactDimensionOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create or update a binding of type Artifact in the environment
+     */
+    public function withArtifactInput(string $name, Artifact $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifactInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired Artifact output to be assigned in the environment
+     */
+    public function withArtifactOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifactOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create or update a binding of type Artifacts in the environment
+     */
+    public function withArtifactsInput(string $name, Artifacts $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifactsInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired Artifacts output to be assigned in the environment
+     */
+    public function withArtifactsOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArtifactsOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type CacheVolume in the environment
      */
     public function withCacheVolumeInput(string $name, CacheVolume $value, string $description): Env
@@ -227,6 +296,29 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     public function withCloudOutput(string $name, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCloudOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create or update a binding of type CollectionTypeDef in the environment
+     */
+    public function withCollectionTypeDefInput(string $name, CollectionTypeDef $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollectionTypeDefInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired CollectionTypeDef output to be assigned in the environment
+     */
+    public function withCollectionTypeDefOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCollectionTypeDefOutput');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('description', $description);
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

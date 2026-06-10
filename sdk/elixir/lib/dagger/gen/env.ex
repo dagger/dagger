@@ -196,6 +196,112 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type ArtifactDimension in the environment
+  """
+  @spec with_artifact_dimension_input(t(), String.t(), Dagger.ArtifactDimension.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_artifact_dimension_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withArtifactDimensionInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired ArtifactDimension output to be assigned in the environment
+  """
+  @spec with_artifact_dimension_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_artifact_dimension_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withArtifactDimensionOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type Artifact in the environment
+  """
+  @spec with_artifact_input(t(), String.t(), Dagger.Artifact.t(), String.t()) :: Dagger.Env.t()
+  def with_artifact_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withArtifactInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Artifact output to be assigned in the environment
+  """
+  @spec with_artifact_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_artifact_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withArtifactOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type Artifacts in the environment
+  """
+  @spec with_artifacts_input(t(), String.t(), Dagger.Artifacts.t(), String.t()) :: Dagger.Env.t()
+  def with_artifacts_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withArtifactsInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Artifacts output to be assigned in the environment
+  """
+  @spec with_artifacts_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_artifacts_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withArtifactsOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type CacheVolume in the environment
   """
   @spec with_cache_volume_input(t(), String.t(), Dagger.CacheVolume.t(), String.t()) ::
@@ -363,6 +469,42 @@ defmodule Dagger.Env do
     query_builder =
       env.query_builder
       |> QB.select("withCloudOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type CollectionTypeDef in the environment
+  """
+  @spec with_collection_type_def_input(t(), String.t(), Dagger.CollectionTypeDef.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_collection_type_def_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCollectionTypeDefInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired CollectionTypeDef output to be assigned in the environment
+  """
+  @spec with_collection_type_def_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_collection_type_def_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCollectionTypeDefOutput")
       |> QB.put_arg("name", name)
       |> QB.put_arg("description", description)
 

@@ -509,6 +509,49 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a ArtifactDimension from its ID.
+  """
+  @spec load_artifact_dimension_from_id(t(), Dagger.ArtifactDimensionID.t()) ::
+          Dagger.ArtifactDimension.t()
+  def load_artifact_dimension_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadArtifactDimensionFromID") |> QB.put_arg("id", id)
+
+    %Dagger.ArtifactDimension{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a Artifact from its ID.
+  """
+  @spec load_artifact_from_id(t(), Dagger.ArtifactID.t()) :: Dagger.Artifact.t()
+  def load_artifact_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadArtifactFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Artifact{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a Artifacts from its ID.
+  """
+  @spec load_artifacts_from_id(t(), Dagger.ArtifactsID.t()) :: Dagger.Artifacts.t()
+  def load_artifacts_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadArtifactsFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Artifacts{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a Binding from its ID.
   """
   @spec load_binding_from_id(t(), Dagger.BindingID.t()) :: Dagger.Binding.t()
@@ -602,6 +645,21 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadCloudFromID") |> QB.put_arg("id", id)
 
     %Dagger.Cloud{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a CollectionTypeDef from its ID.
+  """
+  @spec load_collection_type_def_from_id(t(), Dagger.CollectionTypeDefID.t()) ::
+          Dagger.CollectionTypeDef.t()
+  def load_collection_type_def_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadCollectionTypeDefFromID") |> QB.put_arg("id", id)
+
+    %Dagger.CollectionTypeDef{
       query_builder: query_builder,
       client: client.client
     }

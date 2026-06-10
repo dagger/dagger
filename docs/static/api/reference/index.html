@@ -67,6 +67,10 @@
             <h4 class="nav-group-title">Types</h4>
             <ul class="nav-group-items">
               <li><a href="#definition-Address">Address</a></li>
+              <li><a href="#definition-Artifact">Artifact</a></li>
+              <li><a href="#definition-ArtifactDimension">ArtifactDimension</a></li>
+              <li><a href="#definition-ArtifactFilter">ArtifactFilter</a></li>
+              <li><a href="#definition-Artifacts">Artifacts</a></li>
               <li><a href="#definition-Binding">Binding</a></li>
               <li><a href="#definition-Boolean">Boolean</a></li>
               <li><a href="#definition-BuildArg">BuildArg</a></li>
@@ -79,6 +83,7 @@
               <li><a href="#definition-CheckGroup">CheckGroup</a></li>
               <li><a href="#definition-ClientFilesyncMirror">ClientFilesyncMirror</a></li>
               <li><a href="#definition-Cloud">Cloud</a></li>
+              <li><a href="#definition-CollectionTypeDef">CollectionTypeDef</a></li>
               <li><a href="#definition-Container">Container</a></li>
               <li><a href="#definition-CurrentModule">CurrentModule</a></li>
               <li><a href="#definition-DiffStat">DiffStat</a></li>
@@ -2005,6 +2010,227 @@
               </div>
             </div>
           </section>
+          <section id="definition-Artifact" class="definition definition-object" data-traverse-target="definition-Artifact">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Artifact</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>One artifact in a workspace artifact scope.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Artifact-coordinate" href="#Artifact-coordinate"><code>coordinate</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> Convenience lookup for one coordinate by dimension name. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Dimension name.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Artifact-coordinates" href="#Artifact-coordinates"><code>coordinates</code></a> - <span class="property-type"><a href="#definition-String"><code>[String]!</code></a></span> </td>
+                        <td> Ordered coordinate row for this artifact. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Artifact-id" href="#Artifact-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this Artifact. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Artifact-scope" href="#Artifact-scope"><code>scope</code></a> - <span class="property-type"><a href="#definition-Artifacts"><code>Artifacts!</code></a></span> </td>
+                        <td> The Artifacts scope that produced this row. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ArtifactDimension" class="definition definition-object" data-traverse-target="definition-ArtifactDimension">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ArtifactDimension</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A filterable axis of the artifact graph.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ArtifactDimension-id" href="#ArtifactDimension-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this ArtifactDimension. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ArtifactDimension-keyType" href="#ArtifactDimension-keyType"><code>keyType</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Type of this dimension's keys. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ArtifactDimension-name" href="#ArtifactDimension-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Filter name as used in CLI flags and table headers. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ArtifactFilter" class="definition definition-input-object" data-traverse-target="definition-ArtifactFilter">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ArtifactFilter</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A coordinate filter on one artifact dimension.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Input Field</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>dimension</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> Dimension to filter. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>values</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span>
+                        </td>
+                        <td> Allowed coordinate values. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">"dimension"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"values"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"abc123"</span><span class="hljs-punctuation">]</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Artifacts" class="definition definition-object" data-traverse-target="definition-Artifacts">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Artifacts</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A scoped, filterable view over workspace artifacts.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Artifacts-dimensions" href="#Artifacts-dimensions"><code>dimensions</code></a> - <span class="property-type"><a href="#definition-ArtifactDimension"><code>[ArtifactDimension!]!</code></a></span> </td>
+                        <td> Ordered filterable dimensions for the current scope. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Artifacts-filterCoordinates" href="#Artifacts-filterCoordinates"><code>filterCoordinates</code></a> - <span class="property-type"><a href="#definition-Artifacts"><code>Artifacts!</code></a></span> </td>
+                        <td> Keep rows whose coordinate for the given dimension matches one of the provided values. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>dimension</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Dimension to filter.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>values</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>Allowed coordinate values.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Artifacts-filterDimension" href="#Artifacts-filterDimension"><code>filterDimension</code></a> - <span class="property-type"><a href="#definition-Artifacts"><code>Artifacts!</code></a></span> </td>
+                        <td> Keep rows whose coordinate row has a non-null cell for the given dimension. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>dimension</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Dimension to require.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Artifacts-id" href="#Artifacts-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this Artifacts. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Artifacts-items" href="#Artifacts-items"><code>items</code></a> - <span class="property-type"><a href="#definition-Artifact"><code>[Artifact!]!</code></a></span> </td>
+                        <td> Artifacts matching the current filters. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Binding" class="definition definition-object" data-traverse-target="definition-Binding">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -2027,6 +2253,18 @@
                         <td> Retrieve the binding value, as type Address </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asArtifact" href="#Binding-asArtifact"><code>asArtifact</code></a> - <span class="property-type"><a href="#definition-Artifact"><code>Artifact!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Artifact </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asArtifactDimension" href="#Binding-asArtifactDimension"><code>asArtifactDimension</code></a> - <span class="property-type"><a href="#definition-ArtifactDimension"><code>ArtifactDimension!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type ArtifactDimension </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asArtifacts" href="#Binding-asArtifacts"><code>asArtifacts</code></a> - <span class="property-type"><a href="#definition-Artifacts"><code>Artifacts!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Artifacts </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asCacheVolume" href="#Binding-asCacheVolume"><code>asCacheVolume</code></a> - <span class="property-type"><a href="#definition-CacheVolume"><code>CacheVolume!</code></a></span> </td>
                         <td> Retrieve the binding value, as type CacheVolume </td>
                       </tr>
@@ -2045,6 +2283,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asCloud" href="#Binding-asCloud"><code>asCloud</code></a> - <span class="property-type"><a href="#definition-Cloud"><code>Cloud!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Cloud </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asCollectionTypeDef" href="#Binding-asCollectionTypeDef"><code>asCollectionTypeDef</code></a> - <span class="property-type"><a href="#definition-CollectionTypeDef"><code>CollectionTypeDef!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type CollectionTypeDef </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asContainer" href="#Binding-asContainer"><code>asContainer</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
@@ -2763,6 +3005,49 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Cloud-traceURL" href="#Cloud-traceURL"><code>traceURL</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The trace URL for the current session </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-CollectionTypeDef" class="definition definition-object" data-traverse-target="definition-CollectionTypeDef">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">CollectionTypeDef</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A definition of collection semantics layered on top of an object type.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="CollectionTypeDef-batchType" href="#CollectionTypeDef-batchType"><code>batchType</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef</code></a></span> </td>
+                        <td> Synthetic batch namespace type for collection-level operations, if any. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="CollectionTypeDef-id" href="#CollectionTypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this CollectionTypeDef. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="CollectionTypeDef-keyType" href="#CollectionTypeDef-keyType"><code>keyType</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef</code></a></span> </td>
+                        <td> Type accepted by get(key) and subset(keys: ...). </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="CollectionTypeDef-valueType" href="#CollectionTypeDef-valueType"><code>valueType</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef</code></a></span> </td>
+                        <td> Type returned by get() and enumerated by list. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -5957,6 +6242,144 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withArtifactDimensionInput" href="#Env-withArtifactDimensionInput"><code>withArtifactDimensionInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type ArtifactDimension in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The ArtifactDimension value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withArtifactDimensionOutput" href="#Env-withArtifactDimensionOutput"><code>withArtifactDimensionOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired ArtifactDimension output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withArtifactInput" href="#Env-withArtifactInput"><code>withArtifactInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Artifact in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The Artifact value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withArtifactOutput" href="#Env-withArtifactOutput"><code>withArtifactOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Artifact output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withArtifactsInput" href="#Env-withArtifactsInput"><code>withArtifactsInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Artifacts in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The Artifacts value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withArtifactsOutput" href="#Env-withArtifactsOutput"><code>withArtifactsOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Artifacts output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withCacheVolumeInput" href="#Env-withCacheVolumeInput"><code>withCacheVolumeInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type CacheVolume in the environment </td>
                       </tr>
@@ -6168,6 +6591,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withCloudOutput" href="#Env-withCloudOutput"><code>withCloudOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired Cloud output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCollectionTypeDefInput" href="#Env-withCollectionTypeDefInput"><code>withCollectionTypeDefInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type CollectionTypeDef in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The CollectionTypeDef value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCollectionTypeDefOutput" href="#Env-withCollectionTypeDefOutput"><code>withCollectionTypeDefOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired CollectionTypeDef output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -11440,6 +11909,21 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><a href="#definition-Artifact"><code>Artifact</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ArtifactDimension"><code>ArtifactDimension</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Artifacts"><code>Artifacts</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><a href="#definition-Binding"><code>Binding</code></a></p>
                         </td>
                       </tr>
@@ -11471,6 +11955,11 @@
                       <tr>
                         <td>
                           <p><a href="#definition-Cloud"><code>Cloud</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-CollectionTypeDef"><code>CollectionTypeDef</code></a></p>
                         </td>
                       </tr>
                       <tr>
@@ -12755,6 +13244,10 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-asCollection" href="#TypeDef-asCollection"><code>asCollection</code></a> - <span class="property-type"><a href="#definition-CollectionTypeDef"><code>CollectionTypeDef</code></a></span> </td>
+                        <td> If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="TypeDef-asEnum" href="#TypeDef-asEnum"><code>asEnum</code></a> - <span class="property-type"><a href="#definition-EnumTypeDef"><code>EnumTypeDef</code></a></span> </td>
                         <td> If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null. </td>
                       </tr>
@@ -12793,6 +13286,44 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="TypeDef-optional" href="#TypeDef-optional"><code>optional</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
                         <td> Whether this type can be set to null. Defaults to false. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withCollection" href="#TypeDef-withCollection"><code>withCollection</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Marks this Object TypeDef as a collection. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withCollectionGet" href="#TypeDef-withCollectionGet"><code>withCollectionGet</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Overrides the effective get function used by a collection TypeDef. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The function that resolves one collection item by key.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withCollectionKeys" href="#TypeDef-withCollectionKeys"><code>withCollectionKeys</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Overrides the effective keys field used by a collection TypeDef. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The field that enumerates collection keys.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="TypeDef-withConstructor" href="#TypeDef-withConstructor"><code>withConstructor</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
@@ -13392,6 +13923,24 @@
                         <td> Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-artifacts" href="#Workspace-artifacts"><code>artifacts</code></a> - <span class="property-type"><a href="#definition-Artifacts"><code>Artifacts!</code></a></span> </td>
+                        <td> A filterable view of all artifacts in this workspace. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>enumerate</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Resolve collection items by running module code.</p>
+                                <p>When false, only dimensions and top-level artifacts are returned, without executing any module functions.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-checks" href="#Workspace-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
                         <td> Return all checks from modules loaded in the workspace. </td>
                       </tr>
@@ -13411,6 +13960,11 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>onlyGenerate</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>When true, only return generate-as-checks; exclude annotated check functions</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>dimensions</code></span> - <span class="property-type"><a href="#definition-ArtifactFilter"><code>[ArtifactFilter!]</code></a></span></h6>
+                                <p>Narrow checks by artifact dimension coordinates.</p>
+                                <p>Collection items expand only for matching keys, and batch operations run over the narrowed subset. Checks that do not carry every filtered dimension are excluded.</p>
                               </div>
                             </div>
                           </div>

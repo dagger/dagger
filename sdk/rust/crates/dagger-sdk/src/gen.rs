@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub type AddressId = Id;
+pub type ArtifactDimensionId = Id;
+pub type ArtifactId = Id;
+pub type ArtifactsId = Id;
 pub type BindingId = Id;
 pub type CacheVolumeId = Id;
 pub type ChangesetId = Id;
@@ -18,6 +21,7 @@ pub type CheckGroupId = Id;
 pub type CheckId = Id;
 pub type ClientFilesyncMirrorId = Id;
 pub type CloudId = Id;
+pub type CollectionTypeDefId = Id;
 pub type ContainerId = Id;
 pub type CurrentModuleId = Id;
 pub type DiffStatId = Id;
@@ -156,6 +160,11 @@ pub type WorkspaceMigrationId = Id;
 pub type WorkspaceMigrationStepId = Id;
 pub type WorkspaceModuleId = Id;
 pub type WorkspaceModuleSettingId = Id;
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct ArtifactFilter {
+    pub dimension: String,
+    pub values: Vec<String>,
+}
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
     pub name: String,
@@ -541,6 +550,247 @@ impl Node for Address {
     }
 }
 #[derive(Clone)]
+pub struct Artifact {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Artifact {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Artifact {
+    fn graphql_type() -> &'static str {
+        "Artifact"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Artifact {
+    /// Convenience lookup for one coordinate by dimension name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Dimension name.
+    pub async fn coordinate(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("coordinate");
+        query = query.arg("name", name.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Ordered coordinate row for this artifact.
+    pub async fn coordinates(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("coordinates");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Artifact.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The Artifacts scope that produced this row.
+    pub fn scope(&self) -> Artifacts {
+        let query = self.selection.select("scope");
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for Artifact {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct ArtifactDimension {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for ArtifactDimension {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ArtifactDimension {
+    fn graphql_type() -> &'static str {
+        "ArtifactDimension"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ArtifactDimension {
+    /// A unique identifier for this ArtifactDimension.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Type of this dimension's keys.
+    pub fn key_type(&self) -> TypeDef {
+        let query = self.selection.select("keyType");
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Filter name as used in CLI flags and table headers.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ArtifactDimension {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct Artifacts {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Artifacts {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Artifacts {
+    fn graphql_type() -> &'static str {
+        "Artifacts"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Artifacts {
+    /// Ordered filterable dimensions for the current scope.
+    pub async fn dimensions(&self) -> Result<Vec<ArtifactDimension>, DaggerError> {
+        let query = self.selection.select("dimensions");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| ArtifactDimension {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ArtifactDimension"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Keep rows whose coordinate for the given dimension matches one of the provided values.
+    ///
+    /// # Arguments
+    ///
+    /// * `dimension` - Dimension to filter.
+    /// * `values` - Allowed coordinate values.
+    pub fn filter_coordinates(
+        &self,
+        dimension: impl Into<String>,
+        values: Vec<impl Into<String>>,
+    ) -> Artifacts {
+        let mut query = self.selection.select("filterCoordinates");
+        query = query.arg("dimension", dimension.into());
+        query = query.arg(
+            "values",
+            values
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Keep rows whose coordinate row has a non-null cell for the given dimension.
+    ///
+    /// # Arguments
+    ///
+    /// * `dimension` - Dimension to require.
+    pub fn filter_dimension(&self, dimension: impl Into<String>) -> Artifacts {
+        let mut query = self.selection.select("filterDimension");
+        query = query.arg("dimension", dimension.into());
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this Artifacts.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Artifacts matching the current filters.
+    pub async fn items(&self) -> Result<Vec<Artifact>, DaggerError> {
+        let query = self.selection.select("items");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Artifact {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Artifact"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+}
+impl Node for Artifacts {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct Binding {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -574,6 +824,33 @@ impl Binding {
     pub fn as_address(&self) -> Address {
         let query = self.selection.select("asAddress");
         Address {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Artifact
+    pub fn as_artifact(&self) -> Artifact {
+        let query = self.selection.select("asArtifact");
+        Artifact {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type ArtifactDimension
+    pub fn as_artifact_dimension(&self) -> ArtifactDimension {
+        let query = self.selection.select("asArtifactDimension");
+        ArtifactDimension {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Artifacts
+    pub fn as_artifacts(&self) -> Artifacts {
+        let query = self.selection.select("asArtifacts");
+        Artifacts {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -619,6 +896,15 @@ impl Binding {
     pub fn as_cloud(&self) -> Cloud {
         let query = self.selection.select("asCloud");
         Cloud {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type CollectionTypeDef
+    pub fn as_collection_type_def(&self) -> CollectionTypeDef {
+        let query = self.selection.select("asCollectionTypeDef");
+        CollectionTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -1532,6 +1818,76 @@ impl Cloud {
     }
 }
 impl Node for Cloud {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct CollectionTypeDef {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for CollectionTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for CollectionTypeDef {
+    fn graphql_type() -> &'static str {
+        "CollectionTypeDef"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl CollectionTypeDef {
+    /// Synthetic batch namespace type for collection-level operations, if any.
+    pub fn batch_type(&self) -> TypeDef {
+        let query = self.selection.select("batchType");
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this CollectionTypeDef.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Type accepted by get(key) and subset(keys: ...).
+    pub fn key_type(&self) -> TypeDef {
+        let query = self.selection.select("keyType");
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Type returned by get() and enumerated by list.
+    pub fn value_type(&self) -> TypeDef {
+        let query = self.selection.select("valueType");
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for CollectionTypeDef {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -6595,6 +6951,153 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type ArtifactDimension in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ArtifactDimension value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_artifact_dimension_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withArtifactDimensionInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired ArtifactDimension output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_artifact_dimension_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withArtifactDimensionOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Artifact in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Artifact value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_artifact_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withArtifactInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Artifact output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_artifact_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withArtifactOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Artifacts in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Artifacts value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_artifacts_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withArtifactsInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Artifacts output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_artifacts_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withArtifactsOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type CacheVolume in the environment
     ///
     /// # Arguments
@@ -6832,6 +7335,55 @@ impl Env {
         description: impl Into<String>,
     ) -> Env {
         let mut query = self.selection.select("withCloudOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type CollectionTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The CollectionTypeDef value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_collection_type_def_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCollectionTypeDefInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired CollectionTypeDef output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_collection_type_def_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCollectionTypeDefOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
@@ -13794,6 +14346,57 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a ArtifactDimension from its ID.
+    pub fn load_artifact_dimension_from_id(
+        &self,
+        id: impl IntoID<ArtifactDimensionId>,
+    ) -> ArtifactDimension {
+        let mut query = self.selection.select("loadArtifactDimensionFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        ArtifactDimension {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Artifact from its ID.
+    pub fn load_artifact_from_id(&self, id: impl IntoID<ArtifactId>) -> Artifact {
+        let mut query = self.selection.select("loadArtifactFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Artifact {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Artifacts from its ID.
+    pub fn load_artifacts_from_id(&self, id: impl IntoID<ArtifactsId>) -> Artifacts {
+        let mut query = self.selection.select("loadArtifactsFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Binding from its ID.
     pub fn load_binding_from_id(&self, id: impl IntoID<BindingId>) -> Binding {
         let mut query = self.selection.select("loadBindingFromID");
@@ -13904,6 +14507,25 @@ impl Query {
             }),
         );
         Cloud {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a CollectionTypeDef from its ID.
+    pub fn load_collection_type_def_from_id(
+        &self,
+        id: impl IntoID<CollectionTypeDefId>,
+    ) -> CollectionTypeDef {
+        let mut query = self.selection.select("loadCollectionTypeDefFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        CollectionTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -16084,6 +16706,15 @@ impl Loadable for TypeDef {
     }
 }
 impl TypeDef {
+    /// If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.
+    pub fn as_collection(&self) -> CollectionTypeDef {
+        let query = self.selection.select("asCollection");
+        CollectionTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
     pub fn as_enum(&self) -> EnumTypeDef {
         let query = self.selection.select("asEnum");
@@ -16157,6 +16788,43 @@ impl TypeDef {
     pub async fn optional(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("optional");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Marks this Object TypeDef as a collection.
+    pub fn with_collection(&self) -> TypeDef {
+        let query = self.selection.select("withCollection");
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Overrides the effective get function used by a collection TypeDef.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The function that resolves one collection item by key.
+    pub fn with_collection_get(&self, name: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withCollectionGet");
+        query = query.arg("name", name.into());
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Overrides the effective keys field used by a collection TypeDef.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The field that enumerates collection keys.
+    pub fn with_collection_keys(&self, name: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withCollectionKeys");
+        query = query.arg("name", name.into());
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
     pub fn with_constructor(&self, function: impl IntoID<Id>) -> TypeDef {
@@ -16693,7 +17361,18 @@ pub struct Workspace {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceArtifactsOpts {
+    /// Resolve collection items by running module code.
+    /// When false, only dimensions and top-level artifacts are returned, without executing any module functions.
+    #[builder(setter(into, strip_option), default)]
+    pub enumerate: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceChecksOpts<'a> {
+    /// Narrow checks by artifact dimension coordinates.
+    /// Collection items expand only for matching keys, and batch operations run over the narrowed subset. Checks that do not carry every filtered dimension are excluded.
+    #[builder(setter(into, strip_option), default)]
+    pub dimensions: Option<Vec<ArtifactFilter>>,
     /// Only include checks matching the specified patterns
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
@@ -16837,6 +17516,35 @@ impl Workspace {
         let query = self.selection.select("address");
         query.execute(self.graphql_client.clone()).await
     }
+    /// A filterable view of all artifacts in this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn artifacts(&self) -> Artifacts {
+        let query = self.selection.select("artifacts");
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A filterable view of all artifacts in this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn artifacts_opts(&self, opts: WorkspaceArtifactsOpts) -> Artifacts {
+        let mut query = self.selection.select("artifacts");
+        if let Some(enumerate) = opts.enumerate {
+            query = query.arg("enumerate", enumerate);
+        }
+        Artifacts {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return all checks from modules loaded in the workspace.
     ///
     /// # Arguments
@@ -16865,6 +17573,9 @@ impl Workspace {
         }
         if let Some(only_generate) = opts.only_generate {
             query = query.arg("onlyGenerate", only_generate);
+        }
+        if let Some(dimensions) = opts.dimensions {
+            query = query.arg("dimensions", dimensions);
         }
         CheckGroup {
             proc: self.proc.clone(),
