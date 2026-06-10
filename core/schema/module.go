@@ -238,6 +238,11 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
 					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
 				),
+				dagql.Arg("include").Doc(
+					`Narrow workspace module loading to the named modules (and their dependencies) before computing typedefs.`,
+					`Each pattern is a workspace module name or "module:item"; a pattern that does not name a workspace module is ignored and every module is loaded.`,
+					`Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.`,
+				),
 			).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
@@ -2077,6 +2082,10 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResu
 type currentTypeDefsArgs struct {
 	ReturnAllTypes bool `default:"false"`
 	HideCore       dagql.Optional[dagql.Boolean]
+	// Include is a workspace module-loading hint consumed by the engine before
+	// this resolver runs (it narrows which modules are served); the typedef
+	// computation itself reflects whatever ended up served, so it is ignored here.
+	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args currentTypeDefsArgs) (dagql.ObjectResultArray[*core.TypeDef], error) {
