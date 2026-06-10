@@ -38,20 +38,21 @@ git checkout -b add-dagger-checks
 
 ## Find modules to install
 
+Search the module registry for the tools you use:
+
 ```shell
-dagger mod recommend
+dagger search eslint
+dagger search vitest
 ```
 
-Dagger scans the project and recommends modules that match the tools it finds.
+## Install modules
 
-## Install recommended modules
-
-Install the modules you want from the recommendations:
+Install the modules you want:
 
 ```shell
-dagger mod install github.com/dagger/eslint
-dagger mod install github.com/dagger/vitest
-dagger mod install github.com/dagger/prettier
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
 ```
 
 This creates a `dagger.toml` configuration file and adds three modules: a linter, a test runner, and a code formatter.
