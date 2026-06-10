@@ -29,6 +29,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -1510,6 +1511,10 @@ type sharedResult struct {
 	lazyEvalCancel   context.CancelCauseFunc
 	lazyEvalWaiters  int
 	lazyEvalErr      error
+	// lazyEvalProfOpID is the wcprof op for the in-flight lazy evaluation
+	// (guarded by lazyMu alongside lazyEvalWaitCh). Waiters record wait
+	// events against it.
+	lazyEvalProfOpID uint64
 }
 
 type sharedResultPayloadState struct {
@@ -1760,6 +1765,10 @@ type ongoingCall struct {
 	sharedWorkCtx              context.Context
 	releaseSharedWorkLeaseFn   func(context.Context) error
 	releaseSharedWorkLeaseOnce sync.Once
+
+	// profOpID is the wcprof op for the shared execution of this call, when
+	// profiling is enabled. Waiters record wait events against it.
+	profOpID uint64
 
 	res *sharedResult
 }
@@ -2925,9 +2934,13 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	}
 	if shared.lazyEvalWaitCh != nil {
 		waitCh := shared.lazyEvalWaitCh
+		lazyOpID := shared.lazyEvalProfOpID
 		shared.lazyEvalWaiters++
 		shared.lazyMu.Unlock()
-		return c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+		profWait := wcprof.BeginWait(stackCtx, lazyOpID, wcprof.WaitReasonLazy)
+		waitErr := c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+		profWait.End()
+		return waitErr
 	}
 
 	waitCh := make(chan struct{})
@@ -2936,6 +2949,15 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	resultCall := shared.loadResultCall()
 	if resultCall != nil {
 		evalCtx = ContextWithCall(evalCtx, resultCall)
+	}
+	var lazyOp *wcprof.Op
+	if wcprof.Active() != nil {
+		// the run of this result's lazy evaluation callback; the class ties
+		// the cost back to the call that created the lazy value
+		evalCtx, lazyOp = wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, profCallClass(resultCall), wcprof.OpOpts{
+			ClientID: profClientID(stackCtx),
+		})
+		shared.lazyEvalProfOpID = lazyOp.ID()
 	}
 	shared.lazyEvalWaitCh = waitCh
 	shared.lazyEvalCancel = cancel
@@ -3011,6 +3033,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 		}
 		runEval()
+		lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 		shared.lazyMu.Lock()
 		shared.lazyEvalErr = err
@@ -3029,7 +3052,10 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		close(waitCh)
 	}()
 
-	return c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+	profWait := wcprof.BeginWait(stackCtx, lazyOp.ID(), wcprof.WaitReasonLazy)
+	waitErr := c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+	profWait.End()
+	return waitErr
 }
 
 func (c *Cache) Close(ctx context.Context) error {
@@ -3476,13 +3502,43 @@ func (c *Cache) GetOrInitCall(
 	return c.getOrInitCall(ctx, sessionID, resolver, req, fn)
 }
 
-//nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
 func (c *Cache) getOrInitCall(
 	ctx context.Context,
 	sessionID string,
 	resolver TypeResolver,
 	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
+) (AnyResult, error) {
+	if wcprof.Active() == nil || req == nil || req.ResultCall == nil {
+		return c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, nil)
+	}
+	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
+		ClientID: profClientID(ctx),
+	})
+	res, err := c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, profOp)
+	outcome := profOp.OutcomeHint()
+	switch {
+	case err != nil:
+		outcome = profErrOutcome(err)
+	case req.DoNotCache:
+		outcome = wcprof.OutcomeDoNotCache
+	case res != nil && res.HitCache():
+		outcome = wcprof.OutcomeHit
+	case outcome == wcprof.OutcomeNone:
+		outcome = wcprof.OutcomeOK
+	}
+	profOp.EndWithResult(outcome, profResultID(res))
+	return res, err
+}
+
+//nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
+func (c *Cache) getOrInitCallInner(
+	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
+	req *CallRequest,
+	fn func(context.Context) (AnyResult, error),
+	profOp *wcprof.Op,
 ) (AnyResult, error) {
 	if sessionID == "" {
 		return nil, errors.New("get or init call: empty session ID")
@@ -3564,6 +3620,7 @@ func (c *Cache) getOrInitCall(
 		requestInputs = append(requestInputs, dig)
 	}
 	callKey := callDigest.String()
+	profOp.SetIdent(callKey)
 	if ctx.Value(cacheContextKey{callKey}) != nil {
 		return nil, ErrCacheRecursiveCall
 	}
@@ -3595,7 +3652,8 @@ func (c *Cache) getOrInitCall(
 			// already an ongoing call
 			oc.waiters++
 			c.callsMu.Unlock()
-			return c.wait(ctx, sessionID, resolver, oc, req)
+			profOp.SetOutcomeHint(wcprof.OutcomeJoined)
+			return c.wait(ctx, sessionID, resolver, oc, req, true)
 		}
 	}
 
@@ -3608,9 +3666,19 @@ func (c *Cache) getOrInitCall(
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
 	callCtx := context.WithValue(ctx, cacheContextKey{callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	var execOp *wcprof.Op
+	if wcprof.Active() != nil {
+		// the shared execution of this call's resolver; all singleflighted
+		// callers wait on this op
+		callCtx, execOp = wcprof.BeginOp(callCtx, wcprof.OpKindCallExec, profCallClass(req.ResultCall), wcprof.OpOpts{
+			Ident:    callKey,
+			ClientID: profClientID(ctx),
+		})
+	}
 	sharedWorkCtx, releaseSharedWorkLease, err := withOperationLease(withoutOperationLease(callCtx))
 	if err != nil {
 		c.callsMu.Unlock()
+		execOp.End(wcprof.OutcomeError)
 		return nil, fmt.Errorf("acquire shared operation lease: %w", err)
 	}
 	oc := &ongoingCall{
@@ -3622,6 +3690,7 @@ func (c *Cache) getOrInitCall(
 		waiters:                  1,
 		sharedWorkCtx:            sharedWorkCtx,
 		releaseSharedWorkLeaseFn: releaseSharedWorkLease,
+		profOpID:                 execOp.ID(),
 	}
 
 	if req.ConcurrencyKey != "" {
@@ -3633,6 +3702,7 @@ func (c *Cache) getOrInitCall(
 		val, err := fn(oc.sharedWorkCtx)
 		oc.err = err
 		oc.val = val
+		execOp.EndWithResult(profErrOutcome(err), profResultID(val))
 
 		c.callsMu.Lock()
 		noWaiters := oc.waiters == 0
@@ -3643,7 +3713,8 @@ func (c *Cache) getOrInitCall(
 	}()
 
 	c.callsMu.Unlock()
-	return c.wait(ctx, sessionID, resolver, oc, req)
+	profOp.SetOutcomeHint(wcprof.OutcomeExecuted)
+	return c.wait(ctx, sessionID, resolver, oc, req, false)
 }
 
 func (c *Cache) lookupCallRequest(
@@ -3785,6 +3856,7 @@ func (c *Cache) wait(
 	resolver TypeResolver,
 	oc *ongoingCall,
 	req *CallRequest,
+	joined bool,
 ) (AnyResult, error) {
 	var (
 		completionErr error
@@ -3792,12 +3864,21 @@ func (c *Cache) wait(
 		completed     bool
 	)
 
+	var profWait *wcprof.Wait
+	if wcprof.Active() != nil {
+		reason := wcprof.WaitReasonCallExec
+		if joined {
+			reason = wcprof.WaitReasonSingleflight
+		}
+		profWait = wcprof.BeginWait(ctx, oc.profOpID, reason)
+	}
 	select {
 	case <-oc.waitCh:
 		completed = true
 	case <-ctx.Done():
 		canceledErr = context.Cause(ctx)
 	}
+	profWait.End()
 
 	if completed {
 		completionErr = oc.err
@@ -3842,7 +3923,23 @@ func (c *Cache) wait(
 		defer func() {
 			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
 		}()
+		var pubOp *wcprof.Op
+		if wcprof.Active() != nil {
+			// result publication (indexing, dependency attachment) parented
+			// under the shared execution op
+			_, pubOp = wcprof.BeginOp(
+				wcprof.ContextWithOpID(context.Background(), oc.profOpID),
+				wcprof.OpKindInternal, "dagql.publishResult", wcprof.OpOpts{},
+			)
+		}
 		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
+		if pubOp != nil {
+			var resID uint64
+			if oc.res != nil {
+				resID = uint64(oc.res.id)
+			}
+			pubOp.EndWithResult(profErrOutcome(oc.initCompletedResultErr), resID)
+		}
 		c.callsMu.Lock()
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 		c.callsMu.Unlock()

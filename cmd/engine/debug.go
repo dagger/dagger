@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/server"
+	"github.com/dagger/dagger/engine/wcprof"
 )
 
 func setupDebugHandlers(addr string, eng *server.Server) error {
@@ -78,6 +79,19 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 		rw.Header().Set("Content-Type", "application/json")
 		if err := eng.WriteDagqlCacheDebugSnapshot(rw); err != nil {
 			logrus.WithError(err).Warn("failed streaming dagql cache debug snapshot")
+		}
+	}))
+	m.Handle("/debug/wcprof/dump", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rec := wcprof.Active()
+		if rec == nil {
+			http.Error(rw, "wcprof not enabled (connect a client with --profile or set _DAGGER_WCPROF=1)", http.StatusServiceUnavailable)
+			return
+		}
+		// flush by default; pass ?flush=0 to keep events buffered
+		flush := req.URL.Query().Get("flush") != "0"
+		rw.Header().Set("Content-Type", "application/x-ndjson")
+		if err := rec.WriteDump(rw, flush); err != nil {
+			logrus.WithError(err).Warn("failed streaming wcprof dump")
 		}
 	}))
 

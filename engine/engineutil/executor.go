@@ -24,6 +24,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	gatewayapi "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
@@ -111,30 +112,56 @@ func (c *Client) Run(
 		nestedClientFunctionCall,
 		nestedClientEnv,
 	)
-	return c.run(ctx, state,
-		c.setupNetwork,
-		c.injectInit,
-		c.generateBaseSpec,
-		c.filterEnvs,
-		c.setupRootfs,
-		c.setUserGroup,
-		c.setExitCodePath,
-		c.setupStdio,
-		c.setupOTel,
-		c.setupSecretScrubbing,
-		c.setProxyEnvs,
-		c.enableGPU,
-		c.createCWD,
-		c.setupNestedClient,
-		c.installCACerts,
-		c.runContainer,
+
+	var execOp *wcprof.Op
+	if wcprof.Active() != nil {
+		ident := state.id
+		if execMD != nil && execMD.CallDigest != "" {
+			ident = execMD.CallDigest.String()
+		}
+		ctx, execOp = wcprof.BeginOp(ctx, wcprof.OpKindExec, "exec.run", wcprof.OpOpts{
+			Ident:    ident,
+			ClientID: callerClientID,
+		})
+		if nestedClientMetadata != nil && nestedClientMetadata.ClientID != "" {
+			// nested client calls back into the API under this client ID; the
+			// analyzer stitches its ops under this exec via this link
+			wcprof.Link(ctx, wcprof.LinkKindNestedClient, 0, 0, nestedClientMetadata.ClientID, 0)
+		}
+	}
+	err := c.run(ctx, state,
+		namedSetupFunc{"setupNetwork", c.setupNetwork},
+		namedSetupFunc{"injectInit", c.injectInit},
+		namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
+		namedSetupFunc{"filterEnvs", c.filterEnvs},
+		namedSetupFunc{"setupRootfs", c.setupRootfs},
+		namedSetupFunc{"setUserGroup", c.setUserGroup},
+		namedSetupFunc{"setExitCodePath", c.setExitCodePath},
+		namedSetupFunc{"setupStdio", c.setupStdio},
+		namedSetupFunc{"setupOTel", c.setupOTel},
+		namedSetupFunc{"setupSecretScrubbing", c.setupSecretScrubbing},
+		namedSetupFunc{"setProxyEnvs", c.setProxyEnvs},
+		namedSetupFunc{"enableGPU", c.enableGPU},
+		namedSetupFunc{"createCWD", c.createCWD},
+		namedSetupFunc{"setupNestedClient", c.setupNestedClient},
+		namedSetupFunc{"installCACerts", c.installCACerts},
+		namedSetupFunc{"runContainer", c.runContainer},
 	)
+	execOp.EndErr(err)
+	return err
+}
+
+// namedSetupFunc pairs an executor setup phase with a stable name used for
+// profiling and logging.
+type namedSetupFunc struct {
+	name string
+	fn   executorSetupFunc
 }
 
 func (c *Client) run(
 	ctx context.Context,
 	state *execState,
-	setupFuncs ...executorSetupFunc,
+	setupFuncs ...namedSetupFunc,
 ) (rerr error) {
 	c.runningMu.Lock()
 	c.running[state.id] = state
@@ -158,8 +185,18 @@ func (c *Client) run(
 		}
 	}()
 
+	profiling := wcprof.Active() != nil
 	for _, f := range setupFuncs {
-		if err := f(ctx, state); err != nil {
+		phaseCtx := ctx
+		var phaseOp *wcprof.Op
+		if profiling {
+			phaseCtx, phaseOp = wcprof.BeginOp(ctx, wcprof.OpKindExecPhase, "exec."+f.name, wcprof.OpOpts{
+				Ident: state.id,
+			})
+		}
+		err := f.fn(phaseCtx, state)
+		phaseOp.EndErr(err)
+		if err != nil {
 			bklog.G(ctx).WithError(err).Error("executor run")
 			return err
 		}

@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/network"
@@ -51,6 +52,10 @@ type startingService struct {
 
 	done chan struct{}
 	err  error
+
+	// profOpID is the wcprof op for this service start, when profiling is
+	// enabled. Waiters record wait events against it.
+	profOpID uint64
 }
 
 // RunningService represents a service that is actively running.
@@ -328,10 +333,13 @@ func (ss *Services) Get(ctx context.Context, dig digest.Digest, clientSpecific b
 		case isRunning:
 			return running, nil
 		case isStarting:
+			profWait := wcprof.BeginWait(ctx, starting.profOpID, wcprof.WaitReasonService)
 			select {
 			case <-ctx.Done():
+				profWait.End()
 				return nil, context.Cause(ctx)
 			case <-starting.done:
+				profWait.End()
 			}
 		default:
 			return nil, notRunningErr
@@ -944,11 +952,14 @@ func (ss *Services) startWithKey(
 			suppress(starting.running)
 			ss.l.Unlock()
 			starting.running.addOriginSpanContexts(opts.OriginSpanContexts)
+			profWait := wcprof.BeginWait(ctx, starting.profOpID, wcprof.WaitReasonService)
 			select {
 			case <-ctx.Done():
+				profWait.End()
 				releaseSuppression()
 				return nil, nil, context.Cause(ctx)
 			case <-starting.done:
+				profWait.End()
 			}
 		default:
 			running := &RunningService{
@@ -958,11 +969,18 @@ func (ss *Services) startWithKey(
 			running.addOriginSpanContexts(opts.OriginSpanContexts)
 			suppress(running)
 			svcCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+			var profOp *wcprof.Op
+			if wcprof.Active() != nil {
+				svcCtx, profOp = wcprof.BeginOp(svcCtx, wcprof.OpKindServiceStart, "service.start", wcprof.OpOpts{
+					Ident: key.Digest.String(),
+				})
+			}
 			start := &startingService{
-				running: running,
-				ctx:     svcCtx,
-				cancel:  cancel,
-				done:    make(chan struct{}),
+				running:  running,
+				ctx:      svcCtx,
+				cancel:   cancel,
+				done:     make(chan struct{}),
+				profOpID: profOp.ID(),
 			}
 			ss.starting[key] = start
 			ss.l.Unlock()
@@ -971,6 +989,7 @@ func (ss *Services) startWithKey(
 
 			if err := svc.Start(svcCtx, running, key.Digest, opts); err != nil {
 				start.err = err
+				profOp.End(wcprof.OutcomeError)
 				releaseSuppression()
 				_ = running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
 				ss.l.Lock()
@@ -982,6 +1001,7 @@ func (ss *Services) startWithKey(
 			if running.Wait == nil {
 				err := fmt.Errorf("service %s started without Wait callback", network.HostHash(key.Digest))
 				start.err = err
+				profOp.End(wcprof.OutcomeError)
 				releaseSuppression()
 				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
 				ss.l.Lock()
@@ -995,6 +1015,7 @@ func (ss *Services) startWithKey(
 			delete(ss.starting, key)
 			if context.Cause(svcCtx) != nil {
 				ss.l.Unlock()
+				profOp.End(wcprof.OutcomeCanceled)
 				releaseSuppression()
 				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
 				return nil, nil, context.Cause(svcCtx)
@@ -1002,6 +1023,7 @@ func (ss *Services) startWithKey(
 			ss.running[key] = running
 			ss.bindings[key] = 1
 			ss.l.Unlock()
+			profOp.End(wcprof.OutcomeOK)
 
 			go func() {
 				if running.Wait == nil {

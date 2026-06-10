@@ -75,6 +75,7 @@ var (
 	autoApply                bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
 	enableScaleOut           bool
+	profileFlag              bool
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -394,6 +395,11 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	// this flag enables scale-out for a few commands, e.g. checks
 	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	flags.Lookup("scale-out").Hidden = true
+
+	// experimental: enable engine wall-clock profiling (wcprof) for this
+	// session; recorded events are retrieved from the engine debug endpoint
+	flags.BoolVar(&profileFlag, "profile", false, "Enable experimental engine wall-clock profiling for this session")
+	flags.Lookup("profile").Hidden = true
 
 	for _, fl := range []string{
 		"dot-output",

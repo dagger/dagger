@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
@@ -49,6 +50,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/engineutil/containerfs"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/network"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -166,8 +168,32 @@ func newExecState(
 
 type executorSetupFunc func(context.Context, *execState) error
 
+// wcprofInjectNetNSDelayFile is a wcprof validation aid: when this file
+// exists in the engine container and profiling is enabled, setupNetwork
+// sleeps for the number of milliseconds it contains before doing real work.
+// Used to verify the offline analyzer detects an injected per-exec
+// bottleneck (the original motivating case was un-pooled CNI setup).
+const wcprofInjectNetNSDelayFile = "/tmp/wcprof-inject-netns-delay-ms"
+
+func wcprofInjectNetNSDelay() {
+	if wcprof.Active() == nil {
+		return
+	}
+	data, err := os.ReadFile(wcprofInjectNetNSDelayFile)
+	if err != nil {
+		return
+	}
+	ms, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || ms <= 0 {
+		return
+	}
+	time.Sleep(time.Duration(ms) * time.Millisecond)
+}
+
 //nolint:gocyclo
 func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
+	wcprofInjectNetNSDelay()
+
 	provider, ok := c.NetworkProviders[state.procInfo.Meta.NetMode]
 	if !ok {
 		return fmt.Errorf("unknown network mode %s", state.procInfo.Meta.NetMode)
@@ -1134,7 +1160,7 @@ func (c *Client) installCACerts(ctx context.Context, state *execState) error {
 		caExecState.spec.Process.Cwd = "/"
 		caExecState.spec.Process.Terminal = false
 
-		if err := c.run(ctx, caExecState, c.runContainer); err != nil {
+		if err := c.run(ctx, caExecState, namedSetupFunc{"runContainer", c.runContainer}); err != nil {
 			return fmt.Errorf("installer command failed: %w, output: %s", err, output.String())
 		}
 		return nil
@@ -1265,9 +1291,14 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		})
 	}
 
+	profStartNS := wcprof.NowNS()
+	var profStartedNS atomic.Int64
 	startedCallback := func() {
 		state.startedOnce.Do(func() {
 			trace.SpanFromContext(ctx).AddEvent("Container started")
+			if wcprof.Active() != nil {
+				profStartedNS.Store(wcprof.NowNS())
+			}
 			if state.startedCh != nil {
 				close(state.startedCh)
 			}
@@ -1388,5 +1419,21 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		return eg.Wait()
 	}
 
-	return exitError(ctx, state.exitCodePath, c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall), state.procInfo.Meta.ValidExitCodes)
+	runErr := c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall)
+	if wcprof.Active() != nil {
+		// split engine overhead (creating/starting the container) from the
+		// user's process runtime
+		endNS := wcprof.NowNS()
+		outcome := wcprof.OutcomeOK
+		if runErr != nil {
+			outcome = wcprof.OutcomeError
+		}
+		if startedNS := profStartedNS.Load(); startedNS > 0 {
+			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
+			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser}, startedNS, endNS, outcome)
+		} else {
+			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
+		}
+	}
+	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
 }

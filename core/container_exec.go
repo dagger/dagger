@@ -35,6 +35,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/network"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/trace"
@@ -590,7 +591,9 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 	}
 	sort.Strings(lockKeys)
 	for _, lockKey := range lockKeys {
+		profWait := wcprof.BeginWaitIdent(ctx, "cachelock:"+lockKey, wcprof.WaitReasonLock)
 		locker.Lock(lockKey)
+		profWait.End()
 	}
 	return func() {
 		for i := len(lockKeys) - 1; i >= 0; i-- {
@@ -1576,6 +1579,8 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			return fmt.Errorf("failed to prepare mounts: %w", err)
 		}
 
+		profPrepareStartNS := wcprof.NowNS()
+
 		rootState := &execMountState{
 			Dest:        pb.RootMount,
 			Selector:    "/",
@@ -1728,6 +1733,10 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		sort.Slice(execMounts, func(i, j int) bool {
 			return execMounts[i].Dest < execMounts[j].Dest
 		})
+
+		if wcprof.Active() != nil {
+			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "withExec.prepareMounts", wcprof.OpOpts{}, profPrepareStartNS, wcprof.NowNS(), wcprof.OutcomeOK)
+		}
 
 		defer func() {
 			_ = releaseActives()
@@ -2108,6 +2117,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			)
 		}()
 
+		// NB: no explicit wcprof wait is recorded for the exec itself: the
+		// executor's exec.run op is a child of the current op (ctx flows into
+		// the goroutine), which both subtracts it from self-time and gives
+		// the replay an exact join. Ident-based waits were tried first and
+		// can mis-resolve when call digests are shared across execs.
 		var execErr error
 		select {
 		case execErr = <-execErrCh:
@@ -2154,8 +2168,17 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if invalidateErr != nil {
 			return invalidateErr
 		}
-		if err := applyOutputs(); err != nil {
-			return err
+		profApplyStartNS := wcprof.NowNS()
+		applyErr := applyOutputs()
+		if wcprof.Active() != nil {
+			outcome := wcprof.OutcomeOK
+			if applyErr != nil {
+				outcome = wcprof.OutcomeError
+			}
+			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "withExec.applyOutputs", wcprof.OpOpts{}, profApplyStartNS, wcprof.NowNS(), outcome)
+		}
+		if applyErr != nil {
+			return applyErr
 		}
 
 		container.Lazy = nil
