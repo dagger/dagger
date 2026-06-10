@@ -41,7 +41,7 @@ Commits on this branch:
 
 - Build dev engine + CLI: `./hack/build` (also resets the `dagger-engine.dev` container + volume = full cold cache). Run against it: `./hack/with-dev ./bin/dagger ...`.
 - **Cold pulls**: `dagger core engine local-cache prune` does NOT force a re-pull — the persisted dagql cache keeps the materialized `from` result alive. Fast trick: pull a different image each attempt (nginx, redis, postgres, mariadb...). Full reset: `./hack/build`.
-- Capture raw telemetry: `go run ./hack/otlpdump -addr 127.0.0.1:43180 -out /tmp/telemetry.jsonl`, then set `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:43180` plus explicit `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`/`..._METRICS_ENDPOINT` (the generic var alone only delivers traces) and `OTEL_EXPORTER_OTLP_TRACES_LIVE=1` on the CLI. Inspect with jq (`.kind` is span/log/metric; progress records have `attrs["dagger.io/progress.item"]`).
+- Capture raw telemetry: `go run ./hack/otlpdump -addr 127.0.0.1:43180 -out /tmp/telemetry.jsonl`, then set `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:43180` plus explicit `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`/`..._METRICS_ENDPOINT` (the generic var alone only delivers traces) and `OTEL_EXPORTER_OTLP_TRACES_LIVE=1` on the CLI. Inspect with jq (`.kind` is span/log/metric; progress records have `attrs["dagger.io/progress.item"]`). See also the `telemetry-capture` skill.
 - Pretty TUI in a captured pty: `dagger query` falls back to plain when stdin is redirected; use `script -qec "./hack/with-dev ./bin/dagger core container from --address=nginx with-exec --args=ls stdout" /tmp/out.typescript` and grep for braille: `grep -aoP '[\x{2840}-\x{28FF}]+'`.
 
 ## Golden test gotchas (dagql/idtui)
