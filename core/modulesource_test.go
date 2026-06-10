@@ -37,6 +37,14 @@ func (sdk *moduleSourceAttachTestSDK) AsClientGenerator() (ClientGenerator, bool
 	return nil, false
 }
 
+func (sdk *moduleSourceAttachTestSDK) CloneForModuleSource(*ModuleSource) SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	return &cp
+}
+
 func (sdk *moduleSourceAttachTestSDK) AttachDependencyResults(
 	ctx context.Context,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),

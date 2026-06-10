@@ -16,6 +16,20 @@ type dangSDK struct {
 	rawConfig map[string]any
 }
 
+func (sdk *dangSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	if sdk.rawConfig != nil {
+		cp.rawConfig = make(map[string]any, len(sdk.rawConfig))
+		for k, v := range sdk.rawConfig {
+			cp.rawConfig[k] = v
+		}
+	}
+	return &cp
+}
+
 // dangImpl is implemented by each supported Dang major version
 // (core/sdk/dang/v1, v2, ...). Unlike core.ModuleTypes, ModuleTypes takes
 // already-scoped values: the scoping helpers are unexported in this package
