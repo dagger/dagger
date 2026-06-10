@@ -1,5 +1,6 @@
 import React from "react";
 import clsx from "clsx";
+import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import { useLocation } from "@docusaurus/router";
 import { useThemeConfig } from "@docusaurus/theme-common";
 import Logo from "@theme/Logo";
@@ -9,6 +10,67 @@ import Content from "@theme/DocSidebar/Desktop/Content";
 import type { Props } from "@theme/DocSidebar/Desktop";
 
 import styles from "./styles.module.css";
+
+const versions = require("@site/versions.json") as string[];
+const latestVersion = versions[0];
+const currentVersionLabel = "Next";
+
+function joinBaseUrl(baseUrl: string, path: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return `${normalizedBase}${path.replace(/^\/+/, "")}`;
+}
+
+function getCurrentVersion(pathname: string, baseUrl: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const pathWithoutBase = pathname.startsWith(normalizedBase)
+    ? pathname.slice(normalizedBase.length)
+    : pathname.replace(/^\/+/, "");
+
+  if (pathWithoutBase === "next" || pathWithoutBase.startsWith("next/")) {
+    return "current";
+  }
+
+  return (
+    versions.find(
+      (version) =>
+        pathWithoutBase === version || pathWithoutBase.startsWith(`${version}/`)
+    ) ?? latestVersion
+  );
+}
+
+function DocsVersionSelect() {
+  const {
+    siteConfig: { baseUrl },
+  } = useDocusaurusContext();
+  const { pathname } = useLocation();
+  const currentVersion = getCurrentVersion(pathname, baseUrl);
+
+  return (
+    <select
+      aria-label="Docs version"
+      className={styles.versionSelect}
+      value={currentVersion}
+      onChange={(event) => {
+        const nextValue = event.currentTarget.value;
+        const nextPath =
+          nextValue === "current"
+            ? joinBaseUrl(baseUrl, "next/")
+            : nextValue === latestVersion
+              ? baseUrl
+              : joinBaseUrl(baseUrl, `${nextValue}/`);
+
+        window.location.href = nextPath;
+      }}
+    >
+      {versions.map((version) => (
+        <option key={version} value={version}>
+          {version}
+        </option>
+      ))}
+      <option value="current">{currentVersionLabel}</option>
+    </select>
+  );
+}
 
 function scrollActiveSidebarItemIntoView(sidebar: HTMLElement) {
   const activeLink =
@@ -71,7 +133,10 @@ function DocSidebarDesktop({ path, sidebar, onCollapse, isHidden }: Props) {
       className={clsx(styles.sidebar, isHidden && styles.sidebarHidden)}
     >
       <div className={styles.sidebarHeader}>
-        <Logo tabIndex={-1} className={styles.sidebarLogo} />
+        <div className={styles.sidebarBrand}>
+          <Logo tabIndex={-1} className={styles.sidebarLogo} />
+          <DocsVersionSelect />
+        </div>
         <div className="docs-sidebar-search">
           <SearchBar />
         </div>
