@@ -29,10 +29,84 @@ import (
 var workspaceCmd = &cobra.Command{
 	Use:     "workspace",
 	Aliases: []string{"ws"},
-	Short:   "Manage the current workspace",
+	Short:   "Inspect or configure your workspace (cwd, remotes, config, etc.)",
+	Long: `Inspect or configure your workspace.
+
+Run with no subcommand to print a digest of workspace state (cwd, root,
+current remote, installed modules summary).`,
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "ws",
 	},
+	Args: cobra.NoArgs,
+	RunE: runWorkspaceDigest,
+}
+
+// runWorkspaceDigest prints a one-shot summary of the current workspace:
+// cwd, root, selected remote, all selectable remotes, and a brief list of
+// installed modules. Bound to bare `dagger workspace` invocation; replaces
+// the briefly-considered `dagger status` verb.
+func runWorkspaceDigest(cmd *cobra.Command, _ []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		dag := engineClient.Dagger()
+		ws := dag.CurrentWorkspace()
+		out := cmd.OutOrStdout()
+
+		cwd, err := ws.Cwd(ctx)
+		if err != nil {
+			return fmt.Errorf("load workspace cwd: %w", err)
+		}
+		address, err := ws.Address(ctx)
+		if err != nil {
+			return fmt.Errorf("load workspace address: %w", err)
+		}
+		root, err := workspaceRootFromAddress(address, cwd)
+		if err != nil {
+			return err
+		}
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return fmt.Errorf("load workspace config file: %w", err)
+		}
+		if configFile == "" {
+			configFile = "none"
+		}
+
+		fmt.Fprintf(out, "cwd:     %s\n", cwd)
+		fmt.Fprintf(out, "root:    %s\n", root)
+		fmt.Fprintf(out, "config:  %s\n", configFile)
+
+		// Remote info — best-effort; an unconfigured remote is normal.
+		if _, remote, err := selectedRemoteWorkspaceAddress(ctx, "workspace"); err == nil && remote != "" {
+			fmt.Fprintf(out, "remote:  %s\n", remote)
+		}
+
+		// Modules summary.
+		var res struct {
+			CurrentWorkspace struct {
+				ModuleList []struct {
+					Name   string
+					Source string
+				}
+			}
+		}
+		if err := dag.Do(ctx, &dagger.Request{
+			Query: `query { currentWorkspace { moduleList { name source } } }`,
+		}, &dagger.Response{Data: &res}); err != nil {
+			return fmt.Errorf("list installed modules: %w", err)
+		}
+		mods := res.CurrentWorkspace.ModuleList
+		if len(mods) == 0 {
+			fmt.Fprintln(out, "modules: (none installed)")
+			return nil
+		}
+		fmt.Fprintln(out, "modules:")
+		for _, m := range mods {
+			fmt.Fprintf(out, "  %s (%s)\n", m.Name, m.Source)
+		}
+		return nil
+	})
 }
 
 var workspaceRootCmd = &cobra.Command{
@@ -101,14 +175,6 @@ var workspaceConfigFileCmd = &cobra.Command{
 	},
 }
 
-var workspaceInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Create workspace config",
-	Long:  "Create dagger.toml for the current workspace.",
-	Args:  cobra.NoArgs,
-	RunE:  runWorkspaceInit,
-}
-
 var workspaceConfigCmd = &cobra.Command{
 	Use:   "config [key] [value]",
 	Short: "Get or set workspace configuration",
@@ -147,18 +213,8 @@ var workspaceAutocheckCmd = &cobra.Command{
 	RunE:  WorkspaceAutocheck,
 }
 
-var workspaceActivityCmd = &cobra.Command{
-	Use:    "activity",
-	Short:  "List recent Cloud activity for the selected workspace",
-	Args:   cobra.NoArgs,
-	Hidden: true,
-	RunE:   WorkspaceActivity,
-}
-
-// activityCmd is the top-level hoist of `dagger workspace activity`. The
-// workspace-scoped form remains as a hidden alias during the transition;
-// it will be removed when `dagger workspace` is slimmed down in a later
-// phase.
+// activityCmd is the top-level activity command (hoisted from what was
+// `dagger workspace activity`).
 var activityCmd = &cobra.Command{
 	Use:   "activity",
 	Short: "Show recent activity (runs, traces, etc.) for this workspace",
@@ -172,38 +228,17 @@ func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
-	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceAutocheckCmd)
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
-	workspaceCmd.AddCommand(workspaceActivityCmd)
 
-	addWorkspaceHereFlag(configCmd)
 	addWorkspaceHereFlag(workspaceConfigCmd)
-	addWorkspaceHereFlag(workspaceInitCmd)
-	workspaceActivityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
 	activityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
-
-	setWorkspaceFlagPolicy(workspaceInitCmd, workspaceFlagPolicyLocalOnly)
 }
 
 func addWorkspaceHereFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&workspaceHere, "here", false, "Write workspace config at the selected workspace cwd")
-}
-
-func runWorkspaceInit(cmd *cobra.Command, _ []string) error {
-	return withEngine(cmd.Context(), client.Params{
-		SkipWorkspaceModules: true,
-	}, func(ctx context.Context, engineClient *client.Client) error {
-		configDir, err := initWorkspace(ctx, engineClient.Dagger())
-		if err != nil {
-			return err
-		}
-
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Created workspace config in %s\n", configDir)
-		return err
-	})
 }
 
 func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
