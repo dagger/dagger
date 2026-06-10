@@ -148,8 +148,20 @@ var workspaceAutocheckCmd = &cobra.Command{
 }
 
 var workspaceActivityCmd = &cobra.Command{
+	Use:    "activity",
+	Short:  "List recent Cloud activity for the selected workspace",
+	Args:   cobra.NoArgs,
+	Hidden: true,
+	RunE:   WorkspaceActivity,
+}
+
+// activityCmd is the top-level hoist of `dagger workspace activity`. The
+// workspace-scoped form remains as a hidden alias during the transition;
+// it will be removed when `dagger workspace` is slimmed down in a later
+// phase.
+var activityCmd = &cobra.Command{
 	Use:   "activity",
-	Short: "List recent Cloud activity for the selected workspace",
+	Short: "Show recent activity (runs, traces, etc.) for this workspace",
 	Args:  cobra.NoArgs,
 	RunE:  WorkspaceActivity,
 }
@@ -171,6 +183,7 @@ func init() {
 	addWorkspaceHereFlag(workspaceConfigCmd)
 	addWorkspaceHereFlag(workspaceInitCmd)
 	workspaceActivityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
+	activityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
 
 	setWorkspaceFlagPolicy(workspaceInitCmd, workspaceFlagPolicyLocalOnly)
 }

@@ -52,13 +52,9 @@ func init() {
 }
 
 var checksCmd = &cobra.Command{
-	Aliases: []string{"checks"},
-	Use:     "check [options] [pattern...]",
-	Short:   "Check the state of your project by running tests, linters, etc.",
-	Annotations: map[string]string{
-		visibleAliasesAnnotation: "checks",
-	},
-	Long: `Check the state of your project by running tests, linters, etc.
+	Use:   "check [options] [pattern...]",
+	Short: "Verify your project — tests, linters, type checks, security scans, etc.",
+	Long: `Verify your project — tests, linters, type checks, security scans, etc.
 
 Examples:
   dagger check                    # Run all checks
