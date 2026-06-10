@@ -17,16 +17,19 @@ type recommendation struct {
 
 // recommendExcludeDirs lists directories we strip from the workspace snapshot
 // before globbing. Keeps the work cheap and avoids false positives from
-// vendored or generated content. Patterns match Workspace.Directory's exclude
-// semantics (path-prefix style).
+// vendored or generated content. Patterns use Workspace.Directory's
+// docker-ignore style, which anchors un-prefixed patterns to the root. We
+// want recursive matches (e.g. a polyglot repo's `frontend/node_modules`),
+// so each entry is doubled: one anchored at the root, one wildcarded for
+// any nested depth.
 var recommendExcludeDirs = []string{
-	".git/",
-	".dagger/",
-	"node_modules/",
-	"vendor/",
-	"dist/",
-	"build/",
-	"target/",
+	".git/", "**/.git/",
+	".dagger/", "**/.dagger/",
+	"node_modules/", "**/node_modules/",
+	"vendor/", "**/vendor/",
+	"dist/", "**/dist/",
+	"build/", "**/build/",
+	"target/", "**/target/",
 }
 
 // runRecommend scans the workspace for files matching each registry entry's
