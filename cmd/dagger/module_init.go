@@ -142,9 +142,9 @@ func runModuleInit(cmd *cobra.Command, args []string) error {
 	// An empty --path means "use the default layout"; remember that distinction
 	// so we can decide whether to auto-install the new module afterward.
 	usingDefaultPath := moduleInitPath == ""
-	path := moduleInitPath
+	relativePath := moduleInitPath
 	if usingDefaultPath {
-		path = filepath.Join(".dagger", "modules", name)
+		relativePath = filepath.Join(".dagger", "modules", name)
 	}
 
 	return withEngine(cmd.Context(), client.Params{
@@ -154,22 +154,31 @@ func runModuleInit(cmd *cobra.Command, args []string) error {
 		dag := ec.Dagger()
 		out := cmd.OutOrStdout()
 
+		// Resolve --path relative to the workspace root (not the CLI's cwd).
+		// Absolute --path values are used as-is.
+		filesystemPath, err := resolveWorkspacePath(ctx, dag, relativePath)
+		if err != nil {
+			return err
+		}
+
 		// Step 1: ensure the SDK is installed in this workspace.
 		if err := ensureSDKInstalled(ctx, out, dag, sdkRef); err != nil {
 			return fmt.Errorf("install SDK: %w", err)
 		}
 
-		// Step 2: write dagger-module.toml at the requested path.
-		if err := writeModuleConfig(out, path, name, sdkRef); err != nil {
+		// Step 2: write dagger-module.toml at the workspace-resolved path.
+		if err := writeModuleConfig(out, filesystemPath, name, sdkRef); err != nil {
 			return fmt.Errorf("write module config: %w", err)
 		}
 
 		// Step 3: with the default layout, also install the new module into
 		// the workspace so it's registered in dagger.toml. With a custom
-		// --path, leave layout decisions to the user.
+		// --path, leave layout decisions to the user. The install ref is the
+		// workspace-relative path so the engine resolves it correctly even
+		// when the CLI's cwd is elsewhere in the workspace.
 		if usingDefaultPath {
 			fmt.Fprintf(out, "Installing module: %s ...\n", name)
-			if err := installWorkspaceModule(ctx, out, dag, path, name, false); err != nil {
+			if err := installWorkspaceModule(ctx, out, dag, relativePath, name, false); err != nil {
 				return fmt.Errorf("install new module: %w", err)
 			}
 		} else {
@@ -182,6 +191,23 @@ func runModuleInit(cmd *cobra.Command, args []string) error {
 		)
 		return nil
 	})
+}
+
+// resolveWorkspacePath turns a CLI-supplied --path into a host filesystem
+// path rooted at the workspace, not at the CLI's cwd. Absolute paths pass
+// through unchanged. The dagger module commands are workspace-scoped: a
+// user running `dagger module init foo --path=./things` from any
+// subdirectory of the workspace expects `./things` to mean
+// "<workspace-root>/things", not "<cwd>/things".
+func resolveWorkspacePath(ctx context.Context, dag *dagger.Client, relPath string) (string, error) {
+	if filepath.IsAbs(relPath) {
+		return relPath, nil
+	}
+	wsRoot, err := currentWorkspaceExportPath(ctx, dag.CurrentWorkspace())
+	if err != nil {
+		return "", fmt.Errorf("locate workspace root: %w", err)
+	}
+	return filepath.Join(wsRoot, relPath), nil
 }
 
 // ensureSDKInstalled installs the SDK module into the current workspace if
