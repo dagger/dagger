@@ -9,14 +9,23 @@ Replace the opaque/noisy telemetry for image pulls with streaming progress: hide
 A cold `container.from("nginx")` now renders as:
 
 ```
-✔ .from(address: "nginx"): Container! 1.3s ⣿⣿⣿⣿⣿⣿ 33 MB
+✔ .from(address: "nginx"): Container! 4.9s
+  ✔ pulling nginx:latest 3.3s ██████ 63 MB
+  ✔ unpacking nginx:latest 1.0s ██████ 63 MB
 ```
 
-Commits on this branch (not pushed at handoff time):
+PR: https://github.com/dagger/dagger/pull/13410
+
+Commits on this branch:
 
 - `fix(telemetry): hide registry HTTP noise in the TUI` — `telemetry.Encapsulate()` on the `pulling`/`resolving`/`pushing` spans (engine/server/resolver/resolver.go) hides the containerd/otelhttp HTTP child spans; `ShouldShow` (dagql/dagui/opts.go) no longer reveals encapsulated *failures* under successful parents, which buries the registry's routine 401 auth-challenge span (it always looks like an error). Reveal-on-failure is preserved: a genuinely failed pull still exposes the HTTP spans. New helper: `Span.EncapsulationHidden` (dagql/dagui/spans.go).
 - `feat(telemetry): stream image pull progress as braille bars` — see architecture below.
 - `chore(idtui): restore scrubbed hostname in golden` — see golden gotchas below.
+- `test(idtui): cover partial progress bar fills` — was loose end #3. Viztest `PartialProgress` emits synthetic never-completing progress; golden covers attribution/+N/byte summary, and `TestRenderProgressBarFills` (dagql/idtui/progress_render_test.go) pins exact cell fills, because the scrub.Stabilize braille rule (util/scrub/scrub.go, predates branch, for nondeterministic roll-up dots) collapses braille runs in goldens.
+- `feat(telemetry): stream image unpack progress` — encapsulated `unpacking <ref>` span in `ImportImage` (engine/snapshots/pull.go); containerd's native `diff.WithProgress` apply-opt streams compressed-bytes-read per layer, keyed by blob digest. Deduped layers skip Apply and emit nothing (= no warm-path noise). Shared emitter moved to `snapshots.EmitProgress` (engine/snapshots/progress.go).
+- `feat(telemetry): render progress spans as labeled rows` — carrying progress reveals an encapsulated span (`EncapsulationHidden`, dagql/dagui/spans.go); collapsed rows surface descendants' progress as indented rows like the error-origin roll-up (`renderProgressSpanRow`). Bars are never merged across spans. `DisplayRef` (engine/snapshots/progress.go) drops digest + default registry from pulling/unpacking span names.
+- `feat(idtui): block-element progress bars, name first` — progress uses block elements so braille means span status only (spinner + roll-up dots). Multi-item (2-D) = one bottom-up cell per item; single-item (1-D) = fixed 12-cell left-to-right track, picked automatically by item count. Bars trail the name/duration. Block runs escape the braille scrub, so goldens now lock exact fills.
+- `chore(idtui): render progress bars faint` — whole progress row is dim except the status icon.
 
 ## Architecture
 
@@ -26,7 +35,7 @@ Commits on this branch (not pushed at handoff time):
 
 **TUI ingest** (dagql/dagui/progress.go): `DBLogExporter.Export` calls `db.ingestProgress` before text-log handling; progress records fold into `Span.Progress` (*SpanProgress, ordered items) and register the span in every ancestor's `Span.ProgressSpans` set. Covered by `TestIngestProgressLogs` (dagql/dagui/progress_test.go).
 
-**Rendering** (dagql/idtui/frontend_pretty.go, `renderProgressBars`, called from `renderStepTitle` next to `renderRollUpDots`): one braille cell per item via the existing `brailleDots` table (gray=not started, yellow=in flight, green=complete), `+N` overflow past 40 cells, aggregate humanized byte count. Ownership rule: a row renders its own `Progress`, plus items from `ProgressSpans` sources when the row is collapsed, or when no deeper visible row will render them (`spanRendersOwnProgress` walks `ParentSpan` chain with `ShouldShow`) — that's how bars land on `.from` while the encapsulated `pulling` span stays hidden.
+**Rendering** (dagql/idtui/frontend_pretty.go, `renderProgressBars`): a span renders only its OWN progress, trailing its name/duration. Multi-item = one bottom-up block cell per item (`verticalEighths`, gray=not started, yellow=in flight, green=complete, `+N` past 40 cells); single-item = 12-cell horizontal track (`renderProgressTrack`); everything faint. Progress-carrying spans are always visible: `HasProgress` escapes `EncapsulationHidden` (revealed when ancestors expanded), and collapsed rows roll up descendants' progress as indented rows (`renderProgressSpanRow` in `renderRowContentRest`, mirroring error origins, driven by `Span.ProgressSpans`).
 
 ## Verification loop
 
@@ -37,16 +46,16 @@ Commits on this branch (not pushed at handoff time):
 
 ## Golden test gotchas (dagql/idtui)
 
-- Regenerate one golden: `./hack/with-dev go test ./dagql/idtui/ -run 'TestTelemetry/TestGolden/<name>' -update`. The TUI renders inside `./bin/dagger`, so `./hack/build` first after TUI changes, or the regen uses stale rendering.
+- Regenerate one golden (preferred): `./hack/with-dev ./bin/dagger call engine-dev test-telemetry --run 'TestTelemetry/TestGolden/<name>' --update -y` — runs in the containerized harness (~5min), so no hostname/path artifacts; `-y` auto-applies the changeset.
+- Local alternative: `./hack/with-dev go test ./dagql/idtui/ -run 'TestTelemetry/TestGolden/<name>' -update`. The TUI renders inside `./bin/dagger`, so `./hack/build` first after TUI changes, or the regen uses stale rendering.
 - Running goldens against the local persistent engine produces two environment artifacts vs CI: the engine hostname (`name=<container-id>` doesn't match the `*.dagger.local` scrub pattern in util/scrub/scrub.go) and absolute repo paths (`/app/...` in CI). Hand-restore the scrubbed hostname line after regenerating, and treat local full-suite failures that only differ in those as noise. Real validation is CI / the containerized harness.
 
 ## Loose ends (rough value order)
 
-1. **Unpack progress**: `importImageLayer` (engine/snapshots/pull.go) — the decompress/apply phase, ~40% of cold-pull wall time — emits nothing. Same convention; consider whether it shares the layer item names (digest) under a separate span or distinct item names.
-2. **Git/HTTP/filesync emitters**: 1-D bars via the same convention. Filesync currently has a 5s-gauge `FilesyncWrittenBytes` metric (engine/filesync/localfs.go) to upgrade.
-3. **Renderer test coverage**: add a viztest function (dagql/idtui/viztest/main.go) emitting synthetic partial progress + a golden, to lock in partial-fill rendering — live pulls finish too fast to capture mid-flight frames.
-4. **Dagger Cloud**: progress records reach Cloud as empty-bodied logs; check how its UI treats them / teach it the convention.
-5. **dagger/otel-go hardening** (separate repo, optional): `LogValueFromPB` should handle nil `AnyValue`; `LogValueToPB` encodes empty bodies as the literal string `"INVALID"`. Eventually move the `dagger.io/progress.*` attrs upstream next to the other UI attrs.
+1. **Git/HTTP/filesync emitters**: 1-D bars via the same convention (single item → track form renders automatically). Filesync currently has a 5s-gauge `FilesyncWrittenBytes` metric (engine/filesync/localfs.go) to upgrade.
+2. **Full golden-suite harness validation pending**: Docker Hub 429-rate-limited the harness's binfmt setup pull (cold-pull testing exhausted the quota). partial-progress (the only progress-bearing golden) was regenerated locally + hostname-restored; PR CI is the backstop.
+3. **Dagger Cloud**: progress records reach Cloud as empty-bodied logs; check how its UI treats them / teach it the convention.
+4. **dagger/otel-go hardening** (separate repo, optional): `LogValueFromPB` should handle nil `AnyValue`; `LogValueToPB` encodes empty bodies as the literal string `"INVALID"`. Eventually move the `dagger.io/progress.*` attrs upstream next to the other UI attrs.
 
 ## Misc
 
