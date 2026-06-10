@@ -45,7 +45,7 @@ mkdir tests
 cd tests
 cat > dagger-module.toml <<'EOF'
 name = "tests"
-engineVersion = "latest"
+engineVersion = "v1.0.0-beta.3"
 source = "."
 
 [runtime]
@@ -82,7 +82,7 @@ mkdir tests
 cd tests
 cat > dagger-module.toml <<'EOF'
 name = "tests"
-engineVersion = "latest"
+engineVersion = "v1.0.0-beta.3"
 source = "."
 
 [runtime]
@@ -115,7 +115,7 @@ mkdir tests
 cd tests
 cat > dagger-module.toml <<'EOF'
 name = "tests"
-engineVersion = "latest"
+engineVersion = "v1.0.0-beta.3"
 source = "."
 
 [runtime]
@@ -169,7 +169,7 @@ mkdir -p examples/go
 cd examples/go
 cat > dagger-module.toml <<'EOF'
 name = "examples-go"
-engineVersion = "latest"
+engineVersion = "v1.0.0-beta.3"
 source = "."
 
 [runtime]
@@ -205,7 +205,7 @@ mkdir -p examples/python
 cd examples/python
 cat > dagger-module.toml <<'EOF'
 name = "examples-python"
-engineVersion = "latest"
+engineVersion = "v1.0.0-beta.3"
 source = "."
 
 [runtime]
@@ -226,7 +226,8 @@ class Examples:
     async def greeter_hello(self):
         greeting = await dag.greeter().hello("World")
 
-	# Do something with the greeting
+        # Do something with the greeting
+        _ = greeting
 ```
 
 </TabItem>
@@ -237,7 +238,7 @@ mkdir -p examples/typescript
 cd examples/typescript
 cat > dagger-module.toml <<'EOF'
 name = "examples-typescript"
-engineVersion = "latest"
+engineVersion = "v1.0.0-beta.3"
 source = "."
 
 [runtime]

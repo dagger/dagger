@@ -379,7 +379,7 @@ class MyModule:
         return (
             dag.container()
             .from_("aquasec/trivy:0.50.4")
-            .with_exec(["trivy", "image", "--severity=" + severity.name, ref])
+            .with_exec(["trivy", "image", "--severity=" + severity.value, ref])
             .stdout()
         )
 ```

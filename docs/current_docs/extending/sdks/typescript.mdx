@@ -584,7 +584,6 @@ are also supported. After adding a dependency, `dagger-module.toml` gains a
 ```toml title="dagger-module.toml"
 name = "my-module"
 engineVersion = "v1.0.0-beta.3"
-source = "."
 
 [runtime]
 source = "typescript"
@@ -605,7 +604,7 @@ import { dag, Directory, object, func } from "@dagger.io/dagger"
 class MyModule {
   @func()
   example(buildSrc: Directory, buildArgs: string[]): Directory {
-    return dag.golang().build({ source: buildSrc, args: buildArgs }).terminal()
+    return dag.go().build({ source: buildSrc, args: buildArgs }).terminal()
   }
 }
 ```
