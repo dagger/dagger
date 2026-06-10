@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
 )
@@ -43,7 +42,6 @@ type CopyOptions struct {
 	Filter            Filter
 	Chown             *Ownership
 	Mode              *os.FileMode
-	Stats             *CopyStats
 	XAttrErrorHandler XAttrErrorHandler
 	DisableXAttrs     bool
 	CopyDirContents   bool
@@ -61,33 +59,4 @@ type CopyOptions struct {
 
 type Copier struct {
 	dest *destination
-}
-
-type CopyStats struct {
-	EntriesVisited int64
-	Included       int64
-	Skipped        int64
-
-	Dirs         int64
-	RegularFiles int64
-	Symlinks     int64
-	SpecialFiles int64
-
-	ReadDirCalls        int64
-	ReadDirDuration     time.Duration
-	EnsureDirCalls      int64
-	EnsureDirDuration   time.Duration
-	CreatedDirs         int64
-	MaterializedDirs    int64
-	RemoveCalls         int64
-	RemoveDuration      time.Duration
-	ContentCopyCalls    int64
-	ContentCopyDuration time.Duration
-	BytesCopied         int64
-	MetadataCalls       int64
-	MetadataDuration    time.Duration
-	XAttrListCalls      int64
-	XAttrGetCalls       int64
-	XAttrSetCalls       int64
-	XAttrDuration       time.Duration
 }

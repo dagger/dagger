@@ -4,10 +4,7 @@ import (
 	"context"
 
 	cache "github.com/dagger/dagger/engine/snapshots"
-	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -15,12 +12,7 @@ const (
 	contentHashIndex  = keyContentHashKey + ":"
 )
 
-func SearchContentHash(ctx context.Context, store cache.MetadataStore, dgst digest.Digest) (_ []CacheRefMetadata, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "contenthash.search", trace.WithAttributes(
-		attribute.String("contenthash.digest", dgst.String()),
-	))
-	defer telemetry.EndWithCause(span, &rerr)
-
+func SearchContentHash(ctx context.Context, store cache.MetadataStore, dgst digest.Digest) ([]CacheRefMetadata, error) {
 	var results []CacheRefMetadata
 	mds, err := store.Search(ctx, contentHashIndex+dgst.Encoded(), false)
 	if err != nil {
@@ -29,7 +21,6 @@ func SearchContentHash(ctx context.Context, store cache.MetadataStore, dgst dige
 	for _, md := range mds {
 		results = append(results, CacheRefMetadata{md})
 	}
-	span.SetAttributes(attribute.Int("contenthash.result_count", len(results)))
 	return results, nil
 }
 

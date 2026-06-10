@@ -170,10 +170,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 	// skip creating a cache ref if we're only syncing parent dirs
 	if !forParents {
 		var err error
-		createCopyRefCtx, createCopyRefSpan := Tracer(ctx).Start(ctx, "filesync.create-copy-ref")
-		newCopyRef, err = cacheManager.New(createCopyRefCtx, nil)
-		createCopyRefErr := err
-		telemetry.EndWithCause(createCopyRefSpan, &createCopyRefErr)
+		newCopyRef, err = cacheManager.New(ctx, nil)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to create new copy ref: %w", err)
 		}
@@ -190,10 +187,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 		if !ok {
 			return nil, "", fmt.Errorf("copy ref metadata: unexpected ref type %T", newCopyRef)
 		}
-		getCacheCtx, getCacheSpan := Tracer(ctx).Start(ctx, "filesync.get-copy-cache-context")
-		cacheCtx, err = bkcontenthash.GetCacheContext(getCacheCtx, newCopyMD)
-		getCacheErr := err
-		telemetry.EndWithCause(getCacheSpan, &getCacheErr)
+		cacheCtx, err = bkcontenthash.GetCacheContext(ctx, newCopyMD)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get cache context: %w", err)
 		}
@@ -522,71 +516,32 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, "", fmt.Errorf("%s: no such file or directory", local.copyPath)
 	}
 
-	checksumCtx, checksumSpan := Tracer(ctx).Start(ctx, "copy.checksum", trace.WithAttributes(
-		attribute.String("copy.path", local.copyPath),
-		attribute.Int("copy.only_count", len(only)),
-	))
-	dgst, err := cacheCtx.Checksum(checksumCtx, newCopyRef, "/", bkcontenthash.ChecksumOpts{})
-	if err == nil {
-		checksumSpan.SetAttributes(attribute.String("contenthash.digest", dgst.String()))
-	}
-	checksumErr := err
-	telemetry.EndWithCause(checksumSpan, &checksumErr)
+	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{})
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to checksum: %w", err)
 	}
 
 	// If we have already created a cache ref with the same content hash, use that instead of copying
 	// another equivalent one.
-	searchCtx, searchSpan := Tracer(ctx).Start(ctx, "copy.search-content-hash", trace.WithAttributes(
-		attribute.String("contenthash.digest", dgst.String()),
-	))
-	sis, err := bkcontenthash.SearchContentHash(searchCtx, cacheManager, dgst)
-	searchSpan.SetAttributes(attribute.Int("contenthash.result_count", len(sis)))
-	searchErr := err
-	telemetry.EndWithCause(searchSpan, &searchErr)
+	sis, err := bkcontenthash.SearchContentHash(ctx, cacheManager, dgst)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to search content hash: %w", err)
 	}
-	reuseCtx, reuseSpan := Tracer(ctx).Start(ctx, "copy.reuse-content-hash-ref", trace.WithAttributes(
-		attribute.Int("contenthash.candidate_count", len(sis)),
-	))
-	var failedCandidates int
 	for _, si := range sis {
-		finalRef, err := cacheManager.GetBySnapshotID(reuseCtx, si.SnapshotID())
+		finalRef, err := cacheManager.GetBySnapshotID(ctx, si.SnapshotID())
 		if err == nil {
 			bklog.G(ctx).Debugf("reusing copy ref %s", si.SnapshotID())
-			reuseSpan.SetAttributes(
-				attribute.Bool("contenthash.hit", true),
-				attribute.Int("contenthash.failed_candidate_count", failedCandidates),
-			)
-			reuseErr := error(nil)
-			telemetry.EndWithCause(reuseSpan, &reuseErr)
 			return finalRef, dgst, nil
 		} else {
-			failedCandidates++
 			bklog.G(ctx).Debugf("failed to get cache ref: %v", err)
 		}
 	}
-	reuseSpan.SetAttributes(
-		attribute.Bool("contenthash.hit", false),
-		attribute.Int("contenthash.failed_candidate_count", failedCandidates),
-	)
-	reuseErr := error(nil)
-	telemetry.EndWithCause(reuseSpan, &reuseErr)
 
-	prepareMountCtx, prepareMountSpan := Tracer(ctx).Start(ctx, "copy.prepare-mountable")
-	copyRefMntable, err := newCopyRef.Mount(prepareMountCtx, false)
-	prepareMountErr := err
-	telemetry.EndWithCause(prepareMountSpan, &prepareMountErr)
+	copyRefMntable, err := newCopyRef.Mount(ctx, false)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get mountable: %w", err)
 	}
-	_, mountRefSpan := Tracer(ctx).Start(ctx, "copy.mount-ref")
 	copyRefMounts, copyRefRelease, err := copyRefMntable.Mount()
-	mountRefSpan.SetAttributes(attribute.Int("copy.mount_count", len(copyRefMounts)))
-	mountRefErr := err
-	telemetry.EndWithCause(mountRefSpan, &mountRefErr)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get mounts: %w", err)
 	}
@@ -610,10 +565,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}()
 	}
 	copyRefMnter := bkcache.LocalMounterWithMounts(copyRefMounts)
-	_, localMountSpan := Tracer(ctx).Start(ctx, "copy.local-mount")
 	copyRefMntPath, err := copyRefMnter.Mount()
-	localMountErr := err
-	telemetry.EndWithCause(localMountSpan, &localMountErr)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to mount: %w", err)
 	}
@@ -625,13 +577,10 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}
 	}()
 
-	_, newCopierSpan := Tracer(ctx).Start(ctx, "copy.new-copier")
 	copier, err := layercopy.NewCopier(layercopy.Mount{
 		Root:  copyRefMntPath,
 		Mount: &copyRefMounts[0],
 	})
-	newCopierErr := err
-	telemetry.EndWithCause(newCopierSpan, &newCopierErr)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create copier: %w", err)
 	}
@@ -643,27 +592,15 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}
 	}()
 
-	_, filterSpan := Tracer(ctx).Start(ctx, "copy.build-only-filter", trace.WithAttributes(
-		attribute.Int("copy.only_count", len(only)),
-		attribute.String("copy.path", local.copyPath),
-	))
-	onlyFilter := localCopyOnlyPaths(only, local.copyPath)
-	filterSpan.SetAttributes(attribute.Int("copy.filtered_only_count", len(onlyFilter)))
-	filterErr := error(nil)
-	telemetry.EndWithCause(filterSpan, &filterErr)
-
-	layercopyStats := &layercopy.CopyStats{}
-	layercopyCtx, layercopySpan := Tracer(ctx).Start(ctx, "copy.layercopy")
-	if err := copier.Copy(layercopyCtx,
+	if err := copier.Copy(ctx,
 		layercopy.Mount{Root: filepath.Join(local.rootPath, local.subdir)},
 		local.copyPath,
 		"/",
 		layercopy.CopyOptions{
 			Filter: layercopy.Filter{
 				// Only copy files that we know about changes for.
-				Only: onlyFilter,
+				Only: localCopyOnlyPaths(only, local.copyPath),
 			},
-			Stats:                  layercopyStats,
 			DisableXAttrs:          true,
 			CopyDirContents:        true,
 			DisableSourceHardlinks: true,
@@ -677,53 +614,28 @@ func (local *localFS) Sync( //nolint:gocyclo
 			},
 		},
 	); err != nil {
-		layercopyErr := err
-		layercopySpan.SetAttributes(filesyncLayercopyStatsAttributes(layercopyStats)...)
-		telemetry.EndWithCause(layercopySpan, &layercopyErr)
 		return nil, "", fmt.Errorf("failed to copy %q: %w", local.subdir, err)
 	}
-	layercopyErr := error(nil)
-	layercopySpan.SetAttributes(filesyncLayercopyStatsAttributes(layercopyStats)...)
-	telemetry.EndWithCause(layercopySpan, &layercopyErr)
-
-	_, closeCopierSpan := Tracer(ctx).Start(ctx, "copy.copier-close")
 	if err := copier.Close(); err != nil {
 		copier = nil
-		closeCopierErr := err
-		telemetry.EndWithCause(closeCopierSpan, &closeCopierErr)
 		return nil, "", fmt.Errorf("failed to close copier: %w", err)
 	}
-	closeCopierErr := error(nil)
-	telemetry.EndWithCause(closeCopierSpan, &closeCopierErr)
 	copier = nil
 
-	_, unmountSpan := Tracer(ctx).Start(ctx, "copy.unmount")
 	if err := copyRefMnter.Unmount(); err != nil {
 		copyRefMnter = nil
-		unmountErr := err
-		telemetry.EndWithCause(unmountSpan, &unmountErr)
 		return nil, "", fmt.Errorf("failed to unmount: %w", err)
 	}
-	unmountErr := error(nil)
-	telemetry.EndWithCause(unmountSpan, &unmountErr)
 	copyRefMnter = nil
 	if copyRefReleaseFn != nil {
-		_, releaseMountSpan := Tracer(ctx).Start(ctx, "copy.release-mount")
 		if err := copyRefReleaseFn(); err != nil {
 			copyRefReleaseFn = nil
-			releaseMountErr := err
-			telemetry.EndWithCause(releaseMountSpan, &releaseMountErr)
 			return nil, "", fmt.Errorf("failed to release copy ref mount: %w", err)
 		}
-		releaseMountErr := error(nil)
-		telemetry.EndWithCause(releaseMountSpan, &releaseMountErr)
 		copyRefReleaseFn = nil
 	}
 
-	commitCtx, commitSpan := Tracer(ctx).Start(ctx, "copy.commit")
-	finalRef, err := newCopyRef.Commit(commitCtx)
-	commitErr := err
-	telemetry.EndWithCause(commitSpan, &commitErr)
+	finalRef, err := newCopyRef.Commit(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to commit: %w", err)
 	}
@@ -744,68 +656,18 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, "", fmt.Errorf("final sync metadata: unexpected ref type %T", finalRef)
 	}
 
-	setCacheCtx, setCacheSpan := Tracer(ctx).Start(ctx, "copy.set-cache-context")
-	if err := bkcontenthash.SetCacheContext(setCacheCtx, finalMD, cacheCtx); err != nil {
-		setCacheErr := err
-		telemetry.EndWithCause(setCacheSpan, &setCacheErr)
+	if err := bkcontenthash.SetCacheContext(ctx, finalMD, cacheCtx); err != nil {
 		return nil, "", fmt.Errorf("failed to set cache context: %w", err)
 	}
-	setCacheErr := error(nil)
-	telemetry.EndWithCause(setCacheSpan, &setCacheErr)
 
-	_, setContentHashSpan := Tracer(ctx).Start(ctx, "copy.set-content-hash-key", trace.WithAttributes(
-		attribute.String("contenthash.digest", dgst.String()),
-	))
 	if err := (bkcontenthash.CacheRefMetadata{RefMetadata: finalMD}).SetContentHashKey(dgst); err != nil {
-		setContentHashErr := err
-		telemetry.EndWithCause(setContentHashSpan, &setContentHashErr)
 		return nil, "", fmt.Errorf("failed to set content hash key: %w", err)
 	}
-	setContentHashErr := error(nil)
-	telemetry.EndWithCause(setContentHashSpan, &setContentHashErr)
-
-	_, setDescriptionSpan := Tracer(ctx).Start(ctx, "copy.set-description")
 	if err := finalMD.SetDescription(fmt.Sprintf("local dir %s (include: %v) (exclude %v)", local.subdir, local.includes, local.excludes)); err != nil {
-		setDescriptionErr := err
-		telemetry.EndWithCause(setDescriptionSpan, &setDescriptionErr)
 		return nil, "", fmt.Errorf("failed to set description: %w", err)
 	}
-	setDescriptionErr := error(nil)
-	telemetry.EndWithCause(setDescriptionSpan, &setDescriptionErr)
 
 	return finalRef, dgst, nil
-}
-
-func filesyncLayercopyStatsAttributes(stats *layercopy.CopyStats) []attribute.KeyValue {
-	if stats == nil {
-		return nil
-	}
-	return []attribute.KeyValue{
-		attribute.Int64("layercopy.entries_visited", stats.EntriesVisited),
-		attribute.Int64("layercopy.included", stats.Included),
-		attribute.Int64("layercopy.skipped", stats.Skipped),
-		attribute.Int64("layercopy.dirs", stats.Dirs),
-		attribute.Int64("layercopy.regular_files", stats.RegularFiles),
-		attribute.Int64("layercopy.symlinks", stats.Symlinks),
-		attribute.Int64("layercopy.special_files", stats.SpecialFiles),
-		attribute.Int64("layercopy.read_dir_calls", stats.ReadDirCalls),
-		attribute.Int64("layercopy.read_dir_duration_ms", stats.ReadDirDuration.Milliseconds()),
-		attribute.Int64("layercopy.ensure_dir_calls", stats.EnsureDirCalls),
-		attribute.Int64("layercopy.ensure_dir_duration_ms", stats.EnsureDirDuration.Milliseconds()),
-		attribute.Int64("layercopy.created_dirs", stats.CreatedDirs),
-		attribute.Int64("layercopy.materialized_dirs", stats.MaterializedDirs),
-		attribute.Int64("layercopy.remove_calls", stats.RemoveCalls),
-		attribute.Int64("layercopy.remove_duration_ms", stats.RemoveDuration.Milliseconds()),
-		attribute.Int64("layercopy.content_copy_calls", stats.ContentCopyCalls),
-		attribute.Int64("layercopy.content_copy_duration_ms", stats.ContentCopyDuration.Milliseconds()),
-		attribute.Int64("layercopy.bytes_copied", stats.BytesCopied),
-		attribute.Int64("layercopy.metadata_calls", stats.MetadataCalls),
-		attribute.Int64("layercopy.metadata_duration_ms", stats.MetadataDuration.Milliseconds()),
-		attribute.Int64("layercopy.xattr_list_calls", stats.XAttrListCalls),
-		attribute.Int64("layercopy.xattr_get_calls", stats.XAttrGetCalls),
-		attribute.Int64("layercopy.xattr_set_calls", stats.XAttrSetCalls),
-		attribute.Int64("layercopy.xattr_duration_ms", stats.XAttrDuration.Milliseconds()),
-	}
 }
 
 // the full absolute path on the local filesystem
