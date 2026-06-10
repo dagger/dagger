@@ -1,0 +1,27 @@
+[
+  {
+    "name": "go-sdk",
+    "repo": "github.com/dagger/go-sdk",
+    "aliases": ["go", "golang"]
+  },
+  {
+    "name": "python-sdk",
+    "repo": "github.com/dagger/python-sdk",
+    "aliases": ["python", "py"]
+  },
+  {
+    "name": "typescript-sdk",
+    "repo": "github.com/dagger/typescript-sdk",
+    "aliases": ["typescript", "ts"]
+  },
+  {
+    "name": "php-sdk",
+    "repo": "github.com/dagger/php-sdk",
+    "aliases": ["php"]
+  },
+  {
+    "name": "java-sdk",
+    "repo": "github.com/dagger/java-sdk",
+    "aliases": ["java"]
+  }
+]
