@@ -164,6 +164,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
+		dagql.Func("artifacts", s.artifacts).
+			Doc("A filterable view of all artifacts in this workspace.").
+			Args(
+				dagql.Arg("enumerate").Doc(
+					"Resolve collection items by running module code.",
+					"When false, only dimensions and top-level artifacts are returned, without executing any module functions."),
+			),
 		dagql.NodeFunc("update", s.update).
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
@@ -188,6 +195,34 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.WorkspaceModuleSetting]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
+
+	dagql.Fields[*core.Artifacts]{
+		dagql.Func("filterDimension", s.artifactsFilterDimension).
+			Doc("Keep rows whose coordinate row has a non-null cell for the given dimension.").
+			Args(
+				dagql.Arg("dimension").Doc("Dimension to require."),
+			),
+		dagql.Func("filterCoordinates", s.artifactsFilterCoordinates).
+			Doc("Keep rows whose coordinate for the given dimension matches one of the provided values.").
+			Args(
+				dagql.Arg("dimension").Doc("Dimension to filter."),
+				dagql.Arg("values").Doc("Allowed coordinate values."),
+			),
+		dagql.Func("items", s.artifactsItems).
+			Doc("Artifacts matching the current filters."),
+	}.Install(srv)
+	dagql.Fields[*core.ArtifactDimension]{}.Install(srv)
+	dagql.Fields[*core.Artifact]{
+		dagql.Func("coordinates", s.artifactCoordinates).
+			Doc("Ordered coordinate row for this artifact."),
+		dagql.Func("coordinate", s.artifactCoordinate).
+			Doc("Convenience lookup for one coordinate by dimension name.").
+			Args(
+				dagql.Arg("name").Doc("Dimension name."),
+			),
+		dagql.Func("scope", s.artifactScope).
+			Doc("The Artifacts scope that produced this row."),
+	}.Install(srv)
 }
 
 type workspaceArgs struct {
@@ -237,6 +272,105 @@ func (s *workspaceSchema) cwd(
 ) (dagql.String, error) {
 	_ = ctx
 	return dagql.NewString(workspaceAPIPath(parent.Cwd)), nil
+}
+
+func (s *workspaceSchema) artifacts(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Enumerate bool `default:"true"`
+	},
+) (*core.Artifacts, error) {
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return core.NewWorkspaceArtifacts(ctx, mods, args.Enumerate)
+}
+
+func (s *workspaceSchema) artifactsFilterDimension(
+	ctx context.Context,
+	parent *core.Artifacts,
+	args struct {
+		Dimension string
+	},
+) (*core.Artifacts, error) {
+	_ = ctx
+	return parent.FilterDimension(args.Dimension)
+}
+
+func (s *workspaceSchema) artifactsFilterCoordinates(
+	ctx context.Context,
+	parent *core.Artifacts,
+	args struct {
+		Dimension string
+		Values    dagql.ArrayInput[dagql.String]
+	},
+) (*core.Artifacts, error) {
+	_ = ctx
+	values := make([]string, 0, len(args.Values))
+	for _, value := range args.Values {
+		values = append(values, value.String())
+	}
+	return parent.FilterCoordinates(args.Dimension, values)
+}
+
+func (s *workspaceSchema) artifactsItems(
+	ctx context.Context,
+	parent *core.Artifacts,
+	_ struct{},
+) ([]*core.Artifact, error) {
+	_ = ctx
+	return parent.Items(), nil
+}
+
+func (s *workspaceSchema) artifactCoordinates(
+	ctx context.Context,
+	parent *core.Artifact,
+	_ struct{},
+) (dagql.Array[dagql.Nullable[dagql.String]], error) {
+	_ = ctx
+	artifactCoords := parent.Coordinates()
+	coords := make(dagql.Array[dagql.Nullable[dagql.String]], len(artifactCoords))
+	for i, coord := range artifactCoords {
+		if coord == nil {
+			coords[i] = dagql.Null[dagql.String]()
+			continue
+		}
+		coords[i] = dagql.NonNull(dagql.String(*coord))
+	}
+	return coords, nil
+}
+
+func (s *workspaceSchema) artifactCoordinate(
+	ctx context.Context,
+	parent *core.Artifact,
+	args struct {
+		Name string
+	},
+) (dagql.Nullable[dagql.String], error) {
+	_ = ctx
+	if value, ok := parent.Coordinate(args.Name); ok {
+		return dagql.NonNull(dagql.String(value)), nil
+	}
+	return dagql.Null[dagql.String](), nil
+}
+
+func (s *workspaceSchema) artifactScope(
+	ctx context.Context,
+	parent *core.Artifact,
+	_ struct{},
+) (*core.Artifacts, error) {
+	_ = ctx
+	scope := parent.Scope()
+	if scope == nil {
+		return nil, fmt.Errorf("artifact has no scope")
+	}
+	return scope, nil
 }
 
 type workspaceDirectoryArgs struct {
