@@ -1390,6 +1390,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		client.narrowPendingWorkspaceModulesForSingleQuery(peekRootFields)
 	} else if include, ok := peekWorkspaceSelectorInclude(r, client.clientMetadata); ok {
 		client.narrowPendingWorkspaceModulesForSelectorInclude(include)
+	} else if include, ok := peekWorkspaceTypeDefsInclude(r, client.clientMetadata); ok {
+		client.narrowPendingWorkspaceModulesForSelectorInclude(include)
 	}
 	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
@@ -1446,6 +1448,23 @@ func peekWorkspaceSelectorInclude(r *http.Request, clientMD *engine.ClientMetada
 		return nil, false
 	}
 	ok, include, err := dagql.PeekWorkspaceSelectorInclude(r)
+	if err != nil || !ok {
+		return nil, false
+	}
+	return include, true
+}
+
+// peekWorkspaceTypeDefsInclude narrows module loading for `dagger call` and
+// `dagger functions`, which build their command tree from a currentTypeDefs
+// introspection. That query roots at currentTypeDefs (otherwise treated as
+// needing the full workspace schema) and keeps the session open rather than
+// declaring SingleQuery. When such a client scopes the introspection to specific
+// modules via an include argument, only those modules need to load.
+func peekWorkspaceTypeDefsInclude(r *http.Request, clientMD *engine.ClientMetadata) ([]string, bool) {
+	if clientMD == nil || !clientMD.LoadWorkspaceModules || clientMD.SkipWorkspaceModules {
+		return nil, false
+	}
+	ok, include, err := dagql.PeekWorkspaceTypeDefsInclude(r)
 	if err != nil || !ok {
 		return nil, false
 	}
