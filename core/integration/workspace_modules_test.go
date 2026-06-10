@@ -167,9 +167,9 @@ entrypoint = true
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--mod=.", "./dep")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--load-module=.", "./dep")
 		require.Error(t, err)
-		requireErrOut(t, err, "unknown flag: --mod")
+		requireErrOut(t, err, "unknown flag: --load-module")
 	})
 
 	t.Run("install rejects non-module refs without corrupting config", func(ctx context.Context, t *testctx.T) {
