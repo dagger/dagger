@@ -352,7 +352,7 @@ type PhpSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK
 	//
-	Workspace *Directory // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:37:2)
+	WorkspaceDir *Directory // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:37:2)
 	//
 	// The path of the SDK source in the workspace
 	//
@@ -371,9 +371,9 @@ type PhpSDKDevOpts struct {
 func (r *Query) PhpSDKDev(opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:33:1)
 	q := r.query.Select("phpSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
