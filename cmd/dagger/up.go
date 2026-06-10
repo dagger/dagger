@@ -75,7 +75,7 @@ func loadUpGroupInfo(ctx context.Context, dag *dagger.Client, upGroup *dagger.Up
 	info := &UpGroupInfo{Ups: make([]*UpInfo, 0, len(items))}
 	for _, item := range items {
 		info.Ups = append(info.Ups, &UpInfo{
-			Name:        cliName(item.Name),
+			Name:        item.Name,
 			Description: item.Description,
 		})
 	}

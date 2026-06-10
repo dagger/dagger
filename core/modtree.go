@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
@@ -35,6 +36,54 @@ type ModTreeNode struct {
 	IsCheck        bool
 	IsGenerator    bool
 	IsUp           bool
+
+	// Collection support. Collection types expand into one item node per
+	// key, and their batch operations become leaves over the current
+	// subset; see collectionChildren.
+
+	// CollectionItemKey is set on item nodes: the key this node was
+	// expanded from, resolved through the collection's get(key).
+	CollectionItemKey dagql.Input
+	// LiteralName marks names that are collection keys: displayed raw
+	// rather than kebab-cased.
+	LiteralName bool
+	// Coordinates accumulates collection dimension values along the path
+	// (dimension name -> key), used to apply dimension filters.
+	Coordinates map[string]string
+	// CollectionBatch marks a leaf that executes a batch operation over
+	// the parent collection's subset.
+	CollectionBatch bool
+	// SubsetDimension is the dimension a batch leaf narrows; its filter is
+	// satisfied through SubsetKeys rather than a single coordinate.
+	SubsetDimension string
+	// SubsetKeys narrows the collection before a batch operation when
+	// dimension filters select a strict subset. Nil means the full set.
+	SubsetKeys []dagql.Input
+	// SubsetElem is the collection's key input type, used to build the
+	// typed subset argument.
+	SubsetElem dagql.Input
+	// shadowedChecks are item-type function names whose checks are
+	// replaced by a collection-level batch operation.
+	shadowedChecks map[string]bool
+	// DimensionFilters restricts collection expansion to the given values
+	// per dimension. Set on the root and inherited by children.
+	DimensionFilters map[string][]string
+}
+
+// matchesDimensionFilters reports whether a leaf satisfies every dimension
+// filter: each filtered dimension must be carried as a coordinate on the
+// leaf's path (expansion already restricts coordinates to allowed values),
+// or be the dimension a batch leaf narrows through its subset.
+func (node *ModTreeNode) matchesDimensionFilters() bool {
+	for dim := range node.DimensionFilters {
+		if node.CollectionBatch && dim == node.SubsetDimension {
+			continue
+		}
+		if _, ok := node.Coordinates[dim]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (node *ModTreeNode) Path() ModTreePath {
@@ -647,7 +696,36 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 		if err := node.Parent.DagqlValue(ctx, &parentObjValue); err != nil {
 			return err
 		}
-		return srv.Select(dagql.WithNonInternalTelemetry(ctx), parentObjValue, dest, dagql.Selector{Field: node.Name})
+		ctx := dagql.WithNonInternalTelemetry(ctx)
+		// Collection item: resolve through get(key).
+		if node.CollectionItemKey != nil {
+			return srv.Select(ctx, parentObjValue, dest, dagql.Selector{
+				Field: collectionGetFunctionName,
+				Args:  []dagql.NamedInput{{Name: collectionGetArgName, Value: node.CollectionItemKey}},
+			})
+		}
+		// Collection batch operation, over the (possibly narrowed) subset.
+		if node.CollectionBatch {
+			var sels []dagql.Selector
+			if node.SubsetKeys != nil {
+				sels = append(sels, dagql.Selector{
+					Field: collectionSubsetName,
+					Args: []dagql.NamedInput{{
+						Name: collectionKeysFieldName,
+						Value: dagql.DynamicArrayInput{
+							Elem:   node.SubsetElem,
+							Values: node.SubsetKeys,
+						},
+					}},
+				})
+			}
+			sels = append(sels,
+				dagql.Selector{Field: collectionBatchFieldName},
+				dagql.Selector{Field: node.Name},
+			)
+			return srv.Select(ctx, parentObjValue, dest, sels...)
+		}
+		return srv.Select(ctx, parentObjValue, dest, dagql.Selector{Field: node.Name})
 	}
 	return fmt.Errorf("%q: get value: parent is not an object", node.PathString())
 }
@@ -701,14 +779,14 @@ func (node *ModTreeNode) RollupNodes(ctx context.Context, matches func(*ModTreeN
 // Walk the tree and return all check nodes, with include and exclude filters applied.
 func (node *ModTreeNode) RollupChecks(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
 	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
-		return n.IsCheck
+		return n.IsCheck && n.matchesDimensionFilters()
 	}, include, exclude)
 }
 
 // Walk the tree and return all generator nodes, with include and exclude filters applied.
 func (node *ModTreeNode) RollupGenerator(ctx context.Context, include []string, exclude []string) ([]*ModTreeNode, error) {
 	return node.RollupNodes(ctx, func(n *ModTreeNode) bool {
-		return n.IsGenerator
+		return n.IsGenerator && n.matchesDimensionFilters()
 	}, include, exclude)
 }
 
@@ -806,11 +884,24 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 }
 
 func (node *ModTreeNode) PathString() string {
-	return strings.Join(node.Path().CliCase(), ":")
+	return strings.Join(node.displayPath(), ":")
+}
+
+// displayPath kebab-cases path segments except collection keys, which are
+// displayed raw (a key like "./app" or "TestFoo" is data, not a name).
+func (node *ModTreeNode) displayPath() []string {
+	if node.Parent == nil {
+		return nil
+	}
+	segment := node.Name
+	if !node.LiteralName {
+		segment = strcase.ToKebab(segment)
+	}
+	return append(node.Parent.displayPath(), segment)
 }
 
 func (node *ModTreeNode) moduleLocalPathString() string {
-	path := node.Path()
+	path := node.displayPath()
 	if len(path) == 0 {
 		return ""
 	}
@@ -823,10 +914,10 @@ func (node *ModTreeNode) moduleLocalPathString() string {
 	// Workspace checks reparent each module tree under a synthetic naming-only
 	// root. Scale-out loads the module directly, so the remote check/generator
 	// lookup must use the name relative to that module.
-	if root.Parent != nil && root.Parent.Module.Self() == nil && path[0] == root.Name {
+	if root.Parent != nil && root.Parent.Module.Self() == nil && path[0] == strcase.ToKebab(root.Name) {
 		path = path[1:]
 	}
-	return strings.Join(path.CliCase(), ":")
+	return strings.Join(path, ":")
 }
 
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
@@ -881,6 +972,11 @@ func (node *ModTreeNode) walk(ctx context.Context, fn WalkFunc, visiting map[str
 // while the object's nested functions are still discoverable via the subtree.
 // Callers that need unique results should deduplicate by path (see RollupNodes).
 func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
+	if node.Type.Self() != nil && node.Type.Self().AsCollection.Valid {
+		if collection := node.Type.Self().AsCollection.Value.Self(); collection != nil {
+			return node.collectionChildren(ctx, collection)
+		}
+	}
 	var children []*ModTreeNode
 	if objType := node.ObjectType(); objType != nil {
 		nodeType := objType.Name
@@ -889,18 +985,25 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 			if functionRequiresArgs(fn) {
 				continue
 			}
+			// A batch operation shadows the same-named item check: the
+			// collection level runs it once over the subset instead.
+			if node.shadowedChecks[fn.Name] {
+				continue
+			}
 			returnType := fn.ReturnType.Self().ToType().Name()
 			children = append(children, &ModTreeNode{
-				Parent:         node,
-				Name:           fn.Name,
-				DagqlServer:    node.DagqlServer,
-				Module:         node.Module,
-				OriginalModule: node.OriginalModule,
-				Type:           fn.ReturnType,
-				IsCheck:        fn.IsCheck,
-				IsGenerator:    fn.IsGenerator,
-				IsUp:           fn.IsUp,
-				Description:    fn.Description,
+				Parent:           node,
+				Name:             fn.Name,
+				DagqlServer:      node.DagqlServer,
+				Module:           node.Module,
+				OriginalModule:   node.OriginalModule,
+				Type:             fn.ReturnType,
+				IsCheck:          fn.IsCheck,
+				IsGenerator:      fn.IsGenerator,
+				IsUp:             fn.IsUp,
+				Description:      fn.Description,
+				Coordinates:      node.Coordinates,
+				DimensionFilters: node.DimensionFilters,
 			})
 			// if the type returned by the function is an object, also add the object subtree
 			if returnsObject := fn.ReturnType.Self().AsObject.Valid; returnsObject &&
@@ -908,16 +1011,18 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				returnType != nodeType {
 				if subType, ok := node.OriginalModule.Self().objectTypeDefResultByName(fn.ReturnType.Self().ToType().Name()); ok {
 					children = append(children, &ModTreeNode{
-						Parent:         node,
-						Name:           fn.Name,
-						DagqlServer:    node.DagqlServer,
-						Module:         node.Module,
-						OriginalModule: node.OriginalModule,
-						Type:           subType,
-						IsCheck:        false,
-						IsGenerator:    false,
-						IsUp:           false,
-						Description:    subType.Self().AsObject.Value.Self().Description,
+						Parent:           node,
+						Name:             fn.Name,
+						DagqlServer:      node.DagqlServer,
+						Module:           node.Module,
+						OriginalModule:   node.OriginalModule,
+						Type:             subType,
+						IsCheck:          false,
+						IsGenerator:      false,
+						IsUp:             false,
+						Description:      subType.Self().AsObject.Value.Self().Description,
+						Coordinates:      node.Coordinates,
+						DimensionFilters: node.DimensionFilters,
 					})
 				}
 			}
@@ -925,20 +1030,215 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 		for _, fieldRes := range objType.Fields {
 			field := fieldRes.Self()
 			children = append(children, &ModTreeNode{
-				Parent:         node,
-				Name:           field.Name,
-				DagqlServer:    node.DagqlServer,
-				Module:         node.Module,
-				OriginalModule: node.OriginalModule,
-				Type:           field.TypeDef,
-				IsCheck:        false,
-				IsGenerator:    false,
-				IsUp:           false,
-				Description:    field.Description,
+				Parent:           node,
+				Name:             field.Name,
+				DagqlServer:      node.DagqlServer,
+				Module:           node.Module,
+				OriginalModule:   node.OriginalModule,
+				Type:             field.TypeDef,
+				IsCheck:          false,
+				IsGenerator:      false,
+				IsUp:             false,
+				Description:      field.Description,
+				Coordinates:      node.Coordinates,
+				DimensionFilters: node.DimensionFilters,
 			})
 		}
 	}
 	return children, nil
+}
+
+// collectionChildren expands a collection node per the collections design:
+//
+//   - batch operations marked @check/@generate/@up become leaves at the
+//     collection level, executing once over the (possibly narrowed) subset;
+//     a batch operation shadows the same-named check on the item type
+//   - each collection key becomes an item node resolved via get(key), so
+//     unshadowed item-type checks run once per item
+//
+// Dimension filters restrict which keys expand, and narrow the subset that
+// batch operations see. Keys are only enumerated (which may run module
+// code) when something underneath can actually run.
+func (node *ModTreeNode) collectionChildren(ctx context.Context, collection *CollectionTypeDef) ([]*ModTreeNode, error) {
+	if !collection.ValueType.Valid {
+		return nil, nil
+	}
+	valueTypeName := collection.ValueType.Value.Self().ToType().Name()
+	itemTypeRes, ok := node.OriginalModule.Self().objectTypeDefResultByName(valueTypeName)
+	if !ok || itemTypeRes.Self() == nil || !itemTypeRes.Self().AsObject.Valid {
+		return nil, nil
+	}
+	itemObj := itemTypeRes.Self().AsObject.Value.Self()
+	dimension := artifactTypeName(itemObj)
+
+	var children []*ModTreeNode
+	shadowed := map[string]bool{}
+	var batchNodes []*ModTreeNode
+	if collection.BatchType.Valid && collection.BatchType.Value.Self().AsObject.Valid {
+		for _, fnRes := range collection.BatchType.Value.Self().AsObject.Value.Self().Functions {
+			fn := fnRes.Self()
+			if fn == nil || functionRequiresArgs(fn) {
+				continue
+			}
+			if !fn.IsCheck && !fn.IsGenerator && !fn.IsUp {
+				continue
+			}
+			if _, exists := itemObj.FunctionByName(fn.Name); exists {
+				shadowed[fn.Name] = true
+			}
+			batch := &ModTreeNode{
+				Parent:           node,
+				Name:             fn.Name,
+				DagqlServer:      node.DagqlServer,
+				Module:           node.Module,
+				OriginalModule:   node.OriginalModule,
+				Type:             fn.ReturnType,
+				IsCheck:          fn.IsCheck,
+				IsGenerator:      fn.IsGenerator,
+				IsUp:             fn.IsUp,
+				Description:      fn.Description,
+				CollectionBatch:  true,
+				SubsetDimension:  dimension,
+				Coordinates:      node.Coordinates,
+				DimensionFilters: node.DimensionFilters,
+			}
+			children = append(children, batch)
+			batchNodes = append(batchNodes, batch)
+		}
+	}
+
+	allowed, filtered := node.DimensionFilters[dimension]
+	needItems := objectHasTreeActions(node.OriginalModule.Self(), itemObj, shadowed, map[string]bool{})
+	if !needItems && !filtered {
+		return children, nil
+	}
+
+	// Enumerate keys: needed to expand items, and to narrow the subset for
+	// batch operations when this dimension is filtered.
+	var keysResult dagql.AnyResult
+	var collectionValue dagql.AnyObjectResult
+	if err := node.DagqlValue(ctx, &collectionValue); err != nil {
+		return nil, fmt.Errorf("%q: resolve collection: %w", node.PathString(), err)
+	}
+	if err := node.DagqlServer.Select(dagql.WithNonInternalTelemetry(ctx), collectionValue, &keysResult, dagql.Selector{Field: collectionKeysFieldName}); err != nil {
+		return nil, fmt.Errorf("%q: enumerate collection keys: %w", node.PathString(), err)
+	}
+	keys, err := artifactCollectionKeys(keysResult)
+	if err != nil {
+		return nil, fmt.Errorf("%q: %w", node.PathString(), err)
+	}
+
+	subsetKeys := []dagql.Input{}
+	for _, key := range keys {
+		if filtered && !slices.Contains(allowed, key.coordinate) {
+			continue
+		}
+		if filtered {
+			subsetKeys = append(subsetKeys, key.input)
+		}
+		if !needItems {
+			continue
+		}
+		coords := make(map[string]string, len(node.Coordinates)+1)
+		for d, v := range node.Coordinates {
+			coords[d] = v
+		}
+		coords[dimension] = key.coordinate
+		children = append(children, &ModTreeNode{
+			Parent:            node,
+			Name:              key.coordinate,
+			LiteralName:       true,
+			DagqlServer:       node.DagqlServer,
+			Module:            node.Module,
+			OriginalModule:    node.OriginalModule,
+			Type:              itemTypeRes,
+			Description:       itemObj.Description,
+			CollectionItemKey: key.input,
+			Coordinates:       coords,
+			shadowedChecks:    shadowed,
+			DimensionFilters:  node.DimensionFilters,
+		})
+	}
+	if filtered {
+		if len(subsetKeys) == 0 {
+			// The filter excludes every key of this collection: its batch
+			// operations are out of scope too.
+			kept := children[:0]
+			for _, child := range children {
+				if !child.CollectionBatch {
+					kept = append(kept, child)
+				}
+			}
+			return kept, nil
+		}
+		keyElem := collection.KeyType.Value.Self().ToInput()
+		for _, batch := range batchNodes {
+			batch.SubsetKeys = subsetKeys
+			batch.SubsetElem = keyElem
+		}
+	}
+	return children, nil
+}
+
+// objectHasTreeActions reports whether an object type (or anything reachable
+// from it through the tree walk) defines a check, generator, or up function
+// that is not shadowed at the top level.
+func objectHasTreeActions(mod *Module, obj *ObjectTypeDef, shadowed map[string]bool, seen map[string]bool) bool {
+	if seen[obj.Name] {
+		return false
+	}
+	seen[obj.Name] = true
+	for _, fnRes := range obj.Functions {
+		fn := fnRes.Self()
+		if fn == nil || functionRequiresArgs(fn) || shadowed[fn.Name] {
+			continue
+		}
+		if fn.IsCheck || fn.IsGenerator || fn.IsUp {
+			return true
+		}
+		if next, ok := mod.objectTypeDefResultByName(fn.ReturnType.Self().ToType().Name()); ok {
+			if typeDefHasTreeActions(mod, next, seen) {
+				return true
+			}
+		}
+	}
+	for _, fieldRes := range obj.Fields {
+		field := fieldRes.Self()
+		if field == nil {
+			continue
+		}
+		if next, ok := mod.objectTypeDefResultByName(field.TypeDef.Self().ToType().Name()); ok {
+			if typeDefHasTreeActions(mod, next, seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func typeDefHasTreeActions(mod *Module, typeDef dagql.ObjectResult[*TypeDef], seen map[string]bool) bool {
+	self := typeDef.Self()
+	if self == nil || !self.AsObject.Valid || self.AsObject.Value.Self() == nil {
+		return false
+	}
+	// A nested collection acts through its batch operations and item type.
+	if self.AsCollection.Valid && self.AsCollection.Value.Self() != nil {
+		collection := self.AsCollection.Value.Self()
+		if collection.BatchType.Valid && collection.BatchType.Value.Self().AsObject.Valid {
+			for _, fnRes := range collection.BatchType.Value.Self().AsObject.Value.Self().Functions {
+				if fn := fnRes.Self(); fn != nil && (fn.IsCheck || fn.IsGenerator || fn.IsUp) {
+					return true
+				}
+			}
+		}
+		if collection.ValueType.Valid {
+			if item, ok := mod.objectTypeDefResultByName(collection.ValueType.Value.Self().ToType().Name()); ok {
+				return typeDefHasTreeActions(mod, item, seen)
+			}
+		}
+		return false
+	}
+	return objectHasTreeActions(mod, self.AsObject.Value.Self(), nil, seen)
 }
 
 func (node *ModTreeNode) ChildrenNames(ctx context.Context) ([]string, error) {
@@ -992,6 +1292,17 @@ type persistedModTreeNode struct {
 	IsCheck                bool   `json:"isCheck,omitempty"`
 	IsGenerator            bool   `json:"isGenerator,omitempty"`
 	IsUp                   bool   `json:"isUp,omitempty"`
+
+	// Collection node state. Keys are persisted as coordinate strings and
+	// re-decoded through the parent collection's key type.
+	LiteralName       bool                `json:"literalName,omitempty"`
+	Coordinates       map[string]string   `json:"coordinates,omitempty"`
+	CollectionItemKey string              `json:"collectionItemKey,omitempty"`
+	CollectionBatch   bool                `json:"collectionBatch,omitempty"`
+	SubsetDimension   string              `json:"subsetDimension,omitempty"`
+	SubsetKeys        []string            `json:"subsetKeys,omitempty"`
+	ShadowedChecks    map[string]bool     `json:"shadowedChecks,omitempty"`
+	DimensionFilters  map[string][]string `json:"dimensionFilters,omitempty"`
 }
 
 type persistedModTreeEncoder struct {
@@ -1030,13 +1341,33 @@ func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
 	id := len(enc.tree.Nodes) + 1
 	enc.ids[node] = id
 	persisted := persistedModTreeNode{
-		ID:          id,
-		ParentID:    parentID,
-		Name:        node.Name,
-		Description: node.Description,
-		IsCheck:     node.IsCheck,
-		IsGenerator: node.IsGenerator,
-		IsUp:        node.IsUp,
+		ID:               id,
+		ParentID:         parentID,
+		Name:             node.Name,
+		Description:      node.Description,
+		IsCheck:          node.IsCheck,
+		IsGenerator:      node.IsGenerator,
+		IsUp:             node.IsUp,
+		LiteralName:      node.LiteralName,
+		Coordinates:      node.Coordinates,
+		CollectionBatch:  node.CollectionBatch,
+		SubsetDimension:  node.SubsetDimension,
+		ShadowedChecks:   node.shadowedChecks,
+		DimensionFilters: node.DimensionFilters,
+	}
+	if node.CollectionItemKey != nil {
+		key, err := artifactCollectionKeyValue(node.CollectionItemKey)
+		if err != nil {
+			return 0, fmt.Errorf("encode persisted mod tree node %q key: %w", node.Name, err)
+		}
+		persisted.CollectionItemKey = key
+	}
+	for _, subsetKey := range node.SubsetKeys {
+		key, err := artifactCollectionKeyValue(subsetKey)
+		if err != nil {
+			return 0, fmt.Errorf("encode persisted mod tree node %q subset key: %w", node.Name, err)
+		}
+		persisted.SubsetKeys = append(persisted.SubsetKeys, key)
 	}
 	if node.Module.Self() != nil {
 		moduleID, err := encodePersistedObjectRef(enc.cache, node.Module, "mod tree module")
@@ -1076,11 +1407,17 @@ func decodePersistedModTree(ctx context.Context, dag *dagql.Server, tree persist
 		}
 
 		node := &ModTreeNode{
-			Name:        persisted.Name,
-			Description: persisted.Description,
-			IsCheck:     persisted.IsCheck,
-			IsGenerator: persisted.IsGenerator,
-			IsUp:        persisted.IsUp,
+			Name:             persisted.Name,
+			Description:      persisted.Description,
+			IsCheck:          persisted.IsCheck,
+			IsGenerator:      persisted.IsGenerator,
+			IsUp:             persisted.IsUp,
+			LiteralName:      persisted.LiteralName,
+			Coordinates:      persisted.Coordinates,
+			CollectionBatch:  persisted.CollectionBatch,
+			SubsetDimension:  persisted.SubsetDimension,
+			shadowedChecks:   persisted.ShadowedChecks,
+			DimensionFilters: persisted.DimensionFilters,
 		}
 		if persisted.ModuleResultID != 0 {
 			module, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleResultID, "mod tree module")
@@ -1127,7 +1464,75 @@ func decodePersistedModTree(ctx context.Context, dag *dagql.Server, tree persist
 		nodes[persisted.ID].Parent = parent
 	}
 
+	// Collection keys were persisted as coordinate strings: re-decode them
+	// through the parent collection's key type, now that parents are wired.
+	for _, persisted := range tree.Nodes {
+		if persisted.CollectionItemKey == "" && len(persisted.SubsetKeys) == 0 {
+			continue
+		}
+		node := nodes[persisted.ID]
+		collection := modTreeParentCollection(node)
+		if collection == nil || !collection.KeyType.Valid {
+			return nil, fmt.Errorf("decode persisted mod tree node %d: no parent collection for key", persisted.ID)
+		}
+		keyInput := collection.KeyType.Value.Self().ToInput()
+		if persisted.CollectionItemKey != "" {
+			key, err := decodeModTreeCollectionKey(keyInput, persisted.CollectionItemKey)
+			if err != nil {
+				return nil, fmt.Errorf("decode persisted mod tree node %d key: %w", persisted.ID, err)
+			}
+			node.CollectionItemKey = key
+		}
+		for _, subsetKey := range persisted.SubsetKeys {
+			key, err := decodeModTreeCollectionKey(keyInput, subsetKey)
+			if err != nil {
+				return nil, fmt.Errorf("decode persisted mod tree node %d subset key: %w", persisted.ID, err)
+			}
+			node.SubsetKeys = append(node.SubsetKeys, key)
+		}
+		if node.CollectionBatch {
+			node.SubsetElem = keyInput
+		}
+	}
+
 	return nodes, nil
+}
+
+// modTreeParentCollection returns the collection metadata of the node's
+// parent, for item and batch nodes hanging off a collection node.
+func modTreeParentCollection(node *ModTreeNode) *CollectionTypeDef {
+	if node == nil || node.Parent == nil {
+		return nil
+	}
+	parentType := node.Parent.Type.Self()
+	if parentType == nil || !parentType.AsCollection.Valid {
+		return nil
+	}
+	return parentType.AsCollection.Value.Self()
+}
+
+// decodeModTreeCollectionKey turns a persisted coordinate string back into a
+// typed key input. Integer and float coordinates parse before decoding;
+// strings and enum member names decode directly.
+func decodeModTreeCollectionKey(keyInput dagql.Input, coordinate string) (dagql.Input, error) {
+	var raw any = coordinate
+	switch keyInput.Type().Name() {
+	case "Int":
+		parsed, err := strconv.ParseInt(coordinate, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		raw = parsed
+	case "Float":
+		parsed, err := strconv.ParseFloat(coordinate, 64)
+		if err != nil {
+			return nil, err
+		}
+		raw = parsed
+	case "Boolean":
+		raw = coordinate == "true"
+	}
+	return keyInput.Decoder().DecodeInput(raw)
 }
 
 func attachModTreeNodeDependencyResults(

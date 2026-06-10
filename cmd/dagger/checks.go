@@ -11,6 +11,7 @@ import (
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/codes"
 
 	"dagger.io/dagger"
@@ -29,6 +30,10 @@ var (
 	checksPast         bool
 	checksNoPast       bool
 	checksRun          bool
+
+	// checksDimensionFilters are dynamic --<dimension>=<value> filters,
+	// lowered to Workspace.checks(dimensions: ...).
+	checksDimensionFilters []artifactListFilter
 )
 
 //go:embed checks.graphql
@@ -62,10 +67,35 @@ Examples:
   dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
 `,
 	Args: cobra.ArbitraryArgs,
-	RunE: runChecksCommand,
+	// Flag parsing is disabled to accept dynamic artifact dimension
+	// filters (e.g. --go-test=TestFoo); registered flags are resolved by
+	// hand in runChecksCommand.
+	DisableFlagParsing: true,
+	RunE:               runChecksCommand,
 }
 
 func runChecksCommand(cmd *cobra.Command, args []string) error {
+	knownFlags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
+	knownFlags.AddFlagSet(cmd.Flags())
+	knownFlags.AddFlagSet(cmd.InheritedFlags())
+	patterns, filters, help, err := parseDynamicFilterArgs(args, knownFlags)
+	if err != nil {
+		return err
+	}
+	if help {
+		if err := cmd.Help(); err != nil {
+			return err
+		}
+		return printCheckDimensionFlags(cmd)
+	}
+	// Flag parsing is disabled, so cobra never validates flag groups:
+	// enforce the mutually-exclusive sets by hand.
+	if err := cmd.ValidateFlagGroups(); err != nil {
+		return err
+	}
+	checksDimensionFilters = filters
+	args = patterns
+
 	if !checksListMode {
 		replayed, shouldRun, err := maybeReplayPastChecks(cmd, args)
 		if !shouldRun {
@@ -154,6 +184,35 @@ func checkPastWorkspaceAddress(ctx context.Context) (string, bool, string, error
 	return "", false, inferErr.Error(), nil
 }
 
+// printCheckDimensionFlags appends the workspace's filterable artifact
+// dimensions to the help output. Discovery is static (no module code runs);
+// failures are silent so --help works outside a workspace.
+func printCheckDimensionFlags(cmd *cobra.Command) error {
+	return withEngine(
+		cmd.Context(),
+		client.Params{LoadWorkspaceModules: true},
+		func(ctx context.Context, engineClient *client.Client) error {
+			scope, err := loadArtifactScope(ctx, engineClient.Dagger(), nil, false)
+			if err != nil {
+				//nolint:nilerr // best-effort: --help must keep working outside a workspace
+				return nil
+			}
+			if len(scope.Dimensions) <= 1 {
+				return nil
+			}
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "\nFILTER DIMENSIONS (see: dagger list)\n")
+			for _, dim := range scope.Dimensions {
+				if dim.Name == artifactTypeDimension {
+					continue
+				}
+				fmt.Fprintf(out, "  --%s=<value>\n", dim.Name)
+			}
+			return nil
+		},
+	)
+}
+
 func runChecksNow(cmd *cobra.Command, args []string) error {
 	params := client.Params{
 		EnableCloudScaleOut:  enableScaleOut,
@@ -165,10 +224,18 @@ func runChecksNow(cmd *cobra.Command, args []string) error {
 		func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			ws := dag.CurrentWorkspace()
+			dimensions := make([]dagger.ArtifactFilter, 0, len(checksDimensionFilters))
+			for _, filter := range checksDimensionFilters {
+				dimensions = append(dimensions, dagger.ArtifactFilter{
+					Dimension: filter.Dimension,
+					Values:    filter.Values,
+				})
+			}
 			checks := ws.Checks(dagger.WorkspaceChecksOpts{
 				Include:      args,
 				NoGenerate:   checksNoGenerate,
 				OnlyGenerate: checksOnlyGenerate,
+				Dimensions:   dimensions,
 			})
 			if checksListMode {
 				return listChecks(ctx, dag, checks, cmd)
@@ -242,7 +309,7 @@ func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dag
 	info := &CheckGroupInfo{Checks: make([]*CheckInfo, 0, len(items))}
 	for _, item := range items {
 		info.Checks = append(info.Checks, &CheckInfo{
-			Name:        cliName(item.Name),
+			Name:        item.Name,
 			Description: item.Description,
 			Type:        item.CheckType,
 		})

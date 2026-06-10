@@ -28,11 +28,12 @@ type CheckGroup struct {
 	Checks []*Check     `json:"checks"`
 }
 
-func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string, noGenerate, onlyGenerate bool) (*CheckGroup, error) {
+func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string, noGenerate, onlyGenerate bool, dimensionFilters map[string][]string) (*CheckGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
 	}
+	rootNode.DimensionFilters = dimensionFilters
 
 	var checks []*Check
 	if !onlyGenerate {

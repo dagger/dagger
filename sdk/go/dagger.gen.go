@@ -375,6 +375,15 @@ type WorkspaceModuleID string
 // A unique identifier for an object.
 type WorkspaceModuleSettingID string
 
+// A coordinate filter on one artifact dimension.
+type ArtifactFilter struct {
+	// Dimension to filter.
+	Dimension string `json:"dimension"`
+
+	// Allowed coordinate values.
+	Values []string `json:"values"`
+}
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -16954,6 +16963,10 @@ type WorkspaceChecksOpts struct {
 	NoGenerate bool
 	// When true, only return generate-as-checks; exclude annotated check functions
 	OnlyGenerate bool
+	// Narrow checks by artifact dimension coordinates.
+	//
+	// Collection items expand only for matching keys, and batch operations run over the narrowed subset. Checks that do not carry every filtered dimension are excluded.
+	Dimensions []ArtifactFilter
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -16971,6 +16984,10 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		// `onlyGenerate` optional argument
 		if !querybuilder.IsZeroValue(opts[i].OnlyGenerate) {
 			q = q.Arg("onlyGenerate", opts[i].OnlyGenerate)
+		}
+		// `dimensions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dimensions) {
+			q = q.Arg("dimensions", opts[i].Dimensions)
 		}
 	}
 

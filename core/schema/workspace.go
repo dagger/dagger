@@ -153,6 +153,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
 				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
 				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions"),
+				dagql.Arg("dimensions").Doc(
+					"Narrow checks by artifact dimension coordinates.",
+					"Collection items expand only for matching keys, and batch operations run over the narrowed subset. Checks that do not carry every filtered dimension are excluded."),
 			),
 		dagql.Func("generators", s.generators).
 			Doc("Return all generators from modules loaded in the workspace.").
@@ -919,6 +922,7 @@ func (s *workspaceSchema) checks(
 		Include      dagql.Optional[dagql.ArrayInput[dagql.String]]
 		NoGenerate   dagql.Optional[dagql.Boolean]
 		OnlyGenerate dagql.Optional[dagql.Boolean]
+		Dimensions   dagql.Optional[dagql.ArrayInput[dagql.InputObject[core.ArtifactFilter]]]
 	},
 ) (*core.CheckGroup, error) {
 	if isSyntheticWorkspace(parent) {
@@ -946,9 +950,18 @@ func (s *workspaceSchema) checks(
 		return nil, err
 	}
 
+	var dimensionFilters map[string][]string
+	if args.Dimensions.Valid {
+		filters := make([]core.ArtifactFilter, 0, len(args.Dimensions.Value))
+		for _, filter := range args.Dimensions.Value {
+			filters = append(filters, filter.Value)
+		}
+		dimensionFilters = core.DimensionFilterMap(filters)
+	}
+
 	var allChecks []*core.Check
 	for _, mod := range mods {
-		checkGroup, err := core.NewCheckGroup(ctx, mod, nil, noGenerate, onlyGenerate)
+		checkGroup, err := core.NewCheckGroup(ctx, mod, nil, noGenerate, onlyGenerate, dimensionFilters)
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
 		}

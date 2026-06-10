@@ -61,12 +61,16 @@ func TestParseArtifactListArgsKnownFlags(t *testing.T) {
 	workspace := known.StringP("workspace", "W", "", "")
 	mod := known.StringP("mod", "m", "", "")
 
+	verbose := known.CountP("verbose", "v", "")
+
 	dimension, filters, help, err := parseArtifactListArgs([]string{
 		"--progress=report",
 		"-W", "github.com/acme/ws",
 		"-m=./tool",
 		"go-test",
 		"-q",
+		// count flag: must not consume the following filter flag
+		"-v",
 		"--go-module", "./app",
 	}, known)
 	require.NoError(t, err)
@@ -76,6 +80,7 @@ func TestParseArtifactListArgsKnownFlags(t *testing.T) {
 	require.Equal(t, "github.com/acme/ws", *workspace)
 	require.Equal(t, "./tool", *mod)
 	require.True(t, *quiet)
+	require.Equal(t, 1, *verbose)
 	require.Equal(t, []artifactListFilter{
 		{Dimension: "go-module", Values: []string{"./app"}},
 	}, filters)

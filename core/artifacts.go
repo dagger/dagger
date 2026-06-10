@@ -17,6 +17,34 @@ import (
 
 const ArtifactTypeDimension = "type"
 
+// ArtifactFilter selects artifact coordinate values for one dimension.
+// Values within one dimension are OR; filters across dimensions are AND.
+type ArtifactFilter struct {
+	Dimension string   `doc:"Dimension to filter." json:"dimension"`
+	Values    []string `doc:"Allowed coordinate values." json:"values"`
+}
+
+func (ArtifactFilter) TypeName() string {
+	return "ArtifactFilter"
+}
+
+func (ArtifactFilter) TypeDescription() string {
+	return "A coordinate filter on one artifact dimension."
+}
+
+// DimensionFilterMap folds filters into a dimension -> values map, merging
+// repeated dimensions (OR semantics within a dimension).
+func DimensionFilterMap(filters []ArtifactFilter) map[string][]string {
+	if len(filters) == 0 {
+		return nil
+	}
+	byDimension := make(map[string][]string, len(filters))
+	for _, filter := range filters {
+		byDimension[filter.Dimension] = append(byDimension[filter.Dimension], filter.Values...)
+	}
+	return byDimension
+}
+
 type Artifacts struct {
 	Dimensions []*ArtifactDimension `field:"true" doc:"Ordered filterable dimensions for the current scope."`
 	rows       []*Artifact

@@ -99,35 +99,65 @@ type artifactListFilter struct {
 }
 
 func parseArtifactListArgs(args []string, knownFlags *pflag.FlagSet) (string, []artifactListFilter, bool, error) {
+	positionals, filters, help, err := parseDynamicFilterArgs(args, knownFlags)
+	if err != nil || help {
+		return "", nil, help, err
+	}
 	var dimension string
+	for _, arg := range positionals {
+		if dimension != "" {
+			return "", nil, false, fmt.Errorf("expected exactly one artifact dimension, got %q and %q", dimension, arg)
+		}
+		dimension = arg
+	}
+	return dimension, filters, false, nil
+}
+
+// parseDynamicFilterArgs parses arguments for a command that disables cobra
+// flag parsing in order to accept dynamic artifact dimension filters.
+// Registered flags (own and inherited, including shorthands like -W and -m)
+// are applied; any other --name[=value] flag is collected as a dimension
+// filter; bare arguments are returned as positionals.
+//
+// Disabling cobra parsing also disables cobra behavior that commands must
+// reinstate by hand. Known so far — a command adopting this parser must:
+//   - handle -h/--help itself (returned via the help result)
+//   - call cmd.ValidateFlagGroups() after parsing, or MarkFlagsMutuallyExclusive
+//     and friends silently stop being enforced
+//   - rely on applyKnownFlag's NoOptDefVal handling so bool and count flags
+//     (-v) never consume the next argument
+//
+// Both of the latter were found as CI failures, not review.
+func parseDynamicFilterArgs(args []string, knownFlags *pflag.FlagSet) ([]string, []artifactListFilter, bool, error) {
+	var positionals []string
 	filtersByDimension := map[string][]string{}
 	filterOrder := []string{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--help" || arg == "-h":
-			return "", nil, true, nil
+			return nil, nil, true, nil
 		case arg == "--":
-			return "", nil, false, fmt.Errorf("unexpected argument %q", arg)
+			return nil, nil, false, fmt.Errorf("unexpected argument %q", arg)
 		case strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--"):
-			// Shorthands can only belong to registered flags (e.g. -W, -m):
-			// dimension filters always use long form.
+			// Shorthands can only belong to registered flags: dimension
+			// filters always use long form.
 			name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "-"), "=")
 			if knownFlags != nil && len(name) == 1 {
 				if flag := knownFlags.ShorthandLookup(name); flag != nil {
 					var err error
 					i, err = applyKnownFlag(knownFlags, flag, value, hasValue, args, i)
 					if err != nil {
-						return "", nil, false, err
+						return nil, nil, false, err
 					}
 					continue
 				}
 			}
-			return "", nil, false, fmt.Errorf("unknown shorthand flag: %q", arg)
+			return nil, nil, false, fmt.Errorf("unknown shorthand flag: %q", arg)
 		case strings.HasPrefix(arg, "--"):
 			name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
 			if name == "" {
-				return "", nil, false, fmt.Errorf("empty artifact filter flag")
+				return nil, nil, false, fmt.Errorf("empty artifact filter flag")
 			}
 			// Registered flags (own and inherited, e.g. --mod, --progress)
 			// are applied; anything else is a dimension filter.
@@ -136,14 +166,14 @@ func parseArtifactListArgs(args []string, knownFlags *pflag.FlagSet) (string, []
 					var err error
 					i, err = applyKnownFlag(knownFlags, flag, value, hasValue, args, i)
 					if err != nil {
-						return "", nil, false, err
+						return nil, nil, false, err
 					}
 					continue
 				}
 			}
 			if !hasValue {
 				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
-					return "", nil, false, fmt.Errorf("artifact filter --%s requires a value", name)
+					return nil, nil, false, fmt.Errorf("artifact filter --%s requires a value", name)
 				}
 				i++
 				value = args[i]
@@ -154,10 +184,7 @@ func parseArtifactListArgs(args []string, knownFlags *pflag.FlagSet) (string, []
 			}
 			filtersByDimension[name] = append(filtersByDimension[name], value)
 		default:
-			if dimension != "" {
-				return "", nil, false, fmt.Errorf("expected exactly one artifact dimension, got %q and %q", dimension, arg)
-			}
-			dimension = arg
+			positionals = append(positionals, arg)
 		}
 	}
 	filters := make([]artifactListFilter, 0, len(filterOrder))
@@ -167,20 +194,24 @@ func parseArtifactListArgs(args []string, knownFlags *pflag.FlagSet) (string, []
 			Values:    filtersByDimension[name],
 		})
 	}
-	return dimension, filters, false, nil
+	return positionals, filters, false, nil
 }
 
 // applyKnownFlag applies one occurrence of a registered flag, consuming the
 // next argument as its value when needed, and returns the updated index.
+// Flags with a no-option default (bools "true", counts "+1") never consume
+// the next argument.
 func applyKnownFlag(flags *pflag.FlagSet, flag *pflag.Flag, value string, hasValue bool, args []string, i int) (int, error) {
-	if !hasValue && flag.Value.Type() != "bool" {
-		if i+1 >= len(args) {
-			return i, fmt.Errorf("flag --%s requires a value", flag.Name)
+	if !hasValue {
+		if flag.NoOptDefVal != "" {
+			value = flag.NoOptDefVal
+		} else {
+			if i+1 >= len(args) {
+				return i, fmt.Errorf("flag --%s requires a value", flag.Name)
+			}
+			i++
+			value = args[i]
 		}
-		i++
-		value = args[i]
-	} else if !hasValue {
-		value = "true"
 	}
 	return i, flags.Set(flag.Name, value)
 }

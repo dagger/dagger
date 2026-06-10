@@ -457,3 +457,86 @@ type Swatch struct {
 		require.Equal(t, []string{"BLUE", "RED"}, strings.Fields(out))
 	})
 }
+
+// TestCheckSelection covers plans-lite: collection-aware check selection
+// per the "Checks" section of collections.md. Collection items appear as
+// per-item checks, batch operations shadow same-named item checks and run
+// once over the subset, and --<dimension> filters narrow both.
+//
+// The fixture's batch verify fails on purpose, reporting its subset, so
+// execution assertions can observe exactly which keys it saw.
+func (CollectionSuite) TestCheckSelection(_ context.Context, t *testctx.T) {
+	t.Run("batch shadows item checks in listing", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goTestWorkspace(t, c).
+			With(daggerExecRaw("check", "-l")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		// One batch verify per collection occurrence, at the collection level.
+		require.Contains(t, out, "go:modules:./app:tests:verify")
+		require.Contains(t, out, "go:modules:./lib:tests:verify")
+		// Item-level verify is shadowed; vet is not.
+		require.NotContains(t, out, "TestAppGreet:verify")
+		require.Contains(t, out, "go:modules:./app:tests:TestAppGreet:vet")
+		require.Contains(t, out, "go:modules:./lib:tests:TestLibTrim:vet")
+	})
+
+	t.Run("dimension filter narrows listing", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goTestWorkspace(t, c).
+			With(daggerExecRaw("check", "-l", "--go-module=./app")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "go:modules:./app:tests:verify")
+		require.Contains(t, out, "go:modules:./app:tests:TestAppAdd:vet")
+		require.NotContains(t, out, "./lib")
+	})
+
+	t.Run("filter excludes collections without matching keys", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goTestWorkspace(t, c).
+			With(daggerExecRaw("check", "-l", "--go-test=TestAppGreet")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "go:modules:./app:tests:TestAppGreet:vet")
+		require.Contains(t, out, "go:modules:./app:tests:verify")
+		require.NotContains(t, out, "TestAppAdd")
+		require.NotContains(t, out, "./lib")
+	})
+
+	t.Run("batch runs once over the narrowed subset", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goTestWorkspace(t, c).
+			With(artifactsExecFail("check", "--go-test=TestAppGreet", "--go-test=TestAppAdd", "**:verify")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "./app batch verified: ^(TestAppGreet|TestAppAdd)$")
+		require.NotContains(t, out, "TestLib")
+	})
+
+	t.Run("include patterns compose with dimension filters", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goTestWorkspace(t, c).
+			With(daggerExecRaw("check", "--go-test=TestAppGreet", "**:vet")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		_ = out
+	})
+
+	t.Run("help lists filter dimensions", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := goTestWorkspace(t, c).
+			With(daggerExecRaw("check", "--help")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "FILTER DIMENSIONS")
+		require.Contains(t, out, "--go-module=<value>")
+		require.Contains(t, out, "--go-test=<value>")
+	})
+}

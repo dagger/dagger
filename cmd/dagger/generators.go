@@ -76,7 +76,7 @@ func loadGeneratorGroupInfo(ctx context.Context, dag *dagger.Client, generatorGr
 	info := &GeneratorGroupInfo{Generators: make([]*GeneratorInfo, 0, len(items))}
 	for _, item := range items {
 		info.Generators = append(info.Generators, &GeneratorInfo{
-			Name:        cliName(item.Name),
+			Name:        item.Name,
 			Description: item.Description,
 		})
 	}

@@ -30,7 +30,10 @@ entrypoint = true
 		WithNewFile("go/dagger.json", `{"name": "go", "sdk": "go", "source": "."}`).
 		WithNewFile("go/main.go", `package main
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 type Go struct{}
 
@@ -81,6 +84,14 @@ func (t *GoTests) Run() string {
 	return t.Path + ": go test -run '^(" + strings.Join(t.Keys, "|") + ")$'"
 }
 
+// Verify all tests in the current subset in a single invocation.
+// Fails on purpose, reporting the subset, so tests can observe exactly
+// which keys the batch operation saw.
+// +check
+func (t *GoTests) Verify() error {
+	return errors.New(t.Path + " batch verified: ^(" + strings.Join(t.Keys, "|") + ")$")
+}
+
 // A single Go test
 type GoTest struct {
 	Path string
@@ -90,6 +101,18 @@ type GoTest struct {
 // Run this test
 func (t *GoTest) Run() string {
 	return t.Path + ": go test -run '^" + t.Name + "$'"
+}
+
+// Verify this test (shadowed by the collection's batch verify)
+// +check
+func (t *GoTest) Verify() string {
+	return t.Path + ": verified " + t.Name
+}
+
+// Vet the package containing this test
+// +check
+func (t *GoTest) Vet() string {
+	return t.Path + ": vetted " + t.Name
 }
 `)
 }
