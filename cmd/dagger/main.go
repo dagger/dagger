@@ -163,8 +163,6 @@ func init() {
 		moduleUpdateCmd,
 		searchCmd,
 		activityCmd,
-		functionCmd,
-		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
 		sessionAliasCmd,

@@ -61,27 +61,14 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 }
 
 func TestCosmeticCommandAliases(t *testing.T) {
-	cmd, _, err := rootCmd.Find([]string{"function"})
+	cmd, _, err := rootCmd.Find([]string{"api", "call"})
 	require.NoError(t, err)
-	require.Same(t, functionCmd, cmd)
-
-	cmd, _, err = rootCmd.Find([]string{"fn"})
-	require.NoError(t, err)
-	require.Same(t, functionCmd, cmd)
-
-	cmd, _, err = rootCmd.Find([]string{"function", "list"})
-	require.NoError(t, err)
-	require.Same(t, functionListCmd, cmd)
+	require.Same(t, apiCallCmd.Command(), cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"functions"})
+	cmd, _, err = rootCmd.Find([]string{"api", "functions"})
 	require.NoError(t, err)
-	require.Same(t, funcListCmd, cmd)
-	require.True(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"function", "call"})
-	require.NoError(t, err)
-	require.Same(t, functionCallCmd.Command(), cmd)
+	require.Same(t, apiFunctionsCmd, cmd)
 	require.False(t, cmd.Hidden)
 
 	cmd, _, err = rootCmd.Find([]string{"call"})
@@ -292,7 +279,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 
 func TestHelpAliasesRespectHiddenAliases(t *testing.T) {
 	require.Contains(t, renderHelp(t, workspaceCmd), "workspace, ws")
-	require.Contains(t, renderHelp(t, functionCmd), "function, fn")
 
 	execHelp := renderHelp(t, runCmd)
 	require.NotContains(t, execHelp, "exec, run")
@@ -429,7 +415,7 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 
 	workspaceRef = "./local-workspace"
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil))
-	require.NoError(t, validateWorkspaceFlagPolicy(functionCallCmd.Command(), nil))
+	require.NoError(t, validateWorkspaceFlagPolicy(apiCallCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}))
