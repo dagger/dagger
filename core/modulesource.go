@@ -153,6 +153,28 @@ func (sdk *SDKConfig) ExperimentalFeatureEnabled(feature ModuleSourceExperimenta
 	return sdk.Experimental[feature.String()]
 }
 
+// selfCallsAlwaysEnabler is implemented by SDKs that always require self calls,
+// independent of the SELF_CALLS experimental flag — e.g. the interpreted Dang
+// SDK, which resolves its own types by name against the runtime schema.
+type selfCallsAlwaysEnabler interface {
+	AlwaysEnablesSelfCalls() bool
+}
+
+// SelfCallsEnabled reports whether self calls are enabled for this source,
+// either via the SELF_CALLS experimental flag or because the SDK always
+// requires them. All call sites must use this rather than checking the flag
+// directly, so the two enablement paths stay consistent (an inconsistency
+// causes a module's own types to be both installed and rejected as duplicates).
+func (src *ModuleSource) SelfCallsEnabled() bool {
+	if src.SDK != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
+		return true
+	}
+	if sc, ok := src.SDKImpl.(selfCallsAlwaysEnabler); ok && sc.AlwaysEnablesSelfCalls() {
+		return true
+	}
+	return false
+}
+
 type ModuleSource struct {
 	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
 	ConfigFilename                string
@@ -411,6 +433,7 @@ type persistedModuleSourceSDKCapabilities struct {
 	ModuleTypes     bool `json:"moduleTypes,omitempty"`
 	CodeGenerator   bool `json:"codeGenerator,omitempty"`
 	ClientGenerator bool `json:"clientGenerator,omitempty"`
+	SelfCallsAlways bool `json:"selfCallsAlways,omitempty"`
 }
 
 type persistedModuleSourcePayload struct {
@@ -452,6 +475,11 @@ type persistedModuleSourceLazySDK struct {
 }
 
 var _ SDK = (*persistedModuleSourceLazySDK)(nil)
+var _ selfCallsAlwaysEnabler = (*persistedModuleSourceLazySDK)(nil)
+
+func (sdk *persistedModuleSourceLazySDK) AlwaysEnablesSelfCalls() bool {
+	return sdk != nil && sdk.capabilities.SelfCallsAlways
+}
 
 func (sdk *persistedModuleSourceLazySDK) load(ctx context.Context) (SDK, error) {
 	if sdk == nil || sdk.config == nil {
@@ -647,11 +675,16 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
 		_, hasCodeGenerator := src.SDKImpl.AsCodeGenerator()
 		_, hasClientGenerator := src.SDKImpl.AsClientGenerator()
+		selfCallsAlways := false
+		if sc, ok := src.SDKImpl.(selfCallsAlwaysEnabler); ok && sc.AlwaysEnablesSelfCalls() {
+			selfCallsAlways = true
+		}
 		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
 			Runtime:         hasRuntime,
 			ModuleTypes:     hasModuleTypes,
 			CodeGenerator:   hasCodeGenerator,
 			ClientGenerator: hasClientGenerator,
+			SelfCallsAlways: selfCallsAlways,
 		}
 	}
 	if src.ContextDirectory.Self() != nil {

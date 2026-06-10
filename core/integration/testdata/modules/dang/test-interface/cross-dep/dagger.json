@@ -1,0 +1,16 @@
+{
+  "name": "cross-dep",
+  "engineVersion": "v0.21.5",
+  "sdk": "dang",
+  "include": ["!dep"],
+  "dependencies": [
+    {
+      "name": "moduleA",
+      "source": "./moduleA"
+    },
+    {
+      "name": "moduleB",
+      "source": "./moduleB"
+    }
+  ]
+}

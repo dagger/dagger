@@ -72,6 +72,15 @@ func (sdk *dangSDK) AttachDependencyResults(
 	return nil, nil
 }
 
+// AlwaysEnablesSelfCalls reports that the Dang SDK always needs self calls.
+// Unlike compiled SDKs, the interpreter resolves its own types at runtime by
+// name against the schema, so a module's own types must be present in the
+// schema it queries — e.g. to call a method on an interface value received
+// across a dependency. See isSelfCallsEnabled.
+func (sdk *dangSDK) AlwaysEnablesSelfCalls() bool {
+	return true
+}
+
 func (sdk *dangSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
 	return dagql.NewStringArray(), nil
 }
