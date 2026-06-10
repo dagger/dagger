@@ -150,7 +150,17 @@ type TestSplit {
   """
   pub testCollections: Void @check {
     # Every collection test boots a nested dev engine; unbounded test
-    # parallelism saturates the runner and stalls engine sessions.
-    testSpecific(["TestCollection$"], parallel: 4)
+    # parallelism saturates the runner and stalls engine sessions, so
+    # bound it, and keep the check-selection half in its own shard.
+    testSpecific(["TestCollection$/TestPublicSurface", "TestCollection$/TestAlgebraLaws", "TestCollection$/TestGeneratedClients", "TestCollection$/TestCacheReplay", "TestCollection$/TestKeyTypes"], parallel: 4)
+  }
+
+  """
+  Test Collection Check Selection
+  """
+  pub testCollectionChecks: Void @check {
+    # The check-selection tests execute real checks on top of nested
+    # engines: the heaviest collection tests, sharded separately.
+    testSpecific(["TestCollection$/TestCheckSelection"], parallel: 4)
   }
 }
