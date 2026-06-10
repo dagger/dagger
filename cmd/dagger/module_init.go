@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 )
@@ -200,33 +201,105 @@ func runModuleInit(cmd *cobra.Command, args []string) error {
 // subdirectory of the workspace expects `./things` to mean
 // "<workspace-root>/things", not "<cwd>/things".
 func resolveWorkspacePath(ctx context.Context, dag *dagger.Client, relPath string) (string, error) {
-	if filepath.IsAbs(relPath) {
-		return relPath, nil
-	}
 	wsRoot, err := currentWorkspaceExportPath(ctx, dag.CurrentWorkspace())
 	if err != nil {
 		return "", fmt.Errorf("locate workspace root: %w", err)
 	}
-	return filepath.Join(wsRoot, relPath), nil
+	var resolved string
+	if filepath.IsAbs(relPath) {
+		resolved = filepath.Clean(relPath)
+	} else {
+		resolved = filepath.Clean(filepath.Join(wsRoot, relPath))
+	}
+
+	// Refuse paths that escape the workspace root. A module installed
+	// outside the workspace would silently fail to be picked up later by
+	// `dagger install` (which writes its entry into dagger.toml under a
+	// workspace-relative key). Symlinks aren't followed here — workspaces
+	// are normal source trees, not chroot jails.
+	absRoot, err := filepath.Abs(wsRoot)
+	if err != nil {
+		return "", fmt.Errorf("workspace root absolute path: %w", err)
+	}
+	rel, err := filepath.Rel(absRoot, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("--path %q escapes workspace root %q; module paths must live inside the workspace", relPath, absRoot)
+	}
+	return resolved, nil
 }
 
 // ensureSDKInstalled installs the SDK module into the current workspace if
-// it isn't already present. Idempotent: if already installed, prints a
-// confirmation and returns nil.
+// it isn't already present. Idempotent: if already installed (matched by
+// canonical source ref, not by short name), prints a confirmation and
+// returns nil.
+//
+// Source-ref matching matters: a workspace could already have a module
+// installed under the conventional name (e.g. "go-sdk") that points at a
+// fork (github.com/myorg/go-sdk). Matching by basename would silently use
+// the fork; the install loop wouldn't run. Match by repo URL instead so
+// the caller gets the SDK they asked for or a clear conflict signal.
 func ensureSDKInstalled(ctx context.Context, out io.Writer, dag *dagger.Client, sdkRef string) error {
-	installed, err := installedModuleNames(ctx, dag)
+	installedByName, installedBySource, err := installedModules(ctx, dag)
 	if err != nil {
 		return err
 	}
-	// Match by canonical short name (final path segment); this matches the
-	// default naming the install path uses when no --name is supplied.
-	conventional := conventionalSDKModuleName(sdkRef)
-	if installed[conventional] {
-		fmt.Fprintf(out, "Using already-installed SDK: %s (as %q)\n", sdkRef, conventional)
-		return nil
+
+	// Strip @version when comparing — installed modules typically carry the
+	// resolved ref without the user-supplied version qualifier.
+	wantSource := sdkRef
+	if i := strings.Index(wantSource, "@"); i >= 0 {
+		wantSource = wantSource[:i]
 	}
+
+	for source, name := range installedBySource {
+		base := source
+		if i := strings.Index(base, "@"); i >= 0 {
+			base = base[:i]
+		}
+		if base == wantSource {
+			fmt.Fprintf(out, "Using already-installed SDK: %s (as %q)\n", sdkRef, name)
+			return nil
+		}
+	}
+
+	// No source-ref match. If something is squatting the conventional name
+	// from a different repo, refuse rather than silently shadow it.
+	conventional := conventionalSDKModuleName(sdkRef)
+	if existingSource, taken := installedByName[conventional]; taken {
+		return fmt.Errorf(
+			"module name %q is already taken in this workspace by %q (different from --sdk=%s); pick a different SDK or uninstall the existing module first",
+			conventional, existingSource, sdkRef,
+		)
+	}
+
 	fmt.Fprintf(out, "Installing SDK: %s ...\n", sdkRef)
 	return installWorkspaceModule(ctx, out, dag, sdkRef, "", false)
+}
+
+// installedModules returns two views of the installed modules in the
+// current workspace: name → source, and source → name. The maps share data;
+// callers pick whichever direction they need.
+func installedModules(ctx context.Context, dag *dagger.Client) (byName, bySource map[string]string, _ error) {
+	var res struct {
+		CurrentWorkspace struct {
+			ModuleList []struct {
+				Name   string
+				Source string
+			}
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query: `query { currentWorkspace { moduleList { name source } } }`,
+	}, &dagger.Response{Data: &res}); err != nil {
+		return nil, nil, fmt.Errorf("list installed modules: %w", err)
+	}
+	byName = make(map[string]string, len(res.CurrentWorkspace.ModuleList))
+	bySource = make(map[string]string, len(res.CurrentWorkspace.ModuleList))
+	for _, m := range res.CurrentWorkspace.ModuleList {
+		byName[m.Name] = m.Source
+		bySource[m.Source] = m.Name
+	}
+	return byName, bySource, nil
 }
 
 // conventionalSDKModuleName derives the workspace-side install name from
@@ -249,24 +322,64 @@ func conventionalSDKModuleName(sdkRef string) string {
 // The file declares the module's name + SDK. Source scaffolding is left to
 // `dagger generate` against the installed SDK.
 //
-// Today the schema uses `runtime.source` for the SDK identifier. When the
-// schema splits runtime (engine) from sdk (tooling) into separate fields,
-// this writer updates to match.
+// Today the schema uses `runtime.source` for the SDK identifier (the SDK type
+// marshals as "sdk" in legacy JSON and "runtime" in TOML — see
+// core/modules/config.go). When the schema gains an explicit `sdk` field
+// distinct from `runtime`, this writer updates to match.
+//
+// Refuses to overwrite an existing dagger-module.toml AND refuses to land
+// alongside a legacy dagger.json — the user would silently end up with two
+// configs at one path and `selectFoundModuleConfig`'s tie-breaker would hide
+// the legacy file. In that case, point them at `dagger setup` to migrate.
+//
+// The write itself is atomic (tmp file + rename) so a crash mid-write
+// doesn't leave a half-written TOML that blocks the next init.
 func writeModuleConfig(out io.Writer, path, name, sdkRef string) error {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return fmt.Errorf("create module directory %q: %w", path, err)
 	}
-	configPath := filepath.Join(path, "dagger-module.toml")
+	configPath := filepath.Join(path, modules.Filename)
 	if _, err := os.Stat(configPath); err == nil {
 		return fmt.Errorf("module config already exists at %q (refusing to overwrite)", configPath)
 	}
-	contents := fmt.Sprintf(`name = %q
+	legacyPath := filepath.Join(path, modules.LegacyFilename)
+	if _, err := os.Stat(legacyPath); err == nil {
+		return fmt.Errorf("a legacy %s exists at %q; run `dagger setup` to migrate it before adding a new module here", modules.LegacyFilename, legacyPath)
+	}
 
-[runtime]
-source = %q
-`, name, sdkRef)
-	if err := os.WriteFile(configPath, []byte(contents), 0o644); err != nil {
-		return fmt.Errorf("write %q: %w", configPath, err)
+	cfg := &modules.ModuleConfigWithUserFields{
+		ModuleConfig: modules.ModuleConfig{
+			Name: name,
+			SDK:  &modules.SDK{Source: sdkRef},
+		},
+	}
+	data, err := modules.MarshalModuleConfigForFilename(cfg, configPath)
+	if err != nil {
+		return fmt.Errorf("marshal module config: %w", err)
+	}
+
+	tmpFile, err := os.CreateTemp(path, ".dagger-module.toml.*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	cleanup := func() { _ = os.Remove(tmpPath) }
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		cleanup()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		cleanup()
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		cleanup()
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		cleanup()
+		return fmt.Errorf("rename %q -> %q: %w", tmpPath, configPath, err)
 	}
 	fmt.Fprintf(out, "Wrote %s\n", configPath)
 	return nil
