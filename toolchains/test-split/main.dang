@@ -10,8 +10,9 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    parallel: Int,
   ): Void {
-    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, parallel: parallel)
   }
 
   let testCliEngineSpecific(
@@ -148,6 +149,8 @@ type TestSplit {
   shard.
   """
   pub testCollections: Void @check {
-    testSpecific(["TestCollection$"])
+    # Every collection test boots a nested dev engine; unbounded test
+    # parallelism saturates the runner and stalls engine sessions.
+    testSpecific(["TestCollection$"], parallel: 4)
   }
 }
