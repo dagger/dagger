@@ -88,16 +88,16 @@ func init() {
 }
 
 var workspaceUpdateCmd = newWorkspaceUpdateCmd(false)
-var moduleUpdateCmd = newWorkspaceUpdateCmd(true)
+var moduleUpdateCmd = newWorkspaceUpdateCmd(false)
 
 func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   "update",
-		Short: "Refresh workspace-managed state",
-		Long: `Refresh workspace-managed state.
+		Short: "Refresh installed-module state",
+		Long: `Refresh installed-module state.
 
 Refreshes entries already recorded in dagger.lock.`,
-		Example: `"dagger workspace update"`,
+		Example: `"dagger update"`,
 		Args:    cobra.NoArgs,
 		Hidden:  hidden,
 		RunE:    runWorkspaceUpdate,
@@ -105,33 +105,34 @@ Refreshes entries already recorded in dagger.lock.`,
 }
 
 var workspaceInstallCmd = newWorkspaceInstallCmd(false, nil)
-var moduleDepInstallCmd = newWorkspaceInstallCmd(true, []string{"i"})
+var moduleDepInstallCmd = newWorkspaceInstallCmd(false, []string{"i"})
 
 func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
 		Use:     "install [options] <module>",
 		Aliases: aliases,
-		Short:   "Install a module",
+		Short:   "Install a module into your workspace",
 		Long: `Install a module into the current workspace.
 
 If no workspace config is selected, this creates one at the workspace root first.
 Use --here to create the workspace config at the workspace cwd instead.`,
-		Example: "dagger workspace install github.com/shykes/daggerverse/hello@v0.3.0",
+		Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runWorkspaceInstall,
 	}
 }
 
-var workspaceUninstallCmd = newWorkspaceUninstallCmd(false)
-var moduleDepUninstallCmd = newWorkspaceUninstallCmd(true)
+var workspaceUninstallCmd = newWorkspaceUninstallCmd(false, nil)
+var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, []string{"un"})
 
-func newWorkspaceUninstallCmd(hidden bool) *cobra.Command {
+func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
 		Use:     "uninstall [options] <module>",
-		Short:   "Uninstall a module",
+		Aliases: aliases,
+		Short:   "Uninstall a module from your workspace",
 		Long:    `Uninstall a module from the current workspace, removing it from dagger.toml.`,
-		Example: "dagger workspace uninstall hello",
+		Example: "dagger uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runWorkspaceUninstall,

@@ -30,8 +30,8 @@ func init() {
 
 var generateCmd = &cobra.Command{
 	Use:   "generate [options] [pattern...]",
-	Short: "Generate assets of your project",
-	Long: `Generate assets of your project
+	Short: "Generate derived files for your project — code, SDKs, types, docs, etc.",
+	Long: `Generate derived files for your project — code, SDKs, types, docs, etc.
 
 Examples:
   dagger generate                            # Generate all assets

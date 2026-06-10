@@ -18,7 +18,7 @@ import (
 func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"install"})
 	require.NoError(t, err)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
 	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
@@ -33,7 +33,7 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 
 	cmd, _, err = rootCmd.Find([]string{"update"})
 	require.NoError(t, err)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
 	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 
@@ -52,7 +52,12 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	cmd, _, err = rootCmd.Find([]string{"i"})
 	require.NoError(t, err)
 	require.Same(t, moduleDepInstallCmd, cmd)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"un"})
+	require.NoError(t, err)
+	require.Same(t, moduleDepUninstallCmd, cmd)
+	require.False(t, cmd.Hidden)
 }
 
 func TestCosmeticCommandAliases(t *testing.T) {
@@ -89,15 +94,6 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, callCoreCmd.Command(), cmd)
 	require.True(t, cmd.Hidden)
 	require.Contains(t, cmd.Deprecated, "dagger -m core function call")
-
-	cmd, _, err = rootCmd.Find([]string{"module"})
-	require.NoError(t, err)
-	require.Same(t, modCmd, cmd)
-	require.False(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"mod"})
-	require.NoError(t, err)
-	require.Same(t, modCmd, cmd)
 
 	cmd, _, err = rootCmd.Find([]string{"exec"})
 	require.NoError(t, err)
@@ -297,7 +293,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 func TestHelpAliasesRespectHiddenAliases(t *testing.T) {
 	require.Contains(t, renderHelp(t, workspaceCmd), "workspace, ws")
 	require.Contains(t, renderHelp(t, functionCmd), "function, fn")
-	require.Contains(t, renderHelp(t, modCmd), "module, mod")
 
 	execHelp := renderHelp(t, runCmd)
 	require.NotContains(t, execHelp, "exec, run")
