@@ -165,6 +165,108 @@ func (PlatformSuite) TestFromSinglePlatformTagWithoutExplicitPlatform(ctx contex
 	}
 }
 
+func (PlatformSuite) TestFromMultiPlatformTagWithFreshPullEngines(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const registryHost = "registry:5000"
+
+	registrySvc := c.Container().
+		From("registry:3").
+		WithMountedCache("/var/lib/registry", c.CacheVolume("platform-multi-tag-registry-"+identity.NewID())).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		AsService()
+
+	startFreshEngine := func(ctx context.Context, t *testctx.T) (*dagger.Client, func()) {
+		t.Helper()
+
+		devEngine := devEngineContainer(c,
+			func(ctr *dagger.Container) *dagger.Container {
+				return ctr.WithServiceBinding("registry", registrySvc)
+			},
+			engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg engineconfig.Config) engineconfig.Config {
+				cfg.Registries = map[string]engineconfig.RegistryConfig{
+					registryHost: {PlainHTTP: ptr(true)},
+				}
+				return cfg
+			}),
+		)
+
+		engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+		require.NoError(t, err)
+
+		endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+		require.NoError(t, err)
+
+		nestedClient, err := dagger.Connect(ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		require.NoError(t, err)
+
+		var cleanupOnce sync.Once
+		cleanup := func() {
+			cleanupOnce.Do(func() {
+				nestedClient.Close()
+				_, _ = engineSvc.Stop(ctx)
+			})
+		}
+		t.Cleanup(cleanup)
+		return nestedClient, cleanup
+	}
+
+	platforms := []dagger.Platform{"linux/amd64", "linux/arm64"}
+	markers := make(map[dagger.Platform]string, len(platforms))
+	variants := make([]*dagger.Container, 0, len(platforms))
+
+	pushClient, cleanupPushEngine := startFreshEngine(ctx, t)
+	for _, platform := range platforms {
+		marker := "hello from " + string(platform)
+		variants = append(variants, pushClient.Container(dagger.ContainerOpts{Platform: platform}).
+			WithRootfs(pushClient.Directory().WithNewFile("platform.txt", marker)))
+		markers[platform] = marker
+	}
+
+	ref := registryHost + "/platform-multi-tag:" + identity.NewID()
+	_, err := pushClient.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
+		PlatformVariants: variants,
+	})
+	require.NoError(t, err)
+	cleanupPushEngine()
+
+	assertPulled := func(ctx context.Context, t *testctx.T, ctr *dagger.Container, expectedPlatform dagger.Platform) {
+		t.Helper()
+
+		ctrPlatform, err := ctr.Platform(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expectedPlatform, ctrPlatform)
+
+		contents, err := ctr.File("/platform.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, markers[expectedPlatform], contents)
+	}
+
+	t.Run("default platform", func(ctx context.Context, t *testctx.T) {
+		pullClient, cleanupPullEngine := startFreshEngine(ctx, t)
+		defer cleanupPullEngine()
+
+		defaultPlatform, err := pullClient.DefaultPlatform(ctx)
+		require.NoError(t, err)
+		require.Contains(t, markers, defaultPlatform)
+
+		assertPulled(ctx, t, pullClient.Container().From(ref), defaultPlatform)
+	})
+
+	for _, platform := range platforms {
+		platform := platform
+		t.Run(string(platform), func(ctx context.Context, t *testctx.T) {
+			pullClient, cleanupPullEngine := startFreshEngine(ctx, t)
+			defer cleanupPullEngine()
+
+			assertPulled(ctx, t, pullClient.Container(dagger.ContainerOpts{Platform: platform}).From(ref), platform)
+		})
+	}
+}
+
 func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir("../.."))
 
