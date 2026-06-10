@@ -80,14 +80,60 @@ func TestRenderProgressBarFills(t *testing.T) {
 
 	got := strings.Join(fe.tui.RenderLines(), "\n")
 
-	// dots per cell = ceil(current*8/total), clamped to [1,8]; an unknown
-	// total renders a single dot
-	if want := "⣿⣿⡇⡀⡀⡀ 30 MB/50 MB"; !strings.Contains(got, want) {
+	// fill level per cell = ceil(current*8/total), clamped to [1,8]; an
+	// unknown total renders the lowest level
+	if want := "██▄▁▁▁ 30 MB/50 MB"; !strings.Contains(got, want) {
 		t.Errorf("render missing partial fills %q:\n%s", want, got)
 	}
 	// items past the cap fold into +N; all-complete items omit the total
-	if want := strings.Repeat("⣿", 40) + "+10 51 kB"; !strings.Contains(got, want) {
+	if want := strings.Repeat("█", 40) + "+10 51 kB"; !strings.Contains(got, want) {
 		t.Errorf("render missing overflow bar %q:\n%s", want, got)
+	}
+}
+
+// TestRenderProgressTrack covers the single-item (1-D) form: a fixed-width
+// track filling left-to-right, visually distinct from the per-item cells.
+func TestRenderProgressTrack(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	fetchID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:        fetchID,
+			TraceID:   prettyTestTraceID(),
+			ParentID:  rootID,
+			Name:      "fetching modules.tar.gz",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	db.Spans.Map[fetchID].Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+		{Name: "modules.tar.gz", Current: 9_000_000, Total: 12_000_000, Unit: "bytes"},
+	}}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.ExpandCompleted = true
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	got := strings.Join(fe.tui.RenderLines(), "\n")
+	if want := "fetching modules.tar.gz 1.0s █████████░░░ 9.0 MB/12 MB"; !strings.Contains(got, want) {
+		t.Errorf("render missing 1-D track %q:\n%s", want, got)
 	}
 }
 
@@ -173,18 +219,18 @@ func TestRenderProgressSpanRows(t *testing.T) {
 	}
 
 	// expanded: carrying progress reveals the encapsulated spans, and each
-	// renders bar-first in its natural tree position
+	// renders its labeled bar in its natural tree position
 	expanded := render(true)
 	for _, want := range []string{
-		"⣿⣿ 20 MB pulling nginx",
-		"⣿⡇ 15 MB/20 MB unpacking nginx",
+		"pulling nginx 1.0s ██ 20 MB",
+		"unpacking nginx 1.0s █▄ 15 MB/20 MB",
 	} {
 		if !strings.Contains(expanded, want) {
 			t.Errorf("expanded render missing progress row %q:\n%s", want, expanded)
 		}
 	}
 	for _, line := range strings.Split(expanded, "\n") {
-		if strings.Contains(line, "Container.from") && strings.Contains(line, "⣿") {
+		if strings.Contains(line, "Container.from") && strings.Contains(line, "█") {
 			t.Errorf("bars should not merge into the parent's title row:\n%s", expanded)
 		}
 	}
@@ -193,8 +239,8 @@ func TestRenderProgressSpanRows(t *testing.T) {
 	// nearest visible collapsed ancestor
 	collapsed := render(false)
 	for _, want := range []string{
-		"⣿⣿ 20 MB pulling nginx",
-		"⣿⡇ 15 MB/20 MB unpacking nginx",
+		"pulling nginx 1.0s ██ 20 MB",
+		"unpacking nginx 1.0s █▄ 15 MB/20 MB",
 	} {
 		if !strings.Contains(collapsed, want) {
 			t.Errorf("collapsed render missing rolled-up progress row %q:\n%s", want, collapsed)

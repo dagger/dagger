@@ -3338,19 +3338,13 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 	chained := row.Chained
 	depth := row.Depth
 
-	// Progress rows (e.g. "pulling nginx:latest") lead with their bar: the
-	// fill state doubles as the status indicator, and the leading cells set
-	// them apart from ordinary spans.
-	barFirst := span.HasProgress() && span.Call() == nil && span.Message == ""
+	// Progress rows (e.g. "pulling nginx:latest") render their name faintly,
+	// as a label for the trailing bar rather than a step of its own.
+	progressRow := span.HasProgress() && span.Call() == nil && span.Message == ""
 
 	if !abridged && row.Span.LLMRole == "" {
-		if barFirst {
-			fmt.Fprint(out, fe.renderProgressBars(out, span))
-			fmt.Fprint(out, " ")
-		} else {
-			fe.renderStatusIcon(ctx, out, row, statusHost)
-			fmt.Fprint(out, " ")
-		}
+		fe.renderStatusIcon(ctx, out, row, statusHost)
+		fmt.Fprint(out, " ")
 	}
 
 	if r.Debug {
@@ -3388,7 +3382,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		if span.Name == "" {
 			empty = true
 		}
-		if barFirst {
+		if progressRow {
 			// keep the focus on the bar; the name is a label
 			fmt.Fprint(out, out.String(span.Name).Faint())
 		} else if err := r.renderSpan(out, span, span.Name); err != nil {
@@ -3410,13 +3404,10 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 			}
 		}
 
-		// Render streaming progress trailing the title for spans that can't
-		// lead with it (e.g. a call emitting progress on itself)
-		if !barFirst {
-			if bars := fe.renderProgressBars(out, span); bars != "" {
-				fmt.Fprint(out, " ")
-				fmt.Fprint(out, bars)
-			}
+		// Render streaming progress (e.g. image layer downloads)
+		if bars := fe.renderProgressBars(out, span); bars != "" {
+			fmt.Fprint(out, " ")
+			fmt.Fprint(out, bars)
 		}
 
 		fe.renderStatus(out, span)
@@ -3601,13 +3592,48 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 	return result.String()
 }
 
-// maxProgressItems caps how many per-item braille cells a single row may
-// render before summarizing the remainder.
+// maxProgressItems caps how many per-item cells a single row may render
+// before summarizing the remainder.
 const maxProgressItems = 40
 
-// renderProgressBars renders the span's own streaming-progress state as one
-// braille cell per item, filling from 1 dot (started) to 8 dots (complete),
-// plus an aggregate byte count. Descendants' progress is never merged in:
+// progressTrackWidth is the fixed cell width of a single-item (1-D)
+// progress track.
+const progressTrackWidth = 12
+
+// verticalEighths maps a fill level (1-8) to a block element rising from
+// the bottom of the cell. Progress uses block elements rather than braille
+// so the braille glyphs keep one meaning in the UI: span status (the
+// spinner and roll-up dots).
+var verticalEighths = []rune{
+	' ', // 0: empty (unused; untouched items render level 1)
+	'▁', // 1: ▁
+	'▂', // 2: ▂
+	'▃', // 3: ▃
+	'▄', // 4: ▄
+	'▅', // 5: ▅
+	'▆', // 6: ▆
+	'▇', // 7: ▇
+	'█', // 8: █
+}
+
+// horizontalEighths maps a fill level (1-8) to a block element extending
+// from the left of the cell.
+var horizontalEighths = []rune{
+	' ', // 0: empty
+	'▏', // 1: ▏
+	'▎', // 2: ▎
+	'▍', // 3: ▍
+	'▌', // 4: ▌
+	'▋', // 5: ▋
+	'▊', // 6: ▊
+	'▉', // 7: ▉
+	'█', // 8: █
+}
+
+// renderProgressBars renders the span's own streaming-progress state, plus
+// an aggregate byte count. Multiple items render 2-D: one cell per item,
+// filling bottom-up like a bar chart. A single item renders 1-D: a fixed
+// track filling left-to-right. Descendants' progress is never merged in:
 // each progress-carrying span renders as its own labeled row (revealed in
 // the tree, or rolled up under a collapsed ancestor).
 func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) string {
@@ -3617,24 +3643,34 @@ func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) s
 	items := span.Progress.Order
 
 	var sb strings.Builder
+	if item := items[0]; len(items) == 1 && item.Total > 0 {
+		fe.renderProgressTrack(out, &sb, item)
+	} else {
+		fe.renderProgressCells(out, &sb, items)
+	}
+
+	current, total := span.Progress.Totals()
+	if items[0].Unit == "bytes" && total > 0 {
+		summary := humanizeBytes(current)
+		if current < total {
+			summary += "/" + humanizeBytes(total)
+		}
+		sb.WriteString(out.String(" " + summary).Faint().String())
+	}
+	return sb.String()
+}
+
+// renderProgressCells renders one bottom-up filling cell per item.
+func (fe *frontendPretty) renderProgressCells(out TermOutput, sb *strings.Builder, items []*dagui.ProgressItem) {
 	shown := items
 	if len(shown) > maxProgressItems {
 		shown = shown[:maxProgressItems]
 	}
-	var current, total int64
-	unit := ""
-	for _, item := range items {
-		current += item.Current
-		total += item.Total
-		if unit == "" {
-			unit = item.Unit
-		}
-	}
 	for _, item := range shown {
-		dots := 1
+		level := 1
 		if item.Total > 0 {
-			dots = int((item.Current*8 + item.Total - 1) / item.Total) // ceil
-			dots = max(min(dots, 8), 1)
+			level = int((item.Current*8 + item.Total - 1) / item.Total) // ceil
+			level = max(min(level, 8), 1)
 		}
 		color := termenv.ANSIYellow
 		switch {
@@ -3643,19 +3679,32 @@ func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) s
 		case item.Current == 0:
 			color = termenv.ANSIBrightBlack
 		}
-		sb.WriteString(out.String(string(brailleDots[dots])).Foreground(color).String())
+		sb.WriteString(out.String(string(verticalEighths[level])).Foreground(color).String())
 	}
 	if rest := len(items) - len(shown); rest > 0 {
 		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).Faint().String())
 	}
-	if unit == "bytes" && total > 0 {
-		summary := humanizeBytes(current)
-		if current < total {
-			summary += "/" + humanizeBytes(total)
-		}
-		sb.WriteString(out.String(" " + summary).Faint().String())
+}
+
+// renderProgressTrack renders a single item as a fixed-width left-to-right
+// track with eighth-cell resolution.
+func (fe *frontendPretty) renderProgressTrack(out TermOutput, sb *strings.Builder, item *dagui.ProgressItem) {
+	eighths := int(item.Current * progressTrackWidth * 8 / item.Total)
+	eighths = max(min(eighths, progressTrackWidth*8), 0)
+	full, rem := eighths/8, eighths%8
+	color := termenv.ANSIYellow
+	if item.Complete() {
+		color = termenv.ANSIGreen
 	}
-	return sb.String()
+	if full > 0 {
+		sb.WriteString(out.String(strings.Repeat(string(verticalEighths[8]), full)).Foreground(color).String())
+	}
+	if rem > 0 {
+		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(color).String())
+	}
+	if empty := progressTrackWidth - full - min(rem, 1); empty > 0 {
+		sb.WriteString(out.String(strings.Repeat("░", empty)).Foreground(termenv.ANSIBrightBlack).String())
+	}
 }
 
 // statusIcon returns an icon indicating the span's status, and a bool

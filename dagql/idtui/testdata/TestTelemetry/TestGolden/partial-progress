@@ -12,7 +12,7 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 $ viztest: Viztest! X.Xs CACHED
-✔ .partialProgress: Void X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ X.X B/X.X B
-╰╴⡀⡄⡆⡇⣇⣧⣷⣿+10 X.X B overflow X.Xs
+✔ .partialProgress: Void X.Xs ██▄▁▁▁ X.X B/X.X B
+╰╴✔ overflow X.Xs ████████████████████████████████████████+10 X.X B
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
