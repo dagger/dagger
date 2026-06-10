@@ -7,8 +7,26 @@ import (
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/distribution/reference"
 	"go.opentelemetry.io/otel/log"
 )
+
+// DisplayRef shortens a fully qualified image ref for transfer span names
+// ("pulling <ref>", "unpacking <ref>"): these surface as labeled progress
+// rows in the TUI, where the repo digest and default registry are noise.
+func DisplayRef(ref string) string {
+	named, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return ref
+	}
+	trimmed := reference.TrimNamed(named)
+	if tagged, ok := named.(reference.Tagged); ok {
+		if withTag, err := reference.WithTag(trimmed, tagged.Tag()); err == nil {
+			return reference.FamiliarString(withTag)
+		}
+	}
+	return reference.FamiliarString(trimmed)
+}
 
 // ProgressEmitInterval throttles streaming progress records; the final
 // record for an item is always emitted so consumers converge on the true

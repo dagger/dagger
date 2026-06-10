@@ -43,7 +43,7 @@ func (cm *snapshotManager) ImportImage(
 	if name == "" {
 		name = img.Ref
 	}
-	span, ctx := tracing.StartSpan(ctx, "unpacking "+name, telemetry.Encapsulated(), telemetry.Encapsulate())
+	span, ctx := tracing.StartSpan(ctx, "unpacking "+DisplayRef(name), telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()

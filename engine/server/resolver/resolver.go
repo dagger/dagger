@@ -259,7 +259,7 @@ func (r *Resolver) ResolveImageConfig(
 }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "pulling "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
+	span, ctx := tracing.StartSpan(ctx, "pulling "+bkcache.DisplayRef(ref), telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()

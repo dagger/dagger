@@ -91,12 +91,12 @@ func TestRenderProgressBarFills(t *testing.T) {
 	}
 }
 
-// TestRenderProgressBarSegments covers a visible span whose hidden
-// (encapsulated) descendants each report progress: every source renders as
-// its own segment with its own byte count, rather than summing — a pull's
-// fetch and unpack read the same compressed bytes, so a single sum would
-// double the apparent transfer size.
-func TestRenderProgressBarSegments(t *testing.T) {
+// TestRenderProgressSpanRows covers encapsulated descendants that report
+// progress: each renders as its own labeled bar-first row — revealed in the
+// tree when its ancestors are expanded, rolled up beneath the nearest
+// visible collapsed ancestor otherwise. Bars are never merged into the
+// ancestor's own title row.
+func TestRenderProgressSpanRows(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
 	rootID := prettyTestSpanID(1)
@@ -159,16 +159,45 @@ func TestRenderProgressBarSegments(t *testing.T) {
 	from := db.Spans.Map[fromID]
 	from.ProgressSpans.Add(pulling)
 	from.ProgressSpans.Add(unpacking)
+	root := db.Spans.Map[rootID]
+	root.ProgressSpans.Add(pulling)
+	root.ProgressSpans.Add(unpacking)
 
-	fe := NewWithDB(io.Discard, db)
-	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
-	fe.FrontendOpts.ExpandCompleted = true
-	fe.FrontendOpts.GCThreshold = time.Hour
-	fe.recalculateViewLocked()
+	render := func(expand bool) string {
+		fe := NewWithDB(io.Discard, db)
+		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+		fe.FrontendOpts.ExpandCompleted = expand
+		fe.FrontendOpts.GCThreshold = time.Hour
+		fe.recalculateViewLocked()
+		return strings.Join(fe.tui.RenderLines(), "\n")
+	}
 
-	got := strings.Join(fe.tui.RenderLines(), "\n")
+	// expanded: carrying progress reveals the encapsulated spans, and each
+	// renders bar-first in its natural tree position
+	expanded := render(true)
+	for _, want := range []string{
+		"⣿⣿ 20 MB pulling nginx",
+		"⣿⡇ 15 MB/20 MB unpacking nginx",
+	} {
+		if !strings.Contains(expanded, want) {
+			t.Errorf("expanded render missing progress row %q:\n%s", want, expanded)
+		}
+	}
+	for _, line := range strings.Split(expanded, "\n") {
+		if strings.Contains(line, "Container.from") && strings.Contains(line, "⣿") {
+			t.Errorf("bars should not merge into the parent's title row:\n%s", expanded)
+		}
+	}
 
-	if want := "⣿⣿ 20 MB ⣿⡇ 15 MB/20 MB"; !strings.Contains(got, want) {
-		t.Errorf("render missing per-source segments %q:\n%s", want, got)
+	// collapsed: the progress spans still surface, rolled up beneath the
+	// nearest visible collapsed ancestor
+	collapsed := render(false)
+	for _, want := range []string{
+		"⣿⣿ 20 MB pulling nginx",
+		"⣿⡇ 15 MB/20 MB unpacking nginx",
+	} {
+		if !strings.Contains(collapsed, want) {
+			t.Errorf("collapsed render missing rolled-up progress row %q:\n%s", want, collapsed)
+		}
 	}
 }
