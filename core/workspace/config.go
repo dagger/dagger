@@ -15,10 +15,56 @@ import (
 // Config represents a parsed dagger.toml workspace configuration.
 type Config struct {
 	Modules            map[string]ModuleEntry `json:"modules,omitempty" toml:"modules"`
+	SDKs               map[string]SDKEntry    `json:"sdks,omitempty" toml:"sdks"`
 	Ignore             []string               `json:"ignore,omitempty" toml:"ignore"`
 	DefaultsFromDotEnv bool                   `json:"defaults_from_dotenv,omitempty" toml:"defaults_from_dotenv,omitempty"`
 	Env                map[string]EnvOverlay  `json:"env,omitempty" toml:"env"`
 	Ports              map[string]PortMapping `json:"ports,omitempty" toml:"ports,omitempty"`
+}
+
+// SDKEntry represents a single SDK install in the workspace config under
+// [sdks.<name>]. It records the SDK module source plus the local targets
+// (authored modules, generated clients) that this SDK manages.
+type SDKEntry struct {
+	// Source is the canonical module ref of the SDK or a builtin runtime
+	// name (e.g. "go", "python", "github.com/dagger/go-sdk").
+	Source string `json:"source" toml:"source"`
+
+	// Pin is the content-addressed digest of the SDK module, for
+	// reproducible loads. Empty for builtin runtimes; set for external refs
+	// at install time.
+	Pin string `json:"pin,omitempty" toml:"pin,omitempty"`
+
+	// Modules lists the workspace-local modules this SDK authors and
+	// manages. Each entry is appended as a [[sdks.<name>.modules]] block in
+	// TOML and read back as an array of tables. Empty means this SDK is
+	// installed but not authoring anything locally (e.g. consumer-only).
+	Modules []SDKManagedModule `json:"modules,omitempty" toml:"modules,omitempty"`
+
+	// Clients lists generated typed bindings this SDK produces. Each entry
+	// is a [[sdks.<name>.clients]] block. Shape is intentionally minimal
+	// while concrete client SDKs (TypeScript, Go) take shape.
+	Clients []SDKManagedClient `json:"clients,omitempty" toml:"clients,omitempty"`
+
+	// Settings is the workspace-scoped SDK settings map written by
+	// `dagger settings <sdk> key value`. Mirrors ModuleEntry.Settings.
+	Settings map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
+}
+
+// SDKManagedModule is a workspace-relative path to a module that this SDK
+// authors and manages here. The path is the only required field; the
+// module's own engine state lives in <path>/dagger-module.toml.
+type SDKManagedModule struct {
+	Path string `json:"path" toml:"path"`
+}
+
+// SDKManagedClient is a workspace-relative path to a generated client
+// produced by this SDK, bound to one module. Module accepts a
+// workspace-relative path or canonical ref, same resolution as
+// [modules.X].source. Shape will evolve as concrete client SDKs implement.
+type SDKManagedClient struct {
+	Path   string `json:"path" toml:"path"`
+	Module string `json:"module" toml:"module"`
 }
 
 // PortMapping declares a host port that forwards to a workspace service.
@@ -186,7 +232,10 @@ func SerializeConfig(cfg *Config) []byte {
 	}
 
 	wroteModules := writeModuleEntries(&b, cfg.Modules)
-	if wroteModules && (len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
+	if wroteModules && (len(cfg.SDKs) > 0 || len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
+		b.WriteString("\n")
+	}
+	if writeSDKEntries(&b, cfg.SDKs) && (len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
 		b.WriteString("\n")
 	}
 	if writeEnvEntries(&b, cfg.Env) && len(cfg.Ports) > 0 {
@@ -217,6 +266,18 @@ func cloneConfig(cfg *Config) *Config {
 				Up:                ModuleSkip{Skip: append([]string(nil), entry.Up.Skip...)},
 				Generate:          ModuleSkip{Skip: append([]string(nil), entry.Generate.Skip...)},
 				Check:             ModuleSkip{Skip: append([]string(nil), entry.Check.Skip...)},
+			}
+		}
+	}
+	if len(cfg.SDKs) > 0 {
+		cloned.SDKs = make(map[string]SDKEntry, len(cfg.SDKs))
+		for name, entry := range cfg.SDKs {
+			cloned.SDKs[name] = SDKEntry{
+				Source:   entry.Source,
+				Pin:      entry.Pin,
+				Modules:  append([]SDKManagedModule(nil), entry.Modules...),
+				Clients:  append([]SDKManagedClient(nil), entry.Clients...),
+				Settings: cloneConfigMap(entry.Settings),
 			}
 		}
 	}
@@ -291,6 +352,49 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 			fmt.Fprintf(b, "check.skip = %s\n", formatConfigValue(entry.Check.Skip))
 		}
 		writeConfigTable(b, modulePath+".settings", entry.Settings, true)
+	}
+
+	return true
+}
+
+// writeSDKEntries renders the [sdks.<name>] blocks with their nested
+// [[sdks.<name>.modules]] / [[sdks.<name>.clients]] arrays and optional
+// [sdks.<name>.settings] table.
+func writeSDKEntries(b *strings.Builder, sdks map[string]SDKEntry) bool {
+	if len(sdks) == 0 {
+		return false
+	}
+
+	names := make([]string, 0, len(sdks))
+	for name := range sdks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for i, name := range names {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+
+		entry := sdks[name]
+		sdkPath := "sdks." + formatConfigPathSegment(name)
+		fmt.Fprintf(b, "[%s]\n", sdkPath)
+		fmt.Fprintf(b, "source = %q\n", entry.Source)
+		if entry.Pin != "" {
+			fmt.Fprintf(b, "pin = %q\n", entry.Pin)
+		}
+		writeConfigTable(b, sdkPath+".settings", entry.Settings, true)
+		for _, mod := range entry.Modules {
+			b.WriteString("\n")
+			fmt.Fprintf(b, "[[%s.modules]]\n", sdkPath)
+			fmt.Fprintf(b, "path = %q\n", mod.Path)
+		}
+		for _, client := range entry.Clients {
+			b.WriteString("\n")
+			fmt.Fprintf(b, "[[%s.clients]]\n", sdkPath)
+			fmt.Fprintf(b, "path = %q\n", client.Path)
+			fmt.Fprintf(b, "module = %q\n", client.Module)
+		}
 	}
 
 	return true
