@@ -2223,7 +2223,16 @@ func (mod *userMod) install(ctx context.Context, dag *dagql.Server, opts ...Inst
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			if src := self.GetSource(); src != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
+			// When the runtime supports moduleTypes, the module's own types are
+			// loaded alongside its dependencies (the self-calls behavior, now
+			// graduated from experimental). A type collision with a dependency
+			// is expected and silently allowed; without that capability, it's
+			// still an error.
+			runtimeLoadsOwnTypes := false
+			if src := self.GetSource(); src != nil && src.SDKImpl != nil {
+				_, runtimeLoadsOwnTypes = src.SDKImpl.AsModuleTypes()
+			}
+			if runtimeLoadsOwnTypes {
 				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
 			} else {
 				return fmt.Errorf("type %q is already defined by module %q", objDef.Name, modType.SourceMod().Name())

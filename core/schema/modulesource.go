@@ -2447,8 +2447,19 @@ func (s *moduleSourceSchema) buildModuleConfig(
 	return modCfg, nil
 }
 
-func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
-	return src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
+// selfCallsAvailable reports whether self-calls — the engine behavior of
+// loading and registering a module's own types alongside its function calls —
+// can be used for this module. The decision is now a runtime-capability check:
+// if the runtime implements moduleTypes, the engine wires self-calls in. The
+// previous per-module experimental opt-in (SDK.Experimental.SELF_CALLS) was
+// incubation scaffolding and is no longer consulted; modules using a
+// capable runtime get the behavior automatically.
+func selfCallsAvailable(src dagql.ObjectResult[*core.ModuleSource]) bool {
+	if src.Self() == nil || src.Self().SDKImpl == nil {
+		return false
+	}
+	_, ok := src.Self().SDKImpl.AsModuleTypes()
+	return ok
 }
 
 func (s *moduleSourceSchema) runCodegen(
@@ -2478,7 +2489,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if srcInst.Self().SDK != nil {
 		// Only if the SDK implements a specific function to get module type definitions.
 		// If not, we will have circular dependency issues.
-		if _, ok := srcInst.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(srcInst) {
+		if selfCallsAvailable(srcInst) {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
@@ -3043,7 +3054,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, mod *core.Mo
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 
-	if typeDefsEnabled && isSelfCallsEnabled(src) {
+	if typeDefsEnabled && selfCallsAvailable(src) {
 		mod.IncludeSelfInDeps = true
 	}
 

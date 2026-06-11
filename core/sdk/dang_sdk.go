@@ -116,12 +116,12 @@ func (sdk *dangSDK) ModuleTypes(
 		return inst, err
 	}
 
-	runner := dangSourceRunner(func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
-		return dang.RunDir(ctx, modSrcDir, false)
-	})
-	if src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls) {
-		runner = runDangDirForModuleTypes
-	}
+	// This is the moduleTypes path; the engine reached us specifically because
+	// it wants type loading. Always use the type-aware runner. Previously
+	// gated on the per-module SELF_CALLS experimental flag, which has been
+	// graduated — runtime capability (via this function existing) is the
+	// signal now.
+	runner := runDangDirForModuleTypes
 
 	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, nil, scopedMod, dagql.ObjectResult[*core.Env]{}, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		inst, err = initDangModule(ctx, dag, env)
