@@ -56,43 +56,63 @@ func EmitProgress(ctx context.Context, item string, current, total int64, unit s
 	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
 }
 
-// progressTracker streams one item's absolute progress with throttled
-// updates; an initial zero state is emitted immediately so the item appears
-// as soon as work begins, and finish emits the converged final state.
-type progressTracker struct {
+// ProgressTracker streams one item's absolute progress with throttled
+// updates. A known total emits an initial zero state immediately so the
+// item appears as soon as work begins; an unknown total (<= 0) stays
+// silent until progress is actually made, so no-op transfers emit nothing.
+type ProgressTracker struct {
 	ctx   context.Context
 	item  string
 	total int64
+	unit  string
 
 	mu       sync.Mutex
+	current  int64
 	lastEmit time.Time
 }
 
-func newProgressTracker(ctx context.Context, item string, total int64) *progressTracker {
-	pt := &progressTracker{
+func NewProgressTracker(ctx context.Context, item string, total int64, unit string) *ProgressTracker {
+	pt := &ProgressTracker{
 		ctx:   ctx,
 		item:  item,
-		total: total,
+		total: max(total, 0),
+		unit:  unit,
 	}
-	EmitProgress(ctx, item, 0, total, "bytes")
+	if pt.total > 0 {
+		EmitProgress(ctx, item, 0, pt.total, unit)
+	}
 	return pt
 }
 
-func (pt *progressTracker) update(current int64) {
+// Update records the item's absolute progress, emitting on a throttle;
+// Finish guarantees the final state.
+func (pt *ProgressTracker) Update(current int64) {
 	pt.mu.Lock()
+	pt.current = current
 	now := time.Now()
-	// purely throttled: finish guarantees the final state
 	if now.Sub(pt.lastEmit) < ProgressEmitInterval {
 		pt.mu.Unlock()
 		return
 	}
 	pt.lastEmit = now
 	pt.mu.Unlock()
-	EmitProgress(pt.ctx, pt.item, current, pt.total, "bytes")
+	EmitProgress(pt.ctx, pt.item, current, pt.total, pt.unit)
 }
 
-func (pt *progressTracker) finish() {
-	EmitProgress(pt.ctx, pt.item, pt.total, pt.total, "bytes")
+// Finish emits the final state: the last recorded amount, against the
+// known total if there is one.
+func (pt *ProgressTracker) Finish() {
+	pt.mu.Lock()
+	current := pt.current
+	pt.mu.Unlock()
+	if current == 0 && pt.total <= 0 {
+		return
+	}
+	total := pt.total
+	if total <= 0 {
+		total = current
+	}
+	EmitProgress(pt.ctx, pt.item, current, total, pt.unit)
 }
 
 // NewProgressReader wraps r to stream its read progress as one item via the
@@ -102,13 +122,13 @@ func (pt *progressTracker) finish() {
 func NewProgressReader(ctx context.Context, item string, total int64, r io.ReadCloser) io.ReadCloser {
 	return &progressReader{
 		r:       r,
-		tracker: newProgressTracker(ctx, item, max(total, 0)),
+		tracker: NewProgressTracker(ctx, item, total, "bytes"),
 	}
 }
 
 type progressReader struct {
 	r       io.ReadCloser
-	tracker *progressTracker
+	tracker *ProgressTracker
 
 	read int64
 	done bool
@@ -118,7 +138,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	n, err := pr.r.Read(p)
 	if n > 0 {
 		pr.read += int64(n)
-		pr.tracker.update(pr.read)
+		pr.tracker.Update(pr.read)
 	}
 	if err == io.EOF {
 		pr.emitFinal()
@@ -131,16 +151,11 @@ func (pr *progressReader) Close() error {
 	return pr.r.Close()
 }
 
-// emitFinal emits the converged final state once: everything read, against
-// the known total if there is one.
+// emitFinal emits the converged final state once.
 func (pr *progressReader) emitFinal() {
 	if pr.done {
 		return
 	}
 	pr.done = true
-	total := pr.tracker.total
-	if total <= 0 {
-		total = pr.read
-	}
-	EmitProgress(pr.tracker.ctx, pr.tracker.item, pr.read, total, "bytes")
+	pr.tracker.Finish()
 }

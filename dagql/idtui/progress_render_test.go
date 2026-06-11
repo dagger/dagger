@@ -137,6 +137,55 @@ func TestRenderProgressTrack(t *testing.T) {
 	}
 }
 
+// TestRenderProgressIndeterminate covers a single item with an unknown
+// total (e.g. a filesync's streaming diff): no bar, just a climbing count.
+func TestRenderProgressIndeterminate(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	syncID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:        syncID,
+			TraceID:   prettyTestTraceID(),
+			ParentID:  rootID,
+			Name:      "uploading /src",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	db.Spans.Map[syncID].Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+		{Name: "bytes", Current: 400_000_000, Total: 0, Unit: "bytes"},
+	}}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.ExpandCompleted = true
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	got := strings.Join(fe.tui.RenderLines(), "\n")
+	if want := "uploading /src 1.0s 400 MB"; !strings.Contains(got, want) {
+		t.Errorf("render missing indeterminate count %q:\n%s", want, got)
+	}
+	if strings.Contains(got, "█") || strings.Contains(got, "▁") || strings.Contains(got, "░") {
+		t.Errorf("indeterminate progress should not render bar glyphs:\n%s", got)
+	}
+}
+
 // TestRenderProgressObjectUnit covers non-byte units (e.g. a git fetch
 // counting objects): the summary shows raw counts with the unit name
 // instead of humanized byte sizes.

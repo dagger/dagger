@@ -3633,9 +3633,10 @@ var horizontalEighths = []rune{
 // renderProgressBars renders the span's own streaming-progress state, plus
 // an aggregate byte count. Multiple items render 2-D: one cell per item,
 // filling bottom-up like a bar chart. A single item renders 1-D: a fixed
-// track filling left-to-right. Descendants' progress is never merged in:
-// each progress-carrying span renders as its own labeled row (revealed in
-// the tree, or rolled up under a collapsed ancestor).
+// track filling left-to-right, or just a climbing count when the total is
+// unknown (e.g. a filesync's streaming diff). Descendants' progress is
+// never merged in: each progress-carrying span renders as its own labeled
+// row (revealed in the tree, or rolled up under a collapsed ancestor).
 func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) string {
 	if !span.HasProgress() {
 		return ""
@@ -3643,14 +3644,17 @@ func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) s
 	items := span.Progress.Order
 
 	var sb strings.Builder
-	if item := items[0]; len(items) == 1 && item.Total > 0 {
-		fe.renderProgressTrack(out, &sb, item)
-	} else {
+	switch {
+	case len(items) == 1 && items[0].Total > 0:
+		fe.renderProgressTrack(out, &sb, items[0])
+	case len(items) == 1:
+		// indeterminate: only the climbing count below
+	default:
 		fe.renderProgressCells(out, &sb, items)
 	}
 
 	current, total := span.Progress.Totals()
-	if unit := items[0].Unit; unit != "" && total > 0 {
+	if unit := items[0].Unit; unit != "" && current > 0 {
 		var summary string
 		if unit == "bytes" {
 			summary = humanizeBytes(current)
@@ -3664,7 +3668,10 @@ func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) s
 			}
 			summary += " " + unit
 		}
-		sb.WriteString(out.String(" " + summary).Faint().String())
+		if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(out.String(summary).Faint().String())
 	}
 	return sb.String()
 }

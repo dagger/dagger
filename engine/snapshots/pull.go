@@ -246,11 +246,11 @@ func (cm *snapshotManager) importImageLayer(
 		return nil, err
 	}
 	var applyOpts []diff.ApplyOpt
-	var unpack *progressTracker
+	var unpack *ProgressTracker
 	if desc.Size > 0 {
-		unpack = newProgressTracker(ctx, desc.Digest.String(), desc.Size)
+		unpack = NewProgressTracker(ctx, desc.Digest.String(), desc.Size, "bytes")
 		applyOpts = append(applyOpts, diff.WithProgress(func(_ ocispecs.Descriptor, read int64) {
-			unpack.update(read)
+			unpack.Update(read)
 		}))
 	}
 	if _, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...); err != nil {
@@ -258,7 +258,10 @@ func (cm *snapshotManager) importImageLayer(
 		return nil, err
 	}
 	if unpack != nil {
-		unpack.finish()
+		// a successful apply consumed the whole blob even if the
+		// decompressor skipped trailing bytes
+		unpack.Update(desc.Size)
+		unpack.Finish()
 	}
 	if err := unmount(); err != nil {
 		return nil, err
