@@ -95,6 +95,14 @@ type daggerSession struct {
 	telemetryPubSub *PubSub
 	seenKeys        sync.Map
 
+	// Dagger Cloud exporters, created once from the main client's auth and
+	// shared by every client in the session; owned (and shut down) by the
+	// session, not by any one client's providers. Guarded by stateMu, which
+	// is held for all client initialization.
+	cloudSpans   sdktrace.SpanExporter
+	cloudLogs    sdklog.Exporter
+	cloudMetrics sdkmetric.Exporter
+
 	services *core.Services
 	resolver *serverresolver.Resolver
 
@@ -477,6 +485,18 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	}
 	errs = errors.Join(errs, releaseGroup.Wait())
 
+	// the per-client providers above only flush into the session-owned cloud
+	// exporters; the session shuts them down, once, here
+	if sess.cloudSpans != nil {
+		errs = errors.Join(errs, sess.cloudSpans.Shutdown(ctx))
+	}
+	if sess.cloudLogs != nil {
+		errs = errors.Join(errs, sess.cloudLogs.Shutdown(ctx))
+	}
+	if sess.cloudMetrics != nil {
+		errs = errors.Join(errs, sess.cloudMetrics.Shutdown(ctx))
+	}
+
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
 
@@ -682,16 +702,16 @@ func (srv *Server) initializeDaggerClient(
 		}
 	}
 
-	var (
-		cloudSpans   sdktrace.SpanExporter
-		cloudLogs    sdklog.Exporter
-		cloudMetrics sdkmetric.Exporter
-	)
-
-	// export to Dagger Cloud if the client has cloud auth
-	if client.clientMetadata.CloudAuth != nil {
-		// in-memory token refresher since this code runs in the engine
-		cloudSpans, cloudLogs, cloudMetrics, err = enginetel.NewCloudExporters(ctx, client.clientMetadata.CloudAuth, refreshAndPersistCredentials, "")
+	// Export telemetry to Dagger Cloud if the session's main client has cloud
+	// auth. The exporters are created once, from the main client's identity,
+	// and shared by every client in the session so that telemetry from nested
+	// clients (module runtimes, privileged execs, services) reaches Cloud too.
+	// Nested clients always initialize after the main client (every init runs
+	// under sess.stateMu in getOrInitClient), so the exporters exist by the
+	// time they attach below.
+	sess := client.daggerSession
+	if md := client.clientMetadata; client.clientID == sess.mainClientCallerID && md.CloudAuth != nil {
+		sess.cloudSpans, sess.cloudLogs, sess.cloudMetrics, err = enginetel.NewCloudExporters(ctx, md.CloudAuth, refreshAndPersistCredentials, md.CloudURL)
 		if err != nil {
 			slog.Warn("failed to configure cloud exporters for session", "error", err)
 		}
@@ -706,9 +726,9 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	if cloudSpans != nil {
+	if sess.cloudSpans != nil {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
-			cloudSpans,
+			enginetel.SharedSpanExporter{SpanExporter: sess.cloudSpans},
 		)))
 	}
 
@@ -719,9 +739,12 @@ func (srv *Server) initializeDaggerClient(
 		sdklog.WithProcessor(logs),
 	}
 
-	if cloudLogs != nil {
+	if sess.cloudLogs != nil {
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			sdklog.NewBatchProcessor(cloudLogs, sdklog.WithExportInterval(telemetry.NearlyImmediate)),
+			sdklog.NewBatchProcessor(
+				enginetel.SharedLogExporter{Exporter: sess.cloudLogs},
+				sdklog.WithExportInterval(telemetry.NearlyImmediate),
+			),
 		))
 	}
 
@@ -736,10 +759,10 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	if cloudMetrics != nil {
+	if sess.cloudMetrics != nil {
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
-				cloudMetrics,
+				enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics},
 				sdkmetric.WithInterval(metricReaderInterval),
 			)),
 		)

@@ -29,6 +29,9 @@ var (
 	configuredCloudExportersOnce   sync.Once
 )
 
+// NewCloudExporters builds OTLP exporters for Dagger Cloud. cloudURL is the
+// endpoint the client is configured with; when empty it falls back to the
+// current process's DAGGER_CLOUD_URL and then the default Cloud API URL.
 func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
 	if cloudAuth == nil || cloudAuth.Token == nil {
 		return nil, nil, nil, fmt.Errorf("no cloud auth provided")
@@ -36,9 +39,9 @@ func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 
 	authHeader := cloudAuthHeader(cloudAuth)
 
-	// The explicit cloudURL parameter is added with the tests so they compile;
-	// the follow-up fix wires it into endpoint selection.
-	cloudURL = os.Getenv("DAGGER_CLOUD_URL")
+	if cloudURL == "" {
+		cloudURL = os.Getenv("DAGGER_CLOUD_URL")
+	}
 	if cloudURL == "" {
 		cloudURL = "https://api.dagger.cloud"
 	}
