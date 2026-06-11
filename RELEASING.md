@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June%2010,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June%2011,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -75,12 +75,31 @@ and improve it. We want small, constant improvements which compound. Therefore:
 
 ## Workflow for releases off non-main branch
 
-> [!WARNING]
->
-> There are no additional instructions for this, since this hasn't been done in
-> a while.
->
-> Exercise caution!
+Patch releases may be cut from a release branch, such as `backport-0.21`,
+instead of `main`. In that case, set `RELEASE_BRANCH` to the release branch and
+follow the release flow against that branch so the tagged commit contains the
+release prep and post-release changes.
+
+Because the prep and post-release PRs target the release branch, their changes
+will not automatically reach `main`. After the release branch post-release PR is
+ready, open a separate catch-up PR targeting `main`.
+
+- [ ] Start the catch-up PR from the latest `main`.
+- [ ] Bring over release prep outputs for every release cut from the release
+      branch since the last main catch-up. This includes release note files,
+      changelogs, SDK/Helm version files, docs version files, `.changes/.next`,
+      and any generated release metadata.
+- [ ] Bring over post-release outputs for the latest release, including internal
+      tooling `dagger.json`/generated updates and GitHub workflow/action version
+      bumps.
+- [ ] Include any `RELEASING.md` improvements in both the release branch
+      post-release PR and the main catch-up PR.
+- [ ] Do not merge or cherry-pick the release branch wholesale into `main`.
+      Backported product fixes should already have landed on `main`, and `main`
+      may have newer release workflow changes that should not be overwritten by
+      older release-branch files.
+- [ ] Review the catch-up PR carefully against the release branch PRs and merge
+      it into `main` before the next main release.
 
 ## Required tooling
 
