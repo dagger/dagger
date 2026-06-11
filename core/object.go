@@ -1174,9 +1174,23 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if !ok {
 					return nil, fmt.Errorf("expected *Query, got %T", self)
 				}
+				// store only the args the caller actually provided — found in
+				// the call frame, built from the query AST — so the
+				// constructor still applies its own defaults, including .env
+				// user defaults, to the rest.
+				var explicit map[string]bool
+				if frame := dagql.CurrentCall(ctx); frame != nil {
+					explicit = make(map[string]bool, len(frame.Args))
+					for _, arg := range frame.Args {
+						explicit[arg.Name] = true
+					}
+				}
 				cp := query.Clone()
 				cp.ConstructorArgs = make(map[string]dagql.Input, len(args))
 				for k, v := range args {
+					if explicit != nil && !explicit[k] {
+						continue
+					}
 					cp.ConstructorArgs[k] = v
 				}
 				return dagql.NewObjectResultForCurrentCall(ctx, dag, cp)
