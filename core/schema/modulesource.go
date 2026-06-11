@@ -226,6 +226,9 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
 			WithInput(dagql.PerClientInput).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
+		dagql.NodeFunc("_asModule", s.moduleSourceAsScaleOutModule).
+			WithInput(dagql.PerClientInput).
+			Doc(`Engine-internal variant of asModule that exposes the legacy workspace compat options to engine-to-engine callers (e.g. check scale-out), which submit them over the wire where internal arguments are rejected. Not part of the public API.`),
 		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
 		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
@@ -3051,45 +3054,74 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	}
 	return inst.WithContentDigest(ctx, scopedDigest)
 }
+
+// asModuleArgs are the arguments to ModuleSource.asModule. They are
+// internal-only: in-engine callers (e.g. the legacy workspace projection)
+// set them directly via selectors.
+type asModuleArgs struct {
+	// This internal-only flag allows us to force SDK modules to enable default function
+	// caching even when they are on older modules, which ensures they don't see a regression
+	// right after function caching is enabled. It can be removed after SDKs have been updated
+	// to latest engine versions.
+	ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
+
+	// LegacyDefaultPath marks modules projected from legacy workspace fields.
+	// The caller should also pass DefaultPathContextSourceRef so
+	// +defaultPath inputs resolve from the legacy project/workspace context.
+	LegacyDefaultPath bool `internal:"true" default:"false"`
+
+	// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument
+	// carrying arg customizations from the workspace dagger.json.
+	// Applied after type defs are populated so constructor arg metadata
+	// (Ignore, DefaultPath, etc.) can be overridden before Install.
+	LegacyArgCustomizationsJSON string `internal:"true" default:""`
+
+	// LegacyNameOverride, when non-empty, overrides the module name.
+	LegacyNameOverride string `internal:"true" default:""`
+
+	// LegacyWorkspaceConfigJSON is a JSON-encoded map[string]any
+	// carrying workspace config defaults from the workspace dagger.json.
+	LegacyWorkspaceConfigJSON string `internal:"true" default:""`
+
+	// LegacyDefaultsFromDotEnv, when true and workspace config is set,
+	// also load .env defaults for args not found in WorkspaceConfig.
+	LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
+
+	// DefaultPathContextSourceRef, when set, loads implementation code from
+	// the receiver but resolves +defaultPath inputs from this source ref.
+	DefaultPathContextSourceRef string `internal:"true" default:""`
+
+	// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
+	DefaultPathContextSourcePin string `internal:"true" default:""`
+}
+
+// asScaleOutModuleArgs mirrors asModuleArgs without the internal markers.
+// Scale-out submits module loading to a remote engine as a regular GraphQL
+// query, where internal arguments are rejected at parse time, so
+// ModuleSource._asModule accepts them as ordinary (hidden) arguments.
+type asScaleOutModuleArgs struct {
+	ForceDefaultFunctionCaching bool   `default:"false"`
+	LegacyDefaultPath           bool   `default:"false"`
+	LegacyArgCustomizationsJSON string `default:""`
+	LegacyNameOverride          string `default:""`
+	LegacyWorkspaceConfigJSON   string `default:""`
+	LegacyDefaultsFromDotEnv    bool   `default:"false"`
+	DefaultPathContextSourceRef string `default:""`
+	DefaultPathContextSourcePin string `default:""`
+}
+
+func (s *moduleSourceSchema) moduleSourceAsScaleOutModule(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	args asScaleOutModuleArgs,
+) (dagql.ObjectResult[*core.Module], error) {
+	return s.moduleSourceAsModule(ctx, src, asModuleArgs(args))
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	args struct {
-		// This internal-only flag allows us to force SDK modules to enable default function
-		// caching even when they are on older modules, which ensures they don't see a regression
-		// right after function caching is enabled. It can be removed after SDKs have been updated
-		// to latest engine versions.
-		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
-
-		// LegacyDefaultPath marks modules projected from legacy workspace fields.
-		// The caller should also pass DefaultPathContextSourceRef so
-		// +defaultPath inputs resolve from the legacy project/workspace context.
-		LegacyDefaultPath bool `internal:"true" default:"false"`
-
-		// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument
-		// carrying arg customizations from the workspace dagger.json.
-		// Applied after type defs are populated so constructor arg metadata
-		// (Ignore, DefaultPath, etc.) can be overridden before Install.
-		LegacyArgCustomizationsJSON string `internal:"true" default:""`
-
-		// LegacyNameOverride, when non-empty, overrides the module name.
-		LegacyNameOverride string `internal:"true" default:""`
-
-		// LegacyWorkspaceConfigJSON is a JSON-encoded map[string]any
-		// carrying workspace config defaults from the workspace dagger.json.
-		LegacyWorkspaceConfigJSON string `internal:"true" default:""`
-
-		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
-		// also load .env defaults for args not found in WorkspaceConfig.
-		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
-
-		// DefaultPathContextSourceRef, when set, loads implementation code from
-		// the receiver but resolves +defaultPath inputs from this source ref.
-		DefaultPathContextSourceRef string `internal:"true" default:""`
-
-		// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
-		DefaultPathContextSourcePin string `internal:"true" default:""`
-	},
+	args asModuleArgs,
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

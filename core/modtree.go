@@ -536,7 +536,10 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 		query = query.Select("asModuleSource").
 			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
 	}
-	query = query.Select("asModule")
+	// _asModule rather than asModule: this query executes on the remote
+	// engine as an external GraphQL request, where the legacy compat
+	// arguments below would be rejected as internal-only.
+	query = query.Select("_asModule")
 	if mod.Name() != "" && mod.Name() != modSrc.ModuleName {
 		query = query.Arg("legacyNameOverride", mod.Name())
 	}

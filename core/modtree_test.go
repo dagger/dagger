@@ -80,7 +80,15 @@ func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryForModuleLoadedFromDi
 		}
 
 		type ModuleSource {
-			asModule: Module!
+			_asModule(
+				legacyDefaultPath: Boolean = false,
+				legacyNameOverride: String = "",
+				legacyWorkspaceConfigJson: String = "",
+				legacyDefaultsFromDotEnv: Boolean = false,
+				legacyArgCustomizationsJson: String = "",
+				defaultPathContextSourceRef: String = "",
+				defaultPathContextSourcePin: String = "",
+			): Module!
 		}
 
 		type Module {
@@ -145,6 +153,12 @@ func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryPreservesAsModuleOpti
 	require.Contains(t, generated, `legacyDefaultsFromDotEnv: true`)
 	require.Contains(t, generated, `legacyArgCustomizationsJson:`)
 	require.Contains(t, generated, `selectModule`)
+
+	// The query executes on the remote engine as an external request, where
+	// internal arguments are rejected: the legacy options must go through
+	// _asModule, which accepts them as ordinary arguments.
+	require.Contains(t, generated, `_asModule(`)
+	require.NotContains(t, generated, ` asModule(`)
 }
 
 func (s *ModTreeNodeTestSuite) TestModuleLocalPathString(ctx context.Context, t *testctx.T) {
