@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // moduleSdkCmd dispatches arbitrary subcommands to the current module's SDK.
@@ -77,8 +78,22 @@ func runModuleSdk(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := cmd.Context()
-	fullArgs := append([]string{"call", sdkName}, args...)
-	sub := exec.CommandContext(ctx, os.Args[0], fullArgs...)
+	// Re-emit the persistent flags the user supplied on this invocation so the
+	// spawned `dagger call` runs against the same workspace, env, debug level,
+	// progress format, etc. Only flags that were actually set are forwarded;
+	// defaults are left implicit so environment variables can still apply.
+	forwarded := forwardedPersistentFlags(cmd)
+	fullArgs := append(append(forwarded, "call", sdkName), args...)
+
+	// os.Executable resolves through any wrapper / symlink to the binary
+	// currently running, so the child re-execs the same dagger build that
+	// served the parent invocation. os.Args[0] would resolve via PATH and
+	// could land on a different binary.
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate dagger binary: %w", err)
+	}
+	sub := exec.CommandContext(ctx, self, fullArgs...)
 	sub.Stdin = os.Stdin
 	sub.Stdout = os.Stdout
 	sub.Stderr = os.Stderr
@@ -121,13 +136,42 @@ func currentModuleSDKName() (string, error) {
 	return conventionalSDKModuleName(cfg.SDK.Source), nil
 }
 
+// forwardedPersistentFlags returns the persistent flags (--workspace, --env,
+// --debug, --progress, etc.) that were explicitly set on this invocation, in
+// `--name=value` form suitable to splice in before `call` when re-executing
+// the dagger binary. Skips the help flag (forwarding it would print help for
+// the spawned `call`, not the wrapper).
+func forwardedPersistentFlags(cmd *cobra.Command) []string {
+	var out []string
+	// InheritedFlags surfaces every persistent flag the parent commands
+	// declared; Visit only fires for flags whose value was explicitly set.
+	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) {
+		if !f.Changed || f.Name == "help" {
+			return
+		}
+		// Slice flags expose their elements via SliceValue; emit one
+		// --name=value pair per element so pflag re-parses them as a slice.
+		if sv, ok := f.Value.(pflag.SliceValue); ok {
+			for _, v := range sv.GetSlice() {
+				out = append(out, "--"+f.Name+"="+v)
+			}
+			return
+		}
+		out = append(out, "--"+f.Name+"="+f.Value.String())
+	})
+	return out
+}
+
 // findModuleConfigUpward walks from cwd toward the filesystem root looking
-// for a dagger-module.toml or dagger.json. Returns the first match.
+// for a dagger-module.toml or dagger.json. Stops at the workspace root (the
+// nearest dagger.toml) so a stray module config in an ancestor of an
+// unrelated workspace can't be picked up.
 func findModuleConfigUpward() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("getwd: %w", err)
 	}
+	const workspaceMarker = "dagger.toml"
 	dir := cwd
 	for {
 		for _, name := range modules.ConfigFilenames() {
@@ -136,11 +180,18 @@ func findModuleConfigUpward() (string, error) {
 				return candidate, nil
 			}
 		}
+		// Stop at the workspace boundary, BEFORE ascending past it. If the
+		// current dir is itself a workspace root, we've already checked it
+		// for a module config above; an outer module would belong to a
+		// different workspace.
+		if _, err := os.Stat(filepath.Join(dir, workspaceMarker)); err == nil {
+			return "", fmt.Errorf("no module config (%s) found from %q up to the workspace root %q; run `dagger module sdk` from inside a module", strings.Join(modules.ConfigFilenames(), " or "), cwd, dir)
+		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			break
 		}
 		dir = parent
 	}
-	return "", fmt.Errorf("no dagger-module.toml found from %q upward; run `dagger module sdk` from inside a module", cwd)
+	return "", fmt.Errorf("no module config (%s) found from %q upward, and no workspace root in any parent; run `dagger module sdk` from inside a module", strings.Join(modules.ConfigFilenames(), " or "), cwd)
 }
