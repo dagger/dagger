@@ -156,6 +156,11 @@ type frontendPretty struct {
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
 	renderVersion  uint64 // bumped on global render config changes (verbosity, zoom)
 
+	// progressExpanded tracks rows whose completed-transfer roll-up has
+	// been expanded into individual rows (the "p" keybind, distinct from
+	// regular tree expansion).
+	progressExpanded map[dagui.SpanID]bool
+
 	// viewDirty is set when DB data changes (ExportSpans, LogExport) and
 	// cleared by recalculateViewLocked in Render. This coalesces multiple
 	// data updates into a single recalculate per render frame.
@@ -1428,6 +1433,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
 			KeyEnabled(focused != nil && len(focused.ErrorOrigins.Order) > 0)),
+		key.NewBinding(key.WithKeys("p"),
+			key.WithHelp("p", progressToggleHelp(fe.progressExpanded[fe.FocusedSpan])),
+			KeyEnabled(focused != nil && fe.spanHasProgressRollup(fe.FocusedSpan))),
 		key.NewBinding(key.WithKeys("t"),
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
@@ -2388,6 +2396,20 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 			st.Update()
 		}
 		return
+	case "p":
+		// toggle the focused row's completed-transfer roll-up between the
+		// merged summary line and individual rows (distinct from regular
+		// tree expansion)
+		if fe.FocusedSpan.IsValid() && fe.spanHasProgressRollup(fe.FocusedSpan) {
+			if fe.progressExpanded == nil {
+				fe.progressExpanded = make(map[dagui.SpanID]bool)
+			}
+			fe.progressExpanded[fe.FocusedSpan] = !fe.progressExpanded[fe.FocusedSpan]
+			if st, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+				st.Update()
+			}
+		}
+		return
 	case "enter":
 		fe.ZoomedSpan = fe.FocusedSpan
 		fe.renderVersion++
@@ -2988,38 +3010,30 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		// Like error origins: descendants carrying streaming progress surface
 		// as labeled rows, rolled up here when this row is collapsed. When
 		// the row is expanded they render in their natural tree position
-		// instead (carrying progress reveals an encapsulated span). Only
-		// transfers that hold attention earn their own row: live rendering
-		// shows in-flight transfers once they've been active past the
-		// threshold (completed ones stop piercing the collapse — they'd
-		// accumulate without bound on large traces), and the final render
-		// keeps the slow ones as the run's transfer summary while folding
-		// the quick ones into a single merged line — a module fetching
-		// dozens of packages would otherwise drown the report. Debug and
-		// high verbosity show every transfer.
-		var quick []*dagui.Span
+		// instead (carrying progress reveals an encapsulated span).
+		// In-flight transfers each get their own row; completed ones always
+		// fold into a single merged summary line — a module fetching dozens
+		// of packages would otherwise drown the view. The "p" keybind
+		// (progressExpanded), debug, and high verbosity expand the fold
+		// into individual rows.
+		showAll := fe.progressExpanded[span.ID] || r.Debug ||
+			r.Verbosity >= dagui.ShowSpammyVerbosity
+		var done []*dagui.Span
 		for _, src := range span.ProgressSpans.Order {
 			if src == span || !src.HasProgress() {
 				continue
 			}
-			if !r.Debug && r.Verbosity < dagui.ShowSpammyVerbosity {
-				if !r.final && !src.IsRunningOrEffectsRunning() {
-					continue
-				}
-				if src.Activity.Duration(r.now) < quickTransferThreshold {
-					if r.final {
-						quick = append(quick, src)
-					}
-					continue
-				}
+			if !showAll && !src.IsRunningOrEffectsRunning() {
+				done = append(done, src)
+				continue
 			}
 			fe.renderProgressSpanRow(ctx, out, r, row, prefix, src, statusHost)
 		}
-		if len(quick) == 1 {
-			// a single quick transfer is already its own summary
-			fe.renderProgressSpanRow(ctx, out, r, row, prefix, quick[0], statusHost)
-		} else if len(quick) > 1 {
-			fe.renderMergedProgressRow(out, r, row, prefix, quick)
+		if len(done) == 1 {
+			// a single completed transfer is already its own summary
+			fe.renderProgressSpanRow(ctx, out, r, row, prefix, done[0], statusHost)
+		} else if len(done) > 1 {
+			fe.renderMergedProgressRow(out, r, row, prefix, done)
 		}
 	}
 	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
@@ -3163,11 +3177,6 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	return false
 }
 
-// quickTransferThreshold is how long a transfer must be active before it
-// earns its own roll-up row; quicker ones stay hidden live and merge into
-// a single summary line in the final render.
-const quickTransferThreshold = time.Second
-
 // transferKinds maps the leading verb of a transfer span's name — the
 // engine's progress emitters all follow "<verb> <subject>", e.g.
 // "pulling nginx:latest", "fetching <url>" — to singular/plural nouns for
@@ -3208,11 +3217,12 @@ func transferSummary(srcs []*dagui.Span) string {
 	return strings.Join(parts, ", ")
 }
 
-// renderMergedProgressRow folds quick transfers into one summary line
+// renderMergedProgressRow folds completed transfers into one summary line
 // beneath the given row: a count by kind and the merged wall-clock
 // duration of their activity. The interval union means parallel transfers
 // don't double-count, and byte totals are deliberately omitted — fetch and
 // unpack read the same bytes, so summing would double the apparent size.
+// The "p" keybind expands the fold into individual rows.
 func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, srcs []*dagui.Span) {
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, false)
@@ -3225,7 +3235,52 @@ func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, r
 		activity.Add(src)
 	}
 	fmt.Fprint(out, out.String(" "+dagui.FormatDuration(activity.Duration(r.now))).Faint())
+	if fe.FocusedSpan == row.Span.ID && !fe.reportOnly && !fe.finalRender {
+		// discoverability hint, like the error origins' "r jump ↴"
+		color := termenv.ANSIBrightBlack
+		if time.Since(fe.pressedKeyAt) < keypressDuration {
+			color = termenv.ANSIWhite
+		}
+		fmt.Fprintf(out, " %s %s",
+			out.String("p").Foreground(color).Bold(),
+			out.String("expand").Foreground(color),
+		)
+	}
 	fmt.Fprintln(out)
+}
+
+func progressToggleHelp(expanded bool) string {
+	if expanded {
+		return "collapse transfers"
+	}
+	return "expand transfers"
+}
+
+// spanHasProgressRollup reports whether the span currently folds completed
+// descendant transfers into a merged line (or has it expanded), i.e.
+// whether the "p" toggle applies to it.
+func (fe *frontendPretty) spanHasProgressRollup(id dagui.SpanID) bool {
+	span := fe.db.Spans.Map[id]
+	if span == nil {
+		return false
+	}
+	if fe.rows != nil {
+		if row := fe.rows.BySpan[id]; row != nil && row.Expanded && row.HasChildren {
+			// the roll-up only renders beneath collapsed rows
+			return false
+		}
+	}
+	var done int
+	for _, src := range span.ProgressSpans.Order {
+		if src == span || !src.HasProgress() || src.IsRunningOrEffectsRunning() {
+			continue
+		}
+		done++
+		if done > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // renderProgressSpanRow renders one hidden/collapsed descendant's streaming

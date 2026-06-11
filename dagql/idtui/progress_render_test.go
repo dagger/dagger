@@ -331,10 +331,9 @@ func TestRenderProgressSpanRows(t *testing.T) {
 		}
 	}
 
-	// collapsed: the progress spans still surface in the final render,
-	// rolled up beneath the nearest visible collapsed ancestor (the live
-	// roll-up only carries in-flight transfers; see
-	// TestRenderProgressSpanRowsAutoHide)
+	// collapsed: the completed transfers fold into one merged summary
+	// line beneath the nearest visible collapsed ancestor (see
+	// TestRenderProgressSpanRowsAutoHide for the fold policy)
 	fe := NewWithDB(io.Discard, db)
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
 	fe.FrontendOpts.GCThreshold = time.Hour
@@ -343,28 +342,24 @@ func TestRenderProgressSpanRows(t *testing.T) {
 		t.Fatalf("FinalRender: %v", err)
 	}
 	collapsed := buf.String()
-	for _, want := range []string{
-		"pulling nginx 1.0s ██ 20 MB",
-		"unpacking nginx 1.0s █▄ 15 MB/20 MB",
-	} {
-		if !strings.Contains(collapsed, want) {
-			t.Errorf("collapsed final render missing rolled-up progress row %q:\n%s", want, collapsed)
-		}
+	if want := "1 pull, 1 unpack 1.0s"; !strings.Contains(collapsed, want) {
+		t.Errorf("collapsed final render missing merged transfer line %q:\n%s", want, collapsed)
 	}
 }
 
-// TestRenderProgressSpanRowsAutoHide covers the roll-up's auto-hide: live
-// rendering only rolls up transfers that are still in flight, so completed
-// ones stop piercing their collapsed ancestors (they'd otherwise accumulate
-// without bound on large traces). The final render keeps them as the run's
-// transfer summary.
+// TestRenderProgressSpanRowsAutoHide covers the roll-up's fold policy:
+// in-flight transfers each get their own row immediately, completed ones
+// always fold into one merged summary line (they'd otherwise accumulate
+// without bound on large traces), and the "p" keybind expands the fold
+// back into individual rows.
 func TestRenderProgressSpanRowsAutoHide(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
 	rootID := prettyTestSpanID(1)
 	fromID := prettyTestSpanID(2)
 	pullingID := prettyTestSpanID(3)
-	unpackingID := prettyTestSpanID(4)
+	fetchingID := prettyTestSpanID(4)
+	unpackingID := prettyTestSpanID(5)
 	start := time.Unix(100, 0)
 	end := start.Add(time.Second)
 	db.ImportSnapshots([]dagui.SpanSnapshot{
@@ -387,7 +382,7 @@ func TestRenderProgressSpanRowsAutoHide(t *testing.T) {
 			Final:     true,
 		},
 		{
-			// finished: hidden from the live roll-up
+			// finished: folds into the merged line
 			ID:           pullingID,
 			TraceID:      prettyTestTraceID(),
 			ParentID:     fromID,
@@ -398,31 +393,36 @@ func TestRenderProgressSpanRowsAutoHide(t *testing.T) {
 			Final:        true,
 		},
 		{
-			// still transferring: stays in the live roll-up
+			// finished: folds into the merged line
+			ID:           fetchingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "fetching https://example.com/pkg.apk",
+			Encapsulated: true,
+			StartTime:    start,
+			EndTime:      end,
+			Final:        true,
+		},
+		{
+			// just started transferring: own row immediately
 			ID:           unpackingID,
 			TraceID:      prettyTestTraceID(),
 			ParentID:     fromID,
 			Name:         "unpacking nginx",
 			Encapsulated: true,
-			StartTime:    start,
+			StartTime:    time.Now(),
 		},
 	})
 	db.SetPrimarySpan(rootID)
 
-	pulling := db.Spans.Map[pullingID]
-	pulling.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
-		{Name: "layer-1", Current: 10_000_000, Total: 10_000_000, Unit: "bytes"},
-	}}
-	unpacking := db.Spans.Map[unpackingID]
-	unpacking.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
-		{Name: "layer-1", Current: 5_000_000, Total: 10_000_000, Unit: "bytes"},
-	}}
-	from := db.Spans.Map[fromID]
-	from.ProgressSpans.Add(pulling)
-	from.ProgressSpans.Add(unpacking)
-	root := db.Spans.Map[rootID]
-	root.ProgressSpans.Add(pulling)
-	root.ProgressSpans.Add(unpacking)
+	for _, id := range []dagui.SpanID{pullingID, fetchingID, unpackingID} {
+		src := db.Spans.Map[id]
+		src.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+			{Name: "layer-1", Current: 5_000_000, Total: 10_000_000, Unit: "bytes"},
+		}}
+		db.Spans.Map[fromID].ProgressSpans.Add(src)
+		db.Spans.Map[rootID].ProgressSpans.Add(src)
+	}
 
 	fe := NewWithDB(io.Discard, db)
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity // the TUI default
@@ -432,29 +432,32 @@ func TestRenderProgressSpanRowsAutoHide(t *testing.T) {
 	if want := "unpacking nginx"; !strings.Contains(live, want) {
 		t.Errorf("live render missing in-flight rolled-up progress row %q:\n%s", want, live)
 	}
+	if want := "1 pull, 1 fetch 1.0s"; !strings.Contains(live, want) {
+		t.Errorf("live render missing merged transfer line %q:\n%s", want, live)
+	}
 	if dontWant := "pulling nginx"; strings.Contains(live, dontWant) {
-		t.Errorf("live render should hide completed rolled-up progress row %q:\n%s", dontWant, live)
+		t.Errorf("live render should fold completed progress row %q:\n%s", dontWant, live)
 	}
 
-	// the final render keeps completed transfers as the run's summary
-	var buf strings.Builder
-	if err := fe.FinalRender(&buf); err != nil {
-		t.Fatalf("FinalRender: %v", err)
-	}
-	final := buf.String()
-	for _, want := range []string{"pulling nginx", "unpacking nginx"} {
-		if !strings.Contains(final, want) {
-			t.Errorf("final render missing rolled-up progress row %q:\n%s", want, final)
+	// the "p" toggle expands the fold into individual rows
+	fe.progressExpanded = map[dagui.SpanID]bool{fromID: true}
+	fe.renderVersion++
+	fe.recalculateViewLocked()
+	expanded := strings.Join(fe.tui.RenderLines(), "\n")
+	for _, want := range []string{"pulling nginx", "fetching https://example.com/pkg.apk"} {
+		if !strings.Contains(expanded, want) {
+			t.Errorf("expanded fold missing individual progress row %q:\n%s", want, expanded)
 		}
+	}
+	if dontWant := "1 pull, 1 fetch"; strings.Contains(expanded, dontWant) {
+		t.Errorf("expanded fold should not render the merged line %q:\n%s", dontWant, expanded)
 	}
 }
 
-// TestRenderProgressMergedRollup covers the quick-transfer fold: transfers
-// active for less than the threshold don't earn their own roll-up row.
-// Live they stay hidden entirely; in the final render they merge into one
-// summary line counting them by kind with the wall-clock union of their
-// activity, so a module fetching dozens of packages doesn't drown the
-// report. Slow transfers still render individually.
+// TestRenderProgressMergedRollup covers the merged line itself: completed
+// transfers fold into one summary line counting them by kind with the
+// wall-clock union of their activity, so a module fetching dozens of
+// packages doesn't drown the view.
 func TestRenderProgressMergedRollup(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
@@ -537,85 +540,28 @@ func TestRenderProgressMergedRollup(t *testing.T) {
 		t.Fatalf("FinalRender: %v", err)
 	}
 	final := buf.String()
-	if want := "pulling alpine"; !strings.Contains(final, want) {
-		t.Errorf("final render missing slow transfer row %q:\n%s", want, final)
+	// merged line: counts by kind, wall-clock union of the 0.0s-5.0s pull
+	// and the overlapping quick transfers
+	if want := "1 pull, 3 fetches, 1 download 5.0s"; !strings.Contains(final, want) {
+		t.Errorf("final render missing merged transfer line %q:\n%s", want, final)
 	}
-	// merged line: counts by kind, wall-clock union of 0.0s-0.9s
-	if want := "3 fetches, 1 download 0.9s"; !strings.Contains(final, want) {
-		t.Errorf("final render missing merged quick-transfer line %q:\n%s", want, final)
-	}
-	if dontWant := "pkg-1.apk"; strings.Contains(final, dontWant) {
-		t.Errorf("quick transfer %q should fold into the merged line:\n%s", dontWant, final)
-	}
-}
-
-// TestRenderProgressLiveHidesQuick covers the live threshold: an in-flight
-// transfer doesn't earn a roll-up row until it's been active past the
-// threshold, so storms of sub-second transfers never spam the live view.
-func TestRenderProgressLiveHidesQuick(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	db := dagui.NewDB()
-	rootID := prettyTestSpanID(1)
-	fromID := prettyTestSpanID(2)
-	slowID := prettyTestSpanID(3)
-	youngID := prettyTestSpanID(4)
-	longAgo := time.Unix(100, 0)
-	now := time.Now()
-	db.ImportSnapshots([]dagui.SpanSnapshot{
-		{
-			ID:        rootID,
-			TraceID:   prettyTestTraceID(),
-			Name:      "root",
-			StartTime: longAgo,
-		},
-		{
-			ID:        fromID,
-			TraceID:   prettyTestTraceID(),
-			ParentID:  rootID,
-			Name:      "Container.from",
-			StartTime: longAgo,
-		},
-		{
-			// in flight and active well past the threshold: shown
-			ID:           slowID,
-			TraceID:      prettyTestTraceID(),
-			ParentID:     fromID,
-			Name:         "pulling nginx",
-			Encapsulated: true,
-			StartTime:    longAgo,
-		},
-		{
-			// in flight but just started: not yet
-			ID:           youngID,
-			TraceID:      prettyTestTraceID(),
-			ParentID:     fromID,
-			Name:         "fetching https://example.com/pkg.apk",
-			Encapsulated: true,
-			StartTime:    now,
-		},
-	})
-	db.SetPrimarySpan(rootID)
-
-	from := db.Spans.Map[fromID]
-	root := db.Spans.Map[rootID]
-	for _, id := range []dagui.SpanID{slowID, youngID} {
-		src := db.Spans.Map[id]
-		src.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
-			{Name: "blob", Current: 512, Total: 1024, Unit: "bytes"},
-		}}
-		from.ProgressSpans.Add(src)
-		root.ProgressSpans.Add(src)
+	for _, dontWant := range []string{"pulling alpine", "pkg-1.apk"} {
+		if strings.Contains(final, dontWant) {
+			t.Errorf("completed transfer %q should fold into the merged line:\n%s", dontWant, final)
+		}
 	}
 
-	fe := NewWithDB(io.Discard, db)
-	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
-	fe.recalculateViewLocked()
-
-	live := strings.Join(fe.tui.RenderLines(), "\n")
-	if want := "pulling nginx"; !strings.Contains(live, want) {
-		t.Errorf("live render missing long-active transfer %q:\n%s", want, live)
+	// the "p" toggle expands the fold into individual rows, in the final
+	// render too
+	fe.progressExpanded = map[dagui.SpanID]bool{installID: true}
+	buf.Reset()
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatalf("FinalRender: %v", err)
 	}
-	if dontWant := "fetching"; strings.Contains(live, dontWant) {
-		t.Errorf("live render should hide transfer younger than the threshold %q:\n%s", dontWant, live)
+	expanded := buf.String()
+	for _, want := range []string{"pulling alpine", "pkg-1.apk", "downloading /out"} {
+		if !strings.Contains(expanded, want) {
+			t.Errorf("expanded fold missing individual progress row %q:\n%s", want, expanded)
+		}
 	}
 }
