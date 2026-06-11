@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path/filepath"
+	"slices"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/core"
@@ -795,6 +797,8 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 	})
 
 	switch t := dangType.(type) {
+	case dang.MapType:
+		return res, fmt.Errorf("%s cannot be exposed via GraphQL; store maps in private (non-pub) fields instead", t)
 	case dang.ListType:
 		elemTypeDef, err := dangTypeToTypeDef(ctx, srv, t.Type, localTypes)
 		if err != nil {
@@ -1139,7 +1143,31 @@ func (c dangConverter) convertList(ctx context.Context, vals []any, fieldType hm
 	return listVal, nil
 }
 
+// convertMap rehydrates a Map-typed field from its serialized JSON object.
+// JSON decoding does not preserve key order, so keys are sorted to keep
+// rehydrated maps deterministic.
+func (c dangConverter) convertMap(ctx context.Context, vals map[string]any, mapT dang.MapType) (dang.Value, error) {
+	mapVal := dang.MapValue{
+		Keys:    make([]string, 0, len(vals)),
+		Entries: make(map[string]dang.Value, len(vals)),
+		ValType: mapT.Type,
+	}
+	for _, key := range slices.Sorted(maps.Keys(vals)) {
+		entryVal, err := c.convert(ctx, vals[key], mapT.Type)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert map entry %q: %w", key, err)
+		}
+		mapVal.Keys = append(mapVal.Keys, key)
+		mapVal.Entries[key] = entryVal
+	}
+	return mapVal, nil
+}
+
 func (c dangConverter) convertObject(ctx context.Context, vals map[string]any, fieldType hm.Type) (dang.Value, error) {
+	if mapT, isMap := fieldType.(dang.MapType); isMap {
+		return c.convertMap(ctx, vals, mapT)
+	}
+
 	mod, isMod := fieldType.(dang.TypeScope)
 	if !isMod {
 		return nil, fmt.Errorf("expected module type, got %T", fieldType)
