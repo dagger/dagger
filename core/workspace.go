@@ -25,7 +25,7 @@ type Workspace struct {
 
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
-	ConfigFile string `field:"true" doc:"Selected native workspace config file relative to the workspace root, if any."`
+	ConfigFile string
 
 	// LockFile is the selected lockfile path relative to the workspace root.
 	// It is independent from ConfigFile: compat config and missing native config

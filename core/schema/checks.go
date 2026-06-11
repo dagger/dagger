@@ -37,7 +37,7 @@ func (s checksSchema) Install(srv *dagql.Server) {
 		dagql.Func("originalModule", s.originalModule).
 			Doc("The original module in which the check has been defined"),
 		dagql.Func("checkType", s.checkType).
-			View(AfterVersion("v0.21.7")).
+			View(AfterVersion("v0.21.0")).
 			Doc("The type of check: 'check' for annotated checks, 'generate' for generate-as-checks"),
 
 		dagql.Func("resultEmoji", s.resultEmoji).

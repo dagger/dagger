@@ -39,14 +39,14 @@ func (s *querySchema) Install(srv *dagql.Server) {
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
 			),
 		dagql.NodeFunc("_remoteGitMirror", s.remoteGitMirror).
-			View(AfterVersion("v0.21.7")).
+			View(AfterVersion("v0.21.0")).
 			IsPersistable().
 			Doc(`(Internal-only) Returns the persistent bare git mirror for a remote URL.`).
 			Args(
 				dagql.Arg("remoteURL").Doc("Normalized remote repository URL."),
 			),
 		dagql.NodeFunc("_clientFilesyncMirror", s.clientFilesyncMirror).
-			View(AfterVersion("v0.21.7")).
+			View(AfterVersion("v0.21.0")).
 			IsPersistable().
 			Doc(`(Internal-only) Returns the persistent filesync mirror for a stable client and drive.`).
 			Args(
@@ -58,8 +58,8 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	srv.InstallScalar(core.JSON{})
 	srv.InstallScalar(core.Void{})
 
-	srv.InstallObject(dagql.NewClass[*core.RemoteGitMirror](srv).View(AfterVersion("v0.21.7")))
-	srv.InstallObject(dagql.NewClass[*core.ClientFilesyncMirror](srv).View(AfterVersion("v0.21.7")))
+	srv.InstallObject(dagql.NewClass[*core.RemoteGitMirror](srv).View(AfterVersion("v0.21.0")))
+	srv.InstallObject(dagql.NewClass[*core.ClientFilesyncMirror](srv).View(AfterVersion("v0.21.0")))
 	dagql.Fields[*core.RemoteGitMirror]{}.Install(srv)
 	dagql.Fields[*core.ClientFilesyncMirror]{}.Install(srv)
 

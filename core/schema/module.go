@@ -276,7 +276,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
 				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks").
-					View(AfterVersion("v0.21.7")),
+					View(AfterVersion("v0.21.0")),
 			),
 
 		dagql.NodeFunc("check", s.moduleCheck).

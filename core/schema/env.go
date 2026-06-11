@@ -83,7 +83,7 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
 				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks").
-					View(AfterVersion("v0.21.7")),
+					View(AfterVersion("v0.21.0")),
 			),
 		dagql.Func("check", s.envCheck).
 			Experimental("Checks API is highly experimental and may be removed or replaced entirely.").
