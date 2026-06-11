@@ -93,14 +93,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("moduleInit", s.moduleInit).
-			DoNotCache("Mutates workspace config and host filesystem").
-			Doc("Create a new module owned by the workspace and auto-install it in dagger.toml.").
+			DoNotCache("Plans workspace changes against live host filesystem").
+			Doc("Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the SDK install under [sdks.<name>], the authoring entry under [[sdks.<name>.modules]], and (when path defaults) [modules.<name>]. Returns the resulting Changeset for the caller to preview and apply.").
 			Args(
 				dagql.Arg("name").Doc("Name of the new module."),
-				dagql.Arg("sdk").Doc("SDK to use for the new module."),
+				dagql.Arg("sdk").Doc("Canonical SDK source ref (alias resolution is the caller's responsibility)."),
+				dagql.Arg("path").Doc(`Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].`),
 				dagql.Arg("source").Doc("Source subpath within the new module."),
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
-				dagql.Arg("selfCalls").Doc("Enable the self-calls experimental feature for the new module."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("configRead", s.configRead).
