@@ -12,7 +12,7 @@
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <dagger.module.deps>0.21.4-template-module</dagger.module.deps>
+        <dagger.module.deps>0.21.6-template-module</dagger.module.deps>
     </properties>
 
     <dependencies>
@@ -115,7 +115,7 @@
             <plugin>
                 <!--
                 This plugin configuration helps VS Code editor (and others) to find
-                the generated code created by `dagger module init` and `dagger develop` and
+                the generated code created by `dagger init` and `dagger develop` and
                 helps for code completion.
                 -->
                 <groupId>org.codehaus.mojo</groupId>
