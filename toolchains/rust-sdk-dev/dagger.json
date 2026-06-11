@@ -1,6 +1,6 @@
 {
   "name": "rust-sdk-dev",
-  "engineVersion": "v0.21.5",
+  "engineVersion": "v0.21.6",
   "sdk": {
     "source": "go"
   },
