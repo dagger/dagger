@@ -800,8 +800,11 @@ func (fe *frontendPretty) startReportHeartbeat() func() {
 
 	done := make(chan struct{})
 	var once sync.Once
+	var wg sync.WaitGroup
 	start := time.Now()
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -815,6 +818,7 @@ func (fe *frontendPretty) startReportHeartbeat() func() {
 	}()
 	return func() {
 		once.Do(func() { close(done) })
+		wg.Wait()
 	}
 }
 

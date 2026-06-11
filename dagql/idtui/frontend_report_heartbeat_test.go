@@ -3,6 +3,7 @@ package idtui
 import (
 	"context"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,21 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
+
+type blockingHeartbeatWriter struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (w *blockingHeartbeatWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() {
+		close(w.started)
+	})
+	// Hold the heartbeat inside Write until the test explicitly releases it.
+	<-w.release
+	return len(p), nil
+}
 
 func checkSpanStub(spanID byte, checkName string, start time.Time, end time.Time, status codes.Code) tracetest.SpanStub {
 	return tracetest.SpanStub{
@@ -29,6 +45,58 @@ func checkSpanStub(spanID byte, checkName string, start time.Time, end time.Time
 		Attributes: []attribute.KeyValue{
 			attribute.String(telemetry.CheckNameAttr, checkName),
 		},
+	}
+}
+
+func TestReportHeartbeatStopWaitsForInFlightWrite(t *testing.T) {
+	t.Setenv("DAGGER_REPORT_HEARTBEAT", "1ms")
+
+	writer := &blockingHeartbeatWriter{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(writer.release)
+		})
+	}
+
+	fe := NewWithDB(writer, dagui.NewDB())
+	fe.reportOnly = true
+
+	stopHeartbeat := fe.startReportHeartbeat()
+	t.Cleanup(func() {
+		release()
+		stopHeartbeat()
+	})
+
+	// Wait until stopHeartbeat has an in-flight heartbeat write to wait for.
+	select {
+	case <-writer.started:
+	case <-time.After(time.Second):
+		t.Fatal("heartbeat did not start")
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		stopHeartbeat()
+		close(stopped)
+	}()
+
+	// The old implementation returned here as soon as it signaled done.
+	select {
+	case <-stopped:
+		t.Fatal("stopHeartbeat returned while heartbeat write was blocked")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	release()
+
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("stopHeartbeat did not return after heartbeat write was released")
 	}
 }
 
