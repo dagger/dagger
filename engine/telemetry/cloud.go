@@ -126,8 +126,9 @@ func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshF
 					otlpmetrichttp.WithEndpointURL(metricsURL.String()),
 					otlpmetrichttp.WithHeaders(newHeaders))
 			},
-			token: token,
-			exp:   metricExporter,
+			tokenRefresh: tokenRefreshFn,
+			token:        token,
+			exp:          metricExporter,
 		}
 		return NewSpanHeartbeater(wrappedSpanExporter), wrappedLogExporter, wrappedMetricExporter, nil
 	}
@@ -201,9 +202,6 @@ func (e *refreshingSpanExporter) ExportSpans(ctx context.Context, spans []sdktra
 func (e *refreshingSpanExporter) Shutdown(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
 	return e.exp.Shutdown(ctx)
 }
 
@@ -257,9 +255,6 @@ func (e *refreshingLogExporter) Export(ctx context.Context, logs []sdklog.Record
 func (e *refreshingLogExporter) Shutdown(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
 	return e.exp.Shutdown(ctx)
 }
 
@@ -297,7 +292,7 @@ func (e *refreshingLogExporter) refreshIfNecessary(ctx context.Context) error {
 }
 
 type refreshingMetricExporter struct {
-	tokenRefresh func(context.Context, *oauth2.Token) (*oauth2.Token, error)
+	tokenRefresh func(context.Context) (*oauth2.Token, error)
 	Factory      func(*oauth2.Token) (sdkmetric.Exporter, error)
 
 	token *oauth2.Token
@@ -328,9 +323,6 @@ func (e *refreshingMetricExporter) Export(ctx context.Context, metrics *metricda
 func (e *refreshingMetricExporter) Shutdown(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err := e.refreshIfNecessary(ctx); err != nil {
-		return fmt.Errorf("refresh exporter: %w", err)
-	}
 	return e.exp.Shutdown(ctx)
 }
 
@@ -352,7 +344,7 @@ func (e *refreshingMetricExporter) refreshIfNecessary(ctx context.Context) error
 	}
 	if e.tokenRefresh != nil {
 		var err error
-		e.token, err = e.tokenRefresh(ctx, e.token)
+		e.token, err = e.tokenRefresh(ctx)
 		if err != nil {
 			return fmt.Errorf("refresh token: %w", err)
 		}
