@@ -194,7 +194,7 @@ func (class Class[T]) Typed() Typed {
 
 func (class Class[T]) IDType() (IDType, bool) {
 	if class.idable {
-		return ID[T]{inner: class.inner, sourceMap: class.sourceMap, view: class.view}, true
+		return ID[T]{inner: class.inner, sourceMap: class.sourceMap}, true
 	} else {
 		return nil, false
 	}
