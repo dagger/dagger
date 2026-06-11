@@ -1775,6 +1775,10 @@ type ContainerAsTarballOpts struct {
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
+	// Clamp file and image timestamps to this Unix epoch (in seconds) for reproducible digests.
+	//
+	// Defaults to the client's SOURCE_DATE_EPOCH environment variable when present.
+	RewriteTimestamp int
 }
 
 // Package the container state as an OCI image, and return it as a tar archive
@@ -1792,6 +1796,10 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+		// `rewriteTimestamp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RewriteTimestamp) {
+			q = q.Arg("rewriteTimestamp", opts[i].RewriteTimestamp)
 		}
 	}
 
@@ -2013,6 +2021,10 @@ type ContainerExportOpts struct {
 	MediaTypes ImageMediaTypes
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
+	// Clamp file and image timestamps to this Unix epoch (in seconds) for reproducible digests.
+	//
+	// Defaults to the client's SOURCE_DATE_EPOCH environment variable when present.
+	RewriteTimestamp int
 }
 
 // Writes the container as an OCI tarball to the destination file path on the host.
@@ -2039,6 +2051,10 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `rewriteTimestamp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RewriteTimestamp) {
+			q = q.Arg("rewriteTimestamp", opts[i].RewriteTimestamp)
 		}
 	}
 	q = q.Arg("path", path)
@@ -2361,6 +2377,10 @@ type ContainerPublishOpts struct {
 	Protocol RegistryProtocol
 	// Allow HTTPS registry communication without verifying the server certificate.
 	InsecureSkipTLSVerify bool
+	// Clamp file and image timestamps to this Unix epoch (in seconds) for reproducible digests.
+	//
+	// Defaults to the client's SOURCE_DATE_EPOCH environment variable when present.
+	RewriteTimestamp int
 }
 
 // Package the container state as an OCI image, and publish it to a registry
@@ -2395,6 +2415,10 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		// `insecureSkipTLSVerify` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureSkipTLSVerify) {
 			q = q.Arg("insecureSkipTLSVerify", opts[i].InsecureSkipTLSVerify)
+		}
+		// `rewriteTimestamp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RewriteTimestamp) {
+			q = q.Arg("rewriteTimestamp", opts[i].RewriteTimestamp)
 		}
 	}
 	q = q.Arg("address", address)
@@ -4722,6 +4746,10 @@ func (r *Directory) Exists(ctx context.Context, path string, opts ...DirectoryEx
 type DirectoryExportOpts struct {
 	// If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
 	Wipe bool
+	// Clamp file timestamps to this Unix epoch (in seconds) for reproducible exports.
+	//
+	// Defaults to the client's SOURCE_DATE_EPOCH environment variable when present.
+	RewriteTimestamp int
 }
 
 // Writes the contents of the directory to a path on the host.
@@ -4734,6 +4762,10 @@ func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryEx
 		// `wipe` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Wipe) {
 			q = q.Arg("wipe", opts[i].Wipe)
+		}
+		// `rewriteTimestamp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RewriteTimestamp) {
+			q = q.Arg("rewriteTimestamp", opts[i].RewriteTimestamp)
 		}
 	}
 	q = q.Arg("path", path)

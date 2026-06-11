@@ -3448,6 +3448,35 @@ func (ContainerSuite) TestAsTarballCached(ctx context.Context, t *testctx.T) {
 	require.Equal(t, first, second)
 }
 
+func (ContainerSuite) TestAsTarballRewriteTimestamp(ctx context.Context, t *testctx.T) {
+	const (
+		epoch  = 1100000000 // 2004-11-09
+		epoch2 = 1200000000 // 2008-01-10
+	)
+	c := connect(ctx, t)
+
+	build := func() *dagger.Container {
+		return c.Container().From(alpineImage).WithNewFile("/repro.txt", "reproducible builds")
+	}
+
+	tarballHash := func(opts dagger.ContainerAsTarballOpts) string {
+		t.Helper()
+		out, err := build().
+			WithMountedFile("/foo.tar", build().AsTarball(opts)).
+			WithExec([]string{"sha256sum", "/foo.tar"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.Fields(out)[0]
+	}
+
+	h1 := tarballHash(dagger.ContainerAsTarballOpts{RewriteTimestamp: epoch})
+	h2 := tarballHash(dagger.ContainerAsTarballOpts{RewriteTimestamp: epoch})
+	require.Equal(t, h1, h2, "same rewriteTimestamp must yield identical tarball digest")
+
+	h3 := tarballHash(dagger.ContainerAsTarballOpts{RewriteTimestamp: epoch2})
+	require.NotEqual(t, h1, h3, "different rewriteTimestamp must change the tarball digest")
+}
+
 func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -958,6 +958,20 @@ func (c *Client) setProxyEnvs(_ context.Context, state *execState) error {
 	return nil
 }
 
+func (c *Client) setupSourceDateEpoch(_ context.Context, state *execState) error {
+	if state.execMD == nil || state.execMD.SourceDateEpoch == nil {
+		return nil
+	}
+	const envKey = "SOURCE_DATE_EPOCH"
+	if _, ok := state.origEnvMap[envKey]; ok {
+		// respect explicit value set by the user via WithEnvVariable
+		return nil
+	}
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		fmt.Sprintf("%s=%d", envKey, *state.execMD.SourceDateEpoch))
+	return nil
+}
+
 func (c *Client) enableGPU(_ context.Context, state *execState) error {
 	if state.execMD == nil {
 		return nil

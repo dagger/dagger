@@ -234,6 +234,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
 				dagql.Arg("wipe").Doc(`If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
+				dagql.Arg("rewriteTimestamp").Doc(
+					`Clamp file timestamps to this Unix epoch (in seconds) for reproducible exports.`,
+					`Defaults to the client's SOURCE_DATE_EPOCH environment variable when present.`),
 			),
 		dagql.NodeFunc("export", s.exportLegacy).
 			WithInput(dagql.PerClientInput).
@@ -1406,12 +1409,13 @@ func (s *directorySchema) changesetDiffStats(ctx context.Context, parent dagql.O
 }
 
 type dirExportArgs struct {
-	Path string
-	Wipe bool `default:"false"`
+	Path             string
+	Wipe             bool `default:"false"`
+	RewriteTimestamp dagql.Optional[dagql.Int]
 }
 
 func (s *directorySchema) export(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirExportArgs) (dagql.String, error) {
-	err := parent.Self().Export(ctx, parent, args.Path, !args.Wipe)
+	err := parent.Self().Export(ctx, parent, args.Path, !args.Wipe, resolveSourceDateEpoch(ctx, args.RewriteTimestamp))
 	if err != nil {
 		return "", err
 	}

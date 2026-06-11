@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  Add `rewriteTimestamp` to `Container.publish`, `Container.export`, `Container.asTarball`, and `Directory.export`.
+
+  When set to a Unix epoch (in seconds), file and image timestamps newer than that value are clamped down to it, producing identical digests across runs — the standard `SOURCE_DATE_EPOCH` reproducible-builds workflow.
+
+  When omitted, the engine falls back to the caller's `SOURCE_DATE_EPOCH` environment variable (propagated automatically via `ClientMetadata`). When neither is set, wall-clock behaviour is unchanged.
+
+  `SOURCE_DATE_EPOCH` is also forwarded into each exec container's process environment so that build tools inside containers can produce reproducible outputs without additional wiring.
+time: 2026-07-07T00:00:00.000000000+00:00
+custom:
+  Author: danielwegener
+  PR: "13419"

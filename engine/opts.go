@@ -156,6 +156,11 @@ type ClientMetadata struct {
 	// of this client's work. Experimental; the recorded events are retrieved
 	// via the engine debug endpoints.
 	Profile bool `json:"profile,omitempty"`
+
+	// SourceDateEpoch, when set, is propagated to export/publish operations as
+	// the rewriteTimestamp default (clamp file/image timestamps to this Unix
+	// epoch). Populated from the client's SOURCE_DATE_EPOCH env var.
+	SourceDateEpoch *int64 `json:"source_date_epoch,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}

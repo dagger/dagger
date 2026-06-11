@@ -1469,6 +1469,12 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		md.WorkspaceEnv = c.WorkspaceEnv
 	}
 
+	if epochStr := os.Getenv("SOURCE_DATE_EPOCH"); epochStr != "" {
+		if epoch, err := strconv.ParseInt(epochStr, 10, 64); err == nil {
+			md.SourceDateEpoch = &epoch
+		}
+	}
+
 	return md
 }
 
