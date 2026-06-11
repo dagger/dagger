@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 // TestRenderProgressBarFills locks in the per-cell braille fill math. The
@@ -402,6 +404,114 @@ func TestTransferSummary(t *testing.T) {
 // always fold into one merged summary line (they'd otherwise accumulate
 // without bound on large traces), and the "p" keybind expands the fold
 // back into individual rows.
+// TestRenderProgressSpanRowsAutoHideKeepsFailuresSeparate guards the collapsed
+// roll-up: failed and canceled transfers must not disappear into the green
+// completed-transfer summary.
+func TestRenderProgressSpanRowsAutoHideKeepsFailuresSeparate(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	fromID := prettyTestSpanID(2)
+	pullingID := prettyTestSpanID(3)
+	fetchingID := prettyTestSpanID(4)
+	uploadingID := prettyTestSpanID(5)
+	downloadingID := prettyTestSpanID(6)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			// still running so the completed child stays collapsed in the live TUI
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root",
+			StartTime: start,
+		},
+		{
+			ID:        fromID,
+			TraceID:   prettyTestTraceID(),
+			ParentID:  rootID,
+			Name:      "Container.from",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:           pullingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "pulling nginx",
+			Encapsulated: true,
+			StartTime:    start,
+			EndTime:      end,
+			Final:        true,
+		},
+		{
+			ID:           fetchingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "fetching https://example.com/pkg.apk",
+			Encapsulated: true,
+			StartTime:    start,
+			EndTime:      end,
+			Final:        true,
+		},
+		{
+			ID:           uploadingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "uploading cache",
+			Encapsulated: true,
+			StartTime:    start,
+			EndTime:      end,
+			Final:        true,
+			Status:       sdktrace.Status{Code: codes.Error},
+		},
+		{
+			ID:           downloadingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "downloading canceled",
+			Encapsulated: true,
+			StartTime:    start,
+			EndTime:      end,
+			Final:        true,
+			Canceled:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	for _, id := range []dagui.SpanID{pullingID, fetchingID, uploadingID, downloadingID} {
+		src := db.Spans.Map[id]
+		src.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+			{Name: "layer-1", Current: 5_000_000, Total: 10_000_000, Unit: "bytes"},
+		}}
+		db.Spans.Map[fromID].ProgressSpans.Add(src)
+		db.Spans.Map[rootID].ProgressSpans.Add(src)
+	}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.recalculateViewLocked()
+
+	live := strings.Join(fe.tui.RenderLines(), "\n")
+	if want := "1 pull, 1 fetch 1.0s"; !strings.Contains(live, want) {
+		t.Errorf("live render missing success-only merged transfer line %q:\n%s", want, live)
+	}
+	for _, want := range []string{"uploading cache", "downloading canceled"} {
+		if !strings.Contains(live, want) {
+			t.Errorf("live render should keep failed/canceled progress row %q separate:\n%s", want, live)
+		}
+	}
+	for _, dontWant := range []string{
+		"1 pull, 1 fetch, 1 upload",
+		"1 pull, 1 fetch, 1 download",
+	} {
+		if strings.Contains(live, dontWant) {
+			t.Errorf("live render should not merge failed/canceled transfer into summary %q:\n%s", dontWant, live)
+		}
+	}
+}
+
 func TestRenderProgressSpanRowsAutoHide(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()

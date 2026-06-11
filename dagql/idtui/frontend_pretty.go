@@ -3223,14 +3223,24 @@ func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, r
 	fmt.Fprintln(out)
 }
 
+// foldableProgressSource reports whether a transfer belongs in the merged
+// completed-transfer summary: finished, and neither failed nor canceled —
+// those must stay visible as their own rows rather than disappear into a
+// green checkmark.
+func foldableProgressSource(src *dagui.Span) bool {
+	return !src.IsRunningOrEffectsRunning() &&
+		!src.IsFailedOrCausedFailure() &&
+		!src.IsCanceled()
+}
+
 // renderProgressRollup surfaces a collapsed row's descendant transfers,
 // like error origins: when the row is expanded they render in their
 // natural tree position instead (carrying progress reveals an encapsulated
-// span). In-flight transfers each get their own row; completed ones always
-// fold into a single merged summary line — a module fetching dozens of
-// packages would otherwise drown the view. The "p" keybind
-// (progressExpanded), debug, and high verbosity expand the fold into
-// individual rows.
+// span). In-flight, failed, and canceled transfers each get their own row;
+// successfully completed ones always fold into a single merged summary
+// line — a module fetching dozens of packages would otherwise drown the
+// view. The "p" keybind (progressExpanded), debug, and high verbosity
+// expand the fold into individual rows.
 func (fe *frontendPretty) renderProgressRollup(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost) {
 	span := row.Span
 	showAll := fe.progressExpanded[span.ID] || r.Debug ||
@@ -3240,7 +3250,7 @@ func (fe *frontendPretty) renderProgressRollup(ctx tuist.Context, out TermOutput
 		if src == span || !src.HasProgress() {
 			continue
 		}
-		if !showAll && !src.IsRunningOrEffectsRunning() {
+		if !showAll && foldableProgressSource(src) {
 			done = append(done, src)
 			continue
 		}
@@ -3277,7 +3287,7 @@ func (fe *frontendPretty) spanHasProgressRollup(id dagui.SpanID) bool {
 	}
 	var done int
 	for _, src := range span.ProgressSpans.Order {
-		if src == span || !src.HasProgress() || src.IsRunningOrEffectsRunning() {
+		if src == span || !src.HasProgress() || !foldableProgressSource(src) {
 			continue
 		}
 		done++
