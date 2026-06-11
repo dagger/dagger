@@ -107,6 +107,10 @@ type ClientMetadata struct {
 	// If set, the auth for cloud requests; used for PARC and scale-out
 	CloudAuth *auth.Cloud `json:"cloud_auth,omitempty"`
 
+	// If set, the Dagger Cloud API URL the client is configured with, so
+	// engine-side telemetry exports to the same endpoint as the client.
+	CloudURL string `json:"cloud_url,omitempty"`
+
 	// If true, this client enables scaling checks out to cloud engines
 	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`
 
