@@ -92,7 +92,7 @@ func (s *workspaceSchema) moduleInit(
 		}
 	}
 
-	sdkName := conventionalSDKShortName(args.SDK)
+	sdkName := workspace.ConventionalSDKShortName(args.SDK)
 	sdkEntry, sdkInstalled := cfg.SDKs[sdkName]
 	if !sdkInstalled {
 		sdkEntry = workspace.SDKEntry{Source: args.SDK}
@@ -321,22 +321,6 @@ func (s *workspaceSchema) resolveModuleRuntimeRef(ctx context.Context, sdkRef st
 // chain lands.
 func (s *workspaceSchema) lookupSDKTargetRuntime(_ context.Context, _ string) (string, bool) {
 	return "", false
-}
-
-// conventionalSDKShortName returns the workspace-side short name to use for
-// an SDK install entry, derived from the SDK's canonical source ref. For
-// builtin names (e.g. "go") the input passes through unchanged. For external
-// refs, the last path segment with any @version suffix stripped wins —
-// matching the convention `dagger install` uses when no --name is supplied.
-func conventionalSDKShortName(sdkRef string) string {
-	ref := sdkRef
-	if i := strings.Index(ref, "@"); i >= 0 {
-		ref = ref[:i]
-	}
-	if i := strings.LastIndex(ref, "/"); i >= 0 {
-		ref = ref[i+1:]
-	}
-	return ref
 }
 
 func workspaceModuleInitSourceSelector(refPath string) dagql.Selector {

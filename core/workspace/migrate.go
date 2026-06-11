@@ -9,6 +9,22 @@ import (
 	"github.com/dagger/dagger/core/modules"
 )
 
+// ConventionalSDKShortName returns the workspace-side short name to use for
+// an SDK install derived from its canonical source ref. Builtin runtimes
+// ("go", "python", etc.) pass through unchanged; external refs collapse to
+// the last path segment with any @version suffix stripped — matching the
+// convention `dagger install` uses when no --name is supplied.
+func ConventionalSDKShortName(sdkRef string) string {
+	ref := sdkRef
+	if i := strings.Index(ref, "@"); i >= 0 {
+		ref = ref[:i]
+	}
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		ref = ref[i+1:]
+	}
+	return ref
+}
+
 // IsLocalRef performs a fast heuristic check to determine whether a module
 // reference string refers to a local path instead of a git source.
 func IsLocalRef(source, pin string) bool {
@@ -78,6 +94,27 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	wsCfg := compatWorkspace.WorkspaceConfig()
 	if needsProjectModuleMigration && compatWorkspace.MainModule != nil {
 		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
+	}
+
+	// Surface the legacy module's SDK ref as a workspace SDK install with
+	// its authoring entry. Legacy dagger.json carried the SDK inline on the
+	// module; new dagger.toml records SDK installs in [sdks.*] and the
+	// modules they author in [[sdks.*.modules]]. This is the file-format
+	// catch-up for the runtime/SDK split.
+	if hasSDK {
+		if wsCfg.SDKs == nil {
+			wsCfg.SDKs = map[string]SDKEntry{}
+		}
+		sdkName := ConventionalSDKShortName(cfg.SDK.Source)
+		entry, exists := wsCfg.SDKs[sdkName]
+		if !exists {
+			entry = SDKEntry{Source: cfg.SDK.Source}
+		}
+		if needsProjectModuleMigration {
+			modulePath := filepath.Join(LockDirName, "modules", cfg.Name)
+			entry.Modules = append(entry.Modules, SDKManagedModule{Path: modulePath})
+		}
+		wsCfg.SDKs[sdkName] = entry
 	}
 	workspaceConfigData, err := renderMigrationWorkspaceConfig(wsCfg, compatWorkspace.MainModule)
 	if err != nil {
