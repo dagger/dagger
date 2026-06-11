@@ -153,6 +153,7 @@ func init() {
 		configCmd,
 		envCmd,
 		settingsCmd,
+		artifactListCmd,
 		checksCmd,
 		upCmd,
 		generateCmd,

@@ -34,6 +34,8 @@ type ListTypeDefID = dagql.ID[*ListTypeDef]
 
 type ObjectTypeDefID = dagql.ID[*ObjectTypeDef]
 
+type CollectionTypeDefID = dagql.ID[*CollectionTypeDef]
+
 type InterfaceTypeDefID = dagql.ID[*InterfaceTypeDef]
 
 type InputTypeDefID = dagql.ID[*InputTypeDef]

@@ -373,6 +373,36 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load a ArtifactDimension from its ID.
+     */
+    public function loadArtifactDimensionFromID(ArtifactDimensionId $id): ArtifactDimension
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadArtifactDimensionFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ArtifactDimension($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Artifact from its ID.
+     */
+    public function loadArtifactFromID(ArtifactId $id): Artifact
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadArtifactFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Artifact($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Artifacts from its ID.
+     */
+    public function loadArtifactsFromID(ArtifactsId $id): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadArtifactsFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Binding from its ID.
      */
     public function loadBindingFromID(BindingId $id): Binding
@@ -440,6 +470,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCloudFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a CollectionTypeDef from its ID.
+     */
+    public function loadCollectionTypeDefFromID(CollectionTypeDefId $id): CollectionTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCollectionTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\CollectionTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

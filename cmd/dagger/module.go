@@ -71,6 +71,7 @@ func init() {
 	moduleAddFlags(shellCmd, shellCmd.PersistentFlags(), true)
 	shellAddFlags(shellCmd)
 	moduleAddFlags(checksCmd, checksCmd.PersistentFlags(), false)
+	moduleAddFlags(artifactListCmd, artifactListCmd.Flags(), false)
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
 

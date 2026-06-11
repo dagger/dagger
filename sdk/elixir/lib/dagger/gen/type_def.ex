@@ -16,6 +16,20 @@ defmodule Dagger.TypeDef do
   @type t() :: %__MODULE__{}
 
   @doc """
+  If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.
+  """
+  @spec as_collection(t()) :: Dagger.CollectionTypeDef.t() | nil
+  def as_collection(%__MODULE__{} = type_def) do
+    query_builder =
+      type_def.query_builder |> QB.select("asCollection")
+
+    %Dagger.CollectionTypeDef{
+      query_builder: query_builder,
+      client: type_def.client
+    }
+  end
+
+  @doc """
   If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
   """
   @spec as_enum(t()) :: Dagger.EnumTypeDef.t() | nil
@@ -144,6 +158,48 @@ defmodule Dagger.TypeDef do
       type_def.query_builder |> QB.select("optional")
 
     Client.execute(type_def.client, query_builder)
+  end
+
+  @doc """
+  Marks this Object TypeDef as a collection.
+  """
+  @spec with_collection(t()) :: Dagger.TypeDef.t()
+  def with_collection(%__MODULE__{} = type_def) do
+    query_builder =
+      type_def.query_builder |> QB.select("withCollection")
+
+    %Dagger.TypeDef{
+      query_builder: query_builder,
+      client: type_def.client
+    }
+  end
+
+  @doc """
+  Overrides the effective get function used by a collection TypeDef.
+  """
+  @spec with_collection_get(t(), String.t()) :: Dagger.TypeDef.t()
+  def with_collection_get(%__MODULE__{} = type_def, name) do
+    query_builder =
+      type_def.query_builder |> QB.select("withCollectionGet") |> QB.put_arg("name", name)
+
+    %Dagger.TypeDef{
+      query_builder: query_builder,
+      client: type_def.client
+    }
+  end
+
+  @doc """
+  Overrides the effective keys field used by a collection TypeDef.
+  """
+  @spec with_collection_keys(t(), String.t()) :: Dagger.TypeDef.t()
+  def with_collection_keys(%__MODULE__{} = type_def, name) do
+    query_builder =
+      type_def.query_builder |> QB.select("withCollectionKeys") |> QB.put_arg("name", name)
+
+    %Dagger.TypeDef{
+      query_builder: query_builder,
+      client: type_def.client
+    }
   end
 
   @doc """

@@ -143,6 +143,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/CollectionTypeDef.html"><abbr title="Dagger\CollectionTypeDef">CollectionTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asCollection">asCollection</a>()
+        
+                                            <p><p>If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/EnumTypeDef.html"><abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -239,6 +249,36 @@
                     <a href="#method_optional">optional</a>()
         
                                             <p><p>Whether this type can be set to null. Defaults to false.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withCollection">withCollection</a>()
+        
+                                            <p><p>Marks this Object TypeDef as a collection.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withCollectionGet">withCollectionGet</a>(string $name)
+        
+                                            <p><p>Overrides the effective get function used by a collection TypeDef.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withCollectionKeys">withCollectionKeys</a>(string $name)
+        
+                                            <p><p>Overrides the effective keys field used by a collection TypeDef.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -457,8 +497,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_asEnum">
+                    <h3 id="method_asCollection">
         <div class="location">at line 19</div>
+        <code>                    <a href="../Dagger/CollectionTypeDef.html"><abbr title="Dagger\CollectionTypeDef">CollectionTypeDef</abbr></a>
+    <strong>asCollection</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/CollectionTypeDef.html"><abbr title="Dagger\CollectionTypeDef">CollectionTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asEnum">
+        <div class="location">at line 28</div>
         <code>                    <a href="../Dagger/EnumTypeDef.html"><abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr></a>
     <strong>asEnum</strong>()
         </code>
@@ -490,7 +562,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_asInput">
-        <div class="location">at line 28</div>
+        <div class="location">at line 37</div>
         <code>                    <a href="../Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a>
     <strong>asInput</strong>()
         </code>
@@ -522,7 +594,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_asInterface">
-        <div class="location">at line 37</div>
+        <div class="location">at line 46</div>
         <code>                    <a href="../Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a>
     <strong>asInterface</strong>()
         </code>
@@ -554,7 +626,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_asList">
-        <div class="location">at line 46</div>
+        <div class="location">at line 55</div>
         <code>                    <a href="../Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a>
     <strong>asList</strong>()
         </code>
@@ -586,7 +658,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_asObject">
-        <div class="location">at line 55</div>
+        <div class="location">at line 64</div>
         <code>                    <a href="../Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a>
     <strong>asObject</strong>()
         </code>
@@ -618,7 +690,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_asScalar">
-        <div class="location">at line 64</div>
+        <div class="location">at line 73</div>
         <code>                    <a href="../Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a>
     <strong>asScalar</strong>()
         </code>
@@ -650,7 +722,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 73</div>
+        <div class="location">at line 82</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -682,7 +754,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_kind">
-        <div class="location">at line 82</div>
+        <div class="location">at line 91</div>
         <code>                    <abbr title="Dagger\TypeDefKind">TypeDefKind</abbr>
     <strong>kind</strong>()
         </code>
@@ -714,7 +786,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 91</div>
+        <div class="location">at line 100</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -746,7 +818,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_optional">
-        <div class="location">at line 100</div>
+        <div class="location">at line 109</div>
         <code>                    bool
     <strong>optional</strong>()
         </code>
@@ -777,8 +849,124 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_withCollection">
+        <div class="location">at line 118</div>
+        <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+    <strong>withCollection</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Marks this Object TypeDef as a collection.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withCollectionGet">
+        <div class="location">at line 127</div>
+        <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+    <strong>withCollectionGet</strong>(string $name)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Overrides the effective get function used by a collection TypeDef.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withCollectionKeys">
+        <div class="location">at line 137</div>
+        <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+    <strong>withCollectionKeys</strong>(string $name)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Overrides the effective keys field used by a collection TypeDef.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withConstructor">
-        <div class="location">at line 109</div>
+        <div class="location">at line 147</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withConstructor</strong>(<a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a> $function)
         </code>
@@ -820,7 +1008,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnum">
-        <div class="location">at line 121</div>
+        <div class="location">at line 159</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withEnum</strong>(string $name, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null)
         </code>
@@ -872,7 +1060,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnumMember">
-        <div class="location">at line 137</div>
+        <div class="location">at line 175</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withEnumMember</strong>(string $name, string|null $value = &#039;&#039;, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null)
         </code>
@@ -934,7 +1122,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnumValue">
-        <div class="location">at line 164</div>
+        <div class="location">at line 202</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withEnumValue</strong>(string $value, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null)
         </code>
@@ -991,7 +1179,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withField">
-        <div class="location">at line 187</div>
+        <div class="location">at line 225</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withField</strong>(string $name, <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null)
         </code>
@@ -1053,7 +1241,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withFunction">
-        <div class="location">at line 212</div>
+        <div class="location">at line 250</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withFunction</strong>(<a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a> $function)
         </code>
@@ -1095,7 +1283,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInterface">
-        <div class="location">at line 222</div>
+        <div class="location">at line 260</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withInterface</strong>(string $name, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null)
         </code>
@@ -1147,7 +1335,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withKind">
-        <div class="location">at line 238</div>
+        <div class="location">at line 276</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withKind</strong>(<abbr title="Dagger\TypeDefKind">TypeDefKind</abbr> $kind)
         </code>
@@ -1189,7 +1377,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withListOf">
-        <div class="location">at line 248</div>
+        <div class="location">at line 286</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withListOf</strong>(<a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $elementType)
         </code>
@@ -1231,7 +1419,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObject">
-        <div class="location">at line 260</div>
+        <div class="location">at line 298</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withObject</strong>(string $name, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null)
         </code>
@@ -1288,7 +1476,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withOptional">
-        <div class="location">at line 283</div>
+        <div class="location">at line 321</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withOptional</strong>(bool $optional)
         </code>
@@ -1330,7 +1518,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withScalar">
-        <div class="location">at line 293</div>
+        <div class="location">at line 331</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>withScalar</strong>(string $name, string|null $description = &#039;&#039;)
         </code>

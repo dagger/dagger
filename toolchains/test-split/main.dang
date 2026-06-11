@@ -10,8 +10,10 @@ type TestSplit {
     ebpfProgs: [String!],
     pkg: String! = "./core/integration",
     race: Boolean,
+    parallel: Int,
+    timeout: String,
   ): Void {
-    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg, parallel: parallel, timeout: timeout)
   }
 
   let testCliEngineSpecific(
@@ -42,7 +44,7 @@ type TestSplit {
   """
   pub testBase: Void @check {
     testSkip(
-      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestCachePersistence", "TestLocalCache", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
+      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestCachePersistence", "TestLocalCache", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace", "TestCollection$"],
       pkg: "./...",
       race: true,
     )
@@ -137,5 +139,31 @@ type TestSplit {
   """
   pub testWorkspaces: Void @check {
     testSpecific(["TestWorkspace"])
+  }
+
+  """
+  Test Collections
+
+  Runs the collection integration suite. Each test boots a nested dev
+  engine, which is too slow for the race-enabled base shard. The skip
+  pattern is anchored so the collection unit tests stay in the base
+  shard.
+  """
+  pub testCollections: Void @check {
+    # Every collection test boots a nested dev engine; unbounded test
+    # parallelism saturates the runner and stalls engine sessions, so
+    # bound it, and keep the check-selection half in its own shard.
+    # timeout below the 30m session cap, so a wedged engine session fails
+    # fast with a goroutine dump instead of a silent cancellation.
+    testSpecific(["TestCollection$/TestPublicSurface", "TestCollection$/TestAlgebraLaws", "TestCollection$/TestGeneratedClients", "TestCollection$/TestCacheReplay", "TestCollection$/TestKeyTypes"], parallel: 4, timeout: "20m")
+  }
+
+  """
+  Test Collection Check Selection
+  """
+  pub testCollectionChecks: Void @check {
+    # The check-selection tests execute real checks on top of nested
+    # engines: the heaviest collection tests, sharded separately.
+    testSpecific(["TestCollection$/TestCheckSelection"], parallel: 4, timeout: "20m")
   }
 }

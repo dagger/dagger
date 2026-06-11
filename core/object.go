@@ -25,8 +25,9 @@ const trivialFieldDirectiveName = "trivialResolveField"
 const deprecatedDirectiveName = "deprecated"
 
 type ModuleObjectType struct {
-	typeDef *ObjectTypeDef
-	mod     dagql.ObjectResult[*Module]
+	typeDef    *ObjectTypeDef
+	collection *CollectionTypeDef
+	mod        dagql.ObjectResult[*Module]
 }
 
 var _ ModType = &ModuleObjectType{}
@@ -53,9 +54,10 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		return value, nil
 	case map[string]any:
 		res, err := dagql.NewResultForCurrentCall(ctx, &ModuleObject{
-			Module:  t.mod,
-			TypeDef: t.typeDef,
-			Fields:  value,
+			Module:     t.mod,
+			TypeDef:    t.typeDef,
+			Collection: t.collection,
+			Fields:     value,
 		})
 		if err != nil {
 			return nil, err
@@ -432,8 +434,9 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 type ModuleObject struct {
 	Module dagql.ObjectResult[*Module]
 
-	TypeDef *ObjectTypeDef
-	Fields  map[string]any
+	TypeDef    *ObjectTypeDef
+	Collection *CollectionTypeDef
+	Fields     map[string]any
 }
 
 var _ dagql.HasDependencyResults = (*ModuleObject)(nil)
@@ -714,9 +717,10 @@ func (obj *ModuleObject) DecodePersistedObject(
 		fields[name] = decoded
 	}
 	return &ModuleObject{
-		Module:  obj.Module,
-		TypeDef: obj.TypeDef,
-		Fields:  fields,
+		Module:     obj.Module,
+		TypeDef:    obj.TypeDef,
+		Collection: obj.Collection,
+		Fields:     fields,
 	}, nil
 }
 
@@ -996,16 +1000,27 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server, opts ..
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
 	}
-	fields, err := obj.fields(ctx)
-	if err != nil {
-		return err
-	}
+	var (
+		fields []dagql.Field[*ModuleObject]
+		err    error
+	)
+	if obj.Collection != nil {
+		fields, err = obj.collectionMembers(ctx, dag)
+		if err != nil {
+			return err
+		}
+	} else {
+		fields, err = obj.fields(ctx)
+		if err != nil {
+			return err
+		}
 
-	funs, err := obj.functions(ctx, dag)
-	if err != nil {
-		return err
+		funs, err := obj.functions(ctx, dag)
+		if err != nil {
+			return err
+		}
+		fields = append(fields, funs...)
 	}
-	fields = append(fields, funs...)
 
 	class.Install(fields...)
 	dag.InstallObject(class, installDirectives...)
@@ -1057,9 +1072,10 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			spec,
 			func(ctx context.Context, self dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
 				return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
-					Module:  obj.Module,
-					TypeDef: objDef,
-					Fields:  map[string]any{},
+					Module:     obj.Module,
+					TypeDef:    objDef,
+					Collection: obj.Collection,
+					Fields:     map[string]any{},
 				})
 			},
 		)

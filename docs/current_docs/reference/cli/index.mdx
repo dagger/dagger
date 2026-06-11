@@ -48,6 +48,7 @@ dagger [options] [subcommand | file...]
 * [dagger function](#dagger-function)	 - Work with module functions
 * [dagger generate](#dagger-generate)	 - Generate assets of your project
 * [dagger integration](#dagger-integration)	 - Manage Dagger Cloud integration providers
+* [dagger list](#dagger-list)	 - List workspace artifact dimension values
 * [dagger module](#dagger-module)	 - Work with modules in your workspace
 * [dagger up](#dagger-up)	 - Start services defined by the module and expose them on the host
 * [dagger version](#dagger-version)	 - Print dagger version
@@ -1057,6 +1058,60 @@ dagger integration setup <provider>
 ### SEE ALSO
 
 * [dagger integration](#dagger-integration)	 - Manage Dagger Cloud integration providers
+
+## dagger list
+
+List workspace artifact dimension values
+
+### Synopsis
+
+List values for an artifact dimension.
+
+Use dimension filters (e.g. --go-module=./app) to narrow the artifact scope
+before listing values. The built-in "types" dimension is an alias for "type".
+
+```
+dagger list <dimension> [--<dimension>=<value>...]
+```
+
+### Examples
+
+```
+dagger list types
+  dagger list go-test --go-module=./app
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --eager-runtime       load module runtime eagerly
+  -m, --mod string          Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
 
 ## dagger module
 

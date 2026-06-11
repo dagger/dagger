@@ -39,6 +39,33 @@ export type AddressID = string & { __AddressID: never }
 /**
  * A unique identifier for an object.
  */
+export type ArtifactDimensionID = string & { __ArtifactDimensionID: never }
+
+export type ArtifactFilter = {
+  /**
+   * Dimension to filter.
+   */
+  dimension: string
+
+  /**
+   * Allowed coordinate values.
+   */
+  values: string[]
+}
+
+/**
+ * A unique identifier for an object.
+ */
+export type ArtifactID = string & { __ArtifactID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ArtifactsID = string & { __ArtifactsID: never }
+
+/**
+ * A unique identifier for an object.
+ */
 export type BindingID = string & { __BindingID: never }
 
 export type BuildArg = {
@@ -281,6 +308,11 @@ export type ClientFilesyncMirrorID = string & {
  * A unique identifier for an object.
  */
 export type CloudID = string & { __CloudID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type CollectionTypeDefID = string & { __CollectionTypeDefID: never }
 
 export type ContainerAsServiceOpts = {
   /**
@@ -2993,6 +3025,15 @@ export type UpID = string & { __UpID: never }
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceArtifactsOpts = {
+  /**
+   * Resolve collection items by running module code.
+   *
+   * When false, only dimensions and top-level artifacts are returned, without executing any module functions.
+   */
+  enumerate?: boolean
+}
+
 export type WorkspaceChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -3008,6 +3049,13 @@ export type WorkspaceChecksOpts = {
    * When true, only return generate-as-checks; exclude annotated check functions
    */
   onlyGenerate?: boolean
+
+  /**
+   * Narrow checks by artifact dimension coordinates.
+   *
+   * Collection items expand only for matching keys, and batch operations run over the narrowed subset. Checks that do not carry every filtered dimension are excluded.
+   */
+  dimensions?: ArtifactFilter[]
 }
 
 export type WorkspaceConfigReadOpts = {
@@ -3306,6 +3354,224 @@ export class Address extends BaseClient {
   }
 }
 
+/**
+ * One artifact in a workspace artifact scope.
+ */
+export class Artifact extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _coordinate?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _coordinate?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._coordinate = _coordinate
+  }
+
+  /**
+   * A unique identifier for this Artifact.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Convenience lookup for one coordinate by dimension name.
+   * @param name Dimension name.
+   */
+  coordinate = async (name: string): Promise<string> => {
+    if (this._coordinate) {
+      return this._coordinate
+    }
+
+    const ctx = this._ctx.select("coordinate", { name })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Ordered coordinate row for this artifact.
+   */
+  coordinates = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("coordinates")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The Artifacts scope that produced this row.
+   */
+  scope = (): Artifacts => {
+    const ctx = this._ctx.select("scope")
+    return new Artifacts(ctx)
+  }
+}
+
+/**
+ * A filterable axis of the artifact graph.
+ */
+export class ArtifactDimension extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this ArtifactDimension.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Type of this dimension's keys.
+   */
+  keyType = (): TypeDef => {
+    const ctx = this._ctx.select("keyType")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Filter name as used in CLI flags and table headers.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A scoped, filterable view over workspace artifacts.
+ */
+export class Artifacts extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Artifacts.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Ordered filterable dimensions for the current scope.
+   */
+  dimensions = async (): Promise<ArtifactDimension[]> => {
+    type dimensions = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("dimensions").select("id")
+
+    const response: Awaited<dimensions[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new ArtifactDimension(ctx.copy().selectNode(r.id, "ArtifactDimension")),
+    )
+  }
+
+  /**
+   * Keep rows whose coordinate for the given dimension matches one of the provided values.
+   * @param dimension Dimension to filter.
+   * @param values Allowed coordinate values.
+   */
+  filterCoordinates = (dimension: string, values: string[]): Artifacts => {
+    const ctx = this._ctx.select("filterCoordinates", { dimension, values })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Keep rows whose coordinate row has a non-null cell for the given dimension.
+   * @param dimension Dimension to require.
+   */
+  filterDimension = (dimension: string): Artifacts => {
+    const ctx = this._ctx.select("filterDimension", { dimension })
+    return new Artifacts(ctx)
+  }
+
+  /**
+   * Artifacts matching the current filters.
+   */
+  items = async (): Promise<Artifact[]> => {
+    type items = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("items").select("id")
+
+    const response: Awaited<items[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new Artifact(ctx.copy().selectNode(r.id, "Artifact")),
+    )
+  }
+
+  /**
+   * Call the provided function with current Artifacts.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Artifacts) => Artifacts) => {
+    return arg(this)
+  }
+}
+
 export class Binding extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _asString?: string = undefined
@@ -3360,6 +3626,30 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Artifact
+   */
+  asArtifact = (): Artifact => {
+    const ctx = this._ctx.select("asArtifact")
+    return new Artifact(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type ArtifactDimension
+   */
+  asArtifactDimension = (): ArtifactDimension => {
+    const ctx = this._ctx.select("asArtifactDimension")
+    return new ArtifactDimension(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Artifacts
+   */
+  asArtifacts = (): Artifacts => {
+    const ctx = this._ctx.select("asArtifacts")
+    return new Artifacts(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type CacheVolume
    */
   asCacheVolume = (): CacheVolume => {
@@ -3397,6 +3687,14 @@ export class Binding extends BaseClient {
   asCloud = (): Cloud => {
     const ctx = this._ctx.select("asCloud")
     return new Cloud(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type CollectionTypeDef
+   */
+  asCollectionTypeDef = (): CollectionTypeDef => {
+    const ctx = this._ctx.select("asCollectionTypeDef")
+    return new CollectionTypeDef(ctx)
   }
 
   /**
@@ -4296,6 +4594,61 @@ export class Cloud extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+}
+
+/**
+ * A definition of collection semantics layered on top of an object type.
+ */
+export class CollectionTypeDef extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this CollectionTypeDef.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Synthetic batch namespace type for collection-level operations, if any.
+   */
+  batchType = (): TypeDef => {
+    const ctx = this._ctx.select("batchType")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Type accepted by get(key) and subset(keys: ...).
+   */
+  keyType = (): TypeDef => {
+    const ctx = this._ctx.select("keyType")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Type returned by get() and enumerated by list.
+   */
+  valueType = (): TypeDef => {
+    const ctx = this._ctx.select("valueType")
+    return new TypeDef(ctx)
   }
 }
 
@@ -7301,6 +7654,96 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type ArtifactDimension in the environment
+   * @param name The name of the binding
+   * @param value The ArtifactDimension value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withArtifactDimensionInput = (
+    name: string,
+    value: ArtifactDimension,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withArtifactDimensionInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired ArtifactDimension output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withArtifactDimensionOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withArtifactDimensionOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Artifact in the environment
+   * @param name The name of the binding
+   * @param value The Artifact value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withArtifactInput = (
+    name: string,
+    value: Artifact,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withArtifactInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Artifact output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withArtifactOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withArtifactOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Artifacts in the environment
+   * @param name The name of the binding
+   * @param value The Artifacts value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withArtifactsInput = (
+    name: string,
+    value: Artifacts,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withArtifactsInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Artifacts output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withArtifactsOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withArtifactsOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type CacheVolume in the environment
    * @param name The name of the binding
    * @param value The CacheVolume value to assign to the binding
@@ -7426,6 +7869,38 @@ export class Env extends BaseClient {
    */
   withCloudOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCloudOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type CollectionTypeDef in the environment
+   * @param name The name of the binding
+   * @param value The CollectionTypeDef value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCollectionTypeDefInput = (
+    name: string,
+    value: CollectionTypeDef,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCollectionTypeDefInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired CollectionTypeDef output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCollectionTypeDefOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCollectionTypeDefOutput", {
+      name,
+      description,
+    })
     return new Env(ctx)
   }
 
@@ -13220,6 +13695,32 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a ArtifactDimension from its ID.
+   */
+  loadArtifactDimensionFromID = (
+    id: ArtifactDimensionID,
+  ): ArtifactDimension => {
+    const ctx = this._ctx.select("loadArtifactDimensionFromID", { id })
+    return new ArtifactDimension(ctx)
+  }
+
+  /**
+   * Load a Artifact from its ID.
+   */
+  loadArtifactFromID = (id: ArtifactID): Artifact => {
+    const ctx = this._ctx.select("loadArtifactFromID", { id })
+    return new Artifact(ctx)
+  }
+
+  /**
+   * Load a Artifacts from its ID.
+   */
+  loadArtifactsFromID = (id: ArtifactsID): Artifacts => {
+    const ctx = this._ctx.select("loadArtifactsFromID", { id })
+    return new Artifacts(ctx)
+  }
+
+  /**
    * Load a Binding from its ID.
    */
   loadBindingFromID = (id: BindingID): Binding => {
@@ -13275,6 +13776,16 @@ export class Client extends BaseClient {
   loadCloudFromID = (id: CloudID): Cloud => {
     const ctx = this._ctx.select("loadCloudFromID", { id })
     return new Cloud(ctx)
+  }
+
+  /**
+   * Load a CollectionTypeDef from its ID.
+   */
+  loadCollectionTypeDefFromID = (
+    id: CollectionTypeDefID,
+  ): CollectionTypeDef => {
+    const ctx = this._ctx.select("loadCollectionTypeDefFromID", { id })
+    return new CollectionTypeDef(ctx)
   }
 
   /**
@@ -14943,6 +15454,14 @@ export class TypeDef extends BaseClient {
   }
 
   /**
+   * If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.
+   */
+  asCollection = (): CollectionTypeDef => {
+    const ctx = this._ctx.select("asCollection")
+    return new CollectionTypeDef(ctx)
+  }
+
+  /**
    * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
    */
   asEnum = (): EnumTypeDef => {
@@ -15033,6 +15552,32 @@ export class TypeDef extends BaseClient {
     const response: Awaited<boolean> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Marks this Object TypeDef as a collection.
+   */
+  withCollection = (): TypeDef => {
+    const ctx = this._ctx.select("withCollection")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Overrides the effective get function used by a collection TypeDef.
+   * @param name The function that resolves one collection item by key.
+   */
+  withCollectionGet = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionGet", { name })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Overrides the effective keys field used by a collection TypeDef.
+   * @param name The field that enumerates collection keys.
+   */
+  withCollectionKeys = (name: string): TypeDef => {
+    const ctx = this._ctx.select("withCollectionKeys", { name })
+    return new TypeDef(ctx)
   }
 
   /**
@@ -15424,10 +15969,24 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * A filterable view of all artifacts in this workspace.
+   * @param opts.enumerate Resolve collection items by running module code.
+   *
+   * When false, only dimensions and top-level artifacts are returned, without executing any module functions.
+   */
+  artifacts = (opts?: WorkspaceArtifactsOpts): Artifacts => {
+    const ctx = this._ctx.select("artifacts", { ...opts })
+    return new Artifacts(ctx)
+  }
+
+  /**
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
    * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
    * @param opts.onlyGenerate When true, only return generate-as-checks; exclude annotated check functions
+   * @param opts.dimensions Narrow checks by artifact dimension coordinates.
+   *
+   * Collection items expand only for matching keys, and batch operations run over the narrowed subset. Checks that do not carry every filtered dimension are excluded.
    */
   checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })

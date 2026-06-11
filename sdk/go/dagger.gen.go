@@ -138,6 +138,15 @@ func (e *ExecError) Unwrap() error {
 type AddressID string
 
 // A unique identifier for an object.
+type ArtifactDimensionID string
+
+// A unique identifier for an object.
+type ArtifactID string
+
+// A unique identifier for an object.
+type ArtifactsID string
+
+// A unique identifier for an object.
 type BindingID string
 
 // A unique identifier for an object.
@@ -157,6 +166,9 @@ type ClientFilesyncMirrorID string
 
 // A unique identifier for an object.
 type CloudID string
+
+// A unique identifier for an object.
+type CollectionTypeDefID string
 
 // A unique identifier for an object.
 type ContainerID string
@@ -362,6 +374,15 @@ type WorkspaceModuleID string
 
 // A unique identifier for an object.
 type WorkspaceModuleSettingID string
+
+// A coordinate filter on one artifact dimension.
+type ArtifactFilter struct {
+	// Dimension to filter.
+	Dimension string `json:"dimension"`
+
+	// Allowed coordinate values.
+	Values []string `json:"values"`
+}
 
 // Key value object that represents a build argument.
 type BuildArg struct {
@@ -598,6 +619,341 @@ func (r *Address) AsNode() Node {
 	}
 }
 
+// One artifact in a workspace artifact scope.
+type Artifact struct {
+	query *querybuilder.Selection
+
+	coordinate *string
+	id         *ID
+}
+
+func (r *Artifact) WithGraphQLQuery(q *querybuilder.Selection) *Artifact {
+	return &Artifact{
+		query: q,
+	}
+}
+
+// Convenience lookup for one coordinate by dimension name.
+func (r *Artifact) Coordinate(ctx context.Context, name string) (string, error) {
+	if r.coordinate != nil {
+		return *r.coordinate, nil
+	}
+	q := r.query.Select("coordinate")
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Ordered coordinate row for this artifact.
+func (r *Artifact) Coordinates(ctx context.Context) ([]string, error) {
+	q := r.query.Select("coordinates")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Artifact.
+func (r *Artifact) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Artifact) XXX_GraphQLType() string {
+	return "Artifact"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Artifact) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Artifact) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Artifact) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The Artifacts scope that produced this row.
+func (r *Artifact) Scope() *Artifacts {
+	q := r.query.Select("scope")
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// AsNode returns this Artifact as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Artifact) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A filterable axis of the artifact graph.
+type ArtifactDimension struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+}
+
+func (r *ArtifactDimension) WithGraphQLQuery(q *querybuilder.Selection) *ArtifactDimension {
+	return &ArtifactDimension{
+		query: q,
+	}
+}
+
+// A unique identifier for this ArtifactDimension.
+func (r *ArtifactDimension) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ArtifactDimension) XXX_GraphQLType() string {
+	return "ArtifactDimension"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ArtifactDimension) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ArtifactDimension) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ArtifactDimension) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Type of this dimension's keys.
+func (r *ArtifactDimension) KeyType() *TypeDef {
+	q := r.query.Select("keyType")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Filter name as used in CLI flags and table headers.
+func (r *ArtifactDimension) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ArtifactDimension as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ArtifactDimension) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A scoped, filterable view over workspace artifacts.
+type Artifacts struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+type WithArtifactsFunc func(r *Artifacts) *Artifacts
+
+// With calls the provided function with current Artifacts.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Artifacts) With(f WithArtifactsFunc) *Artifacts {
+	return f(r)
+}
+
+func (r *Artifacts) WithGraphQLQuery(q *querybuilder.Selection) *Artifacts {
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Ordered filterable dimensions for the current scope.
+func (r *Artifacts) Dimensions(ctx context.Context) ([]ArtifactDimension, error) {
+	q := r.query.Select("dimensions")
+
+	q = q.Select("id")
+
+	type dimensions struct {
+		Id ID
+	}
+
+	convert := func(fields []dimensions) []ArtifactDimension {
+		out := []ArtifactDimension{}
+
+		for i := range fields {
+			val := ArtifactDimension{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "ArtifactDimension")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dimensions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Keep rows whose coordinate for the given dimension matches one of the provided values.
+func (r *Artifacts) FilterCoordinates(dimension string, values []string) *Artifacts {
+	q := r.query.Select("filterCoordinates")
+	q = q.Arg("dimension", dimension)
+	q = q.Arg("values", values)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// Keep rows whose coordinate row has a non-null cell for the given dimension.
+func (r *Artifacts) FilterDimension(dimension string) *Artifacts {
+	q := r.query.Select("filterDimension")
+	q = q.Arg("dimension", dimension)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
+// A unique identifier for this Artifacts.
+func (r *Artifacts) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Artifacts) XXX_GraphQLType() string {
+	return "Artifacts"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Artifacts) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Artifacts) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Artifacts) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Artifacts matching the current filters.
+func (r *Artifacts) Items(ctx context.Context) ([]Artifact, error) {
+	q := r.query.Select("items")
+
+	q = q.Select("id")
+
+	type items struct {
+		Id ID
+	}
+
+	convert := func(fields []items) []Artifact {
+		out := []Artifact{}
+
+		for i := range fields {
+			val := Artifact{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Artifact")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []items
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// AsNode returns this Artifacts as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Artifacts) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type Binding struct {
 	query *querybuilder.Selection
 
@@ -620,6 +976,33 @@ func (r *Binding) AsAddress() *Address {
 	q := r.query.Select("asAddress")
 
 	return &Address{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Artifact
+func (r *Binding) AsArtifact() *Artifact {
+	q := r.query.Select("asArtifact")
+
+	return &Artifact{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ArtifactDimension
+func (r *Binding) AsArtifactDimension() *ArtifactDimension {
+	q := r.query.Select("asArtifactDimension")
+
+	return &ArtifactDimension{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Artifacts
+func (r *Binding) AsArtifacts() *Artifacts {
+	q := r.query.Select("asArtifacts")
+
+	return &Artifacts{
 		query: q,
 	}
 }
@@ -665,6 +1048,15 @@ func (r *Binding) AsCloud() *Cloud {
 	q := r.query.Select("asCloud")
 
 	return &Cloud{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CollectionTypeDef
+func (r *Binding) AsCollectionTypeDef() *CollectionTypeDef {
+	q := r.query.Select("asCollectionTypeDef")
+
+	return &CollectionTypeDef{
 		query: q,
 	}
 }
@@ -1837,6 +2229,94 @@ func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
 // AsNode returns this Cloud as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Cloud) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A definition of collection semantics layered on top of an object type.
+type CollectionTypeDef struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *CollectionTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *CollectionTypeDef {
+	return &CollectionTypeDef{
+		query: q,
+	}
+}
+
+// Synthetic batch namespace type for collection-level operations, if any.
+func (r *CollectionTypeDef) BatchType() *TypeDef {
+	q := r.query.Select("batchType")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// A unique identifier for this CollectionTypeDef.
+func (r *CollectionTypeDef) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CollectionTypeDef) XXX_GraphQLType() string {
+	return "CollectionTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CollectionTypeDef) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CollectionTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CollectionTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Type accepted by get(key) and subset(keys: ...).
+func (r *CollectionTypeDef) KeyType() *TypeDef {
+	q := r.query.Select("keyType")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Type returned by get() and enumerated by list.
+func (r *CollectionTypeDef) ValueType() *TypeDef {
+	q := r.query.Select("valueType")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// AsNode returns this CollectionTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CollectionTypeDef) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -6225,6 +6705,78 @@ func (r *Env) WithAddressOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type ArtifactDimension in the environment
+func (r *Env) WithArtifactDimensionInput(name string, value *ArtifactDimension, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withArtifactDimensionInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ArtifactDimension output to be assigned in the environment
+func (r *Env) WithArtifactDimensionOutput(name string, description string) *Env {
+	q := r.query.Select("withArtifactDimensionOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Artifact in the environment
+func (r *Env) WithArtifactInput(name string, value *Artifact, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withArtifactInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Artifact output to be assigned in the environment
+func (r *Env) WithArtifactOutput(name string, description string) *Env {
+	q := r.query.Select("withArtifactOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Artifacts in the environment
+func (r *Env) WithArtifactsInput(name string, value *Artifacts, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withArtifactsInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Artifacts output to be assigned in the environment
+func (r *Env) WithArtifactsOutput(name string, description string) *Env {
+	q := r.query.Select("withArtifactsOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type CacheVolume in the environment
 func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description string) *Env {
 	assertNotNil("value", value)
@@ -6337,6 +6889,30 @@ func (r *Env) WithCloudInput(name string, value *Cloud, description string) *Env
 // Declare a desired Cloud output to be assigned in the environment
 func (r *Env) WithCloudOutput(name string, description string) *Env {
 	q := r.query.Select("withCloudOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type CollectionTypeDef in the environment
+func (r *Env) WithCollectionTypeDefInput(name string, value *CollectionTypeDef, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCollectionTypeDefInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CollectionTypeDef output to be assigned in the environment
+func (r *Env) WithCollectionTypeDefOutput(name string, description string) *Env {
+	q := r.query.Select("withCollectionTypeDefOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -13477,6 +14053,36 @@ func (r *Query) LoadAddressFromID(id AddressID) *Address {
 	}
 }
 
+// Load a ArtifactDimension from its ID.
+func (r *Query) LoadArtifactDimensionFromID(id ArtifactDimensionID) *ArtifactDimension {
+	q := r.query.Select("loadArtifactDimensionFromID")
+	q = q.Arg("id", id)
+
+	return &ArtifactDimension{
+		query: q,
+	}
+}
+
+// Load a Artifact from its ID.
+func (r *Query) LoadArtifactFromID(id ArtifactID) *Artifact {
+	q := r.query.Select("loadArtifactFromID")
+	q = q.Arg("id", id)
+
+	return &Artifact{
+		query: q,
+	}
+}
+
+// Load a Artifacts from its ID.
+func (r *Query) LoadArtifactsFromID(id ArtifactsID) *Artifacts {
+	q := r.query.Select("loadArtifactsFromID")
+	q = q.Arg("id", id)
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
 // Load a Binding from its ID.
 func (r *Query) LoadBindingFromID(id BindingID) *Binding {
 	q := r.query.Select("loadBindingFromID")
@@ -13543,6 +14149,16 @@ func (r *Query) LoadCloudFromID(id CloudID) *Cloud {
 	q = q.Arg("id", id)
 
 	return &Cloud{
+		query: q,
+	}
+}
+
+// Load a CollectionTypeDef from its ID.
+func (r *Query) LoadCollectionTypeDefFromID(id CollectionTypeDefID) *CollectionTypeDef {
+	q := r.query.Select("loadCollectionTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &CollectionTypeDef{
 		query: q,
 	}
 }
@@ -15612,6 +16228,15 @@ func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	}
 }
 
+// If kind is OBJECT and this object is a collection, the collection-specific type definition. Otherwise this will be null.
+func (r *TypeDef) AsCollection() *CollectionTypeDef {
+	q := r.query.Select("asCollection")
+
+	return &CollectionTypeDef{
+		query: q,
+	}
+}
+
 // If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
 func (r *TypeDef) AsEnum() *EnumTypeDef {
 	q := r.query.Select("asEnum")
@@ -15743,6 +16368,35 @@ func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Marks this Object TypeDef as a collection.
+func (r *TypeDef) WithCollection() *TypeDef {
+	q := r.query.Select("withCollection")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Overrides the effective get function used by a collection TypeDef.
+func (r *TypeDef) WithCollectionGet(name string) *TypeDef {
+	q := r.query.Select("withCollectionGet")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Overrides the effective keys field used by a collection TypeDef.
+func (r *TypeDef) WithCollectionKeys(name string) *TypeDef {
+	q := r.query.Select("withCollectionKeys")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
 }
 
 // Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
@@ -16304,6 +16958,31 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceArtifactsOpts contains options for Workspace.Artifacts
+type WorkspaceArtifactsOpts struct {
+	// Resolve collection items by running module code.
+	//
+	// When false, only dimensions and top-level artifacts are returned, without executing any module functions.
+	//
+	// Default: true
+	Enumerate bool
+}
+
+// A filterable view of all artifacts in this workspace.
+func (r *Workspace) Artifacts(opts ...WorkspaceArtifactsOpts) *Artifacts {
+	q := r.query.Select("artifacts")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `enumerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Enumerate) {
+			q = q.Arg("enumerate", opts[i].Enumerate)
+		}
+	}
+
+	return &Artifacts{
+		query: q,
+	}
+}
+
 // WorkspaceChecksOpts contains options for Workspace.Checks
 type WorkspaceChecksOpts struct {
 	// Only include checks matching the specified patterns
@@ -16312,6 +16991,10 @@ type WorkspaceChecksOpts struct {
 	NoGenerate bool
 	// When true, only return generate-as-checks; exclude annotated check functions
 	OnlyGenerate bool
+	// Narrow checks by artifact dimension coordinates.
+	//
+	// Collection items expand only for matching keys, and batch operations run over the narrowed subset. Checks that do not carry every filtered dimension are excluded.
+	Dimensions []ArtifactFilter
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -16329,6 +17012,10 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		// `onlyGenerate` optional argument
 		if !querybuilder.IsZeroValue(opts[i].OnlyGenerate) {
 			q = q.Arg("onlyGenerate", opts[i].OnlyGenerate)
+		}
+		// `dimensions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dimensions) {
+			q = q.Arg("dimensions", opts[i].Dimensions)
 		}
 	}
 

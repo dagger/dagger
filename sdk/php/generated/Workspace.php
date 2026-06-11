@@ -23,10 +23,26 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * A filterable view of all artifacts in this workspace.
+     */
+    public function artifacts(?bool $enumerate = true): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('artifacts');
+        if (null !== $enumerate) {
+        $innerQueryBuilder->setArgument('enumerate', $enumerate);
+        }
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return all checks from modules loaded in the workspace.
      */
-    public function checks(?array $include = null, ?bool $noGenerate = null, ?bool $onlyGenerate = null): CheckGroup
-    {
+    public function checks(
+        ?array $include = null,
+        ?bool $noGenerate = null,
+        ?bool $onlyGenerate = null,
+        ?array $dimensions = null,
+    ): CheckGroup {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
@@ -36,6 +52,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $onlyGenerate) {
         $innerQueryBuilder->setArgument('onlyGenerate', $onlyGenerate);
+        }
+        if (null !== $dimensions) {
+        $innerQueryBuilder->setArgument('dimensions', $dimensions);
         }
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

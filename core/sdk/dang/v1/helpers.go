@@ -638,6 +638,15 @@ func evalDirectiveArg(ctx context.Context, env dang.ValueScope, node dang.Node) 
 	return dangValToGo(val)
 }
 
+func hasDangDirective(directives []*dang.DirectiveApplication, name string) bool {
+	for _, directive := range directives {
+		if directive.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // dangValToGo converts a Dang Value to a plain Go value.
 func dangValToGo(val dang.Value) (any, error) {
 	switch v := val.(type) {
@@ -683,13 +692,25 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		},
 	}
 
+	var collectionKeysField string
+	var collectionGetFunction string
 	for _, form := range module.ObjectBodyForms {
 		slot, ok := form.(*dang.FieldDecl)
-		if !ok || slot.Visibility < dang.PublicVisibility {
+		if !ok {
 			continue
 		}
 
 		bindingName := slot.Name.Name
+		directives := classMod.GetDirectives(bindingName)
+		hasKeys := hasDangDirective(directives, "keys")
+		hasGet := hasDangDirective(directives, "get")
+		if slot.Visibility < dang.PublicVisibility {
+			if hasKeys || hasGet {
+				return res, fmt.Errorf("private member %s on %s uses a collection directive", bindingName, name)
+			}
+			continue
+		}
+
 		scheme, found := classMod.LocalSchemeOf(bindingName)
 		if !found {
 			return res, fmt.Errorf("missing local slot %s for %s", bindingName, name)
@@ -701,6 +722,15 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		}
 		switch x := slotType.(type) {
 		case *hm.FunctionType:
+			if hasKeys {
+				return res, fmt.Errorf("method %s on %s uses @keys, but collection keys must be a field", bindingName, name)
+			}
+			if hasGet {
+				if collectionGetFunction != "" {
+					return res, fmt.Errorf("collection object %s has multiple @get functions", name)
+				}
+				collectionGetFunction = bindingName
+			}
 			fnDef, err := createFunction(ctx, srv, classMod, bindingName, x, env, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create method %s for %s: %w", bindingName, name, err)
@@ -715,6 +745,15 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 				Args:  []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](fnDefID)}},
 			})
 		default:
+			if hasGet {
+				return res, fmt.Errorf("field %s on %s uses @get, but collection get must be a function", bindingName, name)
+			}
+			if hasKeys {
+				if collectionKeysField != "" {
+					return res, fmt.Errorf("collection object %s has multiple @keys fields", name)
+				}
+				collectionKeysField = bindingName
+			}
 			fieldDef, err := dangTypeToTypeDef(ctx, srv, slotType, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create field %s: %w", bindingName, err)
@@ -736,6 +775,22 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 			sels = append(sels, dagql.Selector{
 				Field: "withField",
 				Args:  fieldArgs,
+			})
+		}
+	}
+
+	if collectionKeysField != "" || collectionGetFunction != "" {
+		sels = append(sels, dagql.Selector{Field: "withCollection"})
+		if collectionKeysField != "" {
+			sels = append(sels, dagql.Selector{
+				Field: "withCollectionKeys",
+				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(collectionKeysField)}},
+			})
+		}
+		if collectionGetFunction != "" {
+			sels = append(sels, dagql.Selector{
+				Field: "withCollectionGet",
+				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(collectionGetFunction)}},
 			})
 		}
 	}

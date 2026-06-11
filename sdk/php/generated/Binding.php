@@ -20,6 +20,33 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type Artifact
+     */
+    public function asArtifact(): Artifact
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asArtifact');
+        return new \Dagger\Artifact($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type ArtifactDimension
+     */
+    public function asArtifactDimension(): ArtifactDimension
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asArtifactDimension');
+        return new \Dagger\ArtifactDimension($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type Artifacts
+     */
+    public function asArtifacts(): Artifacts
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asArtifacts');
+        return new \Dagger\Artifacts($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type CacheVolume
      */
     public function asCacheVolume(): CacheVolume
@@ -62,6 +89,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCloud');
         return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type CollectionTypeDef
+     */
+    public function asCollectionTypeDef(): CollectionTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCollectionTypeDef');
+        return new \Dagger\CollectionTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

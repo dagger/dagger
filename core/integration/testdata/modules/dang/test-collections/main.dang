@@ -1,0 +1,20 @@
+"""
+Test module for Dang collection authoring.
+"""
+type TestCollections {
+  pub tests(): Tests! {
+    Tests(paths: ["unit", "integration"])
+  }
+}
+
+type Tests {
+  pub paths: [String!]! @keys
+
+  pub lookup(name: String!): TestCase! @get {
+    TestCase(name: name)
+  }
+}
+
+type TestCase {
+  pub name: String!
+}

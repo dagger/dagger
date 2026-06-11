@@ -74,6 +74,28 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (DangSuite) TestCollections(_ context.Context, t *testctx.T) {
+	t.Run("collection keys", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-collections").
+			With(daggerCall("tests", "keys")).
+			Stdout(ctx)
+		require.NoError(t, err, out)
+		require.ElementsMatch(t, []string{"unit", "integration"}, strings.Split(strings.TrimSpace(out), "\n"))
+	})
+
+	t.Run("collection get", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-collections").
+			With(daggerCall("tests", "get", "--key", "unit", "name")).
+			Stdout(ctx)
+		require.NoError(t, err, out)
+		require.Equal(t, "unit", strings.TrimSpace(out))
+	})
+}
+
 func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
 	t.Run("get status", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
