@@ -42,7 +42,7 @@ func New(
 	//   "!sdk/python/README.md",
 	//   "!sdk/python/LICENSE"
 	// ]
-	workspace *dagger.Directory,
+	workspaceDir *dagger.Directory,
 
 	// +default="sdk/python"
 	sourcePath string,
@@ -57,11 +57,11 @@ func New(
 					"/root/.local/bin:/usr/local/bin:$PATH",
 					dagger.ContainerWithEnvVariableOpts{Expand: true}).
 				With(toolsCache("uv", "ruff", "mypy")).
-				With(uvTool(workspace)).
-				WithDirectory("/src/sdk/python", workspace.Directory(sourcePath)).
+				With(uvTool(workspaceDir)).
+				WithDirectory("/src/sdk/python", workspaceDir.Directory(sourcePath)).
 				WithWorkdir("/src/sdk/python").
 				WithExec(uv("sync"))),
-		Workspace:         workspace,
+		Workspace:         workspaceDir,
 		SourcePath:        sourcePath,
 		SupportedVersions: supportedVersions,
 	}

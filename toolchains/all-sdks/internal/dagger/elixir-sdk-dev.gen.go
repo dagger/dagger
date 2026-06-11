@@ -244,8 +244,8 @@ func (r *ElixirSDKDev) UpdateCodegenTests() *Changeset { // elixir-sdk-dev (../.
 	}
 }
 
-func (r *ElixirSDKDev) Workspace() *Directory { // elixir-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *ElixirSDKDev) WorkspaceDir() *Directory { // elixir-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,
@@ -288,7 +288,7 @@ func (r *Env) WithElixirSDKDevOutput(name string, description string) *Env { // 
 type ElixirSDKDevOpts struct {
 	BaseImage string // elixir-sdk-dev (../../../../:0:0)
 
-	Workspace *Directory // elixir-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // elixir-sdk-dev (../../../../:0:0)
 
 	SourcePath string // elixir-sdk-dev (../../../../:0:0)
 }
@@ -300,9 +300,9 @@ func (r *Query) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev { // elixir
 		if !querybuilder.IsZeroValue(opts[i].BaseImage) {
 			q = q.Arg("baseImage", opts[i].BaseImage)
 		}
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {

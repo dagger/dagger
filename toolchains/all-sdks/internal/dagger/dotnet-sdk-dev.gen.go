@@ -190,8 +190,8 @@ func (r *DotnetSDKDev) WithInstall() *DotnetSDKDev { // dotnet-sdk-dev (../../..
 }
 
 // A directory with all the files needed to develop the SDK.
-func (r *DotnetSDKDev) Workspace() *Directory { // dotnet-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *DotnetSDKDev) WorkspaceDir() *Directory { // dotnet-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,
@@ -235,7 +235,7 @@ type DotnetSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK.
 	//
-	Workspace *Directory // dotnet-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // dotnet-sdk-dev (../../../../:0:0)
 	//
 	// The path of the SDK in the workspace.
 	//
@@ -245,9 +245,9 @@ type DotnetSDKDevOpts struct {
 func (r *Query) DotnetSDKDev(opts ...DotnetSDKDevOpts) *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
 	q := r.query.Select("dotnetSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {

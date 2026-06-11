@@ -545,11 +545,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var workspace *dagger.Directory
-			if inputArgs["workspace"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["workspace"]), &workspace)
+			var workspaceDir *dagger.Directory
+			if inputArgs["workspaceDir"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["workspaceDir"]), &workspaceDir)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg workspace", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg workspaceDir", err))
 				}
 			}
 			var sourcePath string
@@ -559,7 +559,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourcePath", err))
 				}
 			}
-			return New(workspace, sourcePath), nil
+			return New(workspaceDir, sourcePath), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

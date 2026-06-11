@@ -5,13 +5,13 @@ type JavaSdkDev {
   Base image to create a dev container for the Java SDK
   """
   let mavenImage: Container! {
-    workspace.directory("sdk/java/runtime/images/maven").dockerBuild
+    workspaceDir.directory("sdk/java/runtime/images/maven").dockerBuild
   }
 
   """
   Workspace with all the files needed to develop the SDK.
   """
-  pub workspace: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+  pub workspaceDir: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
     "*",
     "!sdk/java/dagger-codegen-maven-plugin/",
     "!sdk/java/dagger-java-annotation-processor/",
@@ -43,7 +43,7 @@ type JavaSdkDev {
     daggerEngine
       .installClient(
         mavenImage
-          .withDirectory(workspacePath, workspace)
+          .withDirectory(workspacePath, workspaceDir)
           .withWorkdir(workspacePath + "/" + sourcePath),
       )
   }
@@ -53,7 +53,7 @@ type JavaSdkDev {
   }
 
   pub source: Directory! {
-    workspace.directory(sourcePath)
+    workspaceDir.directory(sourcePath)
   }
 
   """
@@ -164,7 +164,7 @@ type JavaSdkDev {
       sourcePath + "/pom.xml",
       sourcePath + "/runtime/template/pom.xml",
     ].each { pom =>
-      initialState = initialState.withFile(pom, workspace.file(pom))
+      initialState = initialState.withFile(pom, workspaceDir.file(pom))
       bumped = bumped.withFile(pom, bumpCtr.file(workspacePath + "/" + pom))
     }
 

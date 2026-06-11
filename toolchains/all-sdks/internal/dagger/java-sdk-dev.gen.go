@@ -239,8 +239,8 @@ func (r *JavaSDKDev) Test(ctx context.Context) error { // java-sdk-dev (../../..
 }
 
 // Workspace with all the files needed to develop the SDK.
-func (r *JavaSDKDev) Workspace() *Directory { // java-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *JavaSDKDev) WorkspaceDir() *Directory { // java-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,
@@ -260,7 +260,7 @@ type JavaSDKDevOpts struct {
 	//
 	// Workspace with all the files needed to develop the SDK.
 	//
-	Workspace *Directory // java-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // java-sdk-dev (../../../../:0:0)
 	//
 	// The path of the SDK in the workspace
 	//
@@ -270,9 +270,9 @@ type JavaSDKDevOpts struct {
 func (r *Query) JavaSDKDev(opts ...JavaSDKDevOpts) *JavaSDKDev { // java-sdk-dev (../../../../:0:0)
 	q := r.query.Select("javaSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {

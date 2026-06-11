@@ -762,7 +762,7 @@ type PythonSDKDevOpts struct {
 	//
 	// A workspace containing the SDK source code and other relevant files
 	//
-	Workspace *Directory // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:45:2)
+	WorkspaceDir *Directory // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:45:2)
 
 	// Default: "sdk/python"
 	SourcePath string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:48:2)
@@ -772,9 +772,9 @@ type PythonSDKDevOpts struct {
 func (r *Query) PythonSDKDev(opts ...PythonSDKDevOpts) *PythonSDKDev { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:24:1)
 	q := r.query.Select("pythonSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {

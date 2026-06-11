@@ -34,7 +34,7 @@ func New(
 	// A directory with all the files needed to develop the SDK
 	// +defaultPath="/"
 	// +ignore=["*", "!sdk/php", "!docs/doctum-config.php", "!docs/static/reference/php", "sdk/php/.changes"]
-	workspace *dagger.Directory,
+	workspaceDir *dagger.Directory,
 	// The path of the SDK source in the workspace
 	// +default="sdk/php"
 	sourcePath string,
@@ -43,8 +43,8 @@ func New(
 	doctumConfigPath string,
 ) *PhpSdkDev {
 	return &PhpSdkDev{
-		Workspace:         workspace,
-		OriginalWorkspace: workspace,
+		Workspace:         workspaceDir,
+		OriginalWorkspace: workspaceDir,
 		SourcePath:        sourcePath,
 		DoctumConfigPath:  doctumConfigPath,
 	}
