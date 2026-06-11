@@ -282,7 +282,13 @@ func (state *HTTPState) Resolve(
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// close through a closure: resp.Body is replaced with a progress reader
+	// below, and `defer resp.Body.Close()` would capture the original body
+	// at registration, leaving the wrapper (and its final progress emit on
+	// early returns) unclosed
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotModified {
 		return nil, fmt.Errorf("invalid response status %s", resp.Status)
 	}
