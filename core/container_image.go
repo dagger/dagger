@@ -257,6 +257,7 @@ func (container *Container) AsTarball(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 	filePath string,
+	sourceDateEpoch *int64,
 ) (f *File, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -296,7 +297,7 @@ func (container *Container) AsTarball(
 			return err
 		}
 		defer file.Close()
-		return bk.WriteContainerImageTarball(ctx, file, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+		return bk.WriteContainerImageTarball(ctx, file, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression), sourceDateEpoch)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)

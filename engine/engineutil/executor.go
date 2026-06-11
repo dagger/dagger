@@ -70,6 +70,11 @@ type ExecutionMetadata struct {
 
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
+
+	// SourceDateEpoch, when non-nil, is injected as SOURCE_DATE_EPOCH into the
+	// container's process environment so that build tools can produce
+	// reproducible outputs. Propagated from ClientMetadata.SourceDateEpoch.
+	SourceDateEpoch *int64
 }
 
 func (c *Client) Run(
@@ -123,6 +128,7 @@ func (c *Client) Run(
 		c.setupOTel,
 		c.setupSecretScrubbing,
 		c.setProxyEnvs,
+		c.setupSourceDateEpoch,
 		c.enableGPU,
 		c.createCWD,
 		c.setupNestedClient,
