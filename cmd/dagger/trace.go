@@ -12,10 +12,13 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
 
 var traceOrgFlag string
+var traceSpanFlag string
 
 var traceCmd = &cobra.Command{
 	Use:    "trace [trace ID]",
@@ -33,12 +36,28 @@ var traceCmd = &cobra.Command{
 
 func init() {
 	traceCmd.Flags().StringVar(&traceOrgFlag, "org", "", "Dagger Cloud org name (defaults to current org)")
+	traceCmd.Flags().StringVar(&traceSpanFlag, "span", "", "Span ID to focus and stream logs from")
 }
 
 func Trace(cmd *cobra.Command, args []string) error {
 	traceID := args[0]
+	var selectedSpan dagui.SpanID
+	var selectedSpanHex string
+	if traceSpanFlag != "" {
+		spanID, err := trace.SpanIDFromHex(traceSpanFlag)
+		if err != nil {
+			return fmt.Errorf("invalid span ID %q: %w", traceSpanFlag, err)
+		}
+		selectedSpan = dagui.SpanID{SpanID: spanID}
+		selectedSpanHex = spanID.String()
+	}
 
-	return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+	runOpts := opts
+	if selectedSpan.IsValid() {
+		runOpts.ZoomedSpanIncludeSelf = true
+	}
+
+	return Frontend.Run(cmd.Context(), runOpts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cloudAuth, err := auth.GetCloudAuth(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cloud auth: %w", err)
@@ -65,26 +84,68 @@ func Trace(cmd *cobra.Command, args []string) error {
 
 		noop := func() error { return nil }
 
-		// We need the root span ID to stream logs with descendants.
+		// We need the primary span ID to stream logs with descendants.
 		// Use a sync.Once to start log streaming as soon as we find it.
 		var logStreamOnce sync.Once
 		eg, ctx := errgroup.WithContext(ctx)
+		streamLogsFrom := func(spanID string) {
+			logStreamOnce.Do(func() {
+				eg.Go(func() error {
+					return client.StreamLogs(ctx, orgID, traceID, spanID, func(logs []cloud.LogMessage) {
+						slog.Debug("received logs from cloud", "count", len(logs))
+						records := cloud.LogMessagesToRecords(traceID, logs)
+						if len(records) == 0 {
+							return
+						}
+						if err := logExp.Export(ctx, records); err != nil {
+							slog.Warn("error exporting logs", "err", err)
+						}
+					})
+				})
+			})
+		}
+
+		if selectedSpan.IsValid() {
+			Frontend.SetPrimary(selectedSpan)
+			streamLogsFrom(selectedSpanHex)
+		}
+
+		exportSpans := func(spanDatas []cloud.SpanData) []sdktrace.ReadOnlySpan {
+			if len(spanDatas) == 0 {
+				return nil
+			}
+
+			resourceSpans := cloud.SpansToPB(spanDatas)
+			spans := telemetry.SpansFromPB(resourceSpans)
+			if len(spans) == 0 {
+				return nil
+			}
+
+			if err := spanExp.ExportSpans(ctx, spans); err != nil {
+				slog.Warn("error exporting spans", "err", err)
+				return nil
+			}
+			return spans
+		}
 
 		eg.Go(func() error {
-			return client.StreamSpans(ctx, orgID, traceID, func(spanDatas []cloud.SpanData) {
+			if selectedSpan.IsValid() {
+				spanData, err := client.GetSpan(ctx, orgID, traceID, selectedSpanHex)
+				if err != nil {
+					return fmt.Errorf("get selected span: %w", err)
+				}
+				if spanData == nil {
+					return fmt.Errorf("span %s not found", selectedSpanHex)
+				}
+				exportSpans([]cloud.SpanData{*spanData})
+			}
+
+			return client.StreamSpans(ctx, orgID, traceID, selectedSpanHex, func(spanDatas []cloud.SpanData) {
 				slog.Debug("received spans from cloud", "count", len(spanDatas))
 
-				// Convert to OTLP proto, then to OTel SDK ReadOnlySpans,
-				// and feed through the frontend's exporter pipeline so
-				// rendering is triggered correctly.
-				resourceSpans := cloud.SpansToPB(spanDatas)
-				spans := telemetry.SpansFromPB(resourceSpans)
-				if len(spans) == 0 {
-					return
-				}
+				spans := exportSpans(spanDatas)
 
-				if err := spanExp.ExportSpans(ctx, spans); err != nil {
-					slog.Warn("error exporting spans", "err", err)
+				if selectedSpan.IsValid() {
 					return
 				}
 
@@ -98,20 +159,7 @@ func Trace(cmd *cobra.Command, args []string) error {
 
 						// Start streaming logs for the root span and all descendants.
 						rootSpanHex := span.SpanContext().SpanID().String()
-						logStreamOnce.Do(func() {
-							eg.Go(func() error {
-								return client.StreamLogs(ctx, orgID, traceID, rootSpanHex, func(logs []cloud.LogMessage) {
-									slog.Debug("received logs from cloud", "count", len(logs))
-									records := cloud.LogMessagesToRecords(traceID, logs)
-									if len(records) == 0 {
-										return
-									}
-									if err := logExp.Export(ctx, records); err != nil {
-										slog.Warn("error exporting logs", "err", err)
-									}
-								})
-							})
-						})
+						streamLogsFrom(rootSpanHex)
 						break
 					}
 				}

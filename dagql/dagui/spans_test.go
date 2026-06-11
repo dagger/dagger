@@ -368,6 +368,54 @@ func TestResumeOutputReparentsRuntimeSpanUnderCreator(t *testing.T) {
 	}
 }
 
+func TestRowsViewZoomedSpanIncludeSelfScopesToSelectedSubtree(t *testing.T) {
+	db := NewDB()
+	traceID := TraceID{TraceID: trace.TraceID{1}}
+	rootID := SpanID{SpanID: trace.SpanID{1}}
+	selectedID := SpanID{SpanID: trace.SpanID{2}}
+	grandchildID := SpanID{SpanID: trace.SpanID{3}}
+	siblingID := SpanID{SpanID: trace.SpanID{4}}
+
+	addSpan := func(id, parent SpanID, name string) {
+		span := db.newSpan(id)
+		span.Received = true
+		span.TraceID = traceID
+		span.ParentID = parent
+		span.Name = name
+		span.StartTime = time.Now()
+		span.EndTime = span.StartTime.Add(time.Millisecond)
+		db.Spans.Add(span)
+		db.integrateSpan(span)
+	}
+
+	addSpan(rootID, SpanID{}, "root")
+	addSpan(selectedID, rootID, "selected")
+	addSpan(grandchildID, selectedID, "grandchild")
+	addSpan(siblingID, rootID, "sibling")
+
+	opts := FrontendOpts{
+		ZoomedSpan:            selectedID,
+		ZoomedSpanIncludeSelf: true,
+	}
+	rowsView := db.RowsView(opts)
+
+	if len(rowsView.Body) != 1 {
+		t.Fatalf("expected selected subtree only, got %d top-level trees", len(rowsView.Body))
+	}
+	if rowsView.Body[0].Span.ID != selectedID {
+		t.Fatalf("expected selected span as top tree, got %s", rowsView.Body[0].Span.ID)
+	}
+	if len(rowsView.Body[0].Children) != 1 {
+		t.Fatalf("expected selected span to have 1 visible child, got %d", len(rowsView.Body[0].Children))
+	}
+	if rowsView.Body[0].Children[0].Span.ID != grandchildID {
+		t.Fatalf("expected grandchild under selected span, got %s", rowsView.Body[0].Children[0].Span.ID)
+	}
+	if _, ok := rowsView.BySpan[siblingID]; ok {
+		t.Fatal("expected sibling to be excluded from selected subtree")
+	}
+}
+
 func TestPendingClearsAndPropagatesThroughCausalContinuation(t *testing.T) {
 	db := NewDB()
 
