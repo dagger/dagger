@@ -115,31 +115,92 @@ func runModuleSdk(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// currentModuleSDKName locates the dagger-module.toml (or legacy dagger.json)
-// reachable from cwd and returns the workspace-installed name of its SDK.
-// Reads from disk; no engine session needed.
+// currentModuleSDKName returns the workspace short name of the SDK that
+// authors the module reachable from cwd.
+//
+// Lookup steps:
+//  1. Walk up from cwd looking for dagger-module.toml (or the legacy
+//     dagger.json). The first match defines the module directory.
+//  2. Continue walking up to the workspace root (the nearest dagger.toml).
+//  3. Read the workspace config and scan [[sdks.*.modules]] for a path
+//     entry matching the module's workspace-relative directory.
+//  4. Return the parent SDK short name.
+//
+// Per the runtime/SDK split, dagger-module.toml no longer records the SDK.
+// The authoring relationship lives in workspace config. If the module
+// isn't registered under any SDK in dagger.toml, the wrapper can't tell
+// which SDK to dispatch to; that's an error the user resolves by
+// installing/registering the module via `dagger module init`.
 func currentModuleSDKName() (string, error) {
-	configPath, err := findModuleConfigUpward()
+	moduleDir, workspaceRoot, err := locateModuleAndWorkspaceRoot()
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(configPath)
+
+	modulePath, err := filepath.Rel(workspaceRoot, moduleDir)
 	if err != nil {
-		return "", fmt.Errorf("read module config %q: %w", configPath, err)
+		return "", fmt.Errorf("compute workspace-relative module path: %w", err)
 	}
-	cfg, err := modules.ParseModuleConfigForFilename(data, configPath)
+	modulePath = filepath.ToSlash(filepath.Clean(modulePath))
+
+	wsConfigPath := filepath.Join(workspaceRoot, workspace.ConfigFileName)
+	wsData, err := os.ReadFile(wsConfigPath)
 	if err != nil {
-		return "", fmt.Errorf("parse module config %q: %w", configPath, err)
+		return "", fmt.Errorf("read workspace config %q: %w", wsConfigPath, err)
 	}
-	if cfg.SDK == nil || strings.TrimSpace(cfg.SDK.Source) == "" {
-		return "", fmt.Errorf("module %q has no SDK declared in its config", configPath)
+	wsCfg, err := workspace.ParseConfig(wsData)
+	if err != nil {
+		return "", fmt.Errorf("parse workspace config %q: %w", wsConfigPath, err)
 	}
-	// FIXME: per the runtime/SDK split, the SDK association is no longer
-	// stored in dagger-module.toml. This call site looks up the workspace
-	// SDK that authors the current module by short-name derivation. Task
-	// #108 will replace this with a proper [[sdks.*.modules]] lookup
-	// against the workspace config.
-	return workspace.ConventionalSDKShortName(cfg.SDK.Source), nil
+
+	for sdkName, sdkEntry := range wsCfg.SDKs {
+		for _, m := range sdkEntry.Modules {
+			if filepath.ToSlash(filepath.Clean(m.Path)) == modulePath {
+				return sdkName, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("module at %q is not registered under any [[sdks.*.modules]] in %s; register it via `dagger module init` or add an entry by hand", modulePath, wsConfigPath)
+}
+
+// locateModuleAndWorkspaceRoot walks upward from cwd, returning the first
+// directory that contains a dagger-module.toml (or legacy dagger.json) as
+// the module root, plus the first directory that contains a dagger.toml
+// at-or-above as the workspace root.
+//
+// The walker stops climbing once it has both. If the workspace root
+// arrives before any module config, the cwd isn't inside a module.
+func locateModuleAndWorkspaceRoot() (moduleDir, workspaceRoot string, _ error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", "", fmt.Errorf("getwd: %w", err)
+	}
+	dir := cwd
+	for {
+		if moduleDir == "" {
+			for _, name := range modules.ConfigFilenames() {
+				if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+					moduleDir = dir
+					break
+				}
+			}
+		}
+		if _, err := os.Stat(filepath.Join(dir, workspace.ConfigFileName)); err == nil {
+			if moduleDir == "" {
+				return "", "", fmt.Errorf("no module config (%s) found between %q and the workspace root %q; run `dagger module sdk` from inside a module", strings.Join(modules.ConfigFilenames(), " or "), cwd, dir)
+			}
+			return moduleDir, dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	if moduleDir != "" {
+		return "", "", fmt.Errorf("module at %q has no workspace root (no dagger.toml in any parent); `dagger module sdk` requires a workspace", moduleDir)
+	}
+	return "", "", fmt.Errorf("no module config (%s) and no workspace root found from %q upward", strings.Join(modules.ConfigFilenames(), " or "), cwd)
 }
 
 // forwardedPersistentFlags returns the persistent flags (--workspace, --env,
@@ -168,36 +229,3 @@ func forwardedPersistentFlags(cmd *cobra.Command) []string {
 	return out
 }
 
-// findModuleConfigUpward walks from cwd toward the filesystem root looking
-// for a dagger-module.toml or dagger.json. Stops at the workspace root (the
-// nearest dagger.toml) so a stray module config in an ancestor of an
-// unrelated workspace can't be picked up.
-func findModuleConfigUpward() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("getwd: %w", err)
-	}
-	const workspaceMarker = "dagger.toml"
-	dir := cwd
-	for {
-		for _, name := range modules.ConfigFilenames() {
-			candidate := filepath.Join(dir, name)
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate, nil
-			}
-		}
-		// Stop at the workspace boundary, BEFORE ascending past it. If the
-		// current dir is itself a workspace root, we've already checked it
-		// for a module config above; an outer module would belong to a
-		// different workspace.
-		if _, err := os.Stat(filepath.Join(dir, workspaceMarker)); err == nil {
-			return "", fmt.Errorf("no module config (%s) found from %q up to the workspace root %q; run `dagger module sdk` from inside a module", strings.Join(modules.ConfigFilenames(), " or "), cwd, dir)
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return "", fmt.Errorf("no module config (%s) found from %q upward, and no workspace root in any parent; run `dagger module sdk` from inside a module", strings.Join(modules.ConfigFilenames(), " or "), cwd)
-}
