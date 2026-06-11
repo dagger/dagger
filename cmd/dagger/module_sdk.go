@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -133,7 +134,12 @@ func currentModuleSDKName() (string, error) {
 	if cfg.SDK == nil || strings.TrimSpace(cfg.SDK.Source) == "" {
 		return "", fmt.Errorf("module %q has no SDK declared in its config", configPath)
 	}
-	return conventionalSDKModuleName(cfg.SDK.Source), nil
+	// FIXME: per the runtime/SDK split, the SDK association is no longer
+	// stored in dagger-module.toml. This call site looks up the workspace
+	// SDK that authors the current module by short-name derivation. Task
+	// #108 will replace this with a proper [[sdks.*.modules]] lookup
+	// against the workspace config.
+	return workspace.ConventionalSDKShortName(cfg.SDK.Source), nil
 }
 
 // forwardedPersistentFlags returns the persistent flags (--workspace, --env,
