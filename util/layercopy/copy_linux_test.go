@@ -215,6 +215,46 @@ func TestCopyDirectoryOnlyCopiesSparsePaths(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 }
 
+func TestCopyEntryMissingSourceAfterFilter(t *testing.T) {
+	t.Parallel()
+
+	missingErr := &os.PathError{Op: "lstat", Path: "/src/gone.txt", Err: os.ErrNotExist}
+
+	t.Run("excluded", func(t *testing.T) {
+		matcher, err := newMatcher("/src", Filter{
+			Only: map[string]struct{}{
+				"keep.txt": {},
+			},
+		})
+		require.NoError(t, err)
+
+		err = (&Copier{}).copyEntry(context.Background(), &source{}, matcher, sourceEntry{
+			Rel:      "gone.txt",
+			ViewPath: "/src/gone.txt",
+			RealPath: "/src/gone.txt",
+			StatErr:  missingErr,
+		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil)
+		require.NoError(t, err)
+	})
+
+	t.Run("included", func(t *testing.T) {
+		matcher, err := newMatcher("/src", Filter{
+			Only: map[string]struct{}{
+				"gone.txt": {},
+			},
+		})
+		require.NoError(t, err)
+
+		err = (&Copier{}).copyEntry(context.Background(), &source{}, matcher, sourceEntry{
+			Rel:      "gone.txt",
+			ViewPath: "/src/gone.txt",
+			RealPath: "/src/gone.txt",
+			StatErr:  missingErr,
+		}, "/dst/gone.txt", CopyOptions{}, matchState{}, nil)
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+}
+
 func TestCopyDirectoryFollowsOverlayDestSymlinkDir(t *testing.T) {
 	t.Parallel()
 
