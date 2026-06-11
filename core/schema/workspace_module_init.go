@@ -100,6 +100,17 @@ func (s *workspaceSchema) moduleInit(
 	sdkEntry.Modules = append(sdkEntry.Modules, workspace.SDKManagedModule{Path: relPath})
 	cfg.SDKs[sdkName] = sdkEntry
 
+	// Resolve which engine runtime ref the new module should declare. The
+	// runtime/SDK split allows an SDK to *delegate* execution to a separate
+	// runtime module by exposing a `targetRuntime: String!` field. When the
+	// field isn't declared, the SDK module IS the runtime — its own
+	// installed ref serves as the runtime ref. That's the common case today
+	// (every shipped SDK does codegen + runtime in one module).
+	runtimeRef, err := s.resolveModuleRuntimeRef(ctx, args.SDK)
+	if err != nil {
+		return nil, err
+	}
+
 	if usingDefaultPath {
 		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: relPath}
 	}
@@ -117,7 +128,7 @@ func (s *workspaceSchema) moduleInit(
 	// Generate the new module's context directory (dagger-module.toml +
 	// SDK-emitted source). The diff is workspace-root-relative because the
 	// moduleSource is constructed against the local workspace context.
-	moduleDiff, err := s.workspaceModuleInitGeneratedDiff(ctx, args, relPath)
+	moduleDiff, err := s.workspaceModuleInitGeneratedDiff(ctx, args, relPath, runtimeRef)
 	if err != nil {
 		return nil, err
 	}
@@ -155,11 +166,15 @@ func (s *workspaceSchema) moduleInit(
 
 // workspaceModuleInitGeneratedDiff drives the moduleSource codegen chain
 // for the new module and returns the resulting context-directory diff,
-// suitable for overlaying onto the workspace rootfs.
+// suitable for overlaying onto the workspace rootfs. runtimeRef is what
+// gets recorded as the module's `runtime` field on disk; it may differ
+// from args.SDK when the SDK delegates execution to a separate runtime
+// module (see resolveModuleRuntimeRef).
 func (s *workspaceSchema) workspaceModuleInitGeneratedDiff(
 	ctx context.Context,
 	args workspaceModuleInitArgs,
 	relPath string,
+	runtimeRef string,
 ) (dagql.ObjectResult[*core.Directory], error) {
 	var res dagql.ObjectResult[*core.Directory]
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -183,7 +198,7 @@ func (s *workspaceSchema) workspaceModuleInitGeneratedDiff(
 	selectors := []dagql.Selector{
 		baseSelector,
 		{Field: "withName", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(args.Name)}}},
-		{Field: "withSDK", Args: []dagql.NamedInput{{Name: "source", Value: dagql.String(args.SDK)}}},
+		{Field: "withSDK", Args: []dagql.NamedInput{{Name: "source", Value: dagql.String(runtimeRef)}}},
 	}
 	if args.Source != "" {
 		selectors = append(selectors, dagql.Selector{
@@ -262,6 +277,50 @@ func workspaceWithDirectoryOverlay(
 		},
 	)
 	return out, err
+}
+
+// resolveModuleRuntimeRef returns the runtime ref to record in the new
+// module's dagger-module.toml given the SDK ref the caller picked.
+//
+// Resolution order:
+//
+//  1. Load the SDK module and look for a `targetRuntime: String!` field on
+//     its main object. If present and non-empty, use its value. This is the
+//     decoupled case: the SDK and the runtime are different modules; the
+//     SDK declares which runtime its codegen targets.
+//
+//  2. Otherwise default to sdkRef itself. The SDK module IS the runtime —
+//     this is the common case today and requires no SDK-side declaration.
+//
+// The introspection path is intentionally fail-soft: any error during
+// the lookup falls through to the default. The override exists so SDKs
+// CAN opt into the split, not as a load-bearing dependency. No SDK
+// currently exposes `targetRuntime`, so today every call resolves via
+// the default; the override hook waits dormant for the first opt-in.
+func (s *workspaceSchema) resolveModuleRuntimeRef(ctx context.Context, sdkRef string) (string, error) {
+	if sdkRef == "" {
+		return "", fmt.Errorf("cannot resolve runtime ref from empty SDK ref")
+	}
+
+	if override, ok := s.lookupSDKTargetRuntime(ctx, sdkRef); ok && override != "" {
+		return override, nil
+	}
+	return sdkRef, nil
+}
+
+// lookupSDKTargetRuntime attempts to read the SDK module's optional
+// `targetRuntime` field. Returns ("", false) when the field is absent or
+// any step of the lookup fails — callers fall back to the SDK ref itself.
+//
+// Implementation note: the full lookup requires loading the SDK as a
+// callable module and selecting `targetRuntime` on its main object. That
+// dagql chain isn't wired here yet — no SDK currently exposes the field,
+// so adding the call would be untested speculation. The function signature
+// is the integration seam; when an SDK opts into the runtime/SDK split,
+// the body of this function is where the moduleSource → asModule → select
+// chain lands.
+func (s *workspaceSchema) lookupSDKTargetRuntime(_ context.Context, _ string) (string, bool) {
+	return "", false
 }
 
 // conventionalSDKShortName returns the workspace-side short name to use for
