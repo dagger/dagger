@@ -205,36 +205,63 @@ func (*Viztest) ManyLines(n int) {
 // cap to exercise +N truncation.
 // +cache="session"
 func (*Viztest) PartialProgress(ctx context.Context) {
-	emit := func(ctx context.Context, item string, current, total int64) {
-		rec := log.Record{}
-		rec.SetTimestamp(time.Now())
-		// explicit empty body: progress records are not log text, and an
-		// unset body does not survive the OTLP round-trip
-		rec.SetBody(log.StringValue(""))
-		rec.AddAttributes(
-			log.String("dagger.io/progress.item", item),
-			log.Int64("dagger.io/progress.current", current),
-			log.Int64("dagger.io/progress.total", total),
-			log.String("dagger.io/progress.unit", "bytes"),
-		)
-		telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
-	}
-
 	// one cell per fill state on the function's own span
-	emit(ctx, "layer-complete", 10_000_000, 10_000_000)
-	emit(ctx, "layer-almost", 9_000_000, 10_000_000)
-	emit(ctx, "layer-half", 5_000_000, 10_000_000)
-	emit(ctx, "layer-started", 1_000_000, 10_000_000)
-	emit(ctx, "layer-untouched", 0, 10_000_000)
-	emit(ctx, "layer-indeterminate", 5_000_000, 0)
+	emitProgress(ctx, "layer-complete", 10_000_000, 10_000_000)
+	emitProgress(ctx, "layer-almost", 9_000_000, 10_000_000)
+	emitProgress(ctx, "layer-half", 5_000_000, 10_000_000)
+	emitProgress(ctx, "layer-started", 1_000_000, 10_000_000)
+	emitProgress(ctx, "layer-untouched", 0, 10_000_000)
+	emitProgress(ctx, "layer-indeterminate", 5_000_000, 0)
 
 	func() {
 		ctx, span := Tracer().Start(ctx, "overflow")
 		defer span.End()
 		for i := range 50 {
-			emit(ctx, fmt.Sprintf("item-%d", i), 1024, 1024)
+			emitProgress(ctx, fmt.Sprintf("item-%d", i), 1024, 1024)
 		}
 	}()
+}
+
+// emitProgress emits one streaming-progress log record following the
+// dagger.io/progress.* convention.
+func emitProgress(ctx context.Context, item string, current, total int64) {
+	rec := log.Record{}
+	rec.SetTimestamp(time.Now())
+	// explicit empty body: progress records are not log text, and an
+	// unset body does not survive the OTLP round-trip
+	rec.SetBody(log.StringValue(""))
+	rec.AddAttributes(
+		log.String("dagger.io/progress.item", item),
+		log.Int64("dagger.io/progress.current", current),
+		log.Int64("dagger.io/progress.total", total),
+		log.String("dagger.io/progress.unit", "bytes"),
+	)
+	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
+}
+
+// TransientProgress runs a long-lived "syncing layers" span (collapsed by
+// default, so its descendants' progress rolls up onto its row) containing
+// one transfer that completes immediately and one that stays in flight.
+// Exercises the roll-up's aging: shortly after the first transfer's span
+// ends, its row should drop out of the roll-up at default verbosity,
+// leaving only the in-flight transfer.
+// +cache="session"
+func (*Viztest) TransientProgress(ctx context.Context) {
+	ctx, outer := Tracer().Start(ctx, "syncing layers")
+	defer outer.End()
+
+	func() {
+		ctx, span := Tracer().Start(ctx, "transfer-done")
+		defer span.End()
+		emitProgress(ctx, "blob", 10_000_000, 10_000_000)
+	}()
+
+	ctx, span := Tracer().Start(ctx, "transfer-live")
+	defer span.End()
+	for i := int64(1); i <= 8; i++ {
+		emitProgress(ctx, "blob", i*1_000_000, 10_000_000)
+		time.Sleep(time.Second)
+	}
 }
 
 // +cache="session"
