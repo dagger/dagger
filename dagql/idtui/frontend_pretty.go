@@ -2985,12 +2985,19 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		}
 	}
 	if len(span.ProgressSpans.Order) > 0 && (!row.Expanded || !row.HasChildren) {
-		// Like error origins: descendants carrying streaming progress always
-		// surface as labeled rows, rolled up here when this row is collapsed.
-		// When the row is expanded they render in their natural tree position
-		// instead (carrying progress reveals an encapsulated span).
+		// Like error origins: descendants carrying streaming progress surface
+		// as labeled rows, rolled up here when this row is collapsed. When
+		// the row is expanded they render in their natural tree position
+		// instead (carrying progress reveals an encapsulated span). Live
+		// rendering only rolls up transfers still in flight — completed ones
+		// would accumulate without bound on large traces and dominate the
+		// view, and they remain reachable by expanding the row. The final
+		// render keeps them as the run's transfer summary.
 		for _, src := range span.ProgressSpans.Order {
 			if src == span || !src.HasProgress() {
+				continue
+			}
+			if !r.final && !r.Debug && !src.IsRunningOrEffectsRunning() {
 				continue
 			}
 			fe.renderProgressSpanRow(ctx, out, r, row, prefix, src, statusHost)

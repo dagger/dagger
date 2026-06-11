@@ -331,15 +331,120 @@ func TestRenderProgressSpanRows(t *testing.T) {
 		}
 	}
 
-	// collapsed: the progress spans still surface, rolled up beneath the
-	// nearest visible collapsed ancestor
-	collapsed := render(false)
+	// collapsed: the progress spans still surface in the final render,
+	// rolled up beneath the nearest visible collapsed ancestor (the live
+	// roll-up only carries in-flight transfers; see
+	// TestRenderProgressSpanRowsAutoHide)
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	var buf strings.Builder
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatalf("FinalRender: %v", err)
+	}
+	collapsed := buf.String()
 	for _, want := range []string{
 		"pulling nginx 1.0s ██ 20 MB",
 		"unpacking nginx 1.0s █▄ 15 MB/20 MB",
 	} {
 		if !strings.Contains(collapsed, want) {
-			t.Errorf("collapsed render missing rolled-up progress row %q:\n%s", want, collapsed)
+			t.Errorf("collapsed final render missing rolled-up progress row %q:\n%s", want, collapsed)
+		}
+	}
+}
+
+// TestRenderProgressSpanRowsAutoHide covers the roll-up's auto-hide: live
+// rendering only rolls up transfers that are still in flight, so completed
+// ones stop piercing their collapsed ancestors (they'd otherwise accumulate
+// without bound on large traces). The final render keeps them as the run's
+// transfer summary.
+func TestRenderProgressSpanRowsAutoHide(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	fromID := prettyTestSpanID(2)
+	pullingID := prettyTestSpanID(3)
+	unpackingID := prettyTestSpanID(4)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			// still running so the trace stays live
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root",
+			StartTime: start,
+		},
+		{
+			// completed, collapsed, still shown at default verbosity:
+			// hosts the roll-up
+			ID:        fromID,
+			TraceID:   prettyTestTraceID(),
+			ParentID:  rootID,
+			Name:      "Container.from",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			// finished: hidden from the live roll-up
+			ID:           pullingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "pulling nginx",
+			Encapsulated: true,
+			StartTime:    start,
+			EndTime:      end,
+			Final:        true,
+		},
+		{
+			// still transferring: stays in the live roll-up
+			ID:           unpackingID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "unpacking nginx",
+			Encapsulated: true,
+			StartTime:    start,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	pulling := db.Spans.Map[pullingID]
+	pulling.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+		{Name: "layer-1", Current: 10_000_000, Total: 10_000_000, Unit: "bytes"},
+	}}
+	unpacking := db.Spans.Map[unpackingID]
+	unpacking.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+		{Name: "layer-1", Current: 5_000_000, Total: 10_000_000, Unit: "bytes"},
+	}}
+	from := db.Spans.Map[fromID]
+	from.ProgressSpans.Add(pulling)
+	from.ProgressSpans.Add(unpacking)
+	root := db.Spans.Map[rootID]
+	root.ProgressSpans.Add(pulling)
+	root.ProgressSpans.Add(unpacking)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity // the TUI default
+	fe.recalculateViewLocked()
+
+	live := strings.Join(fe.tui.RenderLines(), "\n")
+	if want := "unpacking nginx"; !strings.Contains(live, want) {
+		t.Errorf("live render missing in-flight rolled-up progress row %q:\n%s", want, live)
+	}
+	if dontWant := "pulling nginx"; strings.Contains(live, dontWant) {
+		t.Errorf("live render should hide completed rolled-up progress row %q:\n%s", dontWant, live)
+	}
+
+	// the final render keeps completed transfers as the run's summary
+	var buf strings.Builder
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatalf("FinalRender: %v", err)
+	}
+	final := buf.String()
+	for _, want := range []string{"pulling nginx", "unpacking nginx"} {
+		if !strings.Contains(final, want) {
+			t.Errorf("final render missing rolled-up progress row %q:\n%s", want, final)
 		}
 	}
 }
