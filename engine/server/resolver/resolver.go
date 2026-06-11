@@ -1189,7 +1189,10 @@ func limitedPushHandler(pusher remotes.Pusher, provider content.Provider) images
 			return nil, err
 		}
 		defer ra.Close()
-		if err := content.Copy(ctx, cw, content.NewReader(ra), desc.Size, desc.Digest); err != nil {
+		// stream upload progress per layer, attributed to the "pushing
+		// <ref>" span carried by ctx
+		w := wrapProgressWriter(ctx, cw, desc)
+		if err := content.Copy(ctx, w, content.NewReader(ra), desc.Size, desc.Digest); err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
 				return nil, nil
 			}

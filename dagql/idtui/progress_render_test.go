@@ -347,6 +347,56 @@ func TestRenderProgressSpanRows(t *testing.T) {
 	}
 }
 
+// TestTransferSummary covers the merged line's kind counting: the engine's
+// progress emitters all name their spans "<verb> <subject>", and unknown
+// verbs fall back to "transfers".
+func TestTransferSummary(t *testing.T) {
+	mkSpan := func(name string) *dagui.Span {
+		return &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{Name: name}}
+	}
+	for _, tc := range []struct {
+		name  string
+		spans []*dagui.Span
+		want  string
+	}{
+		{
+			name: "counts by kind in order of first appearance",
+			spans: []*dagui.Span{
+				mkSpan("fetching https://example.com/pkg-1.apk"),
+				mkSpan("pulling alpine:latest"),
+				mkSpan("fetching https://example.com/pkg-2.apk"),
+				mkSpan("pushing ttl.sh/test:10m"),
+			},
+			want: "2 fetches, 1 pull, 1 push",
+		},
+		{
+			name: "unknown verbs count as transfers",
+			spans: []*dagui.Span{
+				mkSpan("transfer-done"),
+				mkSpan("syncing /things"),
+			},
+			want: "2 transfers",
+		},
+		{
+			name: "singular and plural nouns",
+			spans: []*dagui.Span{
+				mkSpan("pushing ttl.sh/one:10m"),
+				mkSpan("pushing ttl.sh/two:10m"),
+				mkSpan("downloading /out"),
+				mkSpan("unpacking nginx:latest"),
+				mkSpan("uploading /src"),
+			},
+			want: "2 pushes, 1 download, 1 unpack, 1 upload",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := transferSummary(tc.spans); got != tc.want {
+				t.Errorf("transferSummary = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestRenderProgressSpanRowsAutoHide covers the roll-up's fold policy:
 // in-flight transfers each get their own row immediately, completed ones
 // always fold into one merged summary line (they'd otherwise accumulate

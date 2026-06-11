@@ -9,6 +9,7 @@ import (
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/dagger/dagger/engine/snapshots"
 	digest "github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // progressIngester wraps a content.Ingester so that layer blobs written
@@ -30,13 +31,19 @@ func (pi progressIngester) Writer(ctx context.Context, opts ...content.WriterOpt
 			return w, nil //nolint:nilerr // ignore option errors; progress is best-effort
 		}
 	}
-	desc := wOpts.Desc
-	if !images.IsLayerType(desc.MediaType) || desc.Size <= 0 {
-		// only layers are interesting enough to track; manifests and configs
-		// are tiny
-		return w, nil
-	}
+	return wrapProgressWriter(ctx, w, wOpts.Desc), nil
+}
 
+// wrapProgressWriter wraps a content.Writer so the layer blob written
+// through it streams transfer progress as telemetry, keyed by blob digest
+// — the same wrapper serves pull (blobs fetched into the content store)
+// and push (blobs copied to a registry's writer). Non-layer blobs pass
+// through untouched: manifests and configs are tiny. The wrapper emits a
+// pending state immediately so the item appears before bytes move.
+func wrapProgressWriter(ctx context.Context, w content.Writer, desc ocispecs.Descriptor) content.Writer {
+	if !images.IsLayerType(desc.MediaType) || desc.Size <= 0 {
+		return w
+	}
 	pw := &progressWriter{
 		Writer: w,
 		ctx:    ctx,
@@ -44,11 +51,11 @@ func (pi progressIngester) Writer(ctx context.Context, opts ...content.WriterOpt
 		total:  desc.Size,
 	}
 	if status, err := w.Status(); err == nil {
-		// resume from a partially fetched blob
+		// resume from a partially transferred blob
 		pw.offset = status.Offset
 	}
 	pw.emit(true)
-	return pw, nil
+	return pw
 }
 
 type progressWriter struct {

@@ -3156,6 +3156,7 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 // the merged summary line.
 var transferKinds = map[string][2]string{
 	"pulling":     {"pull", "pulls"},
+	"pushing":     {"push", "pushes"},
 	"unpacking":   {"unpack", "unpacks"},
 	"fetching":    {"fetch", "fetches"},
 	"uploading":   {"upload", "uploads"},
