@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/containerd/continuity/sysx"
@@ -285,6 +286,21 @@ func (local *localFS) Sync( //nolint:gocyclo
 		})
 	}()
 
+	// Stream cumulative uploaded bytes via the telemetry convention,
+	// attributed to the "uploading <path>" span carried by ctx. The total is
+	// unknown up front (the diff streams), so this renders as a climbing
+	// byte count, and an unchanged directory emits nothing. Parent-dir
+	// syncs transfer only directory entries and are skipped.
+	var uploadedBytes atomic.Int64
+	upload := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
+	countUploaded := func(written int64) {
+		if forParents {
+			return
+		}
+		upload.Update(uploadedBytes.Add(written))
+	}
+	defer upload.Finish()
+
 	doubleWalkDiff(egCtx, eg, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
 		if upperStat != nil && upperStat.GitIgnored {
 			if upperStat.IsDir() {
@@ -380,6 +396,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 						attribute.String(telemetry.MetricsTraceIDAttr, rootPathSpan.span.SpanContext().TraceID().String()),
 						attribute.String(telemetry.MetricsSpanIDAttr, rootPathSpan.span.SpanContext().SpanID().String()),
 					}
+					countUploaded(written)
 					rootPathSpan.mu.Lock()
 					rootPathSpan.writtenBytes += written
 					fsMetric.Record(ctx, written, metric.WithAttributes(attrs...))

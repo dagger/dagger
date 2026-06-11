@@ -176,7 +176,7 @@ func (r *Resolver) ResolveImageConfig(
 	ref string,
 	opts ResolveImageConfigOpts,
 ) (_ string, _ digest.Digest, _ []byte, rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
@@ -259,7 +259,7 @@ func (r *Resolver) ResolveImageConfig(
 }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "pulling "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "pulling "+bkcache.DisplayRef(ref), telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
@@ -342,7 +342,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	childrenHandler := images.ChildrenHandler(r.contentStore)
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(r.contentStore, fetcher),
+		remotes.FetchHandler(progressIngester{r.contentStore}, fetcher),
 		childrenHandler,
 		dslHandler,
 	)
@@ -595,7 +595,7 @@ func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest
 }
 
 func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) (rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
@@ -1189,7 +1189,10 @@ func limitedPushHandler(pusher remotes.Pusher, provider content.Provider) images
 			return nil, err
 		}
 		defer ra.Close()
-		if err := content.Copy(ctx, cw, content.NewReader(ra), desc.Size, desc.Digest); err != nil {
+		// stream upload progress per layer, attributed to the "pushing
+		// <ref>" span carried by ctx
+		w := wrapProgressWriter(ctx, cw, desc)
+		if err := content.Copy(ctx, w, content.NewReader(ra), desc.Size, desc.Digest); err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
 				return nil, nil
 			}

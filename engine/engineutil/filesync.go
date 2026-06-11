@@ -16,6 +16,9 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	telemetry "github.com/dagger/otel-go"
 )
 
 func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg any) error {
@@ -130,7 +133,20 @@ func (c *Client) LocalDirExport(
 	}
 	defer diffCopyClient.CloseSend()
 
-	return sendDiffCopyToCaller(diffCopyClient, outputFS, nil)
+	// Encapsulated like the resolver's "pulling" span: hidden unless it
+	// fails, surfacing as a labeled progress row with a climbing byte count
+	// (the receiver only requests changed files, so the total is unknown
+	// and an up-to-date destination transfers nothing).
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
+	defer download.Finish()
+
+	return sendDiffCopyToCaller(diffCopyClient, outputFS, func(current int, _ bool) {
+		download.Update(int64(current))
+	})
 }
 
 func (c *Client) LocalFileExport(
@@ -186,6 +202,15 @@ func (c *Client) LocalFileExport(
 	}
 	defer diffCopyClient.CloseSend()
 
+	// the file size is known up front, so this renders as a 1-D track
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	download := bkcache.NewProgressTracker(ctx, "bytes", stat.Size(), "bytes")
+	defer download.Finish()
+
+	var sent int64
 	fileSizeLeft := stat.Size()
 	chunkSize := int64(MaxFileContentsChunkSize)
 	for fileSizeLeft > 0 {
@@ -198,6 +223,8 @@ func (c *Client) LocalFileExport(
 			return fmt.Errorf("failed to read file: %w", err)
 		}
 		fileSizeLeft -= n
+		sent += n
+		download.Update(sent)
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
@@ -245,11 +272,20 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 	}
 	defer diffCopyClient.CloseSend()
 
+	// the reader's size is unknown, so this renders as a climbing byte count
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
+	defer download.Finish()
+	var sent int64
+
 	chunkSize := int64(MaxFileContentsChunkSize)
 	keepGoing := true
 	for keepGoing {
 		buf := new(bytes.Buffer) // TODO: more efficient to use bufio.Writer, reuse buffers, sync.Pool, etc.
-		_, err := io.CopyN(buf, r, chunkSize)
+		n, err := io.CopyN(buf, r, chunkSize)
 		if errors.Is(err, io.EOF) {
 			keepGoing = false
 			err = nil
@@ -257,6 +293,8 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
+		sent += n
+		download.Update(sent)
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})

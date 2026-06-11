@@ -145,6 +145,7 @@ entrypoint = true
 			require.Contains(t, out, "○ withEnvVariable AFTER=should stay pending")
 		}},
 		{Function: "revealed-spans"},
+		{Function: "partial-progress"},
 
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",

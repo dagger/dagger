@@ -99,6 +99,11 @@ type Span struct {
 	RevealedSpans SpanSet `json:"-"`
 	ErrorOrigins  SpanSet `json:"-"`
 
+	// ProgressSpans tracks descendant spans carrying progress, so rows
+	// representing a subtree (collapsed, or with hidden descendants) can
+	// render it.
+	ProgressSpans SpanSet `json:"-"`
+
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 
@@ -131,6 +136,7 @@ func (span *Span) Snapshot() SpanSnapshot {
 	span.Canceled_, span.CanceledReason_ = span.CanceledReason()
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
+	snapshot.Progress = span.Progress.Clone()
 	return snapshot
 }
 
@@ -316,6 +322,11 @@ type SpanSnapshot struct {
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
+
+	// Progress holds streaming-progress items attributed directly to this
+	// span, folded from progress log records. It lives in the snapshot so
+	// remote frontends receive it without replaying the raw records.
+	Progress *SpanProgress `json:",omitempty"`
 
 	ExtraAttributes map[string]json.RawMessage `json:",omitempty"`
 }
@@ -784,14 +795,32 @@ func (span *Span) Hidden(opts FrontendOpts) bool {
 		// internal spans are hidden by default
 		return true
 	}
-	if span.ParentSpan != nil &&
+	return span.EncapsulationHidden(opts)
+}
+
+// EncapsulationHidden reports whether the span is hidden as an encapsulated
+// internal detail of a parent that didn't fail. Encapsulated steps are
+// hidden - even on error, e.g. a registry's routine 401 auth challenge -
+// unless their parent errors. Spans carrying streaming progress are always
+// shown: they only accumulate progress when real work happens (e.g. a cold
+// pull), and their bars render in their place when they're hidden anyway.
+func (span *Span) EncapsulationHidden(opts FrontendOpts) bool {
+	if span.HasProgress() {
+		return false
+	}
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	return span.ParentSpan != nil &&
 		(span.Encapsulated || span.ParentSpan.Encapsulate) &&
 		!span.ParentSpan.IsFailed() &&
-		verbosity < ShowEncapsulatedVerbosity {
-		// encapsulated steps are hidden (even on error) unless their parent errors
-		return true
-	}
-	return false
+		verbosity < ShowEncapsulatedVerbosity
+}
+
+// HasProgress reports whether the span carries streaming-progress state.
+func (span *Span) HasProgress() bool {
+	return span.Progress != nil && len(span.Progress.Order) > 0
 }
 
 func (span *Span) IsRunning() bool {

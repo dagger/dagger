@@ -156,6 +156,11 @@ type frontendPretty struct {
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
 	renderVersion  uint64 // bumped on global render config changes (verbosity, zoom)
 
+	// progressExpanded tracks rows whose completed-transfer roll-up has
+	// been expanded into individual rows (the "p" keybind, distinct from
+	// regular tree expansion).
+	progressExpanded map[dagui.SpanID]bool
+
 	// viewDirty is set when DB data changes (ExportSpans, LogExport) and
 	// cleared by recalculateViewLocked in Render. This coalesces multiple
 	// data updates into a single recalculate per render frame.
@@ -1428,6 +1433,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
 			KeyEnabled(focused != nil && len(focused.ErrorOrigins.Order) > 0)),
+		key.NewBinding(key.WithKeys("p"),
+			key.WithHelp("p", progressToggleHelp(fe.progressExpanded[fe.FocusedSpan])),
+			KeyEnabled(focused != nil && fe.spanHasProgressRollup(fe.FocusedSpan))),
 		key.NewBinding(key.WithKeys("t"),
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
@@ -2388,6 +2396,20 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 			st.Update()
 		}
 		return
+	case "p":
+		// toggle the focused row's completed-transfer roll-up between the
+		// merged summary line and individual rows (distinct from regular
+		// tree expansion)
+		if fe.FocusedSpan.IsValid() && fe.spanHasProgressRollup(fe.FocusedSpan) {
+			if fe.progressExpanded == nil {
+				fe.progressExpanded = make(map[dagui.SpanID]bool)
+			}
+			fe.progressExpanded[fe.FocusedSpan] = !fe.progressExpanded[fe.FocusedSpan]
+			if st, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+				st.Update()
+			}
+		}
+		return
 	case "enter":
 		fe.ZoomedSpan = fe.FocusedSpan
 		fe.renderVersion++
@@ -2984,6 +3006,9 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 			}
 		}
 	}
+	if len(span.ProgressSpans.Order) > 0 && (!row.Expanded || !row.HasChildren) {
+		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
+	}
 	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		// Filter self-references and causes already rendered elsewhere in this
 		// trace: a span propagated as its own error origin should never be
@@ -3123,6 +3148,170 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 		return fe.renderLogs(out, r, row, logs, limit, prefix, focused)
 	}
 	return false
+}
+
+// transferKinds maps the leading verb of a transfer span's name — the
+// engine's progress emitters all follow "<verb> <subject>", e.g.
+// "pulling nginx:latest", "fetching <url>" — to singular/plural nouns for
+// the merged summary line.
+var transferKinds = map[string][2]string{
+	"pulling":     {"pull", "pulls"},
+	"pushing":     {"push", "pushes"},
+	"unpacking":   {"unpack", "unpacks"},
+	"fetching":    {"fetch", "fetches"},
+	"uploading":   {"upload", "uploads"},
+	"downloading": {"download", "downloads"},
+}
+
+// transferSummary counts the given transfer spans by kind in order of
+// first appearance, e.g. "3 pulls, 38 fetches, 1 upload".
+func transferSummary(srcs []*dagui.Span) string {
+	counts := map[[2]string]int{}
+	var order [][2]string
+	for _, src := range srcs {
+		verb, _, _ := strings.Cut(src.Name, " ")
+		kind, ok := transferKinds[verb]
+		if !ok {
+			kind = [2]string{"transfer", "transfers"}
+		}
+		if counts[kind] == 0 {
+			order = append(order, kind)
+		}
+		counts[kind]++
+	}
+	parts := make([]string, len(order))
+	for i, kind := range order {
+		n := counts[kind]
+		noun := kind[0]
+		if n != 1 {
+			noun = kind[1]
+		}
+		parts[i] = fmt.Sprintf("%d %s", n, noun)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// renderMergedProgressRow folds completed transfers into one summary line
+// beneath the given row: a count by kind and the merged wall-clock
+// duration of their activity. The interval union means parallel transfers
+// don't double-count, and byte totals are deliberately omitted — fetch and
+// unpack read the same bytes, so summing would double the apparent size.
+// The "p" keybind expands the fold into individual rows.
+func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, srcs []*dagui.Span) {
+	fmt.Fprint(out, prefix)
+	r.fancyIndent(out, row, false, false)
+	// indent past the parent's icon column so the line reads as its detail
+	fmt.Fprint(out, "  ")
+	fmt.Fprint(out, out.String(IconSuccess).Foreground(termenv.ANSIGreen))
+	fmt.Fprint(out, out.String(" "+transferSummary(srcs)).Faint())
+	var activity dagui.Activity
+	for _, src := range srcs {
+		activity.Add(src)
+	}
+	fmt.Fprint(out, out.String(" "+dagui.FormatDuration(activity.Duration(r.now))).Faint())
+	if fe.FocusedSpan == row.Span.ID && !fe.reportOnly && !fe.finalRender {
+		// discoverability hint, like the error origins' "r jump ↴"
+		color := termenv.ANSIBrightBlack
+		if time.Since(fe.pressedKeyAt) < keypressDuration {
+			color = termenv.ANSIWhite
+		}
+		fmt.Fprintf(out, " %s %s",
+			out.String("p").Foreground(color).Bold(),
+			out.String("expand").Foreground(color),
+		)
+	}
+	fmt.Fprintln(out)
+}
+
+// foldableProgressSource reports whether a transfer belongs in the merged
+// completed-transfer summary: finished, and neither failed nor canceled —
+// those must stay visible as their own rows rather than disappear into a
+// green checkmark.
+func foldableProgressSource(src *dagui.Span) bool {
+	return !src.IsRunningOrEffectsRunning() &&
+		!src.IsFailedOrCausedFailure() &&
+		!src.IsCanceled()
+}
+
+// renderProgressRollup surfaces a collapsed row's descendant transfers,
+// like error origins: when the row is expanded they render in their
+// natural tree position instead (carrying progress reveals an encapsulated
+// span). In-flight, failed, and canceled transfers each get their own row;
+// successfully completed ones always fold into a single merged summary
+// line — a module fetching dozens of packages would otherwise drown the
+// view. The "p" keybind (progressExpanded), debug, and high verbosity
+// expand the fold into individual rows.
+func (fe *frontendPretty) renderProgressRollup(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost) {
+	span := row.Span
+	showAll := fe.progressExpanded[span.ID] || r.Debug ||
+		r.Verbosity >= dagui.ShowSpammyVerbosity
+	var done []*dagui.Span
+	for _, src := range span.ProgressSpans.Order {
+		if src == span || !src.HasProgress() {
+			continue
+		}
+		if !showAll && foldableProgressSource(src) {
+			done = append(done, src)
+			continue
+		}
+		fe.renderProgressSpanRow(ctx, out, r, row, prefix, src, statusHost)
+	}
+	if len(done) == 1 {
+		// a single completed transfer is already its own summary
+		fe.renderProgressSpanRow(ctx, out, r, row, prefix, done[0], statusHost)
+	} else if len(done) > 1 {
+		fe.renderMergedProgressRow(out, r, row, prefix, done)
+	}
+}
+
+func progressToggleHelp(expanded bool) string {
+	if expanded {
+		return "collapse transfers"
+	}
+	return "expand transfers"
+}
+
+// spanHasProgressRollup reports whether the span currently folds completed
+// descendant transfers into a merged line (or has it expanded), i.e.
+// whether the "p" toggle applies to it.
+func (fe *frontendPretty) spanHasProgressRollup(id dagui.SpanID) bool {
+	span := fe.db.Spans.Map[id]
+	if span == nil {
+		return false
+	}
+	if fe.rows != nil {
+		if row := fe.rows.BySpan[id]; row != nil && row.Expanded && row.HasChildren {
+			// the roll-up only renders beneath collapsed rows
+			return false
+		}
+	}
+	var done int
+	for _, src := range span.ProgressSpans.Order {
+		if src == span || !src.HasProgress() || !foldableProgressSource(src) {
+			continue
+		}
+		done++
+		if done > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// renderProgressSpanRow renders one hidden/collapsed descendant's streaming
+// progress as a labeled bar-first line beneath the given row.
+func (fe *frontendPretty) renderProgressSpanRow(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, src *dagui.Span, statusHost statusIconHost) {
+	fmt.Fprint(out, prefix)
+	r.fancyIndent(out, row, false, false)
+	// indent past the parent's icon column so the bar reads as its detail
+	fmt.Fprint(out, "  ")
+	syntheticRow := &dagui.TraceRow{
+		Span:     src,
+		Depth:    row.Depth,
+		Expanded: true,
+	}
+	fe.renderStepTitle(ctx, out, r, syntheticRow, prefix, statusHost, false, false)
+	fmt.Fprintln(out)
 }
 
 func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span, statusHost statusIconHost) {
@@ -3310,6 +3499,10 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 	chained := row.Chained
 	depth := row.Depth
 
+	// Progress rows (e.g. "pulling nginx:latest") render their name faintly,
+	// as a label for the trailing bar rather than a step of its own.
+	progressRow := span.HasProgress() && span.Call() == nil && span.Message == ""
+
 	if !abridged && row.Span.LLMRole == "" {
 		fe.renderStatusIcon(ctx, out, row, statusHost)
 		fmt.Fprint(out, " ")
@@ -3350,7 +3543,10 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		if span.Name == "" {
 			empty = true
 		}
-		if err := r.renderSpan(out, span, span.Name); err != nil {
+		if progressRow {
+			// keep the focus on the bar; the name is a label
+			fmt.Fprint(out, out.String(span.Name).Faint())
+		} else if err := r.renderSpan(out, span, span.Name); err != nil {
 			return err
 		}
 	}
@@ -3367,6 +3563,12 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 				fmt.Fprint(out, " ")
 				fmt.Fprint(out, dots)
 			}
+		}
+
+		// Render streaming progress (e.g. image layer downloads)
+		if bars := fe.renderProgressBars(out, span); bars != "" {
+			fmt.Fprint(out, " ")
+			fmt.Fprint(out, bars)
 		}
 
 		fe.renderStatus(out, span)
@@ -3549,6 +3751,137 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 	renderGroup(state.PendingCount, termenv.ANSIBrightBlack)
 
 	return result.String()
+}
+
+// maxProgressItems caps how many per-item cells a single row may render
+// before summarizing the remainder.
+const maxProgressItems = 40
+
+// progressTrackWidth is the fixed cell width of a single-item (1-D)
+// progress track.
+const progressTrackWidth = 12
+
+// verticalEighths maps a fill level (1-8) to a block element rising from
+// the bottom of the cell. Progress uses block elements rather than braille
+// so the braille glyphs keep one meaning in the UI: span status (the
+// spinner and roll-up dots).
+var verticalEighths = []rune{
+	' ', // 0: empty (unused; untouched items render level 1)
+	'▁', // 1: ▁
+	'▂', // 2: ▂
+	'▃', // 3: ▃
+	'▄', // 4: ▄
+	'▅', // 5: ▅
+	'▆', // 6: ▆
+	'▇', // 7: ▇
+	'█', // 8: █
+}
+
+// horizontalEighths maps a fill level (1-8) to a block element extending
+// from the left of the cell.
+var horizontalEighths = []rune{
+	' ', // 0: empty
+	'▏', // 1: ▏
+	'▎', // 2: ▎
+	'▍', // 3: ▍
+	'▌', // 4: ▌
+	'▋', // 5: ▋
+	'▊', // 6: ▊
+	'▉', // 7: ▉
+	'█', // 8: █
+}
+
+// renderProgressBars renders the span's own streaming-progress state, plus
+// an aggregate byte count. Multiple items render 2-D: one cell per item,
+// filling bottom-up like a bar chart. A single item renders 1-D: a fixed
+// track filling left-to-right, or just a climbing count when the total is
+// unknown (e.g. a filesync's streaming diff). Descendants' progress is
+// never merged in: each progress-carrying span renders as its own labeled
+// row (revealed in the tree, or rolled up under a collapsed ancestor).
+func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) string {
+	if !span.HasProgress() {
+		return ""
+	}
+	items := span.Progress.Order
+
+	var sb strings.Builder
+	switch {
+	case len(items) == 1 && items[0].Total > 0:
+		fe.renderProgressTrack(out, &sb, items[0])
+	case len(items) == 1:
+		// indeterminate: only the climbing count below
+	default:
+		fe.renderProgressCells(out, &sb, items)
+	}
+
+	current, total := span.Progress.Totals()
+	if unit := items[0].Unit; unit != "" && current > 0 {
+		var summary string
+		if unit == "bytes" {
+			summary = humanizeBytes(current)
+			if current < total {
+				summary += "/" + humanizeBytes(total)
+			}
+		} else {
+			summary = strconv.FormatInt(current, 10)
+			if current < total {
+				summary += "/" + strconv.FormatInt(total, 10)
+			}
+			summary += " " + unit
+		}
+		if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(out.String(summary).Faint().String())
+	}
+	return sb.String()
+}
+
+// renderProgressCells renders one bottom-up filling cell per item.
+func (fe *frontendPretty) renderProgressCells(out TermOutput, sb *strings.Builder, items []*dagui.ProgressItem) {
+	shown := items
+	if len(shown) > maxProgressItems {
+		shown = shown[:maxProgressItems]
+	}
+	for _, item := range shown {
+		level := 1
+		if item.Total > 0 {
+			level = int((item.Current*8 + item.Total - 1) / item.Total) // ceil
+			level = max(min(level, 8), 1)
+		}
+		color := termenv.ANSIYellow
+		switch {
+		case item.Complete():
+			color = termenv.ANSIGreen
+		case item.Current == 0:
+			color = termenv.ANSIBrightBlack
+		}
+		sb.WriteString(out.String(string(verticalEighths[level])).Foreground(color).Faint().String())
+	}
+	if rest := len(items) - len(shown); rest > 0 {
+		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).Faint().String())
+	}
+}
+
+// renderProgressTrack renders a single item as a fixed-width left-to-right
+// track with eighth-cell resolution.
+func (fe *frontendPretty) renderProgressTrack(out TermOutput, sb *strings.Builder, item *dagui.ProgressItem) {
+	eighths := int(item.Current * progressTrackWidth * 8 / item.Total)
+	eighths = max(min(eighths, progressTrackWidth*8), 0)
+	full, rem := eighths/8, eighths%8
+	color := termenv.ANSIYellow
+	if item.Complete() {
+		color = termenv.ANSIGreen
+	}
+	if full > 0 {
+		sb.WriteString(out.String(strings.Repeat(string(verticalEighths[8]), full)).Foreground(color).Faint().String())
+	}
+	if rem > 0 {
+		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(color).Faint().String())
+	}
+	if empty := progressTrackWidth - full - min(rem, 1); empty > 0 {
+		sb.WriteString(out.String(strings.Repeat("░", empty)).Foreground(termenv.ANSIBrightBlack).Faint().String())
+	}
 }
 
 // statusIcon returns an icon indicating the span's status, and a bool
