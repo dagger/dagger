@@ -206,11 +206,14 @@ type daggerClient struct {
 
 	pendingModules      []pendingModule      // gathered in detectAndLoadWorkspaceWithRootfs
 	pendingExtraModules []engine.ExtraModule // populated from clientMD, can arrive late
-	modulesMu           sync.Mutex
-	modulesLoaded       bool
-	modulesErr          error
-	singleQueryMu       sync.Mutex
-	singleQueryServed   bool
+	// Configuration-only settings from dagger.toml, keyed by canonical module
+	// source ref. Attached to every module load of the session.
+	globalModuleSettings map[string]map[string]any
+	modulesMu            sync.Mutex
+	modulesLoaded        bool
+	modulesErr           error
+	singleQueryMu        sync.Mutex
+	singleQueryServed    bool
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -1549,7 +1552,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 				if i < len(src.Self().ConfigToolchains) {
 					cfg = src.Self().ConfigToolchains[i]
 				}
-				pending := pendingRelatedModule(defaultPathContextSrc, tcSrc.Self(), cfg, false)
+				pending := pendingRelatedModule(defaultPathContextSrc, tcSrc.Self(), cfg, false, client.globalModuleSettings)
 				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pending)
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)

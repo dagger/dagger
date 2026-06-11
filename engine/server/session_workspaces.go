@@ -380,6 +380,11 @@ type pendingModule struct {
 	DefaultsFromDotEnv bool
 	ArgCustomizations  []*modules.ModuleConfigArgument
 
+	// Configuration-only settings from dagger.toml, keyed by canonical module
+	// source ref. Threaded into the module load so any matching source in the
+	// dependency tree receives its settings.
+	GlobalSettings map[string]map[string]any
+
 	// If set, load this module's implementation from Ref but resolve
 	// +defaultPath inputs from this source ref instead.
 	DefaultPathContextSourceRef string
@@ -464,6 +469,11 @@ func workspaceConfigPendingModules(
 	pending := make([]pendingModule, 0, len(names))
 	for _, name := range names {
 		entry := cfg.Modules[name]
+		if entry.Source == "" {
+			// Configuration-only entry: loads nothing, its settings are
+			// collected by workspaceGlobalModuleSettings.
+			continue
+		}
 		mod := pendingModule{
 			Kind:               moduleLoadKindAmbient,
 			Ref:                entry.Source,
@@ -492,6 +502,39 @@ func workspaceConfigPendingModules(
 	}
 
 	return pending
+}
+
+// workspaceGlobalModuleSettings collects the configuration-only entries of the
+// workspace config as a (canonical source ref -> settings) map. Relative local
+// keys are resolved from the config directory, like installed entry sources.
+func workspaceGlobalModuleSettings(
+	ctx context.Context,
+	ws *workspace.Workspace,
+	cfg *workspace.Config,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+) (map[string]map[string]any, error) {
+	raw, err := workspace.GlobalModuleSettings(cfg)
+	if err != nil || len(raw) == 0 {
+		return nil, err
+	}
+	configDir := filepath.Dir(ws.ConfigFile)
+
+	settings := make(map[string]map[string]any, len(raw))
+	for key, entrySettings := range raw {
+		ref := key
+		if core.FastModuleSourceKindCheck(key, "") == core.ModuleSourceKindLocal {
+			ref = workspace.ResolveModuleEntrySource(configDir, key)
+			if !filepath.IsAbs(ref) {
+				ref = resolveLocalRef(ws, ref)
+			}
+		}
+		canonical, err := core.CanonicalGlobalSettingsKey(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("configuration-only module entry %q: %w", key, err)
+		}
+		settings[canonical] = entrySettings
+	}
+	return settings, nil
 }
 
 func pendingLegacyModule(
@@ -670,7 +713,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	coreWS.SetCompatWorkspace(compatWorkspace)
 	client.workspace = coreWS
 
-	if !loadModules {
+	// Config-management sessions (migrate, lock, workspace install, config)
+	// load no modules at all and must keep working on an invalid config.
+	if clientMD != nil && clientMD.SkipWorkspaceModules {
 		return nil
 	}
 
@@ -688,10 +733,19 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// --- Gather all modules to load ---
-	var pending []pendingModule
+	// Configuration-only settings apply to every module load of the session,
+	// including -m loads when ambient workspace modules are not loaded.
+	client.globalModuleSettings, err = workspaceGlobalModuleSettings(ctx, ws, wsConfig, resolveLocalRef)
+	if err != nil {
+		return err
+	}
 
-	pending = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
+	if !loadModules {
+		return nil
+	}
+
+	// --- Gather all modules to load ---
+	pending := workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
 	resolveCompatRef := resolveLocalRef
 	if compatWorkspace != nil {
 		configWS := *ws
@@ -858,7 +912,7 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 		return fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
-	loads := gatherModuleLoadRequests(client.pendingModules, client.pendingExtraModules)
+	loads := gatherModuleLoadRequests(client.pendingModules, client.pendingExtraModules, client.globalModuleSettings)
 	resolvedLoads := make([]resolvedModuleLoad, len(loads))
 	resolveErrs := make([]error, len(loads))
 
@@ -1096,7 +1150,7 @@ func (srv *Server) resolveModuleLoad(
 		if i < len(src.Self().ConfigToolchains) {
 			cfg = src.Self().ConfigToolchains[i]
 		}
-		pending := pendingRelatedModule(defaultPathContextSrc, toolchainSrc.Self(), cfg, false)
+		pending := pendingRelatedModule(defaultPathContextSrc, toolchainSrc.Self(), cfg, false, load.mod.GlobalSettings)
 		toolchainMod, err := srv.resolveModuleSourceAsModule(ctx, dag, toolchainSrc, pending)
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving toolchain module: %w", err)
@@ -1108,7 +1162,7 @@ func (srv *Server) resolveModuleLoad(
 	}
 
 	if src.Self().Blueprint.Self() != nil {
-		pending := pendingRelatedModule(defaultPathContextSrc, src.Self().Blueprint.Self(), src.Self().ConfigBlueprint, true)
+		pending := pendingRelatedModule(defaultPathContextSrc, src.Self().Blueprint.Self(), src.Self().ConfigBlueprint, true, load.mod.GlobalSettings)
 		blueprintMod, err := srv.resolveModuleSourceAsModule(ctx, dag, src.Self().Blueprint, pending)
 		if err != nil {
 			return resolvedModuleLoad{}, fmt.Errorf("resolving blueprint module: %w", err)
@@ -1159,18 +1213,20 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 	return nil
 }
 
-func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModule) []moduleLoadRequest {
+func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModule, globalSettings map[string]map[string]any) []moduleLoadRequest {
 	loads := make([]moduleLoadRequest, 0, len(pending)+len(extras))
 	for _, mod := range pending {
+		mod.GlobalSettings = globalSettings
 		loads = append(loads, moduleLoadRequest{mod: mod})
 	}
 	for _, extra := range extras {
 		loads = append(loads, moduleLoadRequest{
 			mod: pendingModule{
-				Kind:       moduleLoadKindExtra,
-				Ref:        extra.Ref,
-				Name:       extra.Name,
-				Entrypoint: extra.Entrypoint,
+				Kind:           moduleLoadKindExtra,
+				Ref:            extra.Ref,
+				Name:           extra.Name,
+				Entrypoint:     extra.Entrypoint,
+				GlobalSettings: globalSettings,
 			},
 		})
 	}
@@ -1431,12 +1487,14 @@ func pendingRelatedModule(
 	related *core.ModuleSource,
 	cfg *modules.ModuleConfigDependency,
 	entrypoint bool,
+	globalSettings map[string]map[string]any,
 ) pendingModule {
 	mod := pendingModule{
-		Kind:       moduleLoadKindExtra,
-		Ref:        related.AsString(),
-		RefPin:     related.Pin(),
-		Entrypoint: entrypoint,
+		Kind:           moduleLoadKindExtra,
+		Ref:            related.AsString(),
+		RefPin:         related.Pin(),
+		Entrypoint:     entrypoint,
+		GlobalSettings: globalSettings,
 		// LegacyDefaultPath is intentionally not set here. Related modules
 		// are loaded as siblings of an explicit -m entrypoint: their
 		// +defaultPath must resolve against that entrypoint's repo (the
@@ -1495,6 +1553,10 @@ func (srv *Server) resolveModuleSourceAsModule(
 }
 
 func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error) {
+	globalSettingsJSON, err := core.EncodeGlobalSettings(mod.GlobalSettings)
+	if err != nil {
+		return nil, fmt.Errorf("build asModule args for %q: %w", mod.Ref, err)
+	}
 	// Delegates to the shared builder so the workspace entrypoint path and the
 	// dependency-graph toolchain load path (loadDependencyModules) produce a
 	// byte-identical AsModuleVariantDigest salt for the same logical module.
@@ -1506,6 +1568,7 @@ func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error)
 		mod.ConfigDefaults,
 		mod.DefaultsFromDotEnv,
 		mod.ArgCustomizations,
+		globalSettingsJSON,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("build asModule args for %q: %w", mod.Ref, err)
