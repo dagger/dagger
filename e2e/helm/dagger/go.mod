@@ -3,7 +3,7 @@ module github.com/dagger/dagger/e2e/helm/dagger
 go 1.26.1
 
 require (
-	dagger.io/dagger v0.21.5
+	dagger.io/dagger v0.21.6
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/vektah/gqlparser/v2 v2.5.32

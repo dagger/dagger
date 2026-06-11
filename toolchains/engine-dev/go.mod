@@ -2,7 +2,7 @@ module dagger/engine-dev
 
 go 1.26.1
 
-require github.com/dagger/dagger/engine/distconsts v0.21.5
+require github.com/dagger/dagger/engine/distconsts v0.21.6
 
 replace (
 	github.com/dagger/dagger => ../..
