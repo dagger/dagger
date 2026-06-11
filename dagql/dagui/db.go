@@ -645,6 +645,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
 		}
+		// progress may have been ingested before the parent linkage was
+		// known (records can arrive ahead of their span, and spans ahead
+		// of their ancestors); re-establish the ancestor registration
+		db.propagateProgressSpans(span)
 	}
 
 	// associate the span to its links

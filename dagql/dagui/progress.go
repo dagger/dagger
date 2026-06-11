@@ -97,3 +97,23 @@ func (db *DB) ingestProgress(record sdklog.Record) bool {
 	db.update(span)
 	return true
 }
+
+// propagateProgressSpans registers the span's progress sources - itself and
+// any descendants already registered through it - in every ancestor. Called
+// when a span's parent linkage is established, since progress records can be
+// ingested before their span arrives (leaving the ancestor walk with nowhere
+// to go), and spans can arrive before their ancestors.
+func (db *DB) propagateProgressSpans(span *Span) {
+	sources := span.ProgressSpans.Order
+	if span.HasProgress() {
+		sources = append([]*Span{span}, sources...)
+	}
+	if len(sources) == 0 {
+		return
+	}
+	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
+		for _, src := range sources {
+			parent.ProgressSpans.Add(src)
+		}
+	}
+}

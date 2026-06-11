@@ -110,3 +110,52 @@ func TestIngestProgressLogs(t *testing.T) {
 		t.Fatal("expected ordinary log to mark the span as having logs")
 	}
 }
+
+func TestIngestProgressLogsBeforeSpans(t *testing.T) {
+	db := NewDB()
+
+	traceID := TraceID{TraceID: trace.TraceID{2}}
+	exportID := SpanID{SpanID: trace.SpanID{1}}
+	downloadID := SpanID{SpanID: trace.SpanID{2}}
+
+	// progress arrives before any span data: nothing to walk yet
+	err := db.LogExporter().Export(context.Background(), []sdklog.Record{
+		newTestProgressRecord(traceID.TraceID, downloadID.SpanID, "bytes", 50, 100),
+	})
+	if err != nil {
+		t.Fatalf("export: %s", err)
+	}
+
+	// the progress-carrying span arrives, linking to a parent that hasn't
+	// arrived yet either
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:        downloadID,
+			TraceID:   traceID,
+			ParentID:  exportID,
+			Name:      "downloading /out",
+			StartTime: time.Unix(1, 0),
+		},
+	})
+	export := db.Spans.Map[exportID]
+	if _, ok := export.ProgressSpans.Map[downloadID]; !ok {
+		t.Fatal("expected late-arriving span's progress to register in its parent")
+	}
+
+	// the parent arrives last, linking further up; the registration must
+	// propagate to the new ancestor too
+	rootID := SpanID{SpanID: trace.SpanID{3}}
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:        exportID,
+			TraceID:   traceID,
+			ParentID:  rootID,
+			Name:      "export directory",
+			StartTime: time.Unix(1, 0),
+		},
+	})
+	root := db.Spans.Map[rootID]
+	if _, ok := root.ProgressSpans.Map[downloadID]; !ok {
+		t.Fatal("expected progress registration to propagate to late-arriving ancestors")
+	}
+}
