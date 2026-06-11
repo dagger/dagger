@@ -19,9 +19,9 @@ Everything in the SDK must work on **Node, Bun, and Deno**. Common regressions:
 - Package-manager detection logic in `runtime/` must handle yarn/npm/pnpm/bun lockfiles consistently — changes here need test coverage for each manager.
 - Changes to runtime defaults or pinned versions (`tsdistconsts`) are user-facing: changie entry required.
 
-## Lint/style in force (eslint.config.js)
+## Lint/style
 
-typescript-eslint recommended + Prettier. Flag what these would catch only as a "linters not run" checklist finding, but also watch for what they *don't* catch:
+Don't hand-replicate `eslint.config.js` — it drifts. typescript-eslint recommended + Prettier are enforced by `dagger check typescript-sdk:lint-typescript` (and `typescript-sdk:lint-docs-snippets` for doc snippets); run those rather than eyeballing the rules, and flag what they'd catch only as a "linters not run" checklist finding. Focus your review on what they *don't* catch:
 
 - `any` creep: prefer precise types or generics; `unknown` + narrowing over `any`. (tseslint recommended warns on explicit `any` — treat new ones as findings needing justification.)
 - Floating promises: every promise is awaited or explicitly voided with a reason.

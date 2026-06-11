@@ -110,7 +110,7 @@ Always produce **both** of the following.
 
 ### A. Review report (in chat)
 
-```
+```text
 # PR Review: <title> (#<num>)
 
 **Summary**: 2-4 sentences — what the PR does and your overall assessment.

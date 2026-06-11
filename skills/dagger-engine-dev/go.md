@@ -1,14 +1,10 @@
 # Go review reference (engine, core, dagql, codegen, sdk/go)
 
-## Lint rules in force (.golangci.yml)
+## Lint
 
-The repo enables a curated linter set; flag code that would fail these:
+Don't hand-replicate the linter config — it drifts. The curated linter set in `.golangci.yml` is enforced by `dagger check go:lint`; run that to surface anything golangci-lint catches rather than eyeballing it. Focus your review on what the linter *can't* catch (the points below); only call out a lint-class issue manually if it suggests the author never ran the linters at all.
 
-- `errorlint` — wrap errors with `%w` (errorf + errorf-multi enforced); use `errors.Is/As`, not `==` on wrapped errors.
-- `nilerr` — returning nil error when err != nil.
-- `bodyclose`, `rowserrcheck` — close HTTP bodies, check sql.Rows.Err.
-- `gosec` — enabled with documented case-by-case excludes. The config explicitly says: **do not blindly add `//nolint` to silence linters**. A new `//nolint` without a justification comment is a finding (`nolintlint` is on, so bare nolints fail anyway).
-- `gocritic` (ifElseChain disabled), `gocyclo`, `dupl`, `unparam`, `unconvert`, `unused`, `ineffassign`, `nakedret`, `whitespace`, `misspell`, `revive`, `staticcheck` (all checks except QF1006, QF1008), `govet` with `nilness` (but `lostcancel` disabled).
+One config rule worth remembering, since it's a judgment call the linter only partially enforces: **do not blindly add `//nolint` to silence linters**. A new `//nolint` without a justification comment is a finding (`nolintlint` is on, so bare nolints fail anyway).
 
 ## Engine-specific review points
 
