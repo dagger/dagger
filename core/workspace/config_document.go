@@ -79,6 +79,10 @@ func UpdateConfigBytesWithHints(
 	if err != nil {
 		return nil, err
 	}
+	out, err = rewriteSDKSections(out, cfg.SDKs)
+	if err != nil {
+		return nil, err
+	}
 	if len(hints) == 0 {
 		return out, nil
 	}
@@ -151,6 +155,11 @@ func configDocumentMap(cfg *Config) map[string]any {
 		}
 		values["ports"] = ports
 	}
+	// SDKs are intentionally NOT included here. The neontoml ApplyMap path
+	// can't express array-of-tables (it would emit inline arrays of inline
+	// tables and leave any pre-existing [[sdks.X.modules]] blocks orphaned).
+	// SDK sections are managed as a self-contained block by rewriteSDKSections
+	// after the rest of the document is format-preserved.
 
 	return values
 }
@@ -288,6 +297,45 @@ func keepEmptyConfigSectionHeaders(cfg *Config) map[string]bool {
 		keep["[env."+formatConfigPathSegment(envName)+"]"] = true
 	}
 	return keep
+}
+
+// rewriteSDKSections drops every [sdks.*] / [[sdks.*]] section from data and
+// appends a canonical rendering of sdks. Format preservation inside the SDK
+// block is intentionally given up: the block is treated as CLI-managed state,
+// not human-curated configuration. Everything outside [sdks.*] passes through
+// unchanged.
+func rewriteSDKSections(data []byte, sdks map[string]SDKEntry) ([]byte, error) {
+	doc, err := tomledit.Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse config for sdks rewrite: %w", err)
+	}
+
+	kept := doc.Sections[:0]
+	for _, section := range doc.Sections {
+		if section.Heading != nil && len(section.Heading.Name) > 0 && section.Heading.Name[0] == "sdks" {
+			continue
+		}
+		kept = append(kept, section)
+	}
+	doc.Sections = kept
+
+	if len(sdks) > 0 {
+		var rendered strings.Builder
+		if writeSDKEntries(&rendered, sdks) {
+			sdkDoc, parseErr := tomledit.Parse(strings.NewReader(rendered.String()))
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse rendered sdks: %w", parseErr)
+			}
+			doc.Sections = append(doc.Sections, sdkDoc.Sections...)
+		}
+	}
+
+	var buf bytes.Buffer
+	var formatter tomledit.Formatter
+	if err := formatter.Format(&buf, doc); err != nil {
+		return nil, fmt.Errorf("format config after sdks rewrite: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 func pruneUnwantedEmptySections(data []byte, keepEmptySections map[string]bool) ([]byte, error) {
