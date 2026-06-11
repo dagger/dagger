@@ -3007,34 +3007,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		}
 	}
 	if len(span.ProgressSpans.Order) > 0 && (!row.Expanded || !row.HasChildren) {
-		// Like error origins: descendants carrying streaming progress surface
-		// as labeled rows, rolled up here when this row is collapsed. When
-		// the row is expanded they render in their natural tree position
-		// instead (carrying progress reveals an encapsulated span).
-		// In-flight transfers each get their own row; completed ones always
-		// fold into a single merged summary line — a module fetching dozens
-		// of packages would otherwise drown the view. The "p" keybind
-		// (progressExpanded), debug, and high verbosity expand the fold
-		// into individual rows.
-		showAll := fe.progressExpanded[span.ID] || r.Debug ||
-			r.Verbosity >= dagui.ShowSpammyVerbosity
-		var done []*dagui.Span
-		for _, src := range span.ProgressSpans.Order {
-			if src == span || !src.HasProgress() {
-				continue
-			}
-			if !showAll && !src.IsRunningOrEffectsRunning() {
-				done = append(done, src)
-				continue
-			}
-			fe.renderProgressSpanRow(ctx, out, r, row, prefix, src, statusHost)
-		}
-		if len(done) == 1 {
-			// a single completed transfer is already its own summary
-			fe.renderProgressSpanRow(ctx, out, r, row, prefix, done[0], statusHost)
-		} else if len(done) > 1 {
-			fe.renderMergedProgressRow(out, r, row, prefix, done)
-		}
+		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
 	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		// Filter self-references and causes already rendered elsewhere in this
@@ -3247,6 +3220,37 @@ func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, r
 		)
 	}
 	fmt.Fprintln(out)
+}
+
+// renderProgressRollup surfaces a collapsed row's descendant transfers,
+// like error origins: when the row is expanded they render in their
+// natural tree position instead (carrying progress reveals an encapsulated
+// span). In-flight transfers each get their own row; completed ones always
+// fold into a single merged summary line — a module fetching dozens of
+// packages would otherwise drown the view. The "p" keybind
+// (progressExpanded), debug, and high verbosity expand the fold into
+// individual rows.
+func (fe *frontendPretty) renderProgressRollup(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost) {
+	span := row.Span
+	showAll := fe.progressExpanded[span.ID] || r.Debug ||
+		r.Verbosity >= dagui.ShowSpammyVerbosity
+	var done []*dagui.Span
+	for _, src := range span.ProgressSpans.Order {
+		if src == span || !src.HasProgress() {
+			continue
+		}
+		if !showAll && !src.IsRunningOrEffectsRunning() {
+			done = append(done, src)
+			continue
+		}
+		fe.renderProgressSpanRow(ctx, out, r, row, prefix, src, statusHost)
+	}
+	if len(done) == 1 {
+		// a single completed transfer is already its own summary
+		fe.renderProgressSpanRow(ctx, out, r, row, prefix, done[0], statusHost)
+	} else if len(done) > 1 {
+		fe.renderMergedProgressRow(out, r, row, prefix, done)
+	}
 }
 
 func progressToggleHelp(expanded bool) string {
