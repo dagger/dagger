@@ -2778,13 +2778,37 @@ func (s *moduleSourceSchema) runGeneratedContext(
 	}
 
 	// write the module config to the generated context directory
-	configFilename := moduleSourceConfigFilename(srcInst.Self())
+	genDirInst, err = writeModuleConfigToContextDir(ctx, dag, srcInst.Self(), genDirInst, modCfg)
+	if err != nil {
+		return originalCtxDir, genDirInst, fmt.Errorf("failed to add updated module config to context dir: %w", err)
+	}
+
+	return originalCtxDir, genDirInst, nil
+}
+
+// writeModuleConfigToContextDir adds the module's config file to ctxDir, using
+// the source's declared on-disk filename (dagger-module.toml or legacy
+// dagger.json) and the matching encoding. Single helper so both the codegen
+// and updated-config write paths agree on filename + format and route through
+// the same marshaller (modules.MarshalModuleConfigForFilename). When format
+// preservation is added for module configs, hook it in here — the same way
+// workspace.UpdateConfigBytes layers neontoml-based preservation on top of a
+// plain marshal in the workspace path.
+func writeModuleConfigToContextDir(
+	ctx context.Context,
+	dag *dagql.Server,
+	src *core.ModuleSource,
+	ctxDir dagql.ObjectResult[*core.Directory],
+	modCfg *modules.ModuleConfigWithUserFields,
+) (dagql.ObjectResult[*core.Directory], error) {
+	configFilename := moduleSourceConfigFilename(src)
 	modCfgBytes, err := modules.MarshalModuleConfigForFilename(modCfg, configFilename)
 	if err != nil {
-		return originalCtxDir, genDirInst, fmt.Errorf("failed to encode module config: %w", err)
+		return ctxDir, fmt.Errorf("encode module config: %w", err)
 	}
-	modCfgPath := filepath.Join(srcInst.Self().SourceRootSubpath, configFilename)
-	err = dag.Select(ctx, genDirInst, &genDirInst,
+	modCfgPath := filepath.Join(src.SourceRootSubpath, configFilename)
+	var updated dagql.ObjectResult[*core.Directory]
+	err = dag.Select(ctx, ctxDir, &updated,
 		dagql.Selector{
 			Field: "withNewFile",
 			Args: []dagql.NamedInput{
@@ -2795,10 +2819,9 @@ func (s *moduleSourceSchema) runGeneratedContext(
 		},
 	)
 	if err != nil {
-		return originalCtxDir, genDirInst, fmt.Errorf("failed to add updated module config to context dir: %w", err)
+		return ctxDir, fmt.Errorf("write module config %q: %w", modCfgPath, err)
 	}
-
-	return originalCtxDir, genDirInst, nil
+	return updated, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
@@ -2858,27 +2881,10 @@ func (s *moduleSourceSchema) moduleSourceUpdatedConfigDirectory(
 		return res, fmt.Errorf("failed to build module source config: %w", err)
 	}
 
-	modCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
-	if err != nil {
-		return res, fmt.Errorf("failed to encode module config: %w", err)
-	}
-	modCfgBytes = append(modCfgBytes, '\n')
-	modCfgPath := filepath.Join(srcInst.Self().SourceRootSubpath, modules.Filename)
-
 	originalCtxDir := srcInst.Self().ContextDirectory
-	var updatedCtxDir dagql.ObjectResult[*core.Directory]
-	err = dag.Select(ctx, originalCtxDir, &updatedCtxDir,
-		dagql.Selector{
-			Field: "withNewFile",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(modCfgPath)},
-				{Name: "contents", Value: dagql.String(modCfgBytes)},
-				{Name: "permissions", Value: dagql.Int(0o644)},
-			},
-		},
-	)
+	updatedCtxDir, err := writeModuleConfigToContextDir(ctx, dag, srcInst.Self(), originalCtxDir, modCfg)
 	if err != nil {
-		return res, fmt.Errorf("failed to apply updated dagger.json: %w", err)
+		return res, fmt.Errorf("failed to apply updated module config: %w", err)
 	}
 
 	updatedCtxDirID, err := updatedCtxDir.ID()
