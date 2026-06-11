@@ -798,7 +798,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 
 	switch t := dangType.(type) {
 	case dang.MapType:
-		return res, fmt.Errorf("%s cannot be exposed via GraphQL; store maps in private (non-pub) fields instead", t)
+		return res, fmt.Errorf("%s cannot be exposed via GraphQL; store maps in private (let) fields instead", t)
 	case dang.ListType:
 		elemTypeDef, err := dangTypeToTypeDef(ctx, srv, t.Type, localTypes)
 		if err != nil {

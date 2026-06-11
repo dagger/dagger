@@ -9,16 +9,16 @@ type TestMapField {
     environment: ["FOO": "bar"]
   }}
 
-  pub withEnv(name: String!, value: String!): TestMapField! {
+  withEnv(name: String!, value: String!): TestMapField! {
     self.env = env.with(name, value)
     self
   }
 
-  pub envJson: String! {
+  envJson: String! {
     toJSON(env)
   }
 
-  pub nestedJson: String! {
+  nestedJson: String! {
     toJSON(config.environment)
   }
 }

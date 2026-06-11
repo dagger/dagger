@@ -2,7 +2,7 @@
 A module that tries to expose a Map via GraphQL, which is unsupported.
 """
 type TestMapPub {
-  pub env: Map[String!]! {
+  env: Map[String!]! {
     ["FOO": "bar"]
   }
 }
