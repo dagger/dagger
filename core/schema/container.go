@@ -74,6 +74,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
 					`The service will be started only for this pull.`),
+				dagql.Arg("protocol").Doc(
+					`Protocol to use for registry communication.`,
+					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`),
+				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`),
 			),
 		dagql.NodeFunc("build", s.build).
 			View(BeforeVersion("v0.19.0")).
@@ -711,6 +715,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
 					`The service will be started only for this push.`),
+				dagql.Arg("protocol").Doc(
+					`Protocol to use for registry communication.`,
+					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`),
+				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`),
 			),
 
 		dagql.NodeFunc("platform", s.platform).
@@ -947,8 +955,40 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 }
 
 type containerFromArgs struct {
-	Address         string
-	RegistryService dagql.Optional[core.ServiceID]
+	Address               string
+	RegistryService       dagql.Optional[core.ServiceID]
+	Protocol              dagql.Optional[core.RegistryProtocol]
+	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+}
+
+func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], insecureSkipTLSVerify bool) (serverresolver.RegistryTransport, error) {
+	if protocol.Valid && protocol.Value == core.RegistryProtocolHTTP && insecureSkipTLSVerify {
+		return serverresolver.RegistryTransport{}, errors.New("insecureSkipTLSVerify cannot be used with HTTP registry protocol")
+	}
+
+	if !protocol.Valid {
+		if insecureSkipTLSVerify {
+			return serverresolver.RegistryTransport{
+				Protocol:              serverresolver.RegistryProtocolHTTPS,
+				InsecureSkipTLSVerify: true,
+			}, nil
+		}
+		return serverresolver.RegistryTransport{}, nil
+	}
+
+	switch protocol.Value {
+	case core.RegistryProtocolHTTPS:
+		return serverresolver.RegistryTransport{
+			Protocol:              serverresolver.RegistryProtocolHTTPS,
+			InsecureSkipTLSVerify: insecureSkipTLSVerify,
+		}, nil
+	case core.RegistryProtocolHTTP:
+		return serverresolver.RegistryTransport{
+			Protocol: serverresolver.RegistryProtocolHTTP,
+		}, nil
+	default:
+		return serverresolver.RegistryTransport{}, fmt.Errorf("unsupported registry protocol %q", protocol.Value)
+	}
 }
 
 const lockContainerFromOperation = "container.from"
@@ -1002,6 +1042,10 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	rslvr, err := query.RegistryResolver(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get registry resolver: %w", err)
+	}
+	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify)
+	if err != nil {
+		return inst, err
 	}
 	platform := parent.Self().Platform
 	var registryServices core.ServiceBindings
@@ -1059,9 +1103,10 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		defer detach()
 
 		_, _, cfgBytes, err := rslvr.ResolveImageConfig(ctx, refStr, serverresolver.ResolveImageConfigOpts{
-			Platform:    ptr(platform.Spec()),
-			ResolveMode: serverresolver.ResolveModeDefault,
-			Network:     network,
+			Platform:          ptr(platform.Spec()),
+			ResolveMode:       serverresolver.ResolveModeDefault,
+			Network:           network,
+			RegistryTransport: registryTransport,
 		})
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
@@ -1076,14 +1121,15 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		ctr.ImageRef = refStr
 		ctr.Platform = core.Platform(platforms.Normalize(imgSpec.Platform))
 		ctr.Lazy = &core.ContainerFromImageRefLazy{
-			Parent:           parent,
-			LazyState:        core.NewLazyState(),
-			CanonicalRef:     refStr,
-			Config:           core.CloneContainerImageConfig(ctr.Config),
-			ImageRef:         ctr.ImageRef,
-			Platform:         ctr.Platform,
-			ResolveMode:      serverresolver.ResolveModeDefault,
-			RegistryServices: registryServices,
+			Parent:            parent,
+			LazyState:         core.NewLazyState(),
+			CanonicalRef:      refStr,
+			Config:            core.CloneContainerImageConfig(ctr.Config),
+			ImageRef:          ctr.ImageRef,
+			Platform:          ctr.Platform,
+			ResolveMode:       serverresolver.ResolveModeDefault,
+			RegistryServices:  registryServices,
+			RegistryTransport: registryTransport,
 		}
 
 		inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -1129,6 +1175,12 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	lockInputs := []any{refName.String(), platform.Format()}
+	if registryTransport.Protocol != "" {
+		lockInputs = append(lockInputs, registryTransport.Protocol)
+	}
+	if registryTransport.InsecureSkipTLSVerify {
+		lockInputs = append(lockInputs, "insecureSkipTLSVerify")
+	}
 	lockResolution, err := resolveLookupFromLock(
 		lockMode,
 		rawLock,
@@ -1164,9 +1216,10 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		defer detach()
 
 		_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
-			Platform:    ptr(platform.Spec()),
-			ResolveMode: serverresolver.ResolveModeDefault,
-			Network:     network,
+			Platform:          ptr(platform.Spec()),
+			ResolveMode:       serverresolver.ResolveModeDefault,
+			Network:           network,
+			RegistryTransport: registryTransport,
 		})
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
@@ -1206,6 +1259,22 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		fromArgs = append(fromArgs, dagql.NamedInput{
 			Name:  "registryService",
 			Value: dagql.Opt(args.RegistryService.Value),
+		})
+	}
+	if registryTransport.Protocol != "" {
+		protocol := core.RegistryProtocolHTTPS
+		if registryTransport.Protocol == serverresolver.RegistryProtocolHTTP {
+			protocol = core.RegistryProtocolHTTP
+		}
+		fromArgs = append(fromArgs, dagql.NamedInput{
+			Name:  "protocol",
+			Value: dagql.Opt(protocol),
+		})
+	}
+	if registryTransport.InsecureSkipTLSVerify {
+		fromArgs = append(fromArgs, dagql.NamedInput{
+			Name:  "insecureSkipTLSVerify",
+			Value: dagql.Boolean(true),
 		})
 	}
 	err = srv.Select(ctx, parent, &inst,
@@ -2397,11 +2466,13 @@ func (s *containerSchema) stat(ctx context.Context, parent dagql.ObjectResult[*c
 }
 
 type containerPublishArgs struct {
-	Address           dagql.String
-	PlatformVariants  []core.ContainerID `default:"[]"`
-	ForcedCompression dagql.Optional[core.ImageLayerCompression]
-	MediaTypes        core.ImageMediaTypes `default:"OCI"`
-	RegistryService   dagql.Optional[core.ServiceID]
+	Address               dagql.String
+	PlatformVariants      []core.ContainerID `default:"[]"`
+	ForcedCompression     dagql.Optional[core.ImageLayerCompression]
+	MediaTypes            core.ImageMediaTypes `default:"OCI"`
+	RegistryService       dagql.Optional[core.ServiceID]
+	Protocol              dagql.Optional[core.RegistryProtocol]
+	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerPublishArgs) (dagql.String, error) {
@@ -2425,6 +2496,10 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 		}
 	}
 	if err := cache.Evaluate(ctx, evals...); err != nil {
+		return "", err
+	}
+	registryTransport, err := registryTransportFromArgs(args.Protocol, args.InsecureSkipTLSVerify)
+	if err != nil {
 		return "", err
 	}
 	var registryServices core.ServiceBindings
@@ -2451,6 +2526,7 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 		args.ForcedCompression.Value,
 		args.MediaTypes,
 		registryServices,
+		registryTransport,
 	)
 	if err != nil {
 		return "", err

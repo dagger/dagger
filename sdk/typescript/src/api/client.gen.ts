@@ -430,6 +430,18 @@ export type ContainerFromOpts = {
    * The service will be started only for this pull.
    */
   registryService?: Service
+
+  /**
+   * Protocol to use for registry communication.
+   *
+   * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+   */
+  protocol?: RegistryProtocol
+
+  /**
+   * Allow HTTPS registry communication without verifying the server certificate.
+   */
+  insecureSkipTLSVerify?: boolean
 }
 
 export type ContainerImportOpts = {
@@ -467,6 +479,18 @@ export type ContainerPublishOpts = {
    * The service will be started only for this push.
    */
   registryService?: Service
+
+  /**
+   * Protocol to use for registry communication.
+   *
+   * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+   */
+  protocol?: RegistryProtocol
+
+  /**
+   * Allow HTTPS registry communication without verifying the server certificate.
+   */
+  insecureSkipTLSVerify?: boolean
 }
 
 export type ContainerStatOpts = {
@@ -2477,6 +2501,43 @@ export type ClientSecretOpts = {
   cacheKey?: string
 }
 
+/**
+ * Transport protocol to use for registry operations.
+ */
+export enum RegistryProtocol {
+  Http = "HTTP",
+  Https = "HTTPS",
+}
+
+/**
+ * Utility function to convert a RegistryProtocol value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function RegistryProtocolValueToName(value: RegistryProtocol): string {
+  switch (value) {
+    case RegistryProtocol.Http:
+      return "HTTP"
+    case RegistryProtocol.Https:
+      return "HTTPS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a RegistryProtocol name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function RegistryProtocolNameToValue(name: string): RegistryProtocol {
+  switch (name) {
+    case "HTTP":
+      return RegistryProtocol.Http
+    case "HTTPS":
+      return RegistryProtocol.Https
+    default:
+      return name as RegistryProtocol
+  }
+}
 /**
  * A unique identifier for an object.
  */
@@ -4646,9 +4707,21 @@ export class Container extends BaseClient {
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
+   * @param opts.protocol Protocol to use for registry communication.
+   *
+   * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+   * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
    */
   from = (address: string, opts?: ContainerFromOpts): Container => {
-    const ctx = this._ctx.select("from", { address, ...opts })
+    const metadata = {
+      protocol: { is_enum: true, value_to_name: RegistryProtocolValueToName },
+    }
+
+    const ctx = this._ctx.select("from", {
+      address,
+      ...opts,
+      __metadata: metadata,
+    })
     return new Container(ctx)
   }
 
@@ -4753,6 +4826,10 @@ export class Container extends BaseClient {
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this push.
+   * @param opts.protocol Protocol to use for registry communication.
+   *
+   * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+   * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
    */
   publish = async (
     address: string,
@@ -4768,6 +4845,7 @@ export class Container extends BaseClient {
         value_to_name: ImageLayerCompressionValueToName,
       },
       mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
+      protocol: { is_enum: true, value_to_name: RegistryProtocolValueToName },
     }
 
     const ctx = this._ctx.select("publish", {

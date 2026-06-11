@@ -690,12 +690,13 @@ type persistedContainerWithDefaultTerminalCmdLazy struct {
 }
 
 type persistedContainerFromLazy struct {
-	ParentResultID   uint64                          `json:"parentResultID"`
-	CanonicalRef     string                          `json:"canonicalRef"`
-	Config           dockerspec.DockerOCIImageConfig `json:"config"`
-	ImageRef         string                          `json:"imageRef,omitempty"`
-	Platform         Platform                        `json:"platform"`
-	RegistryServices []persistedServiceBinding       `json:"registryServices,omitempty"`
+	ParentResultID    uint64                           `json:"parentResultID"`
+	CanonicalRef      string                           `json:"canonicalRef"`
+	Config            dockerspec.DockerOCIImageConfig  `json:"config"`
+	ImageRef          string                           `json:"imageRef,omitempty"`
+	Platform          Platform                         `json:"platform"`
+	RegistryServices  []persistedServiceBinding        `json:"registryServices,omitempty"`
+	RegistryTransport serverresolver.RegistryTransport `json:"registryTransport,omitempty"`
 }
 
 type persistedContainerWithRootFSLazy struct {
@@ -4562,13 +4563,14 @@ func decodePersistedContainerLazy(
 			return err
 		}
 		lazy := &ContainerFromImageRefLazy{
-			Parent:       parent,
-			LazyState:    NewLazyState(),
-			CanonicalRef: persisted.CanonicalRef,
-			Config:       persisted.Config,
-			ImageRef:     persisted.ImageRef,
-			Platform:     persisted.Platform,
-			ResolveMode:  serverresolver.ResolveModeDefault,
+			Parent:            parent,
+			LazyState:         NewLazyState(),
+			CanonicalRef:      persisted.CanonicalRef,
+			Config:            persisted.Config,
+			ImageRef:          persisted.ImageRef,
+			Platform:          persisted.Platform,
+			ResolveMode:       serverresolver.ResolveModeDefault,
+			RegistryTransport: persisted.RegistryTransport,
 		}
 		if len(persisted.RegistryServices) > 0 {
 			services, err := decodePersistedServiceBindings(ctx, dag, "container from registry", persisted.RegistryServices)
@@ -6371,6 +6373,7 @@ func (container *Container) Publish(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 	registryServices ServiceBindings,
+	registryTransport serverresolver.RegistryTransport,
 ) (string, error) {
 	variants := filterEmptyContainers(append([]*Container{container}, platformVariants...))
 	inputByPlatform, err := getVariantRefs(ctx, variants)
@@ -6392,7 +6395,7 @@ func (container *Container) Publish(
 	}
 	defer detach()
 
-	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), network)
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), network, registryTransport)
 	if err != nil {
 		return "", err
 	}

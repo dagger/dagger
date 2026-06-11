@@ -714,6 +714,18 @@ type Container implements Exportable & Node & Syncer {
     The service will be started only for this pull.
     """
     registryService: ID @expectedType(name: "Service")
+
+    """
+    Protocol to use for registry communication.
+
+    Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+    """
+    protocol: RegistryProtocol
+
+    """
+    Allow HTTPS registry communication without verifying the server certificate.
+    """
+    insecureSkipTLSVerify: Boolean = false
   ): Container!
 
   """A unique identifier for this Container."""
@@ -795,6 +807,18 @@ type Container implements Exportable & Node & Syncer {
     The service will be started only for this push.
     """
     registryService: ID @expectedType(name: "Service")
+
+    """
+    Protocol to use for registry communication.
+
+    Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+    """
+    protocol: RegistryProtocol
+
+    """
+    Allow HTTPS registry communication without verifying the server certificate.
+    """
+    insecureSkipTLSVerify: Boolean = false
   ): String!
 
   """
@@ -5241,6 +5265,12 @@ type Query implements Node {
 
   """Get the current Dagger Engine version."""
   version: String!
+}
+
+"""Transport protocol to use for registry operations."""
+enum RegistryProtocol {
+  HTTPS
+  HTTP
 }
 
 """An internal persistent bare git mirror."""

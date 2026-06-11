@@ -470,6 +470,14 @@ class NetworkProtocol(Enum):
     UDP = "UDP"
 
 
+class RegistryProtocol(Enum):
+    """Transport protocol to use for registry operations."""
+
+    HTTP = "HTTP"
+
+    HTTPS = "HTTPS"
+
+
 class ReturnType(Enum):
     """Expected return type of an execution"""
 
@@ -2382,6 +2390,8 @@ class Container(Type):
         address: str,
         *,
         registry_service: "Service | None" = None,
+        protocol: RegistryProtocol | None = None,
+        insecure_skip_tls_verify: bool | None = False,
     ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
@@ -2394,10 +2404,18 @@ class Container(Type):
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this pull.
+        protocol:
+            Protocol to use for registry communication.
+            Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+        insecure_skip_tls_verify:
+            Allow HTTPS registry communication without verifying the server
+            certificate.
         """
         _args = [
             Arg("address", address),
             Arg("registryService", registry_service, None),
+            Arg("protocol", protocol, None),
+            Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -2560,6 +2578,8 @@ class Container(Type):
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         registry_service: "Service | None" = None,
+        protocol: RegistryProtocol | None = None,
+        insecure_skip_tls_verify: bool | None = False,
     ) -> str:
         """Package the container state as an OCI image, and publish it to a
         registry
@@ -2592,6 +2612,12 @@ class Container(Type):
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this push.
+        protocol:
+            Protocol to use for registry communication.
+            Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+        insecure_skip_tls_verify:
+            Allow HTTPS registry communication without verifying the server
+            certificate.
 
         Returns
         -------
@@ -2617,6 +2643,8 @@ class Container(Type):
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("registryService", registry_service, None),
+            Arg("protocol", protocol, None),
+            Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -17136,6 +17164,7 @@ __all__ = [
     "PortForward",
     "PortID",
     "Query",
+    "RegistryProtocol",
     "RemoteGitMirror",
     "RemoteGitMirrorID",
     "ReturnType",

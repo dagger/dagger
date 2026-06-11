@@ -175,7 +175,7 @@ pub fn render_optional_field_args(
     let mut contains_lifetime = false;
     let rendered_args = args.iter().map(|a| &a.input_value).map(|a| {
         let type_ = funcs.format_immutable_input_type(&a.type_);
-        if type_.contains("str") {
+        if type_.contains("&'a") {
             contains_lifetime = true;
         }
         quote! {
