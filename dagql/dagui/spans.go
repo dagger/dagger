@@ -99,12 +99,10 @@ type Span struct {
 	RevealedSpans SpanSet `json:"-"`
 	ErrorOrigins  SpanSet `json:"-"`
 
-	// Progress holds streaming-progress items attributed directly to this
-	// span; ProgressSpans tracks descendant spans carrying progress, so rows
+	// ProgressSpans tracks descendant spans carrying progress, so rows
 	// representing a subtree (collapsed, or with hidden descendants) can
 	// render it.
-	Progress      *SpanProgress `json:"-"`
-	ProgressSpans SpanSet       `json:"-"`
+	ProgressSpans SpanSet `json:"-"`
 
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
@@ -138,6 +136,7 @@ func (span *Span) Snapshot() SpanSnapshot {
 	span.Canceled_, span.CanceledReason_ = span.CanceledReason()
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
+	snapshot.Progress = span.Progress.Clone()
 	return snapshot
 }
 
@@ -323,6 +322,11 @@ type SpanSnapshot struct {
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
+
+	// Progress holds streaming-progress items attributed directly to this
+	// span, folded from progress log records. It lives in the snapshot so
+	// remote frontends receive it without replaying the raw records.
+	Progress *SpanProgress `json:",omitempty"`
 
 	ExtraAttributes map[string]json.RawMessage `json:",omitempty"`
 }

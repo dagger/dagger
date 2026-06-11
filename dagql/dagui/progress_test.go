@@ -1,7 +1,9 @@
 package dagui
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"testing"
 	"time"
 
@@ -157,5 +159,101 @@ func TestIngestProgressLogsBeforeSpans(t *testing.T) {
 	root := db.Spans.Map[rootID]
 	if _, ok := root.ProgressSpans.Map[downloadID]; !ok {
 		t.Fatal("expected progress registration to propagate to late-arriving ancestors")
+	}
+}
+
+// TestProgressSnapshotRoundTrip exercises the remote-frontend path: progress
+// is ingested into one DB, travels to another as gob-encoded snapshots, and
+// must arrive intact, propagate to ancestors, and accept further updates.
+func TestProgressSnapshotRoundTrip(t *testing.T) {
+	server := NewDB()
+
+	traceID := TraceID{TraceID: trace.TraceID{3}}
+	fromID := SpanID{SpanID: trace.SpanID{1}}
+	pullID := SpanID{SpanID: trace.SpanID{2}}
+
+	server.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:        fromID,
+			TraceID:   traceID,
+			Name:      "Container.from",
+			StartTime: time.Unix(1, 0),
+		},
+		{
+			ID:        pullID,
+			TraceID:   traceID,
+			ParentID:  fromID,
+			Name:      "pulling docker.io/library/nginx",
+			StartTime: time.Unix(1, 0),
+		},
+	})
+	err := server.LogExporter().Export(context.Background(), []sdklog.Record{
+		newTestProgressRecord(traceID.TraceID, pullID.SpanID, "sha256:layer1", 50, 100),
+		newTestProgressRecord(traceID.TraceID, pullID.SpanID, "sha256:layer2", 25, 200),
+	})
+	if err != nil {
+		t.Fatalf("export: %s", err)
+	}
+
+	snapshot := server.Spans.Map[pullID].Snapshot()
+	if snapshot.Progress == nil {
+		t.Fatal("expected snapshot to carry progress")
+	}
+	// the snapshot must not share item state with the live span
+	server.Spans.Map[pullID].Progress.update("sha256:layer1", 100, 100, "bytes")
+	if snapshot.Progress.Order[0].Current != 50 {
+		t.Fatal("snapshot progress should be detached from the live span")
+	}
+
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(snapshot); err != nil {
+		t.Fatalf("gob encode: %s", err)
+	}
+	var decoded SpanSnapshot
+	if err := gob.NewDecoder(&buf).Decode(&decoded); err != nil {
+		t.Fatalf("gob decode: %s", err)
+	}
+
+	client := NewDB()
+	client.ImportSnapshots([]SpanSnapshot{decoded})
+
+	pull := client.Spans.Map[pullID]
+	if pull.Progress == nil || len(pull.Progress.Order) != 2 {
+		t.Fatalf("expected imported progress with 2 items, got %+v", pull.Progress)
+	}
+	current, total := pull.Progress.Totals()
+	if current != 75 || total != 300 {
+		t.Fatalf("unexpected totals after import: %d/%d", current, total)
+	}
+
+	// imported progress registers in ancestors (stubbed from ParentID here)
+	from := client.Spans.Map[fromID]
+	if _, ok := from.ProgressSpans.Map[pullID]; !ok {
+		t.Fatal("expected imported progress span in ancestor's ProgressSpans")
+	}
+
+	// the byName index doesn't survive gob; further updates must rebuild it
+	// rather than duplicating items
+	pull.Progress.update("sha256:layer1", 100, 100, "bytes")
+	if len(pull.Progress.Order) != 2 {
+		t.Fatalf("expected update to reuse existing item, got %d items", len(pull.Progress.Order))
+	}
+	if pull.Progress.Order[0].Current != 100 {
+		t.Fatalf("expected layer1 update to apply, got %d", pull.Progress.Order[0].Current)
+	}
+
+	// a later snapshot without progress (e.g. taken before any records
+	// arrived) must not clobber what we have
+	client.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:        pullID,
+			TraceID:   traceID,
+			ParentID:  fromID,
+			Name:      "pulling docker.io/library/nginx",
+			StartTime: time.Unix(1, 0),
+		},
+	})
+	if client.Spans.Map[pullID].Progress == nil {
+		t.Fatal("expected progress to survive a progress-less snapshot")
 	}
 }

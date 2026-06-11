@@ -161,6 +161,11 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 		span := db.findOrAllocSpan(snapshot.ID)
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
+		if snapshot.Progress == nil {
+			// don't lose locally ingested progress to a snapshot that
+			// predates it
+			snapshot.Progress = span.Progress
+		}
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
 		spans[i] = span

@@ -29,7 +29,12 @@ type SpanProgress struct {
 
 func (p *SpanProgress) update(name string, current, total int64, unit string) {
 	if p.byName == nil {
-		p.byName = map[string]*ProgressItem{}
+		// rebuild the index from Order; it doesn't survive serialization
+		// (snapshots travel over gob/JSON, which skip unexported fields)
+		p.byName = make(map[string]*ProgressItem, len(p.Order))
+		for _, item := range p.Order {
+			p.byName[item.Name] = item
+		}
 	}
 	item, ok := p.byName[name]
 	if !ok {
@@ -42,6 +47,22 @@ func (p *SpanProgress) update(name string, current, total int64, unit string) {
 	if unit != "" {
 		item.Unit = unit
 	}
+}
+
+// Clone returns a deep copy, so snapshots don't share mutable state with the
+// live span.
+func (p *SpanProgress) Clone() *SpanProgress {
+	if p == nil {
+		return nil
+	}
+	clone := &SpanProgress{
+		Order: make([]*ProgressItem, len(p.Order)),
+	}
+	for i, item := range p.Order {
+		copied := *item
+		clone.Order[i] = &copied
+	}
+	return clone
 }
 
 // Totals sums current and total across all items. Items with unknown totals
