@@ -193,6 +193,47 @@ func (DangSuite) TestPrivateArg(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (DangSuite) TestMapFields(_ context.Context, t *testctx.T) {
+	t.Run("map field survives rehydration", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-map-field").
+			With(daggerCall("env-json")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"PATH": "/usr/local/bin:/usr/bin:/bin"}`, out)
+	})
+
+	t.Run("map field mutation across calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-map-field").
+			With(daggerCall("with-env", "--name", "HOME", "--value", "/root", "env-json")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/root"}`, out)
+	})
+
+	t.Run("map nested in anonymous object field", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-map-field").
+			With(daggerCall("nested-json")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"FOO": "bar"}`, out)
+	})
+
+	t.Run("exposing a map via GraphQL errors", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := dangModule(t, c, "test-map-pub").
+			With(daggerCall("env")).
+			Stdout(ctx)
+		requireErrOut(t, err, "cannot be exposed via GraphQL")
+	})
+}
+
 func (DangSuite) TestScalars(_ context.Context, t *testctx.T) {
 	t.Run("timestamp", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
