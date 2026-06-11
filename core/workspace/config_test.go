@@ -689,3 +689,139 @@ func TestResolveModuleEntrySource(t *testing.T) {
 		require.Equal(t, "github.com/dagger/dagger/modules/wolfi", ResolveModuleEntrySource(LockDirName, "github.com/dagger/dagger/modules/wolfi"))
 	})
 }
+
+func TestGlobalModuleSettings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("collects configuration-only entries keyed by source ref", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseConfig([]byte(`[modules.my-app]
+source = "./my-app"
+entrypoint = true
+
+[modules.my-app.settings]
+greeting = "hello"
+
+[modules."github.com/dagger/dagger/modules/go".settings]
+version = "1.25"
+
+[modules."./vendored/go-toolchain".settings]
+extraPackages = ["git"]
+`))
+		require.NoError(t, err)
+
+		settings, err := GlobalModuleSettings(cfg)
+		require.NoError(t, err)
+		require.Equal(t, map[string]map[string]any{
+			"github.com/dagger/dagger/modules/go": {
+				"version": "1.25",
+			},
+			"./vendored/go-toolchain": {
+				"extraPackages": []any{"git"},
+			},
+		}, settings)
+	})
+
+	t.Run("returns nothing when all entries are installed", func(t *testing.T) {
+		t.Parallel()
+
+		settings, err := GlobalModuleSettings(&Config{
+			Modules: map[string]ModuleEntry{
+				"my-app": {Source: "./my-app", Settings: map[string]any{"greeting": "hello"}},
+			},
+		})
+		require.NoError(t, err)
+		require.Empty(t, settings)
+	})
+
+	t.Run("skips configuration-only entries without settings", func(t *testing.T) {
+		t.Parallel()
+
+		settings, err := GlobalModuleSettings(&Config{
+			Modules: map[string]ModuleEntry{
+				"github.com/dagger/dagger/modules/go": {},
+			},
+		})
+		require.NoError(t, err)
+		require.Empty(t, settings)
+	})
+
+	t.Run("rejects a bare name without source", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := GlobalModuleSettings(&Config{
+			Modules: map[string]ModuleEntry{
+				"go": {Settings: map[string]any{"version": "1.25"}},
+			},
+		})
+		require.EqualError(t, err, `workspace module "go" has no source; configuration-only entries must be keyed by a module source ref (git ref or local path)`)
+	})
+
+	t.Run("rejects non-settings fields on configuration-only entries", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := GlobalModuleSettings(&Config{
+			Modules: map[string]ModuleEntry{
+				"github.com/dagger/dagger/modules/go": {
+					Entrypoint: true,
+					Settings:   map[string]any{"version": "1.25"},
+				},
+			},
+		})
+		require.EqualError(t, err, `configuration-only module entry "github.com/dagger/dagger/modules/go" must only carry settings`)
+
+		_, err = GlobalModuleSettings(&Config{
+			Modules: map[string]ModuleEntry{
+				"./vendored/go-toolchain": {
+					Up: ModuleSkip{Skip: []string{"redis"}},
+				},
+			},
+		})
+		require.EqualError(t, err, `configuration-only module entry "./vendored/go-toolchain" must only carry settings`)
+	})
+
+	t.Run("env overlays apply to configuration-only entries", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseConfig([]byte(`[modules."github.com/dagger/dagger/modules/dev".settings]
+githubToken = "op://infra/github/token"
+
+[env.ci.modules."github.com/dagger/dagger/modules/dev".settings]
+githubToken = "env://GITHUB_TOKEN"
+`))
+		require.NoError(t, err)
+
+		applied, err := ApplyEnvOverlay(cfg, "ci")
+		require.NoError(t, err)
+
+		settings, err := GlobalModuleSettings(applied)
+		require.NoError(t, err)
+		require.Equal(t, map[string]map[string]any{
+			"github.com/dagger/dagger/modules/dev": {
+				"githubToken": "env://GITHUB_TOKEN",
+			},
+		}, settings)
+	})
+}
+
+func TestSerializeConfigConfigurationOnlyEntries(t *testing.T) {
+	t.Parallel()
+
+	out := SerializeConfig(&Config{
+		Modules: map[string]ModuleEntry{
+			"my-app": {Source: "./my-app"},
+			"github.com/dagger/dagger/modules/go": {
+				Settings: map[string]any{"version": "1.25"},
+			},
+		},
+	})
+	require.NotContains(t, string(out), `source = ""`)
+
+	cfg, err := ParseConfig(out)
+	require.NoError(t, err)
+	require.Equal(t, ModuleEntry{
+		Settings: map[string]any{"version": "1.25"},
+	}, cfg.Modules["github.com/dagger/dagger/modules/go"])
+	require.Equal(t, "./my-app", cfg.Modules["my-app"].Source)
+}

@@ -97,8 +97,10 @@ func configDocumentMap(cfg *Config) map[string]any {
 	if len(cfg.Modules) > 0 {
 		modules := make(map[string]any, len(cfg.Modules))
 		for name, entry := range cfg.Modules {
-			module := map[string]any{
-				"source": entry.Source,
+			module := map[string]any{}
+			// Configuration-only entries have no source.
+			if entry.Source != "" {
+				module["source"] = entry.Source
 			}
 			if entry.Entrypoint {
 				module["entrypoint"] = true
