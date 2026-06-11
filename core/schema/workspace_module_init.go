@@ -3,8 +3,8 @@ package schema
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -12,138 +12,183 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+// workspaceModuleInitArgs is the schema-facing arg set for
+// Workspace.moduleInit. The redesigned shape returns a Changeset rather
+// than applying immediately; callers preview and apply via the standard
+// changeset path. The SelfCalls arg is gone (the feature graduated to a
+// runtime-capability check), and Path is new (workspace-relative, defaults
+// to .dagger/modules/<name>).
 type workspaceModuleInitArgs struct {
-	Name      string
-	SDK       string   `default:""`
-	Source    string   `default:""`
-	Include   []string `default:"[]"`
-	SelfCalls bool     `default:"false"`
-	Here      bool     `default:"false"`
+	Name    string
+	SDK     string   `default:""`
+	Path    string   `default:""`
+	Source  string   `default:""`
+	Include []string `default:"[]"`
+	Here    bool     `default:"false"`
 }
 
+// moduleInit builds the workspace edits required to create a new module
+// owned by this workspace: codegen output (dagger-module.toml plus
+// SDK-generated source) at `path`, the SDK install entry under
+// `[sdks.<sdk-name>]`, the authoring entry under
+// `[[sdks.<sdk-name>.modules]]`, and — when the default path is used — an
+// `[modules.<name>]` install so the new module is callable in this
+// workspace.
+//
+// Every change is staged into one Changeset and returned. No filesystem
+// write happens inside this function; the caller previews via
+// `handleChangesetResponseAt` (or any other Changeset consumer) and decides
+// whether to apply. This eliminates the half-mutated-workspace failure
+// window the previous immediate-apply shape inherited.
 func (s *workspaceSchema) moduleInit(
 	ctx context.Context,
 	parent *core.Workspace,
 	args workspaceModuleInitArgs,
-) (dagql.String, error) {
+) (res *core.Changeset, _ error) {
 	if args.Name == "" {
-		return "", fmt.Errorf("module name is required")
+		return nil, fmt.Errorf("module name is required")
 	}
-	if args.SelfCalls && args.SDK == "" {
-		return "", fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
+	if args.SDK == "" {
+		return nil, fmt.Errorf("--sdk is required")
 	}
 
-	cfg, initialized, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
-	if err != nil {
-		return "", err
+	// Resolve the workspace-relative path for the new module. Empty = default
+	// layout; we treat that as the signal to auto-install in [modules.*].
+	relPath := args.Path
+	usingDefaultPath := relPath == ""
+	if usingDefaultPath {
+		relPath = filepath.Join(".dagger", "modules", args.Name)
 	}
+	relPath = filepath.Clean(relPath)
+	if filepath.IsAbs(relPath) {
+		return nil, fmt.Errorf("--path %q must be workspace-relative, not absolute", args.Path)
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
+	}
+
+	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Modules == nil {
+		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	if cfg.SDKs == nil {
+		cfg.SDKs = map[string]workspace.SDKEntry{}
+	}
+
+	// Reject name conflicts in installed modules and reject path conflicts
+	// across any SDK's authored modules. Two SDKs claiming the same path is
+	// a corruption we shouldn't silently extend.
 	if _, exists := cfg.Modules[args.Name]; exists {
-		return "", fmt.Errorf("module %q already exists in workspace config", args.Name)
+		return nil, fmt.Errorf("module %q is already installed in this workspace", args.Name)
+	}
+	for sdkName, sdkEntry := range cfg.SDKs {
+		for _, m := range sdkEntry.Modules {
+			if m.Path == relPath {
+				return nil, fmt.Errorf("a module is already authored at %q under sdks.%s", relPath, sdkName)
+			}
+		}
 	}
 
-	configDirRel, err := workspaceConfigDirectory(parent)
-	if err != nil {
-		return "", err
+	sdkName := conventionalSDKShortName(args.SDK)
+	sdkEntry, sdkInstalled := cfg.SDKs[sdkName]
+	if !sdkInstalled {
+		sdkEntry = workspace.SDKEntry{Source: args.SDK}
 	}
-	modulePath, err := workspaceHostPath(parent, configDirRel, "modules", args.Name)
-	if err != nil {
-		return "", err
+	sdkEntry.Modules = append(sdkEntry.Modules, workspace.SDKManagedModule{Path: relPath})
+	cfg.SDKs[sdkName] = sdkEntry
+
+	if usingDefaultPath {
+		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: relPath}
 	}
 
-	bk, err := workspaceBuildkit(ctx)
+	// Render new dagger.toml bytes through the format-preserving editor.
+	existingConfigBytes, err := readConfigBytes(ctx, parent)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("read workspace config: %w", err)
 	}
-	cwd, err := bk.AbsPath(ctx, ".")
+	newConfigBytes, err := workspace.UpdateConfigBytes(existingConfigBytes, cfg)
 	if err != nil {
-		return "", fmt.Errorf("cwd: %w", err)
-	}
-	relPath, err := filepath.Rel(cwd, modulePath)
-	if err != nil {
-		return "", fmt.Errorf("compute relative module path: %w", err)
+		return nil, fmt.Errorf("update workspace config: %w", err)
 	}
 
-	if _, err := s.exportWorkspaceModule(ctx, relPath, args); err != nil {
-		return "", err
-	}
-
-	cfg.Modules[args.Name] = workspace.ModuleEntry{
-		Source: path.Join("modules", args.Name),
-	}
-	if err := writeWorkspaceConfig(ctx, parent, cfg); err != nil {
-		return "", err
-	}
-
-	configPath, err := configHostPath(parent)
+	// Generate the new module's context directory (dagger-module.toml +
+	// SDK-emitted source). The diff is workspace-root-relative because the
+	// moduleSource is constructed against the local workspace context.
+	moduleDiff, err := s.workspaceModuleInitGeneratedDiff(ctx, args, relPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	msg := fmt.Sprintf("Created module %q at %s\nInstalled in %s", args.Name, modulePath, configPath)
-	if initialized {
-		msg = fmt.Sprintf("Created workspace config in %s\n%s", filepath.Dir(configPath), msg)
+	configRelPath, err := workspaceConfigFile(parent)
+	if err != nil {
+		return nil, err
 	}
-	return dagql.String(msg), nil
+
+	// Layer the workspace edits onto the workspace rootfs and compute the
+	// resulting Changeset. Operation order matters only for legibility — the
+	// diff is computed at the end.
+	baseDir, err := s.resolveRootfs(ctx, parent, ".", core.CopyFilter{}, false)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workspace rootfs: %w", err)
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("dagql server: %w", err)
+	}
+
+	updatedDir := baseDir
+	updatedDir, err = workspaceWithFile(ctx, dag, updatedDir, configRelPath, newConfigBytes, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("stage workspace config update: %w", err)
+	}
+	updatedDir, err = workspaceWithDirectoryOverlay(ctx, dag, updatedDir, moduleDiff)
+	if err != nil {
+		return nil, fmt.Errorf("stage module generated context: %w", err)
+	}
+
+	return workspaceMigrationChanges(ctx, updatedDir, baseDir)
 }
 
-func (s *workspaceSchema) exportWorkspaceModule(
+// workspaceModuleInitGeneratedDiff drives the moduleSource codegen chain
+// for the new module and returns the resulting context-directory diff,
+// suitable for overlaying onto the workspace rootfs.
+func (s *workspaceSchema) workspaceModuleInitGeneratedDiff(
 	ctx context.Context,
-	refPath string,
 	args workspaceModuleInitArgs,
-) (string, error) {
+	relPath string,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var res dagql.ObjectResult[*core.Directory]
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return "", fmt.Errorf("dagql server: %w", err)
+		return res, fmt.Errorf("dagql server: %w", err)
 	}
 
-	baseSelector := workspaceModuleInitSourceSelector(refPath)
+	baseSelector := workspaceModuleInitSourceSelector(relPath)
 
 	var configExists dagql.Boolean
 	if err := srv.Select(ctx, srv.Root(), &configExists,
 		baseSelector,
 		dagql.Selector{Field: "configExists"},
 	); err != nil {
-		return "", fmt.Errorf("check module exists: %w", err)
+		return res, fmt.Errorf("check existing module at %q: %w", relPath, err)
 	}
 	if bool(configExists) {
-		return "", fmt.Errorf("module %q already exists at %s", args.Name, refPath)
-	}
-
-	var contextDirPath dagql.String
-	if err := srv.Select(ctx, srv.Root(), &contextDirPath,
-		baseSelector,
-		dagql.Selector{Field: "localContextDirectoryPath"},
-	); err != nil {
-		return "", fmt.Errorf("resolve local context directory: %w", err)
+		return res, fmt.Errorf("a module already exists at %q", relPath)
 	}
 
 	selectors := []dagql.Selector{
 		baseSelector,
-		{
-			Field: "withName",
-			Args: []dagql.NamedInput{{
-				Name:  "name",
-				Value: dagql.String(args.Name),
-			}},
-		},
-	}
-
-	if args.SDK != "" {
-		selectors = append(selectors, dagql.Selector{
-			Field: "withSDK",
-			Args: []dagql.NamedInput{{
-				Name:  "source",
-				Value: dagql.String(args.SDK),
-			}},
-		})
+		{Field: "withName", Args: []dagql.NamedInput{{Name: "name", Value: dagql.String(args.Name)}}},
+		{Field: "withSDK", Args: []dagql.NamedInput{{Name: "source", Value: dagql.String(args.SDK)}}},
 	}
 	if args.Source != "" {
 		selectors = append(selectors, dagql.Selector{
 			Field: "withSourceSubpath",
-			Args: []dagql.NamedInput{{
-				Name:  "path",
-				Value: dagql.String(args.Source),
-			}},
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(args.Source)}},
 		})
 	}
 	if len(args.Include) > 0 {
@@ -153,49 +198,86 @@ func (s *workspaceSchema) exportWorkspaceModule(
 		}
 		selectors = append(selectors, dagql.Selector{
 			Field: "withIncludes",
-			Args: []dagql.NamedInput{{
-				Name:  "patterns",
-				Value: patterns,
-			}},
+			Args:  []dagql.NamedInput{{Name: "patterns", Value: patterns}},
 		})
 	}
-	if args.SelfCalls {
-		features := dagql.ArrayInput[core.ModuleSourceExperimentalFeature]{
-			core.ModuleSourceExperimentalFeatureSelfCalls,
-		}
-		selectors = append(selectors, dagql.Selector{
-			Field: "withExperimentalFeatures",
-			Args: []dagql.NamedInput{{
-				Name:  "features",
-				Value: features,
-			}},
-		})
-	}
-
 	selectors = append(selectors,
 		dagql.Selector{
 			Field: "withEngineVersion",
-			Args: []dagql.NamedInput{{
-				Name:  "version",
-				Value: dagql.String(modules.EngineVersionLatest),
-			}},
+			Args:  []dagql.NamedInput{{Name: "version", Value: dagql.String(modules.EngineVersionLatest)}},
 		},
 		dagql.Selector{Field: "generatedContextDirectory"},
-		dagql.Selector{
-			Field: "export",
-			Args: []dagql.NamedInput{{
-				Name:  "path",
-				Value: contextDirPath,
-			}},
-		},
 	)
 
-	var exported string
-	if err := srv.Select(ctx, srv.Root(), &exported, selectors...); err != nil {
-		return "", fmt.Errorf("generate module: %w", err)
+	if err := srv.Select(ctx, srv.Root(), &res, selectors...); err != nil {
+		return res, fmt.Errorf("generate module context: %w", err)
 	}
+	return res, nil
+}
 
-	return string(contextDirPath), nil
+// workspaceWithFile overlays a single file with the given workspace-relative
+// path onto dir.
+func workspaceWithFile(
+	ctx context.Context,
+	dag *dagql.Server,
+	dir dagql.ObjectResult[*core.Directory],
+	path string,
+	contents []byte,
+	mode int,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var out dagql.ObjectResult[*core.Directory]
+	err := dag.Select(ctx, dir, &out,
+		dagql.Selector{
+			Field: "withNewFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+				{Name: "contents", Value: dagql.String(contents)},
+				{Name: "permissions", Value: dagql.Int(mode)},
+			},
+		},
+	)
+	return out, err
+}
+
+// workspaceWithDirectoryOverlay overlays src onto dir at the workspace root,
+// effectively merging the diff Directory's contents into the workspace.
+func workspaceWithDirectoryOverlay(
+	ctx context.Context,
+	dag *dagql.Server,
+	dir dagql.ObjectResult[*core.Directory],
+	src dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.Directory], error) {
+	srcID, err := src.ID()
+	if err != nil {
+		return dir, fmt.Errorf("source directory id: %w", err)
+	}
+	var out dagql.ObjectResult[*core.Directory]
+	err = dag.Select(ctx, dir, &out,
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(".")},
+				{Name: "directory", Value: dagql.NewID[*core.Directory](srcID)},
+			},
+		},
+	)
+	return out, err
+}
+
+// conventionalSDKShortName returns the workspace-side short name to use for
+// an SDK install entry, derived from the SDK's canonical source ref. For
+// builtin names (e.g. "go") the input passes through unchanged. For external
+// refs, the last path segment with any @version suffix stripped wins —
+// matching the convention `dagger install` uses when no --name is supplied.
+func conventionalSDKShortName(sdkRef string) string {
+	ref := sdkRef
+	if i := strings.Index(ref, "@"); i >= 0 {
+		ref = ref[:i]
+	}
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		ref = ref[i+1:]
+	}
+	return ref
 }
 
 func workspaceModuleInitSourceSelector(refPath string) dagql.Selector {
