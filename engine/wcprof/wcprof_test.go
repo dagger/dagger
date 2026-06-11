@@ -9,15 +9,18 @@ import (
 	"testing"
 )
 
-// withTestRecorder installs a fresh global recorder for the duration of the
-// test.
+// withTestRecorder installs a fresh global recorder (in engine-global
+// recording mode) for the duration of the test.
 func withTestRecorder(t *testing.T, maxEvents int64) *Recorder {
 	t.Helper()
 	prev := global.Load()
+	prevOn := globalOn.Load()
 	r := NewRecorder(maxEvents)
 	global.Store(r)
+	globalOn.Store(true)
 	t.Cleanup(func() {
 		global.Store(prev)
+		globalOn.Store(prevOn)
 	})
 	return r
 }
@@ -53,6 +56,62 @@ func TestDisabledIsNoop(t *testing.T) {
 	}
 	w.End() // must not panic
 	Link(ctx, LinkKindResult, 0, 0, "", 1)
+}
+
+func TestSessionScoping(t *testing.T) {
+	r := withTestRecorder(t, 0)
+	globalOn.Store(false) // recorder exists, but only marked contexts record
+
+	ctx := context.Background()
+
+	// unmarked context: no recording
+	opCtx, op := BeginOp(ctx, OpKindCall, "Container.withExec", OpOpts{})
+	if op != nil {
+		t.Fatal("expected nil op for unmarked ctx in session mode")
+	}
+	if opCtx != ctx {
+		t.Fatal("expected unchanged ctx for unmarked ctx in session mode")
+	}
+	if w := BeginWait(ctx, 1, WaitReasonLazy); w != nil {
+		t.Fatal("expected nil wait for unmarked ctx in session mode")
+	}
+	if id := RecordOp(ctx, OpKindExecPhase, "exec.x", OpOpts{}, 1, 2, OutcomeOK); id != 0 {
+		t.Fatal("expected RecordOp to no-op for unmarked ctx in session mode")
+	}
+
+	// marked context: records, and the mark propagates through derived
+	// contexts (here via the op ID the returned ctx carries)
+	marked := ContextWithProfiling(ctx)
+	childCtx, op2 := BeginOp(marked, OpKindCall, "Container.withExec", OpOpts{})
+	if op2 == nil {
+		t.Fatal("expected op for marked ctx in session mode")
+	}
+	op2.End(OutcomeOK)
+	_, op3 := BeginOp(childCtx, OpKindCallExec, "Container.withExec", OpOpts{})
+	if op3 == nil {
+		t.Fatal("expected op for ctx derived from a recorded op")
+	}
+	op3.End(OutcomeOK)
+
+	// a context attributed to a recorded op records too (e.g. background
+	// publish work parented under a recorded exec)
+	if _, op4 := BeginOp(ContextWithOpID(ctx, op2.ID()), OpKindInternal, "x", OpOpts{}); op4 == nil {
+		t.Fatal("expected op for ctx carrying a recorded op ID")
+	} else {
+		op4.End(OutcomeOK)
+	}
+
+	// flipping engine-global recording back on records unmarked contexts
+	globalOn.Store(true)
+	if _, op5 := BeginOp(ctx, OpKindCall, "x", OpOpts{}); op5 == nil {
+		t.Fatal("expected op for unmarked ctx in global mode")
+	} else {
+		op5.End(OutcomeOK)
+	}
+
+	if got := len(drainEvents(r)); got != 4 {
+		t.Fatalf("expected exactly 4 recorded ops, got %d", got)
+	}
 }
 
 func TestOpWaitLinkRoundtrip(t *testing.T) {

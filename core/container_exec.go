@@ -590,8 +590,12 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 		lockKeys = append(lockKeys, lockKey)
 	}
 	sort.Strings(lockKeys)
+	profiling := wcprof.Enabled(ctx)
 	for _, lockKey := range lockKeys {
-		profWait := wcprof.BeginWaitIdent(ctx, "cachelock:"+lockKey, wcprof.WaitReasonLock)
+		var profWait *wcprof.Wait
+		if profiling {
+			profWait = wcprof.BeginWaitIdent(ctx, "cachelock:"+lockKey, wcprof.WaitReasonLock)
+		}
 		locker.Lock(lockKey)
 		profWait.End()
 	}
@@ -1734,7 +1738,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			return execMounts[i].Dest < execMounts[j].Dest
 		})
 
-		if wcprof.Active() != nil {
+		if wcprof.Enabled(ctx) {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "withExec.prepareMounts", wcprof.OpOpts{}, profPrepareStartNS, wcprof.NowNS(), wcprof.OutcomeOK)
 		}
 
@@ -2170,7 +2174,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		profApplyStartNS := wcprof.NowNS()
 		applyErr := applyOutputs()
-		if wcprof.Active() != nil {
+		if wcprof.Enabled(ctx) {
 			outcome := wcprof.OutcomeOK
 			if applyErr != nil {
 				outcome = wcprof.OutcomeError

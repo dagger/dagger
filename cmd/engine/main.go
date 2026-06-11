@@ -47,6 +47,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil/cacerts"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/network/netinst"
 	telemetry "github.com/dagger/otel-go"
@@ -160,6 +161,11 @@ func addFlags(app *cli.App) {
 		cli.BoolFlag{
 			Name:  "extra-debug",
 			Usage: "enable extra debug output in logs",
+		},
+		cli.BoolFlag{
+			Name:   "wcprof",
+			Usage:  "enable experimental wall-clock profiling for all work on the engine (also enabled by the _DAGGER_WCPROF env var; toggleable at runtime via the /debug/wcprof/enabled debug endpoint)",
+			Hidden: true,
 		},
 		cli.BoolFlag{
 			Name:  "trace",
@@ -312,6 +318,10 @@ func main() { //nolint:gocyclo
 	app.Action = func(c *cli.Context) error {
 		bklog.G(ctx).Info("starting dagger engine version:", engineVersion)
 		defer cancel(errors.New("main done"))
+
+		if c.GlobalBool("wcprof") {
+			wcprof.EnableGlobal()
+		}
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
 		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.
 		if os.Geteuid() > 0 {

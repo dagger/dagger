@@ -45,10 +45,33 @@ Current hook points:
 
 ## Enabling and dumping
 
-- CLI: `dagger --profile <anything>` sets `ClientMetadata.Profile`, which
-  enables the engine-global recorder for the rest of the engine's lifetime.
-- Engine env: `_DAGGER_WCPROF=1` enables at startup;
-  `_DAGGER_WCPROF_MAX_EVENTS=N` overrides the event cap (default ~4M).
+Two scopes:
+
+- **Per-session**: `dagger --profile <anything>` (hidden flag) sets
+  `ClientMetadata.Profile`. Only that session's work is recorded — including
+  its nested module/SDK clients — via a context mark applied by the session
+  server and propagated to derived contexts. Caveat: if a profiled call joins
+  in-flight identical work spawned by an *unprofiled* session, the join shows
+  up as an unresolved wait (modeled by the analyzer as a fixed delay) since
+  the other session's execution wasn't recorded.
+- **Engine-global**: record everything. Enable at startup with the engine's
+  `--wcprof` flag (hidden) or `_DAGGER_WCPROF=1`, or at runtime by POSTing to
+  the debug endpoint:
+
+  ```bash
+  curl -X POST -d on  http://<engine-debug-addr>/debug/wcprof/enabled
+  curl -X POST -d off http://<engine-debug-addr>/debug/wcprof/enabled
+  curl http://<engine-debug-addr>/debug/wcprof/enabled   # report state
+  ```
+
+  POSTing `off` stops engine-global recording but keeps buffered events
+  dumpable, lets `--profile` sessions keep recording, and lets in-flight
+  recorded ops finish; `on` re-enables on the same recorder (dumps from
+  before and after merge cleanly since the epoch is unchanged).
+
+`_DAGGER_WCPROF_MAX_EVENTS=N` overrides the event cap (default ~4M),
+read when the recorder is first created.
+
 - Dump: `GET http://<engine-debug-addr>/debug/wcprof/dump` streams a JSON
   header line (string tables, open ops) followed by one JSON event per line,
   and flushes the buffer (pass `?flush=0` to keep it).
@@ -88,8 +111,10 @@ makespan is reported against the actual makespan as a drift sanity check.
 
 This is a prototype for validating the approach:
 
-- the recorder is engine-global (any profiled client enables it for
-  everyone); per-session scoping is future work.
+- there is one engine-wide recorder and event buffer; per-session enablement
+  scopes what gets *recorded*, but all enabled sessions share the buffer and
+  dumps (the analyzer can group by client/root, but the dump endpoint has no
+  per-session filter).
 - events are kept until dumped; long sessions can hit the event cap (the
   dump and the analyzer both surface the drop count loudly).
 - leaf I/O ops (git fetch, image pull, filesync) are not yet instrumented;

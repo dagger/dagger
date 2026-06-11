@@ -114,7 +114,7 @@ func (c *Client) Run(
 	)
 
 	var execOp *wcprof.Op
-	if wcprof.Active() != nil {
+	if wcprof.Enabled(ctx) {
 		ident := state.id
 		if execMD != nil && execMD.CallDigest != "" {
 			ident = execMD.CallDigest.String()
@@ -185,7 +185,7 @@ func (c *Client) run(
 		}
 	}()
 
-	profiling := wcprof.Active() != nil
+	profiling := wcprof.Enabled(ctx)
 	for _, f := range setupFuncs {
 		phaseCtx := ctx
 		var phaseOp *wcprof.Op

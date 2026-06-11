@@ -2951,7 +2951,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		evalCtx = ContextWithCall(evalCtx, resultCall)
 	}
 	var lazyOp *wcprof.Op
-	if wcprof.Active() != nil {
+	if wcprof.Enabled(evalCtx) {
 		// the run of this result's lazy evaluation callback; the class ties
 		// the cost back to the call that created the lazy value
 		evalCtx, lazyOp = wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, profCallClass(resultCall), wcprof.OpOpts{
@@ -3509,7 +3509,7 @@ func (c *Cache) getOrInitCall(
 	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
 ) (AnyResult, error) {
-	if wcprof.Active() == nil || req == nil || req.ResultCall == nil {
+	if !wcprof.Enabled(ctx) || req == nil || req.ResultCall == nil {
 		return c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, nil)
 	}
 	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
@@ -3667,7 +3667,7 @@ func (c *Cache) getOrInitCallInner(
 	callCtx := context.WithValue(ctx, cacheContextKey{callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
 	var execOp *wcprof.Op
-	if wcprof.Active() != nil {
+	if wcprof.Enabled(ctx) {
 		// the shared execution of this call's resolver; all singleflighted
 		// callers wait on this op
 		callCtx, execOp = wcprof.BeginOp(callCtx, wcprof.OpKindCallExec, profCallClass(req.ResultCall), wcprof.OpOpts{
@@ -3865,7 +3865,7 @@ func (c *Cache) wait(
 	)
 
 	var profWait *wcprof.Wait
-	if wcprof.Active() != nil {
+	if wcprof.Enabled(ctx) {
 		reason := wcprof.WaitReasonCallExec
 		if joined {
 			reason = wcprof.WaitReasonSingleflight
@@ -3924,9 +3924,10 @@ func (c *Cache) wait(
 			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
 		}()
 		var pubOp *wcprof.Op
-		if wcprof.Active() != nil {
+		if oc.profOpID != 0 {
 			// result publication (indexing, dependency attachment) parented
-			// under the shared execution op
+			// under the shared execution op; recorded iff the execution was
+			// (the op ID carried by the context opts this into recording)
 			_, pubOp = wcprof.BeginOp(
 				wcprof.ContextWithOpID(context.Background(), oc.profOpID),
 				wcprof.OpKindInternal, "dagql.publishResult", wcprof.OpOpts{},

@@ -168,32 +168,8 @@ func newExecState(
 
 type executorSetupFunc func(context.Context, *execState) error
 
-// wcprofInjectNetNSDelayFile is a wcprof validation aid: when this file
-// exists in the engine container and profiling is enabled, setupNetwork
-// sleeps for the number of milliseconds it contains before doing real work.
-// Used to verify the offline analyzer detects an injected per-exec
-// bottleneck (the original motivating case was un-pooled CNI setup).
-const wcprofInjectNetNSDelayFile = "/tmp/wcprof-inject-netns-delay-ms"
-
-func wcprofInjectNetNSDelay() {
-	if wcprof.Active() == nil {
-		return
-	}
-	data, err := os.ReadFile(wcprofInjectNetNSDelayFile)
-	if err != nil {
-		return
-	}
-	ms, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || ms <= 0 {
-		return
-	}
-	time.Sleep(time.Duration(ms) * time.Millisecond)
-}
-
 //nolint:gocyclo
 func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
-	wcprofInjectNetNSDelay()
-
 	provider, ok := c.NetworkProviders[state.procInfo.Meta.NetMode]
 	if !ok {
 		return fmt.Errorf("unknown network mode %s", state.procInfo.Meta.NetMode)
@@ -1296,7 +1272,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	startedCallback := func() {
 		state.startedOnce.Do(func() {
 			trace.SpanFromContext(ctx).AddEvent("Container started")
-			if wcprof.Active() != nil {
+			if wcprof.Enabled(ctx) {
 				profStartedNS.Store(wcprof.NowNS())
 			}
 			if state.startedCh != nil {
@@ -1420,7 +1396,7 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 
 	runErr := c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall)
-	if wcprof.Active() != nil {
+	if wcprof.Enabled(ctx) {
 		// split engine overhead (creating/starting the container) from the
 		// user's process runtime
 		endNS := wcprof.NowNS()

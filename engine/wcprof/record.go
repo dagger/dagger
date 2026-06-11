@@ -6,6 +6,8 @@ import (
 
 type opCtxKey struct{}
 
+type profCtxKey struct{}
+
 // CurrentOpID returns the profiling op ID carried by ctx, or 0.
 func CurrentOpID(ctx context.Context) uint64 {
 	id, _ := ctx.Value(opCtxKey{}).(uint64)
@@ -20,6 +22,42 @@ func ContextWithOpID(ctx context.Context, opID uint64) context.Context {
 		return ctx
 	}
 	return context.WithValue(ctx, opCtxKey{}, opID)
+}
+
+// ContextWithProfiling marks ctx (and any context derived from it) for
+// recording even when engine-global recording is off. The session server
+// applies this to contexts of sessions that opted into profiling.
+func ContextWithProfiling(ctx context.Context) context.Context {
+	return context.WithValue(ctx, profCtxKey{}, true)
+}
+
+// Enabled reports whether work running under ctx should be recorded. Call
+// sites use it to skip computing op metadata (class/ident strings) when
+// profiling is off. When profiling has never been enabled this is a single
+// atomic load + nil check.
+func Enabled(ctx context.Context) bool {
+	return recorderFor(ctx) != nil
+}
+
+// recorderFor returns the recorder if work under ctx should be recorded:
+// either engine-global recording is on, or ctx belongs to a profiled flow
+// (it carries a recorded op as its current op, or a per-session profiling
+// mark from ContextWithProfiling).
+func recorderFor(ctx context.Context) *Recorder {
+	r := global.Load()
+	if r == nil {
+		return nil
+	}
+	if globalOn.Load() {
+		return r
+	}
+	if CurrentOpID(ctx) != 0 {
+		return r
+	}
+	if on, _ := ctx.Value(profCtxKey{}).(bool); on {
+		return r
+	}
+	return nil
 }
 
 // Op is a handle for an in-progress operation. A nil *Op is valid and all
@@ -53,7 +91,7 @@ type OpOpts struct {
 // it), and a handle to end it. When profiling is disabled it returns ctx
 // unchanged and a nil handle.
 func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (context.Context, *Op) {
-	r := Active()
+	r := recorderFor(ctx)
 	if r == nil {
 		return ctx, nil
 	}
@@ -182,7 +220,7 @@ func BeginWaitIdent(ctx context.Context, ident string, reason WaitReason) *Wait 
 }
 
 func beginWait(ctx context.Context, targetOpID uint64, ident string, reason WaitReason) *Wait {
-	r := Active()
+	r := recorderFor(ctx)
 	if r == nil {
 		return nil
 	}
@@ -238,7 +276,7 @@ func NowNS() int64 {
 // callbacks where holding an *Op handle would race. Returns the op ID, or 0
 // when profiling is disabled.
 func RecordOp(ctx context.Context, kind OpKind, class string, opts OpOpts, startNS, endNS int64, outcome Outcome) uint64 {
-	r := Active()
+	r := recorderFor(ctx)
 	if r == nil {
 		return 0
 	}
@@ -263,7 +301,7 @@ func RecordOp(ctx context.Context, kind OpKind, class string, opts OpOpts, start
 // Link records a non-blocking correlation from fromOpID (0 means the current
 // op in ctx) to an op, an interned ident, and/or a dagql result ID.
 func Link(ctx context.Context, kind LinkKind, fromOpID, targetOpID uint64, ident string, resultID uint64) {
-	r := Active()
+	r := recorderFor(ctx)
 	if r == nil {
 		return
 	}

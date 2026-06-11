@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"expvar"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -81,10 +83,52 @@ func setupDebugHandlers(addr string, eng *server.Server) error {
 			logrus.WithError(err).Warn("failed streaming dagql cache debug snapshot")
 		}
 	}))
+	// Engine-global profiling toggle: GET reports state, POST "on"/"off"
+	// (or any strconv.ParseBool value) flips it. Disabling keeps buffered
+	// events dumpable and does not stop sessions that opted in via --profile.
+	m.Handle("/debug/wcprof/enabled", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost {
+			body, err := io.ReadAll(io.LimitReader(req.Body, 64))
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusBadRequest)
+				return
+			}
+			val := strings.TrimSpace(string(body))
+			if val == "" {
+				val = req.URL.Query().Get("v")
+			}
+			var on bool
+			switch strings.ToLower(val) {
+			case "on":
+				on = true
+			case "off":
+				on = false
+			default:
+				var err error
+				on, err = strconv.ParseBool(val)
+				if err != nil {
+					http.Error(rw, fmt.Sprintf("POST body must be on/off or a boolean, got %q", val), http.StatusBadRequest)
+					return
+				}
+			}
+			if on {
+				wcprof.EnableGlobal()
+				logrus.Info("wcprof global recording enabled via debug endpoint")
+			} else {
+				wcprof.DisableGlobal()
+				logrus.Info("wcprof global recording disabled via debug endpoint")
+			}
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(rw).Encode(map[string]bool{ //nolint:errcheck,errchkjson
+			"global_enabled":  wcprof.GloballyEnabled(),
+			"recorder_active": wcprof.Active() != nil,
+		})
+	}))
 	m.Handle("/debug/wcprof/dump", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rec := wcprof.Active()
 		if rec == nil {
-			http.Error(rw, "wcprof not enabled (connect a client with --profile or set _DAGGER_WCPROF=1)", http.StatusServiceUnavailable)
+			http.Error(rw, "wcprof was never enabled (POST 'on' to /debug/wcprof/enabled, connect a client with --profile, start the engine with --wcprof, or set _DAGGER_WCPROF=1)", http.StatusServiceUnavailable)
 			return
 		}
 		// flush by default; pass ?flush=0 to keep events buffered

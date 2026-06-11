@@ -970,7 +970,7 @@ func (ss *Services) startWithKey(
 			suppress(running)
 			svcCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 			var profOp *wcprof.Op
-			if wcprof.Active() != nil {
+			if wcprof.Enabled(svcCtx) {
 				svcCtx, profOp = wcprof.BeginOp(svcCtx, wcprof.OpKindServiceStart, "service.start", wcprof.OpOpts{
 					Ident: key.Digest.String(),
 				})

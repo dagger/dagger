@@ -8,10 +8,20 @@
 // reconstruction, counterfactual simulation) happens offline after dumping
 // the buffer via the engine debug endpoint.
 //
-// Recording is disabled until EnsureEnabled is called (triggered by a client
-// connecting with ClientMetadata.Profile set, or the
-// _DAGGER_WCPROF environment variable on the engine). When disabled, all
-// recording calls are nil-checks that compile to a few instructions.
+// Recording can be enabled two ways:
+//
+//   - Engine-global: the _DAGGER_WCPROF environment variable, the engine's
+//     --wcprof flag, or POSTing "on" to the /debug/wcprof/enabled endpoint.
+//     All work on the engine is recorded until "off" is POSTed to the same
+//     endpoint.
+//   - Per-session: a client connecting with ClientMetadata.Profile set (the
+//     hidden --profile CLI flag). Only work attributable to that session
+//     (including its nested module/SDK clients) is recorded: the session
+//     server marks the session's contexts via ContextWithProfiling, and the
+//     mark propagates to derived contexts.
+//
+// When profiling has never been enabled, all recording calls are a single
+// atomic load + nil check.
 package wcprof
 
 import (
@@ -339,24 +349,55 @@ func (r *Recorder) append(sh *shard, ev Event) {
 }
 
 //
-// global enablement
+// enablement
 //
 
-var global atomic.Pointer[Recorder]
+var (
+	// global is the recorder, created the first time any profiling is enabled
+	// and retained from then on (so buffered events survive a disable and
+	// periodic-drain dumps from one engine run always share an epoch).
+	global atomic.Pointer[Recorder]
+	// globalOn means record all work on the engine, regardless of whether
+	// the context is marked for per-session profiling.
+	globalOn atomic.Bool
+)
 
 func init() {
 	if os.Getenv("_DAGGER_WCPROF") != "" {
-		EnsureEnabled()
+		EnableGlobal()
 	}
 }
 
-// Active returns the global recorder, or nil when profiling is disabled.
+// Active returns the recorder, or nil if profiling was never enabled. The
+// recorder outlives DisableGlobal so buffered events can still be dumped;
+// use GloballyEnabled/Enabled to ask whether work is being recorded.
 func Active() *Recorder {
 	return global.Load()
 }
 
-// EnsureEnabled enables the global recorder if it is not already enabled.
-func EnsureEnabled() {
+// GloballyEnabled reports whether engine-global recording is on.
+func GloballyEnabled() bool {
+	return globalOn.Load()
+}
+
+// EnableGlobal turns on recording of all work on the engine.
+func EnableGlobal() {
+	EnsureRecorder()
+	globalOn.Store(true)
+}
+
+// DisableGlobal turns off engine-global recording. The recorder and its
+// buffered events are retained for dumping, sessions that explicitly enabled
+// profiling keep recording, and already-recording flows (contexts carrying a
+// recorded op) run to completion.
+func DisableGlobal() {
+	globalOn.Store(false)
+}
+
+// EnsureRecorder creates the recorder if it does not exist yet, without
+// turning on engine-global recording. Used when a session opts into
+// profiling.
+func EnsureRecorder() {
 	if global.Load() != nil {
 		return
 	}

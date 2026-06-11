@@ -62,6 +62,12 @@ type daggerSession struct {
 	sessionID          string
 	mainClientCallerID string
 
+	// wcprofEnabled means this session opted into wall-clock profiling
+	// (ClientMetadata.Profile); work for all its clients (including nested
+	// module/SDK clients) is recorded even when engine-global recording is
+	// off.
+	wcprofEnabled bool
+
 	state   daggerSessionState
 	stateMu sync.RWMutex
 
@@ -324,6 +330,7 @@ func (srv *Server) initializeDaggerSession(
 
 	sess.sessionID = clientMetadata.SessionID
 	sess.mainClientCallerID = clientMetadata.ClientID
+	sess.wcprofEnabled = clientMetadata.Profile
 	sess.clients = map[string]*daggerClient{}
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
@@ -1351,11 +1358,17 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 }
 
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
-	if md := client.clientMetadata; md != nil && md.Profile {
-		wcprof.EnsureEnabled()
-	}
-
 	sess := client.daggerSession
+
+	// Profiling is recorded for this request if the engine is recording
+	// globally, or this session opted in (in which case contexts are marked
+	// so only this session's work records).
+	profiledSession := sess.wcprofEnabled ||
+		(client.clientMetadata != nil && client.clientMetadata.Profile)
+	if profiledSession {
+		wcprof.EnsureRecorder()
+	}
+	profiling := profiledSession || wcprof.GloballyEnabled()
 	sess.dagqlMu.Lock()
 	if sess.dagqlClosing {
 		sess.dagqlMu.Unlock()
@@ -1425,9 +1438,11 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
-	profiling := wcprof.Active() != nil
 	var profServeOp *wcprof.Op
 	if profiling {
+		if profiledSession {
+			ctx = wcprof.ContextWithProfiling(ctx)
+		}
 		ctx, profServeOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
 			ClientID: client.clientID,
 		})

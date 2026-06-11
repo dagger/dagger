@@ -9,7 +9,7 @@ import (
 )
 
 // Wall-clock profiling (wcprof) hooks for the dagql cache. These are no-ops
-// unless profiling is enabled; call sites gate on wcprof.Active() before
+// unless profiling is enabled; call sites gate on wcprof.Enabled(ctx) before
 // computing class strings so the disabled path stays an atomic load.
 
 // profCallClass derives the operation class for a call frame, e.g.
