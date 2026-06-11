@@ -123,6 +123,12 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// always include revealed spans and their parents
 			return true
 		}
+		if span.HasProgress() || len(span.ProgressSpans.Order) > 0 {
+			// always include progress-carrying spans and their ancestor
+			// chain, so remote frontends can place them in the tree even
+			// when they're deep inside unsubscribed subtrees
+			return true
+		}
 		if span.Passthrough {
 			// include any passthrough spans to ensure failures are collected.
 			// the POST /query span for example never fails on its own.

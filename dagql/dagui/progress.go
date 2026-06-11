@@ -103,6 +103,15 @@ func (db *DB) ingestProgress(record sdklog.Record) bool {
 	if !spanID.IsValid() {
 		return true
 	}
+	db.IngestProgress(spanID, item, current, total, unit)
+	return true
+}
+
+// IngestProgress folds one streaming-progress state (latest record wins,
+// keyed by span and item) into the target span. It's the entrypoint for
+// progress sourced outside the OTel log stream, e.g. aggregated from storage
+// by a server.
+func (db *DB) IngestProgress(spanID SpanID, item string, current, total int64, unit string) {
 	span := db.initSpan(spanID)
 	if span.Progress == nil {
 		span.Progress = &SpanProgress{}
@@ -110,13 +119,16 @@ func (db *DB) ingestProgress(record sdklog.Record) bool {
 	span.Progress.update(item, current, total, unit)
 
 	// Surface the progress on ancestors so collapsed rows (or rows whose
-	// progress-carrying descendants are hidden) can render it.
+	// progress-carrying descendants are hidden) can render it. A changed
+	// membership marks the ancestor updated so remote frontends receive the
+	// chain linking the progress span into the tree.
 	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
-		parent.ProgressSpans.Add(span)
+		if parent.ProgressSpans.Add(span) {
+			db.update(parent)
+		}
 	}
 
 	db.update(span)
-	return true
 }
 
 // propagateProgressSpans registers the span's progress sources - itself and
@@ -134,7 +146,9 @@ func (db *DB) propagateProgressSpans(span *Span) {
 	}
 	for parent := span.ParentSpan; parent != nil; parent = parent.ParentSpan {
 		for _, src := range sources {
-			parent.ProgressSpans.Add(src)
+			if parent.ProgressSpans.Add(src) {
+				db.update(parent)
+			}
 		}
 	}
 }
