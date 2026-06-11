@@ -27,7 +27,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "91b6b976cb930e2bce5401e5d99d955253edeb71" // v0.21.4
+	goSDKLibVersion = "336f7b79a6df9834f16d8b4d105e05b9b1a39981" // v0.21.6
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
