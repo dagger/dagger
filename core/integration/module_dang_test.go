@@ -329,6 +329,25 @@ func (DangSuite) TestVersionedSyntax(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (DangSuite) TestNullableSDKInputObjectFields(_ context.Context, t *testctx.T) {
+	for _, call := range []string{
+		"all-null",
+		"string-populated",
+		"file-populated",
+		"secret-populated",
+	} {
+		t.Run(call, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := dangModule(t, c, "test-nullable-sdk-input").
+				With(daggerCall(call)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ok", strings.TrimSpace(out))
+		})
+	}
+}
+
 func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/dang", moduleName))
