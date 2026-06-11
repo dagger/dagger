@@ -184,6 +184,34 @@ type ErrResponse struct {
 	Message string `json:"message"`
 }
 
+// EngineProvisionError is returned when the cloud API rejects an engine
+// provisioning request. It carries the HTTP status code so callers can
+// decide whether the request is worth retrying.
+type EngineProvisionError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *EngineProvisionError) Error() string {
+	return fmt.Sprintf("failed to provision a remote Engine: %s", e.Message)
+}
+
+// Retryable reports whether the provisioning request may succeed if retried.
+// The API signals transient capacity exhaustion with 429 (e.g. a burst of
+// concurrent scale-out requests racing for slots), and gateway errors are
+// transient by nature.
+func (e *EngineProvisionError) Retryable() bool {
+	switch e.StatusCode {
+	case http.StatusTooManyRequests,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, error) {
 	// Remote Engine version defaults to the CLI version - this guarantees the best compatibility
 	tag := engine.Tag
@@ -228,9 +256,12 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 		errResponse := &ErrResponse{}
 		err = body.Decode(errResponse)
 		if err != nil {
-			return nil, fmt.Errorf("response body is not valid JSON: %w", err)
+			errResponse.Message = fmt.Sprintf("unexpected response (status %d)", resp.StatusCode)
 		}
-		return nil, fmt.Errorf("failed to provision a remote Engine: %s", errResponse.Message)
+		return nil, &EngineProvisionError{
+			StatusCode: resp.StatusCode,
+			Message:    errResponse.Message,
+		}
 	}
 
 	err = body.Decode(engineSpec)

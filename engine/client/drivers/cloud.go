@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -96,7 +98,7 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 		execCmd = opts.ExecCmd
 	}
 
-	engineSpec, err := client.Engine(ctx, cloud.EngineRequest{
+	engineSpec, err := provisionEngine(ctx, client, cloud.EngineRequest{
 		Module:   module,
 		Function: function,
 		ExecCmd:  execCmd,
@@ -110,6 +112,52 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 	}
 
 	return &DaggerCloudConnector{EngineSpec: *engineSpec}, nil
+}
+
+// maxProvisionServerErrorRetries bounds retries on 500s, which may be
+// transient (e.g. cold-start races provisioning the org's very first
+// engines) but can also be persistent failures not worth hammering on.
+const maxProvisionServerErrorRetries = 3
+
+// provisionEngine requests a remote engine from the cloud API, retrying
+// while the API reports transient conditions. Capacity exhaustion (429) is
+// expected when many concurrent requests race for slots — e.g. a large
+// `dagger check` scale-out — and is retried for as long as ctx allows, since
+// slots free up as other clients finish. The overall retry budget is bounded
+// by ctx, which the caller caps (10 minutes by default).
+func provisionEngine(ctx context.Context, client *cloud.Client, req cloud.EngineRequest) (*cloud.EngineSpec, error) {
+	backoff := time.Second
+	const maxBackoff = 15 * time.Second
+	serverErrRetries := 0
+	for {
+		spec, err := client.Engine(ctx, req)
+		if err == nil {
+			return spec, nil
+		}
+
+		var provisionErr *cloud.EngineProvisionError
+		if !errors.As(err, &provisionErr) {
+			return nil, err
+		}
+		retryable := provisionErr.Retryable()
+		if !retryable && provisionErr.StatusCode == http.StatusInternalServerError &&
+			serverErrRetries < maxProvisionServerErrorRetries {
+			serverErrRetries++
+			retryable = true
+		}
+		if !retryable {
+			return nil, err
+		}
+
+		// full jitter up to half the backoff to spread out racing clients
+		wait := backoff + rand.N(backoff/2) //nolint:gosec
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("%w (gave up retrying: %w)", err, context.Cause(ctx))
+		case <-time.After(wait):
+		}
+		backoff = min(backoff*2, maxBackoff)
+	}
 }
 
 func (d *daggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {
