@@ -711,7 +711,13 @@ func (srv *Server) initializeDaggerClient(
 	// time they attach below.
 	sess := client.daggerSession
 	if md := client.clientMetadata; client.clientID == sess.mainClientCallerID && md.CloudAuth != nil {
-		sess.cloudSpans, sess.cloudLogs, sess.cloudMetrics, err = enginetel.NewCloudExporters(ctx, md.CloudAuth, refreshAndPersistCredentials, md.CloudURL)
+		refreshCtx := cloudRefreshContext(ctx, client)
+		tokenRefresh := func(context.Context) (*oauth2.Token, error) {
+			refreshCtx, cancel := context.WithTimeout(refreshCtx, cloudTokenRefreshTimeout)
+			defer cancel()
+			return refreshAndPersistCredentials(refreshCtx, srv, md.CredentialsPath, md.ClientID)
+		}
+		sess.cloudSpans, sess.cloudLogs, sess.cloudMetrics, err = enginetel.NewCloudExporters(ctx, md.CloudAuth, tokenRefresh, md.CloudURL)
 		if err != nil {
 			slog.Warn("failed to configure cloud exporters for session", "error", err)
 		}
@@ -818,32 +824,23 @@ func (client *daggerClient) resolveHostServiceCaller(
 	return client.getClientCaller(ctx, id)
 }
 
-// cloudRefreshContext is introduced with the regression tests so they compile.
-// The follow-up OAuth-refresh fix populates it with the session state exporters
-// need when OTel calls them from background goroutines.
-func cloudRefreshContext(ctx context.Context, _ *daggerClient) context.Context {
-	return ctx
+const cloudTokenRefreshTimeout = 5 * time.Second
+
+func cloudRefreshContext(ctx context.Context, client *daggerClient) context.Context {
+	return core.ContextWithQuery(
+		engine.ContextWithClientMetadata(context.WithoutCancel(ctx), client.clientMetadata),
+		client.dagqlRoot,
+	)
 }
 
-func refreshAndPersistCredentials(ctx context.Context) (*oauth2.Token, error) {
-	cPath := ""
-	clientID := ""
-	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		cPath = md.CredentialsPath
-		clientID = md.ClientID
-	}
-	if cPath == "" || clientID == "" {
-		return nil, fmt.Errorf("no credentials path or client id available: %s - %s", cPath, clientID)
-	}
-
-	sv, ok := ctx.Value(serverCtxKey{}).(*Server)
-	if !ok {
-		return nil, fmt.Errorf("get server return false")
+func refreshAndPersistCredentials(ctx context.Context, srv *Server, credentialsPath, sourceClientID string) (*oauth2.Token, error) {
+	if credentialsPath == "" || sourceClientID == "" {
+		return nil, fmt.Errorf("no credentials path or client id available")
 	}
 
 	tokenData, err := (&core.Secret{
-		URIVal:         "file://" + cPath,
-		SourceClientID: clientID,
+		URIVal:         "file://" + credentialsPath,
+		SourceClientID: sourceClientID,
 	}).Plaintext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get secret: %w", err)
@@ -866,14 +863,14 @@ func refreshAndPersistCredentials(ctx context.Context) (*oauth2.Token, error) {
 		return nil, fmt.Errorf("marshal token: %w", err)
 	}
 
-	engine, err := sv.Engine(ctx)
+	engine, err := srv.Engine(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get buildkit client: %w", err)
 	}
-	if err := engine.IOReaderExport(ctx, bytes.NewReader(bt), cPath, 0o600); err != nil {
+	if err := engine.IOReaderExport(ctx, bytes.NewReader(bt), credentialsPath, 0o600); err != nil {
 		return nil, fmt.Errorf("write config: %w", err)
 	}
-	slog.Info("refreshed cloud credentials", "credentialsPath", cPath)
+	slog.Info("refreshed cloud credentials", "credentialsPath", credentialsPath)
 	return newToken, nil
 }
 
@@ -1709,9 +1706,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 
-		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host)
-		sess.beginClosing()
-
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
@@ -1738,6 +1732,12 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	if err := sess.FlushTelemetry(ctx); err != nil {
 		slog.Error("failed to flush telemetry", "error", err)
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush session telemetry: %w", err))
+	}
+
+	if client.clientID == sess.mainClientCallerID {
+		// This must be done after lockfile and telemetry flushing, since both
+		// can use attachables to write data back to the client host.
+		sess.beginClosing()
 	}
 
 	client.closeShutdownOnce.Do(func() {
