@@ -597,6 +597,39 @@ type Test struct{}
 	require.NotContains(t, out, "topsecret")
 }
 
+func (WorkspaceCompatSuite) TestConstructorExplicitArgKeepsUserDefaults(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := pythonModInit(t, c, `
+import dagger
+from dagger import function, object_type
+
+
+@object_type
+class Test:
+    foo: str = "bar"
+    optional_secret: dagger.Secret | None = None
+
+    @function
+    async def reveal(self) -> str:
+        if self.optional_secret is None:
+            return "no secret"
+        return await self.optional_secret.plaintext()
+`).
+		WithNewFile(".env", "Test_OptionalSecret=cmd://echo -n shhh")
+
+	t.Run("without constructor flag", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCall("reveal")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "shhh", out)
+	})
+
+	t.Run("with constructor flag", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCall("--foo", "baz", "reveal")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "shhh", out)
+	})
+}
+
 func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nestedDaggerContainer(t, c, "go", "defaults/superconstructor").
