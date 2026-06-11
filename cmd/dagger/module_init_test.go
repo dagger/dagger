@@ -83,19 +83,6 @@ func TestLoadSDKRegistry(t *testing.T) {
 	}
 }
 
-func TestConventionalSDKModuleName(t *testing.T) {
-	for _, tt := range []struct {
-		ref  string
-		want string
-	}{
-		{"github.com/dagger/go-sdk", "go-sdk"},
-		{"github.com/dagger/python-sdk", "python-sdk"},
-		{"github.com/dagger/go-sdk@v1.2.3", "go-sdk"},
-		{"go-sdk", "go-sdk"},
-		{"github.com/myorg/sub/path/go-sdk", "go-sdk"},
-	} {
-		t.Run(tt.ref, func(t *testing.T) {
-			require.Equal(t, tt.want, conventionalSDKModuleName(tt.ref))
-		})
-	}
-}
+// Conventional SDK short-name derivation is now in core/workspace as
+// ConventionalSDKShortName (shared with the engine's migration code). Tests
+// for it live there.
