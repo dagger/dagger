@@ -3939,6 +3939,14 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
 			c.egraphMu.Lock()
 			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix())
+			// Take the publication handoff hold inside the same critical
+			// section as the canonical pick: the adopted result may be owned
+			// only by another session, and a concurrent session release must
+			// not be able to collect it (running its OnRelease) before this
+			// call re-acquires the lock and its waiters claim session
+			// ownership.
+			c.incrementIncomingOwnershipLocked(ctx, oc.res)
+			oc.handoffHoldActive = true
 			c.egraphMu.Unlock()
 			if objVal, ok := oc.val.(AnyObjectResult); ok {
 				oc.res.setObjClass(objVal.ObjectType())
@@ -4213,8 +4221,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if oc.isPersistable {
 		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds), false)
 	}
-	c.incrementIncomingOwnershipLocked(ctx, oc.res)
-	oc.handoffHoldActive = true
+	// The cache-backed path already took the handoff hold when it adopted the
+	// canonical result above; only fresh results take it here.
+	if !oc.handoffHoldActive {
+		c.incrementIncomingOwnershipLocked(ctx, oc.res)
+		oc.handoffHoldActive = true
+	}
 	if !resWasCacheBacked {
 		oc.res.attachDepsMu.Lock()
 		oc.res.attachDepsWaitCh = make(chan struct{})
