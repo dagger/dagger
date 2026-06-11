@@ -845,7 +845,7 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Create or update a binding of type Volume in the environment
      */
-    public function withVolumeInput(string $name, VolumeId|Volume $value, string $description): Env
+    public function withVolumeInput(string $name, Volume $value, string $description): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolumeInput');
         $innerQueryBuilder->setArgument('name', $name);

@@ -1063,7 +1063,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      */
     public function withVolumeMount(
         string $path,
-        VolumeId|Volume $volume,
+        Volume $volume,
         ?bool $readonly = false,
         ?bool $expand = false,
     ): Container {

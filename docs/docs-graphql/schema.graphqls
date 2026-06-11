@@ -179,23 +179,11 @@ type Binding implements Node {
   """Retrieve the binding value, as type UpGroup"""
   asUpGroup: UpGroup!
 
+  """Retrieve the binding value, as type Volume"""
+  asVolume: Volume!
+
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
-
-  """Retrieve the binding value, as type WorkspaceGit"""
-  asWorkspaceGit: WorkspaceGit!
-
-  """Retrieve the binding value, as type WorkspaceMigration"""
-  asWorkspaceMigration: WorkspaceMigration!
-
-  """Retrieve the binding value, as type WorkspaceMigrationStep"""
-  asWorkspaceMigrationStep: WorkspaceMigrationStep!
-
-  """Retrieve the binding value, as type WorkspaceModule"""
-  asWorkspaceModule: WorkspaceModule!
-
-  """Retrieve the binding value, as type WorkspaceModuleSetting"""
-  asWorkspaceModuleSetting: WorkspaceModuleSetting!
 
   """Returns the digest of the binding value"""
   digest: String!
@@ -539,15 +527,13 @@ type Container implements Exportable & Node & Syncer {
   """Return the container's OCI entrypoint."""
   entrypoint: [String!]!
 
-  """Retrieves the value of the specified persistent environment variable."""
+  """Retrieves the value of the specified environment variable."""
   envVariable(
     """The name of the environment variable to retrieve (e.g., "PATH")."""
     name: String!
   ): String
 
-  """
-  Retrieves the list of persistent environment variables configured on the container.
-  """
+  """Retrieves the list of environment variables passed to commands."""
   envVariables: [EnvVariable!]!
 
   """check if a file or directory exists"""
@@ -562,12 +548,6 @@ type Container implements Exportable & Node & Syncer {
 
     """If specified, do not follow symlinks."""
     doNotFollowSymlinks: Boolean = false
-
-    """
-    Replace "${VAR}" or "$VAR" in the value of path according to the current
-    environment variables defined in the container (e.g. "/$VAR/foo").
-    """
-    expand: Boolean = false
   ): Boolean!
 
   """
@@ -707,25 +687,6 @@ type Container implements Exportable & Node & Syncer {
     Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
     """
     address: String!
-
-    """
-    Service to use as the registry endpoint for the image address.
-
-    The service will be started only for this pull.
-    """
-    registryService: ID @expectedType(name: "Service")
-
-    """
-    Protocol to use for registry communication.
-
-    Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
-    """
-    protocol: RegistryProtocol
-
-    """
-    Allow HTTPS registry communication without verifying the server certificate.
-    """
-    insecureSkipTLSVerify: Boolean = false
   ): Container!
 
   """A unique identifier for this Container."""
@@ -800,25 +761,6 @@ type Container implements Exportable & Node & Syncer {
     "Docker" may be needed for older registries without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
-
-    """
-    Service to use as the registry endpoint for the image address.
-
-    The service will be started only for this push.
-    """
-    registryService: ID @expectedType(name: "Service")
-
-    """
-    Protocol to use for registry communication.
-
-    Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
-    """
-    protocol: RegistryProtocol
-
-    """
-    Allow HTTPS registry communication without verifying the server certificate.
-    """
-    insecureSkipTLSVerify: Boolean = false
   ): String!
 
   """
@@ -1349,6 +1291,28 @@ type Container implements Exportable & Node & Syncer {
   ): Container!
 
   """
+  Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+  """
+  withMountedHostDirectory(
+    """
+    Location of the mounted directory inside the container (e.g., "/mnt/host").
+    """
+    path: String!
+
+    """Absolute path on the engine host to bind-mount."""
+    source: String!
+
+    """Mount the host directory read-only."""
+    readonly: Boolean = false
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   withMountedSecret(
@@ -1538,17 +1502,23 @@ type Container implements Exportable & Node & Syncer {
   ): Container!
 
   """
-  Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
-
-  This is an expert-only escape hatch. If a volatile value affects observable
-  exec results, stale cached results may be reused.
+  Retrieves this container plus an engine-managed volume bind-mounted at the given path.
   """
-  withVolatileVariable(
-    """Name of the volatile variable (e.g., "CI_RUN_ID")."""
-    name: String!
+  withVolumeMount(
+    """Location where the volume will be mounted (e.g., "/mnt/volume")."""
+    path: String!
 
-    """Value of the volatile variable."""
-    value: String!
+    """Identifier of the volume to mount."""
+    volume: ID! @expectedType(name: "Volume")
+
+    """Mount the volume read-only."""
+    readonly: Boolean = false
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): Container!
 
   """Change the container's working directory. Like WORKDIR in Dockerfile."""
@@ -1700,14 +1670,6 @@ type Container implements Exportable & Node & Syncer {
   withoutUser: Container!
 
   """
-  Retrieves this container minus the given volatile environment variable.
-  """
-  withoutVolatileVariable(
-    """The name of the volatile environment variable (e.g., "CI_RUN_ID")."""
-    name: String!
-  ): Container!
-
-  """
   Unset the container's working directory.
 
   Should default to "/".
@@ -1839,14 +1801,6 @@ type Directory implements Exportable & Node & Syncer {
     """
     sourceRootPath: String = "."
   ): ModuleSource!
-
-  """Creates a synthetic workspace from this directory."""
-  asWorkspace(
-    """
-    Current working directory inside the workspace root. Defaults to the workspace root.
-    """
-    cwd: String = "/"
-  ): Workspace! @experimental(reason: "Synthetic workspaces currently support filesystem APIs only.")
 
   """
   Return the difference between this directory and another directory, typically an older snapshot.
@@ -3141,33 +3095,31 @@ type Env implements Node {
     description: String!
   ): Env!
 
-  """Returns a new environment with the provided workspace"""
-  withWorkspace(
-    """The directory to set as the host filesystem"""
-    workspace: ID! @expectedType(name: "Directory")
-  ): Env!
-
-  """Create or update a binding of type WorkspaceGit in the environment"""
-  withWorkspaceGitInput(
+  """Create or update a binding of type Volume in the environment"""
+  withVolumeInput(
     """The name of the binding"""
     name: String!
 
-    """The WorkspaceGit value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceGit")
+    """The Volume value to assign to the binding"""
+    value: ID! @expectedType(name: "Volume")
 
     """The purpose of the input"""
     description: String!
   ): Env!
 
-  """
-  Declare a desired WorkspaceGit output to be assigned in the environment
-  """
-  withWorkspaceGitOutput(
+  """Declare a desired Volume output to be assigned in the environment"""
+  withVolumeOutput(
     """The name of the binding"""
     name: String!
 
     """A description of the desired value of the binding"""
     description: String!
+  ): Env!
+
+  """Returns a new environment with the provided workspace"""
+  withWorkspace(
+    """The directory to set as the host filesystem"""
+    workspace: ID! @expectedType(name: "Directory")
   ): Env!
 
   """Create or update a binding of type Workspace in the environment"""
@@ -3179,104 +3131,6 @@ type Env implements Node {
     value: ID! @expectedType(name: "Workspace")
 
     """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Create or update a binding of type WorkspaceMigration in the environment
-  """
-  withWorkspaceMigrationInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceMigration value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceMigration")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceMigration output to be assigned in the environment
-  """
-  withWorkspaceMigrationOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """
-  Create or update a binding of type WorkspaceMigrationStep in the environment
-  """
-  withWorkspaceMigrationStepInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceMigrationStep value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceMigrationStep")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceMigrationStep output to be assigned in the environment
-  """
-  withWorkspaceMigrationStepOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type WorkspaceModule in the environment"""
-  withWorkspaceModuleInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceModule value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceModule")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceModule output to be assigned in the environment
-  """
-  withWorkspaceModuleOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """
-  Create or update a binding of type WorkspaceModuleSetting in the environment
-  """
-  withWorkspaceModuleSettingInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceModuleSetting value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceModuleSetting")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceModuleSetting output to be assigned in the environment
-  """
-  withWorkspaceModuleSettingOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
     description: String!
   ): Env!
 
@@ -3947,14 +3801,6 @@ type GitRef implements Node {
 
 """A git repository."""
 type GitRepository implements Node {
-  """Creates a synthetic workspace from this git repository."""
-  asWorkspace(
-    """
-    Current working directory inside the workspace root. Defaults to the workspace root.
-    """
-    cwd: String = "/"
-  ): Workspace! @experimental(reason: "Synthetic workspaces currently support filesystem APIs only.")
-
   """Returns details of a branch."""
   branch(
     """Branch's name (e.g., "main")."""
@@ -4593,7 +4439,7 @@ type ModuleSource implements Node & Syncer {
   asString: String!
 
   """The blueprint referenced by the module source."""
-  blueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.")
+  blueprint: ModuleSource!
 
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
@@ -4606,7 +4452,7 @@ type ModuleSource implements Node & Syncer {
   """The clients generated for the module."""
   configClients: [ModuleConfigClient!]!
 
-  """Whether an existing module config file was found."""
+  """Whether an existing dagger.json for the module was found."""
   configExists: Boolean!
 
   """
@@ -4681,7 +4527,7 @@ type ModuleSource implements Node & Syncer {
   moduleName: String!
 
   """
-  The original name of the module as read from the module config file (or set for the first time with the withName API).
+  The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
   """
   moduleOriginalName: String!
 
@@ -4702,7 +4548,7 @@ type ModuleSource implements Node & Syncer {
   sdk: SDKConfig
 
   """
-  The path, relative to the context directory, that contains the module config.
+  The path, relative to the context directory, that contains the module's dagger.json.
   """
   sourceRootSubpath: String!
 
@@ -4717,7 +4563,7 @@ type ModuleSource implements Node & Syncer {
   sync: ID! @expectedType(name: "ModuleSource")
 
   """The toolchains referenced by the module source."""
-  toolchains: [ModuleSource!]! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.")
+  toolchains: [ModuleSource!]!
 
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
@@ -4729,7 +4575,7 @@ type ModuleSource implements Node & Syncer {
   withBlueprint(
     """The blueprint module to set."""
     blueprint: ID! @expectedType(name: "ModuleSource")
-  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+  ): ModuleSource!
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -4793,10 +4639,10 @@ type ModuleSource implements Node & Syncer {
   withToolchains(
     """The toolchain modules to add."""
     toolchains: [ID!]! @expectedType(name: "ModuleSource")
-  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+  ): ModuleSource!
 
   """Update the blueprint module to the latest version."""
-  withUpdateBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+  withUpdateBlueprint: ModuleSource!
 
   """Update one or more module dependencies."""
   withUpdateDependencies(
@@ -4808,7 +4654,7 @@ type ModuleSource implements Node & Syncer {
   withUpdateToolchains(
     """The toolchains to update."""
     toolchains: [String!]!
-  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+  ): ModuleSource!
 
   """Update one or more clients."""
   withUpdatedClients(
@@ -4817,7 +4663,7 @@ type ModuleSource implements Node & Syncer {
   ): ModuleSource!
 
   """Remove the current blueprint from the module source."""
-  withoutBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+  withoutBlueprint: ModuleSource!
 
   """Remove a client from the module source."""
   withoutClient(
@@ -4843,7 +4689,7 @@ type ModuleSource implements Node & Syncer {
   withoutToolchains(
     """The toolchains to remove."""
     toolchains: [String!]!
-  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.")
+  ): ModuleSource!
 }
 
 """Experimental features of a module"""
@@ -5193,8 +5039,8 @@ type Query implements Node {
     refPin: String = ""
 
     """
-    If true, do not attempt to find a module config file in a parent directory
-    of the provided path. Only relevant for local module sources.
+    If true, do not attempt to find dagger.json in a parent directory of the
+    provided path. Only relevant for local module sources.
     """
     disableFindUp: Boolean = false
 
@@ -5260,17 +5106,34 @@ type Query implements Node {
     column: Int!
   ): SourceMap!
 
+  """
+  Create or retrieve an engine-managed SSHFS volume.
+
+  Endpoint must be a parseable SSH URL, e.g. "ssh://user@host:2222/path".
+  """
+  sshfsVolume(
+    """SSH endpoint URL, e.g. "ssh://user@host[:port]/absolute/path"."""
+    endpoint: String!
+
+    """The private key secret to use for authentication."""
+    privateKey: ID! @expectedType(name: "Secret")
+
+    """The public key secret to use for authentication."""
+    publicKey: ID! @expectedType(name: "Secret")
+
+    """
+    A service which must be started before the SSHFS volume is mounted.
+
+    The service's resolved host replaces the endpoint's host so that the engine reaches the right address.
+    """
+    experimentalServiceHost: ID @expectedType(name: "Service")
+  ): Volume!
+
   """Create a new TypeDef."""
   typeDef: TypeDef!
 
   """Get the current Dagger Engine version."""
   version: String!
-}
-
-"""Transport protocol to use for registry operations."""
-enum RegistryProtocol {
-  HTTPS
-  HTTP
 }
 
 """An internal persistent bare git mirror."""
@@ -5826,13 +5689,15 @@ A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
 
-"""
-A Dagger workspace detected from the current working directory or constructed from a Directory.
-"""
+"""A reference to an engine-managed volume."""
+type Volume implements Node {
+  """A unique identifier for this Volume."""
+  id: ID!
+}
+
+"""A Dagger workspace detected from the current working directory."""
 type Workspace implements Node {
-  """
-  Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
-  """
+  """Canonical Dagger address of the workspace directory."""
   address: String!
 
   """Return all checks from modules loaded in the workspace."""
@@ -5855,57 +5720,20 @@ type Workspace implements Node {
   clientId: String!
 
   """
-  Selected native workspace config file relative to the workspace root, if any.
+  Path to config.toml relative to the workspace boundary (empty if not initialized).
   """
-  configFile: String!
-
-  """
-  Read a configuration value from dagger.toml.
-
-  If key is empty, returns the full config.
-
-  If key points to a scalar, returns the value.
-
-  If key points to a table, returns flattened dotted-key output.
-  """
-  configRead(
-    """Dotted key path (e.g. modules.greeter.source). Empty for full config."""
-    key: String = ""
-  ): String!
-
-  """Write a configuration value to dagger.toml."""
-  configWrite(
-    """Dotted key path (e.g. modules.greeter.source)."""
-    key: String!
-
-    """
-    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
-    """
-    value: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
-  """
-  Current location within the workspace root.
-
-  The workspace root is returned as "/".
-
-  Relative paths in workspace APIs resolve from here.
-  """
-  cwd: String!
+  configPath: String!
 
   """
   Returns a Directory from the workspace.
 
-  Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   directory(
     """
     Location of the directory to retrieve. Relative paths (e.g., "src") resolve
-    from the workspace cwd; absolute paths (e.g., "/src") resolve from the
-    workspace root.
+    from the workspace directory; absolute paths (e.g., "/src") resolve from the
+    workspace boundary.
     """
     path: String!
 
@@ -5923,37 +5751,16 @@ type Workspace implements Node {
     gitignore: Boolean = false
   ): Directory!
 
-  """Create a named workspace environment if it does not already exist."""
-  envCreate(
-    """Environment name."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
-  """List named environments defined in the workspace configuration."""
-  envList: [String!]!
-
-  """Remove a named workspace environment."""
-  envRemove(
-    """Environment name."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
   """
   Returns a File from the workspace.
 
-  Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
   """
   file(
     """
     Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
-    from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the
-    workspace root.
+    from the workspace directory; absolute paths (e.g., "/go.mod") resolve from
+    the workspace boundary.
     """
     path: String!
   ): File!
@@ -5963,9 +5770,9 @@ type Workspace implements Node {
 
   Returns the absolute workspace path if found, or null if not found.
 
-  Relative start paths resolve from the workspace cwd.
+  Relative start paths resolve from the workspace directory.
 
-  The search stops at the workspace root and will not traverse above it.
+  The search stops at the workspace boundary and will not traverse above it.
   """
   findUp(
     """The name of the file or directory to search for."""
@@ -5973,7 +5780,7 @@ type Workspace implements Node {
 
     """
     Path to start the search from. Relative paths resolve from the workspace
-    cwd; absolute paths resolve from the workspace root.
+    directory; absolute paths resolve from the workspace boundary.
     """
     from: String = "."
   ): String
@@ -5984,86 +5791,23 @@ type Workspace implements Node {
     include: [String!]
   ): GeneratorGroup!
 
-  """
-  Git state for this workspace. Errors if the workspace is not in a git repository.
-  """
-  git: WorkspaceGit!
+  """Whether a config.toml file exists in the workspace."""
+  hasConfig: Boolean!
 
   """A unique identifier for this Workspace."""
   id: ID!
 
-  """Initialize workspace config, creating dagger.toml."""
-  init(
-    """
-    Create the workspace config directory at the workspace cwd instead of using the default write target.
-    """
-    here: Boolean = false
-  ): String!
+  """Whether .dagger/config.toml exists."""
+  initialized: Boolean!
 
-  """Install a module into the workspace, writing dagger.toml to the host."""
-  install(
-    """Module reference to install."""
-    ref: String!
-
-    """Override name for the installed module entry."""
-    name: String = ""
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
-  """
-  Plan the explicit migration needed for the current workspace.
-
-  The returned plan has an empty changeset and no steps when no migration is needed.
-  """
-  migrate(force: Boolean = false): WorkspaceMigration!
-
-  """
-  Create a new module owned by the workspace and auto-install it in dagger.toml.
-  """
-  moduleInit(
-    """Name of the new module."""
-    name: String!
-
-    """SDK to use for the new module."""
-    sdk: String = ""
-
-    """Source subpath within the new module."""
-    source: String = ""
-
-    """Additional include patterns for the module."""
-    include: [String!] = []
-
-    """Enable the self-calls experimental feature for the new module."""
-    selfCalls: Boolean = false
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
-  """List modules defined in the workspace configuration."""
-  moduleList(
-    """Optional module alias to inspect."""
-    module: String = ""
-  ): [WorkspaceModule!]!
+  """Workspace directory path relative to the workspace boundary."""
+  path: String!
 
   """Return all services from modules loaded in the workspace."""
   services(
     """Only include services matching the specified patterns"""
     include: [String!]
   ): UpGroup!
-
-  """
-  Uninstall a module from the workspace, writing dagger.toml to the host.
-  """
-  uninstall(
-    """Name of the installed module entry to remove."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
 
   """
   Refresh workspace-managed state and return the resulting changeset.
@@ -6073,84 +5817,4 @@ type Workspace implements Node {
   update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
 }
 
-"""Local git state for a workspace."""
-type WorkspaceGit implements Node {
-  """The checked-out HEAD of this workspace."""
-  head: GitRef!
-
-  """A unique identifier for this WorkspaceGit."""
-  id: ID!
-
-  """
-  Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
-  """
-  uncommitted: Changeset!
-}
-
-"""A planned workspace migration."""
-type WorkspaceMigration implements Node {
-  """Filesystem changes for the full migration plan."""
-  changes: Changeset!
-
-  """A unique identifier for this WorkspaceMigration."""
-  id: ID!
-
-  """Logical migration steps, each identified by a stable code."""
-  steps: [WorkspaceMigrationStep!]!
-}
-
-"""A single logical part of a workspace migration."""
-type WorkspaceMigrationStep implements Node {
-  """Filesystem changes for this step."""
-  changes: Changeset!
-
-  """Stable code identifying this logical migration step."""
-  code: String!
-
-  """Generic summary of this step's purpose and impact."""
-  description: String!
-
-  """A unique identifier for this WorkspaceMigrationStep."""
-  id: ID!
-
-  """Non-fatal warnings raised while planning this step."""
-  warnings: [String!]!
-}
-
-"""A module entry in the workspace configuration."""
-type WorkspaceModule implements Node {
-  """
-  Whether the module is the workspace entrypoint (functions aliased to Query root).
-  """
-  entrypoint: Boolean!
-
-  """A unique identifier for this WorkspaceModule."""
-  id: ID!
-
-  """The module name."""
-  name: String!
-
-  """List constructor-backed settings for this module."""
-  settings: [WorkspaceModuleSetting!]!
-
-  """The module source path."""
-  source: String!
-}
-
-"""A constructor-backed module setting."""
-type WorkspaceModuleSetting implements Node {
-  """The constructor argument description."""
-  description: String!
-
-  """A unique identifier for this WorkspaceModuleSetting."""
-  id: ID!
-
-  """The setting key."""
-  key: String!
-
-  """
-  The configured value after applying the selected workspace environment, or empty when unset.
-  """
-  value: String!
-}
 

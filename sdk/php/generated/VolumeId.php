@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `VolumeID` scalar type represents an identifier for an object of type Volume.
+ * A unique identifier for an object.
  */
-readonly class VolumeId extends Client\AbstractId
+readonly class VolumeId extends Client\AbstractScalar
 {
 }
