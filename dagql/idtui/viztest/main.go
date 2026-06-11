@@ -241,10 +241,12 @@ func emitProgress(ctx context.Context, item string, current, total int64) {
 
 // TransientProgress runs a long-lived "syncing layers" span (collapsed by
 // default, so its descendants' progress rolls up onto its row) containing
-// one transfer that completes immediately and one that stays in flight.
-// Exercises the roll-up's aging: shortly after the first transfer's span
-// ends, its row should drop out of the roll-up at default verbosity,
-// leaving only the in-flight transfer.
+// a storm of transfers that complete instantly and one that stays in
+// flight. Exercises the roll-up's quick-transfer fold: the quick ones
+// never earn a live row and merge into one summary line in the final
+// report ("1 transfer, 3 fetches ..."), while the in-flight transfer
+// appears live once it's been active past the threshold and keeps its own
+// row in the report.
 // +cache="session"
 func (*Viztest) TransientProgress(ctx context.Context) {
 	ctx, outer := Tracer().Start(ctx, "syncing layers")
@@ -255,6 +257,14 @@ func (*Viztest) TransientProgress(ctx context.Context) {
 		defer span.End()
 		emitProgress(ctx, "blob", 10_000_000, 10_000_000)
 	}()
+
+	for i := range 3 {
+		func() {
+			ctx, span := Tracer().Start(ctx, fmt.Sprintf("fetching https://example.com/pkg-%d.apk", i))
+			defer span.End()
+			emitProgress(ctx, "body", 2_000_000, 2_000_000)
+		}()
+	}
 
 	ctx, span := Tracer().Start(ctx, "transfer-live")
 	defer span.End()
