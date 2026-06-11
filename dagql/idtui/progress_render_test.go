@@ -448,3 +448,174 @@ func TestRenderProgressSpanRowsAutoHide(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderProgressMergedRollup covers the quick-transfer fold: transfers
+// active for less than the threshold don't earn their own roll-up row.
+// Live they stay hidden entirely; in the final render they merge into one
+// summary line counting them by kind with the wall-clock union of their
+// activity, so a module fetching dozens of packages doesn't drown the
+// report. Slow transfers still render individually.
+func TestRenderProgressMergedRollup(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	installID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	snapshots := []dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root",
+			StartTime: start,
+			EndTime:   start.Add(10 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:        installID,
+			TraceID:   prettyTestTraceID(),
+			ParentID:  rootID,
+			Name:      "Container.withExec",
+			StartTime: start,
+			EndTime:   start.Add(10 * time.Second),
+			Final:     true,
+		},
+	}
+	// one slow pull and a storm of quick, overlapping fetches plus a
+	// quick download; the quick ones span 0.0s-0.9s wall-clock combined
+	quicks := []struct {
+		name       string
+		start, end time.Duration
+	}{
+		{"fetching https://example.com/pkg-1.apk", 0, 300 * time.Millisecond},
+		{"fetching https://example.com/pkg-2.apk", 200 * time.Millisecond, 500 * time.Millisecond},
+		{"fetching https://example.com/pkg-3.apk", 400 * time.Millisecond, 700 * time.Millisecond},
+		{"downloading /out", 600 * time.Millisecond, 900 * time.Millisecond},
+	}
+	slowID := prettyTestSpanID(3)
+	snapshots = append(snapshots, dagui.SpanSnapshot{
+		ID:           slowID,
+		TraceID:      prettyTestTraceID(),
+		ParentID:     installID,
+		Name:         "pulling alpine",
+		Encapsulated: true,
+		StartTime:    start,
+		EndTime:      start.Add(5 * time.Second),
+		Final:        true,
+	})
+	quickIDs := make([]dagui.SpanID, len(quicks))
+	for i, q := range quicks {
+		quickIDs[i] = prettyTestSpanID(byte(4 + i))
+		snapshots = append(snapshots, dagui.SpanSnapshot{
+			ID:           quickIDs[i],
+			TraceID:      prettyTestTraceID(),
+			ParentID:     installID,
+			Name:         q.name,
+			Encapsulated: true,
+			StartTime:    start.Add(q.start),
+			EndTime:      start.Add(q.end),
+			Final:        true,
+		})
+	}
+	db.ImportSnapshots(snapshots)
+	db.SetPrimarySpan(rootID)
+
+	install := db.Spans.Map[installID]
+	root := db.Spans.Map[rootID]
+	for _, id := range append([]dagui.SpanID{slowID}, quickIDs...) {
+		src := db.Spans.Map[id]
+		src.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+			{Name: "blob", Current: 1024, Total: 1024, Unit: "bytes"},
+		}}
+		install.ProgressSpans.Add(src)
+		root.ProgressSpans.Add(src)
+	}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	var buf strings.Builder
+	if err := fe.FinalRender(&buf); err != nil {
+		t.Fatalf("FinalRender: %v", err)
+	}
+	final := buf.String()
+	if want := "pulling alpine"; !strings.Contains(final, want) {
+		t.Errorf("final render missing slow transfer row %q:\n%s", want, final)
+	}
+	// merged line: counts by kind, wall-clock union of 0.0s-0.9s
+	if want := "3 fetches, 1 download 0.9s"; !strings.Contains(final, want) {
+		t.Errorf("final render missing merged quick-transfer line %q:\n%s", want, final)
+	}
+	if dontWant := "pkg-1.apk"; strings.Contains(final, dontWant) {
+		t.Errorf("quick transfer %q should fold into the merged line:\n%s", dontWant, final)
+	}
+}
+
+// TestRenderProgressLiveHidesQuick covers the live threshold: an in-flight
+// transfer doesn't earn a roll-up row until it's been active past the
+// threshold, so storms of sub-second transfers never spam the live view.
+func TestRenderProgressLiveHidesQuick(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	fromID := prettyTestSpanID(2)
+	slowID := prettyTestSpanID(3)
+	youngID := prettyTestSpanID(4)
+	longAgo := time.Unix(100, 0)
+	now := time.Now()
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root",
+			StartTime: longAgo,
+		},
+		{
+			ID:        fromID,
+			TraceID:   prettyTestTraceID(),
+			ParentID:  rootID,
+			Name:      "Container.from",
+			StartTime: longAgo,
+		},
+		{
+			// in flight and active well past the threshold: shown
+			ID:           slowID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "pulling nginx",
+			Encapsulated: true,
+			StartTime:    longAgo,
+		},
+		{
+			// in flight but just started: not yet
+			ID:           youngID,
+			TraceID:      prettyTestTraceID(),
+			ParentID:     fromID,
+			Name:         "fetching https://example.com/pkg.apk",
+			Encapsulated: true,
+			StartTime:    now,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	from := db.Spans.Map[fromID]
+	root := db.Spans.Map[rootID]
+	for _, id := range []dagui.SpanID{slowID, youngID} {
+		src := db.Spans.Map[id]
+		src.Progress = &dagui.SpanProgress{Order: []*dagui.ProgressItem{
+			{Name: "blob", Current: 512, Total: 1024, Unit: "bytes"},
+		}}
+		from.ProgressSpans.Add(src)
+		root.ProgressSpans.Add(src)
+	}
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.recalculateViewLocked()
+
+	live := strings.Join(fe.tui.RenderLines(), "\n")
+	if want := "pulling nginx"; !strings.Contains(live, want) {
+		t.Errorf("live render missing long-active transfer %q:\n%s", want, live)
+	}
+	if dontWant := "fetching"; strings.Contains(live, dontWant) {
+		t.Errorf("live render should hide transfer younger than the threshold %q:\n%s", dontWant, live)
+	}
+}

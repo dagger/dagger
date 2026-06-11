@@ -2988,19 +2988,38 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		// Like error origins: descendants carrying streaming progress surface
 		// as labeled rows, rolled up here when this row is collapsed. When
 		// the row is expanded they render in their natural tree position
-		// instead (carrying progress reveals an encapsulated span). Live
-		// rendering only rolls up transfers still in flight — completed ones
-		// would accumulate without bound on large traces and dominate the
-		// view, and they remain reachable by expanding the row. The final
-		// render keeps them as the run's transfer summary.
+		// instead (carrying progress reveals an encapsulated span). Only
+		// transfers that hold attention earn their own row: live rendering
+		// shows in-flight transfers once they've been active past the
+		// threshold (completed ones stop piercing the collapse — they'd
+		// accumulate without bound on large traces), and the final render
+		// keeps the slow ones as the run's transfer summary while folding
+		// the quick ones into a single merged line — a module fetching
+		// dozens of packages would otherwise drown the report. Debug and
+		// high verbosity show every transfer.
+		var quick []*dagui.Span
 		for _, src := range span.ProgressSpans.Order {
 			if src == span || !src.HasProgress() {
 				continue
 			}
-			if !r.final && !r.Debug && !src.IsRunningOrEffectsRunning() {
-				continue
+			if !r.Debug && r.Verbosity < dagui.ShowSpammyVerbosity {
+				if !r.final && !src.IsRunningOrEffectsRunning() {
+					continue
+				}
+				if src.Activity.Duration(r.now) < quickTransferThreshold {
+					if r.final {
+						quick = append(quick, src)
+					}
+					continue
+				}
 			}
 			fe.renderProgressSpanRow(ctx, out, r, row, prefix, src, statusHost)
+		}
+		if len(quick) == 1 {
+			// a single quick transfer is already its own summary
+			fe.renderProgressSpanRow(ctx, out, r, row, prefix, quick[0], statusHost)
+		} else if len(quick) > 1 {
+			fe.renderMergedProgressRow(out, r, row, prefix, quick)
 		}
 	}
 	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
@@ -3142,6 +3161,71 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 		return fe.renderLogs(out, r, row, logs, limit, prefix, focused)
 	}
 	return false
+}
+
+// quickTransferThreshold is how long a transfer must be active before it
+// earns its own roll-up row; quicker ones stay hidden live and merge into
+// a single summary line in the final render.
+const quickTransferThreshold = time.Second
+
+// transferKinds maps the leading verb of a transfer span's name — the
+// engine's progress emitters all follow "<verb> <subject>", e.g.
+// "pulling nginx:latest", "fetching <url>" — to singular/plural nouns for
+// the merged summary line.
+var transferKinds = map[string][2]string{
+	"pulling":     {"pull", "pulls"},
+	"unpacking":   {"unpack", "unpacks"},
+	"fetching":    {"fetch", "fetches"},
+	"uploading":   {"upload", "uploads"},
+	"downloading": {"download", "downloads"},
+}
+
+// transferSummary counts the given transfer spans by kind in order of
+// first appearance, e.g. "3 pulls, 38 fetches, 1 upload".
+func transferSummary(srcs []*dagui.Span) string {
+	counts := map[[2]string]int{}
+	var order [][2]string
+	for _, src := range srcs {
+		verb, _, _ := strings.Cut(src.Name, " ")
+		kind, ok := transferKinds[verb]
+		if !ok {
+			kind = [2]string{"transfer", "transfers"}
+		}
+		if counts[kind] == 0 {
+			order = append(order, kind)
+		}
+		counts[kind]++
+	}
+	parts := make([]string, len(order))
+	for i, kind := range order {
+		n := counts[kind]
+		noun := kind[0]
+		if n != 1 {
+			noun = kind[1]
+		}
+		parts[i] = fmt.Sprintf("%d %s", n, noun)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// renderMergedProgressRow folds quick transfers into one summary line
+// beneath the given row: a count by kind and the merged wall-clock
+// duration of their activity. The interval union means parallel transfers
+// don't double-count, and byte totals are deliberately omitted — fetch and
+// unpack read the same bytes, so summing would double the apparent size.
+func (fe *frontendPretty) renderMergedProgressRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, srcs []*dagui.Span) {
+	fmt.Fprint(out, prefix)
+	r.fancyIndent(out, row, false, false)
+	// indent past the parent's icon column so the line reads as its detail
+	fmt.Fprint(out, "  ")
+	fmt.Fprint(out, out.String(IconSuccess).Foreground(termenv.ANSIGreen))
+	fmt.Fprint(out, out.String(" "+transferSummary(srcs)).Faint())
+	var activity dagui.Activity
+	for _, src := range srcs {
+		activity.Add(src)
+	}
+	fmt.Fprint(out, out.String(" "+dagui.FormatDuration(activity.Duration(r.now))).Faint())
+	fmt.Fprintln(out)
 }
 
 // renderProgressSpanRow renders one hidden/collapsed descendant's streaming
