@@ -48,9 +48,16 @@ type parsedSSHEndpoint struct {
 	path string
 }
 
-// ensureMounted mounts the endpoint with sshfs using the provided private/public key files (paths)
-// and returns the mount id and local mount path.
-func (m *sshfsManager) ensureMounted(ctx context.Context, endpoint string, privateKeyPath, publicKeyPath string) (string, string, error) {
+// mountID derives the cache id for a sshfs mount as sha256(endpoint + private-key digest).
+//
+// Security: the cache is derived from secret key material. 
+func mountID(endpoint, privKeyDigest string) string {
+	h := sha256.Sum256([]byte(endpoint + ":" + privKeyDigest))
+	return hex.EncodeToString(h[:])
+}
+
+// ensureMounted mounts the endpoint with sshfs using the private key file
+func (m *sshfsManager) ensureMounted(ctx context.Context, endpoint, privateKeyPath, privKeyDigest string) (string, string, error) {
 	parsed, err := parseSSHEndpoint(endpoint)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid sshfs endpoint %q: %w", endpoint, err)
@@ -59,9 +66,7 @@ func (m *sshfsManager) ensureMounted(ctx context.Context, endpoint string, priva
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// id is sha256(endpoint + pubKey path)
-	h := sha256.Sum256([]byte(endpoint + ":" + publicKeyPath))
-	id := hex.EncodeToString(h[:])
+	id := mountID(endpoint, privKeyDigest)
 	if ex, ok := m.mounts[id]; ok {
 		ex.refCount++
 		logrus.WithFields(logrus.Fields{
@@ -287,7 +292,8 @@ func (srv *Server) RegisterSSHFSVolume(ctx context.Context, endpoint string, pri
 	if err := os.MkdirAll(keysDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create ssh keys dir: %w", err)
 	}
-	privPath := filepath.Join(keysDir, digest.FromBytes(privPlain).Encoded())
+	privKeyDigest := digest.FromBytes(privPlain)
+	privPath := filepath.Join(keysDir, privKeyDigest.Encoded())
 	pubPath := filepath.Join(keysDir, digest.FromBytes(pubPlain).Encoded())
 	if err := os.WriteFile(privPath, privPlain, 0o600); err != nil {
 		return nil, fmt.Errorf("write ssh private key: %w", err)
@@ -296,7 +302,7 @@ func (srv *Server) RegisterSSHFSVolume(ctx context.Context, endpoint string, pri
 		return nil, fmt.Errorf("write ssh public key: %w", err)
 	}
 
-	id, mp, err := srv.sshfsMgr.ensureMounted(ctx, endpoint, privPath, pubPath)
+	id, mp, err := srv.sshfsMgr.ensureMounted(ctx, endpoint, privPath, privKeyDigest.String())
 	if err != nil {
 		return nil, err
 	}
