@@ -2699,6 +2699,95 @@ func TestViewsIntrospection(t *testing.T) {
 	})
 }
 
+type viewFilteredEnum string
+
+var viewFilteredEnums = dagql.NewEnum[viewFilteredEnum]()
+
+var _ = viewFilteredEnums.Register("VISIBLE")
+
+var _ dagql.Input = viewFilteredEnum("")
+
+func (viewFilteredEnum) Decoder() dagql.InputDecoder {
+	return viewFilteredEnums
+}
+
+func (v viewFilteredEnum) ToLiteral() call.Literal {
+	return viewFilteredEnums.Literal(v)
+}
+
+func (viewFilteredEnum) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ViewFilteredEnum",
+		NonNull:   true,
+	}
+}
+
+type viewFilteredInput struct {
+	Value string
+}
+
+func (viewFilteredInput) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ViewFilteredInput",
+		NonNull:   true,
+	}
+}
+
+func (viewFilteredInput) TypeName() string {
+	return "ViewFilteredInput"
+}
+
+type viewFilteredInterfaceObject struct{}
+
+func (viewFilteredInterfaceObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ViewFilteredInterfaceObject",
+		NonNull:   true,
+	}
+}
+
+func TestViewsFilterNonObjectTypes(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+
+	viewFilteredEnums.Install(srv, dagql.ExactView("future"))
+	dagql.MustInputSpec(viewFilteredInput{}).Install(srv, dagql.ExactView("future"))
+
+	iface := dagql.NewInterface("ViewFilteredInterface", "future interface").
+		View(dagql.ExactView("future"))
+	iface.AddField(dagql.InterfaceFieldSpec{
+		FieldSpec: dagql.FieldSpec{
+			Name: "value",
+			Type: dagql.String(""),
+		},
+	})
+	srv.InstallInterface(iface)
+
+	class := dagql.NewClass[viewFilteredInterfaceObject](srv)
+	class.Install(dagql.Field[viewFilteredInterfaceObject]{
+		Spec: &dagql.FieldSpec{
+			Name: "value",
+			Type: dagql.String(""),
+		},
+		Func: func(ctx context.Context, self dagql.ObjectResult[viewFilteredInterfaceObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+			return dagql.NewResultForCurrentCall(ctx, dagql.String("value"))
+		},
+	})
+	class.Implements(iface)
+	srv.InstallObject(class)
+
+	oldSchema := srv.SchemaForView("old")
+	require.NotContains(t, oldSchema.Types, "ViewFilteredEnum")
+	require.NotContains(t, oldSchema.Types, "ViewFilteredInput")
+	require.NotContains(t, oldSchema.Types, "ViewFilteredInterface")
+	require.NotContains(t, oldSchema.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+
+	futureSchema := srv.SchemaForView("future")
+	require.Equal(t, ast.Enum, futureSchema.Types["ViewFilteredEnum"].Kind)
+	require.Equal(t, ast.InputObject, futureSchema.Types["ViewFilteredInput"].Kind)
+	require.Equal(t, ast.Interface, futureSchema.Types["ViewFilteredInterface"].Kind)
+	require.Contains(t, futureSchema.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+}
+
 type CoolInt struct {
 	Val int `field:"true"`
 }

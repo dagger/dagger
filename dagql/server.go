@@ -33,14 +33,15 @@ import (
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root          AnyObjectResult
-	telemetry     AroundFunc
-	objects       map[string]ObjectType
-	interfaces    map[string]*Interface
-	scalars       map[string]ScalarType
-	scalarFilters map[string]ViewFilter
-	typeDefs      map[string]TypeDef
-	directives    map[string]DirectiveSpec
+	root           AnyObjectResult
+	telemetry      AroundFunc
+	objects        map[string]ObjectType
+	interfaces     map[string]*Interface
+	scalars        map[string]ScalarType
+	scalarFilters  map[string]ViewFilter
+	typeDefs       map[string]TypeDef
+	typeDefFilters map[string]ViewFilter
+	directives     map[string]DirectiveSpec
 
 	schemas       map[call.View]*ast.Schema
 	schemaDigests map[call.View]digest.Digest
@@ -215,17 +216,18 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 
 func newBlankServer() *Server {
 	return &Server{
-		objects:       map[string]ObjectType{},
-		interfaces:    map[string]*Interface{},
-		scalars:       map[string]ScalarType{},
-		scalarFilters: map[string]ViewFilter{},
-		typeDefs:      map[string]TypeDef{},
-		directives:    map[string]DirectiveSpec{},
-		installLock:   &sync.RWMutex{},
-		schemas:       make(map[call.View]*ast.Schema),
-		schemaDigests: make(map[call.View]digest.Digest),
-		schemaOnces:   make(map[call.View]*sync.Once),
-		schemaLock:    &sync.Mutex{},
+		objects:        map[string]ObjectType{},
+		interfaces:     map[string]*Interface{},
+		scalars:        map[string]ScalarType{},
+		scalarFilters:  map[string]ViewFilter{},
+		typeDefs:       map[string]TypeDef{},
+		typeDefFilters: map[string]ViewFilter{},
+		directives:     map[string]DirectiveSpec{},
+		installLock:    &sync.RWMutex{},
+		schemas:        make(map[call.View]*ast.Schema),
+		schemaDigests:  make(map[call.View]digest.Digest),
+		schemaOnces:    make(map[call.View]*sync.Once),
+		schemaLock:     &sync.Mutex{},
 	}
 }
 
@@ -254,6 +256,9 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	}
 	for name, typeDef := range s.typeDefs {
 		out.typeDefs[name] = typeDef
+	}
+	for name, filter := range s.typeDefFilters {
+		out.typeDefFilters[name] = filter
 	}
 	for name, directive := range s.directives {
 		out.directives[name] = directive
@@ -859,10 +864,13 @@ func (s *Server) InstallDirective(directive DirectiveSpec) {
 }
 
 // InstallTypeDef installs an arbitrary type definition into the schema.
-func (s *Server) InstallTypeDef(def TypeDef) {
+func (s *Server) InstallTypeDef(def TypeDef, filter ...ViewFilter) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	s.typeDefs[def.TypeName()] = def
+	if len(filter) > 0 && filter[0] != nil {
+		s.typeDefFilters[def.TypeName()] = filter[0]
+	}
 	s.invalidateSchemaCache()
 }
 
@@ -950,6 +958,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		})
 		// Emit interface definitions.
 		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
+			if !typeVisibleInView(iface, view) {
+				return
+			}
 			def := iface.Definition(view)
 			schema.AddTypes(def)
 		})
@@ -961,7 +972,13 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
 		})
-		sortutil.RangeSorted(s.typeDefs, func(_ string, t TypeDef) {
+		sortutil.RangeSorted(s.typeDefs, func(name string, t TypeDef) {
+			if !typeVisibleInView(t, view) {
+				return
+			}
+			if filter, ok := s.typeDefFilters[name]; ok && !filter.Contains(view) {
+				return
+			}
 			def := t.TypeDefinition(view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)

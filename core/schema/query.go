@@ -64,7 +64,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.ClientFilesyncMirror]{}.Install(srv)
 
 	core.NetworkProtocols.Install(srv)
-	core.RegistryProtocols.Install(srv)
+	core.RegistryProtocols.Install(srv, AfterVersion("v1.0.0-0"))
 	core.ImageLayerCompressions.Install(srv)
 	core.ImageMediaTypesEnum.Install(srv)
 	core.CacheSharingModes.Install(srv)

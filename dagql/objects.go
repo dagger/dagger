@@ -376,7 +376,10 @@ func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
 		return def.Fields[i].Name < def.Fields[j].Name
 	})
 	// Populate interface names on the definition.
-	for name := range class.interfaces {
+	for name, iface := range class.interfaces {
+		if !typeVisibleInView(iface, view) {
+			continue
+		}
 		def.Interfaces = append(def.Interfaces, name)
 	}
 	sort.Strings(def.Interfaces)
