@@ -78,8 +78,10 @@ type SDKManagedModule struct {
 // workspace-relative path or canonical ref, same resolution as
 // [modules.X].source. Shape will evolve as concrete client SDKs implement.
 type SDKManagedClient struct {
-	Path   string `json:"path" toml:"path"`
-	Module string `json:"module" toml:"module"`
+	Path    string            `json:"path" toml:"path"`
+	Module  string            `json:"module" toml:"module"`
+	Pin     string            `json:"pin,omitempty" toml:"pin,omitempty"`
+	Options map[string]string `json:"options,omitempty" toml:"-"`
 }
 
 // ModuleSkip carries the per-action skip patterns for a module entry.
@@ -123,7 +125,64 @@ func ParseConfig(data []byte) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse dagger.toml: %w", err)
 	}
+	if err := populateClientOptions(data, &cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+func populateClientOptions(data []byte, cfg *Config) error {
+	if len(data) == 0 || cfg == nil || len(cfg.Modules) == 0 {
+		return nil
+	}
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return fmt.Errorf("parse dagger.toml client options: %w", err)
+	}
+
+	for moduleName, entry := range cfg.Modules {
+		if entry.AsSDK == nil || len(entry.AsSDK.Clients) == 0 {
+			continue
+		}
+		rawClients := tree.GetPath([]string{"modules", moduleName, "as-sdk", "clients"})
+		clientTrees, ok := rawClients.([]*toml.Tree)
+		if !ok {
+			continue
+		}
+		for i := range entry.AsSDK.Clients {
+			if i >= len(clientTrees) {
+				break
+			}
+			options := clientOptionsFromTree(clientTrees[i])
+			if len(options) > 0 {
+				entry.AsSDK.Clients[i].Options = options
+			}
+		}
+		cfg.Modules[moduleName] = entry
+	}
+	return nil
+}
+
+func clientOptionsFromTree(tree *toml.Tree) map[string]string {
+	if tree == nil {
+		return nil
+	}
+	options := map[string]string{}
+	for _, key := range tree.Keys() {
+		switch key {
+		case "path", "module", "pin":
+			continue
+		}
+		value, ok := tree.GetPath([]string{key}).(string)
+		if !ok {
+			continue
+		}
+		options[key] = value
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	return options
 }
 
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
@@ -293,10 +352,27 @@ func cloneModuleAsSDK(in *ModuleAsSDK) *ModuleAsSDK {
 	}
 	out := &ModuleAsSDK{
 		Modules: append([]SDKManagedModule(nil), in.Modules...),
-		Clients: append([]SDKManagedClient(nil), in.Clients...),
+		Clients: cloneSDKManagedClients(in.Clients),
 	}
 	if len(out.Modules) == 0 && len(out.Clients) == 0 {
 		return nil
+	}
+	return out
+}
+
+func cloneSDKManagedClients(in []SDKManagedClient) []SDKManagedClient {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]SDKManagedClient, len(in))
+	for i, client := range in {
+		out[i] = client
+		if len(client.Options) > 0 {
+			out[i].Options = make(map[string]string, len(client.Options))
+			for key, value := range client.Options {
+				out[i].Options[key] = value
+			}
+		}
 	}
 	return out
 }
@@ -374,6 +450,17 @@ func writeModuleAsSDK(b *strings.Builder, modulePath string, asSDK *ModuleAsSDK)
 		fmt.Fprintf(b, "[[%s.as-sdk.clients]]\n", modulePath)
 		fmt.Fprintf(b, "path = %q\n", client.Path)
 		fmt.Fprintf(b, "module = %q\n", client.Module)
+		if client.Pin != "" {
+			fmt.Fprintf(b, "pin = %q\n", client.Pin)
+		}
+		keys := make([]string, 0, len(client.Options))
+		for key := range client.Options {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Fprintf(b, "%s = %s\n", formatConfigPathSegment(key), formatConfigValue(client.Options[key]))
+		}
 	}
 }
 
