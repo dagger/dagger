@@ -227,26 +227,21 @@ Initialize a generated API client
 
 Initialize a generated API client at <path>.
 
-The CLI resolves --sdk aliases, asks the engine to plan the generated files and
-workspace config change, then applies the returned Changeset through the
-standard preview/apply flow.
+<sdk> is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
+to add more choices.
+
+The engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
+generated files and workspace config change, then returns a Changeset that the
+CLI previews and applies through the standard preview/apply flow.
 
 ```
-dagger api client init <path> --sdk <sdk> --module <path-or-ref>
+dagger api client init <sdk> <path> <module>
 ```
 
 ### Examples
 
 ```
-dagger api client init ./lib/cli --sdk typescript --module .dagger/modules/api
-```
-
-### Options
-
-```
-      --module string        Workspace-relative path or canonical ref for the module the client binds to
-      --option stringArray   SDK-specific option as KEY=VAL; may be repeated
-      --sdk string           SDK alias or full ref (e.g., 'typescript' or 'github.com/dagger/typescript-sdk')
+dagger api client init typescript ./lib/cli .dagger/modules/api
 ```
 
 ### Options inherited from parent commands
@@ -1718,18 +1713,22 @@ Initialize a new module in the current workspace
 
 Initialize a new module in the workspace.
 
-The CLI is a thin wrapper around the engine's Workspace.moduleInit. It
-resolves the --sdk alias against the embedded sdks.json registry, fills
-in the default path when --path isn't supplied, and asks the engine to
-plan the workspace changes. The engine returns a Changeset that the CLI
-previews and applies through the standard changeset apply flow.
+<sdk> is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
+to add more choices.
+
+For example, after `dagger sdk install go`, run
+`dagger module init go myapp`.
+
+The CLI is a thin wrapper around the engine's Workspace.moduleInit. The
+engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
+workspace changes, and returns a Changeset that the CLI previews and applies
+through the standard changeset apply flow.
 
 What the engine does (atomically, in one Changeset):
-  1. Records the SDK install under [modules.<sdk-name>] in dagger.toml
-     if it isn't already there.
+  1. Uses [modules.<sdk>] as the SDK install and requires its as-sdk marker.
   2. Generates the new module's dagger-module.toml + SDK-emitted source
      scaffold at <path>.
-  3. Records [[modules.<sdk-name>.as-sdk.modules]] authoring entry for
+  3. Records [[modules.<sdk>.as-sdk.modules]] authoring entry for
      <path>.
   4. When --path is the default (.dagger/modules/<name>), also installs
      the new module as [modules.<name>] so it's callable here.
@@ -1739,20 +1738,19 @@ What the engine does (atomically, in one Changeset):
 explicitly).
 
 ```
-dagger module init <name> --sdk <sdk> [flags]
+dagger module init <sdk> <name> [flags]
 ```
 
 ### Examples
 
 ```
-dagger module init myapp --sdk go
+dagger module init go myapp
 ```
 
 ### Options
 
 ```
       --path string   Module path relative to the workspace root (default: .dagger/modules/<name>)
-      --sdk string    SDK alias or full ref (e.g., 'go' or 'github.com/dagger/go-sdk')
 ```
 
 ### Options inherited from parent commands
@@ -2397,4 +2395,3 @@ dagger workspace root [flags]
 ### SEE ALSO
 
 * [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
-

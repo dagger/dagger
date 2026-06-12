@@ -86,3 +86,13 @@ func TestLoadSDKRegistry(t *testing.T) {
 // Conventional SDK short-name derivation is now in core/workspace as
 // ConventionalSDKShortName (shared with the engine's migration code). Tests
 // for it live there.
+
+func TestModuleInitCommandShape(t *testing.T) {
+	cmd, _, err := moduleCmd.Find([]string{"init"})
+	require.NoError(t, err)
+	require.Same(t, moduleInitCmd, cmd)
+	require.Equal(t, "init <sdk> <name>", cmd.Use)
+	require.Nil(t, cmd.Flags().Lookup("sdk"))
+	require.NotNil(t, cmd.Flags().Lookup("path"))
+	require.Contains(t, cmd.Long, "to add more choices")
+}

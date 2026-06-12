@@ -544,7 +544,7 @@ The returned Changeset is the full set of workspace edits, including the SDK's c
 
 **Future: default SDK inference.** When the workspace has exactly one SDK installed, the user could drop the `<sdk>` positional: `dagger module init my-thing`. When multiple SDKs are installed, the user could declare a `default-sdk` in `dagger.toml`. Not in scope for CLI 1.0; non-breaking follow-up.
 
-**Workspace creation cascade.** If there's no workspace yet, the engine initializes one (same implicit-workspace behavior as `dagger install`'s first run). A fresh directory + `dagger module init my-mod --sdk=go` yields workspace + SDK install + module scaffold + workspace install in one command.
+**No workspace creation cascade.** `dagger module init` is dispatch-only. A fresh directory must run `dagger sdk install <sdk>` first; that creates the workspace config, installs the SDK, and stamps the `[modules.<sdk>.as-sdk]` marker that init dispatches through.
 
 The CLI ships no SDK-specific code. The engine ships no SDK alias knowledge. Each layer owns what is stable at its layer.
 
@@ -681,7 +681,7 @@ Available subcommands depend entirely on what the SDK exposes. The CLI surface i
 
 ## Discrete changes from current CLI
 
-Status legend: ✅ shipped on this branch | 🟡 partially shipped (different shape than design) | ⬜ designed, not yet implemented.
+Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designed, not yet implemented.
 
 ### Shipped — top-level surface
 
@@ -693,7 +693,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped (different sh
 
 ### Shipped — `dagger module`
 
-- ✅ **`dagger module init`** — scaffolds a new module. **Current shape: `dagger module init <name> --sdk=<sdk> [--path=<dir>]`.** Engine method `Workspace.moduleInit` returns a `Changeset` and the CLI applies it. (Designed positional shape is in the SDK module interface section — see 🟡 below.)
+- ✅ **`dagger module init`** — scaffolds a new module. **Current shape: `dagger module init <sdk> <name> [--path=<dir>]`.** `<sdk>` is the workspace install name created by `dagger sdk install`; the engine requires `[modules.<sdk>.as-sdk]`, uses the installed entry's source as the runtime/generator ref, returns a `Changeset`, and the CLI applies it. SDK-specific typed flags are still gated on the SDK contract (task #129).
 - ✅ **`dagger module deps {add, rm, list}`** — restored from PR #13226's pre-rollback state.
 - ✅ **`dagger module engine {require, require-current, require-latest, required}`** — restored from the same commit.
 - ✅ **`dagger module sdk`** — wrapper that dispatches `dagger call <current-module's-sdk> <subcommand>`. Looks up the SDK from `[[modules.*.as-sdk.modules]]` workspace entries.
@@ -704,7 +704,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped (different sh
 - ✅ **`dagger api functions`** — moved + renamed from `dagger function list`.
 - ✅ **`dagger api query`** — unchanged.
 - ✅ **`dagger api exec`** — moved from top-level `dagger exec` (with `run` / `r` aliases preserved under the new path). Short description sharpened to "Run a command with a connected Dagger API session". Top-level `dagger exec` is gone.
-- ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <path> --sdk=<sdk> --module=<ref> [--option K=V ...]`.** (Designed positional shape — see 🟡 below.)
+- ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <sdk> <path> <module>`.** `<sdk>` is the workspace install name created by `dagger sdk install`; `--sdk`, `--module`, and `--option` are gone. SDK-specific typed flags are still gated on the SDK contract (task #129).
 
 ### Shipped — `dagger sdk`
 
@@ -731,8 +731,8 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped (different sh
 
 ### Shipped — schema
 
-- ✅ **`Workspace.moduleInit`** — returns `Changeset!` (was `String!`); atomic preview-and-apply via `handleChangesetResponseAt`. No callers in main; Go SDK regen pending so CLI currently calls via raw GraphQL.
-- ✅ **`Workspace.clientInit` / `Workspace.clientGenerate`** — new engine methods backing `dagger api client init` and `dagger generate`.
+- ✅ **`Workspace.moduleInit`** — returns `Changeset!` (was `String!`); atomic preview-and-apply via `handleChangesetResponseAt`. `sdk` is now the installed SDK name, not a source ref; the SDK must already carry the `as-sdk` marker. No callers in main; Go SDK regen pending so CLI currently calls via raw GraphQL.
+- ✅ **`Workspace.clientInit` / `Workspace.clientGenerate`** — new engine methods backing `dagger api client init` and `dagger generate`. `clientInit` uses the installed SDK entry and records the generated client under `[[modules.<sdk>.as-sdk.clients]]`.
 - ✅ **Self-calls graduation** — per-module `experimental.SELF_CALLS` flag still in the schema for back-compat but the engine no longer consults it. Runtime-capability check (does the SDK implement `moduleTypes`?) replaces it.
 
 ### Shipped — flag rename
@@ -748,43 +748,27 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped (different sh
 - ✅ **`dagger call`** — hidden alias to `dagger api call`.
 - ✅ **`dagger shell`** — hidden, reachable.
 
-### 🟡 Partial — designed shape differs from shipped shape
+### 🟡 Partial — SDK-specific typed flags pending
 
-- 🟡 **`dagger module init <sdk> <name>` (positional dispatch)** vs. current `dagger module init <name> --sdk=<sdk>`. Designed shape introspects the SDK's `initModule` function schema and surfaces SDK-specific args as typed flags. Current shape uses `--sdk` flag and has no SDK-arg pass-through. See the SDK contract section above.
-- 🟡 **`dagger api client init <sdk> <path> <module>` (positional dispatch)** vs. current `dagger api client init <path> --sdk=<sdk> --module=<ref> [--option K=V]`. The designed shape drops `--option` in favor of typed SDK function args. The current `--option` flag parses and persists values in `dagger.toml` but **does not forward them to the SDK at generation time** — they are decorative. See `core/schema/workspace_client.go::workspaceClientInitGeneratedDiff`.
+- 🟡 **`dagger module init <sdk> <name> [SDK-SPECIFIC FLAGS]`** — positional dispatch is shipped, but SDK-specific typed flags still require SDK `initModule` introspection (task #129). Current shipped generic args are `<sdk>`, `<name>`, and `--path`.
+- 🟡 **`dagger api client init <sdk> <path> <module> [SDK-SPECIFIC FLAGS]`** — positional dispatch is shipped and `--option` is removed, but SDK-specific typed flags still require SDK `initClient` introspection (task #129). Current shipped generic args are `<sdk>`, `<path>`, and `<module>`.
 
 ### ⬜ Not yet implemented — handoff to follow-up PRs
 
 Tracked as implementation tasks #120–#130 with body-level notes.
 
-#### Init reshape
-
-- ⬜ **`dagger module init <sdk> <name>` reshape** — drop `--sdk` flag, make sdk positional, introspect SDK's `initModule` for typed args. Task #127.
-- ⬜ **`dagger api client init <sdk> <path> <module>` reshape** — drop `--sdk` / `--module` / `--option` flags, make all positional + introspect SDK's `initClient`. Task #128.
-- ⬜ **Engine `Workspace.moduleInit` arg shape change** — drop the install-the-SDK side effect, require the SDK to be installed-as-SDK, accept SDK args as a JSON payload. Task #125.
-- ⬜ **Engine `Workspace.clientInit` arg shape change** — same. Task #126.
-
 #### SDK contract
 
 - ⬜ **`initModule` / `initClient` as capability flags** — when an SDK implements the function, the corresponding init verb is available for it; when absent, the verb errors with `"<sdk> does not support module init"` (or `client init`). Task #129.
+- ⬜ **SDK-specific init args payload** — once `initModule` / `initClient` exist, forward typed SDK args through the engine and merge the SDK-returned Changeset with engine bookkeeping. Tasks #125–#129.
 - ⬜ **`targetRuntime` introspection wiring** — the engine hook (`resolveModuleRuntimeRef` / `lookupSDKTargetRuntime`) is in place but always returns `("", false)`. Activate when the first SDK opts in. Task #129.
 - ⬜ **Capability checks on `core.SDK` interface** — `AsModuleInit() (ModuleInit, bool)` and `AsClientInit() (ClientInit, bool)` alongside the existing `AsRuntime` / `AsModuleTypes` / `AsCodeGenerator` / `AsClientGenerator`. Task #129.
-
-#### Schema bookkeeping
-
-- ⬜ **`ModuleEntry.AsSDK` empty-marker semantics** — `cloneModuleAsSDK` currently collapses an empty `AsSDK` to nil. For the as-sdk-marker model (presence = is-an-SDK, even when no targets are authored), preserve the pointer. Task #121.
 
 #### Ergonomic follow-ups
 
 - ⬜ **Default-SDK inference** — when a workspace has exactly one installed SDK, let the user drop the `<sdk>` positional on `dagger module init`. Non-breaking; rules sketched in the SDK contract section.
 - ⬜ **SDK codegen regen across the 6 SDKs** — the CLI calls `Workspace.moduleInit` / `clientInit` via raw GraphQL (`dag.Do`) today because the Go SDK binding still has the pre-Changeset signature. Collapse to typed calls once regenerated.
-- ⬜ **`--option` flag removal** — currently parses + persists but doesn't reach the SDK at generation time. Dies with the init reshape (Task #128).
-
-### Known unfixed items
-
-- ⬜ **Workspace concept is referenced everywhere (`--env`, `setup`, `-W`) but never defined.** Cold-read v2 and v3 both flagged that newcomers can't form a mental model from the top-level help alone. Likely fix: one-sentence definition at the top of `dagger workspace --help`.
-- ⬜ **`exec` description ("Execute a command in a Dagger session") is too vague.** "Session in what?" Needs sharpening. Also picked up by the move to `dagger api exec` (Task #130) — the new home makes the sharpening natural.
 
 ## Status
 
-Substantial portion shipped on this branch (`design/cli-1.0` → PR #13392). The runtime/SDK split + `as-sdk` schema + Changeset-returning `moduleInit` / `clientInit` are all in. Follow-up work (the `dagger sdk` group, positional init dispatch, `initModule`/`initClient` capability semantics, `--option` removal, exec move) is tracked in tasks #120–#130 with implementation-level notes for handoff.
+Substantial portion shipped on this branch (`design/cli-1.0` → PR #13392). The runtime/SDK split + `as-sdk` schema + Changeset-returning `moduleInit` / `clientInit` are all in. Follow-up work is concentrated on the SDK contract (`initModule` / `initClient` / `targetRuntime` capability semantics), default-SDK inference, and SDK codegen regeneration.

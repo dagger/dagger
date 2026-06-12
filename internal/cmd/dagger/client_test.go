@@ -7,24 +7,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseAPIClientOptions(t *testing.T) {
+func TestAPIClientInitCommandShape(t *testing.T) {
 	t.Parallel()
 
-	got, err := parseAPIClientOptions([]string{
-		"package-name=@my-app/dagger-client",
-		"go-module=example.com/client",
-	})
+	cmd, _, err := apiClientCmd.Find([]string{"init"})
 	require.NoError(t, err)
-	require.Equal(t, []sdkOptionInput{
-		{Key: "package-name", Value: "@my-app/dagger-client"},
-		{Key: "go-module", Value: "example.com/client"},
-	}, got)
-
-	_, err = parseAPIClientOptions([]string{"package-name"})
-	require.EqualError(t, err, `--option "package-name" must be in KEY=VAL form`)
-
-	_, err = parseAPIClientOptions([]string{"path=lib/client"})
-	require.EqualError(t, err, `--option "path" is reserved`)
+	require.Same(t, apiClientInitCmd, cmd)
+	require.Equal(t, "init <sdk> <path> <module>", cmd.Use)
+	require.Nil(t, cmd.Flags().Lookup("sdk"))
+	require.Nil(t, cmd.Flags().Lookup("module"))
+	require.Nil(t, cmd.Flags().Lookup("option"))
+	require.Contains(t, cmd.Long, "to add more choices")
 }
 
 func TestAPIClientEntries(t *testing.T) {
