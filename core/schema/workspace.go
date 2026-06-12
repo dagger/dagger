@@ -151,6 +151,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("skip").Doc("Skip checks matching the specified patterns"),
 				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
 				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions"),
 			),
@@ -783,6 +784,7 @@ func (s *workspaceSchema) checks(
 	parent *core.Workspace,
 	args struct {
 		Include      dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Skip         dagql.Optional[dagql.ArrayInput[dagql.String]]
 		NoGenerate   dagql.Optional[dagql.Boolean]
 		OnlyGenerate dagql.Optional[dagql.Boolean]
 	},
@@ -792,6 +794,7 @@ func (s *workspaceSchema) checks(
 	}
 
 	include := workspaceIncludePatterns(args.Include)
+	skip := workspaceIncludePatterns(args.Skip)
 
 	ctx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -829,6 +832,20 @@ func (s *workspaceSchema) checks(
 		)
 		if err != nil {
 			return nil, err
+		}
+		// Apply caller-requested skip patterns.
+		if len(skip) > 0 {
+			filtered, err = filterNodesByExclude(
+				ctx,
+				filtered,
+				skip,
+				func(check *core.Check) *core.ModTreeNode { return check.Node },
+				func(check *core.Check) string { return check.Name() },
+				"check",
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		// Apply ignoreChecks exclusion for this toolchain's checks.
 		if exclude := ignoreChecks[mod.Self().Name()]; len(exclude) > 0 {

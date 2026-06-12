@@ -251,6 +251,75 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 	})
 }
 
+func (ChecksSuite) TestChecksSkipFlag(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := checksTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("hello-with-checks")
+
+	t.Run("list with skip excludes matching checks", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerExec("check", "-l", "--skip", "failing-*")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "passing-check")
+		require.Contains(t, out, "passing-container")
+		require.Contains(t, out, "test:lint")
+		require.Contains(t, out, "test:unit")
+		require.NotContains(t, out, "failing-check")
+		require.NotContains(t, out, "failing-container")
+	})
+
+	t.Run("list with glob skip pattern", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerExec("check", "-l", "--skip", "**:unit")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "test:lint")
+		require.NotContains(t, out, "test:unit")
+	})
+
+	t.Run("list with prefix skip pattern", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerExec("check", "-l", "--skip", "test")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "passing-check")
+		require.NotContains(t, out, "test:lint")
+		require.NotContains(t, out, "test:unit")
+	})
+
+	t.Run("list with include and skip combined", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerExec("check", "-l", "test", "--skip", "**:unit")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "test:lint")
+		require.NotContains(t, out, "test:unit")
+		require.NotContains(t, out, "passing-check")
+	})
+
+	t.Run("run with skip excludes matching checks", func(ctx context.Context, t *testctx.T) {
+		// Should pass because the failing checks are skipped
+		out, err := modGen.
+			With(daggerExec("--progress=report", "check", "--skip", "failing-*")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.Regexp(t, `passing-container.*OK`, out)
+		require.NotContains(t, out, "failing-check")
+		require.NotContains(t, out, "failing-container")
+	})
+
+	t.Run("past and skip are mutually exclusive", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(daggerExecFail("check", "--past", "--skip", "failing-*")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "if any flags in the group [past skip] are set none of the others can be")
+	})
+}
+
 func (ChecksSuite) TestWorkspaceCheckSkip(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := checksTestEnv(t, c)
