@@ -174,10 +174,10 @@ func TestPlanMigrationWritesMainModuleFirst(t *testing.T) {
 	require.Less(t, mainIdx, toolchainIdx)
 }
 
-// TestPlanMigrationWritesSDKsSection verifies that the legacy `sdk` field on
-// dagger.json is surfaced as a workspace [sdks.<name>] install with the
-// migrated module recorded under [[sdks.<name>.modules]].
-func TestPlanMigrationWritesSDKsSection(t *testing.T) {
+// TestPlanMigrationWritesAsSDK verifies that the legacy `sdk` field on
+// dagger.json is surfaced as a workspace module installed as an SDK, with
+// the migrated module recorded under [[modules.<name>.as-sdk.modules]].
+func TestPlanMigrationWritesAsSDK(t *testing.T) {
 	t.Parallel()
 
 	plan := testMigrationPlan(t, "repo", `{
@@ -190,9 +190,9 @@ func TestPlanMigrationWritesSDKsSection(t *testing.T) {
 }`)
 
 	configData := string(plan.WorkspaceConfigData)
-	require.Contains(t, configData, "[sdks.go]")
+	require.Contains(t, configData, "[modules.go]")
 	require.Contains(t, configData, `source = "go"`)
-	require.Contains(t, configData, "[[sdks.go.modules]]")
+	require.Contains(t, configData, "[[modules.go.as-sdk.modules]]")
 	require.Contains(t, configData, `path = ".dagger/modules/myapp"`)
 }
 
@@ -211,7 +211,7 @@ func TestPlanMigrationExternalSDKShortName(t *testing.T) {
 }`)
 
 	configData := string(plan.WorkspaceConfigData)
-	require.Contains(t, configData, "[sdks.go-sdk]")
+	require.Contains(t, configData, "[modules.go-sdk]")
 	require.Contains(t, configData, `source = "github.com/dagger/go-sdk@v1.2.3"`)
 }
 
