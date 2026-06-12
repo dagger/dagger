@@ -50,7 +50,7 @@ type parsedSSHEndpoint struct {
 
 // mountID derives the cache id for a sshfs mount as sha256(endpoint + private-key digest).
 //
-// Security: the cache is derived from secret key material. 
+// Security: the cache is derived from secret key material.
 func mountID(endpoint, privKeyDigest string) string {
 	h := sha256.Sum256([]byte(endpoint + ":" + privKeyDigest))
 	return hex.EncodeToString(h[:])
