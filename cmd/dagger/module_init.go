@@ -104,11 +104,12 @@ plan the workspace changes. The engine returns a Changeset that the CLI
 previews and applies through the standard changeset apply flow.
 
 What the engine does (atomically, in one Changeset):
-  1. Records the SDK install under [sdks.<name>] in dagger.toml if it
-     isn't already there.
+  1. Records the SDK install under [modules.<sdk-name>] in dagger.toml
+     if it isn't already there.
   2. Generates the new module's dagger-module.toml + SDK-emitted source
      scaffold at <path>.
-  3. Records [[sdks.<name>.modules]] authoring entry for <path>.
+  3. Records [[modules.<sdk-name>.as-sdk.modules]] authoring entry for
+     <path>.
   4. When --path is the default (.dagger/modules/<name>), also installs
      the new module as [modules.<name>] so it's callable here.
 
