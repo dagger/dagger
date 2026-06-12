@@ -2829,7 +2829,7 @@ func (s *containerSchema) withMountedHostDirectory(ctx context.Context, parent d
 		return nil, err
 	}
 
-	ctr, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -2874,7 +2874,7 @@ func (s *containerSchema) withVolumeMount(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 
-	ctr, err := cloneContainerForSchemaChild(ctx, parent)
+	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
