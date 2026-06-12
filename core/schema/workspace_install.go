@@ -12,9 +12,10 @@ import (
 )
 
 type workspaceInstallArgs struct {
-	Ref  string
-	Name string `default:""`
-	Here bool   `default:"false"`
+	Ref   string
+	Name  string `default:""`
+	Here  bool   `default:"false"`
+	AsSdk bool   `default:"false"`
 }
 
 func (s *workspaceSchema) install(
@@ -40,20 +41,37 @@ func (s *workspaceSchema) install(
 	}
 
 	if existing, ok := cfg.Modules[name]; ok {
-		if existing.Source == sourcePath {
-			return dagql.String(fmt.Sprintf("Module %q is already installed", name)), nil
+		if existing.Source != sourcePath {
+			return "", fmt.Errorf(
+				"module %q already exists in workspace config with source %q (new source %q)",
+				name,
+				existing.Source,
+				sourcePath,
+			)
 		}
-		return "", fmt.Errorf(
-			"module %q already exists in workspace config with source %q (new source %q)",
-			name,
-			existing.Source,
-			sourcePath,
-		)
+		// Idempotent re-install: same source already there. If --as-sdk was
+		// passed and the install isn't already marked, stamp the marker so a
+		// plain `install` followed by `sdk install` upgrades it in place.
+		if args.AsSdk && existing.AsSDK == nil {
+			existing.AsSDK = &workspace.ModuleAsSDK{}
+			cfg.Modules[name] = existing
+			if err := writeWorkspaceConfigWithHints(ctx, parent, cfg, nil); err != nil {
+				return "", err
+			}
+			return dagql.String(fmt.Sprintf("Marked %q as an SDK", name)), nil
+		}
+		return dagql.String(fmt.Sprintf("Module %q is already installed", name)), nil
 	}
 
-	cfg.Modules[name] = workspace.ModuleEntry{
+	entry := workspace.ModuleEntry{
 		Source: sourcePath,
 	}
+	if args.AsSdk {
+		// Empty marker. Presence (not contents) is what `dagger module init`
+		// / `dagger api client init` dispatch on.
+		entry.AsSDK = &workspace.ModuleAsSDK{}
+	}
+	cfg.Modules[name] = entry
 	hints := s.collectWorkspaceSettingsHints(ctx, parent, map[string]string{name: args.Ref})
 	if err := writeWorkspaceConfigWithHints(ctx, parent, cfg, hints); err != nil {
 		return "", err
@@ -64,7 +82,11 @@ func (s *workspaceSchema) install(
 		return "", err
 	}
 
-	msg := fmt.Sprintf("Installed module %q in %s", name, cfgPath)
+	verb := "Installed module"
+	if args.AsSdk {
+		verb = "Installed SDK"
+	}
+	msg := fmt.Sprintf("%s %q in %s", verb, name, cfgPath)
 	if initialized {
 		msg = fmt.Sprintf("Created workspace config in %s\n%s", filepath.Dir(cfgPath), msg)
 	}

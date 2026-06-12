@@ -222,6 +222,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"api",
 		"cloud",
 		"module",
+		"sdk",
 		"workspace",
 	} {
 		require.Contains(t, names, name)
@@ -251,7 +252,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	}
 
 	for _, leaf := range []string{"activity", "check", "generate", "install", "installed", "search", "settings", "setup", "uninstall", "up", "update", "version"} {
-		for _, parent := range []string{"api", "cloud", "module", "workspace"} {
+		for _, parent := range []string{"api", "cloud", "module", "sdk", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}
 	}
