@@ -390,6 +390,28 @@ Aliases are a **CLI-side, parse-time** mechanism. `dagger.toml`, `dagger-module.
 
 The SDK registry is separate from the general module registry to keep namespaces clean (`github.com/dagger/go` the toolchain and `github.com/dagger/go-sdk` the SDK can both legitimately want the short name "go" depending on context; scoping the SDK alias mechanism to its own registry avoids the collision).
 
+### Future direction: default SDK inference
+
+Today, `--sdk` is a required flag on both `dagger module init` and `dagger api client init`. The "required → positional" instinct is in tension with "required-and-multiple-required forces awkward 2+ positional shapes," so flags stay.
+
+The cleaner long-term resolution is to make `--sdk` *derivable* (optional, with a default) rather than *required*:
+
+1. **Workspace has exactly one SDK installed** → use it. Covers the monorepo case.
+2. **Workspace config declares a default SDK** (e.g. a top-level `default-sdk = "go-sdk"` field in `dagger.toml`) → use it. Explicit opt-in for polyglot workspaces.
+3. **No SDK installed yet** → error: `"no SDK installed; pass --sdk to install one."` First-time disambiguation forces explicit choice.
+4. **Multiple SDKs, no default configured** → error: `"multiple SDKs installed; pass --sdk or set default-sdk in dagger.toml."`
+
+With those rules, the common-case command becomes:
+
+```bash
+dagger module init my-mod                                  # SDK inferred
+dagger api client init ./lib/cli --module=./modules/api    # SDK inferred
+```
+
+`--sdk` stays a flag — correctly, because it's optional when the workspace has a sensible default.
+
+Not in scope for the CLI 1.0 PR itself; explicit `--sdk` is still required at landing. The inference logic is a non-breaking follow-up (existing invocations with explicit `--sdk` keep working).
+
 ### `dagger module init`
 
 ```bash
