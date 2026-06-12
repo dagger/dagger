@@ -114,6 +114,16 @@ func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "3", strings.TrimSpace(out))
 	})
+
+	t.Run("dependency enum member with digits", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "enum-dependency").
+			With(daggerCall("call-foo")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "P256", strings.TrimSpace(out))
+	})
 }
 
 func (DangSuite) TestMismatch(_ context.Context, t *testctx.T) {
