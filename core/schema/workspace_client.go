@@ -13,25 +13,11 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type SdkOption struct {
-	Key   string `field:"true" doc:"Option key."`
-	Value string `field:"true" doc:"Option value."`
-}
-
-func (SdkOption) TypeName() string {
-	return "SdkOption"
-}
-
-func (SdkOption) TypeDescription() string {
-	return "SDK-specific option to persist for a generated client."
-}
-
 type workspaceClientInitArgs struct {
-	Path    string
-	SDK     string
-	Module  string
-	Options []dagql.InputObject[SdkOption] `default:"[]"`
-	Here    bool                           `default:"false"`
+	Path   string
+	SDK    string
+	Module string
+	Here   bool `default:"false"`
 }
 
 func (s *workspaceSchema) clientInit(
@@ -43,10 +29,10 @@ func (s *workspaceSchema) clientInit(
 		return nil, fmt.Errorf("client path is required")
 	}
 	if args.SDK == "" {
-		return nil, fmt.Errorf("--sdk is required")
+		return nil, fmt.Errorf("SDK name is required")
 	}
 	if args.Module == "" {
-		return nil, fmt.Errorf("--module is required")
+		return nil, fmt.Errorf("module ref is required")
 	}
 
 	clientPath, err := cleanWorkspaceClientPath(args.Path)
@@ -58,12 +44,16 @@ func (s *workspaceSchema) clientInit(
 		return nil, err
 	}
 
-	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
+	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigMustExist, args.Here)
 	if err != nil {
 		return nil, err
 	}
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
+	if err != nil {
+		return nil, err
 	}
 
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, parent)
@@ -78,26 +68,14 @@ func (s *workspaceSchema) clientInit(
 	}
 	modulePin := targetModule.Self().Pin()
 
-	sdkName := workspace.ConventionalSDKShortName(args.SDK)
-	options, err := sdkOptionsMap(args.Options)
-	if err != nil {
-		return nil, err
-	}
 	removeClientEntryAtPath(cfg, clientPath)
-	sdkEntry := cfg.Modules[sdkName]
-	if sdkEntry.Source == "" {
-		sdkEntry.Source = args.SDK
-	}
-	if sdkEntry.AsSDK == nil {
-		sdkEntry.AsSDK = &workspace.ModuleAsSDK{}
-	}
+	sdkEntry = cfg.Modules[args.SDK]
 	sdkEntry.AsSDK.Clients = append(sdkEntry.AsSDK.Clients, workspace.SDKManagedClient{
-		Path:    clientPath,
-		Module:  moduleRef,
-		Pin:     modulePin,
-		Options: options,
+		Path:   clientPath,
+		Module: moduleRef,
+		Pin:    modulePin,
 	})
-	cfg.Modules[sdkName] = sdkEntry
+	cfg.Modules[args.SDK] = sdkEntry
 
 	existingConfigBytes, err := readConfigBytes(ctx, parent)
 	if err != nil {
@@ -108,7 +86,7 @@ func (s *workspaceSchema) clientInit(
 		return nil, fmt.Errorf("update workspace config: %w", err)
 	}
 
-	generatedClients, err := s.workspaceClientInitGeneratedDiff(workspaceCtx, targetModule, args.SDK, clientPath)
+	generatedClients, err := s.workspaceClientInitGeneratedDiff(workspaceCtx, targetModule, sdkRef, clientPath)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +154,7 @@ func (s *workspaceSchema) clientGenerate(
 		if entry.AsSDK == nil || len(entry.AsSDK.Clients) == 0 {
 			continue
 		}
-		sdkRef := clientGeneratorSource(entry)
+		sdkRef := moduleEntrySourceWithPin(entry)
 		if sdkRef == "" {
 			return nil, fmt.Errorf("SDK module %q has no source", sdkName)
 		}
@@ -276,7 +254,7 @@ func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref string) (configRef 
 		cleaned = "."
 	}
 	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("--module %q must not escape the workspace root", ref)
+		return "", "", fmt.Errorf("module ref %q must not escape the workspace root", ref)
 	}
 	loadPath, err := workspaceHostPath(ws, cleaned)
 	if err != nil {
@@ -299,32 +277,6 @@ func workspaceClientModuleSourceSelector(ref string, pin string) dagql.Selector 
 	}
 }
 
-func clientGeneratorSource(entry workspace.ModuleEntry) string {
-	if entry.Pin == "" || strings.Contains(entry.Source, "@") {
-		return entry.Source
-	}
-	return entry.Source + "@" + entry.Pin
-}
-
-func sdkOptionsMap(inputs []dagql.InputObject[SdkOption]) (map[string]string, error) {
-	if len(inputs) == 0 {
-		return nil, nil
-	}
-	options := map[string]string{}
-	for _, input := range inputs {
-		option := input.Value
-		if option.Key == "" {
-			return nil, fmt.Errorf("--option key must not be empty")
-		}
-		switch option.Key {
-		case "path", "module", "pin":
-			return nil, fmt.Errorf("--option %q is reserved", option.Key)
-		}
-		options[option.Key] = option.Value
-	}
-	return options, nil
-}
-
 func removeClientEntryAtPath(cfg *workspace.Config, clientPath string) {
 	if cfg == nil {
 		return
@@ -337,9 +289,6 @@ func removeClientEntryAtPath(cfg *workspace.Config, clientPath string) {
 		entry.AsSDK.Clients = slices.DeleteFunc(entry.AsSDK.Clients, func(client workspace.SDKManagedClient) bool {
 			return filepath.Clean(client.Path) == cleanPath
 		})
-		if len(entry.AsSDK.Modules) == 0 && len(entry.AsSDK.Clients) == 0 {
-			entry.AsSDK = nil
-		}
 		cfg.Modules[moduleName] = entry
 	}
 }
