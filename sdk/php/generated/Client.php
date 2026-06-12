@@ -1023,6 +1023,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load a Volume from its ID.
+     */
+    public function loadVolumeFromID(VolumeId $id): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadVolumeFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Workspace from its ID.
      */
     public function loadWorkspaceFromID(WorkspaceId $id): Workspace
@@ -1178,6 +1188,27 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('line', $line);
         $innerQueryBuilder->setArgument('column', $column);
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create or retrieve an engine-managed SSHFS volume.
+     *
+     * Endpoint must be a parseable SSH URL, e.g. "ssh://user@host:2222/path".
+     */
+    public function sshfsVolume(
+        string $endpoint,
+        Secret $privateKey,
+        Secret $publicKey,
+        ?Service $experimentalServiceHost = null,
+    ): Volume {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sshfsVolume');
+        $innerQueryBuilder->setArgument('endpoint', $endpoint);
+        $innerQueryBuilder->setArgument('privateKey', $privateKey);
+        $innerQueryBuilder->setArgument('publicKey', $publicKey);
+        if (null !== $experimentalServiceHost) {
+        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
+        }
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
