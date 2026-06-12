@@ -18,7 +18,7 @@ together, defeating the purpose of reusable modules.
 
 ## Solution
 
-Extend the `config.*` constructor customization mechanism in `.dagger/config.toml` to
+Extend the `settings.*` constructor customization mechanism in `dagger.toml` to
 support **service references**: a value that resolves to the `Service` returned by a
 `+up` function on another workspace module.
 
@@ -33,7 +33,7 @@ source = "github.com/example/docusaurus@v1.0"
 
 [modules.playwright]
 source = "github.com/example/playwright@v1.0"
-config.app = { from = "docusaurus:serve" }
+settings.app = { from = "docusaurus:serve" }
 ```
 
 The path format is `<module>:<function>` for singleton services, or
@@ -83,7 +83,7 @@ a `*dagger.Service` like any other constructor argument.
 
 When the engine processes constructor arg defaults from `WorkspaceConfig`:
 
-1. **Config parsing**: The `config.*` value `{ from = "docusaurus:serve" }` is parsed
+1. **Config parsing**: The `settings.*` value `{ from = "docusaurus:serve" }` is parsed
    as a `map[string]any` with a single `from` key. This is detected as a service
    reference (as opposed to a literal value).
 
@@ -104,7 +104,7 @@ When a module uses Collections to dynamically expose multiple services:
 
 ```toml
 # docusaurus detects 3 sites, exposes collection with keys "docs", "blog", "api"
-config.app = { from = "docusaurus:serve:docs" }
+settings.app = { from = "docusaurus:serve:docs" }
 ```
 
 The third path segment identifies the collection member whose `+up` function provides

@@ -171,93 +171,39 @@ func (UpSuite) TestUpServiceBinding(ctx context.Context, t *testctx.T) {
 }
 
 func (UpSuite) TestUpServiceRef(ctx context.Context, t *testctx.T) {
-	// Test that a module's constructor can receive a Service from another
-	// module's +up function via a { "from": "<module>:<function>" } config.
+	// A module's constructor can receive a Service from another module's +up
+	// function via workspace settings: settings.<arg> = { from = "<module>:<function>" }
 	c := connect(ctx, t)
-
-	modGen := c.Container().
-		From(alpineImage).
-		WithExec([]string{"apk", "add", "git"}).
-		WithWorkdir("/work").
-		WithExec([]string{"git", "init"}).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		// Create the provider module — a +up function that returns a Service
-		WithWorkdir("/work/provider").
-		With(daggerExec("init", "--sdk=go", "--name=provider")).
-		WithNewFile("main.go", `package main
-
-import "dagger/provider/internal/dagger"
-
-type Provider struct{}
-
-// +up
-func (m *Provider) Serve() *dagger.Service {
-	return dag.Container().
-		From("nginx:alpine").
-		WithExposedPort(80).
-		AsService()
-}
-`).
-		// Create the consumer module — accepts optional Service constructor arg
-		WithWorkdir("/work/consumer").
-		With(daggerExec("init", "--sdk=go", "--name=consumer")).
-		WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"dagger/consumer/internal/dagger"
-)
-
-type Consumer struct {
-	App *dagger.Service
-}
-
-func New(
-	// +optional
-	app *dagger.Service,
-) *Consumer {
-	return &Consumer{App: app}
-}
-
-// HasService returns "true" if a Service was provided, "false" otherwise.
-func (m *Consumer) HasService(ctx context.Context) (string, error) {
-	if m.App == nil {
-		return "false", nil
-	}
-	return "true", nil
-}
-`).
-		// Create the main module that wires them together
-		WithWorkdir("/work/main").
-		With(daggerExec("init")).
-		WithNewFile("dagger.json", `{
-  "name": "main",
-  "engineVersion": "v0.20.1",
-  "toolchains": [
-    {
-      "name": "provider",
-      "source": "../provider"
-    },
-    {
-      "name": "consumer",
-      "source": "../consumer",
-      "customizations": [
-        {
-          "argument": "app",
-          "default": {"from": "provider:serve"}
-        }
-      ]
-    }
-  ]
-}
-`)
-
-	// Verify the consumer received the service from the provider
-	out, err := modGen.
-		With(daggerExec("call", "consumer", "has-service")).
-		Stdout(ctx)
+	modGen, err := upTestEnv(t, c)
 	require.NoError(t, err)
-	require.Contains(t, out, "true")
+
+	t.Run("without service ref", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+`).
+			With(daggerExec("call", "service-ref-consumer", "has-service")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "false")
+	})
+
+	t.Run("with service ref", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.app = { from = "hello-with-services:web" }
+`).
+			With(daggerExec("call", "service-ref-consumer", "has-service")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "true")
+	})
 }
 
 func (UpSuite) TestUpPartialStartupFailure(ctx context.Context, t *testctx.T) {
