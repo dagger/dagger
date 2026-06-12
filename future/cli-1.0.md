@@ -124,7 +124,7 @@ What we considered, debated, changed, and decided for each command. Not a descri
 | `module` | Original Dagger `mod` group was the *consumer* plural ("modules in the ecosystem"). The redesign nuked it and reintroduced singular `dagger module` as the *authoring* lane ("the module under my cursor"). Singular vs plural carries the consumer/author distinction; the verbs underneath differ accordingly. Considered `mod dev` as a nested sub-group inside the old plural — pivoted to the cleaner singular-noun split. |
 | `module init` | Requested explicitly. Replaces a top-level `dagger init` that briefly existed in early drafts (workspace creation goes implicit on first install instead). `dagger module init` matches `cargo init` / `npm init` muscle memory for scaffolding. **Implementation depends on the SDK module interface — see [SDK module interface](#sdk-module-interface).** Form: `dagger module init <name> --sdk=<name> [--path=<dir>]`. No SDK-specific configuration flags at init time — kept minimal. Auto-installs the SDK if not already in the workspace; uses a SDK-internal template convention to scaffold. Post-init SDK-specific operations live under `dagger module sdk` (below). |
 | `module deps` / `module engine` | Restored from PR #13226's pre-rollback state. The original work was rolled back because there was no clean home for it under the old `dagger mod` — adding it created the consumer/author conflation problem. The redesign's whole architecture (separate `dagger module` group, `--load-module` rename, no module-targeting flag on authoring commands) is what makes restoring them honest. The rebalance principle (CLI owns shared operations, SDK owns specialized ones — see [SDK module interface](#sdk-module-interface)) puts `deps` and `engine` clearly on the CLI side: editing dagger-module.toml's deps list or engineVersion is 100% identical across SDKs, so duplicating it inside each SDK would be the kind of duplication the new architecture is meant to avoid. |
-| `module sdk` | Thin wrapper that dispatches to the current module's SDK. Form: `dagger module sdk <subcommand> <args>`. Locates the cwd's `dagger-module.toml` (walking up, stopping at the workspace root), computes the module's workspace-relative path, then scans the workspace's `[[sdks.*.modules]]` for an entry whose `path` matches. The parent `sdks.<NAME>` is the SDK; the wrapper runs `dagger call <NAME> <subcommand> <args>`. The SDK association lives in workspace config, not in `dagger-module.toml` (per the runtime/SDK split — see [SDK module interface](#sdk-module-interface)). Available subcommands depend entirely on what the SDK exposes — no CLI-side contract beyond "you're an installed module with functions." Examples: `dagger module sdk python-version 3.13`, `dagger module sdk setup-template legacy`, `dagger module sdk go-mod-tidy`. This is the per-module escape hatch for SDK-specific operations; the CLI provides discovery and orchestration, the SDK provides everything else. |
+| `module sdk` | Thin wrapper that dispatches to the current module's SDK. Form: `dagger module sdk <subcommand> <args>`. Locates the cwd's `dagger-module.toml` (walking up, stopping at the workspace root), computes the module's workspace-relative path, then scans the workspace's `[[modules.*.as-sdk.modules]]` for an entry whose `path` matches. The parent `modules.<NAME>` is the SDK; the wrapper runs `dagger call <NAME> <subcommand> <args>`. The SDK association lives in workspace config, not in `dagger-module.toml` (per the runtime/SDK split — see [SDK module interface](#sdk-module-interface)). Available subcommands depend entirely on what the SDK exposes — no CLI-side contract beyond "you're an installed module with functions." Examples: `dagger module sdk python-version 3.13`, `dagger module sdk setup-template legacy`, `dagger module sdk go-mod-tidy`. This is the per-module escape hatch for SDK-specific operations; the CLI provides discovery and orchestration, the SDK provides everything else. |
 | `cloud` | Initially in group 5 (meta) with `login`/`logout` as top-level peers. Moved login/logout *under* cloud (rare-use verbs nest). Then `cloud` itself moved from group 5 to group 4 — it's structurally a major namespace, not a meta verb. |
 | `cloud integration` | Original `dagger integration` was singleton-shaped (`accounts`, `setup`) — one provider type, list its accounts. Requested redesign to mutable shape (`create`, `rm`, `list`): each configured integration is a discrete entry; `list` enumerates them (optionally filtered by type), replacing the old "list accounts of provider X" framing. Folded under `cloud` per usefulness × simplicity — integrations are configured occasionally, so they nest. |
 | `cloud check` | Replaces `dagger workspace autocheck` (which was just on/off for the selected remote). Mutable shape `{on, off, list, status NAME}` proposed during the cloud restructure. Naming intentionally overlaps with top-level `check`: different concepts at different levels — top-level = run local checks, `cloud check` = manage Cloud-side automated runs. Acceptable. |
@@ -294,48 +294,61 @@ Heuristic: no `/` and no `@` → builtin name; otherwise module ref.
 
 There is no `sdk` field in `dagger-module.toml`. A previous draft of CLI 1.0 carried both `runtime` and `sdk` at this layer; on reflection the runtime/SDK distinction is real but belongs in the workspace, not the module.
 
-### Workspace config: `dagger.toml` carries SDK installs and authoring
+### Workspace config: SDK installs and authoring nest under `[modules.*]`
 
-`dagger.toml` carries three top-level sections relevant here:
+An SDK is a module whose role in the workspace is to author other modules. There is no parallel `[sdks.*]` top-level section; every install — regular module or SDK module — lives under `[modules.*]`. SDK-specific data nests in an `as-sdk` sub-table on the module entry.
 
 ```toml
 # Installed modules — consumed dependencies, available to call.
 [modules.dagger-cloud]
 source = "github.com/dagger/dagger-cloud@v0.5"
 
-# Installed SDKs and what they manage in this workspace.
-[sdks.go-sdk]
+# Installed module that's also acting as an SDK. The as-sdk sub-table
+# lists what it authors/manages here.
+[modules.go-sdk]
 source = "github.com/dagger/go-sdk@v1.2.3"
 
-[[sdks.go-sdk.modules]]
+[modules.go-sdk.settings]
+strict-build = true
+
+[[modules.go-sdk.as-sdk.modules]]
 path = ".dagger/modules/api"
 
-[[sdks.go-sdk.modules]]
+[[modules.go-sdk.as-sdk.modules]]
 path = "libs/shared"
 
 # A module both authored here AND installed here gets entries in BOTH
-# [modules.*] and [[sdks.X.modules]]. Each section is read independently.
+# places: its own [modules.<name>] install AND a path under the parent
+# SDK's [[modules.<sdk>.as-sdk.modules]] authoring list.
 [modules.api]
 source = ".dagger/modules/api"
 
 # SDK-managed non-module targets (e.g., a TypeScript client generated
-# into a Next.js app). Shape TBD; placeholder section.
-[[sdks.typescript-sdk.clients]]
+# into a Next.js app). Same as-sdk nesting; clients live there too.
+[[modules.typescript-sdk.as-sdk.clients]]
 path = "app/lib/dagger-client"
+module = ".dagger/modules/api"
 ```
 
 Section semantics:
 
-| Section | Meaning |
+| Section / key | Meaning |
 |---|---|
 | `[modules.X]` | Module X is **installed** in this workspace (available to call as a dependency). Engine state. |
-| `[sdks.X]` | SDK X is **installed** in this workspace. `source` is the canonical ref. |
-| `[[sdks.X.modules]]` | This workspace **authors** the module at `path` using SDK X. |
-| `[[sdks.X.clients]]` | This workspace **authors** the client at `path` using SDK X (shape evolving with the client use case). |
+| `[modules.X.settings]` | Workspace-scoped settings for module X. Same location regardless of whether X is a regular module or an SDK. |
+| `[modules.X.as-sdk]` | Module X is installed *as an SDK*. The presence of this sub-table marks the role; its contents list what X authors here. |
+| `[[modules.X.as-sdk.modules]]` | This workspace **authors** the module at `path` using SDK X. |
+| `[[modules.X.as-sdk.clients]]` | This workspace **generates** the client at `path` using SDK X, bound to the named module. |
 
-Sections have orthogonal semantics. A module being authored here is not the same as the module being installed here — they overlap for default-path init but diverge for monorepos that publish modules without using them locally, SDK-under-development, etc. Each section means exactly what its name says.
+Install ≠ develop, still:
 
-Lookups: "what's installed?" → `[modules.*]`. "What am I authoring with go-sdk?" → `[[sdks.go-sdk.modules]]`. No flag interpretation, no cross-referencing.
+- Install lives in the top-level `[modules.*]` entry (regular or as-sdk).
+- Develop (authoring) lives in `[[modules.<sdk>.as-sdk.modules]]` — the SDK's role data.
+- A locally-authored module that's also installed here gets entries in both places. A locally-authored module that's *not* installed (e.g., an SDK under development that ships to others) gets only the `[[as-sdk.modules]]` entry.
+
+The unification removes the settings bifurcation that a parallel `[sdks.*]` section would have caused: `dagger settings <name>` reads/writes `[modules.<name>.settings]` for every install, no engine-side branching between regular modules and SDKs.
+
+Lookups: "what's installed?" → `[modules.*]`. "What am I authoring with go-sdk?" → `[[modules.go-sdk.as-sdk.modules]]`. "What settings does go-sdk have?" → `[modules.go-sdk.settings]`. One namespace, one settings location.
 
 ### SDK module: `targetRuntime` field
 
@@ -373,7 +386,7 @@ Resolution rules for `--sdk=<value>`:
 - Otherwise → look up name (then aliases) in `sdks.json`.
 - 0 / 1 / >1 matches: error / resolve / ambiguous-error.
 
-Aliases are a **CLI-side, parse-time** mechanism. `dagger.toml`, `dagger-module.toml`, the engine, and SDK modules themselves never see the alias — only canonical refs land in `[sdks.X].source` and `runtime`. Adding a new SDK alias is a registry data change, not a CLI release.
+Aliases are a **CLI-side, parse-time** mechanism. `dagger.toml`, `dagger-module.toml`, the engine, and SDK modules themselves never see the alias — only canonical refs land in `[modules.<sdk-name>].source` and `runtime`. Adding a new SDK alias is a registry data change, not a CLI release.
 
 The SDK registry is separate from the general module registry to keep namespaces clean (`github.com/dagger/go` the toolchain and `github.com/dagger/go-sdk` the SDK can both legitimately want the short name "go" depending on context; scoping the SDK alias mechanism to its own registry avoids the collision).
 
@@ -401,10 +414,10 @@ The CLI parses user intent. The engine does the work. Steps:
 
 The engine's `Workspace.moduleInit` performs:
 
-1. **Install the SDK in the workspace** if not already present (idempotent). Adds `[sdks.<sdk-name>]` to `dagger.toml`.
+1. **Install the SDK in the workspace** if not already present (idempotent). Adds `[modules.<sdk-name>]` to `dagger.toml` — the SDK is just a module install like any other, distinguished only by its `as-sdk` sub-table.
 2. **Determine the runtime ref** by introspecting the installed SDK module's `targetRuntime` field. If the field isn't declared, default to the SDK's own installed ref.
 3. **Build the module config** at `<path>/dagger-module.toml` with `name` and `runtime`.
-4. **Record the authoring relationship** by adding an entry to `[[sdks.<sdk-name>.modules]]` with `path`.
+4. **Record the authoring relationship** by appending `[[modules.<sdk-name>.as-sdk.modules]] path = "<path>"` to the SDK's role data.
 5. **If `path` is the default** (under `.dagger/modules/`), also add `[modules.<name>] source = "<path>"` so the new module is installed in the same workspace. Custom paths skip this — the user is managing layout deliberately.
 6. **Return a `Changeset`** of all the above.
 
@@ -425,7 +438,7 @@ dagger settings python-sdk default-python-version 3.13
 dagger settings go-sdk strict-build true
 ```
 
-These are stored under `[sdks.<sdk>.settings]` in `dagger.toml`. Same `dagger settings` mechanism, new section path.
+These are stored under `[modules.<sdk>.settings]` in `dagger.toml` — the same location regular modules use. Because SDKs are just modules (with an `as-sdk` sub-table marking the role), `dagger settings` reads and writes one location regardless of role, and the existing `moduleList` introspection covers both.
 
 ### Generated clients (`dagger api client`)
 
@@ -444,23 +457,20 @@ dagger api client rm <name-or-path>
 
 **One client = one module's bindings.** A client is generated typed access to exactly one module's API. Need bindings for two modules? Two client entries. Need both surfaces in one host language? Two entries with the same SDK, different paths.
 
-Composes at the engine layer: when a function from one bound module returns a type owned by another (e.g., `cli.db()` returning `postgres.Database`), the client emits an opaque handle. The engine dispatches calls on that handle to the right module's runtime. If the host code wants typed access to the postgres surface, add another `[[sdks.typescript.clients]]` entry pointing at postgres. Bindings are independently regeneratable; no SDK has to walk dependency graphs.
+Composes at the engine layer: when a function from one bound module returns a type owned by another (e.g., `cli.db()` returning `postgres.Database`), the client emits an opaque handle. The engine dispatches calls on that handle to the right module's runtime. If the host code wants typed access to the postgres surface, add another `[[modules.typescript-sdk.as-sdk.clients]]` entry pointing at postgres. Bindings are independently regeneratable; no SDK has to walk dependency graphs.
 
 ```toml
-[sdks.typescript]
+[modules.typescript-sdk]
 source = "github.com/dagger/typescript-sdk@v1.2.3"
 
-[[sdks.typescript.clients]]
+[[modules.typescript-sdk.as-sdk.clients]]
 path = "./lib/cli"
 module = ".dagger/modules/cli"
+package-name = "@my-app/dagger-cli-client"     # SDK-specific freeform, per entry
 
-[[sdks.typescript.clients]]
+[[modules.typescript-sdk.as-sdk.clients]]
 path = "./lib/db"
 module = "github.com/dagger/postgres@v1.2.3"   # pinned at add time
-
-# Plus SDK-specific freeform fields, per entry. CLI doesn't know them; SDK
-# does. Preserved verbatim through `dagger generate` runs.
-package-name = "@my-app/dagger-cli-client"
 ```
 
 Fields:
@@ -495,8 +505,8 @@ extend type Workspace {
   """
   Register a generated client target with the given SDK, bound to the given
   module, and produce its initial output. Returns a Changeset with the new
-  [[sdks.X.clients]] entry plus the generated files at `path`. External
-  refs are pinned at this call.
+  [[modules.<sdk>.as-sdk.clients]] entry plus the generated files at `path`.
+  External refs are pinned at this call.
   """
   clientAdd(
     sdk: String!,
@@ -522,7 +532,7 @@ Same shape as `Workspace.moduleInit`: returns a Changeset, caller previews and a
 1. Resolves `module` to a `ModuleSource` (local path or pinned remote ref).
 2. Loads its introspection JSON.
 3. Calls `generateClient(modSource, introspection, path)` → `Directory`.
-4. Merges the returned Directory into the Changeset at `path`, alongside the new `[[sdks.X.clients]]` config entry.
+4. Merges the returned Directory into the Changeset at `path`, alongside the new `[[modules.<sdk>.as-sdk.clients]]` config entry.
 
 The SDK receives one module's surface and emits one client. It does not walk dependency graphs, does not know about workspace state, and does not write files. Engine-smart, CLI-dumb, SDK-dumb.
 
@@ -531,7 +541,7 @@ Freeform `options` forward to a future `generateClient(..., options: [SdkOption!
 **Open questions.**
 
 - **Re-targeting after creation.** If the user wants to point an existing client at a different module ref (e.g., upgrade `postgres@v1` → `@v2`), do they `rm` + `add` or get a `dagger api client update --module=<new-ref>`? Update is friendlier; rm-add is simpler.
-- **Final fields on `[[sdks.X.clients]]`.** Shape firms once two concrete client SDKs (TypeScript, Go) implement against it. Today's sketch reserves `path`, `module`, freeform SDK fields.
+- **Final fields on `[[modules.<sdk>.as-sdk.clients]]`.** Shape firms once two concrete client SDKs (TypeScript, Go) implement against it. Today's sketch reserves `path`, `module`, freeform SDK fields.
 - **`dagger api client list` vs `dagger installed --clients`.** Latter avoids a dedicated verb for a list operation under `api`; former is more discoverable. Probably keep `list` for symmetry with `add`/`rm`.
 - **`removeFiles` default.** Host projects often check generated files into VCS, so deletion has real consequences. Defaulting to false (registration-only) keeps the safer behavior.
 - **Regeneration drift.** If the host has edited the generated dir, does `dagger generate` overwrite, refuse, or merge? Same question that exists for module codegen today; whatever answer lands there applies here.
@@ -550,10 +560,10 @@ Internally:
 
 1. Locate the cwd's `dagger-module.toml` (walking up, stopping at the workspace root).
 2. Compute the module's workspace-relative path.
-3. Load workspace config; scan `[[sdks.*.modules]]` for an entry whose `path` matches. The parent `sdks.<NAME>` is the SDK that manages this module.
+3. Load workspace config; scan `[[modules.*.as-sdk.modules]]` for an entry whose `path` matches. The parent `modules.<NAME>` (the entry that has the as-sdk sub-table) is the SDK that manages this module.
 4. Dispatch `dagger call <NAME> <subcommand> <args>`.
 
-The dispatch reads workspace config, not `dagger-module.toml` (per the runtime/SDK split — the SDK association is workspace-level). If the module isn't found in any `[[sdks.X.modules]]`, the wrapper errors: authored modules must be registered in the workspace.
+The dispatch reads workspace config, not `dagger-module.toml` (per the runtime/SDK split — the SDK association is workspace-level). If the module isn't found in any `[[modules.*.as-sdk.modules]]`, the wrapper errors: authored modules must be registered in the workspace.
 
 Available subcommands depend entirely on what the SDK exposes. The CLI surface is dynamic per module — `dagger module sdk --help` invoked in a Go module shows go-sdk's functions; the same command in a Python module shows python-sdk's. That dynamism is OK because it's bounded to one wrapper command; users learn the structure once.
 
@@ -566,7 +576,7 @@ Available subcommands depend entirely on what the SDK exposes. The CLI surface i
 
 ### Open questions in this section
 
-- Final shape of `[[sdks.X.clients]]`. The use case (e.g., typescript-sdk generating a typed client into a Next.js app) is clear at the conceptual level; concrete fields will be defined when the client implementation lands. Kept as a placeholder for now because the right generalization is hard to see in advance of two concrete instances.
+- Final shape of `[[modules.<sdk>.as-sdk.clients]]`. The use case (e.g., typescript-sdk generating a typed client into a Next.js app) is clear at the conceptual level; concrete fields will be defined when the client implementation lands. Kept as a placeholder for now because the right generalization is hard to see in advance of two concrete instances.
 - Whether `dagger search` surfaces SDKs alongside other modules. Tentative: yes.
 - Whether the runtime-as-builtin-name namespace (`"go"`, `"python"`, …) is a closed set defined by the engine or extensible. Today's answer: closed, matching what the engine bundles. Extension would mean reserving a name for a future runtime module, which is unnecessary while engine builtins exist.
 
@@ -578,7 +588,7 @@ Implementation checklist. Items grouped by type; each is a discrete unit of work
 
 - [x] **`dagger setup`** — top-level idempotent doctor verb. Three steps with per-step confirmation: Cloud login, workspace migration, recommended modules.
 - [ ] **`dagger installed`** — top-level. Lists installed modules from `dagger.toml`. Likely a thin wrapper over existing workspace introspection.
-- [ ] **`dagger module init`** — thin CLI wrapper over the engine's `Workspace.moduleInit`. CLI resolves the `--sdk` alias, defaults `--path`, calls the engine, applies the returned `Changeset`. Engine writes `dagger-module.toml` (with `runtime` only) and updates `dagger.toml` (`[sdks.X]` install + `[[sdks.X.modules]]` authoring + optional `[modules.X]` install). See [SDK module interface](#sdk-module-interface).
+- [ ] **`dagger module init`** — thin CLI wrapper over the engine's `Workspace.moduleInit`. CLI resolves the `--sdk` alias, defaults `--path`, calls the engine, applies the returned `Changeset`. Engine writes `dagger-module.toml` (with `runtime` only) and updates `dagger.toml` (`[modules.<sdk>]` install + `[[modules.<sdk>.as-sdk.modules]]` authoring + optional `[modules.<new-module>]` install). See [SDK module interface](#sdk-module-interface).
 - [ ] **`dagger module sdk`** — wrapper that dispatches `dagger call <current-module's-sdk> <subcommand>`. New verb. See [SDK module interface](#sdk-module-interface).
 - [ ] **`sdks.json` registry + alias resolver** — new CLI-side data file and resolver function. Used by `--sdk=` flag. See [SDK module interface](#sdk-module-interface).
 - [ ] **`dagger cloud integration create`** — new (currently only `setup` exists, which becomes `create`).
