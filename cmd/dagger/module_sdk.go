@@ -153,14 +153,17 @@ func currentModuleSDKName() (string, error) {
 		return "", fmt.Errorf("parse workspace config %q: %w", wsConfigPath, err)
 	}
 
-	for sdkName, sdkEntry := range wsCfg.SDKs {
-		for _, m := range sdkEntry.Modules {
+	for installedName, installed := range wsCfg.Modules {
+		if installed.AsSDK == nil {
+			continue
+		}
+		for _, m := range installed.AsSDK.Modules {
 			if filepath.ToSlash(filepath.Clean(m.Path)) == modulePath {
-				return sdkName, nil
+				return installedName, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("module at %q is not registered under any [[sdks.*.modules]] in %s; register it via `dagger module init` or add an entry by hand", modulePath, wsConfigPath)
+	return "", fmt.Errorf("module at %q is not registered under any [[modules.*.as-sdk.modules]] in %s; register it via `dagger module init` or add an entry by hand", modulePath, wsConfigPath)
 }
 
 // locateModuleAndWorkspaceRoot walks upward from cwd, returning the first
