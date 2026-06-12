@@ -16729,6 +16729,9 @@ pub struct WorkspaceChecksOpts<'a> {
     /// When true, only return generate-as-checks; exclude annotated check functions
     #[builder(setter(into, strip_option), default)]
     pub only_generate: Option<bool>,
+    /// Skip checks matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub skip: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceConfigReadOpts<'a> {
@@ -16885,6 +16888,9 @@ impl Workspace {
         let mut query = self.selection.select("checks");
         if let Some(include) = opts.include {
             query = query.arg("include", include);
+        }
+        if let Some(skip) = opts.skip {
+            query = query.arg("skip", skip);
         }
         if let Some(no_generate) = opts.no_generate {
             query = query.arg("noGenerate", no_generate);

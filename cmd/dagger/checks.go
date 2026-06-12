@@ -29,6 +29,7 @@ var (
 	checksPast         bool
 	checksNoPast       bool
 	checksRun          bool
+	checksSkip         []string
 )
 
 //go:embed checks.graphql
@@ -42,8 +43,12 @@ func init() {
 	checksCmd.Flags().BoolVar(&checksPast, "past", false, "Only replay past Cloud Checks results")
 	checksCmd.Flags().BoolVar(&checksNoPast, "no-past", false, "Disable past Cloud Checks lookup")
 	checksCmd.Flags().BoolVar(&checksRun, "run", false, "Run checks even when past Cloud Checks results are replayed")
+	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching the specified patterns")
 	checksCmd.MarkFlagsMutuallyExclusive("no-generate", "generate")
 	checksCmd.MarkFlagsMutuallyExclusive("past", "no-past", "run")
+	// Past Cloud results can't be filtered by skip patterns, so --skip always
+	// runs checks live.
+	checksCmd.MarkFlagsMutuallyExclusive("past", "skip")
 }
 
 var checksCmd = &cobra.Command{
@@ -59,6 +64,7 @@ Examples:
   dagger check                    # Run all checks
   dagger check -l                 # List all available checks
   dagger check go:lint            # Run the go:lint check and any subchecks
+  dagger check --skip '**e2e'     # Run all checks except those matching '**e2e'
   dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
 `,
 	Args: cobra.ArbitraryArgs,
@@ -66,7 +72,7 @@ Examples:
 }
 
 func runChecksCommand(cmd *cobra.Command, args []string) error {
-	if !checksListMode {
+	if !checksListMode && len(checksSkip) == 0 {
 		replayed, shouldRun, err := maybeReplayPastChecks(cmd, args)
 		if !shouldRun {
 			return err
@@ -167,6 +173,7 @@ func runChecksNow(cmd *cobra.Command, args []string) error {
 			ws := dag.CurrentWorkspace()
 			checks := ws.Checks(dagger.WorkspaceChecksOpts{
 				Include:      args,
+				Skip:         checksSkip,
 				NoGenerate:   checksNoGenerate,
 				OnlyGenerate: checksOnlyGenerate,
 			})

@@ -3000,6 +3000,11 @@ export type WorkspaceChecksOpts = {
   include?: string[]
 
   /**
+   * Skip checks matching the specified patterns
+   */
+  skip?: string[]
+
+  /**
    * When true, only return annotated check functions; exclude generate-as-checks
    */
   noGenerate?: boolean
@@ -15426,6 +15431,7 @@ export class Workspace extends BaseClient {
   /**
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
+   * @param opts.skip Skip checks matching the specified patterns
    * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
    * @param opts.onlyGenerate When true, only return generate-as-checks; exclude annotated check functions
    */

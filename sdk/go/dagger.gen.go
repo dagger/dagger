@@ -16308,6 +16308,8 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 type WorkspaceChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// Skip checks matching the specified patterns
+	Skip []string
 	// When true, only return annotated check functions; exclude generate-as-checks
 	NoGenerate bool
 	// When true, only return generate-as-checks; exclude annotated check functions
@@ -16321,6 +16323,10 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `skip` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Skip) {
+			q = q.Arg("skip", opts[i].Skip)
 		}
 		// `noGenerate` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {

@@ -165,6 +165,7 @@ Examples:
   dagger check                    # Run all checks
   dagger check -l                 # List all available checks
   dagger check go:lint            # Run the go:lint check and any subchecks
+  dagger check --skip '**e2e'     # Run all checks except those matching '**e2e'
   dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
 
 
@@ -185,6 +186,7 @@ dagger check [options] [pattern...]
       --no-past             Disable past Cloud Checks lookup
       --past                Only replay past Cloud Checks results
       --run                 Run checks even when past Cloud Checks results are replayed
+      --skip stringArray    Skip checks matching the specified patterns
 ```
 
 ### Options inherited from parent commands

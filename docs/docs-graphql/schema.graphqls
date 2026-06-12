@@ -5840,6 +5840,9 @@ type Workspace implements Node {
     """Only include checks matching the specified patterns"""
     include: [String!]
 
+    """Skip checks matching the specified patterns"""
+    skip: [String!]
+
     """
     When true, only return annotated check functions; exclude generate-as-checks
     """
