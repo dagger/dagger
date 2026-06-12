@@ -483,13 +483,13 @@ extend type GoSdk {
 
 All three are optional, but each carries capability semantics:
 
-- **`initModule` not implemented** → this SDK does not support module authoring. `dagger module init <sdk>` is unavailable for it; the CLI errors with `"<sdk> does not support module init"`. The SDK is fine for whatever it DOES support (client generation, just being a workspace module, etc.) — it just can't seed new modules.
-- **`initClient` not implemented** → this SDK does not support typed client generation. `dagger api client init <sdk>` is unavailable; the CLI errors similarly.
+- **`initModule` not implemented** → this SDK does not support module authoring. `dagger module init <sdk>` is not registered for it, so trying that path fails like any other missing command. The SDK is fine for whatever it DOES support (client generation, just being a workspace module, etc.) — it just can't seed new modules. Direct engine/API callers still get an explicit `"<sdk> does not support module init"` validation error.
+- **`initClient` not implemented** → this SDK does not support typed client generation. `dagger api client init <sdk>` is not registered for it; direct engine/API callers still get `"<sdk> does not support client init"`.
 - **`targetRuntime` not implemented** → the engine defaults to the SDK's own installed ref. The SDK *is* the runtime. (This is the only one where absence is a sensible default rather than "feature off.")
 
 So presence-of-function is the capability flag. A "module-only SDK" (Go SDK today) implements `initModule` but not `initClient`. A hypothetical "client-only SDK" — say a thin wrapper that generates OpenAPI-style typed bindings against a remote Dagger module but doesn't author new modules — implements `initClient` but not `initModule`. A full SDK implements both.
 
-`dagger sdk module-options <sdk>` and `dagger sdk client-options <sdk>` reflect this directly: they error with `"<sdk> does not implement initModule"` (or `initClient`) when the SDK lacks the capability. `dagger sdk list` could surface a per-SDK capability column (M/C) so users see what's supported at a glance.
+`dagger sdk module-options <sdk>` and `dagger sdk client-options <sdk>` reflect this directly: they report that no module-init or client-init options are available when the SDK lacks the corresponding capability. `dagger sdk list` could surface a per-SDK capability column (M/C) so users see what's supported at a glance.
 
 **Why Changeset, not Directory.** The SDK can lay files anywhere in the workspace, not just at the new module's path — useful for monorepo-level edits like adding a workspace `.gitignore` entry, updating a top-level `package.json`, or seeding a `tsconfig.json` extension. The Changeset language makes the SDK's contribution composable with the engine's. Engine validates that SDK Changesets don't touch engine-owned files (`dagger.toml`, `dagger-module.toml`).
 
@@ -533,7 +533,7 @@ The engine's `Workspace.moduleInit` performs:
 3. **Build the module config** at `<path>/dagger-module.toml` with `name` and `runtime`.
 4. **Record the authoring relationship** by appending `[[modules.<sdk-name>.as-sdk.modules]] path = "<path>"` to the SDK's role data.
 5. **If `path` is the default** (under `.dagger/modules/`), also add `[modules.<name>] source = "<path>"` so the new module is installed in the same workspace. Custom paths skip this — the user is managing layout deliberately.
-6. **The SDK must implement `initModule`.** Engine errors with `"<sdk> does not support module init"` if not. When implemented, the engine calls it with `(ws, name, path, …sdk-args)` and merges the returned Changeset.
+6. **The SDK must implement `initModule`.** The CLI only registers `dagger module init <sdk>` for SDKs with this capability. The engine still validates direct calls and errors with `"<sdk> does not support module init"` if not. When implemented, the engine calls it with `(ws, name, path, …sdk-args)` and merges the returned Changeset.
 7. **Return** the combined Changeset of all the above.
 
 The returned Changeset is the full set of workspace edits, including the SDK's contribution. No filesystem write happens until the caller applies it; the caller can preview and abort. `--auto-apply` skips the preview prompt.
@@ -636,7 +636,7 @@ extend type Workspace {
 
 The engine validates the SDK is installed-as-SDK, resolves `module` to a `ModuleSource`, and calls the SDK's `initClient(ws, path, module, …args)` if implemented. The returned Changeset is merged with the engine's `[[as-sdk.clients]]` config update.
 
-If the SDK does NOT implement `initClient`, the engine errors: this SDK doesn't support typed client generation. Same capability rule as `initModule` — presence of the function on the SDK is what makes the verb available. Engine error: `"<sdk> does not support client init"`.
+If the SDK does NOT implement `initClient`, the CLI does not register `dagger api client init <sdk>`. Same capability rule as `initModule` — presence of the function on the SDK is what makes the verb available. The engine still validates direct calls and errors with `"<sdk> does not support client init"`.
 
 **Decisions.**
 
@@ -759,7 +759,7 @@ Tracked as implementation tasks #120–#130 with body-level notes.
 
 #### SDK contract
 
-- ⬜ **`initModule` / `initClient` as capability flags** — when an SDK implements the function, the corresponding init verb is available for it; when absent, the verb errors with `"<sdk> does not support module init"` (or `client init`). Task #129.
+- ⬜ **`initModule` / `initClient` as capability flags** — when an SDK implements the function, the CLI registers the corresponding `dagger module init <sdk>` or `dagger api client init <sdk>` command; when absent, no SDK-specific init command is registered. Engine/API calls still validate and return explicit unsupported-capability errors. Task #129.
 - ⬜ **SDK-specific init args payload** — once `initModule` / `initClient` exist, forward typed SDK args through the engine and merge the SDK-returned Changeset with engine bookkeeping. Tasks #125–#129.
 - ⬜ **`targetRuntime` introspection wiring** — the engine hook (`resolveModuleRuntimeRef` / `lookupSDKTargetRuntime`) is in place but always returns `("", false)`. Activate when the first SDK opts in. Task #129.
 - ⬜ **Capability checks on `core.SDK` interface** — `AsModuleInit() (ModuleInit, bool)` and `AsClientInit() (ClientInit, bool)` alongside the existing `AsRuntime` / `AsModuleTypes` / `AsCodeGenerator` / `AsClientGenerator`. Task #129.
