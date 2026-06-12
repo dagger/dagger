@@ -30,18 +30,18 @@ import (
 var runCmd = &cobra.Command{
 	Use:     "exec [options] <command>...",
 	Aliases: []string{"run", "r"},
-	Short:   "Run a command with a connected Dagger session (DAGGER_SESSION_PORT/TOKEN injected)",
+	Short:   "Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)",
 	Long: strings.ReplaceAll(
-		`Executes the specified command in a Dagger Session and displays
-live progress in a TUI.
+		`Run an external command with a live Dagger API session attached.
 
-´DAGGER_SESSION_PORT´ and ´DAGGER_SESSION_TOKEN´ will be conveniently
-injected automatically.
+´DAGGER_SESSION_PORT´ and ´DAGGER_SESSION_TOKEN´ are injected into the
+command's environment so the command can talk to the engine directly.
+Progress is rendered live in the TUI.
 
 For example:
 ´´´shell
 jq -n '{query:"{container{id}}"}' | \
-  dagger exec sh -c 'curl -s \
+  dagger api exec sh -c 'curl -s \
     -u $DAGGER_SESSION_TOKEN: \
     -H "content-type:application/json" \
     -d @- \
@@ -51,9 +51,9 @@ jq -n '{query:"{container{id}}"}' | \
 		"`",
 	),
 	Example: strings.TrimSpace(`
-dagger exec go run main.go
-dagger exec node index.mjs
-dagger exec python main.py
+dagger api exec go run main.go
+dagger api exec node index.mjs
+dagger api exec python main.py
 `,
 	),
 	RunE:         Run,
