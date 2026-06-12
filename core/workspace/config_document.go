@@ -324,7 +324,9 @@ func rewriteModuleAsSDKSections(data []byte, modules map[string]ModuleEntry) ([]
 
 	names := make([]string, 0, len(modules))
 	for name, entry := range modules {
-		if entry.AsSDK != nil && (len(entry.AsSDK.Modules) > 0 || len(entry.AsSDK.Clients) > 0) {
+		// Preserve the marker even when empty: presence of AsSDK = "this
+		// install is an SDK," whether or not anything is authored yet.
+		if entry.AsSDK != nil {
 			names = append(names, name)
 		}
 	}
