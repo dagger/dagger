@@ -346,18 +346,19 @@ func cloneConfig(cfg *Config) *Config {
 	return cloned
 }
 
+// cloneModuleAsSDK deep-copies the AsSDK sub-table. Preserves an empty
+// (non-nil with no Modules and no Clients) AsSDK — its mere presence is the
+// "this install IS an SDK" marker, even before any module or client is
+// authored under it. A nil input means "this install is not an SDK"; the
+// clone passes that through unchanged.
 func cloneModuleAsSDK(in *ModuleAsSDK) *ModuleAsSDK {
 	if in == nil {
 		return nil
 	}
-	out := &ModuleAsSDK{
+	return &ModuleAsSDK{
 		Modules: append([]SDKManagedModule(nil), in.Modules...),
 		Clients: cloneSDKManagedClients(in.Clients),
 	}
-	if len(out.Modules) == 0 && len(out.Clients) == 0 {
-		return nil
-	}
-	return out
 }
 
 func cloneSDKManagedClients(in []SDKManagedClient) []SDKManagedClient {
@@ -438,6 +439,14 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 // section. No-op when the module isn't installed as an SDK.
 func writeModuleAsSDK(b *strings.Builder, modulePath string, asSDK *ModuleAsSDK) {
 	if asSDK == nil {
+		return
+	}
+	// An empty AsSDK is the "this install IS an SDK" marker. Emit the empty
+	// section header so the marker survives round-trip; the [[modules.X
+	// .as-sdk.modules]] / .clients arrays follow only when populated.
+	if len(asSDK.Modules) == 0 && len(asSDK.Clients) == 0 {
+		b.WriteString("\n")
+		fmt.Fprintf(b, "[%s.as-sdk]\n", modulePath)
 		return
 	}
 	for _, mod := range asSDK.Modules {
