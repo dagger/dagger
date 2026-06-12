@@ -678,117 +678,116 @@ Available subcommands depend entirely on what the SDK exposes. The CLI surface i
 - Whether `dagger search` surfaces SDKs alongside other modules. Tentative: yes.
 - Whether the runtime-as-builtin-name namespace (`"go"`, `"python"`, …) is a closed set defined by the engine or extensible. Today's answer: closed, matching what the engine bundles. Extension would mean reserving a name for a future runtime module, which is unnecessary while engine builtins exist.
 
+
 ## Discrete changes from current CLI
 
-Implementation checklist. Items grouped by type; each is a discrete unit of work.
+Status legend: ✅ shipped on this branch | 🟡 partially shipped (different shape than design) | ⬜ designed, not yet implemented.
 
-### New commands (need implementation)
+### Shipped — top-level surface
 
-- [x] **`dagger setup`** — top-level idempotent doctor verb. Three steps with per-step confirmation: Cloud login, workspace migration, recommended modules.
-- [ ] **`dagger installed`** — top-level. Lists installed modules from `dagger.toml`. Likely a thin wrapper over existing workspace introspection.
-- [ ] **`dagger module init <sdk> <name>`** — thin CLI dispatch wrapper. Looks up `<sdk>` in workspace config (must be installed-as-SDK via `dagger sdk install`), introspects the SDK's `initModule` function schema, maps SDK-specific args to typed flags, and invokes `Workspace.moduleInit`. Engine writes `dagger-module.toml` (with `runtime` only) and updates `dagger.toml` (`[[modules.<sdk>.as-sdk.modules]]` + optional `[modules.<new-module>]` install). SDK's `initModule` Changeset gets merged. See [SDK module interface](#sdk-module-interface).
-- [ ] **`dagger module sdk`** — wrapper that dispatches `dagger call <current-module's-sdk> <subcommand>`. New verb. See [SDK module interface](#sdk-module-interface).
-- [ ] **`dagger sdk install <name-or-ref>`** — new. Alias-resolving SDK install. Adds the install entry to workspace `[modules.<name>]` plus the empty `[modules.<name>.as-sdk]` marker table.
-- [ ] **`dagger sdk uninstall <name>`** — new. Refuses if anything authored under the SDK; `--force` to override.
-- [ ] **`dagger sdk list`** — new. Enumerates installs with the as-sdk marker.
-- [ ] **`dagger sdk search [query]`** — new. Queries the SDK registry (separate from `dagger search` for general modules).
-- [ ] **`dagger sdk module-options <sdk>`** / **`dagger sdk client-options <sdk>`** — new. Introspect the named SDK's `initModule` / `initClient` schemas and print the SDK-specific flags they accept.
-- [ ] **`sdks.json` registry + alias resolver** — new CLI-side data file and resolver function. Used by `dagger sdk install`. See [SDK module interface](#sdk-module-interface).
-- [ ] **`dagger cloud integration create`** — new (currently only `setup` exists, which becomes `create`).
-- [ ] **`dagger cloud integration rm`** — new.
-- [ ] **`dagger cloud integration list`** — new.
-- [ ] **`dagger cloud check {on, off, list, status}`** — new shape. Today's `autocheck` is just on/off for the selected remote; new shape lets you address checks by name and list/inspect.
-- [ ] **`dagger workspace` (bare, no subcommand)** — new behavior: print digest of workspace state (cwd, root, current remote, installed modules summary). Today, bare `dagger workspace` prints help.
-- [x] **`dagger api client {init,list}`** — replaces the old hidden `dagger client` group. Client definitions live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates registered clients.
+- ✅ **`dagger setup`** — three-step doctor verb (Cloud login → migrate → recommend).
+- ✅ **`dagger installed`** — lists installed modules from `dagger.toml`.
+- ✅ **`dagger install` / `dagger uninstall` / `dagger update` / `dagger search` / `dagger settings` / `dagger activity`** — all hoisted from `dagger workspace` and `dagger mod` to top level.
+- ✅ **`dagger workspace` (bare invocation)** — prints workspace digest (cwd, root, current remote, installed-modules summary). No subcommand needed.
 
-### Restore from PR #13226 pre-rollback
+### Shipped — `dagger module`
 
-- [ ] **`dagger module deps {add, rm, list}`** — restore from commit `89054a4` (PR #13226's "move deps add/rm to updatedConfigDirectory api"). Already present on local experimental branch.
-- [ ] **`dagger module engine {require, require-current, require-latest, required}`** — restore from same commit.
+- ✅ **`dagger module init`** — scaffolds a new module. **Current shape: `dagger module init <name> --sdk=<sdk> [--path=<dir>]`.** Engine method `Workspace.moduleInit` returns a `Changeset` and the CLI applies it. (Designed positional shape is in the SDK module interface section — see 🟡 below.)
+- ✅ **`dagger module deps {add, rm, list}`** — restored from PR #13226's pre-rollback state.
+- ✅ **`dagger module engine {require, require-current, require-latest, required}`** — restored from the same commit.
+- ✅ **`dagger module sdk`** — wrapper that dispatches `dagger call <current-module's-sdk> <subcommand>`. Looks up the SDK from `[[modules.*.as-sdk.modules]]` workspace entries.
 
-### Hoists (existing functionality, new top-level location)
+### Shipped — `dagger api`
 
-- [ ] `dagger workspace install` → `dagger install` (visible top-level, with `i` alias). Today a hidden shim `moduleDepInstallCmd` exists; promote, alias, and remove the workspace subcommand.
-- [ ] `dagger workspace uninstall` → `dagger uninstall` (with `un` alias). Same pattern as `install`.
-- [ ] `dagger workspace update` → `dagger update`. Hidden shim `moduleUpdateCmd` exists; promote.
-- [ ] `dagger workspace activity` → `dagger activity`.
-- [ ] `dagger workspace settings` (hidden) → `dagger settings` (visible, canonical). The visible top-level `settings` already exists as a hidden alias; just unhide.
-- [ ] `dagger mod search` → `dagger search`.
+- ✅ **`dagger api call`** — moved from `dagger function call`.
+- ✅ **`dagger api functions`** — moved + renamed from `dagger function list`.
+- ✅ **`dagger api query`** — unchanged.
+- ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <path> --sdk=<sdk> --module=<ref> [--option K=V ...]`.** (Designed positional shape — see 🟡 below.)
 
-### Moves (reparenting within the tree)
+### Shipped — `dagger cloud`
 
-- [ ] `dagger function call` → `dagger api call`. Subcommand moves from `function` group to `api` group.
-- [ ] `dagger function list` → `dagger api functions`. Move + rename to plural noun (matches the listing-from-the-loaded-module semantic).
-- [ ] `dagger integration accounts` → folded into `dagger cloud integration list` (the mutable model lists integration entries, replacing the singleton "list accounts of provider X" semantic).
-- [ ] `dagger integration setup` → `dagger cloud integration create`. Move + rename (matches the new mutable shape).
-- [ ] `dagger workspace autocheck` → `dagger cloud check`. Move + expand from boolean to mutable shape (see "New commands" above).
-- [ ] `dagger exec` → `dagger api exec`. Move from top-level into the `api` group; it's structurally an API-session verb alongside `query` and `call`.
+- ✅ **`dagger cloud integration {create, rm, list}`** — mutable shape (was `setup`, `accounts`).
+- ✅ **`dagger cloud check {on, off, list, status}`** — replaces `dagger workspace autocheck`; mutable shape supports per-name addressing.
 
-### Removals (from visible surface)
+### Shipped — `dagger workspace`
 
-- [ ] **`dagger mod`** (alias group) — remove. Was the consumer-plural group; replaced by singular `dagger module` (different content). Note: `dagger module` as the *consumer* plural alias to `dagger mod` also goes — the noun gets reassigned.
-- [ ] **`dagger function` / `dagger fn`** — remove the group entirely. Subcommands moved.
-- [ ] **`dagger env`** — remove the group entirely. Env is a path prefix in workspace config; CRUD via `dagger settings --env` and `dagger workspace config`. The flag `--env` survives and its description teaches the model.
-- [ ] **`dagger integration`** (top-level) — remove. Moved under `cloud`.
-- [ ] **`dagger workspace init`** — remove. Workspace creation goes implicit on first `install`.
-- [ ] **`dagger workspace migrate`** — remove. Legacy migration is past the point where any visibility is justified.
-- [ ] **`dagger recommend`** — remove. Generic verb without clear subject at top-level; users reach `search` first.
-- [ ] **`dagger checks`** alias — remove. One name (`check`) per concept.
-- [ ] **`dagger config`** (hidden top-level alias) — remove. Replaced by visible `dagger workspace config`.
-- [ ] **`dagger modules`** (plural, briefly considered) — never lands. Listing handled by `dagger installed`.
-- [ ] **`dagger status`** (briefly considered) — never lands. Workspace digest handled by bare `dagger workspace`.
+- ✅ Slimmed to plumbing only: `config`, `config-file`, `cwd`, `remote`, `remotes`, `root`.
 
-### Hidden top-level aliases (already hidden today; confirm or set)
+### Shipped — config files
 
-- [ ] **`dagger call`** — keep hidden; alias to `dagger api call`. Today's behavior: not in visible `--help`. Verify it still routes correctly after `function call` → `api call` move.
-- [ ] **`dagger shell`** — keep hidden; reachable, absent from `--help`.
+- ✅ **`dagger-module.toml` is engine-only.** `[runtime]` table replaces `sdk` field; `Pin` field added for content-addressed reproducibility. `Config` / `Debug` / `Experimental` per-module fields dropped (self-calls graduates to a runtime-capability check; other fields move to language-toolchain files).
+- ✅ **`[modules.*.as-sdk]` sub-table** — SDK installs and authoring entries nest under the regular module entry. No parallel `[sdks.*]` top-level section. Settings unify on `[modules.X.settings]`.
+- ✅ **Legacy `dagger.json` migration** — `dagger setup` migrates the `sdk` field into `runtime` + adds the `[modules.<sdk>.as-sdk.modules]` authoring entry.
 
-### Flag renames
+### Shipped — schema
 
-- [ ] **`--mod` → `--load-module`** in `moduleAddFlags` (`cmd/dagger/module.go:39`). Single funnel-point change.
-- [ ] **`--no-mod` → `--no-load-module`** in the same funnel.
-- [ ] **Update references in docs and tests** for both flag names.
-- [ ] **Verify `-m` and `-M` short forms** still work post-rename.
+- ✅ **`Workspace.moduleInit`** — returns `Changeset!` (was `String!`); atomic preview-and-apply via `handleChangesetResponseAt`. No callers in main; Go SDK regen pending so CLI currently calls via raw GraphQL.
+- ✅ **`Workspace.clientInit` / `Workspace.clientGenerate`** — new engine methods backing `dagger api client init` and `dagger generate`.
+- ✅ **Self-calls graduation** — per-module `experimental.SELF_CALLS` flag still in the schema for back-compat but the engine no longer consults it. Runtime-capability check (does the SDK implement `moduleTypes`?) replaces it.
 
-### Description updates
+### Shipped — flag rename
 
-Top-level mockup (Short descriptions in cobra):
+- ✅ **`--mod` → `--load-module`** and **`--no-mod` → `--no-load-module`** (`-m` / `-M` short forms preserved).
 
-- [ ] `check`: "Verify your project — tests, linters, type checks, security scans, etc."
-- [ ] `generate`: "Generate derived files for your project — code, SDKs, types, docs, etc."
-- [ ] `up`: "Run your project's services for local development — databases, APIs, dev servers, etc."
-- [ ] `install`: "Install a module into your workspace"
-- [ ] `uninstall`: "Uninstall a module from your workspace"
-- [ ] `installed`: "List installed modules"
-- [ ] `update`: "Refresh installed-module state"
-- [ ] `search`: "Search for modules you can install"
-- [ ] `settings`: "Get or set module settings (use --env for an env overlay)"
-- [ ] `activity`: "Show recent activity (runs, traces, etc.) for this workspace"
-- [ ] `module`: "Author a module: edit dependencies, engine version, etc."
-- [ ] `workspace`: "Inspect or configure your workspace (cwd, remotes, config, etc.)"
-- [ ] `cloud`: "Manage Dagger Cloud (login, integrations, etc.)"
-- [ ] `api`: "Interact with the Dagger API (advanced)"
-- [ ] `setup`: "Ensure Dagger is properly set up and operational in the workspace"
+### Shipped — removed verbs
 
-Long descriptions (cobra Long, shown in `dagger X --help`):
+- ✅ `dagger mod` group, `dagger function` / `fn` group, top-level `dagger env`, top-level `dagger integration`, `dagger migrate`, `dagger workspace {init, migrate, install, uninstall, update, activity, autocheck}`, `dagger checks` alias, hidden `dagger config` alias, `dagger recommend`.
 
-- [ ] `api` Long: teaching beat + docs link (see Subcommand structures section above).
-- [ ] `workspace` Long: clarify bare-invocation digest behavior and distinguish from `settings`.
-- [ ] `module` Long: clarify cwd-based targeting (no `--mod` flag for authoring).
-- [ ] `settings` Long: clarify `--env <name>` scoping and distinguish from `workspace config`.
+### Shipped — hidden aliases
 
-Flag descriptions:
+- ✅ **`dagger call`** — hidden alias to `dagger api call`.
+- ✅ **`dagger shell`** — hidden, reachable.
 
-- [ ] `--load-module`: "Use a one-off module (local path or git ref)"
-- [ ] `--no-load-module`: "Don't load any module for this command"
-- [ ] `--env`: rewrite to name the file-path model (`env.<name>.*` in workspace config) and point at `dagger workspace config env` for inspection.
+### 🟡 Partial — designed shape differs from shipped shape
 
-### Known unfixed items before this lands
+- 🟡 **`dagger module init <sdk> <name>` (positional dispatch)** vs. current `dagger module init <name> --sdk=<sdk>`. Designed shape introspects the SDK's `initModule` function schema and surfaces SDK-specific args as typed flags. Current shape uses `--sdk` flag and has no SDK-arg pass-through. See the SDK contract section above.
+- 🟡 **`dagger api client init <sdk> <path> <module>` (positional dispatch)** vs. current `dagger api client init <path> --sdk=<sdk> --module=<ref> [--option K=V]`. The designed shape drops `--option` in favor of typed SDK function args. The current `--option` flag parses and persists values in `dagger.toml` but **does not forward them to the SDK at generation time** — they are decorative. See `core/schema/workspace_client.go::workspaceClientInitGeneratedDiff`.
 
-- [x] **`list, ls`** cut from the proposal. The modules-v2 effort owns that slot on its own timeline.
-- [ ] **Workspace concept is referenced everywhere (`--env`, `setup`, `-W`) but never defined.** Cold-read v2 and v3 both flagged that newcomers can't form a mental model from the top-level help alone. Likely fix: one-sentence definition at the top of `dagger workspace --help`.
-- [ ] **`exec` description ("Execute a command in a Dagger session") is too vague.** "Session in what?" Needs sharpening.
+### ⬜ Not yet implemented — handoff to follow-up PRs
+
+Tracked as implementation tasks #120–#130 with body-level notes.
+
+#### New top-level group: `dagger sdk`
+
+- ⬜ **`dagger sdk install <name-or-ref>`** — alias-resolving SDK install via `sdks.json`. Marks the install with an empty `[modules.<name>.as-sdk]` table. Task #122.
+- ⬜ **`dagger sdk uninstall <name>`** — refuses if anything is authored under the SDK; `--force` to override. Task #123.
+- ⬜ **`dagger sdk list`** — enumerates installs with the as-sdk marker. Task #124.
+- ⬜ **`dagger sdk search [query]`** — queries the SDK registry. Task #124.
+- ⬜ **`dagger sdk module-options <sdk>` / `dagger sdk client-options <sdk>`** — introspect SDK init function schemas and print the typed flags. Task #124.
+- ⬜ **Cobra parent group + registration**. Task #120.
+
+#### Init reshape
+
+- ⬜ **`dagger module init <sdk> <name>` reshape** — drop `--sdk` flag, make sdk positional, introspect SDK's `initModule` for typed args. Task #127.
+- ⬜ **`dagger api client init <sdk> <path> <module>` reshape** — drop `--sdk` / `--module` / `--option` flags, make all positional + introspect SDK's `initClient`. Task #128.
+- ⬜ **Engine `Workspace.moduleInit` arg shape change** — drop the install-the-SDK side effect, require the SDK to be installed-as-SDK, accept SDK args as a JSON payload. Task #125.
+- ⬜ **Engine `Workspace.clientInit` arg shape change** — same. Task #126.
+
+#### SDK contract
+
+- ⬜ **`initModule` / `initClient` as capability flags** — when an SDK implements the function, the corresponding init verb is available for it; when absent, the verb errors with `"<sdk> does not support module init"` (or `client init`). Task #129.
+- ⬜ **`targetRuntime` introspection wiring** — the engine hook (`resolveModuleRuntimeRef` / `lookupSDKTargetRuntime`) is in place but always returns `("", false)`. Activate when the first SDK opts in. Task #129.
+- ⬜ **Capability checks on `core.SDK` interface** — `AsModuleInit() (ModuleInit, bool)` and `AsClientInit() (ClientInit, bool)` alongside the existing `AsRuntime` / `AsModuleTypes` / `AsCodeGenerator` / `AsClientGenerator`. Task #129.
+
+#### Move
+
+- ⬜ **`dagger exec` → `dagger api exec`** — mechanical reparent. Task #130.
+
+#### Schema bookkeeping
+
+- ⬜ **`ModuleEntry.AsSDK` empty-marker semantics** — `cloneModuleAsSDK` currently collapses an empty `AsSDK` to nil. For the as-sdk-marker model (presence = is-an-SDK, even when no targets are authored), preserve the pointer. Task #121.
+
+#### Ergonomic follow-ups
+
+- ⬜ **Default-SDK inference** — when a workspace has exactly one installed SDK, let the user drop the `<sdk>` positional on `dagger module init`. Non-breaking; rules sketched in the SDK contract section.
+- ⬜ **SDK codegen regen across the 6 SDKs** — the CLI calls `Workspace.moduleInit` / `clientInit` via raw GraphQL (`dag.Do`) today because the Go SDK binding still has the pre-Changeset signature. Collapse to typed calls once regenerated.
+- ⬜ **`--option` flag removal** — currently parses + persists but doesn't reach the SDK at generation time. Dies with the init reshape (Task #128).
+
+### Known unfixed items
+
+- ⬜ **Workspace concept is referenced everywhere (`--env`, `setup`, `-W`) but never defined.** Cold-read v2 and v3 both flagged that newcomers can't form a mental model from the top-level help alone. Likely fix: one-sentence definition at the top of `dagger workspace --help`.
+- ⬜ **`exec` description ("Execute a command in a Dagger session") is too vague.** "Session in what?" Needs sharpening. Also picked up by the move to `dagger api exec` (Task #130) — the new home makes the sharpening natural.
 
 ## Status
 
-Proposed.
+Substantial portion shipped on this branch (`design/cli-1.0` → PR #13392). The runtime/SDK split + `as-sdk` schema + Changeset-returning `moduleInit` / `clientInit` are all in. Follow-up work (the `dagger sdk` group, positional init dispatch, `initModule`/`initClient` capability semantics, `--option` removal, exec move) is tracked in tasks #120–#130 with implementation-level notes for handoff.
