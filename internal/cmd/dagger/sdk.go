@@ -157,14 +157,12 @@ func runSDKInstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Workspace install name: the alias the user typed when one resolves,
-	// otherwise let the engine derive it from the ref. Spec calls this out
-	// explicitly: `dagger sdk install go` lands as [modules.go], not
-	// [modules.go-sdk].
+	// Workspace install name: same rule as the generic install verb —
+	// the engine derives it from the canonical ref's basename when --name
+	// isn't passed. Aliases stay a parse-time convenience and do not
+	// propagate into workspace state: `dagger sdk install go` lands as
+	// [modules.go-sdk], not [modules.go].
 	name := sdkInstallName
-	if name == "" && !strings.ContainsAny(input, "/@") {
-		name = input
-	}
 
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
