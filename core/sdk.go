@@ -82,6 +82,64 @@ type ClientGenerator interface {
 }
 
 /*
+ModuleInitializer is an interface that an SDK may implement to add
+SDK-specific workspace edits during `dagger module init`.
+*/
+type ModuleInitializer interface {
+	/*
+		Initialize a module and return the SDK-owned Changeset to merge with the
+		engine-owned workspace edits.
+
+		SDK must implement the `initModule` function with this signature shape:
+
+		```gql
+		  initModule(
+		    ws: Workspace!
+		    name: String!
+		    path: String!
+		    # SDK-specific args...
+		  ): Changeset!
+		```
+	*/
+	InitModule(
+		context.Context,
+		dagql.ObjectResult[*Workspace],
+		string,
+		string,
+		map[string]any,
+	) (dagql.ObjectResult[*Changeset], error)
+}
+
+/*
+ClientInitializer is an interface that an SDK may implement to add
+SDK-specific workspace edits during `dagger api client init`.
+*/
+type ClientInitializer interface {
+	/*
+		Initialize a generated client and return the SDK-owned Changeset to merge
+		with the engine-owned workspace edits.
+
+		SDK must implement the `initClient` function with this signature shape:
+
+		```gql
+		  initClient(
+		    ws: Workspace!
+		    path: String!
+		    module: String!
+		    # SDK-specific args...
+		  ): Changeset!
+		```
+	*/
+	InitClient(
+		context.Context,
+		dagql.ObjectResult[*Workspace],
+		string,
+		string,
+		map[string]any,
+	) (dagql.ObjectResult[*Changeset], error)
+}
+
+/*
 CodeGenerator is an interface that a SDK may implements to generate code
 for a module.
 
@@ -336,6 +394,12 @@ type SDK interface {
 
 	// Transform the SDK into a ClientGenerator if it implements it.
 	AsClientGenerator() (ClientGenerator, bool)
+
+	// Transform the SDK into a ModuleInitializer if it implements it.
+	AsModuleInitializer() (ModuleInitializer, bool)
+
+	// Transform the SDK into a ClientInitializer if it implements it.
+	AsClientInitializer() (ClientInitializer, bool)
 
 	// AttachDependencyResults attaches any cache-backed results embedded in the
 	// SDK implementation and returns the results the owning ModuleSource must

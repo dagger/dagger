@@ -783,13 +783,6 @@ func main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), "internal error: experimental release exec returned without replacing the current process")
 		exitWithCode(1)
 	}
-	if shouldRegisterSDKInitCommands(os.Args[1:]) {
-		if err := registerInstalledSDKInitCommands(); err != nil {
-			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
-			exitWithCode(1)
-		}
-	}
-
 	opts.Silent = silent                   // show no progress
 	opts.Debug = debugFlag                 // show everything
 	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
@@ -845,6 +838,13 @@ func main() {
 
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
+
+	if shouldRegisterSDKInitCommands(os.Args[1:]) {
+		if err := registerInstalledSDKInitCommands(ctx, os.Args[1:]); err != nil {
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			exitWithCode(1)
+		}
+	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		var exit idtui.ExitError

@@ -140,7 +140,12 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 			return err
 		}
 
-		changesetID, err := callModuleInit(ctx, dag, name, sdkName, moduleInitPath)
+		sdkArgs, err := sdkInitArgsJSON(cmd)
+		if err != nil {
+			return err
+		}
+
+		changesetID, err := callModuleInit(ctx, dag, name, sdkName, moduleInitPath, sdkArgs)
 		if err != nil {
 			return err
 		}
@@ -160,7 +165,7 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 //	})
 //
 // until then we go directly through dag.Do.
-func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkName, path string) (string, error) {
+func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkName, path, sdkArgs string) (string, error) {
 	var res struct {
 		CurrentWorkspace struct {
 			ModuleInit struct {
@@ -169,9 +174,9 @@ func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkName, path
 		} `json:"currentWorkspace"`
 	}
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `query ModuleInit($name: String!, $sdk: String!, $path: String) {
+		Query: `query ModuleInit($name: String!, $sdk: String!, $path: String, $args: JSON) {
   currentWorkspace {
-    moduleInit(name: $name, sdk: $sdk, path: $path) {
+    moduleInit(name: $name, sdk: $sdk, path: $path, args: $args) {
       id
     }
   }
@@ -180,6 +185,7 @@ func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkName, path
 			"name": name,
 			"sdk":  sdkName,
 			"path": path,
+			"args": sdkArgs,
 		},
 	}, &dagger.Response{Data: &res})
 	if err != nil {

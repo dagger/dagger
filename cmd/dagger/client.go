@@ -70,7 +70,12 @@ func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef 
 			return err
 		}
 
-		changesetID, err := callClientInit(ctx, dag, clientPath, sdkName, moduleRef)
+		sdkArgs, err := sdkInitArgsJSON(cmd)
+		if err != nil {
+			return err
+		}
+
+		changesetID, err := callClientInit(ctx, dag, clientPath, sdkName, moduleRef, sdkArgs)
 		if err != nil {
 			return err
 		}
@@ -85,6 +90,7 @@ func callClientInit(
 	path string,
 	sdkName string,
 	moduleRef string,
+	sdkArgs string,
 ) (string, error) {
 	var res struct {
 		CurrentWorkspace struct {
@@ -94,9 +100,9 @@ func callClientInit(
 		} `json:"currentWorkspace"`
 	}
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `query ClientInit($path: String!, $sdk: String!, $module: String!) {
+		Query: `query ClientInit($path: String!, $sdk: String!, $module: String!, $args: JSON) {
   currentWorkspace {
-    clientInit(path: $path, sdk: $sdk, module: $module) {
+    clientInit(path: $path, sdk: $sdk, module: $module, args: $args) {
       id
     }
   }
@@ -105,6 +111,7 @@ func callClientInit(
 			"path":   path,
 			"sdk":    sdkName,
 			"module": moduleRef,
+			"args":   sdkArgs,
 		},
 	}, &dagger.Response{Data: &res})
 	if err != nil {

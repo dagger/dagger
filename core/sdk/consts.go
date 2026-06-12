@@ -36,4 +36,6 @@ var sdkFunctions = []string{
 	"moduleTypes",
 	"requiredClientGenerationFiles",
 	"generateClient",
+	"initModule",
+	"initClient",
 }

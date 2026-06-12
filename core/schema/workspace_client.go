@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
@@ -17,7 +18,8 @@ type workspaceClientInitArgs struct {
 	Path   string
 	SDK    string
 	Module string
-	Here   bool `default:"false"`
+	Args   core.JSON `default:""`
+	Here   bool      `default:"false"`
 }
 
 func (s *workspaceSchema) clientInit(
@@ -86,11 +88,6 @@ func (s *workspaceSchema) clientInit(
 		return nil, fmt.Errorf("update workspace config: %w", err)
 	}
 
-	generatedClients, err := s.workspaceClientInitGeneratedDiff(workspaceCtx, targetModule, sdkRef, clientPath)
-	if err != nil {
-		return nil, err
-	}
-
 	configRelPath, err := workspaceConfigFile(parent)
 	if err != nil {
 		return nil, err
@@ -111,12 +108,34 @@ func (s *workspaceSchema) clientInit(
 	if err != nil {
 		return nil, fmt.Errorf("stage workspace config update: %w", err)
 	}
-	updatedDir, err = workspaceWithDirectoryOverlay(ctx, dag, updatedDir, generatedClients)
+
+	engineChanges, err := workspaceMigrationChanges(ctx, updatedDir, baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("stage generated client: %w", err)
+		return nil, err
 	}
 
-	return workspaceMigrationChanges(ctx, updatedDir, baseDir)
+	sdkArgs, err := coresdk.DecodeInitArgs(args.Args)
+	if err != nil {
+		return nil, err
+	}
+	loadedSDK, err := s.loadWorkspaceSDK(ctx, sdkRef)
+	if err != nil {
+		return nil, err
+	}
+	clientInitializer, ok := loadedSDK.AsClientInitializer()
+	if !ok {
+		return nil, fmt.Errorf("%q does not support client init", args.SDK)
+	}
+	workspaceObj, err := s.currentWorkspaceObject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sdkChanges, err := clientInitializer.InitClient(ctx, workspaceObj, clientPath, moduleRef, sdkArgs)
+	if err != nil {
+		return nil, fmt.Errorf("sdk client init: %w", err)
+	}
+
+	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
 }
 
 func (s *workspaceSchema) clientGenerate(
