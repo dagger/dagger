@@ -142,9 +142,47 @@ func init() {
 	stdout = maybeWrapWriter(os.Stdout, "DAGGER_LOG_STDOUT")
 	stderr = maybeWrapWriter(os.Stderr, "DAGGER_LOG_STDERR")
 
+	// Visual grouping for `dagger --help`. Groups render in the order declared
+	// here, separated by blank lines. Titles are intentionally empty —
+	// readers parse the surface by visual chunking, not by section headers.
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "setup", Title: ""},
+		&cobra.Group{ID: "daily", Title: ""},
+		&cobra.Group{ID: "workspace", Title: ""},
+		&cobra.Group{ID: "toolbox", Title: ""},
+		&cobra.Group{ID: "utility", Title: ""},
+	)
+
+	// Assign each visible top-level command to its group.
+	setupCmd.GroupID = "setup"
+
+	checksCmd.GroupID = "daily"
+	generateCmd.GroupID = "daily"
+	upCmd.GroupID = "daily"
+	activityCmd.GroupID = "daily"
+
+	moduleDepInstallCmd.GroupID = "workspace"
+	moduleDepUninstallCmd.GroupID = "workspace"
+	installedCmd.GroupID = "workspace"
+	moduleUpdateCmd.GroupID = "workspace"
+	searchCmd.GroupID = "workspace"
+	settingsCmd.GroupID = "workspace"
+
+	apiCmd.GroupID = "toolbox"
+	moduleCmd.GroupID = "toolbox"
+	cloudCmd.GroupID = "toolbox"
+	workspaceCmd.GroupID = "toolbox"
+
+	runCmd.GroupID = "utility"
+	versionRoot := versionCmd()
+	versionRoot.GroupID = "utility"
+
+	// Cobra auto-creates the help command; assign it to the utility group too.
+	rootCmd.SetHelpCommandGroupID("utility")
+
 	rootCmd.AddCommand(
 		listenCmd,
-		versionCmd(),
+		versionRoot,
 		queryCmd,
 		runCmd,
 		apiCmd,
@@ -180,6 +218,7 @@ func init() {
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
 	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
+	cobra.AddTemplateFunc("cmdShortWrappedListByGroups", cmdShortWrappedListByGroups)
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
@@ -906,6 +945,70 @@ func wrapCmdDescription(name, short string, padding int) string {
 	return name + short
 }
 
+// cmdShortWrappedListByGroups renders the AVAILABLE COMMANDS section for a
+// parent command. When the parent has registered cobra groups (rootCmd
+// does; subcommands don't), commands render in group order with blank
+// lines between groups. Otherwise, fall back to the original leaf-then-
+// parent rendering so subcommand help (`dagger module --help`, etc.) is
+// unchanged.
+func cmdShortWrappedListByGroups(cmd *cobra.Command) string {
+	cmds := cmd.Commands()
+
+	// No groups → preserve the prior shape: leaves first, then parents.
+	if len(cmd.Groups()) == 0 {
+		out := cmdShortWrappedList(cmds, false)
+		if hasParentCommands(cmds) {
+			if out != "" {
+				out += "\n\n"
+			}
+			out += cmdShortWrappedList(cmds, true)
+		}
+		return out
+	}
+
+	// Compute display padding across every visible command so columns
+	// align across groups.
+	padding := 0
+	for _, c := range cmds {
+		if !isHelpOrAvailableCommand(c) {
+			continue
+		}
+		if n := len(cmdDisplayName(c)); n > padding {
+			padding = n
+		}
+	}
+
+	var sections []string
+	for _, group := range cmd.Groups() {
+		var lines []string
+		for _, c := range cmds {
+			if c.GroupID != group.ID || !isHelpOrAvailableCommand(c) {
+				continue
+			}
+			lines = append(lines, wrapCmdDescription(cmdDisplayName(c), c.Short, padding))
+		}
+		if len(lines) > 0 {
+			sections = append(sections, strings.Join(lines, "\n"))
+		}
+	}
+
+	// Render any ungrouped (but available) commands last. Keeps stragglers
+	// visible if a future cmd forgot to set GroupID — better than dropping
+	// them silently.
+	var ungrouped []string
+	for _, c := range cmds {
+		if c.GroupID != "" || !isHelpOrAvailableCommand(c) {
+			continue
+		}
+		ungrouped = append(ungrouped, wrapCmdDescription(cmdDisplayName(c), c.Short, padding))
+	}
+	if len(ungrouped) > 0 {
+		sections = append(sections, strings.Join(ungrouped, "\n"))
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
 func cmdShortWrappedList(cmds []*cobra.Command, parents bool) string {
 	var available []*cobra.Command
 	padding := 0
@@ -1163,13 +1266,10 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- end}}
 
-{{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
+{{- if .HasAvailableSubCommands}}
 
 {{ "Available Commands" | toUpperBold }}
-{{cmdShortWrappedList $cmds false}}
-{{ if hasParentCommands $cmds}}
-{{cmdShortWrappedList $cmds true}}
-{{- end}}{{/* if hasParentCommands */}}
+{{cmdShortWrappedListByGroups .}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
 
 {{- if .HasAvailableLocalFlags}}
