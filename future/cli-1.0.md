@@ -101,7 +101,7 @@ The old `--mod` carried two unrelated meanings: "load a module for this invocati
 
 `--load-module` was chosen over `--with-module` because Dagger's `WithX` API methods are chainable — `--with-module X --with-module Y` would carry a "load both" implication the flag cannot honor (it is single-valued). `--load-module` is verb-form and singular by reading.
 
-Authoring commands (`dagger module deps`, `dagger module engine`) take **no** module-targeting flag. They operate on the `dagger.json` reachable from cwd. To target a sibling, `cd` first. This matches `cargo add` / `npm install` / `go get`.
+Authoring commands (`dagger module deps`, `dagger module engine`) take **no** module-targeting flag. They operate on the `dagger-module.toml` reachable from cwd. To target a sibling, `cd` first. This matches `cargo add` / `npm install` / `go get`.
 
 ## Per-command decision context
 
@@ -178,17 +178,19 @@ Author a module: scaffold, edit dependencies, engine version, etc.
 Operates on the dagger-module.toml reachable from the current directory.
 
 AVAILABLE COMMANDS
-  init      Initialize a new module in the current directory (requires --sdk)
+  init      Initialize a new module in the workspace (requires --sdk;
+            defaults to .dagger/modules/<name>, override with --path)
   deps      Manage this module's dependencies
   engine    Manage this module's required engine version
   sdk       Run SDK-specific commands against this module (dispatched to the
-            module's declared SDK)
+            SDK that authors this module, looked up via the workspace
+            [[modules.*.as-sdk.modules]] entries)
 ```
 
 #### `dagger module deps`
 
 ```
-Manage this module's dependencies, as declared in dagger.json.
+Manage this module's dependencies, as declared in dagger-module.toml.
 
 AVAILABLE COMMANDS
   add   Add one or more dependencies to the module
