@@ -74,9 +74,6 @@ func (s *workspaceSchema) moduleInit(
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
-	if cfg.SDKs == nil {
-		cfg.SDKs = map[string]workspace.SDKEntry{}
-	}
 
 	// Reject name conflicts in installed modules and reject path conflicts
 	// across any SDK's authored modules. Two SDKs claiming the same path is
@@ -84,21 +81,31 @@ func (s *workspaceSchema) moduleInit(
 	if _, exists := cfg.Modules[args.Name]; exists {
 		return nil, fmt.Errorf("module %q is already installed in this workspace", args.Name)
 	}
-	for sdkName, sdkEntry := range cfg.SDKs {
-		for _, m := range sdkEntry.Modules {
+	for installedName, installed := range cfg.Modules {
+		if installed.AsSDK == nil {
+			continue
+		}
+		for _, m := range installed.AsSDK.Modules {
 			if m.Path == relPath {
-				return nil, fmt.Errorf("a module is already authored at %q under sdks.%s", relPath, sdkName)
+				return nil, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
 			}
 		}
 	}
 
+	// Install the SDK module as a regular module entry, then attach the new
+	// authoring path under its as-sdk sub-table. SDKs and regular modules
+	// share the install surface; only the role-specific authoring data
+	// nests differently.
 	sdkName := workspace.ConventionalSDKShortName(args.SDK)
-	sdkEntry, sdkInstalled := cfg.SDKs[sdkName]
+	sdkEntry, sdkInstalled := cfg.Modules[sdkName]
 	if !sdkInstalled {
-		sdkEntry = workspace.SDKEntry{Source: args.SDK}
+		sdkEntry = workspace.ModuleEntry{Source: args.SDK}
 	}
-	sdkEntry.Modules = append(sdkEntry.Modules, workspace.SDKManagedModule{Path: relPath})
-	cfg.SDKs[sdkName] = sdkEntry
+	if sdkEntry.AsSDK == nil {
+		sdkEntry.AsSDK = &workspace.ModuleAsSDK{}
+	}
+	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: relPath})
+	cfg.Modules[sdkName] = sdkEntry
 
 	// Resolve which engine runtime ref the new module should declare. The
 	// runtime/SDK split allows an SDK to *delegate* execution to a separate
