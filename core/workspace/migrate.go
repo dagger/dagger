@@ -96,25 +96,27 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
 	}
 
-	// Surface the legacy module's SDK ref as a workspace SDK install with
-	// its authoring entry. Legacy dagger.json carried the SDK inline on the
-	// module; new dagger.toml records SDK installs in [sdks.*] and the
-	// modules they author in [[sdks.*.modules]]. This is the file-format
-	// catch-up for the runtime/SDK split.
+	// Surface the legacy module's SDK ref as a workspace module installed
+	// AS an SDK, with the migrated module recorded under the SDK's as-sdk
+	// authoring list. Legacy dagger.json carried the SDK inline on the
+	// module; new dagger.toml records every install (regular module or SDK)
+	// under [modules.*], with the SDK-role data nested in
+	// [modules.<sdk>.as-sdk.*]. This is the file-format catch-up for the
+	// runtime/SDK split.
 	if hasSDK {
-		if wsCfg.SDKs == nil {
-			wsCfg.SDKs = map[string]SDKEntry{}
-		}
 		sdkName := ConventionalSDKShortName(cfg.SDK.Source)
-		entry, exists := wsCfg.SDKs[sdkName]
+		entry, exists := wsCfg.Modules[sdkName]
 		if !exists {
-			entry = SDKEntry{Source: cfg.SDK.Source}
+			entry = ModuleEntry{Source: cfg.SDK.Source}
 		}
 		if needsProjectModuleMigration {
+			if entry.AsSDK == nil {
+				entry.AsSDK = &ModuleAsSDK{}
+			}
 			modulePath := filepath.Join(LockDirName, "modules", cfg.Name)
-			entry.Modules = append(entry.Modules, SDKManagedModule{Path: modulePath})
+			entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
 		}
-		wsCfg.SDKs[sdkName] = entry
+		wsCfg.Modules[sdkName] = entry
 	}
 	workspaceConfigData, err := renderMigrationWorkspaceConfig(wsCfg, compatWorkspace.MainModule)
 	if err != nil {
