@@ -171,6 +171,7 @@ func init() {
 
 	apiCmd.GroupID = "toolbox"
 	moduleCmd.GroupID = "toolbox"
+	sdkCmd.GroupID = "toolbox"
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
 
@@ -200,6 +201,7 @@ func init() {
 		installedCmd,
 		activityCmd,
 		moduleCmd,
+		sdkCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
 		sessionAliasCmd,

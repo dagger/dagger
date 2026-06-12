@@ -106,6 +106,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("ref").Doc("Module reference to install."),
 				dagql.Arg("name").Doc("Override name for the installed module entry."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+				dagql.Arg("asSdk").Doc("Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`)."),
 			),
 		dagql.Func("uninstall", s.uninstall).
 			View(AfterVersion("v1.0.0-0")).
