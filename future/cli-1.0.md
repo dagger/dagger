@@ -769,6 +769,10 @@ Tracked as implementation tasks #120–#130 with body-level notes.
 - ⬜ **`targetRuntime` introspection wiring** — the engine hook (`resolveModuleRuntimeRef` / `lookupSDKTargetRuntime`) is in place but always returns `("", false)`. Activate when the first SDK opts in. Task #129.
 - ⬜ **Capability checks on `core.SDK` interface** — `AsModuleInit() (ModuleInit, bool)` and `AsClientInit() (ClientInit, bool)` alongside the existing `AsRuntime` / `AsModuleTypes` / `AsCodeGenerator` / `AsClientGenerator`. Task #129.
 
+#### Visual grouping in `dagger --help`
+
+- ⬜ **5-group surface in cobra**. The doc's `--help` mockup shows five visual groups separated by blank lines (setup / daily flow / workspace management / specialized toolboxes / utility). The shipped binary dumps everything alphabetically because no `rootCmd.AddGroup(...)` calls exist and no `GroupID` is set on the top-level commands. Template update + group registration + per-command GroupID assignment. Task #131.
+
 #### Move
 
 - ⬜ **`dagger exec` → `dagger api exec`** — mechanical reparent. Task #130.
