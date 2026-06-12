@@ -46,23 +46,24 @@ default is to skip steps that would mutate state.`,
 func runSetup(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
+	errOut := cmd.ErrOrStderr()
 
-	if err := setupStepLogin(cmd); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Step 1 (login): %v\n", err)
+	if err := setupStepLogin(cmd, out, errOut); err != nil {
+		fmt.Fprintf(errOut, "Step 1 (login): %v\n", err)
 		// Login failures shouldn't block migration/recommend.
 	}
 
-	return withEngine(ctx, client.Params{
+	return withEngineSilent(ctx, client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
 		dag := ec.Dagger()
 
-		if err := setupStepMigrate(ctx, cmd, dag); err != nil {
+		if err := setupStepMigrate(ctx, out, dag); err != nil {
 			return fmt.Errorf("step 2 (migrate): %w", err)
 		}
 
-		if err := setupStepRecommend(ctx, cmd, dag); err != nil {
+		if err := setupStepRecommend(ctx, cmd, out, errOut, dag); err != nil {
 			return fmt.Errorf("step 3 (recommend): %w", err)
 		}
 
@@ -73,9 +74,8 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 
 // --- Step 1: Cloud login ---
 
-func setupStepLogin(cmd *cobra.Command) error {
+func setupStepLogin(cmd *cobra.Command, out, errOut io.Writer) error {
 	ctx := cmd.Context()
-	out := cmd.OutOrStdout()
 
 	fmt.Fprintln(out, "Step 1: Cloud login")
 
@@ -84,12 +84,12 @@ func setupStepLogin(cmd *cobra.Command) error {
 		return nil
 	}
 
-	if !confirm(cmd, "  Log in to Dagger Cloud?") {
+	if !confirm(cmd, out, errOut, "  Log in to Dagger Cloud?") {
 		fmt.Fprintln(out, "  Skipped.")
 		return nil
 	}
 
-	if err := cloudauth.Login(ctx, cmd.ErrOrStderr(), cloudauth.WithAuthGate()); err != nil {
+	if err := cloudauth.Login(ctx, errOut, cloudauth.WithAuthGate()); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "  Logged in.")
@@ -98,8 +98,7 @@ func setupStepLogin(cmd *cobra.Command) error {
 
 // --- Step 2: Migrate ---
 
-func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) error {
-	out := cmd.OutOrStdout()
+func setupStepMigrate(ctx context.Context, out io.Writer, dag *dagger.Client) error {
 	fmt.Fprintln(out, "\nStep 2: Workspace migration")
 
 	ws := dag.CurrentWorkspace()
@@ -133,8 +132,7 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 
 // --- Step 3: Recommend modules ---
 
-func setupStepRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) error {
-	out := cmd.OutOrStdout()
+func setupStepRecommend(ctx context.Context, cmd *cobra.Command, out, errOut io.Writer, dag *dagger.Client) error {
 	fmt.Fprintln(out, "\nStep 3: Recommended modules")
 
 	recs, err := runRecommend(ctx, dag)
@@ -160,7 +158,7 @@ func setupStepRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Cli
 	}
 	_ = w.Flush()
 
-	if !confirm(cmd, "  Install recommended modules?") {
+	if !confirm(cmd, out, errOut, "  Install recommended modules?") {
 		fmt.Fprintln(out, "  Skipped.")
 		return nil
 	}
@@ -235,15 +233,15 @@ func workspaceRootFromCwd(wd, workspaceCwd string) (string, error) {
 // SIGINT during the prompt cancels cleanly rather than blocking on stdin
 // forever. A read error other than EOF is reported to stderr instead of
 // being silently treated as "user said no."
-func confirm(cmd *cobra.Command, question string) bool {
+func confirm(cmd *cobra.Command, out, errOut io.Writer, question string) bool {
 	if autoApply {
 		return true
 	}
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s [skipped: non-interactive — use --auto-apply to accept]\n", question)
+		fmt.Fprintf(out, "%s [skipped: non-interactive — use --auto-apply to accept]\n", question)
 		return false
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s [Y/n] ", question)
+	fmt.Fprintf(out, "%s [Y/n] ", question)
 
 	type readResult struct {
 		line string
@@ -259,11 +257,11 @@ func confirm(cmd *cobra.Command, question string) bool {
 	ctx := cmd.Context()
 	select {
 	case <-ctx.Done():
-		fmt.Fprintln(cmd.OutOrStdout())
+		fmt.Fprintln(out)
 		return false
 	case r := <-done:
 		if r.err != nil && !errors.Is(r.err, io.EOF) {
-			fmt.Fprintf(cmd.ErrOrStderr(), "prompt read error: %v\n", r.err)
+			fmt.Fprintf(errOut, "prompt read error: %v\n", r.err)
 			return false
 		}
 		line := strings.TrimSpace(strings.ToLower(r.line))
