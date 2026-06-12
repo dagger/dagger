@@ -84,6 +84,6 @@ func setNetworkDefaults(cfg *bkconfig.NetworkConfig, cniConfigPath string) {
 		cfg.CNIBinaryPath = appdefaults.DefaultCNIBinDir
 	}
 	if cfg.CNIPoolSize == 0 {
-		cfg.CNIPoolSize = 16
+		cfg.CNIPoolSize = 128
 	}
 }
