@@ -3,8 +3,6 @@
 package main
 
 import (
-	"context"
-
 	"dagger/service-ref-consumer/internal/dagger"
 )
 
@@ -20,9 +18,9 @@ func New(
 }
 
 // Returns "true" if a Service was provided, "false" otherwise.
-func (m *ServiceRefConsumer) HasService(ctx context.Context) (string, error) {
+func (m *ServiceRefConsumer) HasService() string {
 	if m.App == nil {
-		return "false", nil
+		return "false"
 	}
-	return "true", nil
+	return "true"
 }
