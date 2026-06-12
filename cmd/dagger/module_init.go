@@ -117,19 +117,18 @@ What the engine does (atomically, in one Changeset):
 [modules.<name>] install (the user is managing workspace layout
 explicitly).`,
 	Example: "dagger module init go myapp",
-	Args:    cobra.ExactArgs(2),
-	RunE:    runModuleInit,
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	},
 }
 
 func init() {
-	moduleInitCmd.Flags().StringVar(&moduleInitPath, "path", "", "Module path relative to the workspace root (default: .dagger/modules/<name>)")
+	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path relative to the workspace root (default: .dagger/modules/<name>)")
 	moduleCmd.AddCommand(moduleInitCmd)
 }
 
-func runModuleInit(cmd *cobra.Command, args []string) error {
-	sdkName := args[0]
-	name := args[1]
-
+func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
