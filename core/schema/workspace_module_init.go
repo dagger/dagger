@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
@@ -21,11 +22,12 @@ import (
 // `dagger sdk install`, not a module source ref.
 type workspaceModuleInitArgs struct {
 	Name    string
-	SDK     string   `default:""`
-	Path    string   `default:""`
-	Source  string   `default:""`
-	Include []string `default:"[]"`
-	Here    bool     `default:"false"`
+	SDK     string    `default:""`
+	Path    string    `default:""`
+	Source  string    `default:""`
+	Include []string  `default:"[]"`
+	Args    core.JSON `default:""`
+	Here    bool      `default:"false"`
 }
 
 // moduleInit builds the workspace edits required to create a new module
@@ -161,7 +163,33 @@ func (s *workspaceSchema) moduleInit(
 		return nil, fmt.Errorf("stage module generated context: %w", err)
 	}
 
-	return workspaceMigrationChanges(ctx, updatedDir, baseDir)
+	engineChanges, err := workspaceMigrationChanges(ctx, updatedDir, baseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sdkArgs, err := coresdk.DecodeInitArgs(args.Args)
+	if err != nil {
+		return nil, err
+	}
+	loadedSDK, err := s.loadWorkspaceSDK(ctx, sdkRef)
+	if err != nil {
+		return nil, err
+	}
+	moduleInitializer, ok := loadedSDK.AsModuleInitializer()
+	if !ok {
+		return nil, fmt.Errorf("%q does not support module init", args.SDK)
+	}
+	workspaceObj, err := s.currentWorkspaceObject(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sdkChanges, err := moduleInitializer.InitModule(ctx, workspaceObj, args.Name, relPath, sdkArgs)
+	if err != nil {
+		return nil, fmt.Errorf("sdk module init: %w", err)
+	}
+
+	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
 }
 
 // workspaceModuleInitGeneratedDiff drives the moduleSource codegen chain
