@@ -17,7 +17,8 @@ import (
 // than applying immediately; callers preview and apply via the standard
 // changeset path. The SelfCalls arg is gone (the feature graduated to a
 // runtime-capability check), and Path is new (workspace-relative, defaults
-// to .dagger/modules/<name>).
+// to .dagger/modules/<name>). SDK is the workspace install name created by
+// `dagger sdk install`, not a module source ref.
 type workspaceModuleInitArgs struct {
 	Name    string
 	SDK     string   `default:""`
@@ -29,11 +30,11 @@ type workspaceModuleInitArgs struct {
 
 // moduleInit builds the workspace edits required to create a new module
 // owned by this workspace: codegen output (dagger-module.toml plus
-// SDK-generated source) at `path`, the SDK install entry under
-// `[modules.<sdk-name>]`, the authoring entry under
-// `[[modules.<sdk-name>.as-sdk.modules]]`, and — when the default path is
-// used — an `[modules.<name>]` install for the new module so it's
-// callable in this workspace.
+// SDK-generated source) at `path`, the authoring entry under
+// `[[modules.<sdk>.as-sdk.modules]]`, and — when the default path is used —
+// an `[modules.<name>]` install for the new module so it's callable in this
+// workspace. The SDK must already be installed as an SDK; init is dispatch,
+// not install.
 //
 // Every change is staged into one Changeset and returned. No filesystem
 // write happens inside this function; the caller previews via
@@ -49,7 +50,7 @@ func (s *workspaceSchema) moduleInit(
 		return nil, fmt.Errorf("module name is required")
 	}
 	if args.SDK == "" {
-		return nil, fmt.Errorf("--sdk is required")
+		return nil, fmt.Errorf("SDK name is required")
 	}
 
 	// Resolve the workspace-relative path for the new module. Empty = default
@@ -67,12 +68,16 @@ func (s *workspaceSchema) moduleInit(
 		return nil, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
 	}
 
-	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
+	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigMustExist, args.Here)
 	if err != nil {
 		return nil, err
 	}
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
+	}
+	sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
+	if err != nil {
+		return nil, err
 	}
 
 	// Reject name conflicts in installed modules and reject path conflicts
@@ -92,20 +97,8 @@ func (s *workspaceSchema) moduleInit(
 		}
 	}
 
-	// Install the SDK module as a regular module entry, then attach the new
-	// authoring path under its as-sdk sub-table. SDKs and regular modules
-	// share the install surface; only the role-specific authoring data
-	// nests differently.
-	sdkName := workspace.ConventionalSDKShortName(args.SDK)
-	sdkEntry, sdkInstalled := cfg.Modules[sdkName]
-	if !sdkInstalled {
-		sdkEntry = workspace.ModuleEntry{Source: args.SDK}
-	}
-	if sdkEntry.AsSDK == nil {
-		sdkEntry.AsSDK = &workspace.ModuleAsSDK{}
-	}
 	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: relPath})
-	cfg.Modules[sdkName] = sdkEntry
+	cfg.Modules[args.SDK] = sdkEntry
 
 	// Resolve which engine runtime ref the new module should declare. The
 	// runtime/SDK split allows an SDK to *delegate* execution to a separate
@@ -113,7 +106,7 @@ func (s *workspaceSchema) moduleInit(
 	// field isn't declared, the SDK module IS the runtime — its own
 	// installed ref serves as the runtime ref. That's the common case today
 	// (every shipped SDK does codegen + runtime in one module).
-	runtimeRef, err := s.resolveModuleRuntimeRef(ctx, args.SDK)
+	runtimeRef, err := s.resolveModuleRuntimeRef(ctx, sdkRef)
 	if err != nil {
 		return nil, err
 	}
