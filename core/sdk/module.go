@@ -276,6 +276,22 @@ func (sdk *module) AsClientGenerator() (core.ClientGenerator, bool) {
 	return &clientGeneratorModule{mod: sdk, funcs: sdk.funcs}, true
 }
 
+func (sdk *module) AsModuleInitializer() (core.ModuleInitializer, bool) {
+	if _, ok := sdk.funcs["initModule"]; !ok {
+		return nil, false
+	}
+
+	return &moduleInitializerModule{mod: sdk, funcs: sdk.funcs}, true
+}
+
+func (sdk *module) AsClientInitializer() (core.ClientInitializer, bool) {
+	if _, ok := sdk.funcs["initClient"]; !ok {
+		return nil, false
+	}
+
+	return &clientInitializerModule{mod: sdk, funcs: sdk.funcs}, true
+}
+
 func gqlFieldName(name string) string {
 	// gql field name is uncapitalized camel case
 	return strcase.ToLowerCamel(name)
