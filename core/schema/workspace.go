@@ -23,6 +23,8 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
+	dagql.MustInputSpec(SdkOption{}).Install(srv)
+
 	currentWorkspaceField := dagql.Func("currentWorkspace", s.currentWorkspace).
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
@@ -103,6 +105,19 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
+		dagql.Func("clientInit", s.clientInit).
+			DoNotCache("Plans workspace changes against live host filesystem").
+			Doc("Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.").
+			Args(
+				dagql.Arg("path").Doc("Workspace-relative output directory for the generated client."),
+				dagql.Arg("sdk").Doc("Canonical SDK source ref (alias resolution is the caller's responsibility)."),
+				dagql.Arg("module").Doc("Workspace-relative path or canonical ref for the module the client binds to."),
+				dagql.Arg("options").Doc("SDK-specific options to persist on the client entry."),
+				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+			),
+		dagql.Func("clientGenerate", s.clientGenerate).
+			DoNotCache("Regenerates workspace client files against live host filesystem").
+			Doc("Regenerate all generated API clients registered in workspace config and return the resulting Changeset."),
 		dagql.Func("configRead", s.configRead).
 			DoNotCache("Reads live config from host").
 			Doc("Read a configuration value from dagger.toml.",

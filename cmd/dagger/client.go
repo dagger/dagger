@@ -2,252 +2,271 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
+	"sort"
+	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
 )
 
 var (
-	generator      string
-	listJSONOutput bool
+	apiClientInitSDK     string
+	apiClientInitModule  string
+	apiClientInitOptions []string
+	apiClientListJSON    bool
 )
 
+var apiClientCmd = &cobra.Command{
+	Use:   "client",
+	Short: "Manage generated API clients",
+	Long: `Manage generated API clients for workspace modules.
+
+Generated clients are persistent typed bindings to the API surface exposed by
+one selected module. Client state is recorded in dagger.toml under the SDK
+module that generates it.`,
+}
+
+var apiClientInitCmd = &cobra.Command{
+	Use:   "init <path> --sdk <sdk> --module <path-or-ref>",
+	Short: "Initialize a generated API client",
+	Long: `Initialize a generated API client at <path>.
+
+The CLI resolves --sdk aliases, asks the engine to plan the generated files and
+workspace config change, then applies the returned Changeset through the
+standard preview/apply flow.`,
+	Example: "dagger api client init ./lib/cli --sdk typescript --module .dagger/modules/api",
+	Args:    cobra.ExactArgs(1),
+	RunE:    runAPIClientInit,
+}
+
+var apiClientListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List generated API clients",
+	Args:  cobra.NoArgs,
+	RunE:  runAPIClientList,
+}
+
 func init() {
-	clientListCmd.Flags().BoolVar(&listJSONOutput, "json", false, "Output the list of available clients in JSON format")
+	apiClientInitCmd.Flags().StringVar(&apiClientInitSDK, "sdk", "", "SDK alias or full ref (e.g., 'typescript' or 'github.com/dagger/typescript-sdk')")
+	apiClientInitCmd.Flags().StringVar(&apiClientInitModule, "module", "", "Workspace-relative path or canonical ref for the module the client binds to")
+	apiClientInitCmd.Flags().StringArrayVar(&apiClientInitOptions, "option", nil, "SDK-specific option as KEY=VAL; may be repeated")
+	_ = apiClientInitCmd.MarkFlagRequired("sdk")
+	_ = apiClientInitCmd.MarkFlagRequired("module")
 
-	clientCmd.AddCommand(clientInstallCmd)
-	clientCmd.AddCommand(clientListCmd)
-	clientCmd.AddCommand(clientUninstallCmd)
-	clientCmd.AddCommand(clientUpdateCmd)
+	apiClientListCmd.Flags().BoolVar(&apiClientListJSON, "json", false, "Output the client list in JSON format")
+
+	apiClientCmd.AddCommand(apiClientInitCmd, apiClientListCmd)
 }
 
-var clientCmd = &cobra.Command{
-	Use:    "client",
-	Short:  "Access Dagger client subcommands",
-	Hidden: true,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
+func runAPIClientInit(cmd *cobra.Command, args []string) error {
+	sdkRef, err := sdkResolve(apiClientInitSDK)
+	if err != nil {
+		return err
+	}
+	options, err := parseAPIClientOptions(apiClientInitOptions)
+	if err != nil {
+		return err
+	}
+
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		dag := ec.Dagger()
+
+		exportPath, err := currentWorkspaceExportPath(ctx, dag.CurrentWorkspace())
+		if err != nil {
+			return err
+		}
+
+		changesetID, err := callClientInit(ctx, dag, args[0], sdkRef, apiClientInitModule, options)
+		if err != nil {
+			return err
+		}
+
+		return handleChangesetResponseAt(ctx, dag, changesetID, autoApply, exportPath)
+	})
 }
 
-var clientInstallCmd = &cobra.Command{
-	Use:     "install [options] generator [path]",
-	Aliases: []string{"use"},
-	Short:   "Generate a new Dagger client from the Dagger module",
-	Example: "dagger client install go ./dagger",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			// default the output to the current working directory if it doesn't exist yet
-			cwd, err := pathutil.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get current working directory: %w", err)
-			}
-
-			switch len(args) {
-			case 0:
-				return fmt.Errorf("generator must set (ts, go, python or custom generator)")
-			case 1:
-				generator = args[0]
-				outputPath = filepath.Join(cwd, "dagger")
-			case 2:
-				generator = args[0]
-				outputPath = args[1]
-			}
-
-			if filepath.IsAbs(outputPath) {
-				outputPath, err = filepath.Rel(cwd, outputPath)
-				if err != nil {
-					return fmt.Errorf("failed to get relative path: %w", err)
-				}
-			}
-
-			dag := engineClient.Dagger()
-
-			mod, err := initializeClientGeneratorModule(ctx, dag, ".")
-			if err != nil {
-				return fmt.Errorf("failed to initialize client generator module: %w", err)
-			}
-
-			contextDirPath, err := mod.Source.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
-			}
-
-			_, err = mod.Source.
-				WithClient(generator, outputPath).
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to export client: %w", err)
-			}
-
-			w := cmd.OutOrStdout()
-			fmt.Fprintf(w, "Generated client at %s\n", outputPath)
-
-			return nil
-		})
-	},
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
+type sdkOptionInput struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
-var clientUninstallCmd = &cobra.Command{
-	Use:     "uninstall [path]",
-	Short:   "Remove a Dagger client from the module",
-	Example: "dagger client uninstall ./dagger",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			if len(args) != 1 {
-				return fmt.Errorf("expected only the path to the generated client to be set as argument")
-			}
-
-			cwd, err := pathutil.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get current working directory: %w", err)
-			}
-
-			path := args[0]
-
-			if filepath.IsAbs(path) {
-				path, err = filepath.Rel(cwd, path)
-				if err != nil {
-					return fmt.Errorf("failed to get relative path: %w", err)
-				}
-			}
-
-			dag := engineClient.Dagger()
-
-			mod, err := initializeClientGeneratorModule(ctx, dag, ".")
-			if err != nil {
-				return fmt.Errorf("failed to initialize client generator module: %w", err)
-			}
-
-			contextDirPath, err := mod.Source.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
-			}
-
-			_, err = mod.Source.
-				WithoutClient(path).
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to remove client from module: %w", err)
-			}
-
-			w := cmd.OutOrStdout()
-			fmt.Fprintf(w,
-				"Client at %s removed from config.\n"+
-					"Please manually remove any remaining files of the generated client from your host\n",
-				path)
-
-			return nil
-		})
-	},
+func parseAPIClientOptions(raw []string) ([]sdkOptionInput, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	options := make([]sdkOptionInput, 0, len(raw))
+	for _, option := range raw {
+		key, value, ok := strings.Cut(option, "=")
+		if !ok {
+			return nil, fmt.Errorf("--option %q must be in KEY=VAL form", option)
+		}
+		if key == "" {
+			return nil, fmt.Errorf("--option key must not be empty")
+		}
+		switch key {
+		case "path", "module", "pin":
+			return nil, fmt.Errorf("--option %q is reserved", key)
+		}
+		options = append(options, sdkOptionInput{Key: key, Value: value})
+	}
+	return options, nil
 }
 
-//go:embed clientconf.graphql
-var loadModClientConfQuery string
+func callClientInit(
+	ctx context.Context,
+	dag *dagger.Client,
+	path string,
+	sdkRef string,
+	moduleRef string,
+	options []sdkOptionInput,
+) (string, error) {
+	var res struct {
+		CurrentWorkspace struct {
+			ClientInit struct {
+				ID string `json:"id"`
+			} `json:"clientInit"`
+		} `json:"currentWorkspace"`
+	}
+	err := dag.Do(ctx, &dagger.Request{
+		Query: `query ClientInit($path: String!, $sdk: String!, $module: String!, $options: [SdkOption!]!) {
+  currentWorkspace {
+    clientInit(path: $path, sdk: $sdk, module: $module, options: $options) {
+      id
+    }
+  }
+}`,
+		Variables: map[string]any{
+			"path":    path,
+			"sdk":     sdkRef,
+			"module":  moduleRef,
+			"options": options,
+		},
+	}, &dagger.Response{Data: &res})
+	if err != nil {
+		return "", fmt.Errorf("plan api client init: %w", err)
+	}
+	if res.CurrentWorkspace.ClientInit.ID == "" {
+		return "", fmt.Errorf("api client init returned an empty changeset id")
+	}
+	return res.CurrentWorkspace.ClientInit.ID, nil
+}
 
-var clientListCmd = &cobra.Command{
-	Use:     "list",
-	Short:   "List all Dagger clients installed in the current module",
-	Example: "dagger client list",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			dag := engineClient.Dagger()
+func callClientGenerate(ctx context.Context, dag *dagger.Client) (string, error) {
+	var res struct {
+		CurrentWorkspace struct {
+			ClientGenerate struct {
+				ID string `json:"id"`
+			} `json:"clientGenerate"`
+		} `json:"currentWorkspace"`
+	}
+	err := dag.Do(ctx, &dagger.Request{
+		Query: `query ClientGenerate {
+  currentWorkspace {
+    clientGenerate {
+      id
+    }
+  }
+}`,
+	}, &dagger.Response{Data: &res})
+	if err != nil {
+		return "", fmt.Errorf("generate api clients: %w", err)
+	}
+	if res.CurrentWorkspace.ClientGenerate.ID == "" {
+		return "", fmt.Errorf("api client generation returned an empty changeset id")
+	}
+	return res.CurrentWorkspace.ClientGenerate.ID, nil
+}
 
-			mod, err := initializeClientGeneratorModule(ctx, dag, ".")
+type apiClientListEntry struct {
+	SDK     string            `json:"sdk"`
+	Path    string            `json:"path"`
+	Module  string            `json:"module"`
+	Pin     string            `json:"pin,omitempty"`
+	Options map[string]string `json:"options,omitempty"`
+}
+
+func runAPIClientList(cmd *cobra.Command, _ []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		rawConfig, err := callWorkspaceConfigRead(ctx, ec.Dagger())
+		if err != nil {
+			return err
+		}
+		cfg, err := workspace.ParseConfig([]byte(rawConfig))
+		if err != nil {
+			return err
+		}
+		clients := apiClientEntries(cfg)
+		if apiClientListJSON {
+			out, err := json.Marshal(clients)
 			if err != nil {
-				return fmt.Errorf("failed to initialize client generator module: %w", err)
+				return fmt.Errorf("marshal api clients: %w", err)
 			}
+			_, err = cmd.OutOrStdout().Write(out)
+			return err
+		}
 
-			moduleSourceID, err := mod.Source.ID(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to list clients: failed to get module source id: %w", err)
-			}
+		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+		fmt.Fprintf(tw, "SDK\tPATH\tMODULE\n")
+		for _, client := range clients {
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", client.SDK, client.Path, client.Module)
+		}
+		return tw.Flush()
+	})
+}
 
-			var res struct {
-				Source struct {
-					ConfigClients []struct {
-						Generator string
-						Directory string
-					}
-				}
-			}
+func callWorkspaceConfigRead(ctx context.Context, dag *dagger.Client) (string, error) {
+	var res struct {
+		CurrentWorkspace struct {
+			ConfigRead string `json:"configRead"`
+		} `json:"currentWorkspace"`
+	}
+	err := dag.Do(ctx, &dagger.Request{
+		Query: `query WorkspaceConfigRead {
+  currentWorkspace {
+    configRead(key: "")
+  }
+}`,
+	}, &dagger.Response{Data: &res})
+	if err != nil {
+		return "", fmt.Errorf("read workspace config: %w", err)
+	}
+	return res.CurrentWorkspace.ConfigRead, nil
+}
 
-			err = dag.Do(ctx, &dagger.Request{
-				Query: loadModClientConfQuery,
-				Variables: map[string]any{
-					"source": moduleSourceID,
-				},
-			}, &dagger.Response{
-				Data: &res,
+func apiClientEntries(cfg *workspace.Config) []apiClientListEntry {
+	if cfg == nil {
+		return nil
+	}
+	var entries []apiClientListEntry
+	for sdkName, module := range cfg.Modules {
+		if module.AsSDK == nil {
+			continue
+		}
+		for _, client := range module.AsSDK.Clients {
+			entries = append(entries, apiClientListEntry{
+				SDK:     sdkName,
+				Path:    client.Path,
+				Module:  client.Module,
+				Pin:     client.Pin,
+				Options: client.Options,
 			})
-
-			if err != nil {
-				return fmt.Errorf("failed to list clients: failed to get module source config clients: %w", err)
-			}
-
-			if listJSONOutput {
-				clientsContent, err := json.Marshal(res.Source.ConfigClients)
-				if err != nil {
-					return fmt.Errorf("failed to marshal clients results: %w", err)
-				}
-
-				cmd.OutOrStdout().Write(clientsContent)
-				return nil
-			}
-
-			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-			fmt.Fprintf(tw, "GENERATOR\tPATH\n")
-			for _, client := range res.Source.ConfigClients {
-				fmt.Fprintf(tw, "%s\t%s\n", client.Generator, client.Directory)
-			}
-
-			return tw.Flush()
-		})
-	},
-}
-
-var clientUpdateCmd = &cobra.Command{
-	Use:     "update [<client>...]",
-	Short:   "Update one or more dagger clients in the current module",
-	Example: "dagger client update github.com/shykes/x/hello@v0.3.0",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			dag := engineClient.Dagger()
-
-			mod, err := initializeClientGeneratorModule(ctx, dag, ".")
-			if err != nil {
-				return fmt.Errorf("failed to initialize client generator module: %w", err)
-			}
-
-			contextDirPath, err := mod.Source.LocalContextDirectoryPath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get local context directory path: %w", err)
-			}
-
-			_, err = mod.Source.
-				WithUpdatedClients(args).
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to update clients: %w", err)
-			}
-
-			w := cmd.OutOrStdout()
-			_, _ = fmt.Fprintln(w, "clients updated")
-
-			return nil
-		})
-	},
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].SDK != entries[j].SDK {
+			return entries[i].SDK < entries[j].SDK
+		}
+		return entries[i].Path < entries[j].Path
+	})
+	return entries
 }

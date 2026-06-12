@@ -24,20 +24,7 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
 
-	cmd, _, err = rootCmd.Find([]string{"workspace", "install"})
-	require.NoError(t, err)
-	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("load-module"))
-	require.Nil(t, cmd.Flags().Lookup("compat"))
-	require.NotNil(t, cmd.Flags().Lookup("name"))
-
 	cmd, _, err = rootCmd.Find([]string{"update"})
-	require.NoError(t, err)
-	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("load-module"))
-	require.Nil(t, cmd.Flags().Lookup("compat"))
-
-	cmd, _, err = rootCmd.Find([]string{"workspace", "update"})
 	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
 	require.Nil(t, cmd.Flags().Lookup("load-module"))
@@ -70,6 +57,15 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, apiFunctionsCmd, cmd)
 	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"api", "client"})
+	require.NoError(t, err)
+	require.Same(t, apiClientCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"client"})
+	require.NoError(t, err)
+	require.NotSame(t, apiClientCmd, cmd)
 
 	cmd, _, err = rootCmd.Find([]string{"call"})
 	require.NoError(t, err)
@@ -202,24 +198,29 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	require.NotContains(t, help, "DAGGER MODULE COMMANDS")
 	require.NotContains(t, help, "DAGGER WORKSPACE COMMANDS")
 	require.NotContains(t, help, "EXECUTION COMMANDS")
-	require.Contains(t, help, "check, checks")
-	require.Contains(t, help, "function, fn")
-	require.Contains(t, help, "module, mod")
+	require.NotContains(t, help, "check, checks")
+	require.NotContains(t, help, "function, fn")
+	require.NotContains(t, help, "module, mod")
 	require.Contains(t, help, "workspace, ws")
 	require.NotContains(t, help, "exec, run")
 
 	names := rootHelpCommandNames(help)
 	for _, name := range []string{
+		"activity",
 		"check",
 		"exec",
 		"generate",
+		"install",
+		"installed",
+		"search",
+		"settings",
+		"setup",
+		"uninstall",
 		"up",
+		"update",
 		"version",
 		"api",
 		"cloud",
-		"env",
-		"function",
-		"integration",
 		"module",
 		"workspace",
 	} {
@@ -232,8 +233,10 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"completion",
 		"config",
 		"core",
+		"env",
+		"function",
 		"functions",
-		"install",
+		"integration",
 		"listen",
 		"lock",
 		"login",
@@ -242,15 +245,12 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"query",
 		"run",
 		"session",
-		"settings",
-		"uninstall",
-		"update",
 	} {
 		require.NotContains(t, names, name)
 	}
 
-	for _, leaf := range []string{"check", "exec", "generate", "up", "version"} {
-		for _, parent := range []string{"api", "cloud", "env", "function", "integration", "module", "workspace"} {
+	for _, leaf := range []string{"activity", "check", "exec", "generate", "install", "installed", "search", "settings", "setup", "uninstall", "up", "update", "version"} {
+		for _, parent := range []string{"api", "cloud", "module", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}
 	}

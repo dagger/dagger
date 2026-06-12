@@ -59,7 +59,7 @@ Examples:
 				if generateListMode {
 					return listGenerators(ctx, dag, generators, cmd)
 				}
-				return runGenerators(ctx, dag, generators, cmd)
+				return runGenerators(ctx, dag, generators, cmd, len(args) == 0)
 			},
 		)
 	},
@@ -114,7 +114,7 @@ func listGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dag
 }
 
 // 'dagger generators' (runs by default)
-func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup, _ *cobra.Command) (rerr error) {
+func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup, _ *cobra.Command, includeClients bool) (rerr error) {
 	ctx, zoomSpan := Tracer().Start(ctx, "generators", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
@@ -131,6 +131,24 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagg
 		).Sync(ctx)
 	if err != nil {
 		return err
+	}
+	if includeClients {
+		clientChangesID, err := callClientGenerate(ctx, dag)
+		if err != nil {
+			return err
+		}
+		clientChanges := dag.LoadChangesetFromID(dagger.ChangesetID(clientChangesID))
+		cs, err = dag.Changeset().
+			WithChangesets(
+				[]*dagger.Changeset{cs, clientChanges},
+				dagger.ChangesetWithChangesetsOpts{
+					OnConflict: dagger.ChangesetsMergeConflictFailEarly,
+				},
+			).
+			Sync(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	return handleChangesetResponse(ctx, dag, cs, autoApply)
 }
