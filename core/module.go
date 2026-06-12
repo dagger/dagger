@@ -276,8 +276,8 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 				continue
 			}
 			updatedArg := arg
-			_, isServiceRef := extractServiceRef(val)
-			if isServiceRef || argSelf.TypeDef.Self().Kind == TypeDefKindObject {
+			_, isFunctionRef := extractFunctionRef(val)
+			if isFunctionRef || argSelf.TypeDef.Self().Kind == TypeDefKindObject {
 				if !argSelf.TypeDef.Self().Optional {
 					var updatedTypeDef dagql.ObjectResult[*TypeDef]
 					if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
@@ -529,8 +529,8 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag 
 		updatedFn, changed, err := mod.patchFunctionArg(ctx, dag, fn, cust.Argument, func(arg dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error) {
 			updatedArg := arg
 			argSelf := arg.Self()
-			_, isServiceRef := extractServiceRef(cust.Default)
-			setOptional := isServiceRef || cust.DefaultPath != "" || cust.DefaultAddress != ""
+			_, isFunctionRef := extractFunctionRef(cust.Default)
+			setOptional := isFunctionRef || cust.DefaultPath != "" || cust.DefaultAddress != ""
 			if setOptional && !argSelf.TypeDef.Self().Optional {
 				var updatedTypeDef dagql.ObjectResult[*TypeDef]
 				if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
@@ -552,7 +552,7 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag 
 					}
 				}
 			}
-			if !isServiceRef {
+			if !isFunctionRef {
 				if s, ok := cust.Default.(string); ok {
 					if jsonValue, ok := legacyArgDefaultValue(argSelf.TypeDef.Self(), s); ok {
 						if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{

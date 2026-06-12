@@ -171,22 +171,30 @@ func (UpSuite) TestUpServiceBinding(ctx context.Context, t *testctx.T) {
 }
 
 func (UpSuite) TestUpServiceRef(ctx context.Context, t *testctx.T) {
-	// A module's constructor can receive a Service from another module's +up
-	// function via workspace settings: settings.<arg> = { from = "<module>:<function>" }
+	// A module's constructor can receive another module's function output via
+	// workspace settings: settings.<arg> = { from = "<module>:<function>" }.
+	// Supported for Service (+up functions) and Container.
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
 	require.NoError(t, err)
 
-	t.Run("without service ref", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.
+	t.Run("without refs", func(ctx context.Context, t *testctx.T) {
+		ctr := modGen.
 			WithWorkdir("app").
 			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
 source = "../service-ref-consumer"
-`).
+`)
+		out, err := ctr.
 			With(daggerExec("call", "service-ref-consumer", "has-service")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "false")
+
+		out, err = ctr.
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "none")
 	})
 
 	t.Run("with service ref", func(ctx context.Context, t *testctx.T) {
@@ -203,6 +211,22 @@ settings.app = { from = "hello-with-services:web" }
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "true")
+	})
+
+	t.Run("with container ref", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = { from = "container-provider:image" }
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
 	})
 }
 

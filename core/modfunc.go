@@ -245,7 +245,7 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		}
 		updatedArgRes := currentArgRes
 		argTypeDef := currentArgRes.Self().TypeDef.Self()
-		if argDefault.IsServiceRef() || argDefault.IsObject() || (argDefault.IsList() &&
+		if argDefault.IsFunctionRef() || argDefault.IsObject() || (argDefault.IsList() &&
 			argTypeDef != nil &&
 			argTypeDef.Kind == TypeDefKindList &&
 			argTypeDef.AsList.Valid &&
@@ -382,22 +382,25 @@ func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *Us
 type UserDefault struct {
 	UserDefaultPrimitive
 
-	// ServiceRef is the colon-separated path to a +up function whose Service
-	// should be injected as this arg's default. Set when the workspace config
-	// contains { from = "<module>:<function>" } for this arg.
-	ServiceRef string
+	// FunctionRef is the colon-separated path to a workspace module function
+	// whose return value should be injected as this arg's default — a +up
+	// function for Service args, or a Container-returning function for
+	// Container args. Set when the workspace config contains
+	// { from = "<module>:<function>" } for this arg.
+	FunctionRef string
 }
 
-func (ud *UserDefault) IsServiceRef() bool {
-	return ud.ServiceRef != ""
+func (ud *UserDefault) IsFunctionRef() bool {
+	return ud.FunctionRef != ""
 }
 
-// resolveServiceRef evaluates the +up function referenced by ud.ServiceRef
-// (e.g. "docusaurus:serve") on the dagql server and returns its Service ID.
-func (ud *UserDefault) resolveServiceRef(ctx context.Context) (any, error) {
-	parts := strings.Split(ud.ServiceRef, ":")
+// resolveFunctionRef evaluates the workspace module function referenced by
+// ud.FunctionRef (e.g. "docusaurus:serve") on the dagql server and returns
+// the ID of the object it produces (a Service, Container, etc).
+func (ud *UserDefault) resolveFunctionRef(ctx context.Context) (any, error) {
+	parts := strings.Split(ud.FunctionRef, ":")
 	if len(parts) < 2 {
-		return nil, ud.errorf(nil, "invalid service reference %q: expected <module>:<function>", ud.ServiceRef)
+		return nil, ud.errorf(nil, "invalid function reference %q: expected <module>:<function>", ud.FunctionRef)
 	}
 
 	srv := dagql.CurrentDagqlServer(ctx)
@@ -410,12 +413,12 @@ func (ud *UserDefault) resolveServiceRef(ctx context.Context) (any, error) {
 
 	var svcResult dagql.AnyObjectResult
 	if err := srv.Select(ctx, srv.Root(), &svcResult, selectors...); err != nil {
-		return nil, ud.errorf(err, "resolve service reference %q", ud.ServiceRef)
+		return nil, ud.errorf(err, "resolve function reference %q", ud.FunctionRef)
 	}
 
 	id, err := svcResult.Select(ctx, srv, dagql.Selector{Field: "id"})
 	if err != nil {
-		return nil, ud.errorf(err, "get service ID from reference %q", ud.ServiceRef)
+		return nil, ud.errorf(err, "get ID from function reference %q", ud.FunctionRef)
 	}
 	return id.Unwrap(), nil
 }
@@ -446,7 +449,7 @@ func (ud *UserDefault) IsList() bool {
 }
 
 func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, error) {
-	if !ud.IsServiceRef() && !ud.IsObject() &&
+	if !ud.IsFunctionRef() && !ud.IsObject() &&
 		(!ud.IsList() ||
 			!ud.Arg.TypeDef.Self().AsList.Valid ||
 			ud.Arg.TypeDef.Self().AsList.Value.Self() == nil ||
@@ -469,10 +472,10 @@ func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, er
 }
 
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
-	// Service reference: resolve by evaluating the +up function on the
-	// referenced module via the dagql server.
-	if ud.IsServiceRef() {
-		return ud.resolveServiceRef(ctx)
+	// Function reference: resolve by evaluating the referenced function on the
+	// referenced workspace module via the dagql server.
+	if ud.IsFunctionRef() {
+		return ud.resolveFunctionRef(ctx)
 	}
 
 	if !ud.IsObject() && !ud.IsList() {
@@ -545,7 +548,7 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 }
 
 func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.Input, error) {
-	if !ud.IsServiceRef() && !ud.IsObject() && !ud.IsList() {
+	if !ud.IsFunctionRef() && !ud.IsObject() && !ud.IsList() {
 		return nil, ud.errorf(nil, "DagqlID(): primitive type has no ID")
 	}
 	value, err := ud.Value(ctx)
@@ -608,10 +611,10 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	if fn.mod.Self().WorkspaceConfig != nil && isConstructor {
 		val, ok := lookupConfigCaseInsensitive(fn.mod.Self().WorkspaceConfig, arg.Self().OriginalName, arg.Self().Name)
 		if ok {
-			// Check for service reference: { from = "<module>:<function>" }
-			if ref, ok := extractServiceRef(val); ok {
+			// Check for function reference: { from = "<module>:<function>" }
+			if ref, ok := extractFunctionRef(val); ok {
 				ud := fn.newUserDefault(arg.Self(), ref)
-				ud.ServiceRef = ref
+				ud.FunctionRef = ref
 				return ud, true, nil
 			}
 			return fn.newUserDefault(arg.Self(), configValueToString(val)), true, nil
@@ -1374,10 +1377,10 @@ func configValueToString(v any) string {
 	}
 }
 
-// extractServiceRef checks if a config value is a service reference of the
+// extractFunctionRef checks if a config value is a function reference of the
 // form { from = "<module>:<function>" }. Returns the reference path and true
 // if it matches, or ("", false) otherwise.
-func extractServiceRef(val any) (string, bool) {
+func extractFunctionRef(val any) (string, bool) {
 	m, ok := val.(map[string]any)
 	if !ok {
 		return "", false

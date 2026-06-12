@@ -19,34 +19,48 @@ together, defeating the purpose of reusable modules.
 ## Solution
 
 Extend the `settings.*` constructor customization mechanism in `dagger.toml` to
-support **service references**: a value that resolves to the `Service` returned by a
-`+up` function on another workspace module.
+support **function references**: a value that resolves to the output of a function
+on another workspace module. Two types are supported today:
+
+- **`Service`** — referencing a `+up` function (the original motivation).
+- **`Container`** — referencing any function that returns a `Container`.
+
+Other core types (`Directory`, `File`, `Secret`) may follow; the resolution
+mechanism is type-agnostic.
 
 ### Config Syntax
 
-A service reference is an inline TOML table with a `from` key whose value is a
-colon-separated path identifying a `+up` function:
+A function reference is an inline TOML table with a `from` key whose value is a
+colon-separated path identifying a function on another workspace module:
 
 ```toml
 [modules.docusaurus]
 source = "github.com/example/docusaurus@v1.0"
 
+[modules.base-images]
+source = "github.com/example/base-images@v1.0"
+
 [modules.playwright]
 source = "github.com/example/playwright@v1.0"
 settings.app = { from = "docusaurus:serve" }
+settings.base = { from = "base-images:chromium" }
 ```
 
-The path format is `<module>:<function>` for singleton services, or
-`<module>:<function>:<collection-key>` for services exposed by a collection member.
+The path format is `<module>:<function>` for singleton functions, or
+`<module>:<function>:<collection-key>` for functions exposed by a collection member.
 
 ### Constraints
 
-- `from` resolves **only** `+up` functions. It is not a general-purpose cross-module
-  function reference.
-- The target constructor argument must accept `*dagger.Service` (typically optional).
+- For `Service` args, `from` resolves `+up` functions. For `Container` args, it
+  resolves any zero-arg function returning a `Container`. It is not (yet) a
+  general-purpose cross-module reference for arbitrary types.
+- The target constructor argument must accept `*dagger.Service` or
+  `*dagger.Container` (typically optional).
+- Referenced functions take no arguments; a provider is parameterized via its
+  own `settings.*` block, not at the reference site.
 - The colon separator is consistent with existing `ModTreeNode.PathString()` convention.
-- Invalid references (nonexistent module, nonexistent function, non-`+up` function,
-  type mismatch) fail at runtime, not at config parse time.
+- Invalid references (nonexistent module, nonexistent function, type mismatch)
+  fail at runtime, not at config parse time.
 
 ### Module Author Side
 
@@ -84,17 +98,18 @@ a `*dagger.Service` like any other constructor argument.
 When the engine processes constructor arg defaults from `WorkspaceConfig`:
 
 1. **Config parsing**: The `settings.*` value `{ from = "docusaurus:serve" }` is parsed
-   as a `map[string]any` with a single `from` key. This is detected as a service
+   as a `map[string]any` with a single `from` key. This is detected as a function
    reference (as opposed to a literal value).
 
-2. **Resolution**: The colon-separated path is resolved to a `+up` function on the
-   referenced workspace module. The engine evaluates the `+up` function to obtain a
-   `Service` value.
+2. **Resolution**: The colon-separated path is resolved to a function on the
+   referenced workspace module. The engine evaluates the function and selects the
+   ID of the object it returns (`Service`, `Container`). Resolution is type-agnostic:
+   it builds dagql selectors from the path segments and grabs `id` off the result.
 
-3. **Injection**: The resolved `Service` is passed as the constructor argument default,
+3. **Injection**: The resolved object is passed as the constructor argument default,
    the same way primitive values are injected today via `UserDefault()`.
 
-4. **Load ordering**: Because module B's constructor depends on module A's `+up`
+4. **Load ordering**: Because module B's constructor depends on module A's
    output, module A must be loaded before module B. This creates an implicit dependency
    ordering between workspace modules.
 
@@ -114,9 +129,9 @@ the service.
 
 - **Service groups / profiles**: Running a named subset of services via `dagger up` is
   out of scope for this design. Will be addressed separately.
-- **General-purpose cross-module references**: `from` is scoped to `+up` / `Service`
-  only. Wiring other types (Directory, Container, etc.) across modules is a separate
-  concern.
+- **General-purpose cross-module references**: `from` is scoped to `Service` (via
+  `+up`) and `Container`. Wiring other types (Directory, File, Secret) across
+  modules is a natural follow-up but not in scope yet.
 - **Config-time validation**: References are validated at runtime. Static config
   validation may be added later.
 
