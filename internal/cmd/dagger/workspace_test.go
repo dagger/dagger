@@ -78,11 +78,12 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.True(t, cmd.Hidden)
 	require.Contains(t, cmd.Deprecated, "dagger -m core function call")
 
-	cmd, _, err = rootCmd.Find([]string{"exec"})
+	// exec / run moved under `dagger api`; no longer reachable at root.
+	cmd, _, err = rootCmd.Find([]string{"api", "exec"})
 	require.NoError(t, err)
 	require.Same(t, runCmd, cmd)
 
-	cmd, _, err = rootCmd.Find([]string{"run"})
+	cmd, _, err = rootCmd.Find([]string{"api", "run"})
 	require.NoError(t, err)
 	require.Same(t, runCmd, cmd)
 
@@ -208,7 +209,6 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	for _, name := range []string{
 		"activity",
 		"check",
-		"exec",
 		"generate",
 		"install",
 		"installed",
@@ -234,6 +234,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"config",
 		"core",
 		"env",
+		"exec",
 		"function",
 		"functions",
 		"integration",
@@ -249,7 +250,7 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		require.NotContains(t, names, name)
 	}
 
-	for _, leaf := range []string{"activity", "check", "exec", "generate", "install", "installed", "search", "settings", "setup", "uninstall", "up", "update", "version"} {
+	for _, leaf := range []string{"activity", "check", "generate", "install", "installed", "search", "settings", "setup", "uninstall", "up", "update", "version"} {
 		for _, parent := range []string{"api", "cloud", "module", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}
