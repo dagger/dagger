@@ -280,7 +280,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("asWorkspace", s.asWorkspace).
-			View(AfterVersion("v0.21.7")).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Creates a synthetic workspace from this directory.").
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
