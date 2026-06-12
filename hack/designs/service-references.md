@@ -22,7 +22,8 @@ Extend the `settings.*` constructor customization mechanism in `dagger.toml` to
 support **function references**: a value that resolves to the output of a function
 on another workspace module. Two types are supported today:
 
-- **`Service`** — referencing a `+up` function (the original motivation).
+- **`Service`** — conventionally referencing a `+up` function (the original
+  motivation), though any `Service`-returning function resolves.
 - **`Container`** — referencing any function that returns a `Container`.
 
 Other core types (`Directory`, `File`, `Secret`) may follow; the resolution
@@ -51,8 +52,13 @@ The path format is `<module>:<function>` for singleton functions, or
 
 ### Constraints
 
-- For `Service` args, `from` resolves `+up` functions. For `Container` args, it
-  resolves any zero-arg function returning a `Container`. It is not (yet) a
+- `from` resolves any zero-arg function on a workspace module whose return type
+  matches the target arg. `+up` is not a gate: it governs `dagger up` lifecycle
+  and listing (`dagger up -l` is where users naturally copy ref strings from),
+  not referenceability. For `Service` args the conventional target is a `+up`
+  function, but any `Service`-returning function works.
+- Supported arg types are scoped to `Service` and `Container` by documentation
+  and test coverage, not by an engine-side type check. It is not (yet) a
   general-purpose cross-module reference for arbitrary types.
 - The target constructor argument must accept `*dagger.Service` or
   `*dagger.Container` (typically optional).
