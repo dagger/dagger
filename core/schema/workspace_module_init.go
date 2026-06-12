@@ -30,10 +30,10 @@ type workspaceModuleInitArgs struct {
 // moduleInit builds the workspace edits required to create a new module
 // owned by this workspace: codegen output (dagger-module.toml plus
 // SDK-generated source) at `path`, the SDK install entry under
-// `[sdks.<sdk-name>]`, the authoring entry under
-// `[[sdks.<sdk-name>.modules]]`, and — when the default path is used — an
-// `[modules.<name>]` install so the new module is callable in this
-// workspace.
+// `[modules.<sdk-name>]`, the authoring entry under
+// `[[modules.<sdk-name>.as-sdk.modules]]`, and — when the default path is
+// used — an `[modules.<name>]` install for the new module so it's
+// callable in this workspace.
 //
 // Every change is staged into one Changeset and returned. No filesystem
 // write happens inside this function; the caller previews via

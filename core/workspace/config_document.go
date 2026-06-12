@@ -155,11 +155,12 @@ func configDocumentMap(cfg *Config) map[string]any {
 		}
 		values["ports"] = ports
 	}
-	// SDKs are intentionally NOT included here. The neontoml ApplyMap path
-	// can't express array-of-tables (it would emit inline arrays of inline
-	// tables and leave any pre-existing [[sdks.X.modules]] blocks orphaned).
-	// SDK sections are managed as a self-contained block by rewriteSDKSections
-	// after the rest of the document is format-preserved.
+	// Per-module as-sdk sub-blocks are intentionally NOT included here.
+	// The neontoml ApplyMap path can't express array-of-tables (it would
+	// emit inline arrays of inline tables and leave any pre-existing
+	// [[modules.X.as-sdk.modules]] blocks orphaned). Those sub-blocks are
+	// managed surgically by rewriteModuleAsSDKSections after the rest of
+	// the document is format-preserved.
 
 	return values
 }
