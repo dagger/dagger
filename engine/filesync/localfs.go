@@ -213,8 +213,20 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}
 	}()
 
+	// the paths to copy from the mirror into the final snapshot
 	only := map[string]struct{}{}
-	ignoredDirs := map[string]struct{}{}
+
+	// Gitignored dirs are not synced, but a re-included file inside one
+	// ("!foo/bar.txt") can only be written once its parent dir exists in the
+	// mirror. Track ignored dirs so they can be created on demand. They never
+	// enter `only`: ignored dirs are not synced content and should not affect
+	// the cache key.
+	type ignoredDir struct {
+		kind    ChangeKind
+		stat    *types.Stat
+		created bool
+	}
+	ignoredDirs := map[string]*ignoredDir{}
 	isIgnoredPath := func(path string) bool {
 		for {
 			if _, ok := ignoredDirs[path]; ok {
@@ -230,6 +242,30 @@ func (local *localFS) Sync( //nolint:gocyclo
 			path = next
 		}
 		return false
+	}
+	var ensureIgnoredParentDirs func(path string) error
+	ensureIgnoredParentDirs = func(path string) error {
+		dir := filepath.Dir(path)
+		if dir == "." { // paths are relative; "." means we reached the sync root
+			return nil
+		}
+		// create outermost ancestors first
+		if err := ensureIgnoredParentDirs(dir); err != nil {
+			return err
+		}
+		ignored, ok := ignoredDirs[dir]
+		if !ok || ignored.created {
+			return nil
+		}
+		appliedChange, err := local.Mkdir(egCtx, ignored.kind, dir, ignored.stat)
+		if err != nil {
+			return err
+		}
+		ignored.created = true
+		cachedResultsMu.Lock()
+		cachedResults = append(cachedResults, appliedChange)
+		cachedResultsMu.Unlock()
+		return nil
 	}
 
 	// We assert if we find a file/dir in the given relative path to correctly return
@@ -304,12 +340,15 @@ func (local *localFS) Sync( //nolint:gocyclo
 	doubleWalkDiff(egCtx, eg, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
 		if upperStat != nil && upperStat.GitIgnored {
 			if upperStat.IsDir() {
-				ignoredDirs[path] = struct{}{}
+				ignoredDirs[path] = &ignoredDir{kind: kind, stat: upperStat}
 			}
 			return nil
 		}
 		switch kind {
 		case ChangeKindAdd, ChangeKindModify:
+			if err := ensureIgnoredParentDirs(path); err != nil {
+				return err
+			}
 			switch {
 			case upperStat.IsDir():
 				appliedChange, err := local.Mkdir(egCtx, kind, path, upperStat)
