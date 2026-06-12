@@ -16009,6 +16009,7 @@ class Workspace(Type):
         self,
         *,
         include: list[str] | None = None,
+        skip: list[str] | None = None,
         no_generate: bool | None = None,
         only_generate: bool | None = None,
     ) -> CheckGroup:
@@ -16018,6 +16019,8 @@ class Workspace(Type):
         ----------
         include:
             Only include checks matching the specified patterns
+        skip:
+            Skip checks matching the specified patterns
         no_generate:
             When true, only return annotated check functions; exclude
             generate-as-checks
@@ -16027,6 +16030,7 @@ class Workspace(Type):
         """
         _args = [
             Arg("include", include, None),
+            Arg("skip", skip, None),
             Arg("noGenerate", no_generate, None),
             Arg("onlyGenerate", only_generate, None),
         ]
