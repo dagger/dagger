@@ -23,14 +23,19 @@ import (
 var embeddedSDKRegistry []byte
 
 type sdkEntry struct {
-	Name    string   `json:"name"`    // canonical short name (e.g., "go-sdk")
-	Repo    string   `json:"repo"`    // canonical full ref (e.g., "github.com/dagger/go-sdk")
-	Aliases []string `json:"aliases"` // user-facing shorthands (e.g., ["go", "golang"])
+	Name        string   `json:"name"`        // canonical short install/search name (e.g., "go")
+	Description string   `json:"description"` // user-facing search description
+	Repo        string   `json:"repo"`        // canonical full ref (e.g., "github.com/dagger/go-sdk")
+	Aliases     []string `json:"aliases"`     // user-facing shorthands (e.g., ["golang"])
 }
 
 func loadSDKRegistry() ([]sdkEntry, error) {
+	return parseSDKRegistry(embeddedSDKRegistry)
+}
+
+func parseSDKRegistry(data []byte) ([]sdkEntry, error) {
 	var entries []sdkEntry
-	if err := json.Unmarshal(embeddedSDKRegistry, &entries); err != nil {
+	if err := json.Unmarshal(data, &entries); err != nil {
 		return nil, fmt.Errorf("parse SDK registry: %w", err)
 	}
 	return entries, nil
@@ -41,7 +46,8 @@ func loadSDKRegistry() ([]sdkEntry, error) {
 //
 // Resolution rules:
 //   - If input contains `/` or `@`, treat as a full ref. Return as-is.
-//   - Otherwise look up in sdks.json by name first, then by alias.
+//   - Otherwise look up in sdks.json by name first, then alias, then repo
+//     basename as a compatibility fallback (`go-sdk`).
 //   - 0 matches → error ("not found").
 //   - 1 match  → return entry.Repo.
 //   - N > 1   → error ("ambiguous"), with candidate names.
@@ -62,11 +68,16 @@ func sdkResolve(input string) (string, error) {
 			matches = append(matches, e)
 			continue
 		}
+		matched := false
 		for _, alias := range e.Aliases {
 			if alias == input {
 				matches = append(matches, e)
+				matched = true
 				break
 			}
+		}
+		if !matched && sdkRegistryRepoBase(e.Repo) == input {
+			matches = append(matches, e)
 		}
 	}
 	switch len(matches) {
@@ -82,6 +93,13 @@ func sdkResolve(input string) (string, error) {
 		sort.Strings(names)
 		return "", fmt.Errorf("SDK %q is ambiguous: matches %s. Pick one.", input, strings.Join(names, ", "))
 	}
+}
+
+func sdkRegistryRepoBase(repo string) string {
+	if idx := strings.LastIndex(repo, "/"); idx != -1 {
+		return repo[idx+1:]
+	}
+	return repo
 }
 
 // --- dagger module init ---
