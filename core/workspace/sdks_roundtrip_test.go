@@ -5,23 +5,25 @@ import (
 	"testing"
 )
 
-func TestSDKsRoundTripFresh(t *testing.T) {
+// TestModuleAsSDKRoundTripFresh covers a freshly-serialized config that
+// declares an SDK install via the as-sdk sub-table.
+func TestModuleAsSDKRoundTripFresh(t *testing.T) {
 	cfg := &Config{
 		Modules: map[string]ModuleEntry{
 			"mymod": {Source: ".dagger/modules/mymod"},
-		},
-		SDKs: map[string]SDKEntry{
 			"go-sdk": {
-				Source: "github.com/dagger/go-sdk",
-				Pin:    "abcdef",
-				Modules: []SDKManagedModule{
-					{Path: ".dagger/modules/mymod"},
-					{Path: "libs/shared"},
-				},
-				Clients: []SDKManagedClient{
-					{Path: "./lib/cli", Module: ".dagger/modules/cli"},
-				},
+				Source:   "github.com/dagger/go-sdk",
+				Pin:      "abcdef",
 				Settings: map[string]any{"strict-build": true},
+				AsSDK: &ModuleAsSDK{
+					Modules: []SDKManagedModule{
+						{Path: ".dagger/modules/mymod"},
+						{Path: "libs/shared"},
+					},
+					Clients: []SDKManagedClient{
+						{Path: "./lib/cli", Module: ".dagger/modules/cli"},
+					},
+				},
 			},
 		},
 	}
@@ -33,16 +35,23 @@ func TestSDKsRoundTripFresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseConfig: %v", err)
 	}
-	if got := parsed.SDKs["go-sdk"]; got.Source != "github.com/dagger/go-sdk" {
-		t.Errorf("Source: got %q", got.Source)
+	goSDK, ok := parsed.Modules["go-sdk"]
+	if !ok {
+		t.Fatalf("go-sdk module missing from parsed config")
 	}
-	if got := parsed.SDKs["go-sdk"]; got.Pin != "abcdef" {
-		t.Errorf("Pin: got %q", got.Pin)
+	if goSDK.Source != "github.com/dagger/go-sdk" {
+		t.Errorf("Source: got %q", goSDK.Source)
 	}
-	if got := len(parsed.SDKs["go-sdk"].Modules); got != 2 {
+	if goSDK.Pin != "abcdef" {
+		t.Errorf("Pin: got %q", goSDK.Pin)
+	}
+	if goSDK.AsSDK == nil {
+		t.Fatalf("AsSDK is nil after round-trip")
+	}
+	if got := len(goSDK.AsSDK.Modules); got != 2 {
 		t.Errorf("Modules count: got %d", got)
 	}
-	if got := len(parsed.SDKs["go-sdk"].Clients); got != 1 {
+	if got := len(goSDK.AsSDK.Clients); got != 1 {
 		t.Errorf("Clients count: got %d", got)
 	}
 
@@ -52,17 +61,21 @@ func TestSDKsRoundTripFresh(t *testing.T) {
 	}
 	t.Logf("=== UpdateConfigBytes round-trip ===\n%s", updated)
 
-	if !strings.Contains(string(updated), "[sdks.go-sdk]") {
-		t.Errorf("missing [sdks.go-sdk] in round-trip output")
-	}
-	if !strings.Contains(string(updated), "[[sdks.go-sdk.modules]]") {
-		t.Errorf("missing [[sdks.go-sdk.modules]] in round-trip output")
+	for _, want := range []string{
+		"[modules.go-sdk]",
+		"[modules.go-sdk.settings]",
+		"[[modules.go-sdk.as-sdk.modules]]",
+		"[[modules.go-sdk.as-sdk.clients]]",
+	} {
+		if !strings.Contains(string(updated), want) {
+			t.Errorf("missing %q in round-trip output", want)
+		}
 	}
 }
 
-// TestSDKsPreservesCommentsOutsideSDKs verifies that comments and formatting
-// in non-SDK sections survive a write that touches SDKs.
-func TestSDKsPreservesCommentsOutsideSDKs(t *testing.T) {
+// TestModuleAsSDKPreservesCommentsOutside verifies that comments and
+// formatting in non-as-sdk regions survive a write that touches as-sdk.
+func TestModuleAsSDKPreservesCommentsOutside(t *testing.T) {
 	original := []byte(`# Top-level comment
 ignore = ["*.bak"]
 
@@ -70,8 +83,11 @@ ignore = ["*.bak"]
 [modules.mymod]
 source = ".dagger/modules/mymod"  # inline comment
 
-[sdks.stale-sdk]
-source = "github.com/old/sdk"
+[modules.go-sdk]
+source = "github.com/old/go-sdk"
+
+[[modules.go-sdk.as-sdk.modules]]
+path = ".dagger/modules/stale"
 `)
 
 	cfg, err := ParseConfig(original)
@@ -79,15 +95,14 @@ source = "github.com/old/sdk"
 		t.Fatalf("ParseConfig: %v", err)
 	}
 
-	// Replace SDKs entirely.
-	cfg.SDKs = map[string]SDKEntry{
-		"new-sdk": {
-			Source: "github.com/new/sdk",
-			Modules: []SDKManagedModule{
-				{Path: ".dagger/modules/mymod"},
-			},
+	// Replace the SDK's as-sdk content entirely.
+	entry := cfg.Modules["go-sdk"]
+	entry.AsSDK = &ModuleAsSDK{
+		Modules: []SDKManagedModule{
+			{Path: ".dagger/modules/mymod"},
 		},
 	}
+	cfg.Modules["go-sdk"] = entry
 
 	out, err := UpdateConfigBytes(original, cfg)
 	if err != nil {
@@ -96,35 +111,33 @@ source = "github.com/old/sdk"
 	t.Logf("=== Updated ===\n%s", out)
 
 	s := string(out)
-	if !strings.Contains(s, "# Top-level comment") {
-		t.Errorf("lost top-level comment")
+	for _, want := range []string{
+		"# Top-level comment",
+		"# Modules section",
+		"# inline comment",
+		"[modules.go-sdk]",
+		`source = "github.com/old/go-sdk"`,
+		`path = ".dagger/modules/mymod"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q", want)
+		}
 	}
-	if !strings.Contains(s, "# Modules section") {
-		t.Errorf("lost module section comment")
-	}
-	if !strings.Contains(s, "# inline comment") {
-		t.Errorf("lost inline comment")
-	}
-	if strings.Contains(s, "stale-sdk") {
-		t.Errorf("stale SDK survived removal")
-	}
-	if !strings.Contains(s, "[sdks.new-sdk]") {
-		t.Errorf("new SDK missing from output")
-	}
-	if !strings.Contains(s, "[[sdks.new-sdk.modules]]") {
-		t.Errorf("new SDK modules array missing")
+	if strings.Contains(s, "stale") {
+		t.Errorf("stale as-sdk entry survived")
 	}
 }
 
-// TestSDKsRemovedWhenEmpty checks that an emptied SDKs map clears the section.
-func TestSDKsRemovedWhenEmpty(t *testing.T) {
+// TestModuleAsSDKRemovedWhenEmpty checks that clearing AsSDK from a module
+// entry drops the corresponding as-sdk array-of-tables on next write.
+func TestModuleAsSDKRemovedWhenEmpty(t *testing.T) {
 	original := []byte(`[modules.mymod]
 source = ".dagger/modules/mymod"
 
-[sdks.go-sdk]
+[modules.go-sdk]
 source = "github.com/dagger/go-sdk"
 
-[[sdks.go-sdk.modules]]
+[[modules.go-sdk.as-sdk.modules]]
 path = ".dagger/modules/mymod"
 `)
 
@@ -132,18 +145,23 @@ path = ".dagger/modules/mymod"
 	if err != nil {
 		t.Fatalf("ParseConfig: %v", err)
 	}
-	cfg.SDKs = nil
+	entry := cfg.Modules["go-sdk"]
+	entry.AsSDK = nil
+	cfg.Modules["go-sdk"] = entry
 
 	out, err := UpdateConfigBytes(original, cfg)
 	if err != nil {
 		t.Fatalf("UpdateConfigBytes: %v", err)
 	}
-	t.Logf("=== Updated (sdks removed) ===\n%s", out)
+	t.Logf("=== Updated (as-sdk removed) ===\n%s", out)
 
-	if strings.Contains(string(out), "sdks") {
-		t.Errorf("sdks section should be gone, got:\n%s", out)
+	if strings.Contains(string(out), "as-sdk") {
+		t.Errorf("as-sdk should be gone, got:\n%s", out)
+	}
+	if !strings.Contains(string(out), "[modules.go-sdk]") {
+		t.Errorf("the go-sdk module install should still be present")
 	}
 	if !strings.Contains(string(out), "[modules.mymod]") {
-		t.Errorf("modules section should still be present")
+		t.Errorf("the mymod module should still be present")
 	}
 }
