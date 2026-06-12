@@ -21,7 +21,14 @@ func TestModuleAsSDKRoundTripFresh(t *testing.T) {
 						{Path: "libs/shared"},
 					},
 					Clients: []SDKManagedClient{
-						{Path: "./lib/cli", Module: ".dagger/modules/cli"},
+						{
+							Path:   "./lib/cli",
+							Module: ".dagger/modules/cli",
+							Pin:    "123456",
+							Options: map[string]string{
+								"package-name": "@my-app/dagger-cli-client",
+							},
+						},
 					},
 				},
 			},
@@ -54,6 +61,12 @@ func TestModuleAsSDKRoundTripFresh(t *testing.T) {
 	if got := len(goSDK.AsSDK.Clients); got != 1 {
 		t.Errorf("Clients count: got %d", got)
 	}
+	if got := goSDK.AsSDK.Clients[0].Pin; got != "123456" {
+		t.Errorf("Client pin: got %q", got)
+	}
+	if got := goSDK.AsSDK.Clients[0].Options["package-name"]; got != "@my-app/dagger-cli-client" {
+		t.Errorf("Client package-name option: got %q", got)
+	}
 
 	updated, err := UpdateConfigBytes(raw, parsed)
 	if err != nil {
@@ -66,6 +79,8 @@ func TestModuleAsSDKRoundTripFresh(t *testing.T) {
 		"[modules.go-sdk.settings]",
 		"[[modules.go-sdk.as-sdk.modules]]",
 		"[[modules.go-sdk.as-sdk.clients]]",
+		`pin = "123456"`,
+		`package-name = "@my-app/dagger-cli-client"`,
 	} {
 		if !strings.Contains(string(updated), want) {
 			t.Errorf("missing %q in round-trip output", want)
