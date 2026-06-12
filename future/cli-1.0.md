@@ -693,7 +693,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 
 ### Shipped — `dagger module`
 
-- ✅ **`dagger module init`** — scaffolds a new module. **Current shape: `dagger module init <sdk> <name> [--path=<dir>]`.** `<sdk>` is the workspace install name created by `dagger sdk install`; the engine requires `[modules.<sdk>.as-sdk]`, uses the installed entry's source as the runtime/generator ref, returns a `Changeset`, and the CLI applies it. SDK-specific typed flags are still gated on the SDK contract (task #129).
+- ✅ **`dagger module init`** — scaffolds a new module. **Current shape: `dagger module init <sdk> <name> [--path=<dir>]`.** `<sdk>` is the workspace install name created by `dagger sdk install`; installed SDKs are registered as `init` child commands from local workspace config, the engine requires `[modules.<sdk>.as-sdk]`, uses the installed entry's source as the runtime/generator ref, returns a `Changeset`, and the CLI applies it. SDK-specific typed flags are still gated on the SDK contract (task #129).
 - ✅ **`dagger module deps {add, rm, list}`** — restored from PR #13226's pre-rollback state.
 - ✅ **`dagger module engine {require, require-current, require-latest, required}`** — restored from the same commit.
 - ✅ **`dagger module sdk`** — wrapper that dispatches `dagger call <current-module's-sdk> <subcommand>`. Looks up the SDK from `[[modules.*.as-sdk.modules]]` workspace entries.
@@ -704,7 +704,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 - ✅ **`dagger api functions`** — moved + renamed from `dagger function list`.
 - ✅ **`dagger api query`** — unchanged.
 - ✅ **`dagger api exec`** — moved from top-level `dagger exec` (with `run` / `r` aliases preserved under the new path). Short description sharpened to "Run a command with a connected Dagger API session". Top-level `dagger exec` is gone.
-- ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <sdk> <path> <module>`.** `<sdk>` is the workspace install name created by `dagger sdk install`; `--sdk`, `--module`, and `--option` are gone. SDK-specific typed flags are still gated on the SDK contract (task #129).
+- ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <sdk> <path> <module>`.** `<sdk>` is the workspace install name created by `dagger sdk install`; installed SDKs are registered as `init` child commands from local workspace config; `--sdk`, `--module`, and `--option` are gone. SDK-specific typed flags are still gated on the SDK contract (task #129).
 
 ### Shipped — `dagger sdk`
 
@@ -750,8 +750,8 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 
 ### 🟡 Partial — SDK-specific typed flags pending
 
-- 🟡 **`dagger module init <sdk> <name> [SDK-SPECIFIC FLAGS]`** — positional dispatch is shipped, but SDK-specific typed flags still require SDK `initModule` introspection (task #129). Current shipped generic args are `<sdk>`, `<name>`, and `--path`.
-- 🟡 **`dagger api client init <sdk> <path> <module> [SDK-SPECIFIC FLAGS]`** — positional dispatch is shipped and `--option` is removed, but SDK-specific typed flags still require SDK `initClient` introspection (task #129). Current shipped generic args are `<sdk>`, `<path>`, and `<module>`.
+- 🟡 **`dagger module init <sdk> <name> [SDK-SPECIFIC FLAGS]`** — positional dispatch through installed SDK child commands is shipped, but SDK-specific typed flags still require SDK `initModule` introspection (task #129). Current shipped generic args are `<sdk>`, `<name>`, and `--path`.
+- 🟡 **`dagger api client init <sdk> <path> <module> [SDK-SPECIFIC FLAGS]`** — positional dispatch through installed SDK child commands is shipped and `--option` is removed, but SDK-specific typed flags still require SDK `initClient` introspection (task #129). Current shipped generic args are `<sdk>`, `<path>`, and `<module>`.
 
 ### ⬜ Not yet implemented — handoff to follow-up PRs
 
