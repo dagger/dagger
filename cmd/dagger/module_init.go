@@ -15,10 +15,9 @@ import (
 
 // --- private sdks.json registry ---
 //
-// This is an implementation detail of `dagger module init --sdk=<name>`.
-// It is NOT a general-purpose alias registry. Only this file consumes it.
-// Adding a new alias is a registry data change here; no other surface
-// reaches for `sdks.json`.
+// This is an implementation detail of `dagger sdk install <name>`. It is NOT
+// a general-purpose alias registry. Adding a new alias is a registry data
+// change here; no other surface reaches for `sdks.json`.
 
 //go:embed sdks.json
 var embeddedSDKRegistry []byte
@@ -37,7 +36,7 @@ func loadSDKRegistry() ([]sdkEntry, error) {
 	return entries, nil
 }
 
-// sdkResolve maps a user-supplied `--sdk` value to the canonical full ref
+// sdkResolve maps a user-supplied SDK install value to the canonical full ref
 // that should flow downstream to the engine.
 //
 // Resolution rules:
@@ -72,7 +71,7 @@ func sdkResolve(input string) (string, error) {
 	}
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("--sdk=%q not found in registry; try `dagger search %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
+		return "", fmt.Errorf("SDK %q not found in registry; try `dagger sdk search %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
 	case 1:
 		return matches[0].Repo, nil
 	default:
@@ -81,34 +80,35 @@ func sdkResolve(input string) (string, error) {
 			names = append(names, m.Name)
 		}
 		sort.Strings(names)
-		return "", fmt.Errorf("--sdk=%q is ambiguous: matches %s. Pick one.", input, strings.Join(names, ", "))
+		return "", fmt.Errorf("SDK %q is ambiguous: matches %s. Pick one.", input, strings.Join(names, ", "))
 	}
 }
 
 // --- dagger module init ---
 
-var (
-	moduleInitSDK  string
-	moduleInitPath string
-)
+var moduleInitPath string
 
 var moduleInitCmd = &cobra.Command{
-	Use:   "init <name> --sdk <sdk>",
+	Use:   "init <sdk> <name>",
 	Short: "Initialize a new module in the current workspace",
 	Long: `Initialize a new module in the workspace.
 
-The CLI is a thin wrapper around the engine's Workspace.moduleInit. It
-resolves the --sdk alias against the embedded sdks.json registry, fills
-in the default path when --path isn't supplied, and asks the engine to
-plan the workspace changes. The engine returns a Changeset that the CLI
-previews and applies through the standard changeset apply flow.
+<sdk> is an SDK installed in this workspace. Run ` + "`dagger sdk install <sdk>`" + `
+to add more choices.
+
+For example, after ` + "`dagger sdk install go`" + `, run
+` + "`dagger module init go myapp`" + `.
+
+The CLI is a thin wrapper around the engine's Workspace.moduleInit. The
+engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
+workspace changes, and returns a Changeset that the CLI previews and applies
+through the standard changeset apply flow.
 
 What the engine does (atomically, in one Changeset):
-  1. Records the SDK install under [modules.<sdk-name>] in dagger.toml
-     if it isn't already there.
+  1. Uses [modules.<sdk>] as the SDK install and requires its as-sdk marker.
   2. Generates the new module's dagger-module.toml + SDK-emitted source
      scaffold at <path>.
-  3. Records [[modules.<sdk-name>.as-sdk.modules]] authoring entry for
+  3. Records [[modules.<sdk>.as-sdk.modules]] authoring entry for
      <path>.
   4. When --path is the default (.dagger/modules/<name>), also installs
      the new module as [modules.<name>] so it's callable here.
@@ -116,25 +116,19 @@ What the engine does (atomically, in one Changeset):
 --path defaults to .dagger/modules/<name>. Custom paths skip the
 [modules.<name>] install (the user is managing workspace layout
 explicitly).`,
-	Example: "dagger module init myapp --sdk go",
-	Args:    cobra.ExactArgs(1),
+	Example: "dagger module init go myapp",
+	Args:    cobra.ExactArgs(2),
 	RunE:    runModuleInit,
 }
 
 func init() {
-	moduleInitCmd.Flags().StringVar(&moduleInitSDK, "sdk", "", "SDK alias or full ref (e.g., 'go' or 'github.com/dagger/go-sdk')")
 	moduleInitCmd.Flags().StringVar(&moduleInitPath, "path", "", "Module path relative to the workspace root (default: .dagger/modules/<name>)")
-	_ = moduleInitCmd.MarkFlagRequired("sdk")
 	moduleCmd.AddCommand(moduleInitCmd)
 }
 
 func runModuleInit(cmd *cobra.Command, args []string) error {
-	name := args[0]
-
-	sdkRef, err := sdkResolve(moduleInitSDK)
-	if err != nil {
-		return err
-	}
+	sdkName := args[0]
+	name := args[1]
 
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
@@ -147,7 +141,7 @@ func runModuleInit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		changesetID, err := callModuleInit(ctx, dag, name, sdkRef, moduleInitPath)
+		changesetID, err := callModuleInit(ctx, dag, name, sdkName, moduleInitPath)
 		if err != nil {
 			return err
 		}
@@ -156,17 +150,18 @@ func runModuleInit(cmd *cobra.Command, args []string) error {
 	})
 }
 
-// callModuleInit invokes the engine's Workspace.moduleInit via a raw
-// GraphQL query so this code can ship ahead of an SDK regeneration. When
-// the Go SDK is regenerated against the new schema, the body collapses
-// to a single typed call:
+// callModuleInit invokes the engine's Workspace.moduleInit via a raw GraphQL
+// query so this code can ship ahead of an SDK regeneration. sdkName is the
+// workspace install name created by `dagger sdk install`. When the Go SDK is
+// regenerated against the new schema, the body collapses to a single typed
+// call:
 //
 //	dag.CurrentWorkspace().ModuleInit(ctx, name, dagger.WorkspaceModuleInitOpts{
-//	    SDK: sdkRef, Path: path,
+//	    SDK: sdkName, Path: path,
 //	})
 //
 // until then we go directly through dag.Do.
-func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkRef, path string) (string, error) {
+func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkName, path string) (string, error) {
 	var res struct {
 		CurrentWorkspace struct {
 			ModuleInit struct {
@@ -184,7 +179,7 @@ func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkRef, path 
 }`,
 		Variables: map[string]any{
 			"name": name,
-			"sdk":  sdkRef,
+			"sdk":  sdkName,
 			"path": path,
 		},
 	}, &dagger.Response{Data: &res})
