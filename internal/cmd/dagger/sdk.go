@@ -101,7 +101,7 @@ var sdkSearchCmd = &cobra.Command{
 	Long: `List entries in the embedded SDK registry (sdks.json).
 
 With no query, prints all known SDKs and their aliases. With a query,
-filters by case-insensitive substring on name, alias, or repo.`,
+filters by case-insensitive substring on name, description, alias, or repo.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSDKSearch,
 }
@@ -289,15 +289,20 @@ func runSDKSearch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	return printSDKSearchResults(cmd.OutOrStdout(), searchSDKRegistry(entries, query))
+}
 
+func searchSDKRegistry(entries []sdkEntry, query string) []sdkEntry {
 	q := strings.ToLower(query)
-	matched := entries[:0:0]
+	matched := make([]sdkEntry, 0, len(entries))
 	for _, e := range entries {
 		if q == "" {
 			matched = append(matched, e)
 			continue
 		}
-		if strings.Contains(strings.ToLower(e.Name), q) || strings.Contains(strings.ToLower(e.Repo), q) {
+		if strings.Contains(strings.ToLower(e.Name), q) ||
+			strings.Contains(strings.ToLower(e.Description), q) ||
+			strings.Contains(strings.ToLower(e.Repo), q) {
 			matched = append(matched, e)
 			continue
 		}
@@ -308,24 +313,35 @@ func runSDKSearch(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+	sort.Slice(matched, func(i, j int) bool { return matched[i].Name < matched[j].Name })
+	return matched
+}
 
-	out := cmd.OutOrStdout()
-	if len(matched) == 0 {
+func printSDKSearchResults(out io.Writer, entries []sdkEntry) error {
+	if len(entries) == 0 {
 		_, err := fmt.Fprintln(out, "No SDKs match.")
 		return err
 	}
-	sort.Slice(matched, func(i, j int) bool { return matched[i].Name < matched[j].Name })
 
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tALIASES\tREPO"); err != nil {
+	if _, err := fmt.Fprintln(w, "NAME\tDESCRIPTION\tALIASES\tREPO"); err != nil {
 		return err
 	}
-	for _, e := range matched {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", e.Name, strings.Join(e.Aliases, ","), e.Repo); err != nil {
+	for _, e := range entries {
+		aliases := "-"
+		if len(e.Aliases) > 0 {
+			aliases = strings.Join(e.Aliases, ",")
+		}
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, e.Description, aliases, e.Repo); err != nil {
 			return err
 		}
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+
+	_, err := fmt.Fprintln(out, "\nRun 'dagger sdk install <NAME>' to install an SDK.")
+	return err
 }
 
 func runSDKModuleOptions(cmd *cobra.Command, args []string) error {
