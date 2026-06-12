@@ -689,6 +689,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped (different sh
 - ✅ **`dagger installed`** — lists installed modules from `dagger.toml`.
 - ✅ **`dagger install` / `dagger uninstall` / `dagger update` / `dagger search` / `dagger settings` / `dagger activity`** — all hoisted from `dagger workspace` and `dagger mod` to top level.
 - ✅ **`dagger workspace` (bare invocation)** — prints workspace digest (cwd, root, current remote, installed-modules summary). No subcommand needed.
+- ✅ **5-group `--help` rendering** — `rootCmd.AddGroup(...)` + per-command `GroupID` + custom `cmdShortWrappedListByGroups` template helper. Five visual groups separated by blank lines: setup / daily flow / workspace management / specialized toolboxes / utility. Subcommand help (e.g., `dagger module --help`) falls back to the leaf-then-parent rendering since those don't define groups.
 
 ### Shipped — `dagger module`
 
@@ -768,10 +769,6 @@ Tracked as implementation tasks #120–#130 with body-level notes.
 - ⬜ **`initModule` / `initClient` as capability flags** — when an SDK implements the function, the corresponding init verb is available for it; when absent, the verb errors with `"<sdk> does not support module init"` (or `client init`). Task #129.
 - ⬜ **`targetRuntime` introspection wiring** — the engine hook (`resolveModuleRuntimeRef` / `lookupSDKTargetRuntime`) is in place but always returns `("", false)`. Activate when the first SDK opts in. Task #129.
 - ⬜ **Capability checks on `core.SDK` interface** — `AsModuleInit() (ModuleInit, bool)` and `AsClientInit() (ClientInit, bool)` alongside the existing `AsRuntime` / `AsModuleTypes` / `AsCodeGenerator` / `AsClientGenerator`. Task #129.
-
-#### Visual grouping in `dagger --help`
-
-- ⬜ **5-group surface in cobra**. The doc's `--help` mockup shows five visual groups separated by blank lines (setup / daily flow / workspace management / specialized toolboxes / utility). The shipped binary dumps everything alphabetically because no `rootCmd.AddGroup(...)` calls exist and no `GroupID` is set on the top-level commands. Template update + group registration + per-command GroupID assignment. Task #131.
 
 #### Move
 
