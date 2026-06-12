@@ -151,6 +151,11 @@ type ClientMetadata struct {
 	// request explicitly passes a recipe argument. This is engine-internal
 	// nested-client state and must not be forwarded through client headers.
 	UseRecipeIDsByDefault bool `json:"-"`
+
+	// SourceDateEpoch, when set, is propagated to export/publish operations as
+	// the rewriteTimestamp default (clamp file/image timestamps to this Unix
+	// epoch). Populated from the client's SOURCE_DATE_EPOCH env var.
+	SourceDateEpoch *int64 `json:"source_date_epoch,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}

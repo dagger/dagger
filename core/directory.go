@@ -3202,7 +3202,7 @@ func (dir *Directory) Stat(ctx context.Context, self dagql.ObjectResult[*Directo
 	return stat, nil
 }
 
-func (dir *Directory) Export(ctx context.Context, self dagql.ObjectResult[*Directory], destPath string, merge bool) (rerr error) {
+func (dir *Directory) Export(ctx context.Context, self dagql.ObjectResult[*Directory], destPath string, merge bool, sourceDateEpoch *int64) (rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -3232,7 +3232,7 @@ func (dir *Directory) Export(ctx context.Context, self dagql.ObjectResult[*Direc
 		if err != nil {
 			return err
 		}
-		return bk.LocalDirExport(ctx, root, destPath, merge, nil)
+		return bk.LocalDirExport(ctx, root, destPath, merge, nil, sourceDateEpoch)
 	})
 }
 

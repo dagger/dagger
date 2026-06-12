@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/fsutil"
@@ -92,6 +93,7 @@ func (c *Client) LocalDirExport(
 	destPath string,
 	merge bool,
 	removePaths []string,
+	sourceDateEpoch *int64,
 ) (rerr error) {
 	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With("export_path", destPath))
 	slog.DebugContext(ctx, "exporting local dir")
@@ -108,6 +110,21 @@ func (c *Client) LocalDirExport(
 	outputFS, err := fsutil.NewFS(srcPath)
 	if err != nil {
 		return err
+	}
+
+	if sourceDateEpoch != nil {
+		epochNano := *sourceDateEpoch * int64(time.Second)
+		outputFS, err = fsutil.NewFilterFS(outputFS, &fsutil.FilterOpt{
+			Map: func(_ string, stat *fsutiltypes.Stat) fsutil.MapResult {
+				if stat.ModTime > epochNano {
+					stat.ModTime = epochNano
+				}
+				return fsutil.MapResultKeep
+			},
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	caller, err := c.GetSessionCaller(ctx)

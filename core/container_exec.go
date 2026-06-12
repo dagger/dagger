@@ -255,6 +255,7 @@ func (container *Container) execMeta(
 	execMD.RedirectStderrPath = opts.RedirectStderr
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
+	execMD.SourceDateEpoch = clientMetadata.SourceDateEpoch
 	if opts.NoInit {
 		execMD.NoInit = true
 	}
@@ -2069,6 +2070,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
 				LockMode:              clientMetadata.LockMode,
 				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
+				SourceDateEpoch:       clientMetadata.SourceDateEpoch,
 			}
 		}
 

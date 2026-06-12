@@ -6374,6 +6374,7 @@ func (container *Container) Publish(
 	mediaTypes ImageMediaTypes,
 	registryServices ServiceBindings,
 	registryTransport serverresolver.RegistryTransport,
+	sourceDateEpoch *int64,
 ) (string, error) {
 	variants := filterEmptyContainers(append([]*Container{container}, platformVariants...))
 	inputByPlatform, err := getVariantRefs(ctx, variants)
@@ -6395,7 +6396,7 @@ func (container *Container) Publish(
 	}
 	defer detach()
 
-	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), network, registryTransport)
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), network, registryTransport, sourceDateEpoch)
 	if err != nil {
 		return "", err
 	}
@@ -6419,6 +6420,7 @@ type ExportOpts struct {
 	MediaTypes        ImageMediaTypes
 	Tar               bool
 	LeaseID           string
+	SourceDateEpoch   *int64
 }
 
 func useOCIMediaTypes(mediaTypes ImageMediaTypes) bool {
@@ -6505,6 +6507,7 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 			opts.ForcedCompression,
 			opts.MediaTypes,
 			"container.tar",
+			opts.SourceDateEpoch,
 		)
 		if err != nil {
 			return nil, err
@@ -6541,7 +6544,7 @@ func (container *Container) Export(ctx context.Context, opts ExportOpts) (*specs
 		return nil, err
 	}
 
-	resp, err := bk.ExportContainerImage(ctx, opts.Dest, inputByPlatform, string(opts.ForcedCompression), opts.Tar, opts.LeaseID, useOCIMediaTypes(opts.MediaTypes))
+	resp, err := bk.ExportContainerImage(ctx, opts.Dest, inputByPlatform, string(opts.ForcedCompression), opts.Tar, opts.LeaseID, useOCIMediaTypes(opts.MediaTypes), opts.SourceDateEpoch)
 	if err != nil {
 		return nil, err
 	}
