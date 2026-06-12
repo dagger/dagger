@@ -62,7 +62,6 @@ AVAILABLE COMMANDS
   cloud           Manage Dagger Cloud (login, integrations, etc.)
   workspace, ws   Inspect or configure your workspace (cwd, remotes, config, etc.)
 
-  exec         Run a command with a connected Dagger session (DAGGER_SESSION_PORT/TOKEN injected)
   help         Help about any command
   version      Print dagger version
 
@@ -87,7 +86,7 @@ OPTIONS
 | 2 | Daily project flow | `check`, `generate`, `up`, `activity` |
 | 3 | Workspace management | `install`, `uninstall`, `installed`, `update`, `search`, `settings` |
 | 4 | Specialized toolboxes | `api`, `module`, `sdk`, `cloud`, `workspace` |
-| 5 | Utility / meta | `exec`, `help`, `version` |
+| 5 | Utility / meta | `help`, `version` |
 
 Visual separation does the disambiguation work that noun-prefix grouping (`dagger workspace X`, `dagger mod Y`) tried to do structurally. Group 4 clusters the major namespaces — `api`, `module`, `sdk`, `cloud`, `workspace` — each with its own subcommand surface. Group 5 is utility; group 3 is the daily-loop module verbs; group 2 is the three shipping fundamentals plus activity.
 
@@ -135,7 +134,7 @@ What we considered, debated, changed, and decided for each command. Not a descri
 | `cloud integration` | Original `dagger integration` was singleton-shaped (`accounts`, `setup`) — one provider type, list its accounts. Requested redesign to mutable shape (`create`, `rm`, `list`): each configured integration is a discrete entry; `list` enumerates them (optionally filtered by type), replacing the old "list accounts of provider X" framing. Folded under `cloud` per usefulness × simplicity — integrations are configured occasionally, so they nest. |
 | `cloud check` | Replaces `dagger workspace autocheck` (which was just on/off for the selected remote). Mutable shape `{on, off, list, status NAME}` proposed during the cloud restructure. Naming intentionally overlaps with top-level `check`: different concepts at different levels — top-level = run local checks, `cloud check` = manage Cloud-side automated runs. Acceptable. |
 | `workspace` (group) | Killed in the first flat-redesign sweep, then reintroduced after observing that the namespace itself does load-bearing work: `dagger workspace config` reads as "advanced workspace plumbing" without the verbs having to carry the signal alone. Slimmed to plumbing only (config, cwd, root, config-file, remote, remotes). Bare invocation prints a digest — this absorbed and dropped a briefly-proposed `dagger status` verb. Moved from group 1 to group 4 because it's structurally a namespace, not a single inspection verb. |
-| `exec` | Initially hidden as "niche." Pushback restored it to visible in group 5 (utility) where its low traffic doesn't crowd the daily-loop verbs above. Hidden ≠ niche — group 5 is exactly where niche-but-real verbs belong. |
+| `exec` | Initially hidden as "niche." Pushback restored it to visible in group 5 (utility). Then folded under `api` — `dagger api exec` reads correctly: it's "exec a command with a Dagger API session attached." Belongs alongside `api query` and `api call`, all variations on "use the API directly." Group 5 reverts to just `help` and `version`. |
 | `call` (hidden) | `dagger function call` was killed when the `function` group was dissolved. `dagger api call` makes the most semantic sense (it's "an API call" and clusters with `query` and `functions`). `dagger call` kept as a hidden top-level alias for muscle memory — and to keep the top-level `call` slot reserved for a future higher-level porcelain (tentative name: `dagger do`). |
 | `shell` (hidden) | Kept reachable, absent from `--help`. Slot stays open to promote or deprecate later based on usage. |
 | `env` (removed) | Originally a top-level group with `create` / `list` / `rm`. Removed entirely after recognizing that `env` is *strictly a path prefix in workspace config* (`env.<name>.modules.<m>.settings.<k>`), not a first-class concept. CRUD happens via `dagger settings --env <name>` (typed) and `dagger workspace config` (raw). Discoverability moves into the `--env` flag's description, which names the file path explicitly. This eliminates one corner of the "workspace vs env vs --env vs settings" four-way confusion cold-read v2 flagged. |
@@ -159,6 +158,8 @@ See https://docs.dagger.io/api for the full overview.
 
 AVAILABLE COMMANDS
   call       Call one or more functions, interconnected into a pipeline
+  client     Manage typed clients generated against the Dagger API
+  exec       Run a command with a connected Dagger session (DAGGER_SESSION_PORT/TOKEN injected)
   functions  List available functions
   query      Send raw GraphQL queries to a dagger engine
 ```
@@ -480,7 +481,15 @@ extend type GoSdk {
 }
 ```
 
-All three are optional. A bare-minimum SDK that doesn't implement any of them still works: `dagger module init <sdk> <name>` produces a `dagger-module.toml` and the workspace bookkeeping, and that's it. The user gets a valid but empty module shell to fill in by hand.
+All three are optional, but each carries capability semantics:
+
+- **`initModule` not implemented** → this SDK does not support module authoring. `dagger module init <sdk>` is unavailable for it; the CLI errors with `"<sdk> does not support module init"`. The SDK is fine for whatever it DOES support (client generation, just being a workspace module, etc.) — it just can't seed new modules.
+- **`initClient` not implemented** → this SDK does not support typed client generation. `dagger api client init <sdk>` is unavailable; the CLI errors similarly.
+- **`targetRuntime` not implemented** → the engine defaults to the SDK's own installed ref. The SDK *is* the runtime. (This is the only one where absence is a sensible default rather than "feature off.")
+
+So presence-of-function is the capability flag. A "module-only SDK" (Go SDK today) implements `initModule` but not `initClient`. A hypothetical "client-only SDK" — say a thin wrapper that generates OpenAPI-style typed bindings against a remote Dagger module but doesn't author new modules — implements `initClient` but not `initModule`. A full SDK implements both.
+
+`dagger sdk module-options <sdk>` and `dagger sdk client-options <sdk>` reflect this directly: they error with `"<sdk> does not implement initModule"` (or `initClient`) when the SDK lacks the capability. `dagger sdk list` could surface a per-SDK capability column (M/C) so users see what's supported at a glance.
 
 **Why Changeset, not Directory.** The SDK can lay files anywhere in the workspace, not just at the new module's path — useful for monorepo-level edits like adding a workspace `.gitignore` entry, updating a top-level `package.json`, or seeding a `tsconfig.json` extension. The Changeset language makes the SDK's contribution composable with the engine's. Engine validates that SDK Changesets don't touch engine-owned files (`dagger.toml`, `dagger-module.toml`).
 
@@ -524,7 +533,7 @@ The engine's `Workspace.moduleInit` performs:
 3. **Build the module config** at `<path>/dagger-module.toml` with `name` and `runtime`.
 4. **Record the authoring relationship** by appending `[[modules.<sdk-name>.as-sdk.modules]] path = "<path>"` to the SDK's role data.
 5. **If `path` is the default** (under `.dagger/modules/`), also add `[modules.<name>] source = "<path>"` so the new module is installed in the same workspace. Custom paths skip this — the user is managing layout deliberately.
-6. **If the SDK implements `initModule`**, call it with `(ws, name, path, …sdk-args)` and merge the returned Changeset.
+6. **The SDK must implement `initModule`.** Engine errors with `"<sdk> does not support module init"` if not. When implemented, the engine calls it with `(ws, name, path, …sdk-args)` and merges the returned Changeset.
 7. **Return** the combined Changeset of all the above.
 
 The returned Changeset is the full set of workspace edits, including the SDK's contribution. No filesystem write happens until the caller applies it; the caller can preview and abort. `--auto-apply` skips the preview prompt.
@@ -627,7 +636,7 @@ extend type Workspace {
 
 The engine validates the SDK is installed-as-SDK, resolves `module` to a `ModuleSource`, and calls the SDK's `initClient(ws, path, module, …args)` if implemented. The returned Changeset is merged with the engine's `[[as-sdk.clients]]` config update.
 
-If the SDK does NOT implement `initClient`, the engine errors: clients need SDK-side generation; without an `initClient` function there's nothing to generate. (Contrast with `moduleInit`, where the SDK function is optional — a module without scaffolding is still a valid empty shell.)
+If the SDK does NOT implement `initClient`, the engine errors: this SDK doesn't support typed client generation. Same capability rule as `initModule` — presence of the function on the SDK is what makes the verb available. Engine error: `"<sdk> does not support client init"`.
 
 **Decisions.**
 
@@ -713,6 +722,7 @@ Implementation checklist. Items grouped by type; each is a discrete unit of work
 - [ ] `dagger integration accounts` → folded into `dagger cloud integration list` (the mutable model lists integration entries, replacing the singleton "list accounts of provider X" semantic).
 - [ ] `dagger integration setup` → `dagger cloud integration create`. Move + rename (matches the new mutable shape).
 - [ ] `dagger workspace autocheck` → `dagger cloud check`. Move + expand from boolean to mutable shape (see "New commands" above).
+- [ ] `dagger exec` → `dagger api exec`. Move from top-level into the `api` group; it's structurally an API-session verb alongside `query` and `call`.
 
 ### Removals (from visible surface)
 
