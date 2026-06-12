@@ -752,7 +752,9 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	fe.FrontendOpts = opts
 
 	if fe.reportOnly {
+		stopHeartbeat := fe.startReportHeartbeat()
 		cleanup, err := run(ctx)
+		stopHeartbeat()
 		if cleanup != nil {
 			err = errors.Join(err, cleanup())
 		}
@@ -771,6 +773,112 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 
 	// return original err
 	return normalizeFrontendExit(fe.err, fe.db)
+}
+
+// reportHeartbeatInterval is how often report mode prints a one-line
+// progress summary while work runs. Report mode is otherwise silent until
+// the final report, which leaves non-interactive consumers (e.g. coding
+// agents) with no liveness signal during long runs. Override with
+// DAGGER_REPORT_HEARTBEAT (a Go duration; 0 disables).
+const reportHeartbeatInterval = 30 * time.Second
+
+func (fe *frontendPretty) startReportHeartbeat() func() {
+	interval := reportHeartbeatInterval
+	if v := os.Getenv("DAGGER_REPORT_HEARTBEAT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			interval = d
+		}
+	}
+	if interval <= 0 || fe.Silent {
+		return func() {}
+	}
+
+	done := make(chan struct{})
+	var once sync.Once
+	var wg sync.WaitGroup
+	start := time.Now()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				fmt.Fprintln(fe.writer, fe.reportHeartbeatLine(time.Since(start)))
+			}
+		}
+	}()
+	return func() {
+		once.Do(func() { close(done) })
+		wg.Wait()
+	}
+}
+
+// reportHeartbeatLine summarizes in-flight work in a single line. Checks get
+// first-class treatment since `dagger check` over a large repo is the
+// longest-running everyday command.
+func (fe *frontendPretty) reportHeartbeatLine(elapsed time.Duration) string {
+	fe.reportMu.Lock()
+	defer fe.reportMu.Unlock()
+
+	now := time.Now()
+	var checksDone, checksFailed int
+	var runningChecks []string
+	var runningSteps int
+	for _, span := range fe.db.Spans.Order {
+		running := span.IsRunningOrEffectsRunning()
+		if running {
+			// only count leaves to approximate "things actually executing"
+			leaf := true
+			for _, child := range span.ChildSpans.Order {
+				if child.IsRunningOrEffectsRunning() {
+					leaf = false
+					break
+				}
+			}
+			if leaf {
+				runningSteps++
+			}
+		}
+		if span.CheckName == "" {
+			continue
+		}
+		switch {
+		case running:
+			runningChecks = append(runningChecks,
+				fmt.Sprintf("%s (%s)", span.CheckName, dagui.FormatDuration(span.Activity.Duration(now))))
+		case span.IsFailed():
+			checksDone++
+			checksFailed++
+		default:
+			checksDone++
+		}
+	}
+
+	line := fmt.Sprintf("[dagger] %s elapsed", dagui.FormatDuration(elapsed))
+	if total := checksDone + len(runningChecks); total > 0 {
+		line += fmt.Sprintf(" · checks: %d/%d done", checksDone, total)
+		if checksFailed > 0 {
+			line += fmt.Sprintf(" (%d failed)", checksFailed)
+		}
+		if len(runningChecks) > 0 {
+			const maxListed = 4
+			listed := runningChecks
+			if len(listed) > maxListed {
+				listed = listed[:maxListed]
+			}
+			line += " · running: " + strings.Join(listed, ", ")
+			if extra := len(runningChecks) - maxListed; extra > 0 {
+				line += fmt.Sprintf(" (+%d more)", extra)
+			}
+		}
+	} else if runningSteps > 0 {
+		line += fmt.Sprintf(" · %d steps running", runningSteps)
+	}
+	return line
 }
 
 func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string, dest any) error {
