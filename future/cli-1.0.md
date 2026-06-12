@@ -703,6 +703,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped (different sh
 - ✅ **`dagger api call`** — moved from `dagger function call`.
 - ✅ **`dagger api functions`** — moved + renamed from `dagger function list`.
 - ✅ **`dagger api query`** — unchanged.
+- ✅ **`dagger api exec`** — moved from top-level `dagger exec` (with `run` / `r` aliases preserved under the new path). Short description sharpened to "Run a command with a connected Dagger API session". Top-level `dagger exec` is gone.
 - ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <path> --sdk=<sdk> --module=<ref> [--option K=V ...]`.** (Designed positional shape — see 🟡 below.)
 
 ### Shipped — `dagger cloud`
@@ -769,10 +770,6 @@ Tracked as implementation tasks #120–#130 with body-level notes.
 - ⬜ **`initModule` / `initClient` as capability flags** — when an SDK implements the function, the corresponding init verb is available for it; when absent, the verb errors with `"<sdk> does not support module init"` (or `client init`). Task #129.
 - ⬜ **`targetRuntime` introspection wiring** — the engine hook (`resolveModuleRuntimeRef` / `lookupSDKTargetRuntime`) is in place but always returns `("", false)`. Activate when the first SDK opts in. Task #129.
 - ⬜ **Capability checks on `core.SDK` interface** — `AsModuleInit() (ModuleInit, bool)` and `AsClientInit() (ClientInit, bool)` alongside the existing `AsRuntime` / `AsModuleTypes` / `AsCodeGenerator` / `AsClientGenerator`. Task #129.
-
-#### Move
-
-- ⬜ **`dagger exec` → `dagger api exec`** — mechanical reparent. Task #130.
 
 #### Schema bookkeeping
 
