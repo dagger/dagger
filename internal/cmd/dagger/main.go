@@ -174,7 +174,6 @@ func init() {
 	cloudCmd.GroupID = "toolbox"
 	workspaceCmd.GroupID = "toolbox"
 
-	runCmd.GroupID = "utility"
 	versionRoot := versionCmd()
 	versionRoot.GroupID = "utility"
 
@@ -185,7 +184,6 @@ func init() {
 		listenCmd,
 		versionRoot,
 		queryCmd,
-		runCmd,
 		apiCmd,
 		traceCmd,
 		lockCmd,
