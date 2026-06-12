@@ -39,8 +39,10 @@ The engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
 generated files and workspace config change, then returns a Changeset that the
 CLI previews and applies through the standard preview/apply flow.`,
 	Example: "dagger api client init typescript ./lib/cli .dagger/modules/api",
-	Args:    cobra.ExactArgs(3),
-	RunE:    runAPIClientInit,
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return cmd.Help()
+	},
 }
 
 var apiClientListCmd = &cobra.Command{
@@ -56,11 +58,7 @@ func init() {
 	apiClientCmd.AddCommand(apiClientInitCmd, apiClientListCmd)
 }
 
-func runAPIClientInit(cmd *cobra.Command, args []string) error {
-	sdkName := args[0]
-	clientPath := args[1]
-	moduleRef := args[2]
-
+func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,

@@ -783,6 +783,12 @@ func main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), "internal error: experimental release exec returned without replacing the current process")
 		exitWithCode(1)
 	}
+	if shouldRegisterSDKInitCommands(os.Args[1:]) {
+		if err := registerInstalledSDKInitCommands(); err != nil {
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			exitWithCode(1)
+		}
+	}
 
 	opts.Silent = silent                   // show no progress
 	opts.Debug = debugFlag                 // show everything
