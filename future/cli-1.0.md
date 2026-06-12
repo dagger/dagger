@@ -468,7 +468,7 @@ These are stored under `[modules.<sdk>.settings]` in `dagger.toml` — the same 
 
 Today's `dagger client install/uninstall/list/update` records clients inside a module's config (`moduleSource.withClient(...)`) — the same per-module locality we're moving away from for modules themselves. In the workspace-first model, generated clients are SDK-managed bindings to the Dagger API surface exposed by selected workspace modules, recorded in workspace config.
 
-This subsection sketches the future shape. It is not in scope for the CLI 1.0 PR itself; the current `dagger client …` group stays as-is (and stays hidden) and gets ported once this section graduates from sketch.
+This subsection is implemented in this PR. The old hidden `dagger client …` group is replaced by `dagger api client …`, and client state moves out of module config into workspace config.
 
 **Placement under `dagger api`.** A generated client is, semantically, a persistent typed binding to the Dagger API. `dagger api` is the existing top-level group for "interact with the Dagger API" — adding "manage persistent typed bindings to it" fits naturally and avoids inventing a top-level `dagger client` noun.
 
@@ -553,11 +553,11 @@ The SDK receives one module's surface and emits one client. It does not walk dep
 
 Freeform `options` forward to a future `generateClient(..., options: [SdkOption!])` overload once per-SDK option needs are concrete. Until then, options pass through to be persisted on the entry but the SDK is not wired to consume them at generation time.
 
-**Open questions.**
+**Decisions.**
 
-- **Re-targeting after creation.** If the user wants to point an existing client at a different module ref (e.g., upgrade `postgres@v1` → `@v2`), do they edit `dagger.toml` directly, re-run `dagger api client init` at the same `<path>` (overwriting the entry), or get a dedicated `update` verb? Re-running `init` with overwrite is the most ergonomic and avoids a third verb; init's Changeset already supports the case (the new entry replaces the old at the same path).
-- **Final fields on `[[modules.<sdk>.as-sdk.clients]]`.** Shape firms once two concrete client SDKs (TypeScript, Go) implement against it. Today's sketch reserves `path`, `module`, freeform SDK fields.
-- **`dagger api client list` vs `dagger installed --clients`.** Latter avoids a dedicated verb for a list operation under `api`; former is more discoverable. Probably keep `list`.
+- **Re-targeting after creation.** Re-run `dagger api client init` at the same `<path>`; the new entry replaces the old one in the returned Changeset.
+- **Fields on `[[modules.<sdk>.as-sdk.clients]]`.** The common fields are `path`, `module`, and `pin`; SDK-specific `--option KEY=VAL` values are persisted as freeform string fields on the same table.
+- **`dagger api client list` vs `dagger installed --clients`.** Keep `dagger api client list` for discoverability.
 - **Regeneration drift.** If the host has edited the generated dir, does `dagger generate` overwrite, refuse, or merge? Same question that exists for module codegen today; whatever answer lands there applies here.
 
 ### Per-module SDK operations: `dagger module sdk`

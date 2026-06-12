@@ -168,7 +168,6 @@ func init() {
 		sessionAliasCmd,
 		newGenCmd(),
 		shellCmd,
-		clientCmd,
 		mcpCmd,
 	)
 
