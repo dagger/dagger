@@ -2,6 +2,7 @@ package daggercmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -111,8 +112,7 @@ var sdkModuleOptionsCmd = &cobra.Command{
 	Long: `Print the SDK-specific flags ` + "`dagger module init <sdk> <name>`" + `
 accepts, introspected from the SDK's initModule function.
 
-Requires the SDK to implement the initModule capability. Not yet wired
-end-to-end — pending the SDK contract (task #129).`,
+Requires the SDK to implement the initModule capability.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSDKModuleOptions,
 }
@@ -123,8 +123,7 @@ var sdkClientOptionsCmd = &cobra.Command{
 	Long: `Print the SDK-specific flags ` + "`dagger api client init <sdk>`" + `
 accepts, introspected from the SDK's initClient function.
 
-Requires the SDK to implement the initClient capability. Not yet wired
-end-to-end — pending the SDK contract (task #129).`,
+Requires the SDK to implement the initClient capability.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSDKClientOptions,
 }
@@ -245,7 +244,7 @@ func runSDKList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	type row struct {
-		name, source string
+		name, source     string
 		modules, clients int
 	}
 	var rows []row
@@ -330,27 +329,84 @@ func runSDKSearch(cmd *cobra.Command, args []string) error {
 }
 
 func runSDKModuleOptions(cmd *cobra.Command, args []string) error {
-	return sdkOptionsNotYetImplemented(cmd.OutOrStdout(), args[0], "initModule", "module init")
+	return runSDKInitOptions(cmd, args[0], sdkInitKindModule)
 }
 
 func runSDKClientOptions(cmd *cobra.Command, args []string) error {
-	return sdkOptionsNotYetImplemented(cmd.OutOrStdout(), args[0], "initClient", "api client init")
+	return runSDKInitOptions(cmd, args[0], sdkInitKindClient)
 }
 
-func sdkOptionsNotYetImplemented(out io.Writer, sdk, fnName, verb string) error {
-	cfg, _, err := readLocalWorkspaceConfig()
+func runSDKInitOptions(cmd *cobra.Command, sdkName string, kind sdkInitKind) error {
+	cfg, cfgPath, err := readLocalWorkspaceConfig()
 	if err != nil {
 		return err
 	}
-	entry, ok := cfg.Modules[sdk]
+	entry, ok := cfg.Modules[sdkName]
 	if !ok || entry.AsSDK == nil {
-		return fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdk, sdk)
+		return fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
 	}
-	// Capability surfacing is wired with the SDK contract (task #129). Until
-	// then there's nothing to introspect — print a clear "coming" message
-	// rather than fabricating a flag list.
-	_, err = fmt.Fprintf(out, "Introspection of %q's %s function is not yet wired (pending SDK contract, task #129).\n\nWhen wired, this will list the SDK-specific flags `dagger %s %s ...` accepts.\n", sdk, fnName, verb, sdk)
-	return err
+	sdkRef, err := sdkInitModuleEntrySource(entry, filepath.Dir(cfgPath))
+	if err != nil {
+		return err
+	}
+
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, ec *client.Client) error {
+		fn, err := inspectSDKInitFunction(ctx, ec.Dagger(), sdkRef, kind)
+		if errors.Is(err, errSDKInitFunctionNotFound) {
+			return fmt.Errorf("%q does not support %s", sdkName, sdkInitCapabilityName(kind))
+		}
+		if err != nil {
+			return err
+		}
+		args, err := sdkInitFunctionFlagArgs(fn, kind)
+		if err != nil {
+			return err
+		}
+		return printSDKInitOptions(cmd.OutOrStdout(), sdkName, kind, args)
+	})
+}
+
+func sdkInitCapabilityName(kind sdkInitKind) string {
+	if kind == sdkInitKindClient {
+		return "client init"
+	}
+	return "module init"
+}
+
+func printSDKInitOptions(out io.Writer, sdkName string, kind sdkInitKind, args []*modFunctionArg) error {
+	usage := fmt.Sprintf("dagger module init %s <name>", sdkName)
+	if kind == sdkInitKindClient {
+		usage = fmt.Sprintf("dagger api client init %s <path> <module>", sdkName)
+	}
+	if len(args) == 0 {
+		_, err := fmt.Fprintf(out, "No SDK-specific flags for `%s`.\n", usage)
+		return err
+	}
+
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintf(w, "Flags for `%s`:\n\n", usage); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "FLAG\tTYPE\tREQUIRED\tDESCRIPTION"); err != nil {
+		return err
+	}
+	for _, arg := range args {
+		required := "no"
+		if arg.IsRequired() {
+			required = "yes"
+		}
+		desc := arg.Short()
+		if desc == "" {
+			desc = "-"
+		}
+		if _, err := fmt.Fprintf(w, "--%s\t%s\t%s\t%s\n", arg.FlagName(), arg.TypeDef.String(), required, desc); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
 }
 
 func readLocalWorkspaceConfig() (*workspace.Config, string, error) {
