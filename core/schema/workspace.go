@@ -116,7 +116,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.Func("moduleInit", s.moduleInit).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Plans workspace changes against live host filesystem").
-			Doc("Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the SDK install under [sdks.<name>], the authoring entry under [[sdks.<name>.modules]], and (when path defaults) [modules.<name>]. Returns the resulting Changeset for the caller to preview and apply.").
+			Doc("Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the SDK install under [modules.<sdk-name>], the authoring entry under [[modules.<sdk-name>.as-sdk.modules]], and (when path defaults) [modules.<name>]. Returns the resulting Changeset for the caller to preview and apply.").
 			Args(
 				dagql.Arg("name").Doc("Name of the new module."),
 				dagql.Arg("sdk").Doc("Canonical SDK source ref (alias resolution is the caller's responsibility)."),

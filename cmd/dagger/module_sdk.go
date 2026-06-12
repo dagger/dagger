@@ -122,9 +122,9 @@ func runModuleSdk(cmd *cobra.Command, args []string) error {
 //  1. Walk up from cwd looking for dagger-module.toml (or the legacy
 //     dagger.json). The first match defines the module directory.
 //  2. Continue walking up to the workspace root (the nearest dagger.toml).
-//  3. Read the workspace config and scan [[sdks.*.modules]] for a path
-//     entry matching the module's workspace-relative directory.
-//  4. Return the parent SDK short name.
+//  3. Read the workspace config and scan [[modules.*.as-sdk.modules]] for
+//     a path entry matching the module's workspace-relative directory.
+//  4. Return the parent module's short name (which is also the SDK name).
 //
 // Per the runtime/SDK split, dagger-module.toml no longer records the SDK.
 // The authoring relationship lives in workspace config. If the module
