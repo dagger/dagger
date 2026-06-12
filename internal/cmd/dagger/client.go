@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
@@ -15,10 +14,7 @@ import (
 )
 
 var (
-	apiClientInitSDK     string
-	apiClientInitModule  string
-	apiClientInitOptions []string
-	apiClientListJSON    bool
+	apiClientListJSON bool
 )
 
 var apiClientCmd = &cobra.Command{
@@ -32,15 +28,18 @@ module that generates it.`,
 }
 
 var apiClientInitCmd = &cobra.Command{
-	Use:   "init <path> --sdk <sdk> --module <path-or-ref>",
+	Use:   "init <sdk> <path> <module>",
 	Short: "Initialize a generated API client",
 	Long: `Initialize a generated API client at <path>.
 
-The CLI resolves --sdk aliases, asks the engine to plan the generated files and
-workspace config change, then applies the returned Changeset through the
-standard preview/apply flow.`,
-	Example: "dagger api client init ./lib/cli --sdk typescript --module .dagger/modules/api",
-	Args:    cobra.ExactArgs(1),
+<sdk> is an SDK installed in this workspace. Run ` + "`dagger sdk install <sdk>`" + `
+to add more choices.
+
+The engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
+generated files and workspace config change, then returns a Changeset that the
+CLI previews and applies through the standard preview/apply flow.`,
+	Example: "dagger api client init typescript ./lib/cli .dagger/modules/api",
+	Args:    cobra.ExactArgs(3),
 	RunE:    runAPIClientInit,
 }
 
@@ -52,26 +51,15 @@ var apiClientListCmd = &cobra.Command{
 }
 
 func init() {
-	apiClientInitCmd.Flags().StringVar(&apiClientInitSDK, "sdk", "", "SDK alias or full ref (e.g., 'typescript' or 'github.com/dagger/typescript-sdk')")
-	apiClientInitCmd.Flags().StringVar(&apiClientInitModule, "module", "", "Workspace-relative path or canonical ref for the module the client binds to")
-	apiClientInitCmd.Flags().StringArrayVar(&apiClientInitOptions, "option", nil, "SDK-specific option as KEY=VAL; may be repeated")
-	_ = apiClientInitCmd.MarkFlagRequired("sdk")
-	_ = apiClientInitCmd.MarkFlagRequired("module")
-
 	apiClientListCmd.Flags().BoolVar(&apiClientListJSON, "json", false, "Output the client list in JSON format")
 
 	apiClientCmd.AddCommand(apiClientInitCmd, apiClientListCmd)
 }
 
 func runAPIClientInit(cmd *cobra.Command, args []string) error {
-	sdkRef, err := sdkResolve(apiClientInitSDK)
-	if err != nil {
-		return err
-	}
-	options, err := parseAPIClientOptions(apiClientInitOptions)
-	if err != nil {
-		return err
-	}
+	sdkName := args[0]
+	clientPath := args[1]
+	moduleRef := args[2]
 
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
@@ -84,7 +72,7 @@ func runAPIClientInit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		changesetID, err := callClientInit(ctx, dag, args[0], sdkRef, apiClientInitModule, options)
+		changesetID, err := callClientInit(ctx, dag, clientPath, sdkName, moduleRef)
 		if err != nil {
 			return err
 		}
@@ -93,40 +81,12 @@ func runAPIClientInit(cmd *cobra.Command, args []string) error {
 	})
 }
 
-type sdkOptionInput struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-func parseAPIClientOptions(raw []string) ([]sdkOptionInput, error) {
-	if len(raw) == 0 {
-		return nil, nil
-	}
-	options := make([]sdkOptionInput, 0, len(raw))
-	for _, option := range raw {
-		key, value, ok := strings.Cut(option, "=")
-		if !ok {
-			return nil, fmt.Errorf("--option %q must be in KEY=VAL form", option)
-		}
-		if key == "" {
-			return nil, fmt.Errorf("--option key must not be empty")
-		}
-		switch key {
-		case "path", "module", "pin":
-			return nil, fmt.Errorf("--option %q is reserved", key)
-		}
-		options = append(options, sdkOptionInput{Key: key, Value: value})
-	}
-	return options, nil
-}
-
 func callClientInit(
 	ctx context.Context,
 	dag *dagger.Client,
 	path string,
-	sdkRef string,
+	sdkName string,
 	moduleRef string,
-	options []sdkOptionInput,
 ) (string, error) {
 	var res struct {
 		CurrentWorkspace struct {
@@ -136,18 +96,17 @@ func callClientInit(
 		} `json:"currentWorkspace"`
 	}
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `query ClientInit($path: String!, $sdk: String!, $module: String!, $options: [SdkOption!]!) {
+		Query: `query ClientInit($path: String!, $sdk: String!, $module: String!) {
   currentWorkspace {
-    clientInit(path: $path, sdk: $sdk, module: $module, options: $options) {
+    clientInit(path: $path, sdk: $sdk, module: $module) {
       id
     }
   }
 }`,
 		Variables: map[string]any{
-			"path":    path,
-			"sdk":     sdkRef,
-			"module":  moduleRef,
-			"options": options,
+			"path":   path,
+			"sdk":    sdkName,
+			"module": moduleRef,
 		},
 	}, &dagger.Response{Data: &res})
 	if err != nil {

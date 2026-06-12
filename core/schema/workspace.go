@@ -23,8 +23,6 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
-	dagql.MustInputSpec(SdkOption{}).Install(srv)
-
 	currentWorkspaceField := dagql.Func("currentWorkspace", s.currentWorkspace).
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
@@ -119,10 +117,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.Func("moduleInit", s.moduleInit).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Plans workspace changes against live host filesystem").
-			Doc("Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the SDK install under [modules.<sdk-name>], the authoring entry under [[modules.<sdk-name>.as-sdk.modules]], and (when path defaults) [modules.<name>]. Returns the resulting Changeset for the caller to preview and apply.").
+			Doc("Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.").
 			Args(
 				dagql.Arg("name").Doc("Name of the new module."),
-				dagql.Arg("sdk").Doc("Canonical SDK source ref (alias resolution is the caller's responsibility)."),
+				dagql.Arg("sdk").Doc("Workspace install name of the SDK to use."),
 				dagql.Arg("path").Doc(`Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].`),
 				dagql.Arg("source").Doc("Source subpath within the new module."),
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
@@ -133,9 +131,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.").
 			Args(
 				dagql.Arg("path").Doc("Workspace-relative output directory for the generated client."),
-				dagql.Arg("sdk").Doc("Canonical SDK source ref (alias resolution is the caller's responsibility)."),
+				dagql.Arg("sdk").Doc("Workspace install name of the SDK to use."),
 				dagql.Arg("module").Doc("Workspace-relative path or canonical ref for the module the client binds to."),
-				dagql.Arg("options").Doc("SDK-specific options to persist on the client entry."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("clientGenerate", s.clientGenerate).
