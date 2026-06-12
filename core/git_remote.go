@@ -637,6 +637,26 @@ func (ref *RemoteGitRef) mount(ctx context.Context, depth int, includeTags bool,
 	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
 }
 
+func (ref *RemoteGitRef) Bare(ctx context.Context, depth int, includeTags bool) (_ *Directory, rerr error) {
+	var bare *Directory
+	originURL := bareOriginRemote(ref.repo.URL)
+	err := ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
+		var err error
+		bare, err = newBareGitDirectory(
+			ctx,
+			fmt.Sprintf("git bare repo for %s (%s %s)", originURL, ref.Name, ref.SHA),
+			func(bareDir string, _ *ctdmount.Mount) error {
+				return doGitBare(ctx, git, bareDir, originURL, ref.Ref, depth, includeTags)
+			},
+		)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return bare, nil
+}
+
 func DNSConfig(ctx context.Context) (*oci.DNSConfig, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {

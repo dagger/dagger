@@ -9790,6 +9790,28 @@ class GeneratorGroup(Type):
 class GitRef(Type):
     """A git ref (tag, branch, or commit)."""
 
+    def bare(
+        self,
+        *,
+        depth: int | None = 1,
+        include_tags: bool | None = False,
+    ) -> Directory:
+        """The bare git repository at this ref.
+
+        Parameters
+        ----------
+        depth:
+            The depth of the bare repository to fetch.
+        include_tags:
+            Set to true to populate tag refs in the bare repository.
+        """
+        _args = [
+            Arg("depth", depth, 1),
+            Arg("includeTags", include_tags, False),
+        ]
+        _ctx = self._select("bare", _args)
+        return Directory(_ctx)
+
     async def commit(self) -> str:
         """The resolved commit id at this ref.
 

@@ -16,6 +16,24 @@ defmodule Dagger.GitRef do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The bare git repository at this ref.
+  """
+  @spec bare(t(), [{:depth, integer() | nil}, {:include_tags, boolean() | nil}]) ::
+          Dagger.Directory.t()
+  def bare(%__MODULE__{} = git_ref, optional_args \\ []) do
+    query_builder =
+      git_ref.query_builder
+      |> QB.select("bare")
+      |> QB.maybe_put_arg("depth", optional_args[:depth])
+      |> QB.maybe_put_arg("includeTags", optional_args[:include_tags])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
+  end
+
+  @doc """
   The resolved commit id at this ref.
   """
   @spec commit(t()) :: {:ok, String.t()} | {:error, term()}

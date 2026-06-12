@@ -14,6 +14,21 @@ namespace Dagger;
 class GitRef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * The bare git repository at this ref.
+     */
+    public function bare(?int $depth = 1, ?bool $includeTags = false): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('bare');
+        if (null !== $depth) {
+        $innerQueryBuilder->setArgument('depth', $depth);
+        }
+        if (null !== $includeTags) {
+        $innerQueryBuilder->setArgument('includeTags', $includeTags);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The resolved commit id at this ref.
      */
     public function commit(): string

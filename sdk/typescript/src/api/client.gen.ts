@@ -1831,6 +1831,18 @@ export type GeneratorGroupID = string & { __GeneratorGroupID: never }
  */
 export type GeneratorID = string & { __GeneratorID: never }
 
+export type GitRefBareOpts = {
+  /**
+   * The depth of the bare repository to fetch.
+   */
+  depth?: number
+
+  /**
+   * Set to true to populate tag refs in the bare repository.
+   */
+  includeTags?: boolean
+}
+
 export type GitRefTreeOpts = {
   /**
    * Set to true to discard .git directory.
@@ -10101,6 +10113,16 @@ export class GitRef extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The bare git repository at this ref.
+   * @param opts.depth The depth of the bare repository to fetch.
+   * @param opts.includeTags Set to true to populate tag refs in the bare repository.
+   */
+  bare = (opts?: GitRefBareOpts): Directory => {
+    const ctx = this._ctx.select("bare", { ...opts })
+    return new Directory(ctx)
   }
 
   /**

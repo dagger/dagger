@@ -10215,6 +10215,15 @@ pub struct GitRef {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRefBareOpts {
+    /// The depth of the bare repository to fetch.
+    #[builder(setter(into, strip_option), default)]
+    pub depth: Option<isize>,
+    /// Set to true to populate tag refs in the bare repository.
+    #[builder(setter(into, strip_option), default)]
+    pub include_tags: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts {
     /// The depth of the tree to fetch.
     #[builder(setter(into, strip_option), default)]
@@ -10250,6 +10259,38 @@ impl Loadable for GitRef {
     }
 }
 impl GitRef {
+    /// The bare git repository at this ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn bare(&self) -> Directory {
+        let query = self.selection.select("bare");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The bare git repository at this ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn bare_opts(&self, opts: GitRefBareOpts) -> Directory {
+        let mut query = self.selection.select("bare");
+        if let Some(depth) = opts.depth {
+            query = query.arg("depth", depth);
+        }
+        if let Some(include_tags) = opts.include_tags {
+            query = query.arg("includeTags", include_tags);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The resolved commit id at this ref.
     pub async fn commit(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("commit");
