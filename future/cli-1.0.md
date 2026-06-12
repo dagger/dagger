@@ -706,6 +706,14 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped (different sh
 - ✅ **`dagger api exec`** — moved from top-level `dagger exec` (with `run` / `r` aliases preserved under the new path). Short description sharpened to "Run a command with a connected Dagger API session". Top-level `dagger exec` is gone.
 - ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <path> --sdk=<sdk> --module=<ref> [--option K=V ...]`.** (Designed positional shape — see 🟡 below.)
 
+### Shipped — `dagger sdk`
+
+- ✅ **`dagger sdk install <name-or-ref>`** — alias-resolving install via `sdks.json`. Workspace install name is the alias you typed (`go`) rather than the canonical-ref basename. Writes the empty `[modules.<name>.as-sdk]` marker that `dagger module init <sdk>` / `dagger api client init <sdk>` dispatch on. Engine method: `Workspace.install(asSdk: true)` — same call as the generic install with the marker arg.
+- ✅ **`dagger sdk uninstall <name>`** — CLI-side refuse-if-authored against the on-disk config (no session bootstrap to read TOML), `--force` overrides; files on disk are left untouched.
+- ✅ **`dagger sdk list`** — reads `dagger.toml`, prints installs where the as-sdk marker is set. Columns: NAME / SOURCE / M / C (M = authored modules, C = generated clients), as a cheap capability affordance until per-SDK introspection lands with the SDK contract.
+- ✅ **`dagger sdk search [query]`** — lists embedded `sdks.json` entries; substring match on name / alias / repo.
+- 🟡 **`dagger sdk module-options <sdk>` / `dagger sdk client-options <sdk>`** — wired as commands and validate that the named install carries the as-sdk marker, but the introspection of `initModule` / `initClient` for the typed flags is gated on the SDK contract (task #129). Until then they print a clear "not yet wired" message rather than fabricating output.
+
 ### Shipped — `dagger cloud`
 
 - ✅ **`dagger cloud integration {create, rm, list}`** — mutable shape (was `setup`, `accounts`).
@@ -748,15 +756,6 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped (different sh
 ### ⬜ Not yet implemented — handoff to follow-up PRs
 
 Tracked as implementation tasks #120–#130 with body-level notes.
-
-#### New top-level group: `dagger sdk`
-
-- ⬜ **`dagger sdk install <name-or-ref>`** — alias-resolving SDK install via `sdks.json`. Marks the install with an empty `[modules.<name>.as-sdk]` table. Task #122.
-- ⬜ **`dagger sdk uninstall <name>`** — refuses if anything is authored under the SDK; `--force` to override. Task #123.
-- ⬜ **`dagger sdk list`** — enumerates installs with the as-sdk marker. Task #124.
-- ⬜ **`dagger sdk search [query]`** — queries the SDK registry. Task #124.
-- ⬜ **`dagger sdk module-options <sdk>` / `dagger sdk client-options <sdk>`** — introspect SDK init function schemas and print the typed flags. Task #124.
-- ⬜ **Cobra parent group + registration**. Task #120.
 
 #### Init reshape
 
