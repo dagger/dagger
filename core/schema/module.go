@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -15,6 +16,26 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+// introspectionDefaultToJSON converts a GraphQL default-value literal (as
+// returned by GraphQL introspection) into a JSON-encoded value suitable for
+// FunctionArg.DefaultValue. Most GraphQL literals (strings, numbers, booleans)
+// are already valid JSON, but enum literals are bare identifiers (e.g. RED)
+// and lists/objects can contain enums, so a typed dagql.Input — when
+// available — is the only reliable way to re-encode them.
+func introspectionDefaultToJSON(literal *string, argSpec dagql.InputSpec) (core.JSON, error) {
+	if literal == nil {
+		return nil, nil
+	}
+	if argSpec.Default != nil {
+		encoded, err := json.Marshal(argSpec.Default)
+		if err != nil {
+			return nil, fmt.Errorf("marshal default %q: %w", *literal, err)
+		}
+		return core.JSON(encoded), nil
+	}
+	return core.JSON(*literal), nil
+}
 
 type moduleSchema struct{}
 
@@ -230,12 +251,14 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.FunctionCall]{
 		dagql.Func("returnValue", s.functionCallReturnValue).
 			WithInput(dagql.PerClientInput).
+			DoNotCache("Imperatively records the active function call result.").
 			Doc(`Set the return value of the function call to the provided value.`).
 			Args(
 				dagql.Arg("value").Doc(`JSON serialization of the return value.`),
 			),
 		dagql.Func("returnError", s.functionCallReturnError).
 			WithInput(dagql.PerClientInput).
+			DoNotCache("Imperatively records the active function call result.").
 			Doc(`Return an error from the function.`).
 			Args(
 				dagql.Arg("error").Doc(`The error to return.`),
@@ -252,6 +275,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
 			),
 
 		dagql.NodeFunc("check", s.moduleCheck).
@@ -582,7 +606,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The type of the elements in the list.`),
 		dagql.Func("__withElementTypeDef", s.listTypeDefWithElementTypeDef),
 	}.Install(dag)
-	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ScalarTypeDef]{
+		dagql.Func("__withName", s.scalarTypeDefWithName),
+	}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", s.enumTypeDefValues).
 			Deprecated("use members instead").
@@ -1931,6 +1957,12 @@ func (s *moduleSchema) enumTypeDefWithName(ctx context.Context, enum *core.EnumT
 	return enum.WithName(args.Name), nil
 }
 
+func (s *moduleSchema) scalarTypeDefWithName(ctx context.Context, scalar *core.ScalarTypeDef, args struct {
+	Name string
+}) (*core.ScalarTypeDef, error) {
+	return scalar.WithName(args.Name), nil
+}
+
 func (s *moduleSchema) enumTypeDefWithSourceMap(ctx context.Context, enum *core.EnumTypeDef, args struct {
 	SourceMap dagql.Optional[core.SourceMapID]
 }) (*core.EnumTypeDef, error) {
@@ -2405,7 +2437,7 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 	}
 
 	for _, introspectionField := range codeGenType.Fields {
-		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
+		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert return type: %w", err)
 		}
@@ -2451,9 +2483,9 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 		}
 
 		for _, introspectionArg := range introspectionField.Args {
-			argType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionArg.TypeRef, false, true)
+			argType, ok, err := resolveArgTypeDef(ctx, dag, introspectionArg)
 			if err != nil {
-				return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert argument type: %w", err)
+				return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert argument type for %s.%s(%s): %w", codeGenType.Name, introspectionField.Name, introspectionArg.Name, err)
 			}
 			if !ok {
 				continue
@@ -2466,9 +2498,11 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 				defaultPath    string
 				defaultAddress string
 				ignore         []string
+				resolvedSpec   dagql.InputSpec
 			)
 			if fieldSpec, ok := queryObjType.FieldSpec(introspectionField.Name, dag.View); ok {
 				if argSpec, ok := fieldSpec.Args.Input(introspectionArg.Name, dag.View); ok {
+					resolvedSpec = argSpec
 					for _, directive := range argSpec.Directives {
 						switch directive.Name {
 						case "defaultPath":
@@ -2491,9 +2525,9 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 					}
 				}
 			}
-			var defaultValue core.JSON
-			if introspectionArg.DefaultValue != nil {
-				defaultValue = core.JSON(*introspectionArg.DefaultValue)
+			defaultValue, err := introspectionDefaultToJSON(introspectionArg.DefaultValue, resolvedSpec)
+			if err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("convert default value for arg %q: %w", introspectionArg.Name, err)
 			}
 			var fnArg dagql.ObjectResult[*core.FunctionArg]
 			if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{
@@ -2595,7 +2629,8 @@ func (s *moduleSchema) moduleChecks(
 	ctx context.Context,
 	mod dagql.ObjectResult[*core.Module],
 	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Include    dagql.Optional[dagql.ArrayInput[dagql.String]]
+		NoGenerate dagql.Optional[dagql.Boolean]
 	},
 ) (*core.CheckGroup, error) {
 	var include []string
@@ -2604,7 +2639,7 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return core.NewCheckGroup(ctx, mod, include)
+	return core.NewCheckGroup(ctx, mod, include, args.NoGenerate.GetOr(false).Bool(), false)
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -2614,7 +2649,7 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name})
+	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name}, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2990,12 +3025,16 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: %w", err)
 	}
-	scopedDigest := hashutil.HashStrings("Module._implementationScoped", sourceDigest.String())
+	scopedDigestInputs := []string{"Module._implementationScoped", sourceDigest.String()}
+	if parentMod.Self().AsModuleVariantDigest != "" {
+		scopedDigestInputs = append(scopedDigestInputs, parentMod.Self().AsModuleVariantDigest)
+	}
+	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, parentMod.Self())
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, parentMod.Self().Clone())
 	if err != nil {
 		return inst, err
 	}

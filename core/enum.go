@@ -34,15 +34,11 @@ func (m *ModuleEnumType) TypeDef(ctx context.Context) (dagql.ObjectResult[*TypeD
 			return dagql.ObjectResult[*TypeDef]{}, err
 		}
 	}
-	return SelectTypeDef(ctx, dagql.Selector{
-		Field: "withEnum",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(m.typeDef.Name)},
-			{Name: "description", Value: dagql.String(m.typeDef.Description)},
-			{Name: "sourceMap", Value: sourceMap},
-			{Name: "sourceModuleName", Value: OptSourceModuleName(m.typeDef.SourceModuleName)},
-		},
-	})
+	return SelectReferenceTypeDef(ctx, "withEnum", "name", m.typeDef.Name,
+		dagql.NamedInput{Name: "description", Value: dagql.String(m.typeDef.Description)},
+		dagql.NamedInput{Name: "sourceMap", Value: sourceMap},
+		dagql.NamedInput{Name: "sourceModuleName", Value: OptSourceModuleName(m.typeDef.SourceModuleName)},
+	)
 }
 
 func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {

@@ -1,0 +1,7 @@
+{
+  "name": "drive",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

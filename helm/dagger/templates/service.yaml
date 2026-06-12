@@ -1,0 +1,33 @@
+{{- if or .Values.engine.containerPorts .Values.engine.port }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dagger.fullname" . }}
+  labels:
+    {{- include "dagger.labels" . | nindent 4 }}
+    {{- with .Values.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    {{- if .Values.engine.containerPorts }}
+    {{- range .Values.engine.containerPorts }}
+    - name: {{ .name | default "dagger" }}
+      port: {{ .containerPort | default $.Values.engine.port }}
+      targetPort: {{ .name | default "dagger" }}
+      protocol: {{ .protocol | default "TCP" }}
+    {{- end }}
+    {{- else }}
+    - name: dagger
+      port: {{ .Values.engine.port }}
+      targetPort: dagger
+      protocol: TCP
+    {{- end }}
+  selector:
+    {{- include "dagger.selectorLabels" . | nindent 4 }}
+{{- end }}

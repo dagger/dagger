@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,12 +16,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	ctrdmount "github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -35,6 +36,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -87,10 +89,11 @@ type ContainerExecOpts struct {
 type ContainerExecState struct {
 	LazyState
 
-	Parent             dagql.ObjectResult[*Container]
-	Opts               ContainerExecOpts
-	ExecMD             *engineutil.ExecutionMetadata
-	ExtractModuleError bool
+	Parent        dagql.ObjectResult[*Container]
+	Opts          ContainerExecOpts
+	ExecMD        *engineutil.ExecutionMetadata
+	ModuleContext dagql.ObjectResult[*Module]
+	FunctionCall  *FunctionCall
 }
 
 type ContainerExecLazy struct {
@@ -98,10 +101,22 @@ type ContainerExecLazy struct {
 }
 
 type persistedContainerExecLazy struct {
-	ParentResultID     uint64                        `json:"parentResultID"`
-	Opts               ContainerExecOpts             `json:"opts"`
-	ExecMD             *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
-	ExtractModuleError bool                          `json:"extractModuleError,omitempty"`
+	ParentResultID                 uint64                        `json:"parentResultID"`
+	ModuleContextResultID          uint64                        `json:"moduleContextResultID,omitempty"`
+	Opts                           ContainerExecOpts             `json:"opts"`
+	ExecMD                         *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	VolatileCacheHitParentResultID uint64                        `json:"volatileCacheHitParentResultID,omitempty"`
+	VolatileCacheHitVolatileEnv    []string                      `json:"volatileCacheHitVolatileEnv,omitempty"`
+}
+
+// ContainerVolatileExecCacheHitLazy materializes from a broad volatile exec
+// cache hit, then restores the request-local volatile environment for
+// descendants of the returned container.
+type ContainerVolatileExecCacheHitLazy struct {
+	LazyState
+
+	Parent      dagql.ObjectResult[*Container]
+	VolatileEnv []string
 }
 
 func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) error {
@@ -120,27 +135,96 @@ func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach fu
 		return nil, err
 	}
 	lazy.State.Parent = parent
-	return []dagql.AnyResult{parent}, nil
+
+	deps := []dagql.AnyResult{parent}
+	if lazy.State.ModuleContext.Self() != nil {
+		attached, err := attach(lazy.State.ModuleContext)
+		if err != nil {
+			return nil, fmt.Errorf("attach container withExec module context: %w", err)
+		}
+		moduleContext, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach container withExec module context: expected %T, got %T", lazy.State.ModuleContext, attached)
+		}
+		lazy.State.ModuleContext = moduleContext
+		deps = append(deps, moduleContext)
+	}
+
+	return deps, nil
 }
 
 func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	if lazy == nil || lazy.State == nil {
 		return nil, fmt.Errorf("encode persisted container withExec lazy: nil state")
 	}
+	if lazy.State.FunctionCall != nil {
+		return nil, fmt.Errorf("cannot persist container exec with active function call")
+	}
 	parentID, err := encodePersistedObjectRef(cache, lazy.State.Parent, "container withExec parent")
 	if err != nil {
 		return nil, err
 	}
+	var moduleContextID uint64
+	if lazy.State.ModuleContext.Self() != nil {
+		moduleContextID, err = encodePersistedObjectRef(cache, lazy.State.ModuleContext, "container withExec module context")
+		if err != nil {
+			return nil, err
+		}
+	}
 	return json.Marshal(persistedContainerExecLazy{
-		ParentResultID:     parentID,
-		Opts:               lazy.State.Opts,
-		ExecMD:             lazy.State.ExecMD,
-		ExtractModuleError: lazy.State.ExtractModuleError,
+		ParentResultID:        parentID,
+		ModuleContextResultID: moduleContextID,
+		Opts:                  lazy.State.Opts,
+		ExecMD:                lazy.State.ExecMD,
 	})
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts, parent *engineutil.ExecutionMetadata) (*engineutil.ExecutionMetadata, error) {
+func (lazy *ContainerVolatileExecCacheHitLazy) Evaluate(ctx context.Context, container *Container) error {
+	if lazy == nil {
+		return nil
+	}
+	return lazy.LazyState.Evaluate(ctx, "Container.withExec.cacheHit", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.VolatileEnv = slices.Clone(lazy.VolatileEnv)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	if lazy == nil {
+		return nil, nil
+	}
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container volatile exec cache hit parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if lazy == nil {
+		return nil, fmt.Errorf("encode persisted container volatile exec cache hit lazy: nil lazy")
+	}
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container volatile exec cache hit parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerExecLazy{
+		VolatileCacheHitParentResultID: parentID,
+		VolatileCacheHitVolatileEnv:    slices.Clone(lazy.VolatileEnv),
+	})
+}
+
+func (container *Container) execMeta(
+	ctx context.Context,
+	opts ContainerExecOpts,
+	parent *engineutil.ExecutionMetadata,
+	moduleContext dagql.ObjectResult[*Module],
+) (*engineutil.ExecutionMetadata, error) {
 	execMD := engineutil.ExecutionMetadata{}
 	if parent != nil {
 		execMD = *parent
@@ -154,24 +238,15 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	if err != nil {
 		return nil, err
 	}
-	execMD.CallerClientID = clientMetadata.ClientID
-	execMD.SessionID = clientMetadata.SessionID
-	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
-
-	if execMD.Call == nil {
-		execMD.Call = dagql.CurrentCall(ctx)
-	}
-	if execMD.CallDigest == "" && execMD.Call != nil {
-		callDigest, err := execMD.Call.RecipeDigest(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("compute exec call digest: %w", err)
+	if execMD.CallDigest == "" {
+		if curCall := dagql.CurrentCall(ctx); curCall != nil {
+			callDigest, err := curCall.RecipeDigest(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("compute exec call digest: %w", err)
+			}
+			execMD.CallDigest = callDigest
 		}
-		execMD.CallDigest = callDigest
 	}
-	if execMD.ExecID == "" {
-		execMD.ExecID = identity.NewID()
-	}
-
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
 	}
@@ -185,39 +260,14 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	}
 
 	var callerModDigest digest.Digest
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
-	}
-	if execMD.EncodedContentModuleID != "" {
-		callerModID := new(call.ID)
-		if err := callerModID.Decode(execMD.EncodedContentModuleID); err != nil {
-			return nil, fmt.Errorf("failed to decode content-scoped module ID: %w", err)
-		}
-		callerMod, err := dagql.NewID[*Module](callerModID).Load(ctx, dag)
+	if moduleContext.Self() != nil {
+		implementationScopedMod, err := ImplementationScopedModule(ctx, moduleContext)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load content-scoped module from encoded module ID: %w", err)
-		}
-		callerModDigest, err = callerMod.ContentPreferredDigest(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get content-scoped module digest: %w", err)
-		}
-	} else if execMD.EncodedModuleID != "" {
-		callerModID := new(call.ID)
-		if err := callerModID.Decode(execMD.EncodedModuleID); err != nil {
-			return nil, fmt.Errorf("failed to decode module ID: %w", err)
-		}
-		callerMod, err := dagql.NewID[*Module](callerModID).Load(ctx, dag)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load module from encoded module ID: %w", err)
-		}
-		implementationScopedMod, err := ImplementationScopedModule(ctx, callerMod)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get implementation-scoped module from encoded module ID: %w", err)
+			return nil, fmt.Errorf("failed to get implementation-scoped module from exec module context: %w", err)
 		}
 		callerModDigest, err = implementationScopedMod.ContentPreferredDigest(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get implementation-scoped module digest from encoded module ID: %w", err)
+			return nil, fmt.Errorf("failed to get implementation-scoped module digest from exec module context: %w", err)
 		}
 	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod.Self() != nil {
 		implementationScopedMod, err := ImplementationScopedModule(ctx, callerMod)
@@ -242,14 +292,6 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		}
 	}
 
-	// this allows executed containers to communicate back to this API
-	if opts.ExperimentalPrivilegedNesting {
-		// establish new client ID for the nested client
-		if execMD.ClientID == "" {
-			execMD.ClientID = identity.NewID()
-		}
-	}
-
 	for _, bnd := range container.Services {
 		for _, alias := range bnd.Aliases {
 			execMD.HostAliases[bnd.Hostname] = append(execMD.HostAliases[bnd.Hostname], alias)
@@ -270,7 +312,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	return &execMD, nil
 }
 
-func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts) (*executor.Meta, error) {
+func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts, includeVolatileEnv bool) (*executor.Meta, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current query: %w", err)
@@ -305,6 +347,9 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
+	if includeVolatileEnv {
+		metaSpec.Env = mergeEnv(metaSpec.Env, container.VolatileEnv)
+	}
 
 	if opts.Expect != ReturnSuccess {
 		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
@@ -324,6 +369,136 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 		return pb.NetMode_HOST, nil
 	}
 	return pb.NetMode_UNSET, nil
+}
+
+type serviceBindingExitError struct {
+	binding ServiceBinding
+	err     error
+	// origins are the install-span contexts of the API calls that returned the
+	// bound service. Embedded in the error message as traceparents so the
+	// consuming exec span links its failure back to those API calls.
+	origins []trace.SpanContext
+}
+
+func (e *serviceBindingExitError) Error() string {
+	if e == nil {
+		return "bound service exited"
+	}
+	name := e.binding.Hostname
+	if name == "" {
+		name = "unknown"
+	}
+	var msg string
+	if e.err == nil {
+		msg = fmt.Sprintf("bound service %s (%s) exited", name, e.binding.Aliases)
+	} else {
+		msg = fmt.Sprintf("bound service %s (%s) exited: %v", name, e.binding.Aliases, e.err)
+	}
+	// Append traceparents so the consuming exec span EndWithCause adds
+	// LinkPurposeErrorOrigin links to the service's install spans. The inner
+	// service error may already carry the service starter's origin; keep it, but
+	// still add any missing current origins so reused services attribute failures
+	// to every API call that installed/bound them.
+	tracked := telemetry.ParseErrorOrigins(msg)
+	trackedKeys := make(map[string]struct{}, len(tracked))
+	for _, origin := range tracked {
+		trackedKeys[spanContextKey(origin)] = struct{}{}
+	}
+	for _, origin := range normalizeSpanContexts(e.origins) {
+		if _, alreadyTracked := trackedKeys[spanContextKey(origin)]; alreadyTracked {
+			continue
+		}
+		msg = telemetry.TrackOrigin(errors.New(msg), origin).Error()
+		trackedKeys[spanContextKey(origin)] = struct{}{}
+	}
+	return msg
+}
+
+func (e *serviceBindingExitError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func isServiceBindingExitError(err error) bool {
+	var svcErr *serviceBindingExitError
+	return errors.As(err, &svcErr)
+}
+
+func serviceBindingErrorOrigins(ctx context.Context, binding ServiceBinding, running *RunningService) []trace.SpanContext {
+	if origins := lookupServiceOriginSpanContexts(ctx, binding.Service); len(origins) > 0 {
+		return origins
+	}
+	if running != nil {
+		if origin := running.errorOriginSpanContext(); origin.IsValid() {
+			return []trace.SpanContext{origin}
+		}
+	}
+	return nil
+}
+
+// monitorServiceBindings reports the first bound service that exits while a
+// dependent operation is still running. If cancel is set, it is called with the
+// service error as the cause.
+func monitorServiceBindings(
+	ctx context.Context,
+	bindings ServiceBindings,
+	running []*RunningService,
+	cancel context.CancelCauseFunc,
+) (<-chan error, func()) {
+	monitorCtx, stopMonitor := context.WithCancel(ctx)
+	serviceErrCh := make(chan error, 1)
+
+	var wg sync.WaitGroup
+	for i, runningSvc := range running {
+		if runningSvc == nil || runningSvc.Wait == nil {
+			continue
+		}
+
+		binding := ServiceBinding{}
+		if i < len(bindings) {
+			binding = bindings[i]
+		}
+		if binding.Hostname == "" {
+			binding.Hostname = runningSvc.Host
+		}
+
+		origins := serviceBindingErrorOrigins(ctx, binding, runningSvc)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			err := runningSvc.Wait(monitorCtx)
+			if monitorCtx.Err() != nil {
+				return
+			}
+
+			svcErr := &serviceBindingExitError{
+				binding: binding,
+				err:     err,
+				origins: origins,
+			}
+			select {
+			case serviceErrCh <- svcErr:
+			default:
+			}
+			if cancel != nil {
+				cancel(svcErr)
+			}
+		}()
+	}
+
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			stopMonitor()
+			wg.Wait()
+			close(serviceErrCh)
+		})
+	}
+	return serviceErrCh, stop
 }
 
 func (container *Container) secretEnvValues(ctx context.Context) ([]string, error) {
@@ -396,14 +571,14 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 			continue
 		}
 		cacheSelf := ctrMount.CacheSource.Volume.Self()
-		if cacheSelf.Sharing != CacheSharingModeLocked {
+		if !cacheSharingModeLocksWrites(cacheSelf.Sharing) {
 			continue
 		}
-		payload, err := cacheSelf.EncodePersistedObject(ctx, nil)
+		lockKey, err := cacheSelf.lockKey()
 		if err != nil {
-			return nil, fmt.Errorf("encode cache lock key for mount %d: %w", i, err)
+			return nil, fmt.Errorf("cache lock key for mount %d: %w", i, err)
 		}
-		lockSet["cache-volume:"+string(payload)] = struct{}{}
+		lockSet[lockKey] = struct{}{}
 	}
 	if len(lockSet) == 0 {
 		return func() {}, nil
@@ -422,6 +597,11 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 			locker.Unlock(lockKeys[i])
 		}
 	}, nil
+}
+
+func cacheSharingModeLocksWrites(mode CacheSharingMode) bool {
+	// Stop-gap: PRIVATE is implemented with the same serialized writes as LOCKED.
+	return mode == CacheSharingModeLocked || mode == CacheSharingModePrivate
 }
 
 func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {
@@ -774,7 +954,7 @@ type execTmpFS struct {
 	opt *pb.TmpfsOpt
 }
 
-func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool) (snapshot.Mountable, error) {
+func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool) (bkcache.MountableRef, error) {
 	return &execTmpFSMount{
 		readonly: readonly,
 		opt:      tmpfs.opt,
@@ -829,7 +1009,7 @@ type execSecretMount struct {
 	data []byte
 }
 
-func (secret *execSecretMount) Mount(_ context.Context, _ bool) (snapshot.Mountable, error) {
+func (secret *execSecretMount) Mount(_ context.Context, _ bool) (bkcache.MountableRef, error) {
 	return &execSecretMountInstance{
 		secret: secret,
 	}, nil
@@ -840,7 +1020,7 @@ type execSecretMountInstance struct {
 }
 
 func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error, error) {
-	dir, err := os.MkdirTemp("", "buildkit-secrets")
+	dir, err := os.MkdirTemp("", "dagger-secrets")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
@@ -924,7 +1104,7 @@ type execSSHMount struct {
 	mode   fs.FileMode
 }
 
-func (ssh *execSSHMount) Mount(ctx context.Context, _ bool) (snapshot.Mountable, error) {
+func (ssh *execSSHMount) Mount(ctx context.Context, _ bool) (bkcache.MountableRef, error) {
 	sock, cleanup, err := ssh.socket.Self().MountSSHAgent(ctx)
 	if err != nil {
 		return nil, err
@@ -975,14 +1155,16 @@ func (container *Container) WithExec(
 	parent dagql.ObjectResult[*Container],
 	opts ContainerExecOpts,
 	execMD *engineutil.ExecutionMetadata,
-	extractModuleError bool,
+	moduleContext dagql.ObjectResult[*Module],
+	functionCall *FunctionCall,
 ) error {
 	state := &ContainerExecState{
-		LazyState:          NewLazyState(),
-		Parent:             parent,
-		Opts:               opts,
-		ExecMD:             execMD,
-		ExtractModuleError: extractModuleError,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          opts,
+		ExecMD:        execMD,
+		ModuleContext: moduleContext,
+		FunctionCall:  functionCall,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
@@ -1037,11 +1219,25 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return fmt.Errorf("get current query: %w", err)
 		}
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return fmt.Errorf("get current client metadata: %w", err)
+		}
 		releaseLockedCaches, err := lockMountedCaches(ctx, inputMounts)
 		if err != nil {
 			return err
 		}
 		defer releaseLockedCaches()
+
+		volatileEnvsFromSession := dagCache.ResolveVolatileVars(ctx, clientMetadata.SessionID)
+		var volatileEnvs []string
+		for _, k := range container.VolatileEnv {
+			k = strings.SplitN(k, "=", 2)[0]
+			if v, ok := volatileEnvsFromSession[k]; ok {
+				volatileEnvs = append(volatileEnvs, fmt.Sprintf("%s=%s", k, v))
+			}
+		}
+		container.VolatileEnv = volatileEnvs
 
 		secretEnv, err := container.secretEnvValues(ctx)
 		if err != nil {
@@ -1051,7 +1247,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		opts := state.Opts
 		expandedArgs := make([]string, len(opts.Args))
 		for i, arg := range opts.Args {
-			expandedArg, err := expandContainerInput(container, arg, opts.Expand)
+			expandedArg, err := ExpandContainerInput(container, arg, opts.Expand)
 			if err != nil {
 				return err
 			}
@@ -1081,7 +1277,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			opts.RedirectStdin = path
 		}
 
-		execMD, err := container.execMeta(ctx, opts, state.ExecMD)
+		execMD, err := container.execMeta(ctx, opts, state.ExecMD, state.ModuleContext)
 		if err != nil {
 			return err
 		}
@@ -1089,7 +1285,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 
 		cache := query.SnapshotManager()
 
-		metaSpec, err := container.metaSpec(ctx, opts)
+		metaSpec, err := container.metaSpec(ctx, opts, true)
 		if err != nil {
 			return err
 		}
@@ -1098,11 +1294,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return fmt.Errorf("failed to get engine client: %w", err)
 		}
-		opWorker := engineClient.Worker
 		causeCtx := trace.SpanContextFromContext(ctx)
-		if opWorker == nil {
-			return fmt.Errorf("missing buildkit worker")
-		}
 
 		rootOutputBinding := func(ref bkcache.ImmutableRef) error {
 			dirPath := "/"
@@ -1602,9 +1794,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			defer releaseResolvedRefs()
 
 			var metaRef bkcache.ImmutableRef
-			var moduleRef bkcache.ImmutableRef
-			var moduleErrID dagql.ID[*Error]
-			haveModuleErrID := false
 			resolveAndTrackFailureRef := func(state *execMountState) (bkcache.ImmutableRef, error) {
 				ref, err := resolveFailureRef(state)
 				if err != nil {
@@ -1614,9 +1803,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			}
 			for _, mountState := range mountStates {
 				keepRef := mountState.Dest == engineutil.MetaMountDestPath
-				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
-					keepRef = true
-				}
 				if !keepRef {
 					continue
 				}
@@ -1631,22 +1817,12 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				if mountState.Dest == engineutil.MetaMountDestPath {
 					metaRef = ref
 				}
-				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
-					moduleRef = ref
-				}
 			}
 
-			if state.ExtractModuleError && moduleRef != nil {
-				errID, ok, err := moduleErrorIDFromRef(ctx, engineClient, moduleRef)
-				if err != nil {
-					rerr = errors.Join(rerr, fmt.Errorf("extract module error: %w", err))
-					return
-				}
-				if ok {
-					moduleErrID = errID
-					haveModuleErrID = true
-				}
-			}
+			// A bound service exiting is the primary failure. Don't turn it into an
+			// ExecError for the command we canceled in response, or the user sees the
+			// command's forced exit code instead of the service failure.
+			serviceBindingExited := isServiceBindingExitError(rerr)
 
 			execMDPresent := execMD != nil
 			execInternal := false
@@ -1654,24 +1830,28 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			if execMDPresent {
 				execInternal = execMD.Internal
 			}
-			if engineClient.Interactive &&
+			if !serviceBindingExited &&
+				engineClient.Interactive &&
 				execMDPresent &&
 				!execInternal &&
 				hasMetaSpec {
 				var callID *call.ID
 				var callDig digest.Digest
-				if execMD.Call != nil {
+				if curCall := dagql.CurrentCall(ctx); curCall != nil {
 					dagqlCache, err := dagql.EngineCache(ctx)
 					if err != nil {
 						rerr = fmt.Errorf("get dagql cache for terminal exec error: %w", err)
 						return
 					}
-					callID, err = dagqlCache.RecipeIDForCall(ctx, execMD.Call)
+					callID, err = dagqlCache.RecipeIDForCall(ctx, curCall)
 					if err != nil {
 						rerr = fmt.Errorf("rebuild recipe ID for terminal exec error: %w", err)
 						return
 					}
-					callDig = callID.ContentPreferredDigest()
+					// Failed interactive execs spawn a throwaway terminal service.
+					// The service manager needs a digest-shaped key for hostname/log
+					// plumbing, but it must not participate in DAG/content identity.
+					callDig = digest.FromString(rand.Text())
 				}
 				meta := *metaSpec
 				meta.Args = []string{"/bin/sh"}
@@ -1828,36 +2008,30 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				terminalContainerNeedsRelease = false
 			}
 
-			var existingExecErr *ExecError
-			if !errors.As(rerr, &existingExecErr) {
-				execErr, ok, err := execErrorFromMetaRef(ctx, engineClient, causeCtx, rerr, metaSpec, metaRef)
-				if err != nil {
-					rerr = errors.Join(err, rerr)
-					return
-				}
-				if ok {
-					rerr = execErr
-				}
-			}
-
-			if haveModuleErrID {
-				rerr = &ModuleExecError{
-					Err:     rerr,
-					ErrorID: moduleErrID,
+			if !serviceBindingExited {
+				var existingExecErr *ExecError
+				if !errors.As(rerr, &existingExecErr) {
+					execErr, ok, err := execErrorFromMetaRef(ctx, engineClient, causeCtx, rerr, metaSpec, metaRef)
+					if err != nil {
+						rerr = errors.Join(err, rerr)
+						return
+					}
+					if ok {
+						rerr = execErr
+					}
 				}
 			}
 		}()
-
 		emu, err := getEmulator(ctx, specs.Platform(container.Platform))
 		if err != nil {
 			return err
 		}
 		if emu != nil {
-			metaSpec.Args = append([]string{engineutil.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
+			metaSpec.Args = append([]string{engineutil.DaggerQemuEmulatorMountPoint}, metaSpec.Args...)
 			execMounts = append(execMounts, executor.Mount{
 				Readonly: true,
 				Src:      emu,
-				Dest:     engineutil.BuildkitQemuEmulatorMountPoint,
+				Dest:     engineutil.DaggerQemuEmulatorMountPoint,
 			})
 		}
 
@@ -1869,18 +2043,94 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return fmt.Errorf("failed to get services: %w", err)
 		}
-		detach, _, err := svcs.StartBindings(ctx, container.Services)
+		detach, runningSvcs, err := svcs.StartBindings(ctx, container.Services)
 		if err != nil {
 			return err
 		}
 		defer detach()
 
-		execWorker := opWorker.ExecWorker(causeCtx, *execMD)
+		execCtx := ctx
+		var cancelExec context.CancelCauseFunc
+		var serviceErrCh <-chan error
+		stopServiceMonitors := func() {}
+		if len(runningSvcs) > 0 {
+			execCtx, cancelExec = context.WithCancelCause(ctx)
+			serviceErrCh, stopServiceMonitors = monitorServiceBindings(ctx, container.Services, runningSvcs, cancelExec)
+			defer cancelExec(nil)
+			defer stopServiceMonitors()
+		}
+
+		var nestedClientMetadata *engine.ClientMetadata
+		if opts.ExperimentalPrivilegedNesting {
+			nestedClientMetadata = &engine.ClientMetadata{
+				ClientID:              identity.NewID(),
+				ClientVersion:         engine.Version,
+				SessionID:             clientMetadata.SessionID,
+				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
+				LockMode:              clientMetadata.LockMode,
+				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
+			}
+		}
+
 		procInfo := executor.ProcessInfo{Meta: meta}
 		if opts.Stdin != "" {
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
 		}
-		_, execErr := execWorker.Run(ctx, "", rootMount, execMounts, procInfo, nil)
+		// Env is runtime/session context, so keep it off persisted exec state.
+		var envContext dagql.ObjectResult[*Env]
+		if state.FunctionCall != nil {
+			env, ok, err := EnvFromContext(ctx)
+			if err != nil {
+				return fmt.Errorf("resolve exec env context: %w", err)
+			}
+			if ok {
+				envContext = env
+			}
+		}
+
+		execErrCh := make(chan error, 1)
+		go func() {
+			execErrCh <- engineClient.Run(
+				execCtx,
+				"",
+				rootMount,
+				execMounts,
+				procInfo,
+				nil,
+				causeCtx,
+				execMD,
+				clientMetadata.SessionID,
+				clientMetadata.ClientID,
+				nestedClientMetadata,
+				state.ModuleContext,
+				state.FunctionCall,
+				envContext,
+			)
+		}()
+
+		var execErr error
+		select {
+		case execErr = <-execErrCh:
+			if execErr != nil {
+				select {
+				case serviceErr := <-serviceErrCh:
+					if serviceErr != nil {
+						execErr = serviceErr
+					}
+				default:
+				}
+			}
+		case serviceErr := <-serviceErrCh:
+			if serviceErr == nil {
+				serviceErr = fmt.Errorf("bound service exited")
+			}
+			execErr = serviceErr
+			if cancelExec != nil {
+				cancelExec(serviceErr)
+			}
+			<-execErrCh
+		}
+		stopServiceMonitors()
 
 		var invalidateErr error
 		for i, ctrMount := range inputMounts {
@@ -1925,16 +2175,32 @@ func decodePersistedContainerExecLazy(
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
 	}
+	if persisted.VolatileCacheHitParentResultID != 0 {
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerVolatileExecCacheHitLazy{
+			LazyState:   NewLazyState(),
+			Parent:      parent,
+			VolatileEnv: slices.Clone(persisted.VolatileCacheHitVolatileEnv),
+		}
+		return nil
+	}
 	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container exec parent")
 	if err != nil {
 		return err
 	}
+	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleContextResultID, "container exec module context")
+	if err != nil {
+		return err
+	}
 	state := &ContainerExecState{
-		LazyState:          NewLazyState(),
-		Parent:             parent,
-		Opts:               persisted.Opts,
-		ExecMD:             persisted.ExecMD,
-		ExtractModuleError: persisted.ExtractModuleError,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          persisted.Opts,
+		ExecMD:        persisted.ExecMD,
+		ModuleContext: moduleContext,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""

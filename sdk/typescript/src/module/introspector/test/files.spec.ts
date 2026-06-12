@@ -1,5 +1,5 @@
-import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
+import { describe, it } from "mocha"
 import * as path from "path"
 import { fileURLToPath } from "url"
 

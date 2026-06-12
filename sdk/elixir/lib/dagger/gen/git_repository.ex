@@ -16,6 +16,26 @@ defmodule Dagger.GitRepository do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Creates a synthetic workspace from this git repository.
+
+  > #### Experimental {: .warning}
+  >
+  > "Synthetic workspaces currently support filesystem APIs only."
+  """
+  @spec as_workspace(t(), [{:cwd, String.t() | nil}]) :: Dagger.Workspace.t()
+  def as_workspace(%__MODULE__{} = git_repository, optional_args \\ []) do
+    query_builder =
+      git_repository.query_builder
+      |> QB.select("asWorkspace")
+      |> QB.maybe_put_arg("cwd", optional_args[:cwd])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
   Returns details of a branch.
   """
   @spec branch(t(), String.t()) :: Dagger.GitRef.t()
@@ -73,7 +93,7 @@ defmodule Dagger.GitRepository do
   @doc """
   A unique identifier for this GitRepository.
   """
-  @spec id(t()) :: {:ok, Dagger.GitRepositoryID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = git_repository) do
     query_builder =
       git_repository.query_builder |> QB.select("id")
@@ -171,6 +191,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.GitRepository do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_git_repository_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.GitRepository{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("GitRepository"),
+       client: dag.client
+     }}
   end
 end

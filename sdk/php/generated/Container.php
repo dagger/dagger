@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * An OCI-compatible container, also known as a Docker container.
  */
-class Container extends Client\AbstractObject implements Client\IdAble
+class Container extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
      * Turn the container into a Service.
@@ -19,7 +19,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      * Be sure to set any exposed ports before this conversion.
      */
     public function asService(
-        ?array $args = null,
+        ?array $args = [],
         ?bool $useEntrypoint = false,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
@@ -123,7 +123,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves the value of the specified environment variable.
+     * Retrieves the value of the specified persistent environment variable.
      */
     public function envVariable(string $name): string
     {
@@ -133,7 +133,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves the list of environment variables passed to commands.
+     * Retrieves the list of persistent environment variables configured on the container.
      */
     public function envVariables(): array
     {
@@ -144,8 +144,12 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * check if a file or directory exists
      */
-    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
-    {
+    public function exists(
+        string $path,
+        ?ExistsType $expectedType = null,
+        ?bool $doNotFollowSymlinks = false,
+        ?bool $expand = false,
+    ): bool {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $expectedType) {
@@ -153,6 +157,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $doNotFollowSymlinks) {
         $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        if (null !== $expand) {
+        $leafQueryBuilder->setArgument('expand', $expand);
         }
         return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
     }
@@ -276,20 +283,33 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Download a container image, and apply it to the container state. All previous state will be lost.
      */
-    public function from(string $address): Container
-    {
+    public function from(
+        string $address,
+        ?Service $registryService = null,
+        ?RegistryProtocol $protocol = null,
+        ?bool $insecureSkipTLSVerify = false,
+    ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('from');
         $innerQueryBuilder->setArgument('address', $address);
+        if (null !== $registryService) {
+        $innerQueryBuilder->setArgument('registryService', $registryService);
+        }
+        if (null !== $protocol) {
+        $innerQueryBuilder->setArgument('protocol', $protocol);
+        }
+        if (null !== $insecureSkipTLSVerify) {
+        $innerQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * A unique identifier for this Container.
      */
-    public function id(): ContainerId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ContainerId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -304,7 +324,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Reads the container from an OCI tarball.
      */
-    public function import(FileId|File $source, ?string $tag = ''): Container
+    public function import(File $source, ?string $tag = ''): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('import');
         $innerQueryBuilder->setArgument('source', $source);
@@ -361,6 +381,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
+        ?Service $registryService = null,
+        ?RegistryProtocol $protocol = null,
+        ?bool $insecureSkipTLSVerify = false,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
         $leafQueryBuilder->setArgument('address', $address);
@@ -372,6 +395,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        if (null !== $registryService) {
+        $leafQueryBuilder->setArgument('registryService', $registryService);
+        }
+        if (null !== $protocol) {
+        $leafQueryBuilder->setArgument('protocol', $protocol);
+        }
+        if (null !== $insecureSkipTLSVerify) {
+        $leafQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
     }
@@ -425,17 +457,18 @@ class Container extends Client\AbstractObject implements Client\IdAble
      *
      * It doesn't run the default command if no exec has been set.
      */
-    public function sync(): ContainerId
+    public function sync(): Container
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\ContainerId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
      * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
      */
     public function terminal(
-        ?array $cmd = null,
+        ?array $cmd = [],
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
     ): Container {
@@ -460,7 +493,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     public function up(
         ?bool $random = false,
         ?array $ports = null,
-        ?array $args = null,
+        ?array $args = [],
         ?bool $useEntrypoint = false,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
@@ -549,9 +582,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $source,
-        ?array $exclude = null,
-        ?array $include = null,
+        Directory $source,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
         ?string $owner = '',
         ?bool $expand = false,
@@ -632,7 +665,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Export environment variables from an env-file to the container.
      */
-    public function withEnvFileVariables(EnvFileId|EnvFile $source): Container
+    public function withEnvFileVariables(EnvFile $source): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvFileVariables');
         $innerQueryBuilder->setArgument('source', $source);
@@ -748,7 +781,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withFile(
         string $path,
-        FileId|File $source,
+        File $source,
         ?int $permissions = null,
         ?string $owner = '',
         ?bool $expand = false,
@@ -809,8 +842,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withMountedCache(
         string $path,
-        CacheVolumeId|CacheVolume $cache,
-        DirectoryId|Directory|null $source = null,
+        CacheVolume $cache,
+        ?Directory $source = null,
         ?CacheSharingMode $sharing = null,
         ?string $owner = '',
         ?bool $expand = false,
@@ -838,7 +871,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withMountedDirectory(
         string $path,
-        DirectoryId|Directory $source,
+        Directory $source,
         ?string $owner = '',
         ?bool $readOnly = false,
         ?bool $expand = false,
@@ -861,12 +894,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this container plus a file mounted at the given path.
      */
-    public function withMountedFile(
-        string $path,
-        FileId|File $source,
-        ?string $owner = '',
-        ?bool $expand = false,
-    ): Container {
+    public function withMountedFile(string $path, File $source, ?string $owner = '', ?bool $expand = false): Container
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
@@ -884,7 +913,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withMountedSecret(
         string $path,
-        SecretId|Secret $source,
+        Secret $source,
         ?string $owner = '',
         ?int $mode = 256,
         ?bool $expand = false,
@@ -948,7 +977,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Attach credentials for future publishing to a registry. Use in combination with publish
      */
-    public function withRegistryAuth(string $address, string $username, SecretId|Secret $secret): Container
+    public function withRegistryAuth(string $address, string $username, Secret $secret): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRegistryAuth');
         $innerQueryBuilder->setArgument('address', $address);
@@ -960,7 +989,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Change the container's root filesystem. The previous root filesystem will be lost.
      */
-    public function withRootfs(DirectoryId|Directory $directory): Container
+    public function withRootfs(Directory $directory): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withRootfs');
         $innerQueryBuilder->setArgument('directory', $directory);
@@ -970,7 +999,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Set a new environment variable, using a secret value
      */
-    public function withSecretVariable(string $name, SecretId|Secret $secret): Container
+    public function withSecretVariable(string $name, Secret $secret): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSecretVariable');
         $innerQueryBuilder->setArgument('name', $name);
@@ -987,7 +1016,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      *
      * The service dependency will also convey to any files or directories produced by the container.
      */
-    public function withServiceBinding(string $alias, ServiceId|Service $service): Container
+    public function withServiceBinding(string $alias, Service $service): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withServiceBinding');
         $innerQueryBuilder->setArgument('alias', $alias);
@@ -1014,7 +1043,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withUnixSocket(
         string $path,
-        SocketId|Socket $source,
+        Socket $source,
         ?string $owner = '',
         ?bool $expand = false,
     ): Container {
@@ -1037,6 +1066,19 @@ class Container extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUser');
         $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+     *
+     * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+     */
+    public function withVolatileVariable(string $name, string $value): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolatileVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -1219,6 +1261,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     public function withoutUser(): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUser');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container minus the given volatile environment variable.
+     */
+    public function withoutVolatileVariable(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutVolatileVariable');
+        $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -91,15 +91,19 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 	return nil
 }
 
+type containerProcessExecutor interface {
+	Exec(context.Context, string, executor.ProcessInfo) error
+}
+
 type dockerHealthcheck struct {
 	args   []string
 	origin trace.SpanContext
 	ctr    *Container
-	exec   executor.Executor
+	exec   containerProcessExecutor
 	svcID  string
 }
 
-func newDockerHealthcheck(exec executor.Executor, svcID string, ctr *Container, origin trace.SpanContext) (*dockerHealthcheck, error) {
+func newDockerHealthcheck(exec containerProcessExecutor, svcID string, ctr *Container, origin trace.SpanContext) (*dockerHealthcheck, error) {
 	if ctr == nil || ctr.Config.Healthcheck == nil || len(ctr.Config.Healthcheck.Test) == 0 || ctr.Config.Healthcheck.Test[0] == "NONE" {
 		return nil, fmt.Errorf("container does not have a healthcheck command")
 	}
@@ -181,7 +185,7 @@ func (chk *dockerHealthcheck) Check(ctx context.Context) error {
 func (chk *dockerHealthcheck) check(ctx context.Context) error {
 	healthcheckMeta, err := chk.ctr.metaSpec(ctx, ContainerExecOpts{
 		Args: chk.args,
-	})
+	}, false)
 	if err != nil {
 		return err
 	}

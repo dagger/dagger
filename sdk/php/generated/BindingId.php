@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `BindingID` scalar type represents an identifier for an object of type Binding.
+ * A unique identifier for an object.
  */
-readonly class BindingId extends Client\AbstractId
+readonly class BindingId extends Client\AbstractScalar
 {
 }

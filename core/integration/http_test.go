@@ -1,5 +1,11 @@
 package core
 
+// These tests cover fetching files and directories over HTTP/HTTPS through the
+// Dagger API.
+//
+// See also:
+// - services_test.go: service networking behavior.
+
 import (
 	"context"
 	"encoding/base64"

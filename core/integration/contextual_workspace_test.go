@@ -1,0 +1,299 @@
+package core
+
+// These tests cover implicit workspace selection from the current directory.
+// They verify find-up behavior when commands run from nested paths.
+//
+// See also:
+// - workspace_selection_test.go: explicit `--workspace` and `-W` selection.
+// - workspace_compat_test.go: legacy compat workspace inference.
+// - module_loading_test.go: module loading after selection.
+
+import (
+	"context"
+	"crypto/rand"
+	"strings"
+	"testing"
+
+	"dagger.io/dagger"
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+)
+
+// ContextualWorkspaceSuite owns how the ambient/default Workspace is inferred
+// from invocation context. This includes whether a Workspace is injected at
+// all, which workspace wins, and how cache invalidation works for that input.
+type ContextualWorkspaceSuite struct{}
+
+func TestContextualWorkspace(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(ContextualWorkspaceSuite{})
+}
+
+func daggerReportCall(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+// TestContextualWorkspaceSelection should cover which workspace gets injected
+// from context before any module code runs.
+func (ContextualWorkspaceSuite) TestContextualWorkspaceSelection(ctx context.Context, t *testctx.T) {
+	t.Run("workspace config is inferred from nearest config directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := workspaceFixture(t, c, "contextual/paths-full").
+			WithNewFile("repo.txt", "hello from boundary").
+			WithNewFile("app/app.txt", "hello from workspace").
+			WithWorkdir("/work/app")
+
+		out, err := ctr.With(daggerReportCall("workspace-value")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("boundary-value")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from boundary", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("found-value")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/repo.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("legacy compat workspace is inferred when no config exists", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("repo.txt", "hello from compat workspace").
+				WithNewFile("ci/main.dang", `
+type Myapp {
+  pub workspacePath: String!
+  pub workspaceAddress: String!
+  pub boundaryValue: String!
+
+  new(ws: Workspace!) {
+    self.workspacePath = ws.cwd
+    self.workspaceAddress = ws.address
+    self.boundaryValue = ws.file("/repo.txt").contents
+    self
+  }
+}
+`)
+		})
+
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file:///work", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("boundary-value")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from compat workspace", strings.TrimSpace(out))
+	})
+
+	t.Run("nearest workspace config beats an outer workspace config", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := workspaceBase(t, c).
+			WithNewFile("dagger.toml", "[modules]\n").
+			With(withWorkspaceFixture(t, c, ".", "workspaces/contextual/paths-shape")).
+			WithWorkdir("/work/app")
+
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/app", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file:///work/app", strings.TrimSpace(out))
+	})
+
+	t.Run("plain module config injects a compat workspace", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "standalone",
+  "sdk": {"source": "dang"}
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("main.dang", `
+type Standalone {
+  pub workspacePath: String!
+
+  new(ws: Workspace!) {
+    self.workspacePath = ws.cwd
+    self
+  }
+}
+`)
+		})
+
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/", strings.TrimSpace(out))
+	})
+
+	t.Run("workspace config beats outer compat inference", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "outer",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("ci/main.dang", `
+type Outer {
+  pub marker: String! {
+    "outer compat module"
+  }
+}
+`).
+				With(withWorkspaceFixture(t, c, ".", "workspaces/contextual/paths-shape")).
+				WithWorkdir("/work/app")
+		})
+
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/app", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file:///work/app", strings.TrimSpace(out))
+	})
+}
+
+// TestContextualWorkspaceShape should pin down the observable properties of
+// the injected Workspace once it has been selected.
+func (ContextualWorkspaceSuite) TestContextualWorkspaceShape(ctx context.Context, t *testctx.T) {
+	t.Run("workspace cwd and address reflect selected location", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := workspaceFixture(t, c, "contextual/paths-shape").
+			WithWorkdir("/work/app")
+
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/app", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file:///work/app", strings.TrimSpace(out))
+	})
+
+	t.Run("workspace findUp is rooted at the injected boundary", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := workspaceFixture(t, c, "contextual/paths-findup").
+			WithNewFile("app/nested/target.txt", "nested target").
+			WithWorkdir("/work/app")
+
+		out, err := ctr.With(daggerReportCall("found-from-nested")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/app/nested/target.txt", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("missing-from-boundary")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+}
+
+// TestContextualWorkspaceCaching should cover cache behavior for functions
+// that receive a Workspace from ambient context.
+func (ContextualWorkspaceSuite) TestContextualWorkspaceCaching(ctx context.Context, t *testctx.T) {
+	const marker = "FUNCTION_EXECUTED"
+
+	daggerCallWithLogs := func(args ...string) dagger.WithContainerFunc {
+		return func(ctr *dagger.Container) *dagger.Container {
+			execArgs := append([]string{"dagger", "--progress=logs", "call"}, args...)
+			return ctr.WithExec(execArgs, dagger.ContainerWithExecOpts{
+				UseEntrypoint: true,
+			})
+		}
+	}
+
+	t.Run("same relevant workspace content hits cache", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		base := workspaceFixture(t, c, "contextual/cacheme").
+			With(nonNestedDevEngine(c)).
+			WithNewFile("included-file", rand.Text())
+
+		first := base.With(daggerCallWithLogs("cacheme", "read"))
+		out1, err := first.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out1, marker)
+
+		second := first.With(daggerCallWithLogs("cacheme", "read"))
+		out2, err := second.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out2, marker)
+	})
+
+	t.Run("unrelated file changes do not invalidate scoped workspace inputs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		base := workspaceFixture(t, c, "contextual/cacheme").
+			With(nonNestedDevEngine(c)).
+			WithNewFile("included-file", rand.Text())
+
+		first := base.With(daggerCallWithLogs("cacheme", "read"))
+		_, err := first.CombinedOutput(ctx)
+		require.NoError(t, err)
+
+		second := first.
+			WithNewFile("another-file", rand.Text()).
+			With(daggerCallWithLogs("cacheme", "read"))
+		out, err := second.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, marker)
+	})
+
+	t.Run("relevant file changes invalidate cache", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		newText := rand.Text()
+		base := workspaceFixture(t, c, "contextual/cacheme").
+			With(nonNestedDevEngine(c)).
+			WithNewFile("included-file", rand.Text())
+
+		first := base.With(daggerCallWithLogs("cacheme", "read"))
+		_, err := first.CombinedOutput(ctx)
+		require.NoError(t, err)
+
+		second := first.
+			WithNewFile("included-file", newText).
+			With(daggerCallWithLogs("cacheme", "read"))
+		out, err := second.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, newText)
+		require.Contains(t, out, marker)
+	})
+}
+
+// TestContextualWorkspaceCLIExposure covers user-visible behavior that is
+// specific to Workspace being injected from context rather than passed
+// explicitly.
+func (ContextualWorkspaceSuite) TestContextualWorkspaceCLIExposure(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceFixture(t, c, "contextual/greeter").
+		WithNewFile("hello.txt", "hello from workspace")
+
+	t.Run("workspace arg is auto-injected", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerReportCall("greeter", "read")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+	})
+
+	t.Run("workspace arg is not exposed as a CLI flag", func(ctx context.Context, t *testctx.T) {
+		help, err := ctr.With(daggerReportCall("greeter", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, help, "--source")
+	})
+}

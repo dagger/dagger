@@ -31,10 +31,10 @@ The typed callback looks like:
 
 ```go
 type DynamicInputFunc[T Typed, A any] func(
-	context.Context,
-	ObjectResult[T],
-	A,
-	*CallRequest,
+ context.Context,
+ ObjectResult[T],
+ A,
+ *CallRequest,
 ) error
 ```
 
@@ -62,8 +62,8 @@ It is declared with `Field.WithInput(...)` and has the form:
 
 ```go
 type ImplicitInput struct {
-	Name     string
-	Resolver ImplicitInputResolver
+ Name     string
+ Resolver ImplicitInputResolver
 }
 ```
 

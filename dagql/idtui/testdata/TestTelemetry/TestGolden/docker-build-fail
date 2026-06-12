@@ -22,20 +22,6 @@ $ viztest: Viztest! X.Xs CACHED
   │ ! stat .dockerignore: no such file or directory
   │
   ├╴✔ resolving docker.io/library/busybox:1.34 X.Xs
-  │ ├╴✔ remotes.docker.resolver.HTTPRequest X.Xs
-  │ │ ╰╴✔ HTTP HEAD X.Xs
-  │ │
-  │ ├╴✔ remotes.docker.resolver.HTTPRequest X.Xs
-  │ │ ╰╴✔ HTTP GET X.Xs
-  │ │
-  │ ├╴✔ remotes.docker.resolver.HTTPRequest X.Xs
-  │ │ ╰╴✔ HTTP GET X.Xs
-  │ │
-  │ ├╴✔ remotes.docker.resolver.HTTPRequest X.Xs
-  │ │ ╰╴✔ HTTP GET X.Xs
-  │ │
-  │ ╰╴✔ remotes.docker.resolver.HTTPRequest X.Xs
-  │   ╰╴✔ HTTP GET X.Xs
   │
   ├╴$ Container.from(address: "docker.io/library/busybox:1.34@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Container! X.Xs CACHED
   │
@@ -50,11 +36,8 @@ $ viztest: Viztest! X.Xs CACHED
   ├╴✘ withExec /bin/sh -c 'echo im failing && false' X.Xs ERROR
   │ ┃ im failing
   │ ! exit code: 1
-  ├╴✘ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs ERROR
-  │ ! 2x exit code: 1
-  ├╴✘ .withoutEntrypoint(keepDefaultArgs: true): Container! X.Xs ERROR
-  │ ! 2x exit code: 1
-  ╰╴✘ .withDefaultArgs(args: ["sh"]): Container! X.Xs ERROR
-    ! 2x exit code: 1
+  ├╴○ withEnvVariable PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin X.Xs
+  ├╴○ .withoutEntrypoint(keepDefaultArgs: true): Container! X.Xs
+  ╰╴○ .withDefaultArgs(args: ["sh"]): Container! X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

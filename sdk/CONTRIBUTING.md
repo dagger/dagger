@@ -28,10 +28,10 @@ This document serves as a guide for creating a new Dagger SDK, but also to help 
 
 A Dagger SDK contains everything to develop CI/CD pipelines for a particular platform. This may include:
 
-* A client library
-* Examples
-* Documentation
-* Platform-specific tooling
+- A client library
+- Examples
+- Documentation
+- Platform-specific tooling
 
 Dagger SDKs are open-source, and developed jointly with the community. Some SDKs are mature enough to be considered stable, while others are experimental. Our goal is to eventually offer stable and feature-complete SDKs for all platforms.
 
@@ -48,6 +48,7 @@ Yes, with a little effort you can develop your own SDK. If you think others may 
 <details><summary>TODO: tbd</summary>
 
 Notes:
+
 - feature parity
 - maturity and adoption
 - documentation and test coverage
@@ -61,6 +62,7 @@ Follow our general [contribution guidelines](../CONTRIBUTING.md) and submit a pu
 ## Design guidelines
 
 General guidelines when making technical decisions:
+
 - Aim for the best developer experience, in a way that is idiomatic to the language. It should feel as natural as possible to its users.
 - Try to keep consistency with the stable SDKs, unless where it contradicts with the previous point which is more important.
 - Try to keep the SDK as thin as possible to reduce the maintenance burden, taking advantage of popular third-party libraries especially if well tested.
@@ -88,8 +90,8 @@ flowchart TD
 
 - **Codegen:** The process of pre-generating from the API schema the code for the Dagger client.
 - **Connect:** Function to establish a connection to the API and return an instance of the Dagger client with access to the initialized GraphQL session.
-    - **Automatic provisioning:** Convenience for establishing a session to the Dagger engine if no existing session is detected. This is what starts the GraphQL server.
-    - **GraphQL session:** For establishing a GraphQL client connection to the GraphQL server, using the parameters provided during provisioning.
+  - **Automatic provisioning:** Convenience for establishing a session to the Dagger engine if no existing session is detected. This is what starts the GraphQL server.
+  - **GraphQL session:** For establishing a GraphQL client connection to the GraphQL server, using the parameters provided during provisioning.
 - **Dagger client:** A set of definitions (e.g., functions, classes…) that make it simple to talk to the Dagger API. When referenced in code (e.g., as returned by *Connect*), it usually refers to an instance of the root type that corresponds to *Query* in the API.
 
 ## Connect
@@ -110,6 +112,7 @@ Configuration options can be added later when needed. They’re used mostly for 
 ### Engine provisioning
 
 When an SDK calls `dagger.Connect`, there are two possible paths:
+
 - Basic (e.g., by `dagger run`)
 - Automatic provisioning
 
@@ -219,6 +222,7 @@ print(result)
 <details><summary>TODO</summary>
 
 Notes:
+
 - Chainable API
   - Extract result from response
   - Immutable query builder
@@ -227,8 +231,8 @@ Notes:
     - Execute when a value is needed (leaf)
     - Make sure DX is clear which is which (rule of thumb, e.g., `await`)
 - Objects → ID
-    - Pass around objects, not IDs
-    - Do the conversion internally when executing the query
+  - Pass around objects, not IDs
+  - Do the conversion internally when executing the query
 - Convenient imports
   - `dagger.Container` (type)
   - `dagger.Client` (i.e., `Query` type)
@@ -247,6 +251,7 @@ This code generation (codegen for short) is done during development. Whenever th
 <details><summary>TODO</summary>
 
 Notes:
+
 - Introspection query
   - Own language?
   - Dagger’s Go lib
@@ -277,6 +282,7 @@ The “automatic provisioning” feature is a convenience to enable **easier onb
 <details><summary>TODO</summary>
 
 Notes:
+
 - Config
   - Stream engine logs to a file (e.g., `log_output=stderr`)
   - Workdir & config path
@@ -303,6 +309,7 @@ Notes:
 We try to implement features in the API as much as possible so there’s no extra work bringing the SDKs to parity and consistency, but sometimes it’s not possible or viable. Some features make more sense as an SDK helper.
 
 The following helpers have been considered worthwhile to include:
+
 - [`With()` convenience](https://github.com/dagger/dagger/issues/3885)
 
 ## Tests

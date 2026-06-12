@@ -208,8 +208,9 @@ func (d containerConnector) EngineID() string {
 
 const (
 	// trim image digests to 16 characters to makeoutput more readable
-	hashLen             = 16
-	containerNamePrefix = "dagger-engine-"
+	hashLen                     = 16
+	containerNamePrefix         = "dagger-engine-"
+	defaultDebugListenerAddress = "127.0.0.1:6060"
 )
 
 const InstrumentationLibrary = "dagger.io/client.drivers"
@@ -265,7 +266,7 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 			if err := d.backend.ContainerStart(ctx, leftoverEngine); err != nil {
 				return nil, fmt.Errorf("failed to start container: %w", err)
 			}
-			d.garbageCollectEngines(ctx, opts.cleanup, slices.Delete(leftoverEngines, i, i+1))
+			d.garbageCollectEngines(ctx, opts.cleanup, nil, slices.Delete(leftoverEngines, i, i+1))
 			return &url.URL{Host: containerName}, nil
 		}
 	}
@@ -290,7 +291,7 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		image:      opts.imageRef,
 		volumes:    []string{volume},
 		privileged: true,
-		args:       []string{"--debug"},
+		args:       []string{"--debug", "--debugaddr", defaultDebugListenerAddress},
 		env:        opts.env,
 		cpus:       opts.cpus,
 		memory:     opts.memory,
@@ -333,25 +334,54 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	// garbage collect any other containers with the same name pattern, which
 	// we assume to be leftover from previous runs of the engine using an older
 	// version
-	d.garbageCollectEngines(ctx, opts.cleanup, leftoverEngines)
+	d.garbageCollectEngines(ctx, opts.cleanup, nil, leftoverEngines)
 
 	return &url.URL{Host: containerName}, nil
 }
 
-func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, engines []string) {
+func (d *imageDriver) garbageCollectEngines(ctx context.Context, cleanup bool, preserveNames, engines []string) {
 	if !cleanup {
 		return
 	}
-	for _, engine := range engines {
-		if engine == "" {
+	for _, engineName := range engines {
+		if engineName == "" || slices.Contains(preserveNames, engineName) {
 			continue
 		}
-		if err := d.backend.ContainerRemove(ctx, engine); err != nil {
+		if err := d.backend.ContainerRemove(ctx, engineName); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
 		}
 	}
+}
+
+func engineNames(versions []string) []string {
+	names := make([]string, 0, len(versions))
+	for _, version := range versions {
+		if version != "" {
+			names = append(names, containerNamePrefix+version)
+		}
+	}
+	return names
+}
+
+// CleanupOldEngines removes local engine containers while preserving the
+// versions that are expected to be used by the current command.
+func CleanupOldEngines(ctx context.Context, preserveVersions []string) error {
+	driver, err := GetDriver(ctx, "image")
+	if err != nil {
+		return err
+	}
+	imageDriver, ok := driver.(*imageDriver)
+	if !ok {
+		return nil
+	}
+	leftoverEngines, err := imageDriver.collectLeftoverEngines(ctx)
+	if err != nil {
+		return err
+	}
+	imageDriver.garbageCollectEngines(ctx, true, engineNames(preserveVersions), leftoverEngines)
+	return nil
 }
 
 func (d *imageDriver) collectLeftoverEngines(ctx context.Context, additionalNames ...string) ([]string, error) {

@@ -11,15 +11,15 @@ namespace Dagger;
 /**
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
-class Secret extends Client\AbstractObject implements Client\IdAble
+class Secret extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this Secret.
      */
-    public function id(): SecretId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\SecretId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

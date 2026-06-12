@@ -13,8 +13,10 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/muesli/termenv"
+	"github.com/pkg/browser"
 	"github.com/vito/go-interact/interact"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -57,6 +59,7 @@ func NewLogs(output io.Writer) Frontend {
 		out:         out,
 		prefixW:     multiprefixw.New(out),
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
+		testLogs:    make(map[dagui.SpanID]*Vterm),
 	}
 	return fe
 }
@@ -71,6 +74,12 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if cleanup != nil {
 		runErr = errors.Join(runErr, cleanup())
 	}
+	if _, ok := renderQuietError(fe.out, runErr); ok {
+		return normalizeFrontendExit(runErr, fe.db)
+	}
+	if !opts.Silent && fe.renderFinalTests() {
+		fmt.Fprintln(fe.out)
+	}
 	// Replay the primary output log to stdout/stderr.
 	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
 		runErr = errors.Join(runErr, writeErr)
@@ -79,6 +88,22 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 		handleTelemetryErrorOutput(fe.out, fe.out, *p)
 	}
 	return normalizeFrontendExit(runErr, fe.db)
+}
+
+func (fe *frontendLogs) renderFinalTests() bool {
+	view := fe.db.TestView()
+	if !view.HasTests() {
+		return false
+	}
+	tv := &TestView{
+		Profile:         fe.profile,
+		Logs:            fe.logs.testLogs,
+		SummaryLogLines: -1,
+	}
+	for _, line := range tv.renderTestSummaryLines(fe.out, view, 80, finalTestViewHeight(tv)) {
+		fmt.Fprintln(fe.out, line)
+	}
+	return true
 }
 
 func (fe *frontendLogs) Opts() *dagui.FrontendOpts {
@@ -128,7 +153,24 @@ func (fe *frontendLogs) MetricExporter() sdkmetric.Exporter {
 	return &logsMetricExporter{fe: fe}
 }
 
-func (fe *frontendLogs) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {}
+func (fe *frontendLogs) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
+	if fe.opts.OpenWeb {
+		if err := browser.OpenURL(url); err != nil {
+			slog.Warn("failed to open URL", "url", url, "err", err)
+		}
+	}
+	if fe.opts.Silent {
+		return
+	}
+
+	if cmdContext, ok := FromCmdContext(ctx); ok && cmdContext.printTraceLink {
+		if logged {
+			fe.out.Write([]byte(traceMessage(fe.profile, url, msg) + "\n"))
+		} else if !skipLoggedOutTraceMsg() {
+			fmt.Fprintf(fe.out, loggedOutTraceMsg+"\n", url)
+		}
+	}
+}
 
 func (fe *frontendLogs) Shell(ctx context.Context, handler ShellHandler) {
 	// Logs frontend doesn't support shell

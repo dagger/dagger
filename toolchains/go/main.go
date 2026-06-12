@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	telemetry "github.com/dagger/otel-go"
+	toml "github.com/pelletier/go-toml"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/modules/go/internal/dagger"
@@ -18,7 +20,9 @@ import (
 )
 
 const (
-	defaultPlatform = dagger.Platform("")
+	defaultPlatform        = dagger.Platform("")
+	moduleConfigFilename   = "dagger-module.toml"
+	legacyModuleConfigFile = "dagger.json"
 )
 
 func New(
@@ -71,6 +75,10 @@ func New(
 	// valid if 'base' arg is nil
 	// +optional
 	extraPackages []string,
+
+	// max number of parallel jobs to run for tidy/check tidy/lint/runtime generation
+	// +default=10
+	limit int,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
@@ -126,6 +134,7 @@ func New(
 		Cgo:         cgo,
 		Race:        race,
 		Experiment:  experiment,
+		Limit:       limit,
 	}
 }
 
@@ -167,6 +176,9 @@ type Go struct {
 	Include []string
 
 	Exclude []string
+
+	// Max number of parallel jobs to run
+	Limit int
 }
 
 type AssociativeArray[T any] []struct {
@@ -490,18 +502,14 @@ func (p *Go) Modules(
 	return mods, nil
 }
 
-func (p *Go) TidyModule(ctx context.Context, mod string) (*dagger.Changeset, error) {
-	p, err := p.GenerateDaggerRuntime(ctx, mod)
-	if err != nil {
-		return nil, err
-	}
+func (p *Go) TidyModule(module string) (*dagger.Changeset, error) {
 	tidyModDir := p.Env(defaultPlatform).
-		WithWorkdir(mod).
+		WithWorkdir(module).
 		WithExec([]string{"go", "mod", "tidy"}).
 		Directory(".")
 	return p.Source.
-		WithFile(path.Join(mod, "/go.mod"), tidyModDir.File("go.mod")).
-		WithFile(path.Join(mod, "/go.sum"), tidyModDir.File("go.sum")).
+		WithFile(path.Join(module, "/go.mod"), tidyModDir.File("go.mod")).
+		WithFile(path.Join(module, "/go.sum"), tidyModDir.File("go.sum")).
 		Changes(p.Source), nil
 }
 
@@ -515,34 +523,217 @@ func (p *Go) Tidy(
 		return nil, err
 	}
 	tidyModules := make([]*dagger.Changeset, len(modules))
-	jobs := parallel.New()
+	jobs := parallel.New().
+		// On a large repo this can run dozens of parallel go mod tidy jobs,
+		// which can lead to OOM or extreme CPU usage, so we limit parallelism
+		WithLimit(p.Limit)
 	for i, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
 			var err error
-			tidyModules[i], err = p.TidyModule(ctx, mod)
+			tidyModules[i], err = p.TidyModule(mod)
 			return err
 		})
 	}
 	if err := jobs.Run(ctx); err != nil {
 		return nil, err
 	}
-	return changesetMerge(tidyModules...), nil
+	return dag.Changeset().WithChangesets(tidyModules), nil
 }
 
-// Merge Changesets together
-// FIXME: move this to core dagger: https://github.com/dagger/dagger/issues/11189
-// FIXME: this duplicates the same function in .dagger/util.go
-// (cross-module function sharing is a PITA)
-func changesetMerge(changesets ...*dagger.Changeset) *dagger.Changeset {
-	before := dag.Directory()
-	for _, changeset := range changesets {
-		before = before.WithDirectory("", changeset.Before())
+// Generate Dagger runtime files for Go SDK modules in the configured source.
+// +generate
+func (p *Go) GenerateDaggerRuntimes(ctx context.Context) (*dagger.Changeset, error) {
+	before := p.Source
+
+	modules, err := p.Modules(ctx, nil, nil)
+	if err != nil {
+		return nil, err
 	}
+
+	layers := make([]*dagger.Directory, len(modules))
+	jobs := parallel.New().
+		WithLimit(p.Limit)
+	for i, module := range modules {
+		i, module := i, module
+		jobs = jobs.WithJob(module, func(ctx context.Context) error {
+			layer, ok, err := p.generateDaggerRuntimeLayer(ctx, module)
+			if err != nil {
+				return err
+			}
+			if ok {
+				layers[i] = layer
+			}
+			return nil
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return nil, err
+	}
+
 	after := before
-	for _, changeset := range changesets {
-		after = after.WithChanges(changeset)
+	for _, layer := range layers {
+		if layer != nil {
+			after = after.WithDirectory("", layer)
+		}
 	}
-	return after.Changes(before)
+	return after.Changes(before), nil
+}
+
+func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {
+	layer, ok, err := p.generateDaggerRuntimeLayer(ctx, start)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		p.Source = p.Source.WithDirectory("", layer)
+	}
+	return p, nil
+}
+
+func (p *Go) generateDaggerRuntimeLayer(ctx context.Context, start string) (*dagger.Directory, bool, error) {
+	var isInside bool
+	var daggerModPath string
+	if err := parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
+		// 1. Are we in a dagger module?
+		daggerConfigPath, err := p.findUpModuleConfig(ctx, start)
+		if err != nil {
+			return err
+		}
+		if daggerConfigPath == "" {
+			return nil
+		}
+		daggerConfigContents, err := p.Source.File(daggerConfigPath).Contents(ctx)
+		if err != nil {
+			return err
+		}
+		daggerConfig, err := parseModuleConfigSummary([]byte(daggerConfigContents), path.Base(daggerConfigPath))
+		if err != nil {
+			return err
+		}
+		if daggerConfig.Runtime.Source == "" {
+			// It's valid for a module config to not have a runtime/source field.
+			return nil
+		}
+		daggerModPath = path.Clean(strings.TrimSuffix(daggerConfigPath, path.Base(daggerConfigPath)))
+
+		// 2. Is the dagger module using the Go SDK?
+		if daggerConfig.Runtime.Source != "go" {
+			return nil
+		}
+		// 3. Are we in the dagger module's *source* directory?
+		sourceField := daggerConfig.Source
+		if sourceField == "" {
+			sourceField = "."
+		}
+		runtimeSourcePath := path.Clean(path.Join(daggerModPath, sourceField))
+		rel, err := filepath.Rel(path.Clean("/"+runtimeSourcePath), path.Clean("/"+start))
+		if err != nil {
+			return err
+		}
+		isInside = !strings.HasPrefix(rel, "..")
+		return nil
+	}); err != nil {
+		return nil, false, err
+	}
+	if !isInside {
+		return nil, false, nil
+	}
+
+	var layer *dagger.Directory
+	if err := parallel.Run(ctx, "generate dagger runtime: "+daggerModPath, func(ctx context.Context) error {
+		// 4. Match! Load the module and generate its files
+		var err error
+		layer, err = p.Source.
+			AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: daggerModPath}).
+			GeneratedContextDirectory().Sync(ctx)
+		return err
+	}); err != nil {
+		return nil, false, err
+	}
+	return layer, true, nil
+}
+
+func (p *Go) findUpModuleConfig(ctx context.Context, start string) (configPath string, err error) {
+	currentPath, err := p.Source.FindUp(ctx, moduleConfigFilename, start)
+	if err != nil {
+		return "", err
+	}
+	legacyPath, err := p.Source.FindUp(ctx, legacyModuleConfigFile, start)
+	if err != nil {
+		return "", err
+	}
+
+	switch {
+	case currentPath == "" && legacyPath == "":
+		return "", nil
+	case legacyPath == "":
+		return currentPath, nil
+	case currentPath == "":
+		return legacyPath, nil
+	case moduleConfigPathDepth(legacyPath) > moduleConfigPathDepth(currentPath):
+		return legacyPath, nil
+	default:
+		return currentPath, nil
+	}
+}
+
+// The Go SDK only needs enough config to decide whether it should generate a
+// runtime layer. Keep this local so the SDK module does not import core/modules
+// and pull the engine dependency graph into its own go.mod.
+type moduleConfigSummary struct {
+	Runtime moduleConfigRuntime
+	Source  string
+}
+
+type moduleConfigRuntime struct {
+	Source string `json:"source" toml:"source"`
+}
+
+func (runtime *moduleConfigRuntime) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if data[0] == '"' {
+		return json.Unmarshal(data, &runtime.Source)
+	}
+	type alias moduleConfigRuntime
+	return json.Unmarshal(data, (*alias)(runtime))
+}
+
+func parseModuleConfigSummary(data []byte, filename string) (*moduleConfigSummary, error) {
+	if filename == legacyModuleConfigFile {
+		var cfg struct {
+			SDK    moduleConfigRuntime `json:"sdk"`
+			Source string              `json:"source"`
+		}
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, err
+		}
+		return &moduleConfigSummary{
+			Runtime: cfg.SDK,
+			Source:  cfg.Source,
+		}, nil
+	}
+
+	var cfg struct {
+		Runtime moduleConfigRuntime `toml:"runtime"`
+		Source  string              `toml:"source"`
+	}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &moduleConfigSummary{
+		Runtime: cfg.Runtime,
+		Source:  cfg.Source,
+	}, nil
+}
+
+func moduleConfigPathDepth(configPath string) int {
+	dir := path.Dir(configPath)
+	if dir == "." || dir == "/" {
+		return 0
+	}
+	return strings.Count(strings.Trim(dir, "/"), "/") + 1
 }
 
 // Check if 'go mod tidy' is up-to-date
@@ -557,9 +748,9 @@ func (p *Go) CheckTidy(
 		return err
 	}
 	jobs := parallel.New().
-		// On a large repo this can run dozens of parallel golangci-lint jobs,
+		// On a large repo this can run dozens of parallel go mod tidy jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
-		WithLimit(3).
+		WithLimit(p.Limit).
 		// For better display in 'dagger checks': logs from all functions below the job will
 		// be printed below the job.
 		// TODO: remove this when dagger has a sub-checks API
@@ -569,7 +760,7 @@ func (p *Go) CheckTidy(
 		WithRollupSpans(true)
 	for _, mod := range modules {
 		jobs = jobs.WithJob(mod, func(ctx context.Context) error {
-			diffTidy, err := p.TidyModule(ctx, mod)
+			diffTidy, err := p.TidyModule(mod)
 			if err != nil {
 				return err
 			}
@@ -619,8 +810,8 @@ func filterPath(path string, include, exclude []string) (bool, error) {
 // +check
 func (p *Go) Lint(
 	ctx context.Context,
-	include []string, //+optional
-	exclude []string, //+optional
+	include []string, // +optional
+	exclude []string, // +optional
 ) error {
 	mods, err := p.Modules(ctx, include, exclude)
 	if err != nil {
@@ -629,7 +820,7 @@ func (p *Go) Lint(
 	jobs := parallel.New().
 		// On a large repo this can run dozens of parallel golangci-lint jobs,
 		// which can lead to OOM or extreme CPU usage, so we limit parallelism
-		WithLimit(3).
+		WithLimit(p.Limit).
 		// For better display in 'dagger checks': logs from all functions below the job will
 		// be printed below the job.
 		// TODO: remove this when dagger has a sub-checks API
@@ -645,27 +836,23 @@ func (p *Go) Lint(
 	return jobs.Run(ctx)
 }
 
-func (p *Go) LintModule(ctx context.Context, mod string) error {
+func (p *Go) LintModule(ctx context.Context, module string) error {
 	lintImageRepo := "docker.io/golangci/golangci-lint"
 	lintImageTag := "v2.11.4-alpine"
 	lintImageDigest := "sha256:72bcd68512b4e27540dd3a778a1b7afd45759d8145cfb3c089f1d7af53e718e9"
 	lintImage := lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
-	p, err := p.GenerateDaggerRuntime(ctx, mod)
-	if err != nil {
-		return err
-	}
 	return parallel.Run(ctx, "lint", func(ctx context.Context) error {
-		_, err = dag.Container().
+		_, err := dag.Container().
 			From(lintImage).
 			WithMountedCache("/go/pkg/mod", p.ModuleCache).
 			WithMountedCache("/root/.cache/go-build", p.BuildCache).
 			WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", p.Source).
-			WithWorkdir(mod).
+			WithWorkdir(module).
 			WithExec([]string{
 				"golangci-lint", "run",
-				"--path-prefix", mod + "/",
+				"--path-prefix", module + "/",
 				"--output.tab.path=stderr",
 				"--output.tab.print-linter-name=true",
 				"--output.tab.colors=false",
@@ -676,64 +863,4 @@ func (p *Go) LintModule(ctx context.Context, mod string) error {
 			Sync(ctx)
 		return err
 	})
-}
-
-func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {
-	var isInside bool
-	var daggerModPath string
-	parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
-		// 1. Are we in a dagger module?
-		daggerJSONPath, err := p.Source.FindUp(ctx, "dagger.json", start)
-		if err != nil {
-			return err
-		}
-		if daggerJSONPath == "" {
-			return nil
-		}
-		daggerJSONContents, err := p.Source.File(daggerJSONPath).Contents(ctx)
-		if err != nil {
-			return err
-		}
-		daggerJSON := dag.JSON().WithContents(dagger.JSON(daggerJSONContents))
-		sdk, err := daggerJSON.Field([]string{"sdk", "source"}).AsString(ctx)
-		if err != nil {
-			// It's valid for a dagger.json to not have a source field
-			return nil //nolint:nilerr
-		}
-		daggerModPath = path.Clean(strings.TrimSuffix(daggerJSONPath, "dagger.json"))
-
-		// 2. Is the dagger module using the Go SDK?
-		if sdk != "go" {
-			return nil
-		}
-		// 3. Are we in the dagger module's *source* directory?
-		sourceField, err := daggerJSON.Field([]string{"source"}).AsString(ctx)
-		if err != nil {
-			// If no source field, default to "."
-			sourceField = "."
-		}
-		runtimeSourcePath := path.Clean(path.Join(daggerModPath, sourceField))
-		rel, err := filepath.Rel(path.Clean("/"+runtimeSourcePath), path.Clean("/"+start))
-		if err != nil {
-			return err
-		}
-		isInside = !strings.HasPrefix(rel, "..")
-		return nil
-	})
-	if isInside {
-		if err := parallel.Run(ctx, "generate dagger runtime: "+daggerModPath, func(ctx context.Context) error {
-			// 4. Match! Load the module and generate its files
-			layer, err := p.Source.
-				AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: daggerModPath}).
-				GeneratedContextDirectory().Sync(ctx)
-			if err != nil {
-				return err
-			}
-			p.Source = p.Source.WithDirectory("", layer)
-			return nil
-		}); err != nil {
-			return nil, err
-		}
-	}
-	return p, nil
 }

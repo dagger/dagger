@@ -23,10 +23,7 @@ func (c *Cache) PersistedSnapshotLinksByResultID(ctx context.Context, resultID u
 		return nil, err
 	}
 
-	c.egraphMu.RLock()
-	links := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
-	c.egraphMu.RUnlock()
-	return links, nil
+	return res.loadSnapshotOwnerLinks(), nil
 }
 
 func (c *Cache) PersistedResultID(res AnyResult) (uint64, error) {

@@ -1,10 +1,10 @@
 module github.com/dagger/dagger
 
-go 1.25.6
+go 1.26.1
 
 require (
-	dagger.io/dagger v0.20.6
-	github.com/dagger/dagger/engine/distconsts v0.20.6
+	dagger.io/dagger v0.21.6
+	github.com/dagger/dagger/engine/distconsts v0.21.6
 )
 
 replace (
@@ -20,7 +20,7 @@ require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/Microsoft/hcsshim v0.14.0
+	github.com/Microsoft/hcsshim v0.14.1
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
 	github.com/adrg/xdg v0.5.3
 	github.com/agext/levenshtein v1.2.3
@@ -43,11 +43,11 @@ require (
 	github.com/cilium/ebpf v0.21.0
 	github.com/containerd/console v1.0.5
 	github.com/containerd/containerd/api v1.10.0
-	github.com/containerd/containerd/v2 v2.2.2
+	github.com/containerd/containerd/v2 v2.2.3
 	github.com/containerd/continuity v0.4.5
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/errdefs/pkg v0.3.0
-	github.com/containerd/fuse-overlayfs-snapshotter/v2 v2.1.7
+	github.com/containerd/fuse-overlayfs-snapshotter/v2 v2.1.2
 	github.com/containerd/go-cni v1.1.13
 	github.com/containerd/go-runc v1.1.0
 	github.com/containerd/log v0.1.0
@@ -57,10 +57,11 @@ require (
 	github.com/containernetworking/cni v1.3.0
 	github.com/containernetworking/plugins v1.9.0
 	github.com/coreos/go-systemd/v22 v22.7.0
+	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
-	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
+	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
-	github.com/dagger/testctx/oteltest v0.1.2
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
@@ -104,7 +105,6 @@ require (
 	github.com/mackerelio/go-osstat v0.2.7
 	github.com/mark3labs/mcp-go v0.47.0
 	github.com/mattn/go-isatty v0.0.20
-	github.com/mitchellh/go-spdx v0.1.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/moby/docker-image-spec v1.3.1
@@ -121,6 +121,7 @@ require (
 	github.com/morikuni/aec v1.1.0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
+	github.com/neongreen/mono/lib/toml v0.0.0-20251026210731-4c1679aeef5c
 	github.com/openai/openai-go v1.12.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -150,9 +151,9 @@ require (
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab
 	github.com/urfave/cli v1.22.17
 	github.com/vektah/gqlparser/v2 v2.5.32
-	github.com/vishvananda/netlink v1.3.1
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang v0.0.0-20260406185415-0d08427e2a24
+	github.com/vito/dang v1.0.1
+	github.com/vito/dang/v2 v2.0.0
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
@@ -163,29 +164,29 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.57.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
-	go.opentelemetry.io/otel v1.42.0
+	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.17.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.41.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.41.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.41.0
 	go.opentelemetry.io/otel/log v0.17.0
-	go.opentelemetry.io/otel/metric v1.42.0
-	go.opentelemetry.io/otel/sdk v1.42.0
+	go.opentelemetry.io/otel/metric v1.43.0
+	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/sdk/log v0.17.0
-	go.opentelemetry.io/otel/sdk/metric v1.42.0
-	go.opentelemetry.io/otel/trace v1.42.0
+	go.opentelemetry.io/otel/sdk/metric v1.43.0
+	go.opentelemetry.io/otel/trace v1.43.0
 	go.opentelemetry.io/proto/otlp v1.9.0
-	golang.org/x/crypto v0.49.0
+	golang.org/x/crypto v0.51.0
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
-	golang.org/x/mod v0.34.0
-	golang.org/x/net v0.52.0
+	golang.org/x/mod v0.36.0
+	golang.org/x/net v0.54.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.42.0
-	golang.org/x/term v0.41.0
-	golang.org/x/text v0.35.0
+	golang.org/x/sys v0.44.0
+	golang.org/x/term v0.43.0
+	golang.org/x/text v0.37.0
 	golang.org/x/time v0.15.0
-	golang.org/x/tools v0.43.0
+	golang.org/x/tools v0.45.0
 	google.golang.org/api v0.257.0
 	google.golang.org/genai v1.52.1
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260319201613-d00831a3d3e7
@@ -319,6 +320,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/opencontainers/cgroups v0.0.6 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -347,6 +349,7 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
+	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
@@ -378,3 +381,7 @@ replace (
 )
 
 tool github.com/matryer/moq
+
+// containerd v2.2.x requires bbolt v1.4.3, which is semver-higher than
+// the main-branch pseudo-version containing the freelist merge fix.
+replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.4.0-beta.0.0.20260422092123-cd4bafc17e45

@@ -1,47 +1,65 @@
 ---
 slug: /extending
-title: "Overview"
-description: "In addition to providing a set of core functions and types, the Dagger API can also be extended with custom Dagger Functions and custom types."
+title: "Module Developer Guide"
+description: "When to build a Dagger module, how to develop one, and how to design an API people can call."
 ---
 
-The Dagger API is extensible and shareable by design.
+# Module Developer Guide
 
-- You can extend the [Dagger API](../getting-started/api.mdx) by creating Dagger modules
-- You can also embed a [Dagger SDK](../getting-started/api/clients-sdk.mdx) directly into your application
+A module is a reusable, typed API for automation — functions, objects, checks, services, and generators that anyone can run from a workspace, in CI, in Cloud, or from an agent. This guide covers when to build a module, the development loop, and how to design one people will actually use.
 
-Both approaches let you access Dagger features for container operations, secret management, and more.
+It's language-agnostic. For the underlying model, read [How Dagger Works](./how-dagger-works/index.mdx); for syntax, pick your [SDK](#choose-your-sdk).
 
-## Modules
+## When to build a module
 
-In addition to providing a set of core functions and types, the Dagger API can be extended with custom Dagger Functions and custom types. This is achieved by creating (or installing) Dagger modules. You are encouraged to write your own Dagger modules and share them with others.
+Build a module when a workflow should become a durable, named interface rather than a remembered sequence of steps — something run often, in more than one place, that encodes a project's conventions or composes with other modules. A module earns its name by improving the caller's experience: better names, typed inputs, structured outputs, and clear errors. Wrapping a single command in a module just for ceremony isn't worth it.
 
-When a Dagger module is loaded, the Dagger API is [dynamically extended](../reference/api/internals.mdx#dynamic-api-extension) with new Dagger Functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions, plus the new Dagger Functions provided by that module.
+Install a module into a workspace ([`dagger.toml`](../reference/configuration/workspace.mdx)) to make it part of a project's command surface; publish a reusable module when several projects need the same capability. See [Workspace Setup](../adopting/workspace-setup.mdx).
 
-Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
+## Developer workflow
 
-## Custom applications
+Dagger ships no language-specific module tooling in the CLI. Instead, **each SDK is itself a Dagger module** — `github.com/dagger/go-sdk`, `dang-sdk`, and so on — whose functions you call to develop a module in that language. The exact commands differ per SDK and live on each [SDK page](#choose-your-sdk); the loop is the same everywhere:
 
-When using a Dagger SDK in your application:
+1. **Scaffold** a new module — the SDK writes its `dagger-module.toml` and a source skeleton, returned as a [changeset](../using-dagger/changesets.mdx) you apply.
+2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](./type-system/index.mdx).
+3. **Regenerate** the client bindings whenever the module's shape or its dependencies change.
+4. **Add dependencies** on other modules, and **pin** the engine version the module needs.
+5. **Check and test** with the module's [checks](./how-dagger-works/checks.mdx) and your own tests.
 
-1. Install the SDK for your preferred language
-2. Initialize a Dagger client in your code
-3. Use Dagger API methods to implement your workflow
-4. Run your application with `dagger run`
+The verbs `dagger check` and `dagger generate` are the same across every SDK; the scaffold, regenerate, and dependency steps come from the SDK module.
 
-The following SDKs are available for embedding Dagger into your application:
+## Designing a good API
 
-- [Go →](./custom-applications/go.mdx) Use the Dagger Go SDK to embed Dagger into your Go applications
-- [TypeScript →](./custom-applications/typescript.mdx) Use the Dagger TypeScript SDK to embed Dagger into your TypeScript applications
-- [Python →](./custom-applications/python.mdx) Use the Dagger Python SDK to embed Dagger into your Python applications
-- [PHP →](./custom-applications/php.mdx) Use the Dagger PHP SDK to embed Dagger into your PHP applications
+Start from the call you want people to remember, then make it obvious.
 
-## Modules vs custom applications
+- **Name for intent.** Functions and objects should read like the caller's goal, not the implementation.
+- **Type inputs honestly.** Prefer real Dagger types over strings, defaults for conventions, [settings](../reference/configuration/workspace.mdx) for team-wide values, and `Secret` for credentials — not magic environment variables or assumed host paths.
+- **Return rich values.** Return a `Container`, a `Directory`, a `Changeset` — whatever lets the caller or another module continue the workflow — instead of flattening everything into a string.
+- **Make side effects explicit.** A function that edits files returns a changeset; a long-running dependency is a `Service`; external effects belong in clearly named publish or export functions.
+- **Keep the boundary clean.** Expose a small public API and keep helpers, intermediate containers, and generated files private. If a caller must know an internal path to use the module, the API is leaking.
+- **Fail usefully.** An error should say what failed, whose problem it is (an input, a credential, the network, or the module), and what to try next — in the caller's terms, validated early before expensive work begins.
 
-Here is a quick summary of differences between these two approaches.
+## Checks, generators, and services
 
-| Capability | Dagger modules | Custom applications |
-|:---|---:|---:|
-| Pre-initialized Dagger API client | ✅ | 🚫 |
-| Direct host access | 🚫 | ✅ |
-| Direct third-party module access | ✅ | 🚫 |
-| Cross-language interoperability | ✅ | 🚫 |
+A module can expose plain functions that just return values — that's valid and composes fine. But a module earns its place by plugging into Dagger's workflows. There are three first-class function types, and a genuinely useful reusable module provides **at least one**:
+
+- **Checks** validate the project — tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as [Cloud Checks](../adopting/triggers/index.mdx). See [Checks](./how-dagger-works/checks.mdx).
+- **Generators** produce source changes as reviewable [changesets](../using-dagger/changesets.mdx) — codegen, formatting, lockfile updates. They run with `dagger generate`.
+- **Services** expose a long-running service — a database, web server, or proxy — started with `dagger up`.
+
+You mark a function as one of these in your SDK (`@check`, `@generate`, `@up`, or the language's equivalent — see your [SDK guide](#choose-your-sdk)). A module that offers none of them is often better left as a plain function call than packaged as a module.
+
+Round these out with the rest of the platform: [settings and environments](../reference/configuration/workspace.mdx) for team and per-context defaults, explicit `Secret` inputs for credentials, and [Dagger Cloud](../adopting/observability.mdx) for traces and remote execution.
+
+## Quality
+
+A module is ready for other people when its public API is small and well-named, its functions and arguments are documented (so `dagger call --help` is useful), its inputs and outputs are typed and composable, and its secrets, services, and side effects are explicit. Cover the main path and the important failure modes with tests. Treat the API as a contract — renaming a function or changing a default is a breaking change. Publish modules as versioned Git refs; consumers add them with `dagger mod install`.
+
+## Choose your SDK
+
+Pick a language to build in. Each guide covers its syntax, project layout, development workflow, dependencies, and testing:
+
+- **[Dang](./sdks/dang.mdx)** — Dagger's native DSL. No codegen and no build step: what you write is what runs. Best when your module orchestrates containers, files, and other Dagger objects.
+- **[Go](./sdks/go.mdx)** — Build modules in Go with a generated, typed client.
+- **[TypeScript](./sdks/typescript.mdx)** — Build modules in TypeScript with decorators and a generated client (Bun, Deno, or Node).
+- **[Python](./sdks/python.mdx)** — Build modules in Python with type hints, decorators, and a generated client.

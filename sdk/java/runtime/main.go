@@ -20,6 +20,8 @@ const (
 	ModSourceDirPath = "/src"
 	ModDirPath       = "/opt/module"
 	GenPath          = "/dagger-io"
+
+	javaSdkModuleNameEnv = "_DAGGER_JAVA_SDK_MODULE_NAME"
 )
 
 type JavaSdk struct {
@@ -166,6 +168,8 @@ func (m *JavaSdk) buildJavaDependencies(
 			"mvn",
 			"versions:set",
 			"-DgenerateBackupPoms=false",
+			"-DprocessDependencies=false",
+			"-DprocessPlugins=false",
 			fmt.Sprintf("-DnewVersion=%s", version),
 		)).
 		// Build and install the java modules one by one
@@ -257,7 +261,7 @@ func (m *JavaSdk) generateCode(
 	// generate the entrypoint class based on the user module
 	entrypoint := ctr.
 		// set the module name as an environment variable so we ensure constructor is only on main object
-		WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
+		WithEnvVariable(javaSdkModuleNameEnv, m.moduleConfig.name).
 		// generate the entrypoint
 		WithExec(m.mavenCommand(
 			"mvn",
@@ -329,7 +333,7 @@ func (m *JavaSdk) buildJar(
 	return m.finalJar(ctx,
 		ctr.
 			// set the module name as an environment variable so we ensure constructor is only on main object
-			WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
+			WithEnvVariable(javaSdkModuleNameEnv, m.moduleConfig.name).
 			// build the final jar
 			WithExec(m.mavenCommand(
 				"mvn",

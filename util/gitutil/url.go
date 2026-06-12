@@ -133,6 +133,39 @@ func ParseURL(remote string) (*GitURL, error) {
 	return nil, ErrUnknownProtocol
 }
 
+// cloneURLFallbackProtocols is the priority order for resolving a clone ref
+// that omits its scheme (e.g. "github.com/foo/bar"). Callers iterate the
+// candidates and try the next one when authentication fails.
+var cloneURLFallbackProtocols = []string{HTTPSProtocol, SSHProtocol}
+
+// ParseCloneURL parses a clone reference into one or more candidate GitURLs,
+// in priority order.
+//
+// Module sources may omit the scheme (e.g. "github.com/foo/bar") since the
+// transport is decided at clone time, not parse time. For those, ParseCloneURL
+// returns multiple candidates with common protocols prepended; callers iterate
+// and try the next one on authentication failure. For fully-qualified URLs,
+// it returns a single-element slice.
+func ParseCloneURL(remote string) ([]*GitURL, error) {
+	u, err := ParseURL(remote)
+	if err == nil {
+		return []*GitURL{u}, nil
+	}
+	if !errors.Is(err, ErrUnknownProtocol) {
+		return nil, err
+	}
+	candidates := make([]*GitURL, 0, len(cloneURLFallbackProtocols))
+	for _, proto := range cloneURLFallbackProtocols {
+		if u, err := ParseURL(proto + "://" + remote); err == nil {
+			candidates = append(candidates, u)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("%w: %q", ErrUnknownProtocol, remote)
+	}
+	return candidates, nil
+}
+
 func IsGitTransport(remote string) bool {
 	if proto := protoRegexp.FindString(remote); proto != "" {
 		proto = strings.ToLower(strings.TrimSuffix(proto, "://"))

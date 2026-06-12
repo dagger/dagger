@@ -1,7 +1,10 @@
 {
   "name": "nested-context-leaf",
-  "engineVersion": "v0.20.3",
+  "engineVersion": "v0.20.6",
   "sdk": {
     "source": "go"
+  },
+  "codegen": {
+    "automaticGitignore": false
   }
 }

@@ -13,38 +13,38 @@ This module creates a configuration file and returns it as a Secret that can be 
 type Module struct {
     // ...
 
-	// +private
-	RegistryConfig *RegistryConfig
+  // +private
+  RegistryConfig *RegistryConfig
 }
 
 func New() *Module {
-	return &Module{
-		// ...
+  return &Module{
+    // ...
 
-		RegistryConfig: dag.RegistryConfig(),
-	}
+    RegistryConfig: dag.RegistryConfig(),
+  }
 }
 
 // use container for actions that need registry credentials
 func (m *Module) container() *Container {
-	return m.Container.
-		With(func(c *Container) *Container {
-			return m.RegistryConfig.MountSecret(c, "/root/.docker/config.json")
-		})
+  return m.Container.
+    With(func(c *Container) *Container {
+      return m.RegistryConfig.MountSecret(c, "/root/.docker/config.json")
+    })
 }
 
 // Add credentials for a registry.
 func (m *Module) WithRegistryAuth(address string, username string, secret *Secret) *Module {
-	m.RegistryConfig = m.RegistryConfig.WithRegistryAuth(address, username, secret)
+  m.RegistryConfig = m.RegistryConfig.WithRegistryAuth(address, username, secret)
 
-	return m
+  return m
 }
 
 // Removes credentials for a registry.
 func (m *Module) WithoutRegistryAuth(address string) *Module {
-	m.RegistryConfig = m.RegistryConfig.WithoutRegistryAuth(address)
+  m.RegistryConfig = m.RegistryConfig.WithoutRegistryAuth(address)
 
-	return m
+  return m
 }
 ```
 

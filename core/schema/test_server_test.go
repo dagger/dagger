@@ -8,8 +8,8 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -17,10 +17,17 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"google.golang.org/grpc"
 )
+
+type currentTypeDefsTestServer struct {
+	deps             *core.SchemaBuilder
+	dag              *dagql.Server
+	workspaceLock    *workspace.Lock
+	workspaceLockOK  bool
+	workspaceLockErr error
+}
 
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
 	return nil
@@ -38,8 +45,8 @@ func (s *currentTypeDefsTestServer) CurrentFunctionCall(context.Context) (*core.
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) CurrentEnv(context.Context) (*call.ID, error) {
-	return nil, nil
+func (s *currentTypeDefsTestServer) CurrentEnv(context.Context) (dagql.ObjectResult[*core.Env], error) {
+	return dagql.ObjectResult[*core.Env]{}, nil
 }
 
 func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Workspace, error) {
@@ -62,8 +69,8 @@ func (s *currentTypeDefsTestServer) SpecificClientMetadata(context.Context, stri
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error) {
-	return nil, nil
+func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context, string, core.SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {
+	return nil, false, nil
 }
 
 func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
@@ -75,14 +82,14 @@ func (s *currentTypeDefsTestServer) TelemetrySeenKeyStore(context.Context) (dagq
 }
 
 func (s *currentTypeDefsTestServer) Server(context.Context) (*dagql.Server, error) {
-	return nil, nil
+	return s.dag, nil
 }
 
 func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Handler) error {
 	return nil
 }
 
-func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata) {
+func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {
@@ -109,7 +116,7 @@ func (s *currentTypeDefsTestServer) BuiltinOCIStore() content.Store { return nil
 
 func (s *currentTypeDefsTestServer) DNS() *oci.DNSConfig { return nil }
 
-func (s *currentTypeDefsTestServer) LeaseManager() *leaseutil.Manager { return nil }
+func (s *currentTypeDefsTestServer) LeaseManager() *bkcache.LeaseManager { return nil }
 
 func (s *currentTypeDefsTestServer) EngineLocalCacheEntries(context.Context) (*core.EngineCacheEntrySet, error) {
 	return nil, nil
@@ -144,3 +151,11 @@ func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, s
 }
 
 func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return nil }
+
+func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context) (*workspace.Lock, bool, error) {
+	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr
+}
+
+func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspace.LookupResult) error {
+	return nil
+}

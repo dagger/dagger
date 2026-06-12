@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The root of the DAG.
  */
-class Client extends Client\AbstractClient implements Client\IdAble
+class Client extends Client\AbstractClient implements Client\IdAble, Node
 {
     /**
      * initialize an address to load directories, containers, secrets or other object types.
@@ -28,7 +28,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
      */
     public function cacheVolume(
         string $key,
-        DirectoryId|Directory|null $source = null,
+        ?Directory $source = null,
         ?CacheSharingMode $sharing = null,
         ?string $owner = '',
     ): CacheVolume {
@@ -64,7 +64,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
         return new \Dagger\Cloud($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function codegen(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): GeneratedCode
+    public function codegen(ModuleSource $modSource, File $introspectionJson): GeneratedCode
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegen');
         $innerQueryBuilder->setArgument('modSource', $modSource);
@@ -72,7 +72,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function codegenBase(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): Container
+    public function codegenBase(ModuleSource $modSource, File $introspectionJson): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenBase');
         $innerQueryBuilder->setArgument('modSource', $modSource);
@@ -232,7 +232,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Creates a function.
      */
-    public function function(string $name, TypeDefId|TypeDef $returnType): Function_
+    public function function(string $name, TypeDef $returnType): Function_
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('function');
         $innerQueryBuilder->setArgument('name', $name);
@@ -243,7 +243,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Create a code generation result, given a directory containing the generated code.
      */
-    public function generatedCode(DirectoryId|Directory $code): GeneratedCode
+    public function generatedCode(Directory $code): GeneratedCode
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedCode');
         $innerQueryBuilder->setArgument('code', $code);
@@ -257,11 +257,11 @@ class Client extends Client\AbstractClient implements Client\IdAble
         string $url,
         ?bool $keepGitDir = true,
         ?string $sshKnownHosts = '',
-        SocketId|Socket|null $sshAuthSocket = null,
+        ?Socket $sshAuthSocket = null,
         ?string $httpAuthUsername = '',
-        SecretId|Secret|null $httpAuthToken = null,
-        SecretId|Secret|null $httpAuthHeader = null,
-        ServiceId|Service|null $experimentalServiceHost = null,
+        ?Secret $httpAuthToken = null,
+        ?Secret $httpAuthHeader = null,
+        ?Service $experimentalServiceHost = null,
     ): GitRepository {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
         $innerQueryBuilder->setArgument('url', $url);
@@ -306,8 +306,8 @@ class Client extends Client\AbstractClient implements Client\IdAble
         ?string $name = null,
         ?int $permissions = null,
         ?string $checksum = null,
-        SecretId|Secret|null $authHeader = null,
-        ServiceId|Service|null $experimentalServiceHost = null,
+        ?Secret $authHeader = null,
+        ?Service $experimentalServiceHost = null,
     ): File {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('http');
         $innerQueryBuilder->setArgument('url', $url);
@@ -332,10 +332,10 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * A unique identifier for this Query.
      */
-    public function id(): QueryId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\QueryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -365,7 +365,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Address from its ID.
      */
-    public function loadAddressFromID(AddressId|Address $id): Address
+    public function loadAddressFromID(AddressId $id): Address
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadAddressFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -375,7 +375,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Binding from its ID.
      */
-    public function loadBindingFromID(BindingId|Binding $id): Binding
+    public function loadBindingFromID(BindingId $id): Binding
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadBindingFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -385,7 +385,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a CacheVolume from its ID.
      */
-    public function loadCacheVolumeFromID(CacheVolumeId|CacheVolume $id): CacheVolume
+    public function loadCacheVolumeFromID(CacheVolumeId $id): CacheVolume
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCacheVolumeFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -395,7 +395,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Changeset from its ID.
      */
-    public function loadChangesetFromID(ChangesetId|Changeset $id): Changeset
+    public function loadChangesetFromID(ChangesetId $id): Changeset
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadChangesetFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -405,7 +405,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Check from its ID.
      */
-    public function loadCheckFromID(CheckId|Check $id): Check
+    public function loadCheckFromID(CheckId $id): Check
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCheckFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -415,7 +415,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a CheckGroup from its ID.
      */
-    public function loadCheckGroupFromID(CheckGroupId|CheckGroup $id): CheckGroup
+    public function loadCheckGroupFromID(CheckGroupId $id): CheckGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCheckGroupFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -425,9 +425,8 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a ClientFilesyncMirror from its ID.
      */
-    public function loadClientFilesyncMirrorFromID(
-        ClientFilesyncMirrorId|ClientFilesyncMirror $id,
-    ): ClientFilesyncMirror {
+    public function loadClientFilesyncMirrorFromID(ClientFilesyncMirrorId $id): ClientFilesyncMirror
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadClientFilesyncMirrorFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\ClientFilesyncMirror($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -436,7 +435,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Cloud from its ID.
      */
-    public function loadCloudFromID(CloudId|Cloud $id): Cloud
+    public function loadCloudFromID(CloudId $id): Cloud
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCloudFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -446,7 +445,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Container from its ID.
      */
-    public function loadContainerFromID(ContainerId|Container $id): Container
+    public function loadContainerFromID(ContainerId $id): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadContainerFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -456,7 +455,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a CurrentModule from its ID.
      */
-    public function loadCurrentModuleFromID(CurrentModuleId|CurrentModule $id): CurrentModule
+    public function loadCurrentModuleFromID(CurrentModuleId $id): CurrentModule
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCurrentModuleFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -466,7 +465,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a DiffStat from its ID.
      */
-    public function loadDiffStatFromID(DiffStatId|DiffStat $id): DiffStat
+    public function loadDiffStatFromID(DiffStatId $id): DiffStat
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDiffStatFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -476,7 +475,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Directory from its ID.
      */
-    public function loadDirectoryFromID(DirectoryId|Directory $id): Directory
+    public function loadDirectoryFromID(DirectoryId $id): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDirectoryFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -486,7 +485,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a EngineCacheEntry from its ID.
      */
-    public function loadEngineCacheEntryFromID(EngineCacheEntryId|EngineCacheEntry $id): EngineCacheEntry
+    public function loadEngineCacheEntryFromID(EngineCacheEntryId $id): EngineCacheEntry
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEngineCacheEntryFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -496,7 +495,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a EngineCacheEntrySet from its ID.
      */
-    public function loadEngineCacheEntrySetFromID(EngineCacheEntrySetId|EngineCacheEntrySet $id): EngineCacheEntrySet
+    public function loadEngineCacheEntrySetFromID(EngineCacheEntrySetId $id): EngineCacheEntrySet
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEngineCacheEntrySetFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -506,7 +505,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a EngineCache from its ID.
      */
-    public function loadEngineCacheFromID(EngineCacheId|EngineCache $id): EngineCache
+    public function loadEngineCacheFromID(EngineCacheId $id): EngineCache
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEngineCacheFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -516,7 +515,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Engine from its ID.
      */
-    public function loadEngineFromID(EngineId|Engine $id): Engine
+    public function loadEngineFromID(EngineId $id): Engine
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEngineFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -526,7 +525,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a EnumTypeDef from its ID.
      */
-    public function loadEnumTypeDefFromID(EnumTypeDefId|EnumTypeDef $id): EnumTypeDef
+    public function loadEnumTypeDefFromID(EnumTypeDefId $id): EnumTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnumTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -536,7 +535,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a EnumValueTypeDef from its ID.
      */
-    public function loadEnumValueTypeDefFromID(EnumValueTypeDefId|EnumValueTypeDef $id): EnumValueTypeDef
+    public function loadEnumValueTypeDefFromID(EnumValueTypeDefId $id): EnumValueTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnumValueTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -546,7 +545,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a EnvFile from its ID.
      */
-    public function loadEnvFileFromID(EnvFileId|EnvFile $id): EnvFile
+    public function loadEnvFileFromID(EnvFileId $id): EnvFile
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvFileFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -556,7 +555,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Env from its ID.
      */
-    public function loadEnvFromID(EnvId|Env $id): Env
+    public function loadEnvFromID(EnvId $id): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -566,7 +565,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a EnvVariable from its ID.
      */
-    public function loadEnvVariableFromID(EnvVariableId|EnvVariable $id): EnvVariable
+    public function loadEnvVariableFromID(EnvVariableId $id): EnvVariable
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvVariableFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -576,7 +575,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Error from its ID.
      */
-    public function loadErrorFromID(ErrorId|Error $id): Error
+    public function loadErrorFromID(ErrorId $id): Error
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadErrorFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -586,7 +585,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a ErrorValue from its ID.
      */
-    public function loadErrorValueFromID(ErrorValueId|ErrorValue $id): ErrorValue
+    public function loadErrorValueFromID(ErrorValueId $id): ErrorValue
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadErrorValueFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -594,9 +593,19 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a Exportable from its ID.
+     */
+    public function loadExportableFromID(ExportableId $id): Exportable
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadExportableFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ExportableClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a FieldTypeDef from its ID.
      */
-    public function loadFieldTypeDefFromID(FieldTypeDefId|FieldTypeDef $id): FieldTypeDef
+    public function loadFieldTypeDefFromID(FieldTypeDefId $id): FieldTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFieldTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -606,7 +615,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a File from its ID.
      */
-    public function loadFileFromID(FileId|File $id): File
+    public function loadFileFromID(FileId $id): File
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFileFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -616,7 +625,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a FunctionArg from its ID.
      */
-    public function loadFunctionArgFromID(FunctionArgId|FunctionArg $id): FunctionArg
+    public function loadFunctionArgFromID(FunctionArgId $id): FunctionArg
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFunctionArgFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -626,9 +635,8 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a FunctionCallArgValue from its ID.
      */
-    public function loadFunctionCallArgValueFromID(
-        FunctionCallArgValueId|FunctionCallArgValue $id,
-    ): FunctionCallArgValue {
+    public function loadFunctionCallArgValueFromID(FunctionCallArgValueId $id): FunctionCallArgValue
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFunctionCallArgValueFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\FunctionCallArgValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -637,7 +645,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a FunctionCall from its ID.
      */
-    public function loadFunctionCallFromID(FunctionCallId|FunctionCall $id): FunctionCall
+    public function loadFunctionCallFromID(FunctionCallId $id): FunctionCall
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFunctionCallFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -647,7 +655,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Function from its ID.
      */
-    public function loadFunctionFromID(FunctionId|Function_ $id): Function_
+    public function loadFunctionFromID(FunctionId $id): Function_
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFunctionFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -657,7 +665,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a GeneratedCode from its ID.
      */
-    public function loadGeneratedCodeFromID(GeneratedCodeId|GeneratedCode $id): GeneratedCode
+    public function loadGeneratedCodeFromID(GeneratedCodeId $id): GeneratedCode
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratedCodeFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -667,7 +675,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Generator from its ID.
      */
-    public function loadGeneratorFromID(GeneratorId|Generator $id): Generator
+    public function loadGeneratorFromID(GeneratorId $id): Generator
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratorFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -677,7 +685,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a GeneratorGroup from its ID.
      */
-    public function loadGeneratorGroupFromID(GeneratorGroupId|GeneratorGroup $id): GeneratorGroup
+    public function loadGeneratorGroupFromID(GeneratorGroupId $id): GeneratorGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGeneratorGroupFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -687,7 +695,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a GitRef from its ID.
      */
-    public function loadGitRefFromID(GitRefId|GitRef $id): GitRef
+    public function loadGitRefFromID(GitRefId $id): GitRef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGitRefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -697,7 +705,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a GitRepository from its ID.
      */
-    public function loadGitRepositoryFromID(GitRepositoryId|GitRepository $id): GitRepository
+    public function loadGitRepositoryFromID(GitRepositoryId $id): GitRepository
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGitRepositoryFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -707,7 +715,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a HTTPState from its ID.
      */
-    public function loadHTTPStateFromID(HTTPStateId|HTTPState $id): HTTPState
+    public function loadHTTPStateFromID(HTTPStateId $id): HTTPState
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHTTPStateFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -717,7 +725,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a HealthcheckConfig from its ID.
      */
-    public function loadHealthcheckConfigFromID(HealthcheckConfigId|HealthcheckConfig $id): HealthcheckConfig
+    public function loadHealthcheckConfigFromID(HealthcheckConfigId $id): HealthcheckConfig
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHealthcheckConfigFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -727,7 +735,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Host from its ID.
      */
-    public function loadHostFromID(HostId|Host $id): Host
+    public function loadHostFromID(HostId $id): Host
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHostFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -737,7 +745,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a InputTypeDef from its ID.
      */
-    public function loadInputTypeDefFromID(InputTypeDefId|InputTypeDef $id): InputTypeDef
+    public function loadInputTypeDefFromID(InputTypeDefId $id): InputTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadInputTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -747,7 +755,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a InterfaceTypeDef from its ID.
      */
-    public function loadInterfaceTypeDefFromID(InterfaceTypeDefId|InterfaceTypeDef $id): InterfaceTypeDef
+    public function loadInterfaceTypeDefFromID(InterfaceTypeDefId $id): InterfaceTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadInterfaceTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -757,7 +765,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a JSONValue from its ID.
      */
-    public function loadJSONValueFromID(JsonValueId|JsonValue $id): JsonValue
+    public function loadJSONValueFromID(JsonValueId $id): JsonValue
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadJSONValueFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -767,7 +775,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a LLM from its ID.
      */
-    public function loadLLMFromID(LLMId|LLM $id): LLM
+    public function loadLLMFromID(LLMId $id): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -777,7 +785,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a LLMTokenUsage from its ID.
      */
-    public function loadLLMTokenUsageFromID(LLMTokenUsageId|LLMTokenUsage $id): LLMTokenUsage
+    public function loadLLMTokenUsageFromID(LLMTokenUsageId $id): LLMTokenUsage
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMTokenUsageFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -787,7 +795,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Label from its ID.
      */
-    public function loadLabelFromID(LabelId|Label $id): Label
+    public function loadLabelFromID(LabelId $id): Label
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLabelFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -797,7 +805,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a ListTypeDef from its ID.
      */
-    public function loadListTypeDefFromID(ListTypeDefId|ListTypeDef $id): ListTypeDef
+    public function loadListTypeDefFromID(ListTypeDefId $id): ListTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadListTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -807,7 +815,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a ModuleConfigClient from its ID.
      */
-    public function loadModuleConfigClientFromID(ModuleConfigClientId|ModuleConfigClient $id): ModuleConfigClient
+    public function loadModuleConfigClientFromID(ModuleConfigClientId $id): ModuleConfigClient
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleConfigClientFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -817,7 +825,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Module from its ID.
      */
-    public function loadModuleFromID(ModuleId|Module $id): Module
+    public function loadModuleFromID(ModuleId $id): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -827,7 +835,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a ModuleSource from its ID.
      */
-    public function loadModuleSourceFromID(ModuleSourceId|ModuleSource $id): ModuleSource
+    public function loadModuleSourceFromID(ModuleSourceId $id): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleSourceFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -837,7 +845,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a ObjectTypeDef from its ID.
      */
-    public function loadObjectTypeDefFromID(ObjectTypeDefId|ObjectTypeDef $id): ObjectTypeDef
+    public function loadObjectTypeDefFromID(ObjectTypeDefId $id): ObjectTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadObjectTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -847,7 +855,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a PhpSdk from its ID.
      */
-    public function loadPhpSdkFromID(PhpSdkId|PhpSdk $id): PhpSdk
+    public function loadPhpSdkFromID(PhpSdkId $id): PhpSdk
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadPhpSdkFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -857,7 +865,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Port from its ID.
      */
-    public function loadPortFromID(PortId|Port $id): Port
+    public function loadPortFromID(PortId $id): Port
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadPortFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -865,19 +873,9 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
-     * Load a Query from its ID.
-     */
-    public function loadQueryFromID(QueryId|Query $id): Client
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadQueryFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Load a RemoteGitMirror from its ID.
      */
-    public function loadRemoteGitMirrorFromID(RemoteGitMirrorId|RemoteGitMirror $id): RemoteGitMirror
+    public function loadRemoteGitMirrorFromID(RemoteGitMirrorId $id): RemoteGitMirror
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadRemoteGitMirrorFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -887,7 +885,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a SDKConfig from its ID.
      */
-    public function loadSDKConfigFromID(SDKConfigId|SDKConfig $id): SDKConfig
+    public function loadSDKConfigFromID(SDKConfigId $id): SDKConfig
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSDKConfigFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -897,7 +895,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a ScalarTypeDef from its ID.
      */
-    public function loadScalarTypeDefFromID(ScalarTypeDefId|ScalarTypeDef $id): ScalarTypeDef
+    public function loadScalarTypeDefFromID(ScalarTypeDefId $id): ScalarTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadScalarTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -907,7 +905,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a SearchResult from its ID.
      */
-    public function loadSearchResultFromID(SearchResultId|SearchResult $id): SearchResult
+    public function loadSearchResultFromID(SearchResultId $id): SearchResult
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSearchResultFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -917,7 +915,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a SearchSubmatch from its ID.
      */
-    public function loadSearchSubmatchFromID(SearchSubmatchId|SearchSubmatch $id): SearchSubmatch
+    public function loadSearchSubmatchFromID(SearchSubmatchId $id): SearchSubmatch
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSearchSubmatchFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -927,7 +925,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Secret from its ID.
      */
-    public function loadSecretFromID(SecretId|Secret $id): Secret
+    public function loadSecretFromID(SecretId $id): Secret
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSecretFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -937,7 +935,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Service from its ID.
      */
-    public function loadServiceFromID(ServiceId|Service $id): Service
+    public function loadServiceFromID(ServiceId $id): Service
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadServiceFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -947,7 +945,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Socket from its ID.
      */
-    public function loadSocketFromID(SocketId|Socket $id): Socket
+    public function loadSocketFromID(SocketId $id): Socket
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSocketFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -957,7 +955,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a SourceMap from its ID.
      */
-    public function loadSourceMapFromID(SourceMapId|SourceMap $id): SourceMap
+    public function loadSourceMapFromID(SourceMapId $id): SourceMap
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSourceMapFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -967,7 +965,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Stat from its ID.
      */
-    public function loadStatFromID(StatId|Stat $id): Stat
+    public function loadStatFromID(StatId $id): Stat
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadStatFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -975,9 +973,19 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a Syncer from its ID.
+     */
+    public function loadSyncerFromID(SyncerId $id): Syncer
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSyncerFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\SyncerClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Terminal from its ID.
      */
-    public function loadTerminalFromID(TerminalId|Terminal $id): Terminal
+    public function loadTerminalFromID(TerminalId $id): Terminal
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadTerminalFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -987,7 +995,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a TypeDef from its ID.
      */
-    public function loadTypeDefFromID(TypeDefId|TypeDef $id): TypeDef
+    public function loadTypeDefFromID(TypeDefId $id): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -997,7 +1005,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Up from its ID.
      */
-    public function loadUpFromID(UpId|Up $id): Up
+    public function loadUpFromID(UpId $id): Up
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadUpFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -1007,7 +1015,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a UpGroup from its ID.
      */
-    public function loadUpGroupFromID(UpGroupId|UpGroup $id): UpGroup
+    public function loadUpGroupFromID(UpGroupId $id): UpGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadUpGroupFromID');
         $innerQueryBuilder->setArgument('id', $id);
@@ -1017,11 +1025,61 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Load a Workspace from its ID.
      */
-    public function loadWorkspaceFromID(WorkspaceId|Workspace $id): Workspace
+    public function loadWorkspaceFromID(WorkspaceId $id): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceGit from its ID.
+     */
+    public function loadWorkspaceGitFromID(WorkspaceGitId $id): WorkspaceGit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceGitFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceGit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceMigration from its ID.
+     */
+    public function loadWorkspaceMigrationFromID(WorkspaceMigrationId $id): WorkspaceMigration
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceMigrationFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceMigration($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceMigrationStep from its ID.
+     */
+    public function loadWorkspaceMigrationStepFromID(WorkspaceMigrationStepId $id): WorkspaceMigrationStep
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceMigrationStepFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceMigrationStep($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceModule from its ID.
+     */
+    public function loadWorkspaceModuleFromID(WorkspaceModuleId $id): WorkspaceModule
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceModuleFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceModuleSetting from its ID.
+     */
+    public function loadWorkspaceModuleSettingFromID(WorkspaceModuleSettingId $id): WorkspaceModuleSetting
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceModuleSettingFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceModuleSetting($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -1033,7 +1091,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function moduleRuntime(ModuleSourceId|ModuleSource $modSource, FileId|File $introspectionJson): Container
+    public function moduleRuntime(ModuleSource $modSource, File $introspectionJson): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleRuntime');
         $innerQueryBuilder->setArgument('modSource', $modSource);
@@ -1066,6 +1124,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
         $innerQueryBuilder->setArgument('requireKind', $requireKind);
         }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load any object by its ID.
+     */
+    public function node(Id $id): Node
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('node');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\NodeClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -1133,7 +1201,7 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * Configure the php-sdk constructor arguments.
      */
-    public function with(DirectoryId|Directory|null $sdkSourceDir = null): Client
+    public function with(?Directory $sdkSourceDir = null): Client
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('with');
         if (null !== $sdkSourceDir) {

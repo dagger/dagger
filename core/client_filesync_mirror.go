@@ -8,7 +8,6 @@ import (
 
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	digest "github.com/opencontainers/go-digest"
@@ -27,7 +26,7 @@ type ClientFilesyncMirror struct {
 
 	snapshot bkcache.MutableRef
 
-	mounter snapshot.Mounter
+	mounter bkcache.Mounter
 	mntPath string
 
 	sharedState *filesync.MirrorSharedState
@@ -80,7 +79,7 @@ func (m *ClientFilesyncMirror) CacheUsageIdentities() []string {
 	return []string{m.snapshot.SnapshotID()}
 }
 
-func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context, _ dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if m == nil {
 		return 0, false, nil
 	}
@@ -102,19 +101,35 @@ type persistedClientFilesyncMirrorPayload struct {
 	Drive          string `json:"drive,omitempty"`
 }
 
-func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (m *ClientFilesyncMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = cache
 	if m == nil {
-		return nil, fmt.Errorf("encode persisted client filesync mirror: nil mirror")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted client filesync mirror: nil mirror")
 	}
 	if m.StableClientID == "" {
-		return nil, fmt.Errorf("encode persisted client filesync mirror: stable client id is empty")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted client filesync mirror: stable client id is empty")
 	}
-	return json.Marshal(persistedClientFilesyncMirrorPayload{
+	m.mu.Lock()
+	var links []dagql.PersistedSnapshotRefLink
+	if m.snapshot != nil {
+		links = []dagql.PersistedSnapshotRefLink{{
+			RefKey: m.snapshot.SnapshotID(),
+			Role:   "snapshot",
+		}}
+	}
+	m.mu.Unlock()
+	payload, err := json.Marshal(persistedClientFilesyncMirrorPayload{
 		StableClientID: m.StableClientID,
 		Drive:          m.Drive,
 	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	return dagql.PersistedObjectEncoding{
+		JSON:          payload,
+		SnapshotLinks: links,
+	}, nil
 }
 
 func (*ClientFilesyncMirror) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
@@ -252,7 +267,7 @@ func (m *ClientFilesyncMirror) ensureRuntimeLocked(ctx context.Context, query *Q
 	if err != nil {
 		return err
 	}
-	m.mounter = snapshot.LocalMounter(mountable)
+	m.mounter = bkcache.LocalMounter(mountable)
 	m.mntPath, err = m.mounter.Mount()
 	if err != nil {
 		return err

@@ -122,7 +122,7 @@ access and cached.
 
 `SchemaBuilder.lazilyLoadSchema`:
 
-```
+```text
 hasEntrypoint?
 ├─ no  → buildSchema(mods) → single server (canonical == self)
 └─ yes → buildSchema(mods with Entrypoint:false) → canonical

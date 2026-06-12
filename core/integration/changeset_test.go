@@ -1,5 +1,9 @@
 package core
 
+// These tests cover Changeset values produced by comparing directories. They
+// verify added, removed, and modified paths, patch/export output, merging, and
+// use from generated module bindings.
+
 import (
 	"context"
 	"fmt"
@@ -263,8 +267,9 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			RemovedLines int    `json:"removedLines"`
 		}
 		err := c.QueryBuilder().
-			Select("loadChangesetFromID").
+			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
+			InlineFragment("Changeset").
 			Select("diffStats").
 			Bind(&diffStats).Execute(ctx)
 		require.NoError(t, err)
@@ -302,8 +307,9 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			RemovedLines int    `json:"removedLines"`
 		}
 		err := c.QueryBuilder().
-			Select("loadChangesetFromID").
+			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
+			InlineFragment("Changeset").
 			Select("diffStats").
 			Bind(&diffStats).Execute(ctx)
 		require.NoError(t, err)
@@ -337,8 +343,9 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			RemovedLines int    `json:"removedLines"`
 		}
 		err := c.QueryBuilder().
-			Select("loadChangesetFromID").
+			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
+			InlineFragment("Changeset").
 			Select("diffStats").
 			Bind(&diffStats).Execute(ctx)
 		require.NoError(t, err)
@@ -778,43 +785,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-func New() *Test {
-	return &Test{
-		Dir: dag.Directory().
-			WithNewFile("foo.txt", "foo\nbar\nbaz").
-			WithNewFile("bar.txt", "hey").
-			WithNewDirectory("emptydir"),
-	}
-}
-
-type Test struct {
-	Dir *dagger.Directory
-}
-
-func (t *Test) Update() *dagger.Changeset {
-	return t.Dir.
-		WithNewFile("foo.txt", "foo\nbaz").
-		WithoutFile("bar.txt").
-		WithNewFile("baz.txt", "im new here").
-		WithoutDirectory("emptydir").
-		Changes(t.Dir)
-}
-
-func (t *Test) NoChanges() *dagger.Changeset {
-	return t.Dir.Changes(t.Dir)
-}
-`,
-		).
+	modGen := moduleEntrypointFixture(t, c, "test", "go/changeset-export").
 		With(daggerCall("dir", "-o", "./outdir"))
 
 	t.Run("export", func(ctx context.Context, t *testctx.T) {
@@ -874,6 +845,7 @@ func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
 	s.testChangeApplying(t, func(dest *dagger.Directory, source *dagger.Changeset) *dagger.Directory {
 		return dest.WithChanges(source)
 	}, false)
+	s.testWithChangesSymlinks(t)
 }
 
 func (s ChangesetSuite) TestChangesAsPatch(ctx context.Context, t *testctx.T) {
@@ -1331,6 +1303,133 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		nodeEntries, err := resultDir.Directory("node").Entries(ctx)
 		require.NoError(t, err)
 		require.Empty(t, nodeEntries)
+	})
+
+	t.Run("file replaced by directory hides older lower directory contents", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		seed := c.Container().
+			WithDirectory("/node", c.Directory().WithNewFile("hidden.txt", "hidden")).
+			WithoutDirectory("/node").
+			WithNewFile("/node", "file")
+
+		seedRef, err := seed.Publish(ctx, registryRef("with-changes-file-to-dir-opaque-seed"))
+		require.NoError(t, err)
+
+		baseDir := c.Container().From(seedRef).Rootfs()
+		beforeDir := c.Directory()
+		afterDir := c.Directory().WithNewFile("node/new.txt", "new")
+		changes := afterDir.Changes(beforeDir)
+
+		resultDir := baseDir.WithChanges(changes)
+
+		nodeEntries, err := resultDir.Directory("node").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"new.txt"}, nodeEntries)
+	})
+
+	t.Run("directory replaced by file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		beforeDir := c.Directory().
+			WithNewFile("node/old.txt", "old")
+
+		afterDir := c.Directory().
+			WithNewFile("node", "now file")
+
+		changes := afterDir.Changes(beforeDir)
+
+		resultDir := beforeDir.WithChanges(changes)
+
+		fileType, err := resultDir.Stat("node", dagger.DirectoryStatOpts{
+			DoNotFollowSymlinks: true,
+		}).FileType(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dagger.FileTypeRegularType, fileType)
+
+		contents, err := resultDir.File("node").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "now file", contents)
+	})
+}
+
+func (ChangesetSuite) testWithChangesSymlinks(t *testctx.T) {
+	t.Run("symlink changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		beforeDir := c.Directory().
+			WithNewFile("target-old.txt", "old").
+			WithNewFile("target-new.txt", "new").
+			WithNewFile("keep-target.txt", "keep").
+			WithSymlink("target-old.txt", "retarget").
+			WithSymlink("keep-target.txt", "remove-link").
+			WithNewFile("file-to-link", "regular").
+			WithSymlink("target-old.txt", "link-to-file").
+			WithNewFile("link-dir-target/file.txt", "dir target").
+			WithSymlink("link-dir-target", "remove-dir-link")
+
+		afterDir := c.Directory().
+			WithNewFile("target-old.txt", "old").
+			WithNewFile("target-new.txt", "new").
+			WithNewFile("keep-target.txt", "keep").
+			WithSymlink("target-new.txt", "retarget").
+			WithSymlink("target-new.txt", "file-to-link").
+			WithNewFile("link-to-file", "now regular").
+			WithNewFile("link-dir-target/file.txt", "dir target").
+			WithSymlink("target-new.txt", "new-link").
+			WithSymlink("missing-target.txt", "dangling-link")
+
+		resultDir := beforeDir.WithChanges(afterDir.Changes(beforeDir))
+
+		assertFileType := func(p string, expected dagger.FileType) {
+			fileType, err := resultDir.Stat(p, dagger.DirectoryStatOpts{
+				DoNotFollowSymlinks: true,
+			}).FileType(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expected, fileType, p)
+		}
+
+		assertFileType("retarget", dagger.FileTypeSymlinkType)
+		assertFileType("file-to-link", dagger.FileTypeSymlinkType)
+		assertFileType("new-link", dagger.FileTypeSymlinkType)
+		assertFileType("dangling-link", dagger.FileTypeSymlinkType)
+		assertFileType("link-to-file", dagger.FileTypeRegularType)
+
+		contents, err := resultDir.File("retarget").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new", contents)
+
+		contents, err = resultDir.File("file-to-link").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new", contents)
+
+		contents, err = resultDir.File("new-link").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new", contents)
+
+		contents, err = resultDir.File("link-to-file").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "now regular", contents)
+
+		exists, err := resultDir.Exists(ctx, "remove-link", dagger.DirectoryExistsOpts{
+			DoNotFollowSymlinks: true,
+		})
+		require.NoError(t, err)
+		require.False(t, exists)
+
+		contents, err = resultDir.File("keep-target.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep", contents)
+
+		exists, err = resultDir.Exists(ctx, "remove-dir-link", dagger.DirectoryExistsOpts{
+			DoNotFollowSymlinks: true,
+		})
+		require.NoError(t, err)
+		require.False(t, exists)
+
+		contents, err = resultDir.File("link-dir-target/file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dir target", contents)
 	})
 }
 

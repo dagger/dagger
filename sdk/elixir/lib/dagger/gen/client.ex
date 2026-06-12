@@ -33,7 +33,7 @@ defmodule Dagger.Client do
   Constructs a cache volume for a given cache key.
   """
   @spec cache_volume(t(), String.t(), [
-          {:source, Dagger.DirectoryID.t() | nil},
+          {:source, Dagger.Directory.t() | nil},
           {:sharing, Dagger.CacheSharingMode.t() | nil},
           {:owner, String.t() | nil}
         ]) :: Dagger.CacheVolume.t()
@@ -42,7 +42,10 @@ defmodule Dagger.Client do
       client.query_builder
       |> QB.select("cacheVolume")
       |> QB.put_arg("key", key)
-      |> QB.maybe_put_arg("source", optional_args[:source])
+      |> QB.maybe_put_arg(
+        "source",
+        if(optional_args[:source], do: Dagger.ID.id!(optional_args[:source]), else: nil)
+      )
       |> QB.maybe_put_arg("sharing", optional_args[:sharing])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
 
@@ -171,8 +174,9 @@ defmodule Dagger.Client do
          %Dagger.TypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
            client: client.client
          }
        end}
@@ -344,11 +348,11 @@ defmodule Dagger.Client do
   @spec git(t(), String.t(), [
           {:keep_git_dir, boolean() | nil},
           {:ssh_known_hosts, String.t() | nil},
-          {:ssh_auth_socket, Dagger.SocketID.t() | nil},
+          {:ssh_auth_socket, Dagger.Socket.t() | nil},
           {:http_auth_username, String.t() | nil},
-          {:http_auth_token, Dagger.SecretID.t() | nil},
-          {:http_auth_header, Dagger.SecretID.t() | nil},
-          {:experimental_service_host, Dagger.ServiceID.t() | nil}
+          {:http_auth_token, Dagger.Secret.t() | nil},
+          {:http_auth_header, Dagger.Secret.t() | nil},
+          {:experimental_service_host, Dagger.Service.t() | nil}
         ]) :: Dagger.GitRepository.t()
   def git(%__MODULE__{} = client, url, optional_args \\ []) do
     query_builder =
@@ -357,11 +361,35 @@ defmodule Dagger.Client do
       |> QB.put_arg("url", url)
       |> QB.maybe_put_arg("keepGitDir", optional_args[:keep_git_dir])
       |> QB.maybe_put_arg("sshKnownHosts", optional_args[:ssh_known_hosts])
-      |> QB.maybe_put_arg("sshAuthSocket", optional_args[:ssh_auth_socket])
+      |> QB.maybe_put_arg(
+        "sshAuthSocket",
+        if(optional_args[:ssh_auth_socket],
+          do: Dagger.ID.id!(optional_args[:ssh_auth_socket]),
+          else: nil
+        )
+      )
       |> QB.maybe_put_arg("httpAuthUsername", optional_args[:http_auth_username])
-      |> QB.maybe_put_arg("httpAuthToken", optional_args[:http_auth_token])
-      |> QB.maybe_put_arg("httpAuthHeader", optional_args[:http_auth_header])
-      |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
+      |> QB.maybe_put_arg(
+        "httpAuthToken",
+        if(optional_args[:http_auth_token],
+          do: Dagger.ID.id!(optional_args[:http_auth_token]),
+          else: nil
+        )
+      )
+      |> QB.maybe_put_arg(
+        "httpAuthHeader",
+        if(optional_args[:http_auth_header],
+          do: Dagger.ID.id!(optional_args[:http_auth_header]),
+          else: nil
+        )
+      )
+      |> QB.maybe_put_arg(
+        "experimentalServiceHost",
+        if(optional_args[:experimental_service_host],
+          do: Dagger.ID.id!(optional_args[:experimental_service_host]),
+          else: nil
+        )
+      )
 
     %Dagger.GitRepository{
       query_builder: query_builder,
@@ -390,8 +418,8 @@ defmodule Dagger.Client do
           {:name, String.t() | nil},
           {:permissions, integer() | nil},
           {:checksum, String.t() | nil},
-          {:auth_header, Dagger.SecretID.t() | nil},
-          {:experimental_service_host, Dagger.ServiceID.t() | nil}
+          {:auth_header, Dagger.Secret.t() | nil},
+          {:experimental_service_host, Dagger.Service.t() | nil}
         ]) :: Dagger.File.t()
   def http(%__MODULE__{} = client, url, optional_args \\ []) do
     query_builder =
@@ -401,8 +429,17 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
       |> QB.maybe_put_arg("checksum", optional_args[:checksum])
-      |> QB.maybe_put_arg("authHeader", optional_args[:auth_header])
-      |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
+      |> QB.maybe_put_arg(
+        "authHeader",
+        if(optional_args[:auth_header], do: Dagger.ID.id!(optional_args[:auth_header]), else: nil)
+      )
+      |> QB.maybe_put_arg(
+        "experimentalServiceHost",
+        if(optional_args[:experimental_service_host],
+          do: Dagger.ID.id!(optional_args[:experimental_service_host]),
+          else: nil
+        )
+      )
 
     %Dagger.File{
       query_builder: query_builder,
@@ -413,7 +450,7 @@ defmodule Dagger.Client do
   @doc """
   A unique identifier for this Query.
   """
-  @spec id(t()) :: {:ok, Dagger.QueryID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = client) do
     query_builder =
       client.query_builder |> QB.select("id")
@@ -778,6 +815,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadErrorValueFromID") |> QB.put_arg("id", id)
 
     %Dagger.ErrorValue{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a Exportable from its ID.
+  """
+  @spec load_exportable_from_id(t(), Dagger.ExportableID.t()) :: Dagger.Exportable.t()
+  def load_exportable_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadExportableFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Exportable{
       query_builder: query_builder,
       client: client.client
     }
@@ -1153,20 +1204,6 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Load a Query from its ID.
-  """
-  @spec load_query_from_id(t(), Dagger.QueryID.t()) :: Dagger.Client.t()
-  def load_query_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadQueryFromID") |> QB.put_arg("id", id)
-
-    %Dagger.Client{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc """
   Load a RemoteGitMirror from its ID.
   """
   @spec load_remote_git_mirror_from_id(t(), Dagger.RemoteGitMirrorID.t()) ::
@@ -1309,6 +1346,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a Syncer from its ID.
+  """
+  @spec load_syncer_from_id(t(), Dagger.SyncerID.t()) :: Dagger.Syncer.t()
+  def load_syncer_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadSyncerFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Syncer{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a Terminal from its ID.
   """
   @spec load_terminal_from_id(t(), Dagger.TerminalID.t()) :: Dagger.Terminal.t()
@@ -1379,6 +1430,84 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a WorkspaceGit from its ID.
+  """
+  @spec load_workspace_git_from_id(t(), Dagger.WorkspaceGitID.t()) :: Dagger.WorkspaceGit.t()
+  def load_workspace_git_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadWorkspaceGitFromID") |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceGit{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a WorkspaceMigration from its ID.
+  """
+  @spec load_workspace_migration_from_id(t(), Dagger.WorkspaceMigrationID.t()) ::
+          Dagger.WorkspaceMigration.t()
+  def load_workspace_migration_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadWorkspaceMigrationFromID") |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceMigration{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a WorkspaceMigrationStep from its ID.
+  """
+  @spec load_workspace_migration_step_from_id(t(), Dagger.WorkspaceMigrationStepID.t()) ::
+          Dagger.WorkspaceMigrationStep.t()
+  def load_workspace_migration_step_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder
+      |> QB.select("loadWorkspaceMigrationStepFromID")
+      |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceMigrationStep{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a WorkspaceModule from its ID.
+  """
+  @spec load_workspace_module_from_id(t(), Dagger.WorkspaceModuleID.t()) ::
+          Dagger.WorkspaceModule.t()
+  def load_workspace_module_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadWorkspaceModuleFromID") |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceModule{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a WorkspaceModuleSetting from its ID.
+  """
+  @spec load_workspace_module_setting_from_id(t(), Dagger.WorkspaceModuleSettingID.t()) ::
+          Dagger.WorkspaceModuleSetting.t()
+  def load_workspace_module_setting_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder
+      |> QB.select("loadWorkspaceModuleSettingFromID")
+      |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceModuleSetting{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new module.
   """
   @spec module(t()) :: Dagger.Module.t()
@@ -1412,6 +1541,20 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("requireKind", optional_args[:require_kind])
 
     %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load any object by its ID.
+  """
+  @spec node(t(), String.t()) :: Dagger.Node.t() | nil
+  def node(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("node") |> QB.put_arg("id", id)
+
+    %Dagger.Node{
       query_builder: query_builder,
       client: client.client
     }
@@ -1506,6 +1649,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Client do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_client_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Client{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Query"),
+       client: dag.client
+     }}
   end
 end

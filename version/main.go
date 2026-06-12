@@ -14,6 +14,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// +cache="session"
 func New(
 	ctx context.Context,
 
@@ -44,8 +45,11 @@ func New(
 	}
 
 	if git, err := gitParent.Directory(".git").Sync(ctx); err == nil {
-		v.Git = git.AsGit()
-		v.GitDir = git
+		repo := git.AsGit()
+		if _, err := repo.Head().Commit(ctx); err == nil {
+			v.Git = repo
+			v.GitDir = git
+		}
 	}
 
 	return v
@@ -64,6 +68,7 @@ type Version struct {
 }
 
 // Generate a version string from the current context
+// +cache="session"
 func (v Version) Version(ctx context.Context) (string, error) {
 	if v.Git == nil {
 		return v.fallbackVersion(ctx)
@@ -147,6 +152,7 @@ func (v Version) fallbackVersion(ctx context.Context) (string, error) {
 }
 
 // Return the tag to use when auto-downloading the engine image from the CLI
+// +cache="session"
 func (v Version) ImageTag(ctx context.Context) (string, error) {
 	if v.Git == nil {
 		return v.fallbackVersion(ctx)
@@ -194,6 +200,7 @@ func (v Version) Dirty(ctx context.Context) (bool, error) {
 	return !isEmpty, nil
 }
 
+// +cache="session"
 func (v Version) CurrentTag(ctx context.Context) (string, error) {
 	if v.Git == nil {
 		return "", nil
@@ -223,6 +230,8 @@ func (v Version) tagsAtCommit(ctx context.Context, commit string) ([]string, err
 		WithWorkdir("/src").
 		WithMountedDirectory(".git", v.GitDir).
 		WithExec([]string{"git", "config", "url.https://github.com/.insteadOf", "git@github.com:"}).
+		// Remote tags are mutable, so avoid reusing a stale pre-tag fetch layer.
+		WithEnvVariable("DAGGER_VERSION_CACHE_BUSTER", time.Now().UTC().Format(time.RFC3339Nano)).
 		WithExec([]string{"git", "fetch", "--tags"}).
 		WithExec([]string{"git", "tag", "-l", "--points-at=" + commit}).
 		Stdout(ctx)

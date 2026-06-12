@@ -99,7 +99,7 @@ func generateConfig(logLevel string) (*dagger.File, error) {
 	return config, nil
 }
 
-func generateBKConfig(kvs []string) (*dagger.File, error) {
+func generateEngineTOML(kvs []string) (*dagger.File, error) {
 	opts := map[string]string{}
 	for _, kv := range kvs {
 		k, v, ok := strings.Cut(kv, "=")

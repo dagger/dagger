@@ -1,0 +1,36 @@
+version: 2.1
+jobs:
+  test:
+    docker:
+      - image: cimg/base:2024.09
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Install Dagger CLI
+          command: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      - run:
+          name: Test
+          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=.
+  build:
+    docker:
+      - image: cimg/base:2024.09
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Install Dagger CLI
+          command: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      - run:
+          name: Build
+          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build-container --source=https://github.com/golang/example#master:hello --args=. publish --address=ttl.sh/my-app-$RANDOM
+workflows:
+  dagger:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test
+
+# assumes the Dagger Cloud token is
+# in a project environment variable named DAGGER_CLOUD_TOKEN

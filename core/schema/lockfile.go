@@ -1,0 +1,214 @@
+package schema
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/engine"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+const lockCoreNamespace = ""
+
+type workspaceLookupLock struct {
+	ctx   context.Context
+	query *core.Query
+	lock  *workspace.Lock
+}
+
+func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspaceLookupLock, error) {
+	lock, ok, err := query.CurrentWorkspaceLock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+
+	return &workspaceLookupLock{
+		ctx:   ctx,
+		query: query,
+		lock:  lock,
+	}, nil
+}
+
+func (l *workspaceLookupLock) SetLookup(namespace, operation string, inputs []any, result workspace.LookupResult) error {
+	if l == nil {
+		return fmt.Errorf("workspace lock is required")
+	}
+	if err := l.query.SetCurrentWorkspaceLookup(l.ctx, namespace, operation, inputs, result); err != nil {
+		return err
+	}
+	if err := l.lock.SetLookup(namespace, operation, inputs, result); err != nil {
+		return err
+	}
+	return nil
+}
+
+func currentLookupLockMode(ctx context.Context) (workspace.LockMode, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", fmt.Errorf("client metadata: %w", err)
+	}
+	return workspace.ResolveLockMode(clientMetadata.LockMode)
+}
+
+// lookupLockForMode is the policy boundary between ordinary lookups and
+// workspace lockfiles. Default/live/pinned lookups use a writable local
+// workspace lock binding when one exists; without one they resolve live and
+// skip lock writes. Frozen mode is different: it is an explicit request to
+// enforce a lockfile, so absence of a writable workspace lock is an error.
+func lookupLockForMode(
+	ctx context.Context,
+	query *core.Query,
+	operation string,
+) (workspace.LockMode, *workspaceLookupLock, error) {
+	lockMode, err := currentLookupLockMode(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s lock mode: %w", operation, err)
+	}
+	if lockMode == workspace.LockModeDisabled {
+		return lockMode, nil, nil
+	}
+
+	lookupLock, err := loadWorkspaceLookupLock(ctx, query)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s lockfile: %w", operation, err)
+	}
+	if lookupLock == nil {
+		if lockMode == workspace.LockModeFrozen {
+			return "", nil, fmt.Errorf("%s lockfile: no writable workspace lockfile is available", operation)
+		}
+		return workspace.LockModeDisabled, nil, nil
+	}
+	return lockMode, lookupLock, nil
+}
+
+type lookupLockResolution struct {
+	Pin         string
+	Policy      workspace.LockPolicy
+	ShouldWrite bool
+	Found       bool
+}
+
+func resolveLookupFromLock(
+	lockMode workspace.LockMode,
+	lock *workspace.Lock,
+	operation string,
+	inputs []any,
+	requestedPolicy workspace.LockPolicy,
+) (lookupLockResolution, error) {
+	resolution := lookupLockResolution{
+		Policy: requestedPolicy,
+	}
+
+	if lockMode == workspace.LockModeDisabled {
+		return resolution, nil
+	}
+
+	if lock != nil {
+		if lockResult, ok, err := lock.GetLookup(lockCoreNamespace, operation, inputs); err != nil {
+			return resolution, fmt.Errorf("invalid lock entry for %s %v: %w", operation, inputs, err)
+		} else if ok {
+			resolution.Found = true
+			resolution.Policy = lockResult.Policy
+			switch lockMode {
+			case workspace.LockModeLive:
+				resolution.ShouldWrite = true
+				return resolution, nil
+			case workspace.LockModeFrozen:
+				resolution.Pin = lockResult.Value
+				return resolution, nil
+			case workspace.LockModePinned:
+				if resolution.Policy == workspace.PolicyPin {
+					resolution.Pin = lockResult.Value
+				} else {
+					resolution.ShouldWrite = true
+				}
+				return resolution, nil
+			default:
+				return resolution, fmt.Errorf("unsupported lock mode %q", lockMode)
+			}
+		}
+	}
+
+	switch lockMode {
+	case workspace.LockModeLive:
+		resolution.ShouldWrite = true
+		return resolution, nil
+	case workspace.LockModePinned:
+		resolution.ShouldWrite = true
+		return resolution, nil
+	case workspace.LockModeFrozen:
+		return resolution, fmt.Errorf("missing lock entry for %s %v", operation, inputs)
+	default:
+		return resolution, fmt.Errorf("unsupported lock mode %q", lockMode)
+	}
+}
+
+func lockHostPath(ws *core.Workspace) (string, error) {
+	if ws.LockFile == "" {
+		return "", fmt.Errorf("workspace lockfile is not selected")
+	}
+	return workspaceHostPath(ws, ws.LockFile)
+}
+
+func readWorkspaceLock(ctx context.Context, bk interface {
+	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
+}, ws *core.Workspace) (*workspace.Lock, error) {
+	lock, _, err := readWorkspaceLockState(ctx, bk, ws)
+	return lock, err
+}
+
+func readWorkspaceLockState(ctx context.Context, bk interface {
+	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
+}, ws *core.Workspace) (*workspace.Lock, bool, error) {
+	lockPath, err := lockHostPath(ws)
+	if err != nil {
+		return nil, false, err
+	}
+
+	data, err := bk.ReadCallerHostFile(ctx, lockPath)
+	if err != nil {
+		if isWorkspaceLockNotFound(err) {
+			legacyPath, err := legacyLockHostPath(ws)
+			if err != nil {
+				return nil, false, err
+			}
+			if legacyPath == "" || legacyPath == lockPath {
+				return workspace.NewLock(), false, nil
+			}
+			data, err = bk.ReadCallerHostFile(ctx, legacyPath)
+			if err != nil {
+				if isWorkspaceLockNotFound(err) {
+					return workspace.NewLock(), false, nil
+				}
+				return nil, false, fmt.Errorf("reading legacy lock: %w", err)
+			}
+		} else {
+			return nil, false, fmt.Errorf("reading lock: %w", err)
+		}
+	}
+
+	lock, err := workspace.ParseLock(data)
+	if err != nil {
+		return nil, false, fmt.Errorf("parsing lock: %w", err)
+	}
+	return lock, true, nil
+}
+
+func isWorkspaceLockNotFound(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+func legacyLockHostPath(ws *core.Workspace) (string, error) {
+	if ws == nil || ws.LockFile == "" {
+		return "", nil
+	}
+	return workspaceHostPath(ws, workspace.LegacyLockFilePathForCanonical(ws.LockFile))
+}

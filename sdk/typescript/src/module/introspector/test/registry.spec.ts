@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
+import { describe, it } from "mocha"
 
 import { dag, Container } from "../../../api/client.gen.js"
 import { connection } from "../../../connect.js"

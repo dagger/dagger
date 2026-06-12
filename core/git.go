@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -249,13 +250,13 @@ type persistedRemoteGitRepositoryPayload struct {
 	Platform      Platform `json:"platform"`
 }
 
-func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if repo == nil {
-		return nil, fmt.Errorf("encode persisted git repository: nil repository")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: nil repository")
 	}
 	remoteJSON, err := json.Marshal(repo.Remote)
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted git repository remote: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git repository remote: %w", err)
 	}
 	payload := persistedGitRepositoryPayload{
 		DiscardGitDir: repo.DiscardGitDir,
@@ -265,7 +266,7 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 	case *LocalGitRepository:
 		dirID, err := encodePersistedObjectRef(cache, backend.Directory, "git repository directory")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.Form = persistedGitRepositoryFormLocal
 		payload.Local = &persistedLocalGitRepositoryPayload{
@@ -273,7 +274,7 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 		}
 	case *RemoteGitRepository:
 		if backend.URL == nil {
-			return nil, fmt.Errorf("encode persisted git repository: remote backend missing URL")
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: remote backend missing URL")
 		}
 		payload.Form = persistedGitRepositoryFormRemote
 		payload.Remote = &persistedRemoteGitRepositoryPayload{
@@ -283,13 +284,13 @@ func (repo *GitRepository) EncodePersistedObject(ctx context.Context, cache dagq
 			Platform:      backend.Platform,
 		}
 	default:
-		return nil, fmt.Errorf("encode persisted git repository: unsupported backend %T", repo.Backend)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git repository: unsupported backend %T", repo.Backend)
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted git repository payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git repository payload: %w", err)
 	}
-	return payloadJSON, nil
+	return encodePersistedObjectRawJSON(payloadJSON), nil
 }
 
 func (*GitRepository) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
@@ -356,17 +357,17 @@ type persistedGitRefPayload struct {
 	SHA          string `json:"sha"`
 }
 
-func (ref *GitRef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (ref *GitRef) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if ref == nil {
-		return nil, fmt.Errorf("encode persisted git ref: nil ref")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git ref: nil ref")
 	}
 	if ref.Ref == nil {
-		return nil, fmt.Errorf("encode persisted git ref: missing ref")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted git ref: missing ref")
 	}
 	repoID, err := encodePersistedObjectRef(cache, ref.Repo, "git ref repo")
 	if err != nil {
-		return nil, err
+		return dagql.PersistedObjectEncoding{}, err
 	}
 	payloadJSON, err := json.Marshal(persistedGitRefPayload{
 		RepoResultID: repoID,
@@ -374,9 +375,9 @@ func (ref *GitRef) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		SHA:          ref.Ref.SHA,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted git ref payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted git ref payload: %w", err)
 	}
-	return payloadJSON, nil
+	return encodePersistedObjectRawJSON(payloadJSON), nil
 }
 
 func (*GitRef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
@@ -497,10 +498,32 @@ func doGitCheckout(
 		}
 	}
 
+	if !discardGitDir {
+		if _, err := checkoutGit.Run(ctx, "read-tree", "HEAD"); err != nil {
+			return fmt.Errorf("failed to normalize git index: %w", err)
+		}
+	}
+
 	if discardGitDir {
 		if err := os.RemoveAll(checkoutDirGit); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("failed to remove .git: %w", err)
 		}
+	}
+
+	checkoutDir, err := checkoutGit.WorkTree(ctx)
+	if err != nil {
+		return fmt.Errorf("could not find worktree: %w", err)
+	}
+	// Use a deterministic non-zero timestamp. Some build tools treat missing
+	// outputs as epoch and skip initial copies when sources are also epoch.
+	normalizedTime := []unix.Timespec{{Sec: 1}, {Sec: 1}}
+	if err := filepath.WalkDir(checkoutDir, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return unix.UtimesNanoAt(unix.AT_FDCWD, path, normalizedTime, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return fmt.Errorf("failed to normalize checkout timestamps: %w", err)
 	}
 
 	return nil

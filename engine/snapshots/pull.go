@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	telemetry "github.com/dagger/otel-go"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -31,6 +34,18 @@ func (cm *snapshotManager) ImportImage(
 		if rerr != nil && current != nil {
 			_ = current.Release(context.WithoutCancel(ctx))
 		}
+	}()
+
+	// Encapsulated like the resolver's "pulling" span: hidden unless it
+	// fails, with its streaming progress surfacing on visible ancestors
+	// (e.g. the originating Container.from call).
+	name := opts.ImageRef
+	if name == "" {
+		name = img.Ref
+	}
+	span, ctx := tracing.StartSpan(ctx, "unpacking "+DisplayRef(name), telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
 	}()
 
 	for _, layer := range img.Layers {
@@ -230,9 +245,23 @@ func (cm *snapshotManager) importImageLayer(
 	if err != nil {
 		return nil, err
 	}
-	if _, err := cm.Applier.Apply(ctx, desc, mounts); err != nil {
+	var applyOpts []diff.ApplyOpt
+	var unpack *ProgressTracker
+	if desc.Size > 0 {
+		unpack = NewProgressTracker(ctx, desc.Digest.String(), desc.Size, "bytes")
+		applyOpts = append(applyOpts, diff.WithProgress(func(_ ocispecs.Descriptor, read int64) {
+			unpack.Update(read)
+		}))
+	}
+	if _, err := cm.Applier.Apply(ctx, desc, mounts, applyOpts...); err != nil {
 		_ = unmount()
 		return nil, err
+	}
+	if unpack != nil {
+		// a successful apply consumed the whole blob even if the
+		// decompressor skipped trailing bytes
+		unpack.Update(desc.Size)
+		unpack.Finish()
 	}
 	if err := unmount(); err != nil {
 		return nil, err
@@ -319,8 +348,12 @@ func (cm *snapshotManager) linkContentToContextLease(ctx context.Context, desc o
 	if desc.Digest == "" {
 		return nil
 	}
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return errors.Wrap(err, "ensure lease for content")
+	}
 	leaseID, ok := leases.FromContext(ctx)
-	if !ok {
+	if !ok || leaseID == "" {
 		return nil
 	}
 	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{

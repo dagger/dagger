@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,10 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	ctdleases "github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
@@ -56,6 +57,7 @@ type Service struct {
 	InsecureRootCapabilities      bool
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
+	ModuleContext                 dagql.ObjectResult[*Module]
 	ExecMeta                      *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
@@ -76,6 +78,215 @@ func (*Service) Type() *ast.Type {
 
 func (*Service) TypeDescription() string {
 	return "A content-addressed service providing TCP connectivity."
+}
+
+var _ dagql.PersistedObject = (*Service)(nil)
+var _ dagql.PersistedObjectDecoder = (*Service)(nil)
+var _ dagql.HasDependencyResults = (*Service)(nil)
+
+type persistedServicePayload struct {
+	CustomHostname                string                        `json:"customHostname,omitempty"`
+	ContainerResultID             uint64                        `json:"containerResultID,omitempty"`
+	Args                          []string                      `json:"args,omitempty"`
+	ExperimentalPrivilegedNesting bool                          `json:"experimentalPrivilegedNesting,omitempty"`
+	InsecureRootCapabilities      bool                          `json:"insecureRootCapabilities,omitempty"`
+	NoInit                        bool                          `json:"noInit,omitempty"`
+	ExecMD                        *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	ModuleContextResultID         uint64                        `json:"moduleContextResultID,omitempty"`
+	ExecMeta                      *executor.Meta                `json:"execMeta,omitempty"`
+	TunnelUpstreamResultID        uint64                        `json:"tunnelUpstreamResultID,omitempty"`
+	TunnelPorts                   []PortForward                 `json:"tunnelPorts,omitempty"`
+	HostSockets                   []persistedServiceHostSocket  `json:"hostSockets,omitempty"`
+}
+
+type persistedServiceHostSocket struct {
+	Kind           SocketKind                  `json:"kind,omitempty"`
+	Handle         dagql.SessionResourceHandle `json:"handle,omitempty"`
+	URLVal         string                      `json:"urlVal,omitempty"`
+	PortForwardVal PortForward                 `json:"portForwardVal,omitempty"`
+	SourceClientID string                      `json:"sourceClientID,omitempty"`
+}
+
+type persistedServiceBinding struct {
+	ServiceResultID uint64   `json:"serviceResultID"`
+	Hostname        string   `json:"hostname"`
+	Aliases         AliasSet `json:"aliases,omitempty"`
+}
+
+func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	if svc == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted service: nil service")
+	}
+	payload := persistedServicePayload{
+		CustomHostname:                svc.CustomHostname,
+		Args:                          slices.Clone(svc.Args),
+		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      svc.InsecureRootCapabilities,
+		NoInit:                        svc.NoInit,
+		ExecMD:                        svc.ExecMD,
+		ExecMeta:                      svc.ExecMeta,
+		TunnelPorts:                   slices.Clone(svc.TunnelPorts),
+		HostSockets:                   make([]persistedServiceHostSocket, 0, len(svc.HostSockets)),
+	}
+	var err error
+	if svc.Container.Self() != nil {
+		payload.ContainerResultID, err = encodePersistedObjectRef(cache, svc.Container, "service container")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+	}
+	if svc.ModuleContext.Self() != nil {
+		payload.ModuleContextResultID, err = encodePersistedObjectRef(cache, svc.ModuleContext, "service module context")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+	}
+	if svc.TunnelUpstream.Self() != nil {
+		payload.TunnelUpstreamResultID, err = encodePersistedObjectRef(cache, svc.TunnelUpstream, "service tunnel upstream")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+	}
+	for i, sock := range svc.HostSockets {
+		if sock == nil {
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted service host socket %d: nil socket", i)
+		}
+		payload.HostSockets = append(payload.HostSockets, persistedServiceHostSocket{
+			Kind:           sock.Kind,
+			Handle:         sock.Handle,
+			URLVal:         sock.URLVal,
+			PortForwardVal: sock.PortForwardVal,
+			SourceClientID: sock.SourceClientID,
+		})
+	}
+	enc, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted service payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(enc), nil
+}
+
+func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedServicePayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted service payload: %w", err)
+	}
+	container, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ContainerResultID, "service container")
+	if err != nil {
+		return nil, err
+	}
+	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleContextResultID, "service module context")
+	if err != nil {
+		return nil, err
+	}
+	tunnelUpstream, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.TunnelUpstreamResultID, "service tunnel upstream")
+	if err != nil {
+		return nil, err
+	}
+	hostSockets := make([]*Socket, 0, len(persisted.HostSockets))
+	for _, sock := range persisted.HostSockets {
+		hostSockets = append(hostSockets, &Socket{
+			Kind:           sock.Kind,
+			Handle:         sock.Handle,
+			URLVal:         sock.URLVal,
+			PortForwardVal: sock.PortForwardVal,
+			SourceClientID: sock.SourceClientID,
+		})
+	}
+	return &Service{
+		CustomHostname:                persisted.CustomHostname,
+		Container:                     container,
+		Args:                          slices.Clone(persisted.Args),
+		ExperimentalPrivilegedNesting: persisted.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      persisted.InsecureRootCapabilities,
+		NoInit:                        persisted.NoInit,
+		ExecMD:                        persisted.ExecMD,
+		ModuleContext:                 moduleContext,
+		ExecMeta:                      persisted.ExecMeta,
+		TunnelUpstream:                tunnelUpstream,
+		TunnelPorts:                   slices.Clone(persisted.TunnelPorts),
+		HostSockets:                   hostSockets,
+	}, nil
+}
+
+func (svc *Service) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	if svc == nil {
+		return nil, nil
+	}
+	var owned []dagql.AnyResult
+	if svc.Container.Self() != nil {
+		container, err := attachContainerResult(attach, svc.Container, "attach service container")
+		if err != nil {
+			return nil, err
+		}
+		svc.Container = container
+		owned = append(owned, container)
+	}
+	if svc.ModuleContext.Self() != nil {
+		attached, err := attach(svc.ModuleContext)
+		if err != nil {
+			return nil, fmt.Errorf("attach service module context: %w", err)
+		}
+		moduleContext, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach service module context: expected %T, got %T", svc.ModuleContext, attached)
+		}
+		svc.ModuleContext = moduleContext
+		owned = append(owned, moduleContext)
+	}
+	if svc.TunnelUpstream.Self() != nil {
+		upstream, err := attachServiceResult(attach, svc.TunnelUpstream, "attach service tunnel upstream")
+		if err != nil {
+			return nil, err
+		}
+		svc.TunnelUpstream = upstream
+		owned = append(owned, upstream)
+	}
+	return owned, nil
+}
+
+func encodePersistedServiceBindings(cache dagql.PersistedObjectCache, owner string, bindings ServiceBindings) ([]persistedServiceBinding, error) {
+	if len(bindings) == 0 {
+		return nil, nil
+	}
+	persisted := make([]persistedServiceBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		serviceID, err := encodePersistedObjectRef(cache, binding.Service, fmt.Sprintf("%s service %q", owner, binding.Hostname))
+		if err != nil {
+			return nil, err
+		}
+		persisted = append(persisted, persistedServiceBinding{
+			ServiceResultID: serviceID,
+			Hostname:        binding.Hostname,
+			Aliases:         slices.Clone(binding.Aliases),
+		})
+	}
+	return persisted, nil
+}
+
+func decodePersistedServiceBindings(ctx context.Context, dag *dagql.Server, owner string, persisted []persistedServiceBinding) (ServiceBindings, error) {
+	if len(persisted) == 0 {
+		return nil, nil
+	}
+	bindings := make(ServiceBindings, 0, len(persisted))
+	for _, binding := range persisted {
+		service, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, binding.ServiceResultID, fmt.Sprintf("%s service %q", owner, binding.Hostname))
+		if err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, ServiceBinding{
+			Service:  service,
+			Hostname: binding.Hostname,
+			Aliases:  slices.Clone(binding.Aliases),
+		})
+	}
+	return bindings, nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -270,6 +481,31 @@ func (io *ServiceIO) Close() error {
 	return errors.Join(errs...)
 }
 
+// firstValidSpanContext returns the first IsValid() context from spans, or a
+// zero SpanContext if none are valid.
+func firstValidSpanContext(spans []trace.SpanContext) trace.SpanContext {
+	for _, s := range spans {
+		if s.IsValid() {
+			return s
+		}
+	}
+	return trace.SpanContext{}
+}
+
+// trackOriginIfMissing stamps the given origin onto err's message (as
+// [traceparent:...]) unless err is nil or already carries an origin. The
+// receiving span's EndWithCause will then add the origin as an error-origin
+// link.
+func trackOriginIfMissing(err error, origin trace.SpanContext) error {
+	if err == nil || !origin.IsValid() {
+		return err
+	}
+	if len(telemetry.ParseErrorOrigins(err.Error())) > 0 {
+		return err
+	}
+	return telemetry.TrackOrigin(err, origin)
+}
+
 func (svc *Service) Start(
 	ctx context.Context,
 	running *RunningService,
@@ -348,16 +584,13 @@ func (svc *Service) startContainer(
 		execMD, err = ctr.execMeta(ctx, ContainerExecOpts{
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
 			NoInit:                        svc.NoInit,
-		}, nil)
+		}, nil, svc.ModuleContext)
 		if err != nil {
 			return err
 		}
 	} else {
 		cloned := *execMD
 		execMD = &cloned
-	}
-	if opts.LogTargetCallDigest != "" {
-		execMD.LogTargetCallDigest = opts.LogTargetCallDigest
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -368,11 +601,21 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return err
 	}
-	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
+	detachDeps, runningDeps, err := svcs.StartBindings(ctx, ctr.Services)
 	if err != nil {
 		return fmt.Errorf("start dependent services: %w", err)
 	}
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
+
+	propagateDependencyExits := len(runningDeps) > 0 &&
+		running.Key.Kind != ServiceRuntimeInteractive &&
+		(opts.IO == nil || !opts.IO.Interactive)
+	var dependencyErrCh <-chan error
+	if propagateDependencyExits {
+		var stopDependencyMonitors func()
+		dependencyErrCh, stopDependencyMonitors = monitorServiceBindings(ctx, ctr.Services, runningDeps, nil)
+		cleanup.Add("stop dependent service monitors", cleanups.Infallible(stopDependencyMonitors))
+	}
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
@@ -405,6 +648,18 @@ func (svc *Service) startContainer(
 	cache := query.SnapshotManager()
 
 	svcID := identity.NewID()
+	serviceResourceLeaseID := "dagger-service-" + svcID
+	_, err = query.LeaseManager().Create(ctx,
+		ctdleases.WithID(serviceResourceLeaseID),
+		ctdleases.WithLabel("dagger.io/lease.type", "service"),
+		ctdleases.WithLabel("dagger.io/service.id", svcID),
+		ctdleases.WithLabel("dagger.io/service.digest", dig.String()),
+	)
+	if err != nil {
+		return fmt.Errorf("create service resource lease: %w", err)
+	}
+	running.setResourceLease(cache, serviceResourceLeaseID)
+	ctx = ctdleases.WithLease(ctx, serviceResourceLeaseID)
 
 	releaseLockedCaches, err := lockMountedCaches(ctx, ctr.Mounts)
 	if err != nil {
@@ -428,6 +683,27 @@ func (svc *Service) startContainer(
 	cleanup.Add("release output refs", func() error {
 		return p.releaseOutputRefs(context.WithoutCancel(ctx))
 	})
+	protectedSnapshots := make(map[string]struct{})
+	for _, state := range p.States {
+		for _, ref := range []bkcache.Ref{
+			state.SourceRef,
+			state.ActiveRef,
+			state.OutputMutable,
+			state.OutputImmutable,
+		} {
+			if ref == nil {
+				continue
+			}
+			snapshotID := ref.SnapshotID()
+			if _, ok := protectedSnapshots[snapshotID]; ok {
+				continue
+			}
+			protectedSnapshots[snapshotID] = struct{}{}
+			if err := running.ProtectRef(ctx, ref); err != nil {
+				return fmt.Errorf("protect service mount snapshot %s: %w", snapshotID, err)
+			}
+		}
+	}
 
 	meta := svc.ExecMeta
 	if meta == nil {
@@ -436,7 +712,7 @@ func (svc *Service) startContainer(
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
 			InsecureRootCapabilities:      svc.InsecureRootCapabilities,
 			NoInit:                        svc.NoInit,
-		})
+		}, false)
 		if err != nil {
 			return err
 		}
@@ -447,9 +723,26 @@ func (svc *Service) startContainer(
 		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
 	}
 
-	attrs := []attribute.KeyValue{}
-	if opts.LogTargetCallDigest != "" {
-		attrs = append(attrs, attribute.String(telemetryattrs.UIResumeOutputAttr, opts.LogTargetCallDigest.String()))
+	attrs := []attribute.KeyValue{
+		// Hide the synthetic service exec span from the UI; its failure
+		// status propagates up to the installing API span (e.g. .asService)
+		// via the cause link below, and its stdio logs are routed there via
+		// DagDigestAttr from executor_spec.
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
+
+	originSpanContexts := running.originSpanContextsSnapshot()
+	if len(originSpanContexts) == 0 {
+		originSpanContexts = normalizeSpanContexts(opts.OriginSpanContexts)
+		running.addOriginSpanContexts(originSpanContexts)
+	}
+
+	spanOpts := []trace.SpanStartOption{trace.WithAttributes(attrs...)}
+	// Cause-link the service exec span to the API spans that installed the
+	// Service value. If this service exits with an error, dagui will then
+	// surface the failure on the installing API span (e.g. .asService).
+	for _, originCtx := range originSpanContexts {
+		spanOpts = append(spanOpts, trace.WithLinks(serviceOriginLink(originCtx)))
 	}
 
 	ctx, span := Tracer(ctx).Start(
@@ -457,8 +750,18 @@ func (svc *Service) startContainer(
 		ctx,
 		// Match naming scheme of normal exec span.
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
-		trace.WithAttributes(attrs...),
+		spanOpts...,
 	)
+	running.setServiceSpan(span, originSpanContexts)
+	// Pick a single install-span context as the canonical "error origin" for
+	// the running service so binding-exit errors can carry a traceparent
+	// pointing at it. Fall back to the service span itself when no install
+	// span is known (e.g. for direct startResult calls outside a dagql call).
+	originCtx := firstValidSpanContext(originSpanContexts)
+	if !originCtx.IsValid() {
+		originCtx = span.SpanContext()
+	}
+	running.setErrorOrigin(originCtx)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -505,18 +808,52 @@ func (svc *Service) startContainer(
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
-	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD)
+	var nestedClientMetadata *engine.ClientMetadata
+	if svc.ExperimentalPrivilegedNesting {
+		nestedClientMetadata = &engine.ClientMetadata{
+			ClientID:          identity.NewID(),
+			ClientVersion:     engine.Version,
+			SessionID:         clientMetadata.SessionID,
+			AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
+			LockMode:          clientMetadata.LockMode,
+		}
+	}
+
 	exited := make(chan struct{})
+	// Route the service's stdio logs to the installing API call's row by
+	// passing its span context as the executor cause context. setupOTel uses
+	// that as the active span for SpanStdio, so log records get tied to the
+	// install span ID — the same way a normal withExec's logs are tied to
+	// its dagql call span.
+	logTargetCtx := originCtx
+	if !logTargetCtx.IsValid() {
+		logTargetCtx = span.SpanContext()
+	}
 	runErr := make(chan error)
 	go func() {
-		_, err := worker.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
-			Meta:   *meta,
-			Stdin:  stdinReader,
-			Stdout: stdoutWriters,
-			Stderr: stderrWriters,
-			Resize: resize,
-			Signal: signal,
-		}, started)
+		err := bk.Run(
+			ctx,
+			svcID,
+			p.Root,
+			p.Mounts,
+			executor.ProcessInfo{
+				Meta:   *meta,
+				Stdin:  stdinReader,
+				Stdout: stdoutWriters,
+				Stderr: stderrWriters,
+				Resize: resize,
+				Signal: signal,
+			},
+			started,
+			logTargetCtx,
+			execMD,
+			clientMetadata.SessionID,
+			clientMetadata.ClientID,
+			nestedClientMetadata,
+			svc.ModuleContext,
+			nil,
+			dagql.ObjectResult[*Env]{},
+		)
 		runErr <- err
 	}()
 	select {
@@ -528,7 +865,7 @@ func (svc *Service) startContainer(
 	checked := make(chan error, 1)
 
 	if ctr.Config.Healthcheck != nil {
-		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, span.SpanContext())
+		dockerHealthcheck, err := newDockerHealthcheck(bk, svcID, ctr, span.SpanContext())
 		if err != nil {
 			return fmt.Errorf("failed to setup docker healthcheck: %w", err)
 		}
@@ -542,6 +879,23 @@ func (svc *Service) startContainer(
 	}
 
 	var stopped atomic.Bool
+	var serviceErrMu sync.Mutex
+	var serviceErr error
+	setServiceErr := func(err error) {
+		if err == nil {
+			return
+		}
+		serviceErrMu.Lock()
+		defer serviceErrMu.Unlock()
+		if serviceErr == nil {
+			serviceErr = err
+		}
+	}
+	getServiceErr := func() error {
+		serviceErrMu.Lock()
+		defer serviceErrMu.Unlock()
+		return serviceErr
+	}
 
 	var exitErr error
 	go func() {
@@ -550,7 +904,7 @@ func (svc *Service) startContainer(
 			close(exited)
 		}()
 
-		exitErr = <-runErr
+		exitErr = trackOriginIfMissing(<-runErr, originCtx)
 		slog.Info("service exited", "err", exitErr)
 
 		// show the exit status; doing so won't fail anything, and is
@@ -558,7 +912,9 @@ func (svc *Service) startContainer(
 		var telemetryErr error
 		defer telemetry.EndWithCause(span, &telemetryErr)
 		defer func() {
-			if !stopped.Load() {
+			if err := getServiceErr(); err != nil {
+				telemetryErr = err
+			} else if !stopped.Load() {
 				// we only care about the exit result (likely 137) if we weren't stopped
 				telemetryErr = exitErr
 			}
@@ -587,6 +943,9 @@ func (svc *Service) startContainer(
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-exited:
+			if err := getServiceErr(); err != nil {
+				return err
+			}
 			return exitErr
 		}
 	}
@@ -611,6 +970,44 @@ func (svc *Service) startContainer(
 		}
 	}
 
+	stopDueToDependencyExit := func(depErr error) error {
+		if depErr == nil {
+			depErr = fmt.Errorf("dependent service exited")
+		}
+		setServiceErr(depErr)
+		if err := stopSvc(context.Background(), true); err != nil {
+			return errors.Join(depErr, err)
+		}
+		return depErr
+	}
+
+	// If a dependency exits while exit propagation is suppressed (e.g. during a
+	// service terminal), remember it and stop this service when suppression lifts.
+	var pendingDependencyErr error
+	var havePendingDependencyErr bool
+	deferDependencyExitIfSuppressed := func(depErr error) bool {
+		if !running.isDependencyExitPropagationSuppressed() {
+			return false
+		}
+		pendingDependencyErr = depErr
+		havePendingDependencyErr = true
+		return true
+	}
+
+	propagateDependencyExitAfterSuppression := func(depErr error, haveDepErr bool, depErrCh <-chan error) {
+		if !haveDepErr {
+			var ok bool
+			depErr, ok = <-depErrCh
+			if !ok {
+				return
+			}
+		}
+		if err := running.waitDependencyExitPropagationUnsuppressed(context.Background()); err != nil {
+			return
+		}
+		_ = stopDueToDependencyExit(depErr)
+	}
+
 	execSvc := func(ctx context.Context, cmd []string, env []string, sio *ServiceIO) error {
 		meta := *meta
 		meta.Args = cmd
@@ -630,7 +1027,7 @@ func (svc *Service) startContainer(
 			stderrWriter = sio.Stderr
 			resizeCh = convertResizeChannel(ctx, sio.ResizeCh)
 		}
-		err = worker.Exec(ctx, svcID, executor.ProcessInfo{
+		err = bk.Exec(ctx, svcID, executor.ProcessInfo{
 			Meta:   meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
@@ -640,35 +1037,50 @@ func (svc *Service) startContainer(
 		return err
 	}
 
-	select {
-	case err := <-checked:
-		if err != nil {
-			return fmt.Errorf("health check errored: %w", err)
-		}
-
-		running.Host = fullHost
-		running.Ports = ctr.Ports
-		running.Stop = stopSvc
-		running.Wait = waitSvc
-		running.Exec = execSvc
-		running.ContainerID = svcID
-		return nil
-	case <-exited:
-		if exitErr != nil {
-			var gwErr *gwpb.ExitError
-			if errors.As(exitErr, &gwErr) {
-				// Create ExecError with available service information
-				return &ExecError{
-					Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
-					Cmd:      meta.Args,
-					ExitCode: int(gwErr.ExitCode),
-					Stdout:   stdoutBuf.String(),
-					Stderr:   stderrBuf.String(),
-				}
+	for {
+		select {
+		case err := <-checked:
+			if err != nil {
+				return fmt.Errorf("health check errored: %w", err)
 			}
-			return exitErr
+
+			running.Host = fullHost
+			running.Ports = ctr.Ports
+			running.Stop = stopSvc
+			running.Wait = waitSvc
+			running.Exec = execSvc
+			running.ContainerID = svcID
+			if havePendingDependencyErr || dependencyErrCh != nil {
+				go propagateDependencyExitAfterSuppression(pendingDependencyErr, havePendingDependencyErr, dependencyErrCh)
+			}
+			return nil
+		case depErr, ok := <-dependencyErrCh:
+			if !ok {
+				dependencyErrCh = nil
+				continue
+			}
+			if deferDependencyExitIfSuppressed(depErr) {
+				dependencyErrCh = nil
+				continue
+			}
+			return stopDueToDependencyExit(depErr)
+		case <-exited:
+			if exitErr != nil {
+				var gwErr *gwpb.ExitError
+				if errors.As(exitErr, &gwErr) {
+					// Create ExecError with available service information
+					return &ExecError{
+						Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
+						Cmd:      meta.Args,
+						ExitCode: int(gwErr.ExitCode),
+						Stdout:   stdoutBuf.String(),
+						Stderr:   stderrBuf.String(),
+					}
+				}
+				return exitErr
+			}
+			return fmt.Errorf("service exited before healthcheck")
 		}
-		return fmt.Errorf("service exited before healthcheck")
 	}
 }
 
@@ -1078,7 +1490,7 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, err
 	}
 
-	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
+	usage, err := bk.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
 	if err != nil {
 		return res, false, fmt.Errorf("failed to check for changes: %w", err)
 	}
@@ -1126,7 +1538,9 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
 	}
 
-	running.TrackRef(abandonedRef)
+	if err := running.TrackRef(ctx, abandonedRef); err != nil {
+		return res, false, fmt.Errorf("track mcp remount ref: %w", err)
+	}
 	abandonedRef = nil
 
 	srv, err := CurrentDagqlServer(ctx)
@@ -1191,6 +1605,33 @@ type ServiceBinding struct {
 	Service  dagql.ObjectResult[*Service]
 	Hostname string
 	Aliases  AliasSet
+}
+
+func (bndp ServiceBindings) AttachDependencyResults(
+	owner string,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
+	owned := make([]dagql.DependencyResult, 0, len(bndp))
+	for i := range bndp {
+		binding := &bndp[i]
+		if binding.Service.Self() == nil {
+			continue
+		}
+		attached, err := attach(binding.Service)
+		if err != nil {
+			return nil, fmt.Errorf("attach %s service %q: %w", owner, binding.Hostname, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Service])
+		if !ok {
+			return nil, fmt.Errorf("attach %s service %q: unexpected result %T", owner, binding.Hostname, attached)
+		}
+		binding.Service = typed
+		owned = append(owned, dagql.DependencyResult{
+			Result: typed,
+			Owned:  false,
+		})
+	}
+	return owned, nil
 }
 
 type AliasSet []string

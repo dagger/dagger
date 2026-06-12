@@ -10,9 +10,9 @@ import (
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/util/parallel"
+	"golang.org/x/mod/semver"
 
 	"dagger/engine-dev/build"
-
 	"dagger/engine-dev/internal/dagger"
 )
 
@@ -63,10 +63,10 @@ func New(
 type EngineDev struct {
 	Source *dagger.Directory
 
-	BuildkitConfig []string // +private
-	LogLevel       string   // +private
-	SubnetNumber   int      // +private
-	EBPFProgs      []string // +private
+	EngineConfig []string // +private
+	LogLevel     string   // +private
+	SubnetNumber int      // +private
+	EBPFProgs    []string // +private
 
 	Race               bool // +private
 	ClientDockerConfig *dagger.Secret
@@ -86,8 +86,8 @@ func (dev *EngineDev) WithEBPFProgs(names []string) *EngineDev {
 	return dev
 }
 
-func (dev *EngineDev) WithBuildkitConfig(key, value string) *EngineDev {
-	dev.BuildkitConfig = append(dev.BuildkitConfig, key+"="+value)
+func (dev *EngineDev) WithEngineConfig(key, value string) *EngineDev {
+	dev.EngineConfig = append(dev.EngineConfig, key+"="+value)
 	return dev
 }
 
@@ -99,10 +99,6 @@ func (dev *EngineDev) WithRace() *EngineDev {
 func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	dev.LogLevel = level
 	return dev
-}
-
-func (dev *EngineDev) sourceWithEbpfObjects() *dagger.Directory {
-	return dev.Source.With(build.EbpfGenerate)
 }
 
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
@@ -160,7 +156,7 @@ func (dev *EngineDev) Container(
 	if err != nil {
 		return nil, err
 	}
-	bkcfg, err := generateBKConfig(dev.BuildkitConfig)
+	engineTOML, err := generateEngineTOML(dev.EngineConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -192,11 +188,14 @@ func (dev *EngineDev) Container(
 
 	ctr = ctr.
 		WithFile(engineJSONPath, cfg).
-		WithFile(engineTOMLPath, bkcfg).
+		WithFile(engineTOMLPath, engineTOML).
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{
+		Version:  version,
+		ImageTag: tag,
+	}).Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -247,10 +246,9 @@ func (dev *EngineDev) Service(
 	devEngine = devEngine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
-			// only one engine can run off it's local state dir at a time; Private means that we will attempt to re-use
-			// these cache volumes if they are not already locked to another running engine but otherwise will create a new
-			// one, which gets us best-effort cache re-use for these nested engine services
-			Sharing: dagger.CacheSharingModePrivate,
+			// Only one engine can safely use a state dir at a time. LOCKED keeps the
+			// cache identity stable while serializing concurrent users.
+			Sharing: dagger.CacheSharingModeLocked,
 		})
 
 	if metrics {
@@ -360,9 +358,9 @@ func (dev *EngineDev) IntrospectionTool() *dagger.File {
 }
 
 // Generate the json schema for a dagger config file
-// Currently supported: "dagger.json", "engine.json"
+// Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
 func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
-	schemaFilename := strings.TrimSuffix(filename, ".json") + ".schema.json"
+	schemaFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".schema.json"
 	// This tool has runtime dependencies on the engine source code itself
 	return dag.Go(dagger.GoOpts{Source: dev.Source}).
 		Env().
@@ -376,18 +374,8 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
 // +generate
-func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
-	// ebpf object files are actually expected to only be generated during a build, not
-	// committed, so we remove stubs and real ones before+after go generate
+func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 	base := dev.Source
-	ebpfObjectFiles, err := base.Glob(ctx, "**/*_bpfel.o")
-	if err != nil {
-		return nil, err
-	}
-	if len(ebpfObjectFiles) > 0 {
-		base = base.WithoutFiles(ebpfObjectFiles)
-	}
-
 	withGoGenerate := dag.Go(dagger.GoOpts{
 		Source: dev.Source,
 		ExtraPackages: []string{
@@ -404,7 +392,6 @@ func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
-		WithExec([]string{"find", "engine/ebpf", "-name", "*_bpfel.o", "-delete"}).
 		WithExec([]string{"go", "test", "./dagql", "-update"}).
 		Directory(".")
 	changes := changes(base, withGoGenerate, []string{"github.com"})
@@ -492,6 +479,7 @@ func (dev *EngineDev) Publish(
 }
 
 func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]targetResult, error) {
+	releaseVersion := releaseVersionFromTags(tags)
 	targetResults := make([]targetResult, len(targets))
 	jobs := parallel.New()
 	for i, target := range targets {
@@ -504,7 +492,7 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := dev.Container(ctx, platform, target.GPUSupport, "", "")
+					ctr, err := dev.Container(ctx, platform, target.GPUSupport, releaseVersion, releaseVersion)
 					if err != nil {
 						return err
 					}
@@ -522,6 +510,15 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		return nil, err
 	}
 	return targetResults, nil
+}
+
+func releaseVersionFromTags(tags []string) string {
+	for _, tag := range tags {
+		if semver.IsValid(tag) {
+			return tag
+		}
+	}
+	return ""
 }
 
 func (dev *EngineDev) pushTargets(

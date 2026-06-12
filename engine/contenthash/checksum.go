@@ -13,7 +13,6 @@ import (
 	"sync/atomic"
 
 	cache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
@@ -201,7 +200,7 @@ func (m *mount) mount(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	lm := snapshot.LocalMounter(mounts)
+	lm := cache.LocalMounter(mounts)
 
 	mp, err := lm.Mount()
 	if err != nil {

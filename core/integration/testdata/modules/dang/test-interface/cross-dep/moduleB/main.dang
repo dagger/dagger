@@ -1,0 +1,14 @@
+type ModuleB {
+  pub fileOverlay(path: String!, contents: String!): FileOverlay! {
+    FileOverlay(path, contents)
+  }
+}
+
+type FileOverlay {
+  pub path: String!
+  pub contents: String!
+
+  pub apply(container: Dagger.Container!): Dagger.Container! {
+    container.withNewFile(path, contents)
+  }
+}

@@ -161,6 +161,8 @@ pub struct FullTypeFields {
     pub type_: Option<FullTypeFieldsType>,
     pub is_deprecated: Option<bool>,
     pub deprecation_reason: Option<String>,
+    #[serde(default)]
+    pub directives: Option<Vec<DirectiveApplication>>,
 
     #[serde(skip)]
     pub parent_type: Option<FullType>,
@@ -204,6 +206,8 @@ pub struct InputValue {
     #[serde(rename = "type")]
     pub type_: InputValueType,
     pub default_value: Option<String>,
+    #[serde(default)]
+    pub directives: Option<Vec<DirectiveApplication>>,
 }
 
 type InputValueType = TypeRef;
@@ -267,6 +271,39 @@ pub struct Schema {
     pub subscription_type: Option<SchemaSubscriptionType>,
     pub types: Option<Vec<Option<SchemaTypes>>>,
     directives: Option<Vec<Option<SchemaDirectives>>>,
+}
+
+/// A directive applied to a schema element (field, argument, etc.).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectiveApplication {
+    pub name: String,
+    #[serde(default)]
+    pub args: Vec<DirectiveApplicationArg>,
+}
+
+/// A single argument on a directive application.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectiveApplicationArg {
+    pub name: String,
+    pub value: Option<String>,
+}
+
+/// Extension trait for extracting `@expectedType` from directive lists.
+pub trait DirectivesExt {
+    fn expected_type(&self) -> Option<String>;
+}
+
+impl DirectivesExt for Option<Vec<DirectiveApplication>> {
+    fn expected_type(&self) -> Option<String> {
+        let directives = self.as_ref()?;
+        let d = directives.iter().find(|d| d.name == "expectedType")?;
+        let arg = d.args.iter().find(|a| a.name == "name")?;
+        let raw = arg.value.as_ref()?;
+        // The value is JSON-encoded, e.g. `"\"Container\""`.
+        serde_json::from_str::<String>(raw).ok()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

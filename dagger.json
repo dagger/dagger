@@ -1,9 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.20.6",
-  "sdk": {
-    "source": "go"
-  },
+  "engineVersion": "v0.21.0",
   "toolchains": [
     {
       "name": "changelog",
@@ -38,6 +35,7 @@
           "ignore": [
             "bin",
             ".git",
+            "**/.git",
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",
@@ -67,20 +65,37 @@
       "source": "toolchains/go-sdk-dev"
     },
     {
-      "name": "helm",
-      "source": "toolchains/helm-dev"
+      "name": "golang",
+      "source": "github.com/dagger/go@main",
+      "pin": "4985ec6b9752e9deac3d37276c0f8a33ceba30bf",
+      "customizations": [
+        {
+          "argument": "selectModule",
+          "default": "e2e/*"
+        }
+      ]
     },
     {
-      "name": "installers",
-      "source": "toolchains/installers"
+      "name": "helm",
+      "source": "github.com/dagger/helm@main",
+      "pin": "d0a7e172e8212b31c6061bb699495b1e8ba0958f"
     },
     {
       "name": "java-sdk",
       "source": "toolchains/java-sdk-dev"
     },
     {
+      "name": "markdown-lint",
+      "source": "modules/markdownlint"
+    },
+    {
       "name": "php-sdk",
       "source": "toolchains/php-sdk-dev"
+    },
+    {
+      "name": "ps-analyzer",
+      "source": "github.com/dagger/PsScriptAnalyzer@main",
+      "pin": "d87a12883dccd495bee98da9d2c20eb44b6f608d"
     },
     {
       "name": "python-sdk",
@@ -103,9 +118,7 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": [
-            "scanSource"
-          ],
+          "function": ["scanSource"],
           "argument": "source",
           "ignore": [
             "bin",
@@ -120,6 +133,11 @@
       ]
     },
     {
+      "name": "shellcheck",
+      "source": "github.com/dagger/shellcheck@main",
+      "pin": "34bcb268f4483fa31ea9e33b6a86aa7892144323"
+    },
+    {
       "name": "test-split",
       "source": "toolchains/test-split"
     },
@@ -127,13 +145,5 @@
       "name": "typescript-sdk",
       "source": "toolchains/typescript-sdk-dev"
     }
-  ],
-  "include": [
-    "sdk/typescript/runtime/**/*",
-    "engine/distconsts",
-    "go.mod",
-    "go.sum",
-    "util/patchpreview"
-  ],
-  "source": ".dagger"
+  ]
 }

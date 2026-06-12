@@ -9,11 +9,9 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opencontainers/go-digest"
@@ -29,7 +27,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "7058e9313c720d82c6a07fefb6ce3fab60c7ec4e" // v0.20.6
+	goSDKLibVersion = "336f7b79a6df9834f16d8b4d105e05b9b1a39981" // v0.21.6
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
@@ -52,6 +50,20 @@ type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
 
+func (sdk *goSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	if sdk.rawConfig != nil {
+		cp.rawConfig = make(map[string]any, len(sdk.rawConfig))
+		for k, v := range sdk.rawConfig {
+			cp.rawConfig[k] = v
+		}
+	}
+	return &cp
+}
+
 func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
 	return sdk, true
 }
@@ -66,6 +78,13 @@ func (sdk *goSDK) AsCodeGenerator() (core.CodeGenerator, bool) {
 
 func (sdk *goSDK) AsClientGenerator() (core.ClientGenerator, bool) {
 	return sdk, true
+}
+
+func (sdk *goSDK) AttachDependencyResults(
+	context.Context,
+	func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	return nil, nil
 }
 
 func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
@@ -236,13 +255,11 @@ func (sdk *goSDK) Codegen(
 		VCSGeneratedPaths: []string{
 			"dagger.gen.go",
 			"internal/dagger/**",
-			"internal/querybuilder/**",
 			"internal/telemetry/**",
 		},
 		VCSIgnoredPaths: []string{
 			"dagger.gen.go",
 			"internal/dagger",
-			"internal/querybuilder",
 			"internal/telemetry",
 			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 		},
@@ -273,9 +290,9 @@ func (sdk *goSDK) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module for go module sdk module types: %w", err)
 	}
-	currentModuleID, err := scopedMod.ID()
+	moduleContextID, err := core.ResultIDInput(scopedMod)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get current module ID for go module sdk module types: %w", err)
+		return inst, fmt.Errorf("failed to get module context ID for go module sdk module types: %w", err)
 	}
 
 	var ctr dagql.ObjectResult[*core.Container]
@@ -298,23 +315,16 @@ func (sdk *goSDK) ModuleTypes(
 	}
 
 	execMD := engineutil.ExecutionMetadata{
-		ClientID: identity.NewID(),
-		Call:     dagql.CurrentCall(ctx),
-		ExecID:   identity.NewID(),
-		Internal: true,
+		Internal:              true,
+		UseRecipeIDsByDefault: true,
 	}
-	if execMD.Call != nil {
-		callDigest, err := execMD.Call.RecipeDigest(ctx)
+	if curCall := dagql.CurrentCall(ctx); curCall != nil {
+		callDigest, err := curCall.RecipeDigest(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("compute Go SDK exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
 	}
-	execMD.EncodedModuleID, err = currentModuleID.Encode()
-	if err != nil {
-		return inst, err
-	}
-
 	err = dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withMountedFile",
@@ -392,6 +402,10 @@ func (sdk *goSDK) ModuleTypes(
 					Name:  "execMD",
 					Value: dagql.NewDigestedSerializedString(&execMD, goSDKExecMDDigest),
 				},
+				{
+					Name:  "moduleContext",
+					Value: dagql.Opt(moduleContextID),
+				},
 			},
 		},
 	)
@@ -430,24 +444,27 @@ func (sdk *goSDK) ModuleTypes(
 		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
 	}
 
-	modCallID := new(call.ID)
-	if err = json.Unmarshal([]byte(modDefsID), modCallID); err != nil {
-		return inst, fmt.Errorf("failed to decode module call ID from type defs json: %w", err)
+	var modID core.ModuleID
+	if err = json.Unmarshal([]byte(modDefsID), &modID); err != nil {
+		return inst, fmt.Errorf("failed to decode module ID from type defs json: %w", err)
 	}
 
+	modCallID, err := modID.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module ID from type defs json: %w", err)
+	}
 	inst, err = dagql.NewID[*core.Module](modCallID).Load(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
 	}
-	// generate-typedefs emits a handle-form module ID out of the withExec result.
-	// Retain that loaded module under the producing exec container so it cannot be
-	// pruned while the exec result that created it is still live.
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get engine cache for go type defs dependency: %w", err)
-	}
-	if err := cache.AddExplicitDependency(ctx, ctr, inst, "go_sdk_generate_typedefs"); err != nil {
-		return inst, fmt.Errorf("failed to retain generated module result from go type defs exec: %w", err)
+	if modCallID.IsHandle() {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get engine cache for go type defs dependency: %w", err)
+		}
+		if err := cache.AddExplicitDependency(ctx, ctr, inst, "go_sdk_generate_typedefs"); err != nil {
+			return inst, fmt.Errorf("failed to retain generated module result from go type defs exec: %w", err)
+		}
 	}
 
 	return inst, nil

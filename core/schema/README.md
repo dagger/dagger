@@ -133,4 +133,3 @@ query twoContainers {
   }
 }
 ```
-

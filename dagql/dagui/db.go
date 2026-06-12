@@ -61,6 +61,8 @@ type DB struct {
 	pendingResumeOutputs map[resumeOutputKey]SpanSet
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
+
+	testIndex *TestIndex
 }
 
 type resumeOutputKey struct {
@@ -121,6 +123,12 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// always include revealed spans and their parents
 			return true
 		}
+		if span.HasProgress() || len(span.ProgressSpans.Order) > 0 {
+			// always include progress-carrying spans and their ancestor
+			// chain, so remote frontends can place them in the tree even
+			// when they're deep inside unsubscribed subtrees
+			return true
+		}
 		if span.Passthrough {
 			// include any passthrough spans to ensure failures are collected.
 			// the POST /query span for example never fails on its own.
@@ -159,6 +167,11 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 		span := db.findOrAllocSpan(snapshot.ID)
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
+		if snapshot.Progress == nil {
+			// don't lose locally ingested progress to a snapshot that
+			// predates it
+			snapshot.Progress = span.Progress
+		}
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
 		spans[i] = span
@@ -169,6 +182,7 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 }
 
 func (db *DB) update(span *Span) {
+	db.noteTestSpanUpdated(span)
 	if span.Final {
 		// don't bump versions for final spans; leave the remote as the
 		// source of truth, lest we stray forward and miss an actual version bump
@@ -247,6 +261,10 @@ type DBLogExporter struct {
 
 func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
+		if db.ingestProgress(log) {
+			// streaming progress data, not log text
+			continue
+		}
 		if log.Body().AsString() == "" {
 			// eof; ignore
 			continue
@@ -379,6 +397,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		FailedLinks:     NewSpanSet(),
 		CanceledLinks:   NewSpanSet(),
 		ErrorOrigins:    NewSpanSet(),
+		ProgressSpans:   NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
 		db:              db,
@@ -637,6 +656,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// if we're a new child, take a new snapshot for ChildCount
 			db.update(span.ParentSpan)
 		}
+		// progress may have been ingested before the parent linkage was
+		// known (records can arrive ahead of their span, and spans ahead
+		// of their ancestors); re-establish the ancestor registration
+		db.propagateProgressSpans(span)
 	}
 
 	// associate the span to its links
@@ -671,7 +694,13 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// Extract error origins from span error descriptions
 	if span.Status.Code == codes.Error {
 		for _, origin := range telemetry.ParseErrorOrigins(span.Status.Description) {
-			linked := db.initSpan(SpanID{SpanID: origin.SpanID()})
+			originID := SpanID{SpanID: origin.SpanID()}
+			if originID == span.ID {
+				// renderStepError early-returns on any non-empty ErrorOrigins,
+				// so a self-origin would suppress the leaf error message.
+				continue
+			}
+			linked := db.initSpan(originID)
 			span.ErrorOrigins.Add(linked)
 		}
 	}
@@ -756,6 +785,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// FIXME: refactor? can we keep some sort of flat map of spans an append
 	// children to them instead of having the single big ordered list?
 	db.Spans.Add(span)
+	db.noteTestSpanUpdated(span)
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {

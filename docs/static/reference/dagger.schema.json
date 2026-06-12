@@ -1,8 +1,86 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/dagger/dagger/core/modules/module-config-with-user-fields",
-  "$ref": "#/$defs/ModuleConfigWithUserFields",
+  "$id": "https://github.com/dagger/dagger/core/modules/legacy-module-config-with-user-fields",
+  "$ref": "#/$defs/LegacyModuleConfigWithUserFields",
   "$defs": {
+    "LegacyModuleConfigWithUserFields": {
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "description": "The self-describing config schema."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the module."
+        },
+        "engineVersion": {
+          "type": "string",
+          "description": "The version of the engine this module was last updated with."
+        },
+        "sdk": {
+          "$ref": "#/$defs/SDK",
+          "description": "The runtime this module uses. It is serialized as \"runtime\" in dagger-module.toml and as \"sdk\" in legacy dagger.json."
+        },
+        "blueprint": {
+          "$ref": "#/$defs/ModuleConfigDependency",
+          "description": "An optional blueprint module"
+        },
+        "toolchains": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigDependency"
+          },
+          "type": "array",
+          "description": "Toolchain modules"
+        },
+        "include": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Paths to explicitly include from the module, relative to the configuration file."
+        },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigDependency"
+          },
+          "type": "array",
+          "description": "The modules this module depends on."
+        },
+        "source": {
+          "type": "string",
+          "description": "The path, relative to this config file, to the subdir containing the module's implementation source code."
+        },
+        "codegen": {
+          "$ref": "#/$defs/ModuleCodegenConfig",
+          "description": "Codegen configuration for this module."
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Paths to explicitly exclude from the module, relative to the configuration file.\n\nDeprecated: Use !\u003cpattern\u003e in the include list instead."
+        },
+        "clients": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigClient"
+          },
+          "type": "array",
+          "description": "The clients generated for this module."
+        },
+        "disableDefaultFunctionCaching": {
+          "type": "boolean",
+          "description": "If true, disable the new default function caching behavior for this module. Functions will instead default to the old behavior of per-session caching."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "engineVersion"
+      ],
+      "description": "LegacyModuleConfigWithUserFields is the frozen public schema for dagger.json."
+    },
     "ModuleCodegenConfig": {
       "properties": {
         "automaticGitignore": {
@@ -130,84 +208,6 @@
         "source"
       ]
     },
-    "ModuleConfigWithUserFields": {
-      "properties": {
-        "$schema": {
-          "type": "string",
-          "description": "The self-describing json $schema"
-        },
-        "name": {
-          "type": "string",
-          "description": "The name of the module."
-        },
-        "engineVersion": {
-          "type": "string",
-          "description": "The version of the engine this module was last updated with."
-        },
-        "sdk": {
-          "$ref": "#/$defs/SDK",
-          "description": "The SDK this module uses"
-        },
-        "blueprint": {
-          "$ref": "#/$defs/ModuleConfigDependency",
-          "description": "An optional blueprint module"
-        },
-        "toolchains": {
-          "items": {
-            "$ref": "#/$defs/ModuleConfigDependency"
-          },
-          "type": "array",
-          "description": "Toolchain modules"
-        },
-        "include": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Paths to explicitly include from the module, relative to the configuration file."
-        },
-        "dependencies": {
-          "items": {
-            "$ref": "#/$defs/ModuleConfigDependency"
-          },
-          "type": "array",
-          "description": "The modules this module depends on."
-        },
-        "source": {
-          "type": "string",
-          "description": "The path, relative to this config file, to the subdir containing the module's implementation source code."
-        },
-        "codegen": {
-          "$ref": "#/$defs/ModuleCodegenConfig",
-          "description": "Codegen configuration for this module."
-        },
-        "exclude": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Paths to explicitly exclude from the module, relative to the configuration file.\n\nDeprecated: Use !\u003cpattern\u003e in the include list instead."
-        },
-        "clients": {
-          "items": {
-            "$ref": "#/$defs/ModuleConfigClient"
-          },
-          "type": "array",
-          "description": "The clients generated for this module."
-        },
-        "disableDefaultFunctionCaching": {
-          "type": "boolean",
-          "description": "If true, disable the new default function caching behavior for this module. Functions will instead default to the old behavior of per-session caching."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "name",
-        "engineVersion"
-      ],
-      "description": "ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file."
-    },
     "SDK": {
       "properties": {
         "source": {
@@ -232,7 +232,7 @@
       "required": [
         "source"
       ],
-      "description": "SDK represents the sdk field in dagger.json The source can be reference to a built-in sdk e.g."
+      "description": "SDK represents the runtime/sdk field in module config."
     }
   }
 }

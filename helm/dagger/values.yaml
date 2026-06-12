@@ -67,13 +67,12 @@ engine:
   # port: 1234 # The container port that the Dagger Engine will listen on.
 
   ### Configure multiple ports for the Dagger Engine
-  # This allows defining all ports in a structured way
+  # If not defined, defaults to engine.port with name "dagger" and protocol "TCP"
   # Example configuration:
   # containerPorts:
   #   - name: dagger
-  #     containerPort: 1234 # Needs to be the same as engine.port if both are set
-  #     protocol: TCP
-  #     hostPort: 1234  # Optional: Expose the engine port directly on the host node
+  #     containerPort: 1234 # Defaults to engine.port if not specified
+  #     protocol: TCP # Defaults to TCP if not specified
   #   - name: metrics
   #     containerPort: 8080
   #     protocol: TCP
@@ -236,3 +235,15 @@ magicache:
   ### If secretName is set, a new secret will NOT be created
   #
   # secretName: EXISTING_SECRET_NAME
+
+service:
+  ### Kubernetes Service is created automatically when engine.port is defined
+  #
+  ### Service type (ClusterIP, NodePort, LoadBalancer)
+  type: ClusterIP
+
+  ### Additional service annotations
+  annotations: {}
+
+  ### Additional service labels
+  labels: {}

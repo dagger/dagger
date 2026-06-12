@@ -11,11 +11,14 @@ import (
 	"path/filepath"
 
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	telemetry "github.com/dagger/otel-go"
 )
 
 func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg any) error {
@@ -27,7 +30,7 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 
 	ctx = opts.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -90,14 +93,10 @@ func (c *Client) LocalDirExport(
 	merge bool,
 	removePaths []string,
 ) (rerr error) {
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
-	bklog.G(ctx).Debug("exporting local dir")
+	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With("export_path", destPath))
+	slog.DebugContext(ctx, "exporting local dir")
 	defer func() {
-		lg := bklog.G(ctx)
-		if rerr != nil {
-			lg = lg.WithError(rerr)
-		}
-		lg.Trace("finished exporting local dir")
+		slog.TraceContext(ctx, "finished exporting local dir", "err", rerr)
 	}()
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -111,28 +110,43 @@ func (c *Client) LocalDirExport(
 		return err
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	caller, err := c.GetSessionCaller(ctx)
 	if err != nil {
-		return err
-	}
-
-	caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
-	if err != nil {
-		return err
+		return fmt.Errorf("failed to get requester session attachables: %w", err)
 	}
 
 	destPath = path.Clean(destPath)
+	method := "/moby.filesync.v1.FileSend/DiffCopy"
+	if !caller.Supports(method) {
+		return fmt.Errorf("method %s not supported by the client", method)
+	}
+
 	ctx = engine.LocalExportOpts{
 		Path:        destPath,
 		Merge:       merge,
 		RemovePaths: removePaths,
 	}.AppendToOutgoingContext(ctx)
 
-	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, nil); err != nil {
-		return err
+	diffCopyClient, err := filesync.NewFileSendClient(caller.Conn()).DiffCopy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create diff copy client: %w", err)
 	}
+	defer diffCopyClient.CloseSend()
 
-	return nil
+	// Encapsulated like the resolver's "pulling" span: hidden unless it
+	// fails, surfacing as a labeled progress row with a climbing byte count
+	// (the receiver only requests changed files, so the total is unknown
+	// and an up-to-date destination transfers nothing).
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
+	defer download.Finish()
+
+	return sendDiffCopyToCaller(diffCopyClient, outputFS, func(current int, _ bool) {
+		download.Update(int64(current))
+	})
 }
 
 func (c *Client) LocalFileExport(
@@ -142,18 +156,14 @@ func (c *Client) LocalFileExport(
 	destPath string,
 	allowParentDirPath bool,
 ) (rerr error) {
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
-		WithField("export_path", destPath).
-		WithField("file_path", filePath).
-		WithField("allow_parent_dir_path", allowParentDirPath),
-	)
-	bklog.G(ctx).Debug("exporting local file")
+	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With(
+		"export_path", destPath,
+		"file_path", filePath,
+		"allow_parent_dir_path", allowParentDirPath,
+	))
+	slog.DebugContext(ctx, "exporting local file")
 	defer func() {
-		lg := bklog.G(ctx)
-		if rerr != nil {
-			lg = lg.WithError(rerr)
-		}
-		lg.Trace("finished exporting local file")
+		slog.TraceContext(ctx, "finished exporting local file", "err", rerr)
 	}()
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -182,7 +192,7 @@ func (c *Client) LocalFileExport(
 		FileMode:           stat.Mode().Perm(),
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -192,6 +202,15 @@ func (c *Client) LocalFileExport(
 	}
 	defer diffCopyClient.CloseSend()
 
+	// the file size is known up front, so this renders as a 1-D track
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	download := bkcache.NewProgressTracker(ctx, "bytes", stat.Size(), "bytes")
+	defer download.Finish()
+
+	var sent int64
 	fileSizeLeft := stat.Size()
 	chunkSize := int64(MaxFileContentsChunkSize)
 	for fileSizeLeft > 0 {
@@ -204,6 +223,8 @@ func (c *Client) LocalFileExport(
 			return fmt.Errorf("failed to read file: %w", err)
 		}
 		fileSizeLeft -= n
+		sent += n
+		download.Update(sent)
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
@@ -228,14 +249,10 @@ func (c *Client) LocalFileExport(
 // IOReaderExport exports the contents of an io.Reader to the caller's local fs as a file
 // TODO: de-dupe this with the above method to extent possible
 func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath string, destMode os.FileMode) (rerr error) {
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
-	bklog.G(ctx).Debug("exporting bytes")
+	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With("export_path", destPath))
+	slog.DebugContext(ctx, "exporting bytes")
 	defer func() {
-		lg := bklog.G(ctx)
-		if rerr != nil {
-			lg = lg.WithError(rerr)
-		}
-		lg.Trace("finished exporting bytes")
+		slog.TraceContext(ctx, "finished exporting bytes", "err", rerr)
 	}()
 
 	ctx = engine.LocalExportOpts{
@@ -245,7 +262,7 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		FileMode:         destMode,
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -255,11 +272,20 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 	}
 	defer diffCopyClient.CloseSend()
 
+	// the reader's size is unknown, so this renders as a climbing byte count
+	span, ctx := tracing.StartSpan(ctx, "downloading "+destPath, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	download := bkcache.NewProgressTracker(ctx, "bytes", 0, "bytes")
+	defer download.Finish()
+	var sent int64
+
 	chunkSize := int64(MaxFileContentsChunkSize)
 	keepGoing := true
 	for keepGoing {
 		buf := new(bytes.Buffer) // TODO: more efficient to use bufio.Writer, reuse buffers, sync.Pool, etc.
-		_, err := io.CopyN(buf, r, chunkSize)
+		n, err := io.CopyN(buf, r, chunkSize)
 		if errors.Is(err, io.EOF) {
 			keepGoing = false
 			err = nil
@@ -267,6 +293,8 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
+		sent += n
+		download.Update(sent)
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})

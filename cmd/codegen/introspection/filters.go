@@ -1,8 +1,6 @@
 package introspection
 
-import (
-	"slices"
-)
+import "slices"
 
 // Core types that can be extended by the engine itself when
 // installing a dependency.
@@ -38,7 +36,7 @@ func (s *Schema) DependencyNames() []string {
 // This include the actual typedef exposed by the module, enum, interface but
 // also any types that may have been extended by the engine itself for that
 // dependency.
-// For example: `Query.loadXXXFromID`, `Bindings.AsXXX` etc...
+// For example: `Binding.AsXXX` etc...
 func (s *Schema) Include(moduleNames ...string) *Schema {
 	filteredSchema := &Schema{
 		QueryType:  s.QueryType,
@@ -64,7 +62,7 @@ func (s *Schema) Include(moduleNames ...string) *Schema {
 // This exclude the actual typedef exposed by the module, enum, interface but
 // also any types that may have been extended by the engine itself for that
 // dependency.
-// For example: `Query.loadXXXFromID`, `Bindings.AsXXX` etc...
+// For example: `Binding.AsXXX` etc...
 func (s *Schema) Exclude(moduleNames ...string) *Schema {
 	filteredSchema := &Schema{
 		QueryType:  s.QueryType,

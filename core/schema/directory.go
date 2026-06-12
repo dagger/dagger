@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -279,6 +278,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
+		dagql.NodeFunc("asWorkspace", s.asWorkspace).
+			Doc("Creates a synthetic workspace from this directory.").
+			Args(
+				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
+			).
+			Experimental("Synthetic workspaces currently support filesystem APIs only."),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
@@ -401,22 +406,9 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 	}
 	platform := parent.Self().Platform()
 
-	// TODO: should this just be lazyInit'd for consistency if nothing else?
-
-	// Make a scratch ref so that we don't have to treat "nil as scratch"
-	// TODO: could have a truly engine-wide shared "scratch" ref to save a little work. For now, as long as everyone uses this API they will
-	// share this ref
-
-	scratchRef, err := parent.Self().SnapshotManager().New(ctx, nil,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("scratch"),
-	)
+	finalRef, err := parent.Self().SnapshotManager().Scratch(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to create scratch ref: %w", err)
-	}
-	finalRef, err := scratchRef.Commit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to commit scratch ref: %w", err)
+		return inst, fmt.Errorf("failed to load scratch ref: %w", err)
 	}
 
 	dir := &core.Directory{
@@ -1060,13 +1052,13 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-type existsArgs struct {
+type directoryExistsArgs struct {
 	Path                string
 	ExpectedType        dagql.Optional[core.ExistsType]
 	DoNotFollowSymlinks bool `default:"false"`
 }
 
-func (s *directorySchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args existsArgs) (dagql.Boolean, error) {
+func (s *directorySchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryExistsArgs) (dagql.Boolean, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return false, err
@@ -1767,6 +1759,14 @@ func (s *directorySchema) asGit(
 		return inst, err
 	}
 	return inst, nil
+}
+
+func (s *directorySchema) asWorkspace(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	args workspaceArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	return syntheticWorkspaceFromRootfs(ctx, dir, args.Cwd, "directory://")
 }
 
 type directoryWithSymlinkArgs struct {

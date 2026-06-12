@@ -20,6 +20,16 @@ type Gh struct {
 	// +private
 	Repository string
 
+	// GitHub host.
+	//
+	// +private
+	Host string
+
+	// Additional CA certificate for the GitHub host.
+	//
+	// +private
+	CACert *dagger.File
+
 	// Git repository source (with .git directory).
 	Source *dagger.Directory
 }
@@ -35,6 +45,16 @@ func New(
 	// +optional
 	repo string,
 
+	// GitHub host.
+	//
+	// +optional
+	host string,
+
+	// Additional CA certificate for the GitHub host.
+	//
+	// +optional
+	caCert *dagger.File,
+
 	// Git repository source (with .git directory).
 	//
 	// +optional
@@ -43,6 +63,8 @@ func New(
 	return &Gh{
 		Token:      token,
 		Repository: repo,
+		Host:       host,
+		CACert:     caCert,
 		Source:     source,
 	}
 }
@@ -69,6 +91,30 @@ func (m *Gh) WithRepo(
 	gh.Repository = repo
 
 	return &gh, nil
+}
+
+// Set a GitHub host as context.
+func (m *Gh) WithHost(
+	// GitHub host.
+	host string,
+) *Gh {
+	gh := *m
+
+	gh.Host = host
+
+	return &gh
+}
+
+// Set an additional CA certificate for the GitHub host.
+func (m *Gh) WithCACert(
+	// Additional CA certificate for the GitHub host.
+	caCert *dagger.File,
+) *Gh {
+	gh := *m
+
+	gh.CACert = caCert
+
+	return &gh
 }
 
 // Load a Git repository source (with .git directory).
@@ -168,8 +214,16 @@ func (m *Gh) Terminal(
 	return m.container(token, repo).Terminal()
 }
 
+func (m *Gh) host() string {
+	if m.Host != "" {
+		return m.Host
+	}
+	return "github.com"
+}
+
 func (m *Gh) base() *dagger.Container {
-	return dag.
+	host := m.host()
+	ctr := dag.
 		Apko().
 		Wolfi().
 		WithPackages([]string{
@@ -179,7 +233,16 @@ func (m *Gh) base() *dagger.Container {
 		Container().
 		WithEnvVariable("GH_PROMPT_DISABLED", "true").
 		WithEnvVariable("GH_NO_UPDATE_NOTIFIER", "true").
-		WithExec([]string{"gh", "auth", "setup-git", "--force", "--hostname", "github.com"}) // Use force to avoid network call and cache setup even when no token is provided.
+		WithEnvVariable("GH_HOST", host)
+
+	if m.CACert != nil {
+		ctr = ctr.
+			WithMountedFile("/etc/ssl/certs/dagger-gh-ca.pem", m.CACert).
+			WithEnvVariable("SSL_CERT_FILE", "/etc/ssl/certs/dagger-gh-ca.pem").
+			WithEnvVariable("GIT_SSL_CAINFO", "/etc/ssl/certs/dagger-gh-ca.pem")
+	}
+
+	return ctr.WithExec([]string{"gh", "auth", "setup-git", "--force", "--hostname", host}) // Use force to avoid network call and cache setup even when no token is provided.
 }
 
 func (m *Gh) container(token *dagger.Secret, repo string) *dagger.Container {
@@ -191,11 +254,16 @@ func (m *Gh) container(token *dagger.Secret, repo string) *dagger.Container {
 		repo = m.Repository
 	}
 
+	host := m.host()
 	return m.base().
 		WithEnvVariable("CACHE_BUSTER", time.Now().Format(time.RFC3339Nano)).
 		With(func(c *dagger.Container) *dagger.Container {
 			if token != nil {
-				c = c.WithSecretVariable("GITHUB_TOKEN", token)
+				if host == "github.com" {
+					c = c.WithSecretVariable("GITHUB_TOKEN", token)
+				} else {
+					c = c.WithSecretVariable("GH_ENTERPRISE_TOKEN", token)
+				}
 			}
 
 			if repo != "" {

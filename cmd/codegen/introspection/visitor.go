@@ -22,7 +22,6 @@ func (v *Visitor) Run() []*Type {
 				"Int":      struct{}{},
 				"Boolean":  struct{}{},
 				"DateTime": struct{}{},
-				"ID":       struct{}{},
 			},
 		},
 		{
@@ -30,6 +29,9 @@ func (v *Visitor) Run() []*Type {
 		},
 		{
 			Kind: TypeKindObject,
+		},
+		{
+			Kind: TypeKindInterface,
 		},
 		{
 			Kind: TypeKindEnum,

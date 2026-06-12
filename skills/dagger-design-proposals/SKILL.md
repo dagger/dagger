@@ -10,6 +10,7 @@ Guidelines for writing design proposals for Dagger features.
 ## Before Writing
 
 **Always research first:**
+
 1. Check existing skills (dagger-codegen, cache-expert, etc.) for relevant context
 2. Look at related code in the Dagger codebase:
    - GraphQL schema: `core/schema/*.go`
@@ -19,7 +20,7 @@ Guidelines for writing design proposals for Dagger features.
 
 ## Structure
 
-```markdown
+````markdown
 # Part N: Title
 
 *Builds on [Part N-1: Title](link)*
@@ -81,7 +82,8 @@ One line.
 
 - Previous: [Part N-1](link)
 - Next: [Part N+1](link) or "Part N+1: Title (coming soon)"
-```
+
+````
 
 ## Style
 
@@ -111,6 +113,7 @@ One line.
 ## Iterating with User
 
 When you have clarifying questions or notes:
+
 1. **List them first** - Present a high-level numbered list of all questions/notes
 2. **One at a time** - Walk through each item individually, waiting for user response
 3. **Don't dump** - Never present all questions with full details at once
@@ -128,6 +131,7 @@ When writing proposals, reference actual Dagger code:
 | SDK codegen | `cmd/codegen/*.go` |
 
 Example: To understand how `Host.findUp` works before proposing `Workspace.findUp`:
+
 ```bash
 # Find the schema definition
 grep -r "findUp" core/schema/host.go
@@ -156,5 +160,6 @@ gh api --method POST /gists/GIST_ID/comments -f body="## Changelog
 ## Related Skills
 
 Check for other Dagger skills that may help with research:
+
 - `dagger-codegen` - SDK codegen, templates, bindings
 - `cache-expert` - Caching internals, invalidation

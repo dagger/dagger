@@ -11,8 +11,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
@@ -99,6 +99,11 @@ type Span struct {
 	RevealedSpans SpanSet `json:"-"`
 	ErrorOrigins  SpanSet `json:"-"`
 
+	// ProgressSpans tracks descendant spans carrying progress, so rows
+	// representing a subtree (collapsed, or with hidden descendants) can
+	// render it.
+	ProgressSpans SpanSet `json:"-"`
+
 	callCache *callpbv1.Call
 	baseCache *callpbv1.Call
 
@@ -121,13 +126,17 @@ type Span struct {
 
 // Snapshot returns a snapshot of the span's current state.
 func (span *Span) Snapshot() SpanSnapshot {
-	span.ChildCount = countChildren(span.ChildSpans, FrontendOpts{})
+	// Never decrease this value; it may have been calculated from a SQL query,
+	// indicating that the span has children but we didn't fetch them
+	// (incremental loading).
+	span.ChildCount = max(span.ChildCount, countChildren(span.ChildSpans, FrontendOpts{}))
 	span.Failed_, span.FailedReason_ = span.FailedReason()
 	span.Cached_, span.CachedReason_ = span.CachedReason()
 	span.Pending_, span.PendingReason_ = span.PendingReason()
 	span.Canceled_, span.CanceledReason_ = span.CanceledReason()
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
+	snapshot.Progress = span.Progress.Clone()
 	return snapshot
 }
 
@@ -255,6 +264,12 @@ type SpanSnapshot struct {
 	Cached   bool `json:",omitempty"`
 	Pending  bool `json:",omitempty"`
 
+	// Blocked marks a lazy-evaluation resume span that aborted because a
+	// prerequisite failed. A blocked resumption is treated as if the deferred
+	// work never ran: it neither resolves the owning span's pending state nor
+	// propagates failure to it.
+	Blocked bool `json:",omitempty"`
+
 	// An extra flag to indicate that a span was canceled because the root span
 	// completed while the span was still running.
 	LeftRunning bool `json:",omitempty"`
@@ -265,6 +280,11 @@ type SpanSnapshot struct {
 	Encapsulated bool `json:",omitempty"`
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
+
+	// Test attributes
+	TestCaseName  string     `json:",omitempty"`
+	TestSuiteName string     `json:",omitempty"`
+	TestStatus    TestStatus `json:",omitempty"`
 
 	Boundary    bool `json:",omitempty"`
 	Reveal      bool `json:",omitempty"`
@@ -303,6 +323,11 @@ type SpanSnapshot struct {
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
 
+	// Progress holds streaming-progress items attributed directly to this
+	// span, folded from progress log records. It lives in the snapshot so
+	// remote frontends receive it without replaying the raw records.
+	Progress *SpanProgress `json:",omitempty"`
+
 	ExtraAttributes map[string]json.RawMessage `json:",omitempty"`
 }
 
@@ -337,8 +362,11 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.CanceledAttr:
 		snapshot.Canceled = val.(bool)
 
-	case dagql.PendingAttr:
+	case telemetry.PendingAttr:
 		snapshot.Pending = val.(bool)
+
+	case telemetryattrs.DagBlockedAttr:
+		snapshot.Blocked = val.(bool)
 
 	case telemetry.UIEncapsulateAttr:
 		snapshot.Encapsulate = val.(bool)
@@ -410,6 +438,15 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)
 
+	case string(semconv.TestCaseNameKey):
+		snapshot.TestCaseName = val.(string)
+
+	case string(semconv.TestSuiteNameKey):
+		snapshot.TestSuiteName = val.(string)
+
+	case string(semconv.TestSuiteRunStatusKey), string(semconv.TestCaseResultStatusKey):
+		snapshot.TestStatus = mergeTestStatus(snapshot.TestStatus, normalizeTestStatus(val.(string)))
+
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their
 		// parent failed, since some happy paths might involve _expected_ failures
@@ -456,8 +493,23 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		} else {
 			changed = parent.RunningSpans.Remove(span)
 		}
-		if causal && span.IsFailed() {
+		if causal && span.IsFailed() && !span.Blocked {
+			// Blocked resumptions carry a cascaded prerequisite failure, not a
+			// failure of the parent's own work; they don't mark the parent
+			// caused-failed. The prerequisite's own resume span propagates the
+			// real failure to its own causal targets.
 			changed = parent.FailedLinks.Add(span) || changed
+			// Propagate error origins across explicit causal links so the
+			// caused-failed span renders the leaf error rather than its own
+			// (possibly cascaded) status description. Self-references are
+			// dropped — renderStepError treats any non-empty ErrorOrigins as
+			// "errored elsewhere, don't repeat".
+			for _, origin := range span.ErrorOrigins.Order {
+				if origin.ID == parent.ID {
+					continue
+				}
+				changed = parent.ErrorOrigins.Add(origin) || changed
+			}
 		}
 		if causal && span.IsCanceled() {
 			changed = parent.CanceledLinks.Add(span) || changed
@@ -471,16 +523,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	for parent := range span.Parents {
 		// don't propagate failure, to respect encapsulation
 		// don't propagate activity, since these are direct parents
-		changed := propagate(parent, false, false)
-
-		// If a child only starts after its parent already completed, treat it as
-		// a resumed continuation of that parent for failure purposes.
-		lateContinuation := !parent.IsRunning() && span.StartTime.After(parent.EndTime)
-		if lateContinuation && span.IsFailedOrCausedFailure() {
-			changed = parent.FailedLinks.Add(span) || changed
-		}
-
-		if changed {
+		if propagate(parent, false, false) {
 			span.db.update(parent)
 		}
 	}
@@ -515,6 +558,10 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 
 	// Update RollUp state for ancestors incrementally
 	span.updateRollUpAncestors()
+
+	if span.db != nil {
+		span.db.noteTestSpanUpdated(span)
+	}
 }
 
 // currentStateCategory determines the span's current state category for rollup counting
@@ -748,14 +795,32 @@ func (span *Span) Hidden(opts FrontendOpts) bool {
 		// internal spans are hidden by default
 		return true
 	}
-	if span.ParentSpan != nil &&
+	return span.EncapsulationHidden(opts)
+}
+
+// EncapsulationHidden reports whether the span is hidden as an encapsulated
+// internal detail of a parent that didn't fail. Encapsulated steps are
+// hidden - even on error, e.g. a registry's routine 401 auth challenge -
+// unless their parent errors. Spans carrying streaming progress are always
+// shown: they only accumulate progress when real work happens (e.g. a cold
+// pull), and their bars render in their place when they're hidden anyway.
+func (span *Span) EncapsulationHidden(opts FrontendOpts) bool {
+	if span.HasProgress() {
+		return false
+	}
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	return span.ParentSpan != nil &&
 		(span.Encapsulated || span.ParentSpan.Encapsulate) &&
 		!span.ParentSpan.IsFailed() &&
-		verbosity < ShowEncapsulatedVerbosity {
-		// encapsulated steps are hidden (even on error) unless their parent errors
-		return true
-	}
-	return false
+		verbosity < ShowEncapsulatedVerbosity
+}
+
+// HasProgress reports whether the span carries streaming-progress state.
+func (span *Span) HasProgress() bool {
+	return span.Progress != nil && len(span.Progress.Order) > 0
 }
 
 func (span *Span) IsRunning() bool {
@@ -806,7 +871,19 @@ func (span *Span) IsPending() bool {
 		return false
 	}
 	if span.Pending || (span.Final && span.Pending_) {
-		return len(span.effectsViaLinks.Order) == 0
+		return !span.hasResolvedEffects()
+	}
+	return false
+}
+
+// hasResolvedEffects reports whether any causal continuation of this span
+// actually ran its deferred work. Blocked resumptions (aborted because a
+// prerequisite failed) don't count: the work is still pending.
+func (span *Span) hasResolvedEffects() bool {
+	for _, effect := range span.effectsViaLinks.Order {
+		if !effect.Blocked {
+			return true
+		}
 	}
 	return false
 }
@@ -823,8 +900,11 @@ func (span *Span) PendingReason() (bool, []string) {
 		return false, reasons
 	}
 	if span.Pending || (span.Final && span.Pending_) {
-		if len(span.effectsViaLinks.Order) > 0 {
+		if span.hasResolvedEffects() {
 			return false, []string{"span has resumed via causal continuation"}
+		}
+		if len(span.effectsViaLinks.Order) > 0 {
+			return true, []string{"span only has blocked resumptions; work is still pending"}
 		}
 		return true, []string{"span says it is pending"}
 	}

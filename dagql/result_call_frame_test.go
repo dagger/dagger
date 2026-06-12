@@ -34,6 +34,210 @@ func TestResultCallDigestErrorsDoNotPanic(t *testing.T) {
 	require.ErrorContains(t, err, `result call frame "broken" args: failed to write argument "bad" to hash`)
 }
 
+func TestResultCallSelfDigestAndInputRefsPreserveInputKinds(t *testing.T) {
+	t.Parallel()
+
+	receiver := cacheTestIntCall("receiver")
+	resultInput := cacheTestIntCall("result-input")
+	moduleInput := cacheTestIntCall("module")
+	digested := digest.FromString("digested-input")
+
+	frame := &ResultCall{
+		Kind:     ResultCallKindField,
+		Type:     NewResultCallType(Int(0).Type()),
+		Field:    "field",
+		Receiver: &ResultCallRef{Call: receiver},
+		Module: &ResultCallModule{
+			ResultRef: &ResultCallRef{Call: moduleInput},
+			Name:      "mod",
+			Ref:       "ref",
+			Pin:       "pin",
+		},
+		Args: []*ResultCallArg{
+			{
+				Name:  "child",
+				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindResultRef, ResultRef: &ResultCallRef{Call: resultInput}},
+			},
+			{
+				Name: "opaque",
+				Value: &ResultCallLiteral{
+					Kind:                 ResultCallLiteralKindDigestedString,
+					DigestedStringValue:  "payload",
+					DigestedStringDigest: digested,
+				},
+			},
+		},
+	}
+
+	_, refs, err := frame.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	require.Len(t, refs, 4)
+	require.Same(t, receiver, refs[0].Result.Call)
+	require.Same(t, resultInput, refs[1].Result.Call)
+	require.Equal(t, digested, refs[2].Digest)
+	require.Nil(t, refs[2].Result)
+	require.Same(t, moduleInput, refs[3].Result.Call)
+}
+
+func TestResultCallModuleMetadataDoesNotAffectStructuralIdentity(t *testing.T) {
+	t.Parallel()
+
+	module := cacheTestIntCall("module")
+	frameA := cacheTestIntCall("field")
+	frameA.Module = &ResultCallModule{
+		ResultRef: &ResultCallRef{Call: module},
+		Name:      "mod-a",
+		Ref:       "ref-a",
+		Pin:       "pin-a",
+	}
+	frameB := cacheTestIntCall("field")
+	frameB.Module = &ResultCallModule{
+		ResultRef: &ResultCallRef{Call: module},
+		Name:      "mod-b",
+		Ref:       "ref-b",
+		Pin:       "pin-b",
+	}
+
+	digestA, err := frameA.deriveRecipeDigest(nil)
+	require.NoError(t, err)
+	digestB, err := frameB.deriveRecipeDigest(nil)
+	require.NoError(t, err)
+	require.Equal(t, digestA, digestB)
+
+	selfA, refsA, err := frameA.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	selfB, refsB, err := frameB.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	require.Equal(t, selfA, selfB)
+	require.Len(t, refsA, 1)
+	require.Len(t, refsB, 1)
+
+	inputA, err := refsA[0].inputDigest(nil)
+	require.NoError(t, err)
+	inputB, err := refsB[0].inputDigest(nil)
+	require.NoError(t, err)
+	require.Equal(t, inputA, inputB)
+}
+
+func TestResultCallModuleIdentityIsStructuralInputOnly(t *testing.T) {
+	t.Parallel()
+
+	moduleA := cacheTestIntCall("module-a")
+	moduleB := cacheTestIntCall("module-b")
+	idNoModule := cacheTestIntCall("field")
+	idWithModuleA := cacheTestIntCall("field")
+	idWithModuleA.Module = &ResultCallModule{
+		ResultRef: &ResultCallRef{Call: moduleA},
+		Name:      "mod",
+		Ref:       "ref",
+		Pin:       "pin",
+	}
+	idWithModuleB := cacheTestIntCall("field")
+	idWithModuleB.Module = &ResultCallModule{
+		ResultRef: &ResultCallRef{Call: moduleB},
+		Name:      "mod",
+		Ref:       "ref",
+		Pin:       "pin",
+	}
+
+	digestNoModule, err := idNoModule.deriveRecipeDigest(nil)
+	require.NoError(t, err)
+	digestModuleA, err := idWithModuleA.deriveRecipeDigest(nil)
+	require.NoError(t, err)
+	digestModuleB, err := idWithModuleB.deriveRecipeDigest(nil)
+	require.NoError(t, err)
+	require.NotEqual(t, digestNoModule, digestModuleA)
+	require.NotEqual(t, digestModuleA, digestModuleB)
+
+	selfNoModule, refsNoModule, err := idNoModule.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	selfModuleA, refsModuleA, err := idWithModuleA.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	selfModuleB, refsModuleB, err := idWithModuleB.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	require.Equal(t, selfNoModule, selfModuleA)
+	require.Equal(t, selfNoModule, selfModuleB)
+	require.Len(t, refsModuleA, len(refsNoModule)+1)
+	require.Len(t, refsModuleB, len(refsModuleA))
+
+	moduleADigest, err := moduleA.deriveRecipeDigest(nil)
+	require.NoError(t, err)
+	moduleBDigest, err := moduleB.deriveRecipeDigest(nil)
+	require.NoError(t, err)
+	inputA, err := refsModuleA[len(refsModuleA)-1].inputDigest(nil)
+	require.NoError(t, err)
+	inputB, err := refsModuleB[len(refsModuleB)-1].inputDigest(nil)
+	require.NoError(t, err)
+	require.Equal(t, moduleADigest, inputA)
+	require.Equal(t, moduleBDigest, inputB)
+	require.NotEqual(t, inputA, inputB)
+}
+
+func TestResultCallSelfDigestUsesRecipeDigestsForResultInputs(t *testing.T) {
+	t.Parallel()
+
+	recvA := cacheTestIntCall("receiver", call.ExtraDigest{
+		Digest: digest.FromString("aux-a"),
+		Label:  "aux",
+	})
+	recvB := cacheTestIntCall("receiver", call.ExtraDigest{
+		Digest: digest.FromString("aux-b"),
+		Label:  "aux",
+	})
+	childA := cacheTestIntCall("child")
+	childA.Receiver = &ResultCallRef{Call: recvA}
+	childB := cacheTestIntCall("child")
+	childB.Receiver = &ResultCallRef{Call: recvB}
+
+	selfA, refsA, err := childA.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	selfB, refsB, err := childB.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	require.Equal(t, selfA, selfB)
+	require.Len(t, refsA, 1)
+	require.Len(t, refsB, 1)
+
+	inputA, err := refsA[0].inputDigest(nil)
+	require.NoError(t, err)
+	inputB, err := refsB[0].inputDigest(nil)
+	require.NoError(t, err)
+	require.Equal(t, inputA, inputB)
+}
+
+func TestResultCallDigestedStringUsesAttachedDigestForStructuralIdentity(t *testing.T) {
+	t.Parallel()
+
+	execMDDigest := digest.FromString("execmd-identity")
+	frameA := cacheTestIntCall("withExec")
+	frameA.Args = []*ResultCallArg{{
+		Name: "execMD",
+		Value: &ResultCallLiteral{
+			Kind:                 ResultCallLiteralKindDigestedString,
+			DigestedStringValue:  `{"clientID":"a","execID":"1"}`,
+			DigestedStringDigest: execMDDigest,
+		},
+	}}
+	frameB := cacheTestIntCall("withExec")
+	frameB.Args = []*ResultCallArg{{
+		Name: "execMD",
+		Value: &ResultCallLiteral{
+			Kind:                 ResultCallLiteralKindDigestedString,
+			DigestedStringValue:  `{"clientID":"b","execID":"2"}`,
+			DigestedStringDigest: execMDDigest,
+		},
+	}}
+
+	selfA, refsA, err := frameA.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	selfB, refsB, err := frameB.selfDigestAndInputRefs(nil)
+	require.NoError(t, err)
+	require.Equal(t, selfA, selfB)
+	require.Len(t, refsA, 1)
+	require.Len(t, refsB, 1)
+	require.Equal(t, execMDDigest, refsA[0].Digest)
+	require.Equal(t, execMDDigest, refsB[0].Digest)
+}
+
 func TestResultCallForkClonesTopLevelMutableState(t *testing.T) {
 	t.Parallel()
 
@@ -250,4 +454,74 @@ func TestResultCallRefResultIDFallbackStillWorks(t *testing.T) {
 	require.Equal(t, reqCall.Field, receiver.Field)
 
 	cacheTestReleaseSession(t, cacheIface, ctx)
+}
+
+// TestResultCallArgPBRedactsSensitive ensures the telemetry/call protobuf
+// encoder redacts args flagged sensitive (e.g. setSecret(plaintext:)), mirroring
+// redactedArgForID on the call.ID path. Regression test for sensitive secret
+// plaintext leaking verbatim into CLI --progress output.
+func TestResultCallArgPBRedactsSensitive(t *testing.T) {
+	t.Parallel()
+
+	c := &Cache{}
+
+	sensitive := &ResultCallArg{
+		Name:        "plaintext",
+		IsSensitive: true,
+		Value:       &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "super-secret"},
+	}
+	pbArg, err := resultCallArgPB(c, sensitive)
+	require.NoError(t, err)
+	require.Equal(t, "plaintext", pbArg.Name)
+	require.Equal(t, "***", pbArg.Value.GetString_())
+	require.NotContains(t, pbArg.Value.GetString_(), "super-secret")
+
+	public := &ResultCallArg{
+		Name:  "name",
+		Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "toast"},
+	}
+	pbArg, err = resultCallArgPB(c, public)
+	require.NoError(t, err)
+	require.Equal(t, "toast", pbArg.Value.GetString_())
+
+	pbArg, err = resultCallArgPB(c, nil)
+	require.NoError(t, err)
+	require.Nil(t, pbArg)
+}
+
+// TestResultCallPBRedactsSensitiveArg exercises the full ResultCall.callPB
+// encoder (the path core/telemetry.go uses for the DagCall span attr) with a
+// setSecret-shaped frame: the non-sensitive arg passes through while the
+// sensitive plaintext is redacted.
+func TestResultCallPBRedactsSensitiveArg(t *testing.T) {
+	t.Parallel()
+
+	c := &Cache{}
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(String("").Type()),
+		Field: "setSecret",
+		Args: []*ResultCallArg{
+			{
+				Name:  "name",
+				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "toast"},
+			},
+			{
+				Name:        "plaintext",
+				IsSensitive: true,
+				Value:       &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "super-secret"},
+			},
+		},
+	}
+
+	pb, err := frame.callPB(c)
+	require.NoError(t, err)
+	require.Len(t, pb.Args, 2)
+
+	byName := make(map[string]string, len(pb.Args))
+	for _, a := range pb.Args {
+		byName[a.Name] = a.Value.GetString_()
+	}
+	require.Equal(t, "toast", byName["name"])
+	require.Equal(t, "***", byName["plaintext"])
 }

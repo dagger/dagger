@@ -1,0 +1,38 @@
+---
+title: "User-Defined Object Types"
+slug: /extending/type-system/user-defined-object-types
+description: "Model durable workflow concepts with module object types."
+---
+
+# User-Defined Object Types
+
+Modules can define their own object types. Use them when a workflow has a durable concept that deserves methods, documentation, and a stable contract.
+
+Good object types represent concepts callers understand:
+
+- A build target.
+- A deploy environment.
+- A release candidate.
+- A test suite.
+- A generated artifact.
+- A service bundle.
+
+Objects should carry meaning. Do not create objects just to imitate classes in an SDK language.
+
+## When to Introduce an Object
+
+Introduce an object when:
+
+- Several functions share the same context.
+- The caller benefits from chaining related methods.
+- A returned value should expose more behavior.
+- The concept appears in traces, docs, or errors often enough to deserve a name.
+- Another module may want to consume the concept.
+
+Keep a plain function when the workflow has one obvious input and one obvious output.
+
+## Object Names
+
+Name objects after domain concepts, not implementation details. A caller should understand why the object exists before they know which SDK implemented it.
+
+TODO: Add naming examples that contrast implementation-shaped names with caller-shaped names.

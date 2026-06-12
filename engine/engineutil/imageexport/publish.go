@@ -9,14 +9,15 @@ import (
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
+	serverresolver "github.com/dagger/dagger/engine/server/resolver"
+	cache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type PushOpts struct {
-	PushByDigest bool
-	Insecure     bool
+	PushByDigest      bool
+	RegistryTransport serverresolver.RegistryTransport
 }
 
 type RegistryPusher interface {
@@ -41,10 +42,10 @@ type ExportOpts struct {
 	NameCanonical  bool
 	DanglingPrefix string
 
-	Push         bool
-	PushByDigest bool
-	Store        bool
-	Insecure     bool
+	Push              bool
+	PushByDigest      bool
+	Store             bool
+	RegistryTransport serverresolver.RegistryTransport
 
 	Commit CommitOpts
 }
@@ -86,8 +87,8 @@ func Export(
 				return nil, errors.New("image export registry pusher is not initialized")
 			}
 			if err := deps.Pusher.PushImage(ctx, img, name, PushOpts{
-				PushByDigest: opts.PushByDigest,
-				Insecure:     opts.Insecure,
+				PushByDigest:      opts.PushByDigest,
+				RegistryTransport: opts.RegistryTransport,
 			}); err != nil {
 				return nil, err
 			}
@@ -113,7 +114,7 @@ func exportToImageStore(
 	img *ExportedImage,
 	nameCanonical bool,
 ) error {
-	leaseCtx, done, err := leaseutil.WithLease(ctx, deps.LeaseManager, leaseutil.MakeTemporary)
+	leaseCtx, done, err := cache.WithLease(ctx, deps.LeaseManager, cache.MakeTemporary)
 	if err != nil {
 		return err
 	}

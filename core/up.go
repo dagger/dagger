@@ -209,7 +209,7 @@ func (u *Up) Description() string {
 }
 
 func (u *Up) OriginalModule() *Module {
-	return u.Node.OriginalModule
+	return u.Node.OriginalModule.Self()
 }
 
 func (*Up) Type() *ast.Type {

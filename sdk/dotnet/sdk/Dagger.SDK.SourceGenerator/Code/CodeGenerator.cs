@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Dagger.SDK.SourceGenerator.Extensions;
@@ -13,6 +14,21 @@ public class CodeGenerator(ICodeRenderer renderer)
 
     public string Generate(Introspection introspection)
     {
+        // Collect type name sets for the renderer
+        if (renderer is CodeRenderer codeRenderer)
+        {
+            codeRenderer.ObjectTypeNames = new HashSet<string>(
+                introspection.Schema.Types
+                    .Where(t => t.Kind == "OBJECT")
+                    .Select(t => t.Name)
+            );
+            codeRenderer.InterfaceTypeNames = new HashSet<string>(
+                introspection.Schema.Types
+                    .Where(t => t.Kind == "INTERFACE")
+                    .Select(t => t.Name)
+            );
+        }
+
         var builder = new StringBuilder(renderer.RenderPre());
 
         builder.AppendLine();
@@ -36,6 +52,7 @@ public class CodeGenerator(ICodeRenderer renderer)
             "SCALAR" => renderer.RenderScalar(type),
             "INPUT_OBJECT" => renderer.RenderInputObject(type),
             "ENUM" => renderer.RenderEnum(type),
+            "INTERFACE" => renderer.RenderInterface(type),
             _ => throw new Exception($"Type kind {type.Kind} is not supported"),
         };
     }

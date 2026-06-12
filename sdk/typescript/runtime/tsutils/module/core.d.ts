@@ -19,10 +19,14 @@ export type ArgumentOptions = {
 
 export function func(alias?: string): MethodDecorator
 export function check(): MethodDecorator
+export function generate(): MethodDecorator
 export function argument(opts?: ArgumentOptions): ParameterDecorator
 export function object(): ClassDecorator
 export function field(alias?: string): PropertyDecorator
 export function enumType(): ClassDecorator
 export function entrypoint(files: string[]): Promise<void>
+export function getRegisteredClass(
+  name: string,
+): { new (...args: unknown[]): unknown } | undefined
 
 export function getTracer(name?: string): unknown

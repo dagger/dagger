@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -115,9 +116,55 @@ type Frontend interface {
 	prompt.PromptHandler
 }
 
+type extendedError interface {
+	error
+	Extensions() map[string]any
+}
+
+func quietErrorMessage(err error) (string, int, bool) {
+	if err == nil {
+		return "", 0, false
+	}
+
+	var extErr extendedError
+	if !errors.As(err, &extErr) {
+		return "", 0, false
+	}
+
+	ext := extErr.Extensions()
+	quiet, _ := ext["_quiet"].(bool)
+	if !quiet {
+		return "", 0, false
+	}
+
+	msg, _ := ext["_message"].(string)
+	if msg == "" {
+		msg = extErr.Error()
+	}
+
+	exitCode := 1
+	if code, ok := ext["_exitCode"].(float64); ok {
+		exitCode = int(code)
+	}
+
+	return msg, exitCode, true
+}
+
+func renderQuietError(w io.Writer, err error) (int, bool) {
+	msg, exitCode, ok := quietErrorMessage(err)
+	if !ok {
+		return 0, false
+	}
+	fmt.Fprintln(w, msg)
+	return exitCode, true
+}
+
 // normalizeFrontendExit ensures a frontend does not report success when the
 // primary command span itself ended in a failed state.
 func normalizeFrontendExit(err error, db *dagui.DB) error {
+	if _, exitCode, ok := quietErrorMessage(err); ok {
+		return ExitError{OriginalCode: exitCode, Original: err}
+	}
 	if err != nil || db == nil || !db.PrimarySpan.IsValid() {
 		return err
 	}

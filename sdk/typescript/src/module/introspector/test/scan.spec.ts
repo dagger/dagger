@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it } from "@otel-test-runner/mocha-test"
 import assert from "assert"
 import * as fs from "fs"
+import { describe, it } from "mocha"
 import path from "path"
 import { fileURLToPath } from "url"
 
@@ -122,6 +122,10 @@ describe("scan by reference TypeScript", function () {
     {
       name: "Should correctly scan interfaces",
       directory: "interface",
+    },
+    {
+      name: "Should correctly scan decorators",
+      directory: "decorators",
     },
   ]
 

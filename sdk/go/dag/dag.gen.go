@@ -193,7 +193,7 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 }
 
 // A unique identifier for this Query.
-func ID(ctx context.Context) (dagger.QueryID, error) {
+func ID(ctx context.Context) (dagger.ID, error) {
 	client := initClient()
 	return client.ID(ctx)
 }
@@ -348,6 +348,12 @@ func LoadErrorFromID(id dagger.ErrorID) *dagger.Error {
 func LoadErrorValueFromID(id dagger.ErrorValueID) *dagger.ErrorValue {
 	client := initClient()
 	return client.LoadErrorValueFromID(id)
+}
+
+// Load a Exportable from its ID.
+func LoadExportableFromID(id dagger.ExportableID) dagger.Exportable {
+	client := initClient()
+	return client.LoadExportableFromID(id)
 }
 
 // Load a FieldTypeDef from its ID.
@@ -506,12 +512,6 @@ func LoadPortFromID(id dagger.PortID) *dagger.Port {
 	return client.LoadPortFromID(id)
 }
 
-// Load a Query from its ID.
-func LoadQueryFromID(id dagger.QueryID) *dagger.Query {
-	client := initClient()
-	return client.LoadQueryFromID(id)
-}
-
 // Load a RemoteGitMirror from its ID.
 func LoadRemoteGitMirrorFromID(id dagger.RemoteGitMirrorID) *dagger.RemoteGitMirror {
 	client := initClient()
@@ -572,6 +572,12 @@ func LoadStatFromID(id dagger.StatID) *dagger.Stat {
 	return client.LoadStatFromID(id)
 }
 
+// Load a Syncer from its ID.
+func LoadSyncerFromID(id dagger.SyncerID) dagger.Syncer {
+	client := initClient()
+	return client.LoadSyncerFromID(id)
+}
+
 // Load a Terminal from its ID.
 func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 	client := initClient()
@@ -602,6 +608,36 @@ func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
 	return client.LoadWorkspaceFromID(id)
 }
 
+// Load a WorkspaceGit from its ID.
+func LoadWorkspaceGitFromID(id dagger.WorkspaceGitID) *dagger.WorkspaceGit {
+	client := initClient()
+	return client.LoadWorkspaceGitFromID(id)
+}
+
+// Load a WorkspaceMigration from its ID.
+func LoadWorkspaceMigrationFromID(id dagger.WorkspaceMigrationID) *dagger.WorkspaceMigration {
+	client := initClient()
+	return client.LoadWorkspaceMigrationFromID(id)
+}
+
+// Load a WorkspaceMigrationStep from its ID.
+func LoadWorkspaceMigrationStepFromID(id dagger.WorkspaceMigrationStepID) *dagger.WorkspaceMigrationStep {
+	client := initClient()
+	return client.LoadWorkspaceMigrationStepFromID(id)
+}
+
+// Load a WorkspaceModule from its ID.
+func LoadWorkspaceModuleFromID(id dagger.WorkspaceModuleID) *dagger.WorkspaceModule {
+	client := initClient()
+	return client.LoadWorkspaceModuleFromID(id)
+}
+
+// Load a WorkspaceModuleSetting from its ID.
+func LoadWorkspaceModuleSettingFromID(id dagger.WorkspaceModuleSettingID) *dagger.WorkspaceModuleSetting {
+	client := initClient()
+	return client.LoadWorkspaceModuleSettingFromID(id)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()
@@ -612,6 +648,12 @@ func Module() *dagger.Module {
 func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()
 	return client.ModuleSource(refString, opts...)
+}
+
+// Load any object by its ID.
+func Node(id dagger.ID) dagger.Node {
+	client := initClient()
+	return client.Node(id)
 }
 
 // Creates a new secret.

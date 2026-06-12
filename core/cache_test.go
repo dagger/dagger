@@ -3,18 +3,18 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkconfig "github.com/dagger/dagger/engine/snapshots/config"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/client"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -31,9 +31,17 @@ type cacheVolumeTestSnapshotManager struct {
 	immutableBySnapshotID map[string]bkcache.ImmutableRef
 	mutableBySnapshotID   map[string]bkcache.MutableRef
 	newResult             bkcache.MutableRef
+	snapshotSizes         map[string]int64
+	lockMutableSnapshotID bool
+	mutableSnapshotOpen   map[string]bool
+	loadedRows            bkcache.PersistentMetadataRows
+	attachCalls           []struct{ leaseID, snapshotID string }
+	removeCalls           []string
+	deleteStaleKeep       map[string]struct{}
 
 	getBySnapshotIDCalls        []string
 	getMutableBySnapshotIDCalls []string
+	snapshotSizeCalls           []string
 	newCalls                    []bkcache.ImmutableRef
 }
 
@@ -59,6 +67,24 @@ func (m *cacheVolumeTestSnapshotManager) GetBySnapshotID(ctx context.Context, sn
 	return ref, nil
 }
 
+func (*cacheVolumeTestSnapshotManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+	panic("unexpected Scratch call")
+}
+
+func (m *cacheVolumeTestSnapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
+	_ = ctx
+	m.snapshotSizeCalls = append(m.snapshotSizeCalls, snapshotID)
+	size, ok := m.snapshotSizes[snapshotID]
+	if !ok {
+		return 0, context.Canceled
+	}
+	return size, nil
+}
+
+func (*cacheVolumeTestSnapshotManager) SnapshotRecordMetadata(context.Context, string) (bkcache.SnapshotRecordMetadata, bool, error) {
+	panic("unexpected SnapshotRecordMetadata call")
+}
+
 func (m *cacheVolumeTestSnapshotManager) New(_ context.Context, parent bkcache.ImmutableRef, _ ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	m.newCalls = append(m.newCalls, parent)
 	if m.newResult == nil {
@@ -72,11 +98,35 @@ func (*cacheVolumeTestSnapshotManager) GetMutable(context.Context, string, ...bk
 }
 
 func (m *cacheVolumeTestSnapshotManager) GetMutableBySnapshotID(ctx context.Context, snapshotID string, _ ...bkcache.RefOption) (bkcache.MutableRef, error) {
-	_ = ctx
 	m.getMutableBySnapshotIDCalls = append(m.getMutableBySnapshotIDCalls, snapshotID)
 	ref, ok := m.mutableBySnapshotID[snapshotID]
 	if !ok {
 		return nil, context.Canceled
+	}
+	if m.lockMutableSnapshotID {
+		if m.mutableSnapshotOpen == nil {
+			m.mutableSnapshotOpen = map[string]bool{}
+		}
+		if m.mutableSnapshotOpen[snapshotID] {
+			return nil, errors.New("locked")
+		}
+		m.mutableSnapshotOpen[snapshotID] = true
+
+		size, err := ref.Size(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ref = &cacheVolumeTestMutableRef{
+			cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
+				id:         ref.ID(),
+				snapshotID: ref.SnapshotID(),
+				size:       size,
+				release: func(context.Context) error {
+					m.mutableSnapshotOpen[snapshotID] = false
+					return nil
+				},
+			},
+		}
 	}
 	return ref, nil
 }
@@ -97,24 +147,37 @@ func (*cacheVolumeTestSnapshotManager) Diff(context.Context, bkcache.ImmutableRe
 	panic("unexpected Diff call")
 }
 
-func (*cacheVolumeTestSnapshotManager) AttachLease(context.Context, string, string) error {
-	panic("unexpected AttachLease call")
+func (m *cacheVolumeTestSnapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID string) error {
+	_ = ctx
+	m.attachCalls = append(m.attachCalls, struct{ leaseID, snapshotID string }{
+		leaseID:    leaseID,
+		snapshotID: snapshotID,
+	})
+	return nil
 }
 
-func (*cacheVolumeTestSnapshotManager) RemoveLease(context.Context, string) error {
-	panic("unexpected RemoveLease call")
+func (m *cacheVolumeTestSnapshotManager) RemoveLease(ctx context.Context, leaseID string) error {
+	_ = ctx
+	m.removeCalls = append(m.removeCalls, leaseID)
+	return nil
 }
 
-func (*cacheVolumeTestSnapshotManager) LoadPersistentMetadata(bkcache.PersistentMetadataRows) error {
-	panic("unexpected LoadPersistentMetadata call")
+func (m *cacheVolumeTestSnapshotManager) LoadPersistentMetadata(rows bkcache.PersistentMetadataRows) error {
+	m.loadedRows = rows
+	return nil
 }
 
 func (*cacheVolumeTestSnapshotManager) PersistentMetadataRows() bkcache.PersistentMetadataRows {
 	return bkcache.PersistentMetadataRows{}
 }
 
-func (*cacheVolumeTestSnapshotManager) DeleteStaleDaggerOwnerLeases(context.Context, map[string]struct{}) error {
-	panic("unexpected DeleteStaleDaggerOwnerLeases call")
+func (m *cacheVolumeTestSnapshotManager) DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error {
+	_ = ctx
+	m.deleteStaleKeep = make(map[string]struct{}, len(keep))
+	for leaseID := range keep {
+		m.deleteStaleKeep[leaseID] = struct{}{}
+	}
+	return nil
 }
 
 func (*cacheVolumeTestSnapshotManager) Close() error {
@@ -125,9 +188,10 @@ type cacheVolumeTestImmutableRef struct {
 	id         string
 	snapshotID string
 	size       int64
+	release    func(context.Context) error
 }
 
-func (r *cacheVolumeTestImmutableRef) Mount(context.Context, bool) (snapshot.Mountable, error) {
+func (r *cacheVolumeTestImmutableRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
 	panic("unexpected Mount call")
 }
 
@@ -139,7 +203,10 @@ func (r *cacheVolumeTestImmutableRef) SnapshotID() string {
 	return r.snapshotID
 }
 
-func (*cacheVolumeTestImmutableRef) Release(context.Context) error {
+func (r *cacheVolumeTestImmutableRef) Release(ctx context.Context) error {
+	if r.release != nil {
+		return r.release(ctx)
+	}
 	return nil
 }
 
@@ -157,14 +224,6 @@ func (*cacheVolumeTestImmutableRef) ExportChain(context.Context, bkconfig.RefCon
 
 func (*cacheVolumeTestImmutableRef) Finalize(context.Context) error {
 	panic("unexpected Finalize call")
-}
-
-func (*cacheVolumeTestImmutableRef) Extract(context.Context, bksession.Group) error {
-	panic("unexpected Extract call")
-}
-
-func (*cacheVolumeTestImmutableRef) FileList(context.Context, bksession.Group) ([]string, error) {
-	panic("unexpected FileList call")
 }
 
 func (*cacheVolumeTestImmutableRef) GetDescription() string {
@@ -251,8 +310,33 @@ func (*cacheVolumeTestMutableRef) Commit(context.Context) (bkcache.ImmutableRef,
 	panic("unexpected Commit call")
 }
 
+func (*cacheVolumeTestMutableRef) CommitWithUsage(context.Context, snapshots.Usage) (bkcache.ImmutableRef, error) {
+	panic("unexpected CommitWithUsage call")
+}
+
 func (*cacheVolumeTestMutableRef) InvalidateSize(context.Context) error {
 	return nil
+}
+
+type cacheVolumeTestPersistedObjectCache struct {
+	resultID uint64
+	seen     []dagql.AnyResult
+}
+
+func (c *cacheVolumeTestPersistedObjectCache) PersistedResultID(res dagql.AnyResult) (uint64, error) {
+	c.seen = append(c.seen, res)
+	return c.resultID, nil
+}
+
+func cacheVolumeTestDirectoryResult(t *testing.T, srv *dagql.Server, op string) dagql.ObjectResult[*Directory] {
+	t.Helper()
+	res, err := dagql.NewObjectResultForCall(&Directory{}, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: op,
+		Type:        dagql.NewResultCallType((&Directory{}).Type()),
+	})
+	require.NoError(t, err)
+	return res
 }
 
 func TestCacheVolumeUsageIdentityUsesLiveSnapshotID(t *testing.T) {
@@ -264,7 +348,7 @@ func TestCacheVolumeUsageIdentityUsesLiveSnapshotID(t *testing.T) {
 			snapshotID: "snapshot-123",
 		},
 	}
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 	cache.snapshot = ref
 
 	require.Equal(t, []string{"snapshot-123"}, cache.CacheUsageIdentities())
@@ -278,47 +362,140 @@ func TestCacheVolumeUsageSizeUsesLiveSnapshotID(t *testing.T) {
 		snapshotID: "snapshot-123",
 		size:       42,
 	}
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 	cache.snapshot = &cacheVolumeTestMutableRef{cacheVolumeTestImmutableRef: *ref}
 
-	size, ok, err := cache.CacheUsageSize(context.Background(), "snapshot-123")
+	size, ok, err := cache.CacheUsageSize(context.Background(), nil, "snapshot-123")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, int64(42), size)
 }
 
-func TestCacheVolumeEncodeDecodePersistsSourceID(t *testing.T) {
+func TestCacheVolumeUsageSizeUsesPersistedSnapshotID(t *testing.T) {
 	t.Parallel()
 
-	sourceCallID := call.NewEngineResultID(17, call.NewType((&Directory{}).Type()))
-	sourceID := dagql.NewID[*Directory](sourceCallID)
+	manager := &cacheVolumeTestSnapshotManager{
+		snapshotSizes: map[string]int64{
+			"snapshot-123": 42,
+		},
+	}
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
+	cache.snapshotID = "snapshot-123"
+
+	size, ok, err := cache.CacheUsageSize(context.Background(), manager, "snapshot-123")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(42), size)
+	require.Equal(t, []string{"snapshot-123"}, manager.snapshotSizeCalls)
+}
+
+func TestHTTPStateUsageSizeUsesPersistedSnapshotID(t *testing.T) {
+	t.Parallel()
+
+	manager := &cacheVolumeTestSnapshotManager{
+		snapshotSizes: map[string]int64{
+			"snapshot-123": 42,
+		},
+	}
+	state := &HTTPState{
+		snapshotID: "snapshot-123",
+	}
+
+	size, ok, err := state.CacheUsageSize(context.Background(), manager, "snapshot-123")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(42), size)
+	require.Empty(t, manager.getBySnapshotIDCalls)
+	require.Equal(t, []string{"snapshot-123"}, manager.snapshotSizeCalls)
+}
+
+func TestCacheVolumeEncodePersistsSourceResultID(t *testing.T) {
+	t.Parallel()
+
+	query := &Query{Server: &cacheVolumeTestQueryServer{mockServer: &mockServer{}}}
+	srv := newCoreDagqlServerForTest(t, query)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
+	source := cacheVolumeTestDirectoryResult(t, srv, "cache-volume-source")
+	persisted := &cacheVolumeTestPersistedObjectCache{resultID: 17}
 
 	cache := NewCache(
 		"cache-key",
 		"ns",
-		dagql.Optional[DirectoryID]{
-			Valid: true,
-			Value: sourceID,
-		},
+		dagql.NonNull(source),
 		CacheSharingModeLocked,
 		"1000:1000",
 	)
 
-	payload, err := cache.EncodePersistedObject(context.Background(), nil)
+	payload, err := cache.EncodePersistedObject(context.Background(), persisted)
 	require.NoError(t, err)
 
 	var raw persistedCacheVolumePayload
-	require.NoError(t, json.Unmarshal(payload, &raw))
-	require.NotEmpty(t, raw.SourceID)
+	require.NoError(t, json.Unmarshal(payload.JSON, &raw))
+	require.Equal(t, uint64(17), raw.SourceResultID)
+	require.Len(t, persisted.seen, 1)
 
-	decodedAny, err := (&CacheVolume{}).DecodePersistedObject(context.Background(), nil, 0, nil, payload)
-	require.NoError(t, err)
-	decoded := decodedAny.(*CacheVolume)
-	require.True(t, decoded.Source.Valid)
+	seenSource, ok := persisted.seen[0].(dagql.ObjectResult[*Directory])
+	require.True(t, ok)
+	require.Same(t, source.Self(), seenSource.Self())
+}
 
-	encodedSource, err := decoded.Source.Value.Encode()
+func TestCacheVolumeAttachDependencyResultsAttachesSource(t *testing.T) {
+	t.Parallel()
+
+	query := &Query{Server: &cacheVolumeTestQueryServer{mockServer: &mockServer{}}}
+	srv := newCoreDagqlServerForTest(t, query)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
+	source := cacheVolumeTestDirectoryResult(t, srv, "cache-volume-source")
+	attachedSource := cacheVolumeTestDirectoryResult(t, srv, "cache-volume-attached-source")
+	cache := NewCache("cache-key", "ns", dagql.NonNull(source), CacheSharingModeShared, "")
+
+	deps, err := cache.AttachDependencyResults(context.Background(), nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+		seenSource, ok := res.(dagql.ObjectResult[*Directory])
+		require.True(t, ok)
+		require.Same(t, source.Self(), seenSource.Self())
+		return attachedSource, nil
+	})
 	require.NoError(t, err)
-	require.Equal(t, raw.SourceID, encodedSource)
+	require.Len(t, deps, 1)
+	require.Same(t, attachedSource.Self(), deps[0].(dagql.ObjectResult[*Directory]).Self())
+	require.Same(t, attachedSource.Self(), cache.Source.Value.Self())
+}
+
+func TestCacheVolumeLockKeyUsesSourceID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	query := &Query{Server: &cacheVolumeTestQueryServer{mockServer: &mockServer{}}}
+	srv := newCoreDagqlServerForTest(t, query)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
+	dagCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, dagCache.Close(context.Background()))
+	})
+	ctx = ContextWithQuery(dagql.ContextWithCache(ctx, dagCache), query)
+
+	sourceCall := &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "cache-volume-source",
+		Type:        dagql.NewResultCallType((&Directory{}).Type()),
+	}
+	initialSource := cacheVolumeTestDirectoryResult(t, srv, "cache-volume-source")
+	sourceAny, err := dagCache.GetOrInitCall(ctx, "session", srv, &dagql.CallRequest{
+		ResultCall: sourceCall,
+	}, dagql.ValueFunc(initialSource))
+	require.NoError(t, err)
+	source, ok := sourceAny.(dagql.ObjectResult[*Directory])
+	require.True(t, ok)
+	sourceID, err := source.ID()
+	require.NoError(t, err)
+	encodedSourceID, err := sourceID.Encode()
+	require.NoError(t, err)
+
+	cache := NewCache("cache-key", "ns", dagql.NonNull(source), CacheSharingModeLocked, "")
+	lockKey, err := cache.lockKey()
+	require.NoError(t, err)
+	require.Contains(t, lockKey, encodedSourceID)
 }
 
 func TestCacheVolumeInitializeSnapshotCreatesMutableSnapshot(t *testing.T) {
@@ -341,13 +518,132 @@ func TestCacheVolumeInitializeSnapshotCreatesMutableSnapshot(t *testing.T) {
 	}
 	ctx := ContextWithQuery(context.Background(), query)
 
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 
 	require.NoError(t, cache.InitializeSnapshot(ctx))
 	require.Len(t, manager.newCalls, 1)
 	require.Nil(t, manager.newCalls[0])
 	require.Equal(t, ref, cache.getSnapshot())
 	require.Equal(t, "/", cache.getSnapshotSelector())
+}
+
+func TestCacheVolumeDecodeDistinctPersistedResultsSharingSnapshot(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	const snapshotID = "cache-volume-snapshot"
+
+	cacheCall := func(field string) *dagql.ResultCall {
+		return &dagql.ResultCall{
+			Kind:  dagql.ResultCallKindField,
+			Type:  dagql.NewResultCallType((&CacheVolume{}).Type()),
+			Field: field,
+		}
+	}
+	cacheResult := func(t *testing.T, srv *dagql.Server, call *dagql.ResultCall, key string) dagql.ObjectResult[*CacheVolume] {
+		t.Helper()
+		cache := NewCache(key, "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeLocked, "")
+		cache.snapshot = &cacheVolumeTestMutableRef{
+			cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
+				id:         key + "-mutable",
+				snapshotID: snapshotID,
+			},
+		}
+		res, err := dagql.NewObjectResultForCall(cache, srv, call)
+		require.NoError(t, err)
+		return res
+	}
+	cacheServer := func(manager bkcache.SnapshotManager) (*dagql.Server, *Query) {
+		query := &Query{
+			Server: &cacheVolumeTestQueryServer{
+				mockServer:   &mockServer{},
+				cacheManager: manager,
+			},
+		}
+		srv := newCoreDagqlServerForTest(t, query)
+		srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*CacheVolume]{}))
+		return srv, query
+	}
+
+	callA := cacheCall("cache-volume-a")
+	callB := cacheCall("cache-volume-b")
+
+	cacheA, err := dagql.NewCache(ctx, dbPath, nil, nil)
+	require.NoError(t, err)
+	srvA, _ := cacheServer(nil)
+	ctxA := dagql.ContextWithCache(ctx, cacheA)
+
+	resA, err := cacheA.GetOrInitCall(ctxA, "session-a", srvA, &dagql.CallRequest{
+		ResultCall:    callA,
+		IsPersistable: true,
+	}, dagql.ValueFunc(cacheResult(t, srvA, callA, "cache-a")))
+	require.NoError(t, err)
+	resB, err := cacheA.GetOrInitCall(ctxA, "session-a", srvA, &dagql.CallRequest{
+		ResultCall:    callB,
+		IsPersistable: true,
+	}, dagql.ValueFunc(cacheResult(t, srvA, callB, "cache-b")))
+	require.NoError(t, err)
+
+	resultIDA, err := cacheA.PersistedResultID(resA)
+	require.NoError(t, err)
+	resultIDB, err := cacheA.PersistedResultID(resB)
+	require.NoError(t, err)
+	require.NotEqual(t, resultIDA, resultIDB)
+
+	require.NoError(t, cacheA.ReleaseSession(ctxA, "session-a"))
+	require.NoError(t, cacheA.Close(ctx))
+
+	managerB := &cacheVolumeTestSnapshotManager{
+		mutableBySnapshotID: map[string]bkcache.MutableRef{
+			snapshotID: &cacheVolumeTestMutableRef{
+				cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
+					id:         "cache-volume-mutable",
+					snapshotID: snapshotID,
+				},
+			},
+		},
+		lockMutableSnapshotID: true,
+	}
+	cacheB, err := dagql.NewCache(ctx, dbPath, managerB, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, cacheB.Close(context.Background()))
+	})
+	srvB, queryB := cacheServer(managerB)
+	ctxB := ContextWithQuery(dagql.ContextWithCache(ctx, cacheB), queryB)
+
+	loadedA, err := cacheB.GetOrInitCall(ctxB, "session-b", srvB, &dagql.CallRequest{
+		ResultCall:    callA,
+		IsPersistable: true,
+	}, func(context.Context) (dagql.AnyResult, error) {
+		return nil, errors.New("unexpected initializer for first persisted cache volume")
+	})
+	require.NoError(t, err)
+
+	loadedB, err := cacheB.GetOrInitCall(ctxB, "session-b", srvB, &dagql.CallRequest{
+		ResultCall:    callB,
+		IsPersistable: true,
+	}, func(context.Context) (dagql.AnyResult, error) {
+		return nil, errors.New("unexpected initializer for second persisted cache volume")
+	})
+	require.NoError(t, err)
+	require.Empty(t, managerB.getMutableBySnapshotIDCalls)
+
+	loadedCacheA, ok := loadedA.(dagql.ObjectResult[*CacheVolume])
+	require.True(t, ok)
+	loadedCacheB, ok := loadedB.(dagql.ObjectResult[*CacheVolume])
+	require.True(t, ok)
+
+	require.NoError(t, loadedCacheA.Self().InitializeSnapshot(ctxB))
+	require.NoError(t, loadedCacheB.Self().InitializeSnapshot(ctxB))
+	require.Equal(t, []string{snapshotID}, managerB.getMutableBySnapshotIDCalls)
+	require.True(t, managerB.mutableSnapshotOpen[snapshotID])
+
+	require.NoError(t, loadedCacheA.Self().OnRelease(ctxB))
+	require.True(t, managerB.mutableSnapshotOpen[snapshotID])
+	require.NoError(t, loadedCacheB.Self().OnRelease(ctxB))
+	require.False(t, managerB.mutableSnapshotOpen[snapshotID])
 }
 
 var _ bkcache.ImmutableRef = (*cacheVolumeTestImmutableRef)(nil)

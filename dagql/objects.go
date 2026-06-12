@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -27,6 +28,10 @@ type Class[T Typed] struct {
 	fields  map[string][]*Field[T]
 	fieldsL *sync.RWMutex
 
+	// interfaces records the interfaces this class implements.
+	// Uses a map (reference type) so it's shared across value copies of Class.
+	interfaces map[string]*Interface
+
 	invalidateSchemaCache func()
 
 	// The inner type sourceMap directive so additional type
@@ -35,6 +40,38 @@ type Class[T Typed] struct {
 }
 
 var _ ObjectType = Class[Typed]{}
+
+// InterfaceImplementor is implemented by object types that can declare
+// interface conformance. Class[T] satisfies this interface.
+type InterfaceImplementor interface {
+	ImplementInterface(iface *Interface)
+	// ImplementInterfaceUnchecked declares interface conformance without
+	// performing dagql's structural Satisfies check. This is used when a
+	// higher-level layer (e.g. core's IsSubtypeOf) has already validated
+	// conformance with richer semantics (covariance, contravariance, etc.).
+	ImplementInterfaceUnchecked(iface *Interface)
+}
+
+var _ InterfaceImplementor = Class[Typed]{}
+
+// ImplementInterface is the same as Implements but satisfies the
+// InterfaceImplementor interface for use via the ObjectType interface.
+func (class Class[T]) ImplementInterface(iface *Interface) {
+	class.Implements(iface)
+}
+
+// ImplementInterfaceUnchecked declares interface conformance without performing
+// the dagql structural Satisfies check. Use this when a higher-level type system
+// (e.g. core's IsSubtypeOf) has already validated conformance.
+func (class Class[T]) ImplementInterfaceUnchecked(iface *Interface) {
+	class.fieldsL.Lock()
+	class.interfaces[iface.TypeName()] = iface
+	class.fieldsL.Unlock()
+	iface.addImplementor(class.TypeName())
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
+}
 
 type ClassOpts[T Typed] struct {
 	// NoIDs disables the default "id" field and disables the IDType method.
@@ -70,50 +107,61 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 	}
 
 	class := Class[T]{
-		inner:     opts.Typed,
-		fields:    map[string][]*Field[T]{},
-		fieldsL:   new(sync.RWMutex),
-		sourceMap: opts.SourceMap,
+		inner:      opts.Typed,
+		fields:     map[string][]*Field[T]{},
+		fieldsL:    new(sync.RWMutex),
+		interfaces: map[string]*Interface{},
+		sourceMap:  opts.SourceMap,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
-		class.Install(
-			Field[T]{
-				Spec: &FieldSpec{
-					Name:        "id",
-					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
-					Type:        ID[T]{inner: opts.Typed},
-					Args: NewInputSpecs(
-						InputSpec{
-							Name:        "recipe",
-							Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
-							Type:        Boolean(false),
-							Default:     Boolean(false),
-							Internal:    true,
-						},
-					),
-					// TODO: ?
-					DoNotCache: "cause",
-				},
-				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
-					recipe, _ := args["recipe"].(Boolean)
-					var (
-						selfID *call.ID
-						err    error
-					)
-					if bool(recipe) {
-						selfID, err = self.RecipeID(ctx)
-					} else {
-						selfID, err = self.ID()
-					}
-					if err != nil {
-						return nil, err
-					}
-					return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
-				},
+		class.Install(Field[T]{
+			Spec: &FieldSpec{
+				Name:        "id",
+				Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
+				Type:        AnyID{},
+				Args: NewInputSpecs(InputSpec{
+					Name:        "recipe",
+					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+					Type:        Boolean(false),
+					Default:     Boolean(false),
+					Internal:    true,
+				}),
+				DoNotCache: "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
 			},
-		)
+			Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
+				recipe, _ := args["recipe"].(Boolean)
+				recipeExplicit := false
+				if call := CurrentCall(ctx); call != nil {
+					for _, arg := range call.Args {
+						if arg != nil && arg.Name == "recipe" {
+							recipeExplicit = true
+							break
+						}
+					}
+				}
+				if !recipeExplicit {
+					if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+						recipe = Boolean(clientMetadata.UseRecipeIDsByDefault)
+					}
+				}
+
+				var (
+					selfID *call.ID
+					err    error
+				)
+				if bool(recipe) {
+					selfID, err = self.RecipeID(ctx)
+				} else {
+					selfID, err = self.ID()
+				}
+				if err != nil {
+					return nil, err
+				}
+				return NewResultForCurrentCall(ctx, NewAnyID(selfID))
+			},
+		})
 		class.idable = true
 	}
 	return class
@@ -124,10 +172,8 @@ func (class Class[T]) ForkObjectType(srv *Server) (ObjectType, error) {
 	defer class.fieldsL.RUnlock()
 
 	forked := class
-	forked.fields = make(map[string][]*Field[T], len(class.fields))
-	for name, fields := range class.fields {
-		forked.fields[name] = slices.Clone(fields)
-	}
+	forked.fields = maps.Clone(forked.fields)
+	forked.interfaces = maps.Clone(class.interfaces)
 	forked.fieldsL = new(sync.RWMutex)
 	forked.invalidateSchemaCache = srv.invalidateSchemaCache
 	return forked, nil
@@ -230,6 +276,37 @@ func (class Class[T]) TypeName() string {
 	return class.inner.Type().Name()
 }
 
+// Implements declares that this class implements the given interface.
+//
+// It verifies that the class structurally satisfies the interface (has all
+// required fields with compatible types). If not, it panics — this is a
+// programming error, like a bad field type.
+//
+// The check uses the empty view ("") which sees all global fields.
+func (class Class[T]) Implements(iface *Interface) {
+	if !iface.Satisfies(class, "") {
+		panic(fmt.Sprintf("type %s does not satisfy interface %s", class.TypeName(), iface.TypeName()))
+	}
+	class.fieldsL.Lock()
+	class.interfaces[iface.TypeName()] = iface
+	class.fieldsL.Unlock()
+	iface.addImplementor(class.TypeName())
+	if class.invalidateSchemaCache != nil {
+		class.invalidateSchemaCache()
+	}
+}
+
+// Interfaces returns the interfaces this class implements.
+func (class Class[T]) Interfaces() []*Interface {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	result := make([]*Interface, 0, len(class.interfaces))
+	for _, iface := range class.interfaces {
+		result = append(result, iface)
+	}
+	return result
+}
+
 func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	class.fieldsL.Lock()
 	f := &Field[T]{
@@ -244,20 +321,6 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	// Invalidate cache after releasing the lock to avoid Class[...].fieldsL and
 	// *Server.schemaLock deadlock if the schema is concurrently introspected and
 	// updated (via Extend)
-	if class.invalidateSchemaCache != nil {
-		class.invalidateSchemaCache()
-	}
-}
-
-func (class Class[T]) ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc) {
-	class.fieldsL.Lock()
-	spec.BuiltinLoadByIDFunc = fun
-	f := &Field[T]{
-		Spec: &spec,
-	}
-	class.fields[spec.Name] = append(class.fields[spec.Name], f)
-	class.fieldsL.Unlock()
-
 	if class.invalidateSchemaCache != nil {
 		class.invalidateSchemaCache()
 	}
@@ -294,6 +357,11 @@ func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
 	sort.Slice(def.Fields, func(i, j int) bool {
 		return def.Fields[i].Name < def.Fields[j].Name
 	})
+	// Populate interface names on the definition.
+	for name := range class.interfaces {
+		def.Interfaces = append(def.Interfaces, name)
+	}
+	sort.Strings(def.Interfaces)
 	return def
 }
 
@@ -345,6 +413,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 		return objResult, nil
 	}
 	if inst, ok := val.(Result[T]); ok {
+		inst.shared.setObjClass(class)
 		return ObjectResult[T]{
 			Result: inst,
 			class:  class,
@@ -358,6 +427,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 						if _, ok := UnwrapAs[T](inner); ok {
 							derefVal := derefCapable.withDerefViewAny()
 							if derefInst, ok := derefVal.(Result[Typed]); ok {
+								derefInst.shared.setObjClass(class)
 								return ObjectResult[T]{
 									Result: Result[T](derefInst),
 									class:  class,
@@ -369,6 +439,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 			}
 			return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
 		}
+		inst.shared.setObjClass(class)
 		return ObjectResult[T]{
 			Result: Result[T](inst),
 			class:  class,
@@ -382,6 +453,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 	if shared == nil {
 		return nil, fmt.Errorf("cannot instantiate %T with %T: missing shared result", class, val)
 	}
+	shared.setObjClass(class)
 
 	return ObjectResult[T]{
 		Result: Result[T]{
@@ -499,14 +571,15 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 			Args:           frameArgs,
 			ImplicitInputs: implicitInputs,
 		},
-		TTL:           field.Spec.TTL,
-		DoNotCache:    field.Spec.DoNotCache != "",
-		IsPersistable: field.Spec.IsPersistable,
+		TTL:                  field.Spec.TTL,
+		DoNotCache:           field.Spec.DoNotCache != "",
+		IsPersistable:        field.Spec.IsPersistable,
+		PassthroughTelemetry: field.Spec.PassthroughTelemetry,
 	}
 	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
 		slog.Warn("failed to get client metadata from context for call", "err", err)
 	} else {
-		req.ConcurrencyKey = clientMD.ClientID
+		req.ConcurrencyKey = clientMD.SessionID
 	}
 	if field.Spec.GetDynamicInput != nil {
 		if err := field.Spec.GetDynamicInput(ctx, r, inputArgs, view, req); err != nil {
@@ -551,8 +624,8 @@ func (r ObjectResult[T]) call(
 	if !ok {
 		return nil, fmt.Errorf("call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
 	}
-	if field.Spec.BuiltinLoadByIDFunc != nil {
-		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
+	if field.Spec.Trivial {
+		ctx = ContextWithTrivialField(ctx)
 	}
 	var (
 		res AnyResult
@@ -796,10 +869,6 @@ type FieldSpec struct {
 	Module *ResultCallModule
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
-	// BuiltinLoadByIDFunc is the execution path for schema-generated
-	// load<Type>FromID fields, which re-enter the graph from an object ID
-	// rather than behaving like normal field resolvers.
-	BuiltinLoadByIDFunc LoadByIDFunc
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
@@ -828,6 +897,16 @@ type FieldSpec struct {
 	// emit their own telemetry.
 	NoTelemetry bool
 
+	// Trivial marks fields that only unwrap data from their receiver rather
+	// than performing meaningful work. Used to suppress install-span capture
+	// for synthetic accessors (e.g. auto-generated module object field
+	// accessors) so they don't claim ownership of values they merely return.
+	Trivial bool
+
+	// PassthroughTelemetry keeps this field's telemetry span available for call
+	// metadata while asking the UI to show its children in its place.
+	PassthroughTelemetry bool
+
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
 	extend bool
@@ -842,6 +921,14 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 	}
 	if len(spec.Directives) > 0 {
 		def.Directives = slices.Clone(spec.Directives)
+	}
+	// When the return type is ID, add @expectedType to convey type info.
+	if spec.Type.Type().Name() == "ID" {
+		if idTyped, ok := spec.Type.(interface{ ExpectedTypeName() string }); ok {
+			if expectedName := idTyped.ExpectedTypeName(); expectedName != "" {
+				def.Directives = append(def.Directives, ExpectedTypeDirective(expectedName))
+			}
+		}
 	}
 	if spec.DeprecatedReason != nil {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
@@ -1140,6 +1227,19 @@ func (specs InputSpecs) ArgumentDefinitions(view call.View) []*ast.ArgumentDefin
 		if len(arg.Directives) > 0 {
 			schemaArg.Directives = slices.Clone(arg.Directives)
 		}
+		// Add @expectedType for ID-typed arguments that don't already
+		// have one. The reflection-based InputSpecsForType path adds
+		// this to spec.Directives, but directly-constructed InputSpecs
+		// (e.g. from ExtendEnvType) may not.
+		if arg.Type.Type().Name() == "ID" {
+			hasExpectedType := slices.ContainsFunc(schemaArg.Directives,
+				func(d *ast.Directive) bool { return d.Name == "expectedType" })
+			if !hasExpectedType {
+				if name := findExpectedTypeName(arg.Type); name != "" {
+					schemaArg.Directives = append(schemaArg.Directives, ExpectedTypeDirective(name))
+				}
+			}
+		}
 		if arg.DeprecatedReason != nil {
 			schemaArg.Directives = append(schemaArg.Directives, deprecated(arg.DeprecatedReason))
 		}
@@ -1227,6 +1327,13 @@ func (fields Fields[T]) Install(server *Server) {
 		})
 	}
 	class.Install(fields...)
+
+	// Flag interface inference stale now that every field is installed. At
+	// InstallObject time only the id field was present, so fields like sync
+	// weren't yet visible to the structural checks. (Done here, after
+	// class.Install releases the field lock, to preserve installLock -> fieldsL
+	// ordering.)
+	server.markInterfacesDirty()
 }
 
 type GenericDynamicInputFunc func(
@@ -1287,6 +1394,14 @@ func (field Field[T]) IsPersistable() Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.IsPersistable = true
+	return field
+}
+
+func (field Field[T]) PassthroughTelemetry() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.PassthroughTelemetry = true
 	return field
 }
 
@@ -1407,6 +1522,48 @@ type reflectField[T any] struct {
 	Field reflect.StructField
 }
 
+// findExpectedTypeName walks through Input wrappers to find the expected type
+// name for ID-typed arguments. It handles Optional, DynamicOptional, and
+// ArrayInput wrappers.
+func findExpectedTypeName(input Input) string {
+	// Direct check.
+	if idTyped, ok := input.(interface{ ExpectedTypeName() string }); ok {
+		if name := idTyped.ExpectedTypeName(); name != "" {
+			return name
+		}
+	}
+	// Unwrap via reflection for generic wrappers like Optional[ID[T]]
+	// or ArrayInput[ID[T]] that we can't type-assert directly.
+	v := reflect.ValueOf(input)
+	switch v.Kind() {
+	case reflect.Struct:
+		for _, f := range v.Fields() {
+			if !f.CanInterface() {
+				continue
+			}
+			if inner, ok := f.Interface().(Input); ok {
+				if name := findExpectedTypeName(inner); name != "" {
+					return name
+				}
+			}
+		}
+	case reflect.Slice:
+		// For ArrayInput[ID[T]], check the element type.
+		elemType := v.Type().Elem()
+		if elemType.Kind() == reflect.Struct || elemType.Kind() == reflect.Interface {
+			zero := reflect.New(elemType).Elem()
+			if zero.CanInterface() {
+				if inner, ok := zero.Interface().(Input); ok {
+					if name := findExpectedTypeName(inner); name != "" {
+						return name
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 	fields, err := reflectFieldsForType(obj, optIn, builtinOrInput)
 	if err != nil {
@@ -1439,6 +1596,13 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			Sensitive:          field.Field.Tag.Get("sensitive") == "true",
 			Internal:           field.Field.Tag.Get("internal") == "true",
 		}
+		// Add @expectedType directive for ID-typed arguments.
+		// Walk through wrapper types (Optional, DynamicOptional, ArrayInput)
+		// to find the underlying type and check for ExpectedTypeName.
+		expectedTypeName := findExpectedTypeName(input)
+		if expectedTypeName != "" {
+			spec.Directives = append(spec.Directives, ExpectedTypeDirective(expectedTypeName))
+		}
 		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
 			reason := dep
 			spec.DeprecatedReason = &reason
@@ -1469,14 +1633,13 @@ func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error))
 	if objT == nil {
 		return nil, nil
 	}
-	if objT.Kind() == reflect.Ptr {
+	if objT.Kind() == reflect.Pointer {
 		objT = objT.Elem()
 	}
 	if objT.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("inputs must be a struct, got %T (%s)", obj, objT.Kind())
 	}
-	for i := range objT.NumField() {
-		fieldT := objT.Field(i)
+	for fieldT := range objT.Fields() {
 		if fieldT.Anonymous {
 			fieldI := reflect.New(fieldT.Type).Elem().Interface()
 			embeddedFields, err := reflectFieldsForType(fieldI, optIn, init)
@@ -1531,7 +1694,7 @@ func getField(
 		return nil, false, fmt.Errorf("get field %q: object is nil", fieldName)
 	}
 	objV := reflect.ValueOf(obj)
-	if objT.Kind() == reflect.Ptr {
+	if objT.Kind() == reflect.Pointer {
 		// if objV.IsZero() {
 		// 	return nil, false, nil
 		// }

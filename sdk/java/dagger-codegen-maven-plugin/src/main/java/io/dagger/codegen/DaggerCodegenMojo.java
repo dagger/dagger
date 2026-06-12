@@ -77,6 +77,12 @@ public class DaggerCodegenMojo extends AbstractMojo {
             }
 
             @Override
+            public void visitInterface(Type type) {
+              getLog().info(String.format("Generating interface %s", type.getName()));
+              codegen.visitInterface(type);
+            }
+
+            @Override
             public void visitInput(Type type) {
               getLog().info(String.format("Generating input %s", type.getName()));
               codegen.visitInput(type);
@@ -128,9 +134,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
     getLog()
         .info(String.format("Querying local dagger CLI for schema (version=%s)", actualVersion));
     this.version = actualVersion;
-    return DaggerCLIUtils.query(
-        getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"),
-        this.bin);
+    return DaggerCLIUtils.query(DaggerCLIUtils.introspectionQuery(getClass()), this.bin);
   }
 
   public File getOutputDirectory() {

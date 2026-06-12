@@ -10,13 +10,13 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/pkg/reference"
 	cerrdefs "github.com/containerd/errdefs"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/cache/config"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/progress/logs"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -35,7 +35,7 @@ type Unlazier interface {
 // appended to the result.
 // Note: Use WorkerRef.GetRemotes instead as moby integration requires custom GetRemotes implementation.
 func (sr *immutableRef) GetRemotes(ctx context.Context, createIfNeeded bool, refCfg config.RefConfig, all bool, s session.Group) ([]*solver.Remote, error) {
-	ctx, done, err := leaseutil.WithLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
+	ctx, done, err := bksnapshots.WithLease(ctx, sr.cm.LeaseManager, bksnapshots.MakeTemporary)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,6 @@
 {
   "name": "gh",
-  "engineVersion": "v0.20.6",
+  "engineVersion": "v0.21.6",
   "sdk": {
     "source": "go"
   },
@@ -15,5 +15,8 @@
       "name": "apko",
       "source": "../apko"
     }
-  ]
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  }
 }

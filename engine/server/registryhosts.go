@@ -18,7 +18,6 @@ import (
 	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/engine/distconsts"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
-	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/pkg/errors"
 )
 
@@ -95,8 +94,10 @@ func applyRegistryHostConfig(host string, cfg resolverconfig.RegistryConfig, h d
 		tc.InsecureSkipVerify = true
 	}
 	baseTransport := docker.DefaultHTTPTransport(tc)
+	// Keep the concrete transport here; resolver wraps tracing after any
+	// per-call service DNS transport is installed.
 	h.Client = &http.Client{
-		Transport: tracing.NewTransport(baseTransport),
+		Transport: baseTransport,
 	}
 	explicitTLS := tc.InsecureSkipVerify || tc.RootCAs != nil || len(tc.Certificates) > 0
 
@@ -108,7 +109,7 @@ func applyRegistryHostConfig(host string, cfg resolverconfig.RegistryConfig, h d
 	if explicitTLS && port != "80" {
 		h.Scheme = "https"
 		h.Client = &http.Client{
-			Transport: tracing.NewTransport(docker.NewHTTPFallback(baseTransport)),
+			Transport: docker.NewHTTPFallback(baseTransport),
 		}
 		return h, nil
 	}

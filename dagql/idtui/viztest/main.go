@@ -21,6 +21,10 @@ type Viztest struct {
 	Num int
 }
 
+type ModuleTypeReturn struct {
+	Container *dagger.Container
+}
+
 // HelloWorld returns the string "Hello, world!"
 // +cache="session"
 func (*Viztest) HelloWorld() string {
@@ -103,26 +107,58 @@ func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
 	defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 	// NB: theoretically this would be from a concurrency pool or something but
 	// we'll simulate it instead to reduce randomness
-	return errors.Join(
-		func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, "sub-thing 1")
-			defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
-			_, err := dag.Container().
-				From("alpine").
-				WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
-				Sync(ctx)
-			return err
-		}(),
-		(func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, "sub-thing 2")
-			defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
-			_, err := dag.Container().
-				From("alpine").
-				WithExec([]string{"sh", "-c", "echo this is another failing effect; exit 1"}).
-				Sync(ctx)
-			return err
-		})(),
-	)
+
+	ctx1, span := Tracer().Start(ctx, "sub-thing 1")
+	_, err1 := dag.Container().
+		From("alpine").
+		WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
+		Sync(ctx1)
+	telemetry.End(span, func() error { return err1 }) //nolint:staticcheck
+
+	ctx2, span := Tracer().Start(ctx, "sub-thing 2")
+	_, err2 := dag.Container().
+		From("alpine").
+		WithExec([]string{"sh", "-c", "echo this is another failing effect; exit 1"}).
+		Sync(ctx2)
+	telemetry.End(span, func() error { return err2 }) //nolint:staticcheck
+
+	return errors.Join(err1, err2)
+}
+
+const testSummarySuite = "viztest summary"
+
+// TestSummary emits a deterministic OpenTelemetry test summary.
+// +cache="never"
+// +check
+func (*Viztest) TestSummary(ctx context.Context) error {
+	ctx, suite := Tracer().Start(ctx, "viztest summary suite",
+		trace.WithAttributes(
+			attribute.String("test.suite.name", testSummarySuite),
+			attribute.String("test.suite.run.status", "success"),
+		))
+	defer suite.End()
+
+	emitTestSummaryCase(ctx, "passing test 01", "pass")
+	emitTestSummaryCase(ctx, "passing test 02", "pass")
+	for i := 1; i <= 2; i++ {
+		emitTestSummaryCase(ctx, fmt.Sprintf("skipped test %02d", i), "skipped")
+	}
+	emitTestSummaryCase(ctx, "failed test 01", "fail")
+	return nil
+}
+
+func emitTestSummaryCase(ctx context.Context, name, status string) {
+	ctx, span := Tracer().Start(ctx, name,
+		trace.WithAttributes(
+			attribute.String("test.case.name", testSummarySuite+"/"+name),
+			attribute.String("test.suite.name", testSummarySuite),
+			attribute.String("test.case.result.status", status),
+		))
+	stdio := telemetry.SpanStdio(ctx, "")
+	fmt.Fprintf(stdio.Stdout, "%s log line 1\n", name)
+	fmt.Fprintf(stdio.Stdout, "%s log line 2\n", name)
+	stdio.Close()
+	span.End()
 }
 
 // +cache="session"
@@ -158,6 +194,83 @@ func (*Viztest) PrimaryLines(n int) string {
 func (*Viztest) ManyLines(n int) {
 	for i := 1; i <= n; i++ {
 		fmt.Println("This is line", i, "of", n)
+	}
+}
+
+// PartialProgress emits synthetic streaming-progress log records (the
+// dagger.io/progress.* convention) with hard-coded values that never reach
+// completion, so the final frame deterministically renders partially filled
+// braille bars: complete, in-flight at various fractions, untouched, and
+// indeterminate (unknown total). A child span overflows the per-row item
+// cap to exercise +N truncation.
+// +cache="session"
+func (*Viztest) PartialProgress(ctx context.Context) {
+	// one cell per fill state on the function's own span
+	emitProgress(ctx, "layer-complete", 10_000_000, 10_000_000)
+	emitProgress(ctx, "layer-almost", 9_000_000, 10_000_000)
+	emitProgress(ctx, "layer-half", 5_000_000, 10_000_000)
+	emitProgress(ctx, "layer-started", 1_000_000, 10_000_000)
+	emitProgress(ctx, "layer-untouched", 0, 10_000_000)
+	emitProgress(ctx, "layer-indeterminate", 5_000_000, 0)
+
+	func() {
+		ctx, span := Tracer().Start(ctx, "overflow")
+		defer span.End()
+		for i := range 50 {
+			emitProgress(ctx, fmt.Sprintf("item-%d", i), 1024, 1024)
+		}
+	}()
+}
+
+// emitProgress emits one streaming-progress log record following the
+// dagger.io/progress.* convention.
+func emitProgress(ctx context.Context, item string, current, total int64) {
+	rec := log.Record{}
+	rec.SetTimestamp(time.Now())
+	// explicit empty body: progress records are not log text, and an
+	// unset body does not survive the OTLP round-trip
+	rec.SetBody(log.StringValue(""))
+	rec.AddAttributes(
+		log.String("dagger.io/progress.item", item),
+		log.Int64("dagger.io/progress.current", current),
+		log.Int64("dagger.io/progress.total", total),
+		log.String("dagger.io/progress.unit", "bytes"),
+	)
+	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
+}
+
+// TransientProgress runs a long-lived "syncing layers" span (collapsed by
+// default, so its descendants' progress rolls up onto its row) containing
+// a storm of transfers that complete instantly and one that stays in
+// flight. Exercises the roll-up's quick-transfer fold: the quick ones
+// never earn a live row and merge into one summary line in the final
+// report ("1 transfer, 3 fetches ..."), while the in-flight transfer
+// appears live once it's been active past the threshold and keeps its own
+// row in the report.
+// +cache="session"
+func (*Viztest) TransientProgress(ctx context.Context) {
+	ctx, outer := Tracer().Start(ctx, "syncing layers")
+	defer outer.End()
+
+	func() {
+		ctx, span := Tracer().Start(ctx, "transfer-done")
+		defer span.End()
+		emitProgress(ctx, "blob", 10_000_000, 10_000_000)
+	}()
+
+	for i := range 3 {
+		func() {
+			ctx, span := Tracer().Start(ctx, fmt.Sprintf("fetching https://example.com/pkg-%d.apk", i))
+			defer span.End()
+			emitProgress(ctx, "body", 2_000_000, 2_000_000)
+		}()
+	}
+
+	ctx, span := Tracer().Start(ctx, "transfer-live")
+	defer span.End()
+	for i := int64(1); i <= 8; i++ {
+		emitProgress(ctx, "blob", i*1_000_000, 10_000_000)
+		time.Sleep(time.Second)
 	}
 }
 
@@ -443,6 +556,26 @@ func (v *Viztest) UseExecService(ctx context.Context) error {
 	return err
 }
 
+// ServiceErrorAttribution binds a container to a service that logs and then
+// exits non-zero, exercising service-exit failure attribution back to the
+// .asService call that returned it.
+// +cache="session"
+func (*Viztest) ServiceErrorAttribution(ctx context.Context) error {
+	crashy := dag.Container().
+		From("alpine").
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{"sh", "-c", "echo service is starting; sleep 1; echo service is crashing >&2; exit 42"},
+		})
+
+	_, err := dag.Container().
+		From("alpine").
+		WithServiceBinding("crashy", crashy).
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"sh", "-c", "echo client is waiting; sleep 10; echo should not happen"}).
+		Sync(ctx)
+	return err
+}
+
 // +cache="session"
 func (*Viztest) NoExecService() *dagger.Service {
 	return dag.Container().
@@ -537,6 +670,17 @@ RUN echo hello, world!
 RUN echo im failing && false
 `).
 		DockerBuild()
+}
+
+// +cache="session"
+func (*Viztest) ModuleTypeReturnFail() *ModuleTypeReturn {
+	return &ModuleTypeReturn{
+		Container: dag.Container().
+			From("alpine").
+			WithEnvVariable("NOW", time.Now().String()).
+			WithExec([]string{"sh", "-c", "echo module type container failing; exit 1"}).
+			WithEnvVariable("AFTER", "should stay pending"),
+	}
 }
 
 // +cache="session"

@@ -16,7 +16,6 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
@@ -278,13 +277,14 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	callerConn, err := query.SpecificClientAttachableConn(ctx, clientMetadata.ClientID)
+	callerConn, _, err := query.SpecificClientAttachableConn(ctx, clientMetadata.ClientID, core.SpecificClientAttachableConnOpts{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get caller attachable conn: %w", err)
 	}
 	drive := pathutil.GetDrive(absRootCopyPath)
 
 	var mirror *core.ClientFilesyncMirror
+	var releaseEphemeralMirror func(context.Context) error
 	if clientMetadata.ClientStableID != "" {
 		var persistedMirror dagql.ObjectResult[*core.ClientFilesyncMirror]
 		if err := srv.Select(ctx, srv.Root(), &persistedMirror, dagql.Selector{
@@ -298,13 +298,16 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}
 		mirror = persistedMirror.Self()
 	} else {
-		mirror = &core.ClientFilesyncMirror{
-			Drive:       drive,
-			EphemeralID: identity.NewID(),
-		}
+		mirror = core.NewEphemeralClientFilesyncMirror(drive)
 		if err := mirror.EnsureCreated(ctx, query); err != nil {
 			return inst, fmt.Errorf("failed to create ephemeral client filesync mirror: %w", err)
 		}
+		releaseEphemeralMirror = mirror.OnRelease
+		defer func() {
+			if releaseErr := releaseEphemeralMirror(context.WithoutCancel(ctx)); releaseErr != nil {
+				err = errors.Join(err, fmt.Errorf("release ephemeral client filesync mirror: %w", releaseErr))
+			}
+		}()
 	}
 
 	ref, contentDgst, err := mirror.Snapshot(ctx, query, callerConn, absRootCopyPath, snapshotOpts)

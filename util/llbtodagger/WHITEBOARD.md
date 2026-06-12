@@ -3,6 +3,7 @@
 Last updated: 2026-02-28
 
 ## Explicit Goal and Hard Requirements (Do Not Forget)
+
 - Goal: implement a utility library under `./util/llbtodagger` that converts BuildKit LLB + Docker image metadata into a Dagger `*call.ID`.
 - Required input/output:
   - Input: `*pb.Definition` (BuildKit LLB definition).
@@ -20,10 +21,12 @@ Last updated: 2026-02-28
   - unresolved mismatch cases.
 
 ## Current Working Assumptions
+
 - Primary target is LLB produced in Dagger engine workflows; support for arbitrary external LLB is best-effort.
 - We should prioritize deterministic and explainable mappings over trying to "guess" hidden runtime state.
 
 ## Conversion Principles (Do Not Violate)
+
 - Fail fast on unsupported or imperfect mappings.
   - If an op or field cannot be represented faithfully yet, return an error.
   - Do not add fallback behavior yet.
@@ -37,6 +40,7 @@ Last updated: 2026-02-28
 - For Docker-build-derived LLB, prefer returning a `Container`-typed ID and preserve container metadata where representable from LLB.
 
 ## Progress Snapshot
+
 - [x] Read `cache-expert` core references and debugging guidance.
 - [x] Reviewed `engine/buildkit/llbdefinition.go` (`OpDAG`, op type helpers).
 - [x] Reviewed `dagql/call/id.go` construction/digest rules.
@@ -57,6 +61,7 @@ Last updated: 2026-02-28
 - [x] Added internal container metadata mapping for Docker image config fields: healthcheck, onbuild, shell, volumes, stop signal.
 
 ## Proposed Library Shape (Planning Draft)
+
 - Public entrypoint (exact naming TBD):
   - `func DefinitionToID(def *pb.Definition, img *dockerspec.DockerOCIImage) (*call.ID, error)`
     - pass `img=nil` when metadata input is unavailable.
@@ -70,6 +75,7 @@ Last updated: 2026-02-28
 ## Detailed Implementation Plan (Checklist)
 
 ### Phase 1: Package and Contracts
+
 - [x] Create package files:
   - `util/llbtodagger/convert.go`
   - `util/llbtodagger/types.go`
@@ -81,6 +87,7 @@ Last updated: 2026-02-28
 - [x] Add package-level docs and explicit non-goals.
 
 ### Phase 2: Mapping Strategy Core
+
 - [x] Parse `*pb.Definition` into `*buildkit.OpDAG`.
 - [x] Normalize root wrapper ops (top-level synthetic selector op with `Op == nil` case).
 - [x] Add memoized recursive conversion of op DAG to call ID DAG.
@@ -90,6 +97,7 @@ Last updated: 2026-02-28
   - if semantics would be lossy/imperfect, return error (do not synthesize).
 
 ### Phase 3: Structural Op Mapping
+
 - [x] Implement source op mapping:
   - [x] `docker-image://` -> `query.container(...).from(address: ...)` chain.
   - [x] `git://` -> `query.git(url: ...).<ref/head/...>.tree(...)` chain.
@@ -113,11 +121,13 @@ Last updated: 2026-02-28
   - [x] explicitly unsupported; return error immediately.
 
 ### Phase 4: Error Handling Framework (Fail-Fast)
+
 - [x] Add stable error categories for unsupported/unfaithful mappings.
 - [x] Include op digest + op type in returned errors for diagnosis.
 - [x] Ensure converter aborts on first unsupported/imperfect mapping (no fallback path yet).
 
 ### Phase 5: Test Matrix
+
 - [x] Unit tests for empty/nil definition behavior.
 - [x] Unit tests for each op family using synthetic `llb` definitions.
 - [x] Tests that unsupported ops (`BuildOp`, `blob://`) return deterministic errors.
@@ -125,6 +135,7 @@ Last updated: 2026-02-28
 - [x] Golden tests for deterministic ID encoding across runs.
 
 ### Phase 6: Documentation and Developer UX
+
 - [x] Add package `README` or doc comments explaining:
   - supported mappings,
   - explicit unsupported ops,
@@ -132,9 +143,11 @@ Last updated: 2026-02-28
 - [x] Keep this whiteboard updated after each implementation chunk.
 
 ### Phase 6 Nice-To-Have Backlog
+
 - [ ] Add "debug mode" helper to print op->ID mapping trace.
 
 ### Phase 7: Dockerfile->LLB Integration Test Matrix
+
 - [x] Add a new dedicated unit test file for Dockerfile-driven conversion coverage.
 - [x] Build a helper that runs:
   - Dockerfile bytes -> `dockerfile2llb.Dockerfile2LLB`
@@ -152,6 +165,7 @@ Last updated: 2026-02-28
 - [x] Keep this whiteboard updated after each implementation chunk.
 
 ### Phase 8: Container-Typed Output and Metadata Preservation
+
 - [x] Update conversion flow so final `DefinitionToID` output is container-typed for Docker-build LLB.
 - [x] Introduce two-input conversion API (`pb.Definition` + `DockerOCIImage`) for metadata-complete conversion.
 - [x] Preserve metadata where representable from Docker OCI config (entrypoint/cmd/env/user/workdir/labels/exposed ports).
@@ -159,6 +173,7 @@ Last updated: 2026-02-28
 - [x] Document metadata not inferable from `pb.Definition` alone.
 
 ### Phase 9: End-to-End Integration Tests (Core Integration Suite)
+
 - [x] Add a new integration test file under `./core/integration` with suite name `LLBToDaggerSuite`.
 - [x] Add helper pipeline in integration tests:
   - Dockerfile string -> `dockerfile2llb.Dockerfile2LLB`
@@ -178,6 +193,7 @@ Last updated: 2026-02-28
 - [x] Keep this whiteboard updated after each implementation chunk.
 
 ### Phase 10: `withDirectory` Permissions Support (`copy` mode override)
+
 - [x] Extend engine API to support explicit permissions on directory copy operations.
   - [x] Add `permissions` argument to `Directory.withDirectory`.
   - [x] Add `permissions` argument to `Container.withDirectory` for API parity.
@@ -195,6 +211,7 @@ Last updated: 2026-02-28
 - [x] Update unsupported catalogs/checklists to remove `copy mode override` once implemented.
 
 ### Phase 11: Read-Only Bind Mount Support + Non-Sticky Exec Mount Semantics
+
 - [x] Extend container API for read-only directory mounts.
   - [x] Add optional `readOnly` (or `readonly`, schema-consistent naming) argument to `Container.withMountedDirectory`.
   - [x] Thread arg through schema -> core `WithMountedDirectory(..., readonly bool)` call.
@@ -220,6 +237,7 @@ Last updated: 2026-02-28
   - [x] Remove "readonly bind mounts unsupported" entries from unsupported catalogs after implementation lands.
 
 ### Phase 12: Group-Only `chown` Support
+
 - [x] Support group-only ownership mapping in llbtodagger file actions.
   - [x] Map group-only chown to Dagger owner string using explicit UID (`0:<gid>` baseline) instead of erroring.
   - [x] Preserve current fail-fast behavior for unsupported named-user/group variants that still cannot be represented.
@@ -236,6 +254,7 @@ Last updated: 2026-02-28
   - [x] Remove/update "group-only chown unsupported" entries after implementation lands.
 
 ### Phase 13: Named User/Group `chown` via Container-Aware FileOp Mapping
+
 - [x] Planning + guardrails.
   - [x] Keep fail-fast behavior for any named-ownership case that cannot be represented faithfully.
   - [x] Scope to Dockerfile-relevant `COPY/ADD --chown=<name>` path first; do not broaden with fallback heuristics.
@@ -256,6 +275,7 @@ Last updated: 2026-02-28
   - [x] Update unsupported catalogs to remove named-chown entries that are now supported and keep any still-unsupported nuances explicit.
 
 ### Phase 14: Internal Container API for OCI Metadata Fields
+
 - [x] Add internal-only container schema API (underscore-prefixed) for setting OCI config metadata not currently exposed in public SDK methods.
   - [x] Confirm API naming/shape (`_...`) so it is callable from raw ID construction but intentionally not codegen'd for SDKs.
   - [x] Keep scope limited to llbtodagger conversion needs; avoid broad public-surface changes.
@@ -281,6 +301,7 @@ Last updated: 2026-02-28
 - [x] Update unsupported catalogs after implementation lands, removing items no longer unsupported.
 
 ### Phase 15: Hard-Cutover `dockerBuild` Integration
+
 - [x] Scope and entrypoints.
   - [x] Cut over `directory.dockerBuild` to the new LLB->ID pipeline while keeping API shape unchanged.
   - [x] Cut over deprecated `container.build` via the same `Container.Build` implementation path.
@@ -320,6 +341,7 @@ Last updated: 2026-02-28
     - This `file.copy createDestPath=false` gap was the major non-secret/non-ssh blocker for broad dockerBuild cutover coverage (resolved in Phase 16).
 
 ### Phase 16: `file.copy createDestPath=false` Support
+
 - Goal:
   - Support BuildKit `FileActionCopy.CreateDestPath=false` semantics in llbtodagger conversion.
   - Unblock dockerBuild cutover tests currently failing on this unsupported copy variant.
@@ -369,6 +391,7 @@ Last updated: 2026-02-28
         - indicates current local/context conversion path is still mismatched for these dockerBuild contexts; after removing prior `createDestPath=false` blocker, this is the next concrete failure to address.
 
 ### Phase 17: Sentinel `MainContext` + Structural Context Rebinding (No `Directory.State*` Dependency)
+
 - Goal:
   - Remove `dockerBuild` reliance on `Directory.State()` / `Directory.StateWithSourcePath()` for Dockerfile context injection.
   - Preserve Dockerfile2LLB's path/selector semantics while binding context reads to the real Dagger directory ID.
@@ -410,6 +433,7 @@ Last updated: 2026-02-28
   - This phase is the prerequisite for removing `Directory.State()` usage from dockerBuild path in the branch where LLB is no longer a general Dagger runtime dependency.
 
 ### Phase 18: Secret Env + Secret Mount Support (dockerBuild Cutover)
+
 - Goal:
   - Support Dockerfile/LLB secret environment and secret mount semantics in hard-cutover `dockerBuild` through llbtodagger conversion.
   - Keep strict fail-fast behavior for unsupported/imperfect cases.
@@ -483,6 +507,7 @@ Last updated: 2026-02-28
   - [x] Update `Current Explicit Unsupported Cases` and nuanced catalogs accordingly.
 
 ### Phase 19: SSH Socket Mount Support (dockerBuild Cutover)
+
 - Goal:
   - Support Dockerfile/LLB SSH socket mount semantics (`RUN --mount=type=ssh`) in hard-cutover `dockerBuild` through llbtodagger conversion.
   - Keep fail-fast behavior for unsupported/imperfect cases.
@@ -538,6 +563,7 @@ Last updated: 2026-02-28
   - Remote syntax frontend behavior for known Dockerfile pragmas is now handled in Phase 20.
 
 ### Phase 20: Syntax Pragma Relaxation
+
 - Goal:
   - Make dockerBuild cutover path laxer for Dockerfile syntax pragmas.
   - Allow known Dockerfile syntax pragma values and ignore them (continue conversion/build normally).
@@ -579,6 +605,7 @@ Last updated: 2026-02-28
   - [x] Update related historical notes in this whiteboard to reflect the new allowed-ignore policy.
 
 ### Phase 21: Public `query.http` Checksum Enforcement
+
 - Goal:
   - Add checksum enforcement support to Dagger's public `query.http` API.
   - Allow callers to provide an expected digest and fail if downloaded content does not match.
@@ -622,6 +649,7 @@ Last updated: 2026-02-28
   - Focused integration coverage is passing with command shape from `skills/cache-expert/references/debugging.md`.
 
 ### Phase 22: Local Source `followPaths` Support (Internal-Only Path)
+
 - Goal:
   - Support BuildKit `local.followpaths` emitted by Dockerfile->LLB conversion, without exposing this knob in public Dagger APIs.
   - Preserve current fail-fast posture for malformed attrs while adding faithful behavior for supported followPaths inputs.
@@ -680,6 +708,7 @@ Last updated: 2026-02-28
   - tests in `util/llbtodagger/*` and `core/integration/*`
 
 ### Phase 23: Hidden Archive Auto-Unpack Compatibility for File Copy
+
 - Goal:
   - Support BuildKit `FileActionCopy.attemptUnpackDockerCompatibility` semantics (Dockerfile `ADD` local archive behavior) without exposing new public SDK surface.
   - Preserve current user-facing API while enabling llbtodagger fidelity for Dockerfile-generated LLB.
@@ -727,6 +756,7 @@ Last updated: 2026-02-28
   - Do not add Dockerfile parsing logic in llbtodagger (LLB-driven only).
 
 ### Phase 24: Conversion-Only Named Ownership for `mkdir` (Dockerfile `WORKDIR` path)
+
 - Goal:
   - Support named-owner `FileActionMkDir` in llbtodagger without adding new Dagger schema APIs.
   - Unblock Dockerfile cases where `USER <name>` precedes `WORKDIR` and BuildKit emits named-owner mkdir actions.
@@ -759,6 +789,7 @@ Last updated: 2026-02-28
   - Do not attempt to support non-canonical malformed LLB variants beyond Dockerfile-relevant behavior.
 
 ### Phase 25: Exec Security Mode Mapping (`RUN --security=insecure`)
+
 - Goal:
   - Support Dockerfile/LLB exec security mode `INSECURE` by mapping it to Dagger `withExec(insecureRootCapabilities: true)`.
 - Checklist:
@@ -770,6 +801,7 @@ Last updated: 2026-02-28
   - This is a conversion-layer mapping only; entitlement/runtime enforcement remains the responsibility of the execution environment (same as normal `withExec(insecureRootCapabilities: true)`).
 
 ### Phase 26: Internal-Only Exec Network `none` Mapping (`RUN --network=none`)
+
 - Goal:
   - Support Dockerfile/LLB exec network mode `NONE` by mapping to a hidden/internal-only `withExec` argument.
   - Keep public SDK/API surface unchanged while preserving Dockerfile fidelity for `RUN --network=none`.
@@ -812,6 +844,7 @@ Last updated: 2026-02-28
   - Do not expose network-mode knobs in public SDK `withExec` options.
 
 ### Phase 27: Internal-Only Exec Network `host` Mapping (`RUN --network=host`) With Security-Setting Gate
+
 - Goal:
   - Support Dockerfile/LLB exec network mode `HOST` by mapping to a hidden/internal-only `withExec` argument.
   - Gate successful execution behind the same engine security setting used for `insecureRootCapabilities` (`security.insecureRootCapabilities`), via entitlement enforcement.
@@ -860,6 +893,7 @@ Last updated: 2026-02-28
   - Do not broaden support for other Dockerfile network modes in this phase.
 
 ### Phase 28: `dockerBuild(noInit)` Support in Hard-Cutover Path
+
 - Goal:
   - Restore `dockerBuild(noInit: true)` behavior in the hard-cutover path (currently hard-erroring).
   - Preserve prior semantics: Dockerfile `RUN` execs run without injected init when `noInit` is set.
@@ -902,6 +936,7 @@ Last updated: 2026-02-28
   - Do not change Dockerfile frontend lowering behavior; this phase is conversion/plumbing only.
 
 ### Phase 29: Explicit-File COPY Fallback for Directory Sources (`SHA256SUMS.d` regression)
+
 - Goal:
   - Fix Dockerfile/LLB conversion bug where an explicit-destination COPY can be lowered to `withFile(...)` even when source is actually a directory, causing runtime error: `path ... is a directory, not a file`.
   - Keep existing fast path for real file sources.
@@ -944,6 +979,7 @@ Last updated: 2026-02-28
   - Do not add source-type probing to converter at conversion-time.
 
 ## Initial Op Coverage Matrix (Planning Draft)
+
 | LLB op kind | Intended Dagger API representation | Confidence | Status |
 |---|---|---|---|
 | `SourceOp` docker-image | `query.container().from(address)` (possibly followed by rootfs projection) | High | Implemented |
@@ -959,6 +995,7 @@ Last updated: 2026-02-28
 | `BuildOp` | explicitly unsupported -> error | N/A | Unsupported-by-design |
 
 ## Known Snags / Mismatch Log
+
 - `BuildOp` nested build semantics are not supported here; immediate error by policy.
 - `local://` source identifiers include session-specific attributes that may not round-trip to a user-level host path.
 - `blob://` source is explicitly unsupported here; immediate error by policy.
@@ -979,6 +1016,7 @@ Last updated: 2026-02-28
   - Added internal `requiredSourcePath` propagation to enforce BuildKit-like missing-source error for literal single-path COPY cases.
 
 ## Current Explicit Unsupported Cases (Implemented)
+
 - All `BuildOp` vertices.
 - All `blob://` sources.
 - All `oci-layout://` sources (currently unsupported).
@@ -1005,6 +1043,7 @@ Last updated: 2026-02-28
 - `ArgsEscaped` on Windows images is unsupported.
 
 ### Unsupported but outside Dockerfile instruction support (or malformed/non-canonical LLB)
+
 - Synthetic root op with more than one input is rejected.
 - Unknown/non-classified op types are rejected.
 - Top-level non-Directory/non-Container result types are rejected.
@@ -1068,6 +1107,7 @@ Last updated: 2026-02-28
 - Exposed ports using protocols other than TCP/UDP are unsupported.
 
 ## Crucial Notes To Not Forget
+
 - `skills/cache-expert/references/debugging.md` is the authoritative source for how to run integration tests; follow it exactly.
   - This applies to both primary agent commands and any subagent that runs/tests/parses integration output.
 - In `core/schema`, APIs prefixed with `_` are internal-only:
@@ -1085,6 +1125,7 @@ Last updated: 2026-02-28
   - First unsupported/imperfect mapping returns error immediately.
 
 ## Whiteboard Usage Rules (For This Task)
+
 - Every time scope, assumptions, or mapping behavior changes, update this file in the same change.
 - Keep section boundaries strict:
   - `Unsupported and relevant to Dockerfile-generated LLB` must contain only Dockerfile-relevant items.

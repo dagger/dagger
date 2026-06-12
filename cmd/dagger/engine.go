@@ -5,16 +5,19 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/imageload"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -50,16 +53,27 @@ func init() {
 }
 
 func defaultRunnerHost() string {
-	tag := engine.Tag
+	tag := engineVersion(engine.Tag)
 	if tag == "" {
 		// can happen during naive dev builds (so just fallback to something
 		// semi-reasonable)
 		return "container://" + distconsts.EngineContainerName
 	}
+	return runnerHostForEngineVersion(tag)
+}
+
+func engineVersion(tag string) string {
+	if tag == "" {
+		return ""
+	}
 	if os.Getenv(GPUSupportEnv) != "" {
 		tag += "-gpu"
 	}
-	return fmt.Sprintf("image://%s:%s", engine.EngineImageRepo, tag)
+	return tag
+}
+
+func runnerHostForEngineVersion(version string) string {
+	return fmt.Sprintf("image://%s:%s", engine.EngineImageRepo, version)
 }
 
 type runClientCallback func(context.Context, *client.Client) error
@@ -69,10 +83,22 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
+	if err := applyWorkspaceClientParams(&params); err != nil {
+		return err
+	}
+	coreModuleSelected := isCoreModuleSelected()
+	if coreModuleSelected {
+		params.LoadWorkspaceModules = false
+	}
 	if !moduleNoURL {
 		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
-			params.Module = modRef
+			if !isCoreModuleRef(modRef) {
+				params.Module = modRef
+			}
 		}
+	}
+	if sessionWorkspace != "" && params.Workspace == nil {
+		params.Workspace = &sessionWorkspace
 	}
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
 		var cleanup cleanups.Cleanups
@@ -127,6 +153,12 @@ func withEngine(
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
 
+		effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
+		if err != nil {
+			return cleanup.Run, err
+		}
+		params.LockMode = effectiveLockMode
+
 		if hasTTY {
 			params.PromptHandler = Frontend
 		}
@@ -150,6 +182,48 @@ func withEngine(
 	})
 }
 
+func applyWorkspaceClientParams(params *client.Params) error {
+	if params.Workspace == nil && workspaceRef != "" {
+		ref := workspaceRef
+		if !isObviouslyRemoteWorkspaceRef(ref) {
+			// --workdir answers where this CLI command is running from. -W
+			// answers which workspace the user selected. If -W is relative, it
+			// follows the command cwd after --workdir has been applied:
+			// `--workdir /work/shell -W ./ws` selects /work/shell/ws. Send that
+			// host path to the engine; the engine still owns workspace detection
+			// from there: git root, config, lock, compat. Remote refs stay
+			// untouched for engine-side git parsing.
+			absRef, err := pathutil.Abs(ref)
+			if err != nil {
+				return fmt.Errorf("resolve workspace: %w", err)
+			}
+			ref = absRef
+		}
+		params.Workspace = &ref
+	}
+	if params.WorkspaceEnv == nil && workspaceEnv != "" {
+		env := workspaceEnv
+		params.WorkspaceEnv = &env
+	}
+	return nil
+}
+
+func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
+	effective := paramLockMode
+	if effective == "" {
+		effective = globalLockMode
+	}
+	if effective == "" {
+		return "", nil
+	}
+
+	mode, err := workspace.ParseLockMode(effective)
+	if err != nil {
+		return "", err
+	}
+	return string(mode), nil
+}
+
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	// Setup telemetry config
 	telemetryCfg := telemetry.Config{
@@ -166,6 +240,15 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 		telemetryCfg.LiveMetricExporters = append(telemetryCfg.LiveMetricExporters, metrics)
 	}
 	ctx = telemetry.Init(ctx, telemetryCfg)
+	// telemetry.Init extracts inherited OTel baggage from the environment.
+	// Re-apply explicit local process settings afterward so a nested Dagger
+	// command's own NO_COLOR/debug request wins over parent baggage.
+	if termenv.EnvNoColor() {
+		ctx = slog.ContextWithColorMode(ctx, true)
+	}
+	if debugFlag {
+		ctx = slog.ContextWithDebugMode(ctx, true)
+	}
 
 	// Set the full command string as the name of the root span.
 	//
@@ -189,10 +272,14 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 
 	// Direct command stdout/stderr to span stdio via OpenTelemetry.
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	oldOut := rootCmd.OutOrStdout()
+	oldErr := rootCmd.ErrOrStderr()
 	rootCmd.SetOut(stdio.Stdout)
 	rootCmd.SetErr(stdio.Stderr)
 
 	return ctx, func(rerr error) {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
 		stdio.Close()
 		telemetry.EndWithCause(span, &rerr)
 		telemetry.Close()

@@ -14,7 +14,7 @@ import (
 
 // List all core engine tests
 func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	return dag.Go(dagger.GoOpts{Source: dev.sourceWithEbpfObjects()}).Tests(ctx)
+	return dag.Go(dagger.GoOpts{Source: dev.Source}).Tests(ctx)
 }
 
 // Run core engine tests
@@ -161,8 +161,7 @@ func (dev *EngineDev) test(
 
 	cgoEnabledEnv := "0"
 	args := []string{
-		"go",
-		"test",
+		"otelgotest",
 	}
 
 	// allow verbose
@@ -243,9 +242,9 @@ func (dev *EngineDev) test(
 func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*dagger.Container, string, error) {
 	devEngine, err := dev.
 		WithEBPFProgs(ebpfProgs).
-		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
-		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
-		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+		WithEngineConfig(`registry."registry:5000"`, `http = true`).
+		WithEngineConfig(`registry."privateregistry:5000"`, `http = true`).
+		WithEngineConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
 		Container(
 			ctx,
 			"",    // platform
@@ -309,7 +308,8 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	}
 
 	utilDirPath := "/dagger-dev"
-	tests := dag.Go(dagger.GoOpts{Source: dev.sourceWithEbpfObjects()}).Env().
+	tests := dag.Go(dagger.GoOpts{Source: dev.Source}).Env().
+		WithExec([]string{"go", "install", "github.com/dagger/otel-go/cmd/otelgotest"}).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithServiceBinding("daggerengine", devEngineSvc).

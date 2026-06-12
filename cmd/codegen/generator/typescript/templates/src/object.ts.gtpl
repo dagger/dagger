@@ -20,7 +20,7 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
             {{- /* Write private temporary field */ -}}
             {{ range $field := .Fields }}
                 {{- if $field.TypeRef.IsScalar }}
-  private readonly _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }} = undefined
+  private readonly _{{ $field.Name }}?: {{ $field | FormatFieldOutputType }} = undefined
                 {{- end }}
         	{{- end }}
 
@@ -34,7 +34,7 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
     ctx?: Context,
             {{- range $i, $field := .Fields }}
                {{- if $field.TypeRef.IsScalar }}
-     _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }},
+     _{{ $field.Name }}?: {{ $field | FormatFieldOutputType }},
                {{- end }}
             {{- end }}
    ) {

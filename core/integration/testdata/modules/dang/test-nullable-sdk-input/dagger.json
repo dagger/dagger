@@ -1,0 +1,14 @@
+{
+  "name": "test-nullable-sdk-input",
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "dang"
+  },
+  "include": ["!producer"],
+  "dependencies": [
+    {
+      "name": "producer",
+      "source": "./producer"
+    }
+  ]
+}

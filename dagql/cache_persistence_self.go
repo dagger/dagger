@@ -38,11 +38,16 @@ type PersistedObjectCache interface {
 	PersistedResultID(AnyResult) (uint64, error)
 }
 
+type PersistedObjectEncoding struct {
+	JSON          json.RawMessage
+	SnapshotLinks []PersistedSnapshotRefLink
+}
+
 // PersistedObject is implemented by object self payloads that can be encoded
 // directly for import-time cache persistence.
 type PersistedObject interface {
 	Typed
-	EncodePersistedObject(context.Context, PersistedObjectCache) (json.RawMessage, error)
+	EncodePersistedObject(context.Context, PersistedObjectCache) (PersistedObjectEncoding, error)
 }
 
 // PersistedObjectDecoder is implemented by zero-value object types that know
@@ -56,7 +61,7 @@ type PersistedObjectDecoder interface {
 // PersistedSelfCodec is the shared interface used to encode/decode result self
 // payloads for disk persistence.
 type PersistedSelfCodec interface {
-	EncodeResult(context.Context, PersistedObjectCache, AnyResult) (PersistedResultEnvelope, error)
+	EncodeResult(context.Context, PersistedObjectCache, AnyResult) (PersistedResultEncoding, error)
 	DecodeResult(context.Context, *Server, uint64, *ResultCall, PersistedResultEnvelope) (AnyResult, error)
 }
 
@@ -64,7 +69,12 @@ type defaultPersistedSelfCodec struct{}
 
 var DefaultPersistedSelfCodec PersistedSelfCodec = defaultPersistedSelfCodec{}
 
-func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache PersistedObjectCache, res AnyResult) (PersistedResultEnvelope, error) {
+type PersistedResultEncoding struct {
+	Envelope      PersistedResultEnvelope
+	SnapshotLinks []PersistedSnapshotRefLink
+}
+
+func (defaultPersistedSelfCodec) EncodeResult(ctx context.Context, cache PersistedObjectCache, res AnyResult) (PersistedResultEncoding, error) {
 	return encodePersistedResultEnvelope(ctx, cache, res)
 }
 
@@ -72,11 +82,13 @@ func (defaultPersistedSelfCodec) DecodeResult(ctx context.Context, dag *Server, 
 	return decodePersistedResultEnvelope(ctx, dag, resultID, call, env)
 }
 
-func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCache, res AnyResult) (PersistedResultEnvelope, error) {
+func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCache, res AnyResult) (PersistedResultEncoding, error) {
 	if res == nil {
-		return PersistedResultEnvelope{
-			Version: 2,
-			Kind:    persistedResultKindNull,
+		return PersistedResultEncoding{
+			Envelope: PersistedResultEnvelope{
+				Version: 2,
+				Kind:    persistedResultKindNull,
+			},
 		}, nil
 	}
 	var resultID uint64
@@ -90,79 +102,104 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		sessionResourceHandle = shared.sessionResourceHandle
 	}
 
+	isObject := false
 	if _, ok := res.(AnyObjectResult); ok {
+		isObject = true
+	}
+	if shared := res.cacheSharedResult(); shared != nil && shared.isObject {
+		isObject = true
+	}
+
+	if isObject {
 		encoder, ok := res.Unwrap().(PersistedObject)
 		if !ok {
-			return PersistedResultEnvelope{}, fmt.Errorf("encode persisted object payload: type %q does not implement persisted object encoding", res.Type().Name())
+			return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: type %q does not implement persisted object encoding", res.Type().Name())
 		}
-		objectJSON, err := encoder.EncodePersistedObject(ctx, cache)
+		objectEncoding, err := encoder.EncodePersistedObject(ctx, cache)
 		if err != nil {
-			return PersistedResultEnvelope{}, fmt.Errorf("encode persisted object payload: %w", err)
+			return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: %w", err)
 		}
-		return PersistedResultEnvelope{
-			Version:               2,
-			Kind:                  persistedResultKindObject,
-			TypeName:              res.Type().Name(),
-			ResultID:              resultID,
-			SessionResourceHandle: sessionResourceHandle,
-			ObjectJSON:            objectJSON,
+		return PersistedResultEncoding{
+			Envelope: PersistedResultEnvelope{
+				Version:               2,
+				Kind:                  persistedResultKindObject,
+				TypeName:              res.Type().Name(),
+				ResultID:              resultID,
+				SessionResourceHandle: sessionResourceHandle,
+				ObjectJSON:            objectEncoding.JSON,
+			},
+			SnapshotLinks: objectEncoding.SnapshotLinks,
 		}, nil
 	}
 	if encoder, ok := res.Unwrap().(PersistedObject); ok {
-		objectJSON, err := encoder.EncodePersistedObject(ctx, cache)
+		objectEncoding, err := encoder.EncodePersistedObject(ctx, cache)
 		if err != nil {
-			return PersistedResultEnvelope{}, fmt.Errorf("encode persisted object payload: %w", err)
+			return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: %w", err)
 		}
-		return PersistedResultEnvelope{
-			Version:               2,
-			Kind:                  persistedResultKindObject,
-			TypeName:              res.Type().Name(),
-			ResultID:              resultID,
-			SessionResourceHandle: sessionResourceHandle,
-			ObjectJSON:            objectJSON,
+		return PersistedResultEncoding{
+			Envelope: PersistedResultEnvelope{
+				Version:               2,
+				Kind:                  persistedResultKindObject,
+				TypeName:              res.Type().Name(),
+				ResultID:              resultID,
+				SessionResourceHandle: sessionResourceHandle,
+				ObjectJSON:            objectEncoding.JSON,
+			},
+			SnapshotLinks: objectEncoding.SnapshotLinks,
 		}, nil
 	}
 
 	if enumerable, ok := res.Unwrap().(Enumerable); ok {
 		shared := res.cacheSharedResult()
 		if shared == nil || shared.loadResultCall() == nil {
-			return PersistedResultEnvelope{}, fmt.Errorf("encode persisted list: missing authoritative call")
+			return PersistedResultEncoding{}, fmt.Errorf("encode persisted list: missing authoritative call")
 		}
 		parentCall := shared.loadResultCall()
 		itemEnvs := make([]PersistedResultEnvelope, 0, enumerable.Len())
 		for i := 1; i <= enumerable.Len(); i++ {
 			item, err := enumerable.NthValue(i, parentCall)
 			if err != nil {
-				return PersistedResultEnvelope{}, fmt.Errorf("encode persisted list item %d: %w", i, err)
+				return PersistedResultEncoding{}, fmt.Errorf("encode persisted list item %d: %w", i, err)
 			}
-			itemEnv, err := encodePersistedResultEnvelope(ctx, cache, item)
+			itemEncoding, err := encodePersistedResultEnvelope(ctx, cache, item)
 			if err != nil {
-				return PersistedResultEnvelope{}, fmt.Errorf("encode persisted list item %d envelope: %w", i, err)
+				return PersistedResultEncoding{}, fmt.Errorf("encode persisted list item %d envelope: %w", i, err)
 			}
-			itemEnvs = append(itemEnvs, itemEnv)
+			itemEnvs = append(itemEnvs, itemEncoding.Envelope)
 		}
-		return PersistedResultEnvelope{
-			Version:               2,
-			Kind:                  persistedResultKindList,
-			TypeName:              res.Type().Name(),
-			ResultID:              resultID,
-			SessionResourceHandle: sessionResourceHandle,
-			ElemTypeName:          enumerable.Element().Type().Name(),
-			Items:                 itemEnvs,
+		return PersistedResultEncoding{
+			Envelope: PersistedResultEnvelope{
+				Version:               2,
+				Kind:                  persistedResultKindList,
+				TypeName:              res.Type().Name(),
+				ResultID:              resultID,
+				SessionResourceHandle: sessionResourceHandle,
+				ElemTypeName:          enumerable.Element().Type().Name(),
+				Items:                 itemEnvs,
+			},
 		}, nil
 	}
 
+	if _, ok := res.Unwrap().(Input); !ok {
+		if _, ok := res.Unwrap().(ScalarType); !ok {
+			if _, ok := res.Unwrap().(Derefable); !ok {
+				return PersistedResultEncoding{}, fmt.Errorf("encode scalar_json payload: type %q does not implement persisted object encoding or scalar input encoding", res.Type().Name())
+			}
+		}
+	}
 	scalarJSON, err := json.Marshal(res.Unwrap())
 	if err != nil {
-		return PersistedResultEnvelope{}, fmt.Errorf("encode scalar_json payload: %w", err)
+		return PersistedResultEncoding{}, fmt.Errorf("encode scalar_json payload: %w", err)
 	}
-	return PersistedResultEnvelope{
-		Version:               2,
-		Kind:                  persistedResultKindScalar,
-		TypeName:              res.Type().Name(),
-		ResultID:              resultID,
-		SessionResourceHandle: sessionResourceHandle,
-		ScalarJSON:            scalarJSON,
+	return PersistedResultEncoding{
+		Envelope: PersistedResultEnvelope{
+			Version:               2,
+			Kind:                  persistedResultKindScalar,
+			TypeName:              res.Type().Name(),
+			ResultID:              resultID,
+			SessionResourceHandle: sessionResourceHandle,
+			ScalarJSON:            scalarJSON,
+		},
 	}, nil
 }
 

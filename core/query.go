@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/auth"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -33,14 +33,26 @@ type Query struct {
 	// constructor. Set by the `with` field on Query so that entrypoint
 	// proxy resolvers can forward them to the constructor.
 	ConstructorArgs map[string]dagql.Input
+
+	cacheVolumeStoreMu sync.Mutex
+	cacheVolumeStore   *cacheVolumeStore
 }
 
-var ErrNoCurrentModule = fmt.Errorf("no current module")
+var (
+	ErrNoCurrentModule    = fmt.Errorf("no current module")
+	ErrNoCurrentWorkspace = fmt.Errorf("no current workspace")
+)
+
+type SpecificClientAttachableConnOpts struct {
+	// IfAvailable returns ok=false instead of waiting when the client currently
+	// has no active session attachables.
+	IfAvailable bool
+}
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -54,8 +66,8 @@ type Server interface {
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 
-	// If the current client is bound to an environment, return its ID.
-	CurrentEnv(context.Context) (*call.ID, error)
+	// If the current client is bound to an environment, return that environment.
+	CurrentEnv(context.Context) (dagql.ObjectResult[*Env], error)
 
 	// Return the modules being served to the current client
 	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
@@ -75,6 +87,13 @@ type Server interface {
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
 
+	// A snapshot of the current workspace lockfile for ambient live locking.
+	// Returns ok=false when lock-backed workspace access is unavailable.
+	CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error)
+
+	// Stage a lockfile lookup result for the current workspace's live lock state.
+	SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error
+
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.
 	SpecificClientMetadata(context.Context, string) (*engine.ClientMetadata, error)
@@ -92,8 +111,9 @@ type Server interface {
 	MuxEndpoint(context.Context, string, http.Handler) error
 
 	// The session attachables connection for a specific client ID within the
-	// same session as the current client.
-	SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error)
+	// same session as the current client. Returns ok=false only when
+	// opts.IfAvailable is set and the client has no active session attachables.
+	SpecificClientAttachableConn(context.Context, string, SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error)
 
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
@@ -120,7 +140,7 @@ type Server interface {
 	DNS() *oci.DNSConfig
 
 	// The lease manager for the engine as a whole
-	LeaseManager() *leaseutil.Manager
+	LeaseManager() *bkcache.LeaseManager
 
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
@@ -222,15 +242,22 @@ func (*Query) TypeDescription() string {
 	return "The root of the DAG."
 }
 
-func (q Query) Clone() *Query {
-	cp := q
+func (q *Query) Clone() *Query {
+	cp := &Query{
+		Server: q.Server,
+	}
 	if q.ConstructorArgs != nil {
 		cp.ConstructorArgs = make(map[string]dagql.Input, len(q.ConstructorArgs))
 		for k, v := range q.ConstructorArgs {
 			cp.ConstructorArgs[k] = v
 		}
 	}
-	return &cp
+
+	q.cacheVolumeStoreMu.Lock()
+	cp.cacheVolumeStore = q.cacheVolumeStore
+	q.cacheVolumeStoreMu.Unlock()
+
+	return cp
 }
 
 func (q *Query) WithPipeline(name, desc string) *Query {

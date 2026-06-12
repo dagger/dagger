@@ -3,7 +3,8 @@ defmodule Dagger.Codegen.Introspection.Types.InputValue do
     :default_value,
     :description,
     :name,
-    :type
+    :type,
+    :directives
   ]
 
   def is_optional?(%__MODULE__{} = input_value) do
@@ -15,12 +16,17 @@ defmodule Dagger.Codegen.Introspection.Types.InputValue do
         "description" => description,
         "name" => name,
         "type" => type
-      }) do
+      } = input_value) do
     %__MODULE__{
       default_value: default_value,
       description: description,
       name: name,
-      type: Dagger.Codegen.Introspection.Types.TypeRef.from_map(type)
+      type: Dagger.Codegen.Introspection.Types.TypeRef.from_map(type),
+      directives:
+        Enum.map(
+          input_value["directives"] || [],
+          &Dagger.Codegen.Introspection.Types.Directive.from_map/1
+        )
     }
   end
 end

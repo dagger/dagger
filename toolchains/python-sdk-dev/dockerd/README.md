@@ -5,4 +5,3 @@ Example:
 ```go
 myContainerWithDocker, err := dag.Dockerd().Attach(myContainer)
 ```
-

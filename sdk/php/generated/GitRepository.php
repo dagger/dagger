@@ -11,8 +11,20 @@ namespace Dagger;
 /**
  * A git repository.
  */
-class GitRepository extends Client\AbstractObject implements Client\IdAble
+class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
 {
+    /**
+     * Creates a synthetic workspace from this git repository.
+     */
+    public function asWorkspace(?string $cwd = '/'): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        if (null !== $cwd) {
+        $innerQueryBuilder->setArgument('cwd', $cwd);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     /**
      * Returns details of a branch.
      */
@@ -57,10 +69,10 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this GitRepository.
      */
-    public function id(): GitRepositoryId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\GitRepositoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

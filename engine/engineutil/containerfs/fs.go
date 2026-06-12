@@ -216,19 +216,25 @@ func (ctrFS *ContainerFS) SetMtime(path string, t int64) error {
 	return os.Chtimes(hostPath, time.Time{}, time.Unix(0, t))
 }
 
+// EnvVar returns the value of the named environment variable from the
+// container's process spec, plus a bool indicating whether the variable was set.
+func (ctrFS *ContainerFS) EnvVar(name string) (string, bool) {
+	prefix := name + "="
+	for _, kv := range ctrFS.spec.Process.Env {
+		if v, ok := strings.CutPrefix(kv, prefix); ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
 func (ctrFS *ContainerFS) LookPath(cmd string) (string, error) {
 	if filepath.IsAbs(cmd) {
 		return cmd, nil
 	}
 
 	// TODO: caller may need to augment PATH with sbins when user not root?
-	var pathEnvVal string
-	for _, env := range ctrFS.spec.Process.Env {
-		if after, ok := strings.CutPrefix(env, "PATH="); ok {
-			pathEnvVal = after
-			break
-		}
-	}
+	pathEnvVal, _ := ctrFS.EnvVar("PATH")
 	if pathEnvVal == "" {
 		pathEnvVal = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 	}

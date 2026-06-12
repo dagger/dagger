@@ -1,5 +1,11 @@
 package core
 
+// These tests cover the Host API for reading files, directories, sockets, and
+// related metadata from the machine running the Dagger client.
+//
+// See also:
+// - local_test.go: local directory import behavior across sessions.
+
 import (
 	"context"
 	"crypto/rand"

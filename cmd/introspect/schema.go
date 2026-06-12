@@ -40,7 +40,7 @@ func Schema(cmd *cobra.Command, args []string) error {
 		formatType(&result, tp)
 		fmt.Fprintln(&result)
 	}
-	fmt.Println(result.String())
+	fmt.Print(result.String())
 
 	return nil
 }
@@ -75,50 +75,70 @@ func formatType(w io.Writer, t *introspection.Type) {
 	switch t.Kind {
 	case introspection.TypeKindScalar:
 		fmt.Fprintf(w, "scalar %s", t.Name)
+		formatDirectiveApplications(w, t.Directives)
 
 	case introspection.TypeKindEnum:
-		fmt.Fprintf(w, "enum %s {\n", t.Name)
+		fmt.Fprintf(w, "enum %s", t.Name)
+		formatDirectiveApplications(w, t.Directives)
+		fmt.Fprint(w, " {\n")
 		formatDescribed(w, t.EnumValues, func(value introspection.EnumValue) string { return value.Description }, formatEnumValue)
 		fmt.Fprint(w, "}")
 
 	case introspection.TypeKindInputObject:
-		fmt.Fprintf(w, "input %s {\n", t.Name)
+		fmt.Fprintf(w, "input %s", t.Name)
+		formatDirectiveApplications(w, t.Directives)
+		fmt.Fprint(w, " {\n")
 		formatDescribed(w, t.InputFields, func(value introspection.InputValue) string { return value.Description }, formatInput)
 		fmt.Fprint(w, "}")
 
 	case introspection.TypeKindObject:
 		fmt.Fprintf(w, "type %s", t.Name)
-
-		// add interfaces if present
-		// if len(t.Interfaces) > 0 {
-		// 	interfaces := make([]string, len(t.Interfaces))
-		// 	for i, iface := range t.Interfaces {
-		// 		interfaces[i] = iface.Name
-		// 	}
-		// 	fmt.Fprintf(w, " implements %s", strings.Join(interfaces, " & "))
-		// }
-
+		formatInterfaces(w, t.Interfaces)
+		formatDirectiveApplications(w, t.Directives)
 		fmt.Fprint(w, " {\n")
 		formatDescribed(w, t.Fields, func(field *introspection.Field) string { return field.Description }, formatField)
 		fmt.Fprint(w, "}")
 
 	case introspection.TypeKindInterface:
-		fmt.Fprintf(w, "interface %s {\n", t.Name)
+		fmt.Fprintf(w, "interface %s", t.Name)
+		formatInterfaces(w, t.Interfaces)
+		formatDirectiveApplications(w, t.Directives)
+		fmt.Fprint(w, " {\n")
 		formatDescribed(w, t.Fields, func(field *introspection.Field) string { return field.Description }, formatField)
 		fmt.Fprint(w, "}")
 
 	case introspection.TypeKindUnion:
-		fmt.Fprintf(w, "union %s = %s", t.Name, "???")
-		panic("unimplemented union handler")
+		fmt.Fprintf(w, "union %s", t.Name)
+		formatDirectiveApplications(w, t.Directives)
+		if len(t.PossibleTypes) > 0 {
+			possibleTypes := make([]string, 0, len(t.PossibleTypes))
+			for _, possibleType := range t.PossibleTypes {
+				possibleTypes = append(possibleTypes, possibleType.Name)
+			}
+			fmt.Fprintf(w, " = %s", strings.Join(possibleTypes, " | "))
+		}
 
 	default:
 		panic(fmt.Sprintf("unknown kind %q", t.Kind))
 	}
 
 	fmt.Fprintln(w)
+}
 
-	if len(t.Directives) > 0 {
-		formatDirectiveApplications(w, t.Directives)
+func formatInterfaces(w io.Writer, interfaces []*introspection.Type) {
+	if len(interfaces) == 0 {
+		return
+	}
+
+	names := make([]string, 0, len(interfaces))
+	for _, iface := range interfaces {
+		if iface == nil || iface.Name == "" {
+			continue
+		}
+		names = append(names, iface.Name)
+	}
+	if len(names) > 0 {
+		fmt.Fprintf(w, " implements %s", strings.Join(names, " & "))
 	}
 }
 
@@ -165,11 +185,16 @@ func preferMultipleLines(text string) bool {
 }
 
 func formatInput(w io.Writer, input introspection.InputValue) {
-	fmt.Fprintf(w, "  %s: %s\n", input.Name, typeRefToString(input.TypeRef))
+	fmt.Fprintf(w, "  %s: %s", input.Name, typeRefToString(input.TypeRef))
+	formatDefaultValue(w, input.DefaultValue)
+	formatDirectiveApplications(w, input.Directives)
+	fmt.Fprintln(w)
 }
 
 func formatEnumValue(w io.Writer, enumVal introspection.EnumValue) {
-	fmt.Fprintf(w, "  %s\n", enumVal.Name)
+	fmt.Fprintf(w, "  %s", enumVal.Name)
+	formatDirectiveApplications(w, enumVal.Directives)
+	fmt.Fprintln(w)
 }
 
 func formatField(w io.Writer, field *introspection.Field) {
@@ -216,15 +241,19 @@ func formatArgs(w io.Writer, indent string, args introspection.InputValues) {
 		}
 		fmt.Fprintf(w, "%s: %s", arg.Name, typeRefToString(arg.TypeRef))
 
-		// Add default value if present
-		if arg.DefaultValue != nil {
-			fmt.Fprintf(w, " = %v", *arg.DefaultValue)
-		}
+		formatDefaultValue(w, arg.DefaultValue)
+		formatDirectiveApplications(w, arg.Directives)
 	}
 	if multiline {
 		fmt.Fprint(w, "\n"+indent)
 	}
 	fmt.Fprint(w, ")")
+}
+
+func formatDefaultValue(w io.Writer, defaultValue *string) {
+	if defaultValue != nil {
+		fmt.Fprintf(w, " = %v", *defaultValue)
+	}
 }
 
 func formatDirectiveApplications(w io.Writer, directives introspection.Directives) {
@@ -240,7 +269,11 @@ func formatDirectiveApplications(w io.Writer, directives introspection.Directive
 			fmt.Fprint(w, "(")
 			args := make([]string, 0, len(directive.Args))
 			for _, arg := range directive.Args {
-				args = append(args, fmt.Sprintf("%s: %v", arg.Name, *arg.Value))
+				value := "null"
+				if arg.Value != nil {
+					value = *arg.Value
+				}
+				args = append(args, fmt.Sprintf("%s: %s", arg.Name, value))
 			}
 			fmt.Fprint(w, strings.Join(args, ", "))
 			fmt.Fprint(w, ")")

@@ -102,11 +102,49 @@ type DiffStat struct {
 	RemovedLines int          `field:"true" doc:"Number of removed lines for this path."`
 }
 
+var _ dagql.PersistedObject = (*DiffStat)(nil)
+var _ dagql.PersistedObjectDecoder = (*DiffStat)(nil)
+
 func (*DiffStat) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "DiffStat",
 		NonNull:   true,
 	}
+}
+
+type persistedDiffStat struct {
+	Path         string       `json:"path"`
+	OldPath      *string      `json:"oldPath,omitempty"`
+	Kind         DiffStatKind `json:"kind"`
+	AddedLines   int          `json:"addedLines"`
+	RemovedLines int          `json:"removedLines"`
+}
+
+func (s *DiffStat) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	if s == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted diff stat: nil diff stat")
+	}
+	return encodePersistedObjectPayload(persistedDiffStat{
+		Path:         s.Path,
+		OldPath:      s.OldPath,
+		Kind:         s.Kind,
+		AddedLines:   s.AddedLines,
+		RemovedLines: s.RemovedLines,
+	})
+}
+
+func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedDiffStat
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted diff stat payload: %w", err)
+	}
+	return &DiffStat{
+		Path:         persisted.Path,
+		OldPath:      persisted.OldPath,
+		Kind:         persisted.Kind,
+		AddedLines:   persisted.AddedLines,
+		RemovedLines: persisted.RemovedLines,
+	}, nil
 }
 
 // ComputePaths computes the added, modified, and removed paths using git diff.
@@ -240,6 +278,11 @@ type changesetJSONEnvelope struct {
 	AfterID  dagql.ID[*Directory] `json:"afterId"`
 }
 
+type persistedChangesetPayload struct {
+	BeforeResultID uint64 `json:"beforeResultID,omitempty"`
+	AfterResultID  uint64 `json:"afterResultID,omitempty"`
+}
+
 // MarshalJSON implements custom JSON marshaling that stores directory IDs
 func (ch *Changeset) MarshalJSON() ([]byte, error) {
 	beforeID, err := ch.Before.ID()
@@ -285,6 +328,52 @@ func (ch *Changeset) ResolveRefs(ctx context.Context, srv *dagql.Server) error {
 	return nil
 }
 
+func (ch *Changeset) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	if ch == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted changeset: nil changeset")
+	}
+	beforeID, err := encodePersistedObjectRef(cache, ch.Before, "changeset before")
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	afterID, err := encodePersistedObjectRef(cache, ch.After, "changeset after")
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	payload, err := json.Marshal(persistedChangesetPayload{
+		BeforeResultID: beforeID,
+		AfterResultID:  afterID,
+	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted changeset payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(payload), nil
+}
+
+func (*Changeset) DecodePersistedObject(
+	ctx context.Context,
+	dag *dagql.Server,
+	_ uint64,
+	_ *dagql.ResultCall,
+	payload json.RawMessage,
+) (dagql.Typed, error) {
+	var persisted persistedChangesetPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted changeset payload: %w", err)
+	}
+
+	before, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.BeforeResultID, "changeset before")
+	if err != nil {
+		return nil, err
+	}
+	after, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.AfterResultID, "changeset after")
+	if err != nil {
+		return nil, err
+	}
+	return NewChangeset(ctx, before, after)
+}
+
 // changesetPathSets enables O(1) path lookups during conflict detection.
 type changesetPathSets struct {
 	added    map[string]struct{}
@@ -322,6 +411,8 @@ func (*Changeset) TypeDescription() string {
 }
 
 var _ Syncable = (*Changeset)(nil)
+var _ dagql.PersistedObject = (*Changeset)(nil)
+var _ dagql.PersistedObjectDecoder = (*Changeset)(nil)
 var _ dagql.HasDependencyResults = (*Changeset)(nil)
 
 func (ch *Changeset) Evaluate(context.Context) error {
@@ -1107,7 +1198,10 @@ func gitMergeWithPatches(
 			}
 		}
 
-		return os.RemoveAll(filepath.Join(workDir, ".git"))
+		if err := os.RemoveAll(filepath.Join(workDir, ".git")); err != nil {
+			return fmt.Errorf("remove temporary merge git repository: %w", err)
+		}
+		return nil
 	})
 }
 
@@ -1145,12 +1239,28 @@ func gitOctopusMergeWithPatches(
 			return err
 		}
 
-		return os.RemoveAll(filepath.Join(workDir, ".git"))
+		if err := os.RemoveAll(filepath.Join(workDir, ".git")); err != nil {
+			return fmt.Errorf("remove temporary octopus merge git repository: %w", err)
+		}
+		return nil
 	})
 }
 
+var gitEphemeralConfig = []string{
+	// These repositories are disposable. Detached maintenance can outlive the
+	// git command and race with the immediate .git cleanup below.
+	"-c", "maintenance.auto=false",
+	"-c", "maintenance.autoDetach=false",
+	"-c", "gc.auto=0",
+	"-c", "gc.autoDetach=false",
+}
+
 func runGit(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	gitArgs := make([]string, 0, len(gitEphemeralConfig)+len(args))
+	gitArgs = append(gitArgs, gitEphemeralConfig...)
+	gitArgs = append(gitArgs, args...)
+
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	cmd.Dir = dir
 	cmd.Env = []string{
 		"GIT_CONFIG_NOSYSTEM=1",

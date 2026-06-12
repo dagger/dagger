@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `AddressID` scalar type represents an identifier for an object of type Address.
+ * A unique identifier for an object.
  */
-readonly class AddressId extends Client\AbstractId
+readonly class AddressId extends Client\AbstractScalar
 {
 }

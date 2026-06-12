@@ -1,0 +1,17 @@
+type TestNullableSdkInput {
+  allNull: String! {
+    producer.use(producer.make)
+  }
+
+  filePopulated: String! {
+    producer.use(producer.make(file: Dagger.file("foo.txt", "bar")))
+  }
+
+  secretPopulated: String! {
+    producer.use(producer.make(secret: Dagger.setSecret("foo", "bar")))
+  }
+
+  stringPopulated: String! {
+    producer.use(producer.make(note: "foo"))
+  }
+}

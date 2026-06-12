@@ -4,22 +4,14 @@ on:
     branches: ["main"]
     tags: ["v**"]
 
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
-    paths:
-      # run tests in a PR when an SDK is modified...
-      - sdk
-      # ...or when we are
-      - .github/workflows/publish.yml
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
-    runs-on: dagger-g3-v0-20-6-16c-st
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: "Publish"
@@ -33,7 +25,6 @@ jobs:
             --registry-image="$DAGGER_ENGINE_IMAGE" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD \
-            --goreleaser-key=env:GORELEASER_KEY \
             --github-token=env:GITHUB_TOKEN \
             --github-org-name="$GITHUB_ORG_NAME" \
             --netlify-token=env:NETLIFY_TOKEN \
@@ -55,8 +46,6 @@ jobs:
           DAGGER_ENGINE_IMAGE: ${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-
-          GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
 
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           GITHUB_ORG_NAME: ${{ vars.GH_ORG_NAME }}
@@ -89,8 +78,11 @@ jobs:
   # TODO: move this into Publish above
   dagger-io-bump-dagger:
     needs: publish
-    if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-20-6-4c
+    if: |
+      github.repository == 'dagger/dagger' &&
+      startsWith(github.ref, 'refs/tags/') &&
+      !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
     steps:
       # Configure credentials to clone dagger modules
       - uses: de-vri-es/setup-git-credentials@v2
@@ -116,6 +108,7 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
+      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: macos-15-intel
     steps:
@@ -203,6 +196,7 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
+      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -257,6 +251,7 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
+      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04-arm
     steps:
@@ -304,6 +299,7 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
+      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -358,6 +354,7 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
+      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04-arm
     steps:
@@ -405,6 +402,7 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
+      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -468,6 +466,7 @@ jobs:
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
+      !contains(github.ref_name, '-') &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-24.04-arm
     steps:

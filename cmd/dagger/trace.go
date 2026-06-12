@@ -22,11 +22,11 @@ var traceCmd = &cobra.Command{
 	Hidden: true,
 	Args:   cobra.ExactArgs(1),
 	Annotations: map[string]string{
-		"experimental": "true",
+		"experimental":       "true",
+		showFinalProgressKey: "true",
 	},
 	Aliases: []string{"t"},
 	Short:   "View a Dagger trace from Dagger Cloud.",
-	GroupID: cloudGroup.ID,
 	Example: `dagger trace 2f123ba77bf7bd2d4db2f70ed20613e8`,
 	RunE:    Trace,
 }
@@ -38,10 +38,7 @@ func init() {
 func Trace(cmd *cobra.Command, args []string) error {
 	traceID := args[0]
 
-	return Frontend.Run(cmd.Context(), dagui.FrontendOpts{
-		Verbosity: dagui.ShowCompletedVerbosity,
-		NoExit:    true,
-	}, func(ctx context.Context) (cleanups.CleanupF, error) {
+	return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cloudAuth, err := auth.GetCloudAuth(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cloud auth: %w", err)
@@ -62,7 +59,9 @@ func Trace(cmd *cobra.Command, args []string) error {
 		}
 
 		spanExp := Frontend.SpanExporter()
+		defer spanExp.Shutdown(ctx)
 		logExp := Frontend.LogExporter()
+		defer logExp.Shutdown(ctx)
 
 		noop := func() error { return nil }
 
@@ -128,11 +127,15 @@ func Trace(cmd *cobra.Command, args []string) error {
 }
 
 func resolveOrgID(ctx context.Context, client *cloud.Client, cloudAuth *auth.Cloud) (string, error) {
-	if traceOrgFlag != "" {
+	orgName := traceOrgFlag
+	if orgName == "" {
+		orgName = cloudOrgFlag
+	}
+	if orgName != "" {
 		// Resolve org name to ID via GraphQL
-		org, err := client.OrgByName(ctx, traceOrgFlag)
+		org, err := client.OrgByName(ctx, orgName)
 		if err != nil {
-			return "", fmt.Errorf("resolve org %q: %w", traceOrgFlag, err)
+			return "", fmt.Errorf("resolve org %q: %w", orgName, err)
 		}
 		return org.ID, nil
 	}

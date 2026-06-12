@@ -20,42 +20,55 @@ In your analysis, chronologically review the conversation and identify:
 Your summary must include these sections:
 
 ### 1. Primary Request and Intent
+
 Capture all user requests and intents in detail, including the broader goals and specific asks.
 
 ### 2. Key Technical Concepts
+
 List important technical concepts, technologies, frameworks, patterns, and architectural decisions discussed.
 
 ### 3. Files and Code Sections
+
 Document specific files examined, modified, or created:
+
 - File path
 - Purpose and context
 - Summary of changes made
 - Relevant code snippets (especially from recent messages)
 
 ### 4. Errors and Fixes
+
 List errors encountered and their resolutions:
+
 - Error description and context
 - How the error was resolved
 - Any user feedback related to the error
 
 ### 5. Problem Solving
+
 Document problems solved, approaches tried, and any ongoing troubleshooting efforts.
 
 ### 6. User Messages
+
 List ALL non-tool-result user messages. These capture user feedback, changing intent, and explicit directions.
 
 ### 7. Pending Tasks
+
 List any tasks explicitly requested but not yet completed or started.
 
 ### 8. Current Work
+
 Describe precisely what was being worked on immediately before this summary. Include:
+
 - The specific task or problem
 - Files being edited
 - Code snippets being worked on
 - Current state (in progress, blocked, testing, etc.)
 
 ### 9. Next Step (Optional)
+
 If there is a clear next step based on the most recent work:
+
 - List the specific next action to take
 - Include direct quotes from the conversation showing what task you were working on
 - Ensure alignment with explicit user requests
@@ -65,7 +78,7 @@ If there is a clear next step based on the most recent work:
 
 ## Output Format
 
-```
+```text
 <analysis>
 [Your chronological analysis ensuring all points are covered thoroughly]
 </analysis>

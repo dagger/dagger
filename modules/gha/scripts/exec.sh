@@ -1,4 +1,6 @@
-#!/bin/bash --noprofile --norc -e -o pipefail
+#!/usr/bin/env bash
+
+set -e -o pipefail
 
 if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
 	set -x
@@ -12,7 +14,8 @@ fi
 # Detect if a dev engine is available, if so: use that
 # We don't rely on PATH because the GHA runner messes with that
 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
-	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+	cli_bin_dir="$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN")"
+	export PATH="$cli_bin_dir:$PATH"
 	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
 fi
 
@@ -36,14 +39,14 @@ echo '$' "$COMMAND"
 
 # Run the command, capturing stdout and stderr
 set +e
-eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+eval "$COMMAND" >"$tmp"/stdout.txt 2> >(tee "$tmp"/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee "$tmp"/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
 EXIT_CODE=$?
 set -e
 # Wait for all background jobs to finish
 wait
 
 # Extra trace URL
-TRACE_URL=$(cat $tmp/trace-url.txt)
+TRACE_URL=$(cat "$tmp"/trace-url.txt)
 
 {
 	echo -e "## Command\n"
@@ -60,7 +63,7 @@ TRACE_URL=$(cat $tmp/trace-url.txt)
 		echo -e "> [!CAUTION]\n>"
 		echo "> Command failed with exit code ${EXIT_CODE}:"
 		echo '> ```'
-		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+		cat "$tmp"/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
 		echo '> ```'
 	else
 		echo -e "> [!NOTE]\n>"
@@ -93,5 +96,5 @@ TRACE_URL=$(cat $tmp/trace-url.txt)
 echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
 echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
 
-cat $tmp/stdout.txt
+cat "$tmp"/stdout.txt
 exit $EXIT_CODE

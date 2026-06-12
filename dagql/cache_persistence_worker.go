@@ -108,30 +108,6 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			})
 		}
 
-		links := append([]PersistedSnapshotRefLink(nil), c.snapshotOwnerLinksForResultLocked(res)...)
-		slices.SortFunc(links, func(a, b PersistedSnapshotRefLink) int {
-			switch {
-			case a.RefKey < b.RefKey:
-				return -1
-			case a.RefKey > b.RefKey:
-				return 1
-			case a.Role < b.Role:
-				return -1
-			case a.Role > b.Role:
-				return 1
-			default:
-				return 0
-			}
-		})
-		resultSnapshotLinks := make([]persistdb.MirrorResultSnapshotLink, 0, len(links))
-		for _, link := range links {
-			resultSnapshotLinks = append(resultSnapshotLinks, persistdb.MirrorResultSnapshotLink{
-				ResultID: int64(resultID),
-				RefKey:   link.RefKey,
-				Role:     link.Role,
-			})
-		}
-
 		outputEqClasses := c.outputEqClassesForResultLocked(resultID)
 		outputEqIDs := make([]eqClassID, 0, len(outputEqClasses))
 		for outputEqID := range outputEqClasses {
@@ -151,9 +127,11 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			resultID:              resultID,
 			frame:                 res.loadResultCall().clone(),
 			self:                  payload.self,
+			isObject:              payload.isObject,
 			hasValue:              payload.hasValue,
 			sessionResourceHandle: res.sessionResourceHandle,
 			persistedEnvelope:     payload.persistedEnvelope,
+			snapshotOwnerLinks:    payload.snapshotOwnerLinks,
 			row: persistdb.MirrorResult{
 				ID:                 int64(resultID),
 				ExpiresAtUnix:      res.expiresAtUnix,
@@ -162,8 +140,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 				RecordType:         res.recordType,
 				Description:        res.description,
 			},
-			resultDeps:          resultDeps,
-			resultSnapshotLinks: resultSnapshotLinks,
+			resultDeps: resultDeps,
 		})
 	}
 
@@ -261,7 +238,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			}
 		}
 
-		env, err := c.persistResultEnvelope(ctx, resultSnapshot)
+		encoding, err := c.persistResultEnvelope(ctx, resultSnapshot)
 		switch {
 		case errors.Is(err, ErrPersistStateNotReady):
 			return persistStateSnapshot{}, err
@@ -269,7 +246,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d envelope: %w", resultSnapshot.resultID, err)
 		}
 
-		payload, err := json.Marshal(env)
+		payload, err := json.Marshal(encoding.Envelope)
 		if err != nil {
 			return persistStateSnapshot{}, fmt.Errorf("persist result %d payload JSON: %w", resultSnapshot.resultID, err)
 		}
@@ -281,6 +258,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			resultSnapshot.row.CallFrameJSON = string(callFrameJSON)
 		}
 		resultSnapshot.row.SelfPayload = payload
+		resultSnapshot.resultSnapshotLinks = resultSnapshotLinkRows(resultSnapshot.resultID, encoding.SnapshotLinks)
 	}
 	return snapshot, nil
 }
@@ -381,30 +359,68 @@ func (c *Cache) applyPersistStateSnapshot(ctx context.Context, snapshot persistS
 	return nil
 }
 
-func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (PersistedResultEnvelope, error) {
+func resultSnapshotLinkRows(resultID sharedResultID, links []PersistedSnapshotRefLink) []persistdb.MirrorResultSnapshotLink {
+	if len(links) == 0 {
+		return nil
+	}
+	links = slices.Clone(links)
+	slices.SortFunc(links, func(a, b PersistedSnapshotRefLink) int {
+		switch {
+		case a.RefKey < b.RefKey:
+			return -1
+		case a.RefKey > b.RefKey:
+			return 1
+		case a.Role < b.Role:
+			return -1
+		case a.Role > b.Role:
+			return 1
+		default:
+			return 0
+		}
+	})
+	rows := make([]persistdb.MirrorResultSnapshotLink, 0, len(links))
+	for _, link := range links {
+		rows = append(rows, persistdb.MirrorResultSnapshotLink{
+			ResultID: int64(resultID),
+			RefKey:   link.RefKey,
+			Role:     link.Role,
+		})
+	}
+	return rows
+}
+
+func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResultSnapshot) (PersistedResultEncoding, error) {
 	if snapshot != nil && snapshot.persistedEnvelope != nil {
-		return *snapshot.persistedEnvelope, nil
+		return PersistedResultEncoding{
+			Envelope:      *snapshot.persistedEnvelope,
+			SnapshotLinks: snapshot.snapshotOwnerLinks,
+		}, nil
 	}
 	if snapshot == nil || !snapshot.hasValue {
-		return PersistedResultEnvelope{
-			Version: 1,
-			Kind:    persistedResultKindNull,
+		return PersistedResultEncoding{
+			Envelope: PersistedResultEnvelope{
+				Version: 1,
+				Kind:    persistedResultKindNull,
+			},
 		}, nil
 	}
 	if snapshot.self == nil {
-		return PersistedResultEnvelope{
-			Version:               2,
-			Kind:                  persistedResultKindNull,
-			ResultID:              uint64(snapshot.resultID),
-			SessionResourceHandle: snapshot.sessionResourceHandle,
+		return PersistedResultEncoding{
+			Envelope: PersistedResultEnvelope{
+				Version:               2,
+				Kind:                  persistedResultKindNull,
+				ResultID:              uint64(snapshot.resultID),
+				SessionResourceHandle: snapshot.sessionResourceHandle,
+			},
 		}, nil
 	}
 	if snapshot.frame == nil {
 		if snapshot.self == nil || snapshot.self.Type() == nil || snapshot.self.Type().Name() != "Query" {
-			return PersistedResultEnvelope{}, fmt.Errorf("result has no call frame and no persisted envelope")
+			return PersistedResultEncoding{}, fmt.Errorf("result has no call frame and no persisted envelope")
 		}
 		shared := &sharedResult{
 			self:                  snapshot.self,
+			isObject:              snapshot.isObject,
 			hasValue:              snapshot.hasValue,
 			id:                    snapshot.resultID,
 			sessionResourceHandle: snapshot.sessionResourceHandle,
@@ -413,6 +429,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	}
 	shared := &sharedResult{
 		self:                  snapshot.self,
+		isObject:              snapshot.isObject,
 		hasValue:              snapshot.hasValue,
 		id:                    snapshot.resultID,
 		sessionResourceHandle: snapshot.sessionResourceHandle,
@@ -447,16 +464,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 			"sessionResourceHandle", snapshot.sessionResourceHandle,
 			"err", err,
 		)
-		return PersistedResultEnvelope{}, err
+		return PersistedResultEncoding{}, err
 	}
 	return env, nil
-}
-
-func (c *Cache) snapshotOwnerLinksForResultLocked(res *sharedResult) []PersistedSnapshotRefLink {
-	if res == nil || len(res.snapshotOwnerLinks) == 0 {
-		return nil
-	}
-	links := make([]PersistedSnapshotRefLink, len(res.snapshotOwnerLinks))
-	copy(links, res.snapshotOwnerLinks)
-	return links
 }

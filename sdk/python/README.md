@@ -115,26 +115,31 @@ dagger call -m dev test default
 ```
 
 Check for linting violations:
+
 ```shell
 dagger call -m dev lint
 ```
 
 Re-format code following common styling conventions:
+
 ```shell
 dagger call -m dev format export --path=.
 ```
 
 Update pinned development dependencies (run from this directory, `./sdk/python`, or adjust export path accordingly):
+
 ```shell
 dagger call -m ../../toolchains/python-sdk-dev dev-container with-exec --args uv,lock,-U directory --path . export --path .
 ```
 
 Update a single pinned development dependency (run from this directory, `./sdk/python`, or adjust export path accordingly):
+
 ```shell
 dagger call -m ../../toolchains/python-sdk-dev dev-container with-exec --args uv,lock,-P,<DEPNAME> directory --path . export --path .
 ```
 
 Build and preview the reference documentation:
+
 ```shell
 dagger call -m dev docs preview up
 ```

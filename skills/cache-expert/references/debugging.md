@@ -8,6 +8,7 @@ This guide focuses on practical debugging for current dagql + filesync cache beh
 2. Log actual values at each boundary.
 3. Find first divergence.
 4. Decide whether the bug is:
+
 - wrong identity construction
 - wrong cache index lookup
 - wrong lifecycle/release behavior
@@ -25,6 +26,7 @@ dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<Te
 
 This command rebuilds the dev engine, runs it as an ephemeral service, and then runs tests against it.
 Output includes:
+
 - dev engine build output
 - test runner output
 - engine logs/printlns
@@ -85,6 +87,96 @@ DO NOT EVER USE broad `./...` WHEN RUNNING TESTS AS YOU WILL ACCIDENTALLY CAPTUR
 
 `./core/integration`, `./dagql/idtui` and `./dagql/idtui/multiprefixw` are integration-style test packages (not quick unit loops). Avoid running them during tight cache-debug cycles unless you explicitly need those integration paths.
 
+## CI Trace Replay
+
+When a failure happens in CI, start from the trace if one is available. The
+user may provide either a raw trace ID or a command copied from the web UI,
+such as:
+
+```bash
+dagger trace <trace-id>
+```
+
+Replay that trace locally with plain progress and capture it to a temp file:
+
+```bash
+dagger --progress=plain trace <trace-id> > /tmp/ci-trace-<trace-id>.log 2>&1
+```
+
+This does not rerun the CI job. It fetches and prints the recorded trace in the
+same style as local `--progress=plain` output, so the rest of this debugging
+guide applies: keep the full output in `/tmp`, inspect it with `rg`, and avoid
+dumping the whole trace into the conversation.
+
+### Finding Trace IDs From GitHub PR Checks
+
+If the user gives a GitHub PR URL instead of a trace ID, first inspect the PR's
+commit statuses and collect the Dagger Cloud target URLs for the checks of
+interest. With GitHub CLI this usually looks like:
+
+```bash
+pr_url='https://github.com/dagger/dagger/pull/13119'
+head_sha="$(gh pr view "$pr_url" --json headRefOid --jq .headRefOid)"
+gh api "repos/dagger/dagger/commits/$head_sha/status" \
+  --jq '.statuses[] | select(.target_url | startswith("https://dagger.cloud/")) | [.state, .context, .target_url] | @tsv'
+```
+
+For failed checks, add `select(.state != "success")`. A Dagger status target URL
+has this shape:
+
+```text
+https://dagger.cloud/{org}/checks/{moduleRef}@{moduleVersion}?check={checkName}
+```
+
+For public repos, the Cloud GraphQL API can map that URL data to check IDs and
+trace IDs without rerunning anything:
+
+```bash
+curl -sS -X POST https://api.dagger.cloud/query \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "query": "query($org:String!,$moduleRef:String!,$moduleVersion:String!){ org(name:$org){ moduleChecks(moduleRef:$moduleRef,moduleVersion:$moduleVersion){ commitSHA checks { id name status traceId spanId moduleRef moduleVersion } } } }",
+    "variables": {
+      "org": "dagger",
+      "moduleRef": "github.com/dagger/dagger",
+      "moduleVersion": "e7600fda40142627a4206ec04de3a5f702be5a45"
+    }
+  }' > /tmp/ci-checks.json
+
+jq -r --arg check 'test-split:test-base' \
+  '.data.org.moduleChecks[].checks[]
+   | select(.name == $check)
+   | [.status, .name, .id, .traceId]
+   | @tsv' /tmp/ci-checks.json
+```
+
+If the Dagger Cloud URL contains `run=<checkID>`, prefer that exact check ID.
+Current GitHub status URLs often only include `check=<name>`, so the lookup is
+"latest matching check for this org/module/version/name"; be careful after
+reruns and prefer the non-success/latest row that matches the status being
+debugged.
+
+Once you have the trace ID, replay it with `dagger --progress=plain trace ...`
+and capture output to `/tmp` as described above.
+
+Start with the usual failure scan:
+
+```bash
+rg -n "panic:|fatal error:|SIGSEGV|--- FAIL:|^FAIL\s|Error:|error:" /tmp/ci-trace-<trace-id>.log
+```
+
+Then inspect around the interesting spans:
+
+```bash
+rg -n "TestName|FieldName|module name|command text" /tmp/ci-trace-<trace-id>.log
+sed -n '<start>,<end>p' /tmp/ci-trace-<trace-id>.log
+```
+
+Use the replayed trace to identify the exact failing call, subtest, generated
+command, or engine error. Once the failing surface is clear, decide whether to
+reproduce it locally with a tight `dagger --progress=plain call engine-dev ...`
+command or debug directly from the recorded CI trace.
+
 ## Performance Debugging With Persistent Dev Engine
 
 For most testing/debugging flows, prefer ephemeral engines via:
@@ -104,6 +196,7 @@ docker volume rm dagger-engine.dev
 ```
 
 Notes:
+
 - The container is named `dagger-engine.dev`.
 - This engine persists across commands/runs, so it is better for iterative perf investigation.
 - A clean reset is often desirable for consistent baselines, but is not always required (depends on whether cache/warm state is part of what you're measuring).
@@ -123,12 +216,14 @@ You can also run Dagger commands through the same wrapper:
 ```
 
 Important CLI gotcha:
+
 - If you do `./hack/with-dev bash -c 'dagger ...'`, you may accidentally pick up a non-dev `dagger` binary from `PATH`.
 - In shell-wrapped commands, explicitly use `./bin/dagger` to avoid ambiguity.
 
 ### Docker-Level Debugging
 
 Because the engine is a normal Docker container, you can use standard Docker tools:
+
 - `docker logs dagger-engine.dev`
 - `docker exec -it dagger-engine.dev sh`
 - `docker kill -s <SIGNAL> dagger-engine.dev`
@@ -136,6 +231,7 @@ Because the engine is a normal Docker container, you can use standard Docker too
 ### pprof and Debug Endpoints
 
 The dev engine exposes debug endpoints on `localhost:6060`.
+
 - Current routes are defined in `cmd/engine/debug.go` (see route setup near line 29).
 - Use whichever endpoint/tooling fits the question (point-in-time snapshots vs time-window captures).
 
@@ -152,6 +248,7 @@ go tool pprof /tmp/heap.pprof
 ```
 
 General profiling guidance:
+
 - Choose profile type and capture window based on the symptom.
 - For long-running or phase-specific regressions, align profile capture timing with the relevant test phase.
 - Keep artifacts organized by run so diffs/comparisons are straightforward.
@@ -168,6 +265,7 @@ _EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL=1s
 ```
 
 Key metrics:
+
 - `dagger_connected_clients`
 - `dagger_dagql_cache_entries`
 - `dagger_dagql_cache_ongoing_calls_entries`
@@ -177,19 +275,24 @@ Key metrics:
 - `dagger_dagql_cache_completed_arbitrary_entries`
 
 Interpretation:
+
 1. If `connected_clients` is `0` but `dagql_cache_entries` stays non-zero, refs are retained.
-2. Use bucket metrics to localize leak class:
+1. Use bucket metrics to localize leak class:
+
 - `completed_calls` growth: call-result refs not released.
 - `ongoing_calls` growth: waiter/cancel path likely stuck.
 - `*_arbitrary_*` growth: opaque/arbitrary cache path leak.
-3. `dagger_dagql_cache_entries` is index-entry count, not unique-result count.
+
+1. `dagger_dagql_cache_entries` is index-entry count, not unique-result count.
    The same shared result may appear in multiple indexes.
 
 Practical scrape tip for nested-engine integration tests:
+
 - Prefer scraping via a container bound to the engine service (`curl http://dev-engine:9090/metrics`).
 - Scraping from the test process via endpoint hostname may fail DNS resolution in some test networks.
 
 Useful correlation log (session teardown):
+
 - `engine/server/session.go` logs:
   - `released dagql cache refs for session` with `beforeEntries` and `afterEntries`
 - If `afterEntries` trends upward across completed sessions, session close is not releasing all refs.
@@ -230,6 +333,7 @@ Useful correlation log (session teardown):
 ### Unexpected miss
 
 Check in order:
+
 1. Did `GetCacheConfig` rewrite ID unexpectedly?
 2. Did args decoded from final ID differ from intended runtime args?
 3. Did recipe digest change because of view/module/nth/sensitive-arg behavior?
@@ -239,6 +343,7 @@ Check in order:
 ### Unexpected hit
 
 Check:
+
 1. Which index hit (`storageKey` vs `contentDigestKey`)?
 2. Was this an intended content-digest hit?
 3. If content hit, was returned ID properly overridden to requested recipe?
@@ -246,6 +351,7 @@ Check:
 ### Session-specific oddities
 
 Check:
+
 1. Did prior error set `noCacheNext` for this key?
 2. Was call forced to `DoNotCache` and then reinserted?
 3. Did session close during execution and release result unexpectedly?
@@ -253,6 +359,7 @@ Check:
 ### TTL confusion
 
 Check:
+
 1. Was TTL set for this field?
 2. Was result marked safe to persist cache metadata?
 3. Was DB metadata updated (or intentionally skipped)?
@@ -269,6 +376,7 @@ Check:
 ## Minimal Logging Principle
 
 Prefer small, high-signal log lines with:
+
 - call ID digest
 - content digest
 - storage key

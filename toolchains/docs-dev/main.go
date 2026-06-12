@@ -38,10 +38,6 @@ type DocsDev struct {
 	NginxConfig *dagger.File // +private
 }
 
-const (
-	markdownlintVersion = "0.31.1"
-)
-
 const cliZenFrontmatter = `---
 title: "CLI Reference"
 description: "Learn how to use the Dagger CLI to run composable workflows in containers."
@@ -59,6 +55,13 @@ func (d DocsDev) Site() *dagger.Directory {
 	return dag.Docusaurus(d.Source, opts).Build()
 }
 
+// Check the docs website build
+// +check
+func (d DocsDev) Check(ctx context.Context) error {
+	_, err := d.Site().Sync(ctx)
+	return err
+}
+
 // Build the docs server
 func (d DocsDev) Server() *dagger.Container {
 	return dag.
@@ -69,29 +72,6 @@ func (d DocsDev) Server() *dagger.Container {
 		WithDefaultArgs([]string{"nginx", "-g", "daemon off;"}).
 		WithDirectory("/var/www", d.Site()).
 		WithExposedPort(8000)
-}
-
-// +check
-// Lint documentation files
-func (d DocsDev) LintMarkdown(
-	ctx context.Context,
-	// +defaultPath="/"
-	// +ignore=[
-	// "**/*",
-	// "!**/README.md",
-	// "!docs/**/*.md",
-	// "!**/.markdownlint.*",
-	// "!**/.markdownlintignore.*"
-	// ]
-	markdownFiles *dagger.Directory,
-) error {
-	_, err := dag.Container().
-		From("tmknom/markdownlint:"+markdownlintVersion).
-		WithWorkdir("/src").
-		WithMountedDirectory(".", markdownFiles).
-		WithExec([]string{"markdownlint", "docs"}).
-		Sync(ctx)
-	return err
 }
 
 // Regenerate the API schema and CLI reference docs
@@ -132,7 +112,8 @@ func (d DocsDev) References(
 	// 4. Generate config file schemas?
 	withConfigSchemas := src.
 		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json")).
-		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json"))
+		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev().ConfigSchema("dagger-module.toml")).
+		WithFile("docs/static/reference/dagger-workspace.schema.json", dag.EngineDev().ConfigSchema("dagger.toml"))
 
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).
@@ -193,8 +174,13 @@ func (d DocsDev) Publish(
 	netlifyToken *dagger.Secret,
 	// +optional
 	deployment string,
+	// +optional
+	apiURL string,
 ) error {
 	api := "https://api.netlify.com/api/v1"
+	if apiURL != "" {
+		api = strings.TrimRight(apiURL, "/")
+	}
 	site := "docs.dagger.io"
 	branch := "main"
 	client := http.Client{}

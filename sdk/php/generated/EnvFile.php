@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A collection of environment variables.
  */
-class EnvFile extends Client\AbstractObject implements Client\IdAble
+class EnvFile extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Return as a file
@@ -48,10 +48,10 @@ class EnvFile extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EnvFile.
      */
-    public function id(): EnvFileId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\EnvFileId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

@@ -31,6 +31,7 @@ type Vterm struct {
 	markdownBuf *bytes.Buffer
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
+	rawBuf      *bytes.Buffer
 	needsRedraw bool
 
 	// Search highlight state. When SearchQuery is non-empty, matching
@@ -48,6 +49,7 @@ func NewVterm(profile termenv.Profile) *Vterm {
 		Profile:     profile,
 		vt:          midterm.NewAutoResizingTerminal(),
 		viewBuf:     new(bytes.Buffer),
+		rawBuf:      new(bytes.Buffer),
 		markdownBuf: new(bytes.Buffer),
 		mu:          new(sync.Mutex),
 	}
@@ -65,6 +67,7 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
+	_, _ = term.rawBuf.Write(p)
 
 	term.needsRedraw = true
 	return n, nil
@@ -83,6 +86,7 @@ func (term *Vterm) Write(p []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
+	_, _ = term.rawBuf.Write(p)
 
 	if atBottom {
 		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
@@ -220,12 +224,73 @@ func (term *Vterm) ScrollToRow(row int) {
 	defer term.mu.Unlock()
 	// Center the target row in the viewport.
 	term.Offset = max(0, row-term.Height/2)
-	// Clamp to valid range.
+	term.clampOffsetLocked()
+	term.needsRedraw = true
+}
+
+func (term *Vterm) ScrollBy(delta int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.Offset += delta
+	term.clampOffsetLocked()
+	term.needsRedraw = true
+}
+
+func (term *Vterm) ScrollPage(deltaPages int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	page := max(term.Height-1, 1)
+	term.Offset += deltaPages * page
+	term.clampOffsetLocked()
+	term.needsRedraw = true
+}
+
+func (term *Vterm) ScrollToTop() {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.Offset = 0
+	term.needsRedraw = true
+}
+
+func (term *Vterm) ScrollToBottom() {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	term.Offset = max(0, term.vt.UsedHeight()-term.Height)
+	term.needsRedraw = true
+}
+
+func (term *Vterm) clampOffsetLocked() {
+	if term.Offset < 0 {
+		term.Offset = 0
+	}
 	maxOffset := max(0, term.vt.UsedHeight()-term.Height)
 	if term.Offset > maxOffset {
 		term.Offset = maxOffset
 	}
+}
+
+func (term *Vterm) Search(query string, currentIdx int) (count, row int) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	if query == "" {
+		term.vt.SearchClear()
+		term.SearchQuery = ""
+		term.SearchCurrentRow = -1
+		term.needsRedraw = true
+		return 0, -1
+	}
+
+	count = term.vt.Search(query)
+	if currentIdx < 0 || currentIdx >= count {
+		row, _ = term.vt.SearchSetCurrent(-1)
+	} else {
+		row, _ = term.vt.SearchSetCurrent(currentIdx)
+	}
+	term.SearchQuery = query
+	term.SearchCurrentRow = row
 	term.needsRedraw = true
+	return count, row
 }
 
 func (term *Vterm) ScrollPercent() float64 {
@@ -427,4 +492,13 @@ func (term *Vterm) Print(w io.Writer) error {
 	}
 
 	return nil
+}
+
+// PrintRaw prints the bytes written to the log terminal without applying any
+// terminal wrapping or markdown rendering.
+func (term *Vterm) PrintRaw(w io.Writer) error {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	_, err := w.Write(term.rawBuf.Bytes())
+	return err
 }

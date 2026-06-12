@@ -13,7 +13,7 @@ type DotnetSdkDev {
   """
   A directory with all the files needed to develop the SDK.
   """
-  pub workspace: Directory!
+  pub workspaceDir: Directory!
     @defaultPath(path: "/")
     @ignorePatterns(patterns: [
       "*",
@@ -30,7 +30,7 @@ type DotnetSdkDev {
   """
   pub sourcePath: String! = "sdk/dotnet/sdk"
 
-  let originalWorkspace: Directory! = workspace
+  let originalWorkspace: Directory! = workspaceDir
 
   let baseContainer: Container! {
     let ctr = container
@@ -48,14 +48,14 @@ type DotnetSdkDev {
   """
   pub devContainer: Container! {
     baseContainer
-      .withMountedDirectory(".", workspace)
+      .withMountedDirectory(".", workspaceDir)
       .withWorkdir(sourcePath)
   }
 
   """
   Lint the Dotnet SDK with Csharpier (https://csharpier.com)
   """
-  pub csharpier: Void! @check {
+  pub csharpier: Void @check {
     devContainer
       .withExec(["dotnet", "tool", "restore"])
       .withExec(["dotnet", "csharpier", "--check", "."])
@@ -76,12 +76,12 @@ type DotnetSdkDev {
   """
   Run tests on the Dotnet SDK
   """
-  pub test: Void! @check {
+  pub test: Void @check {
     devContainer
       .withFile("Dagger.SDK/introspection.json", daggerEngine.introspectionJson)
       .withExec(["dotnet", "restore"])
       .withExec(["dotnet", "build", "--no-restore"])
-      .withExec(["dotnet", "test", "--no-build"], experimentalPrivilegedNesting: true)
+      .withExec(["dagger", "run", "dotnet", "test", "--no-build"])
       .sync
 
     null
@@ -101,8 +101,8 @@ type DotnetSdkDev {
   }
 
   pub withInstall: DotnetSdkDev! {
-    self.workspace = self
-      .workspace
+    self.workspaceDir = self
+      .workspaceDir
       .withoutDirectory(sourcePath)
       .withDirectory(
         sourcePath,
@@ -120,7 +120,7 @@ type DotnetSdkDev {
   and save it back to the workspace.
   """
   pub withFormat: DotnetSdkDev! {
-    self.workspace = directory
+    self.workspaceDir = directory
       .withDirectory(
         "/",
         devContainer
@@ -141,6 +141,6 @@ type DotnetSdkDev {
   code on the host.
   """
   pub changes: Changeset! {
-    workspace.changes(originalWorkspace)
+    workspaceDir.changes(originalWorkspace)
   }
 }

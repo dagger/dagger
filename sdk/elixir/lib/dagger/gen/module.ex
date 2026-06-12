@@ -40,12 +40,14 @@ defmodule Dagger.Module do
   >
   > "This API is highly experimental and may be removed or replaced entirely."
   """
-  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  @spec checks(t(), [{:include, [String.t()]}, {:no_generate, boolean() | nil}]) ::
+          Dagger.CheckGroup.t()
   def checks(%__MODULE__{} = module, optional_args \\ []) do
     query_builder =
       module.query_builder
       |> QB.select("checks")
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
 
     %Dagger.CheckGroup{
       query_builder: query_builder,
@@ -67,8 +69,9 @@ defmodule Dagger.Module do
          %Dagger.Module{
            query_builder:
              QB.query()
-             |> QB.select("loadModuleFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Module"),
            client: module.client
          }
        end}
@@ -100,8 +103,9 @@ defmodule Dagger.Module do
          %Dagger.TypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
            client: module.client
          }
        end}
@@ -163,7 +167,7 @@ defmodule Dagger.Module do
   @doc """
   A unique identifier for this Module.
   """
-  @spec id(t()) :: {:ok, Dagger.ModuleID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("id")
@@ -185,8 +189,9 @@ defmodule Dagger.Module do
          %Dagger.TypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
            client: module.client
          }
        end}
@@ -236,8 +241,9 @@ defmodule Dagger.Module do
          %Dagger.TypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
            client: module.client
          }
        end}
@@ -339,8 +345,9 @@ defmodule Dagger.Module do
        %Dagger.Module{
          query_builder:
            QB.query()
-           |> QB.select("loadModuleFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Module"),
          client: module.client
        }}
     end
@@ -432,6 +439,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Module do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_module_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Module{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Module"),
+       client: dag.client
+     }}
   end
 end

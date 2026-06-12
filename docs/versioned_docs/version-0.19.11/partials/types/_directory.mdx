@@ -1,0 +1,20 @@
+Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger` from). Instead, host files and directories need to be explicitly passed as command-line arguments to Dagger Functions.
+
+There are two important reasons for this.
+
+- Reproducibility: By providing a call-time mechanism to define and control the files available to a Dagger Function, Dagger guards against creating hidden dependencies on ambient properties of the host filesystem that could change at any moment.
+- Security: By forcing you to explicitly specify which host files and directories a Dagger Function "sees" on every call, Dagger ensures that you're always 100% in control. This reduces the risk of third-party Dagger Functions gaining access to your data.
+
+The `Directory` type represents the state of a directory. This could be either a local directory path or a remote Git reference.
+
+### Common operations
+
+Some of the common operations available on the `Directory` type include:
+
+| Field | Description |
+|-------|-------------|
+| `dockerBuild` | Builds a new Docker container from the directory |
+| `entries` | Returns a list of files and directories in the directory |
+| `export` | Writes the contents of the directory to a path on the host |
+| `file` | Returns a file at the given path as a `File`  |
+| `withFile` / `withFiles` | Returns the directory plus the file(s) copied to the given path |

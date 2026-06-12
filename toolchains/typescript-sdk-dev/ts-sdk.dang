@@ -5,7 +5,7 @@ type TypescriptSdkDev {
   pub nodeVersionLts = "24.13.1"
   pub bunVersion = "1.1.38"
 
-  pub workspace: Directory!
+  pub workspaceDir: Directory!
     @defaultPath(path: "/")
     @ignorePatterns(patterns: [
       "*",
@@ -16,18 +16,29 @@ type TypescriptSdkDev {
   pub sourcePath: String! = "sdk/typescript"
 
   pub source: Directory! {
-    workspace.directory(sourcePath)
+    workspaceDir.directory(sourcePath)
   }
 
   """
   Check the formatting of the SDK
   """
-  pub lintTypescript: Void! @check {
+  pub lintTypescript: Void @check {
     nodejsDevContainer
       .withExec(["yarn", "--cwd", sourcePath, "lint"])
       .sync
 
     null
+  }
+
+  """
+  Format the SDK source with prettier via eslint --fix
+  """
+  pub format: Changeset! @generate {
+    nodejsDevContainer
+      .withExec(["yarn", "--cwd", sourcePath, "fmt"])
+      .directory(".")
+      .withoutDirectory(sourcePath + "/node_modules")
+      .changes(workspaceDir)
   }
 
   """
@@ -43,7 +54,7 @@ type TypescriptSdkDev {
       "!**/*prettier*",
       "!**/*eslint*",
     ]),
-  ): Void! @check {
+  ): Void @check {
     let path = "docs/current_docs"
     nodejsDevContainer
       # Add docs snippets on top of the already-mounted SDK source
@@ -57,24 +68,26 @@ type TypescriptSdkDev {
   """
   Test the SDK with LTS version of Node
   """
-  pub testNodejsLts: Void! @check {
+  pub testNodejsLts: Void @check {
     testNodejs(nodeVersionLts)
   }
 
   """
   Test the SDK with previous LTS version of Node
   """
-  pub testNodejsPrevLts: Void! @check {
+  pub testNodejsPrevLts: Void @check {
     testNodejs(nodeVersionPrevLts)
   }
 
   """
   Test the SDK with the given version of NodeJS
   """
-  pub testNodejs(nodeVersion: String!): Void! {
+  pub testNodejs(nodeVersion: String!): Void {
     daggerEngine
       .installClient(nodejsDevContainer(nodeVersion))
-      .withExec(["yarn", "--cwd", sourcePath, "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"])
+      .withWorkdir(sourcePath)
+      .withEnvVariable("NODE_OPTIONS", "--import @dagger.io/mocha/register")
+      .withExec(["yarn", "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"])
       .sync
 
     null
@@ -83,7 +96,7 @@ type TypescriptSdkDev {
   """
   Test the SDK with BunJS
   """
-  pub testBunjs: Void! @check {
+  pub testBunjs: Void @check {
     daggerEngine
       .installClient(bunjsDevContainer)
       .withWorkdir(sourcePath)
@@ -98,7 +111,7 @@ type TypescriptSdkDev {
   """
   pub clientLibrary: Changeset! @generate {
     let ctr = nodejsBase(nodeVersionPrevLts)
-      .withMountedDirectory(".", workspace)
+      .withMountedDirectory(".", workspaceDir)
       .withExec(["yarn", "--cwd", sourcePath, "install"])
     ctr = daggerEngine.installClient(ctr)
     ctr
@@ -109,14 +122,15 @@ type TypescriptSdkDev {
       # FIXME: more efficient way to exclude node_modules from the diff?
       .withoutDirectory(sourcePath + "/node_modules")
       # FIXME: since we know this is purely additive, compare to empty dir for more efficient diff?
-      .changes(workspace)
+      .changes(workspaceDir)
   }
 
-  pub releaseDryRun: Void! @check {
+  pub releaseDryRun: Void @check {
     release(
       dryRun: true,
       sourceTag: "HEAD",
       npmToken: null,
+      npmRegistryURL: "",
     )
   }
 
@@ -128,12 +142,16 @@ type TypescriptSdkDev {
     """
     NPM authentication token
     """
-    npmToken: Secret!,
+    npmToken: Secret,
     """
     Execute a dry-run release, with no side effects
     """
     dryRun: Boolean,
-  ): Void! {
+    """
+    NPM registry URL to publish to.
+    """
+    npmRegistryURL: String! = "",
+  ): Void {
     let version = versionFromTag(sourceTag)
     let versionFlag = if (isSemver(version)) {
       version.trimPrefix("v")
@@ -147,19 +165,27 @@ type TypescriptSdkDev {
     # Check that dist/ exists in the build
     build.directory("dist").entries
     let publishArgs = ["npm", "publish", "--access", "public"]
-    let publish = if (dryRun == true) {
-      build.withExec(publishArgs + ["--dry-run"])
-    } else {
+    if (dryRun == true) {
+      publishArgs += ["--dry-run"]
+      # TODO(vito): in dang, if exprs have to have same return type on all
+      # branches, which gets awkward here
+      null
+    } else if (npmToken != null) {
+      let registry = if (npmRegistryURL != "") {
+        npmRegistryURL.trimRight("/") + "/"
+      } else {
+        "https://registry.npmjs.org/"
+      }
+      let registryAuthHost = registry.trimPrefix("https://").trimPrefix("http://")
       let npmrc = [
-        "//registry.npmjs.org/:_authToken=" + npmToken.plaintext,
-        "registry=https://registry.npmjs.org/",
+        "//" + registryAuthHost + ":_authToken=" + npmToken.plaintext,
+        "registry=" + registry,
         "always-auth=true",
       ].join("\n")
-      build
-        .withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
-        .withExec(publishArgs)
+      build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
+      null
     }
-    publish.sync
+    build.withExec(publishArgs).sync
     null
   }
 
@@ -186,9 +212,9 @@ type TypescriptSdkDev {
       "// Code generated by dagger. DO NOT EDIT.",
       "export const CLI_VERSION = \"" + number + "\"",
     ].join("\n") + "\n"
-    workspace
+    workspaceDir
       .withNewFile(sourcePath + "/src/provisioning/default.ts", contents)
-      .changes(workspace)
+      .changes(workspaceDir)
   }
 
   # Build a nodejs dev environment, with the SDK source code mounted and its dependencies installed
@@ -197,20 +223,28 @@ type TypescriptSdkDev {
     container
       # ⚠️  Keep this in sync with the engine version defined in package.json
       .from("node:" + nodeVersion + "-alpine")
-      .withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion))
+      .withMountedCache(
+        path: "/usr/local/share/.cache/yarn",
+        cache: cacheVolume("yarn_cache:" + nodeVersion),
+        sharing: CacheSharingMode.LOCKED,
+      )
       .withWorkdir("/app")
       .withFile(sourcePath + "/package.json", source.file("package.json"))
       .withFile(sourcePath + "/yarn.lock", source.file("yarn.lock"))
       .withFile(sourcePath + "/eslint.config.js", source.file("eslint.config.js"))
       .withExec(["yarn", "--cwd", sourcePath, "install"])
-      .withDirectory(".", workspace)
+      .withDirectory(".", workspaceDir)
   }
 
   # Build a nodejs base image, without any source code mounted
   pub nodejsBase(nodeVersion: String! = nodeVersionPrevLts): Container! {
     container
       .from("node:" + nodeVersion + "-alpine")
-      .withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion))
+      .withMountedCache(
+        path: "/usr/local/share/.cache/yarn",
+        cache: cacheVolume("yarn_cache:" + nodeVersion),
+        sharing: CacheSharingMode.LOCKED,
+      )
       .withWorkdir("/app")
   }
 
@@ -223,7 +257,7 @@ type TypescriptSdkDev {
       .withWorkdir(sourcePath)
       .withExec(["bun", "install"])
       .withWorkdir("/app")
-      .withDirectory(".", workspace)
+      .withDirectory(".", workspaceDir)
   }
 
   pub binary: File! {

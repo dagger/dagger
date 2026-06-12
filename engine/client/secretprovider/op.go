@@ -3,16 +3,82 @@ package secretprovider
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/1password/onepassword-sdk-go"
 	"github.com/dagger/dagger/engine"
 )
 
-func opProvider(ctx context.Context, key string) ([]byte, error) {
-	key = "op://" + key
+type opCacheEntry struct {
+	expiresAt time.Time
+	data      []byte
+}
 
+var (
+	opCacheMu sync.Mutex
+	opCache   = make(map[string]opCacheEntry)
+)
+
+func opProvider(ctx context.Context, key string) ([]byte, error) {
+	cacheKey, ttl, err := parseOpCacheKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	opCacheMu.Lock()
+	defer opCacheMu.Unlock()
+
+	if existing, ok := opCache[cacheKey]; ok && !opCacheExpired(existing) {
+		return append([]byte(nil), existing.data...), nil
+	}
+
+	plaintext, err := resolveOp(ctx, cacheKey)
+	if err != nil {
+		return nil, err
+	}
+	entry := opCacheEntry{data: append([]byte(nil), plaintext...)}
+	if ttl > 0 {
+		entry.expiresAt = time.Now().Add(ttl)
+	}
+	opCache[cacheKey] = entry
+	return append([]byte(nil), plaintext...), nil
+}
+
+func parseOpCacheKey(key string) (string, time.Duration, error) {
+	ref, rawQuery, hasQuery := strings.Cut(key, "?")
+	cacheKey := "op://" + ref
+	if !hasQuery {
+		return cacheKey, 0, nil
+	}
+
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid query parameters in secret key %q: %w", key, err)
+	}
+
+	ttlStr := strings.TrimSpace(query.Get("ttl"))
+	if ttlStr == "" {
+		return "op://" + key, 0, nil
+	}
+
+	ttl, err := time.ParseDuration(ttlStr)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid ttl %q provided for secret %q: %w", ttlStr, key, err)
+	}
+
+	return cacheKey, ttl, nil
+}
+
+func opCacheExpired(entry opCacheEntry) bool {
+	return !entry.expiresAt.IsZero() && !entry.expiresAt.After(time.Now())
+}
+
+func resolveOp(ctx context.Context, key string) ([]byte, error) {
 	// Attempt to use the `OP_SERVICE_ACCOUNT_TOKEN`
 	if os.Getenv("OP_SERVICE_ACCOUNT_TOKEN") != "" {
 		return opSDKProvider(ctx, key)

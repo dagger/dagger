@@ -86,7 +86,7 @@
 
     
     <p>        class
-    <strong>EngineCacheEntry</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>EngineCacheEntry</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -166,6 +166,16 @@
                     string
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_dagqlCall">dagqlCall</a>()
+        
+                                            <p><p>The DagQL call that produced this cache entry.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
                     <a href="#method_description">description</a>()
         
                                             <p><p>The description of the cache entry.</p></p>                </div>
@@ -183,7 +193,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
@@ -209,6 +219,16 @@
                     <a href="#method_recordType">recordType</a>()
         
                                             <p><p>The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_recordTypes">recordTypes</a>()
+        
+                                            <p><p>The storage record types represented by this cache entry.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -371,8 +391,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_description">
+                    <h3 id="method_dagqlCall">
         <div class="location">at line 37</div>
+        <code>                    string
+    <strong>dagqlCall</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The DagQL call that produced this cache entry.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_description">
+        <div class="location">at line 46</div>
         <code>                    string
     <strong>description</strong>()
         </code>
@@ -404,7 +456,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_diskSpaceBytes">
-        <div class="location">at line 46</div>
+        <div class="location">at line 55</div>
         <code>                    int
     <strong>diskSpaceBytes</strong>()
         </code>
@@ -436,8 +488,8 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 55</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+        <div class="location">at line 64</div>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
     </h3>
@@ -454,7 +506,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -468,7 +520,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_mostRecentUseTimeUnixNano">
-        <div class="location">at line 64</div>
+        <div class="location">at line 73</div>
         <code>                    int
     <strong>mostRecentUseTimeUnixNano</strong>()
         </code>
@@ -500,7 +552,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_recordType">
-        <div class="location">at line 73</div>
+        <div class="location">at line 82</div>
         <code>                    string
     <strong>recordType</strong>()
         </code>
@@ -519,6 +571,38 @@
                     <table class="table table-condensed">
         <tr>
             <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_recordTypes">
+        <div class="location">at line 91</div>
+        <code>                    array
+    <strong>recordTypes</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The storage record types represented by this cache entry.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
             <td></td>
         </tr>
     </table>

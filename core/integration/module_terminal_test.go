@@ -1,5 +1,13 @@
 package core
 
+// These tests cover module functions that return `Container.Terminal`. They
+// verify the host-side interactive session, prompt/output handling, and nested
+// terminal cases driven through the CLI TUI.
+//
+// See also:
+// - module_up_test.go: the module development server UI.
+// - shell_test.go: interactive shell command behavior.
+
 import (
 	"bytes"
 	"context"
@@ -28,36 +36,23 @@ const (
 	resetSeq = termenv.CSI + termenv.ResetSeq + "m"
 )
 
+func terminalFixtureMod(ctx context.Context, t *testctx.T, fixture string) string {
+	t.Helper()
+	modDir := t.TempDir()
+	copyTestdataFixture(ctx, t, modDir, "modules", "go", fixture)
+	return modDir
+}
+
+func cacheTerminalModule(ctx context.Context, t *testctx.T, modDir string, args ...string) {
+	t.Helper()
+	_, err := hostDaggerExecRaw(ctx, t, modDir, args...)
+	require.NoError(t, err)
+}
+
 func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-func New(ctx context.Context) *Test {
-	return &Test{
-		Ctr: dag.Container().
-			From("%s").
-			WithEnvVariable("COOLENV", "woo").
-			WithWorkdir("/coolworkdir"),
-	}
-}
-
-type Test struct {
-	Ctr *dagger.Container
-}
-`, alpineImage), 0644)
-		require.NoError(t, err)
-
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
-
-		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
-		require.NoError(t, err)
+		modDir := terminalFixtureMod(ctx, t, "terminal-default")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -72,7 +67,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -112,43 +107,54 @@ type Test struct {
 		require.NoError(t, err)
 	})
 
+	t.Run("bound service crash keeps terminal open", func(ctx context.Context, t *testctx.T) {
+		modDir := terminalFixtureMod(ctx, t, "terminal-bound-service-crash")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
+
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Second)
+
+		_, err = console.SendLine("echo still here")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("still here\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
-
-	import (
-		"context"
-		"dagger/test/internal/dagger"
-	)
-
-	func New(ctx context.Context) *Test {
-		d1 := dag.Directory().WithNewFile("foo", "FOO\n")
-		d2 := dag.Directory().WithNewFile("bar", "BAR\n")
-
-		return &Test{
-			Ctr: dag.Container().
-				From("%s").
-				WithEnvVariable("COOLENV", "woo").
-				WithWorkdir("/coolworkdir").
-				WithMountedDirectory("/a_mnt", d1).
-				WithMountedCache("/cachemnt", dag.CacheVolume("whateverbrah")).
-				WithMountedDirectory("/z_mnt", d2).
-				WithDefaultTerminalCmd([]string{"/bin/sh"}),
-		}
-	}
-
-	type Test struct {
-		Ctr *dagger.Container
-	}
-	`, alpineImage), 0644)
-		require.NoError(t, err)
-
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
-
-		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
-		require.NoError(t, err)
+		modDir := terminalFixtureMod(ctx, t, "terminal-basic")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -163,7 +169,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -231,40 +237,8 @@ type Test struct {
 	})
 
 	t.Run("attachable", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
-
-	import (
-		"context"
-		"dagger/test/internal/dagger"
-	)
-
-	func New(ctx context.Context) *Test {
-		return &Test{
-			Ctr: dag.Container().
-				From("%s").
-				WithEnvVariable("COOLENV", "woo").
-				WithWorkdir("/coolworkdir").
-				WithDefaultTerminalCmd([]string{"/bin/sh"}),
-		}
-	}
-
-	type Test struct {
-		Ctr *dagger.Container
-	}
-
-	func (t *Test) Debug() *dagger.Container {
-		return t.Ctr.WithEnvVariable("COOLENV", "xoo").Terminal().WithEnvVariable("COOLENV", "yoo")
-	}
-	`, alpineImage), 0644)
-		require.NoError(t, err)
-
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
-
-		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
-		require.NoError(t, err)
+		modDir := terminalFixtureMod(ctx, t, "terminal-attachable")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -279,7 +253,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "debug")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "debug")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -320,36 +294,8 @@ type Test struct {
 	})
 
 	t.Run("override args", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
-	import (
-		"context"
-		"dagger/test/internal/dagger"
-	)
-
-	func New(ctx context.Context) *Test {
-		return &Test{
-			Ctr: dag.Container().
-				From("%s").
-				WithEnvVariable("COOLENV", "woo").
-				WithWorkdir("/coolworkdir").
-				WithExec([]string{"apk", "add", "python3"}).
-				WithDefaultTerminalCmd([]string{"/bin/sh"}),
-		}
-	}
-
-	type Test struct {
-		Ctr *dagger.Container
-	}
-	`, alpineImage), 0644)
-		require.NoError(t, err)
-
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
-
-		// cache the returned container so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "call", "ctr", "sync")
-		require.NoError(t, err)
+		modDir := terminalFixtureMod(ctx, t, "terminal-override-args")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "call", "ctr", "sync")
 
 		console, err := newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
@@ -360,7 +306,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 5, Cols: 22})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal", "--cmd=python")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal", "--cmd=python")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -396,33 +342,8 @@ type Test struct {
 	})
 
 	t.Run("nested client", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-	import (
-		"context"
-		"dagger/test/internal/dagger"
-	)
-	func New(ctx context.Context, nestedSrc *dagger.Directory) *Test {
-		return &Test{
-			Ctr: dag.Container().
-				From("`+golangImage+`").
-				WithMountedDirectory("/src", nestedSrc).
-				WithWorkdir("/src").
-				WithDefaultTerminalCmd([]string{"go", "run", "."}),
-		}
-	}
-	type Test struct {
-		Ctr *dagger.Container
-	}
-	 `), 0644)
-		require.NoError(t, err)
-
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
-
-		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
-		require.NoError(t, err)
+		modDir := terminalFixtureMod(ctx, t, "terminal-nested-client")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		thisRepoPath, err := filepath.Abs("../..")
 		require.NoError(t, err)
@@ -468,7 +389,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 41})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -486,33 +407,8 @@ type Test struct {
 	})
 
 	t.Run("directory", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-func New(ctx context.Context) *Test {
-	return &Test{
-		Dir: dag.
-			Directory().
-			WithNewFile("test", "hello world\n"),
-	}
-}
-
-type Test struct {
-	Dir *dagger.Directory
-}
-`), 0644)
-		require.NoError(t, err)
-
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
-
-		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
-		require.NoError(t, err)
+		modDir := terminalFixtureMod(ctx, t, "terminal-directory")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -527,7 +423,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "dir", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "dir", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -559,41 +455,8 @@ type Test struct {
 	})
 
 	t.Run("on failure", func(ctx context.Context, t *testctx.T) {
-		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
-	import (
-		"context"
-		"dagger/test/internal/dagger"
-	)
-
-	func New(ctx context.Context) *Test {
-		d1 := dag.Directory().WithNewFile("foo", "FOO\n")
-		d2 := dag.Directory().WithNewFile("bar", "BAR\n")
-
-		return &Test{
-			Ctr: dag.Container().
-				From("%s").
-				WithMountedDirectory("/a_mnt", d1).
-				WithMountedCache("/cachemnt", dag.CacheVolume("somethingoranother")).
-				WithMountedDirectory("/z_mnt", d2).
-				WithExec([]string{"sh", "-c", 
-					"echo breakpoint > /fail && echo FOOFOO > /a_mnt/foo && echo BARBAR > /z_mnt/bar && exit 42",
-				}),
-		}
-	}
-
-	type Test struct {
-		Ctr *dagger.Container
-	}
-	`, alpineImage), 0644)
-		require.NoError(t, err)
-
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-		require.NoError(t, err)
-
-		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
-		require.NoError(t, err)
+		modDir := terminalFixtureMod(ctx, t, "terminal-on-failure")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -608,7 +471,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "--interactive", "call", "ctr")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "--interactive", "call", "ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -673,7 +536,7 @@ type Test struct {
 		tty = console.Tty()
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
-		cmd = hostDaggerCommand(ctx, t, modDir, "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
+		cmd = hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty

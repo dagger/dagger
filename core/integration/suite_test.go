@@ -1,5 +1,9 @@
 package core
 
+// This file contains package-wide integration test setup: `TestMain`, shared
+// `testctx` middleware, Dagger client connection helpers, and common assertion
+// helpers.
+
 import (
 	"archive/tar"
 	"bytes"
@@ -13,7 +17,6 @@ import (
 	"runtime"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -21,8 +24,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/otel-go/oteltestctx"
 	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/oteltest"
 )
 
 func TestMain(m *testing.M) {
@@ -31,7 +34,7 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	res := oteltest.Main(m)
+	res := oteltestctx.Main(m)
 
 	if origAuthSock != "" {
 		os.Setenv("SSH_AUTH_SOCK", origAuthSock)
@@ -42,23 +45,21 @@ func TestMain(m *testing.M) {
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
 		testctx.WithParallel(),
-		oteltest.WithTracing(
-			oteltest.TraceConfig[*testing.T]{
+		oteltestctx.WithTracing(
+			oteltestctx.TraceConfig[*testing.T]{
 				StartOptions: testutil.SpanOpts[*testing.T],
 			},
 		),
-		oteltest.WithLogging[*testing.T](),
 	}
 }
 
 func BenchMiddleware() []testctx.Middleware[*testing.B] {
 	return []testctx.Middleware[*testing.B]{
-		oteltest.WithTracing(
-			oteltest.TraceConfig[*testing.B]{
+		oteltestctx.WithTracing(
+			oteltestctx.TraceConfig[*testing.B]{
 				StartOptions: testutil.SpanOpts[*testing.B],
 			},
 		),
-		oteltest.WithLogging[*testing.B](),
 	}
 }
 
@@ -291,19 +292,6 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
-}
-
-func limitTicker(interval time.Duration, limit int) <-chan time.Time {
-	ch := make(chan time.Time, limit)
-	ticker := time.NewTicker(interval)
-	go func() {
-		defer ticker.Stop()
-		defer close(ch)
-		for range limit {
-			ch <- <-ticker.C
-		}
-	}()
-	return ch
 }
 
 // ensure the cache mount doesn't get pruned in the middle of the test by having a container

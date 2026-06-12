@@ -1,0 +1,56 @@
+---
+title: "Jenkins"
+slug: /adopting/triggers/jenkins
+description: "Learn how to use Dagger with Jenkins."
+---
+
+# Jenkins
+
+Dagger runs your checks in Jenkins via `dagger check`, so the same checks you run locally run on every job — without rewriting your pipeline. You keep all of your existing Jenkins infrastructure and `Jenkinsfile`, and simply invoke the Dagger CLI from it.
+
+:::tip
+For checks with no `Jenkinsfile` changes at all, enable [Cloud Checks](./index.mdx) with `dagger ws autocheck on`. The `Jenkinsfile` below is the hybrid-mode alternative for when you want to drive Dagger from your existing Jenkins setup.
+:::
+
+## How it works
+
+There are many ways to run Dagger on Jenkins. The simplest way to get started is having a Jenkins agent with OCI compatible container runtime.
+
+The general workflow looks like this:
+
+1. Jenkins receives job trigger as usual.
+1. Jenkins loads `Jenkinsfile` from repository or from UI configuration.
+1. Jenkins parses the Groovy-based `Jenkinsfile` and downloads the Dagger CLI.
+1. Jenkins runs `dagger check` against the modules installed in your workspace.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the Jenkins agent, and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. Job completes with success or failure based on the check results, pipeline logs appear in Jenkins as usual
+
+## Prerequisites
+
+Running the examples shown below requires:
+
+1. At least one Jenkins agent with the `dagger` label
+1. A Docker engine that is able to run containers (can be `docker:dind`)
+1. The `docker` client installed on your Jenkins agent
+1. A repository with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](../workspace-setup.mdx).
+
+## Example
+
+The following code sample demonstrates how to run your Dagger checks in Jenkins. `dagger check` runs all checks from the modules installed in your workspace and exits non-zero if any check fails; scope it to a single module's checks with a pattern such as `dagger check go:*`.
+
+```groovy title="Jenkinsfile" file=./snippets/Jenkinsfile template
+```
+
+## Dagger Cloud Engines
+
+By default the CLI starts a Dagger Engine inside the Jenkins agent. For a faster, more reliable experience, offload execution to a managed Dagger Engine provided by Dagger Cloud by adding `--cloud` to the command (`dagger check --cloud`). Cloud Engines provide a large persistent cache shared across runs and far more compute than a Jenkins agent, so checks are typically much faster — and you don't provision or maintain any infrastructure. This requires the `DAGGER_CLOUD_TOKEN` credential configured above.
+
+## Resources
+
+If you have any questions about additional ways to use Jenkins with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Jenkins channel](https://discord.com/channels/707636530424053791/1149487212069670974).
+
+- [Introduction to running Dagger Pipelines with Jenkins](https://youtu.be/vuEBx_s1sgs) by Lev Lazinskiy. In this demo, he shows how to integrate Dagger pipelines with Jenkins. He explains the setup process for a Jenkins pipeline using Dagger and covers both a simple and a modular approach to managing CI pipelines effectively.
+
+## About Jenkins
+
+[Jenkins](https://www.jenkins.io/) is an open-source automation server that enables teams to automate the build, test, and deploy processes of software projects. Jenkins supports many plugins that integrate with various tools, making it a popular choice for Continuous Integration and Continuous Deployment.

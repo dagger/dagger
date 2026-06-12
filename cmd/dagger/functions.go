@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -28,6 +27,7 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/querybuilder"
 )
 
 var (
@@ -62,11 +62,6 @@ var (
 	skippedOptsAnnotation = "help:skippedOpts"
 )
 
-var funcGroup = &cobra.Group{
-	ID:    "functions",
-	Title: "Functions",
-}
-
 // FuncCommand is a config object used to create a dynamic set of commands
 // for querying a module's functions.
 type FuncCommand struct {
@@ -78,6 +73,12 @@ type FuncCommand struct {
 
 	// Short is the short description shown in the 'help' output.
 	Short string
+
+	// Hidden hides the command from help output.
+	Hidden bool
+
+	// Deprecated marks the command as deprecated.
+	Deprecated string
 
 	// Long is the long message shown in the 'help <this-command>' output.
 	Long string
@@ -124,10 +125,11 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			Use:         fc.Name,
 			Aliases:     fc.Aliases,
 			Short:       fc.Short,
+			Hidden:      fc.Hidden,
+			Deprecated:  fc.Deprecated,
 			Long:        fc.Long,
 			Example:     fc.Example,
 			Annotations: fc.Annotations,
-			GroupID:     moduleGroup.ID,
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
@@ -317,7 +319,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	var mod *moduleDef
 	var err error
-	if fc.DisableModuleLoad || moduleNoURL {
+	if fc.DisableModuleLoad || moduleNoURL || isCoreModuleSelected() {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
 		// -m modules are loaded at engine connect time as extra modules.
@@ -361,15 +363,71 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 
 	cmd, args, err := fc.traverse(c, a, builder)
 	if err != nil {
+		fc.logCommandParseSchemaSummary(ctx, "traverse_error", a, cmd, args, err)
 		return cmd, args, err
 	}
 
 	// There should be no args left, if there are it's an unknown command.
 	if err := cobra.NoArgs(cmd, args); err != nil {
+		fc.logCommandParseSchemaSummary(ctx, "remaining_args", a, cmd, args, err)
 		return cmd, args, err
 	}
 
 	return cmd, args, nil
+}
+
+func (fc *FuncCommand) logCommandParseSchemaSummary(ctx context.Context, reason string, requestedArgs []string, cmd *cobra.Command, remainingArgs []string, parseErr error) {
+	if fc == nil || fc.mod == nil {
+		return
+	}
+
+	mainObjectName := ""
+	var rootFns []string
+	if fc.mod.MainObject != nil && fc.mod.MainObject.AsObject != nil {
+		mainObjectName = fc.mod.MainObject.AsObject.Name
+		for _, fn := range fc.mod.MainObject.AsObject.GetFunctions() {
+			if fn == nil {
+				continue
+			}
+			rootFns = append(rootFns, fn.CmdName())
+		}
+	}
+	sort.Strings(rootFns)
+
+	cmdPath := ""
+	if cmd != nil {
+		cmdPath = cmd.CommandPath()
+	}
+	errMsg := ""
+	if parseErr != nil {
+		errMsg = parseErr.Error()
+	}
+
+	slog.InfoContext(ctx, "dagger call parse schema summary",
+		"reason", reason,
+		"error", errMsg,
+		"requested_args", limitFuncLogStrings(requestedArgs, 40),
+		"remaining_args", limitFuncLogStrings(remainingArgs, 40),
+		"command_path", cmdPath,
+		"main_object", mainObjectName,
+		"object_count", len(fc.mod.Objects),
+		"interface_count", len(fc.mod.Interfaces),
+		"enum_count", len(fc.mod.Enums),
+		"input_count", len(fc.mod.Inputs),
+		"query_function_count", len(rootFns),
+		"query_functions", limitFuncLogStrings(rootFns, 40),
+	)
+}
+
+func limitFuncLogStrings(vals []string, limit int) []string {
+	if len(vals) == 0 || limit <= 0 {
+		return nil
+	}
+	cp := append([]string(nil), vals...)
+	if len(cp) > limit {
+		cp = cp[:limit]
+	}
+	return cp
 }
 
 // traverse recursively builds the command tree, until the leaf command is found.
@@ -496,9 +554,10 @@ func (fc *FuncCommand) selectWith(cmd *cobra.Command) error {
 	}
 	// Check if any with-args flags were changed.
 	anyChanged := false
+	flags := cmd.LocalNonPersistentFlags()
 	for _, a := range fc.withFn.SupportedArgs() {
-		flag, err := a.GetFlag(cmd.Flags())
-		if err != nil {
+		flag := flags.Lookup(a.FlagName())
+		if flag == nil {
 			continue
 		}
 		if flag.Changed {
@@ -565,8 +624,6 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 		return nil
 	}
 
-	cmd.AddGroup(funcGroup)
-
 	fns, skipped, err := GetSupportedFunctions(fnProvider)
 	if err != nil {
 		return err
@@ -594,7 +651,6 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 		Use:                   cliName(fn.Name),
 		Short:                 fn.Short(),
 		Long:                  fn.Description,
-		GroupID:               funcGroup.ID,
 		DisableFlagsInUseLine: true,
 		// FIXME: Persistent flags should be marked as hidden for sub-commands
 		// but it's not working, so setting an annotation to circumvent it.
@@ -630,10 +686,14 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 
 	p := pool.NewWithResults[flagResult]().WithErrors()
 
+	flags := cmd.LocalNonPersistentFlags()
 	for i, a := range fn.SupportedArgs() {
-		flag, err := a.GetFlag(cmd.Flags())
-		if err != nil {
-			return err
+		flag := flags.Lookup(a.FlagName())
+		if flag == nil {
+			if a.IsRequired() {
+				missingFlags = append(missingFlags, a.FlagName())
+			}
+			continue
 		}
 
 		if !flag.Changed {
@@ -836,7 +896,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 	switch v := item.(type) {
 	case string:
-		return dag.LoadChangesetFromID(dagger.ChangesetID(v)), nil
+		return dagger.Ref[*dagger.Changeset](dag, dagger.ID(v)), nil
 	case map[string]interface{}:
 		if id, ok := v["id"]; ok {
 			return toChangeset(dag, id)
@@ -860,6 +920,10 @@ func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 }
 
 func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) (rerr error) {
+	return handleChangesetResponseAt(ctx, dag, response, autoApply, ".")
+}
+
+func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response any, autoApply bool, exportPath string) (rerr error) {
 	changeset, err := toChangeset(dag, response)
 	if err != nil {
 		return err
@@ -908,7 +972,7 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 
 	ctx, span := Tracer().Start(ctx, "applying changes")
 	defer telemetry.EndWithCause(span, &rerr)
-	if _, err := changeset.Export(ctx, "."); err != nil {
+	if _, err := changeset.Export(ctx, exportPath); err != nil {
 		return err
 	}
 	return nil
@@ -941,7 +1005,7 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 	}
 
 	// Load the LLM from the ID and assign it as $agent
-	llm := dag.LoadLLMFromID(dagger.LLMID(llmID))
+	llm := dagger.Ref[*dagger.LLM](dag, dagger.ID(llmID))
 	if _, err := handler.llm(ctx); err != nil { // init llmSession
 		return err
 	}

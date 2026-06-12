@@ -1,39 +1,24 @@
 import logging
 import os
-from collections.abc import Callable
-from typing import Final, Literal
+from typing import Final
 
 from opentelemetry import context, propagate, trace
-from opentelemetry._logs import get_logger_provider
-from opentelemetry.environment_variables import (
-    _OTEL_PYTHON_LOGGER_PROVIDER,
-    OTEL_LOGS_EXPORTER,
-    OTEL_METRICS_EXPORTER,
-    OTEL_PYTHON_TRACER_PROVIDER,
-    OTEL_TRACES_EXPORTER,
-)
+from opentelemetry.environment_variables import OTEL_PYTHON_TRACER_PROVIDER
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.instrumentation.logging.environment_variables import (
     OTEL_PYTHON_LOG_CORRELATION,
     OTEL_PYTHON_LOG_FORMAT,
     OTEL_PYTHON_LOG_LEVEL,
 )
-from opentelemetry.sdk import _logs as sdklogs
 from opentelemetry.sdk import trace as sdktrace
 from opentelemetry.sdk._configuration import _BaseConfigurator as _BaseSDKConfigurator
 from opentelemetry.sdk._configuration import (
     _get_exporter_names,
     _import_exporters,
-    _init_logging,
-    _init_metrics,
 )
 from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_ENDPOINT,
     OTEL_EXPORTER_OTLP_INSECURE,
-    OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
-    OTEL_EXPORTER_OTLP_LOGS_INSECURE,
-    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
-    OTEL_EXPORTER_OTLP_METRICS_INSECURE,
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
     OTEL_EXPORTER_OTLP_TRACES_INSECURE,
     OTEL_SDK_DISABLED,
@@ -75,18 +60,12 @@ def shutdown():
     # TODO: set a timeout
 
     tracer_provider = get_tracer_provider()
-    logger_provider = get_logger_provider()
-
     # Provider shutdown is called automatically on exit, we just need the forced
     # flush but might as well shutdown now too.
 
     if isinstance(tracer_provider, sdktrace.TracerProvider):
         tracer_provider.force_flush()
         tracer_provider.shutdown()
-
-    if isinstance(logger_provider, sdklogs.LoggerProvider):
-        logger_provider.force_flush()
-        logger_provider.shutdown()
 
 
 def otel_configured() -> bool:
@@ -191,7 +170,6 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
 
         # The default is a NoOpProvider.
         os.environ.setdefault(OTEL_PYTHON_TRACER_PROVIDER, "sdk_tracer_provider")
-        os.environ.setdefault(_OTEL_PYTHON_LOGGER_PROVIDER, "sdk_logger_provider")
 
         # Logging instrumentation.
         os.environ.setdefault(OTEL_PYTHON_LOG_CORRELATION, "true")
@@ -201,19 +179,8 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
             "%(levelname)s [%(name)s]: %(message)s",
         )
 
-        # TODO: The rest of the env vars should be set by the shim rather than in the SDK.
-
-        for name in (
-            OTEL_TRACES_EXPORTER,
-            OTEL_LOGS_EXPORTER,
-            OTEL_METRICS_EXPORTER,
-        ):
-            os.environ.setdefault(name, ",".join(self.exporters))
-
         _vars = {
             OTEL_EXPORTER_OTLP_ENDPOINT: OTEL_EXPORTER_OTLP_INSECURE,
-            OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: OTEL_EXPORTER_OTLP_METRICS_INSECURE,
-            OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: OTEL_EXPORTER_OTLP_LOGS_INSECURE,
             OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: OTEL_EXPORTER_OTLP_TRACES_INSECURE,
         }
         for endpoint, insecure in _vars.items():
@@ -221,26 +188,25 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
                 os.environ.setdefault(insecure, "true")
 
     def _initialize(self):
-        # NB: Fixed order, based on _import_exporters arguments.
-        initializers: dict[Literal["traces", "metrics", "logs"], Callable] = {
-            "traces": _init_tracing,
-            "metrics": _init_metrics,
-            "logs": _init_logging,
-        }
-        all_exporters = _import_exporters(
-            *(_get_exporter_names(t) for t in initializers)
+        # NB: Dagger's engine only accepts Gauge metrics today (engine-side
+        # exec resource monitoring). Emitting counters/histograms from modules
+        # produces 500s and retry noise, so skip metric initialization by
+        # passing an empty list for the metrics slot of _import_exporters.
+        #
+        # Also skip OTel log exporting. Dagger already captures module
+        # stdout/stderr and forwards it as logs; installing OTel's logging
+        # handler would duplicate Python logging records in the TUI.
+        trace_exporters, _, _ = _import_exporters(
+            _get_exporter_names("traces"),
+            [],
+            [],
         )
+        logger.debug(
+            "Initializing traces telemetry with exporters: %s",
+            ", ".join(trace_exporters) if trace_exporters else "none",
+        )
+        _init_tracing(trace_exporters)
 
-        for (kind, init), exporters in zip(
-            initializers.items(), all_exporters, strict=True
-        ):
-            logger.debug(
-                "Initializing %s telemetry with exporters: %s",
-                kind,
-                ", ".join(exporters) if exporters else "none",
-            )
-
-            init(exporters)
-
-        # The logging instrumentor injects the trace context into logs
+        # The logging instrumentor injects the trace context into logs without
+        # exporting them separately.
         LoggingInstrumentor().instrument()

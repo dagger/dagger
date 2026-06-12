@@ -61,18 +61,22 @@ type Module struct {
 	// instead default to the old behavior of per-session caching.
 	DisableDefaultFunctionCaching bool
 
-	// LegacyDefaultPath, when true, causes +defaultPath to resolve relative to
-	// the workspace root instead of the module's own source directory.
-	// Used for legacy blueprints/toolchains migrated to workspace modules.
+	// LegacyDefaultPath marks modules projected from legacy workspace fields.
+	// Their +defaultPath context is supplied through ContextSource during
+	// module loading.
 	LegacyDefaultPath bool
 
-	// Config values from workspace config.toml [modules.<name>.config].
+	// LegacyArgCustomizations are workspace dagger.json argument customizations
+	// applied through asModule.
+	LegacyArgCustomizations []*modules.ModuleConfigArgument
+
+	// Workspace setting values from dagger.toml [modules.<name>.settings].
 	// Typed map: strings, bools, ints, floats as-is from TOML.
 	// When set, constructor args are resolved from this map first.
 	WorkspaceConfig map[string]any
 
-	// When true and WorkspaceConfig is set, also load .env defaults
-	// for args not found in WorkspaceConfig. Off by default.
+	// When true and workspace settings are set, also load .env defaults
+	// for args not found in those settings. Off by default.
 	DefaultsFromDotEnv bool
 
 	// Salts the module content cache key with internal asModule options that
@@ -244,7 +248,7 @@ func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*Env
 }
 
 // ApplyWorkspaceDefaultsToTypeDefs updates constructor arg typedefs based on
-// WorkspaceConfig, so that --help displays the correct default values.
+// workspace settings, so that --help displays the correct default values.
 // For primitive types (string, int, bool, float), it sets arg.DefaultValue
 // to the JSON representation. For object types (Secret, Directory, etc.),
 // it marks the arg as optional (since a default will be resolved at call time).
@@ -864,44 +868,46 @@ func (mod *Module) AttachDependencyResults(
 }
 
 type persistedModulePayload struct {
-	SourceResultID                uint64         `json:"sourceResultID,omitempty"`
-	ContextSourceResultID         uint64         `json:"contextSourceResultID,omitempty"`
-	RuntimeResultID               uint64         `json:"runtimeResultID,omitempty"`
-	DepModuleResultIDs            []uint64       `json:"depModuleResultIDs,omitempty"`
-	IncludeSelfInDeps             bool           `json:"includeSelfInDeps,omitempty"`
-	NameField                     string         `json:"nameField,omitempty"`
-	OriginalName                  string         `json:"originalName,omitempty"`
-	SDKConfig                     *SDKConfig     `json:"sdkConfig,omitempty"`
-	Description                   string         `json:"description,omitempty"`
-	ObjectDefResultIDs            []uint64       `json:"objectDefResultIDs,omitempty"`
-	InterfaceDefResultIDs         []uint64       `json:"interfaceDefResultIDs,omitempty"`
-	EnumDefResultIDs              []uint64       `json:"enumDefResultIDs,omitempty"`
-	LegacyDefaultPath             bool           `json:"legacyDefaultPath,omitempty"`
-	WorkspaceConfig               map[string]any `json:"workspaceConfig,omitempty"`
-	DefaultsFromDotEnv            bool           `json:"defaultsFromDotEnv,omitempty"`
-	DisableDefaultFunctionCaching bool           `json:"disableDefaultFunctionCaching,omitempty"`
+	SourceResultID                uint64                          `json:"sourceResultID,omitempty"`
+	ContextSourceResultID         uint64                          `json:"contextSourceResultID,omitempty"`
+	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
+	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
+	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
+	NameField                     string                          `json:"nameField,omitempty"`
+	OriginalName                  string                          `json:"originalName,omitempty"`
+	SDKConfig                     *SDKConfig                      `json:"sdkConfig,omitempty"`
+	Description                   string                          `json:"description,omitempty"`
+	ObjectDefResultIDs            []uint64                        `json:"objectDefResultIDs,omitempty"`
+	InterfaceDefResultIDs         []uint64                        `json:"interfaceDefResultIDs,omitempty"`
+	EnumDefResultIDs              []uint64                        `json:"enumDefResultIDs,omitempty"`
+	LegacyDefaultPath             bool                            `json:"legacyDefaultPath,omitempty"`
+	LegacyArgCustomizations       []*modules.ModuleConfigArgument `json:"legacyArgCustomizations,omitempty"`
+	WorkspaceConfig               map[string]any                  `json:"workspaceConfig,omitempty"`
+	DefaultsFromDotEnv            bool                            `json:"defaultsFromDotEnv,omitempty"`
+	DisableDefaultFunctionCaching bool                            `json:"disableDefaultFunctionCaching,omitempty"`
+	AsModuleVariantDigest         string                          `json:"asModuleVariantDigest,omitempty"`
 }
 
-func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	var persisted persistedModulePayload
 	if mod.Source.Valid {
 		sourceID, err := encodePersistedObjectRef(cache, mod.Source.Value, "module source")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.SourceResultID = sourceID
 	}
 	if mod.ContextSource.Valid {
 		contextSourceID, err := encodePersistedObjectRef(cache, mod.ContextSource.Value, "module context source")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.ContextSourceResultID = contextSourceID
 	}
 	if mod.Runtime.Valid {
 		runtimeID, err := encodePersistedObjectRef(cache, mod.Runtime.Value, "module runtime")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.RuntimeResultID = runtimeID
 	}
@@ -916,7 +922,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 			}
 			depResultID, err := encodePersistedObjectRef(cache, depInst, fmt.Sprintf("module dependency %q", dep.Name()))
 			if err != nil {
-				return nil, err
+				return dagql.PersistedObjectEncoding{}, err
 			}
 			if mod.IncludeSelfInDeps && depInst.Self() == mod {
 				continue
@@ -933,7 +939,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	for _, def := range mod.ObjectDefs {
 		defID, err := encodePersistedObjectRef(cache, def, "module object typedef")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.ObjectDefResultIDs = append(persisted.ObjectDefResultIDs, defID)
 	}
@@ -941,7 +947,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	for _, def := range mod.InterfaceDefs {
 		defID, err := encodePersistedObjectRef(cache, def, "module interface typedef")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.InterfaceDefResultIDs = append(persisted.InterfaceDefResultIDs, defID)
 	}
@@ -949,20 +955,22 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	for _, def := range mod.EnumDefs {
 		defID, err := encodePersistedObjectRef(cache, def, "module enum typedef")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.EnumDefResultIDs = append(persisted.EnumDefResultIDs, defID)
 	}
 	persisted.LegacyDefaultPath = mod.LegacyDefaultPath
+	persisted.LegacyArgCustomizations = mod.LegacyArgCustomizations
 	persisted.WorkspaceConfig = mod.WorkspaceConfig
 	persisted.DefaultsFromDotEnv = mod.DefaultsFromDotEnv
 	persisted.DisableDefaultFunctionCaching = mod.DisableDefaultFunctionCaching
+	persisted.AsModuleVariantDigest = mod.AsModuleVariantDigest
 
 	jsonBytes, err := json.Marshal(persisted)
 	if err != nil {
-		return nil, fmt.Errorf("encode persisted module payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module payload: %w", err)
 	}
-	return jsonBytes, nil
+	return encodePersistedObjectRawJSON(jsonBytes), nil
 }
 
 func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
@@ -1037,9 +1045,11 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		EnumDefs:                      enumDefs,
 		IncludeSelfInDeps:             persisted.IncludeSelfInDeps,
 		LegacyDefaultPath:             persisted.LegacyDefaultPath,
+		LegacyArgCustomizations:       persisted.LegacyArgCustomizations,
 		WorkspaceConfig:               persisted.WorkspaceConfig,
 		DefaultsFromDotEnv:            persisted.DefaultsFromDotEnv,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
+		AsModuleVariantDigest:         persisted.AsModuleVariantDigest,
 	}
 	if mod.SDKConfig == nil {
 		mod.SDKConfig = &SDKConfig{}
@@ -1757,7 +1767,29 @@ func (mod *Module) namespaceSourceMap(
 	sourceMap dagql.Nullable[dagql.ObjectResult[*SourceMap]],
 ) (dagql.Nullable[dagql.ObjectResult[*SourceMap]], error) {
 	if !sourceMap.Valid || sourceMap.Value.Self() == nil {
-		return sourceMap, nil
+		// Even if the SDK didn't provide a source map, record the module
+		// name so downstream consumers (CLI, shell, codegen dependency
+		// filtering) can identify which module a type/function belongs to.
+		// Route through dag.Select rather than NewObjectResultForCurrentCall
+		// so the result is attached and callers can read its ID when calling
+		// __withSourceMap.
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return dagql.Nullable[dagql.ObjectResult[*SourceMap]]{}, fmt.Errorf("current dagql server: %w", err)
+		}
+		var synthesized dagql.ObjectResult[*SourceMap]
+		if err := dag.Select(ctx, dag.Root(), &synthesized, dagql.Selector{
+			Field: "sourceMap",
+			Args: []dagql.NamedInput{
+				{Name: "module", Value: dagql.Opt(dagql.String(mod.Name()))},
+				{Name: "filename", Value: dagql.String("")},
+				{Name: "line", Value: dagql.Int(0)},
+				{Name: "column", Value: dagql.Int(0)},
+			},
+		}); err != nil {
+			return dagql.Nullable[dagql.ObjectResult[*SourceMap]]{}, fmt.Errorf("synthesize source map for module %q: %w", mod.Name(), err)
+		}
+		return dagql.NonNull(synthesized), nil
 	}
 	filename := filepath.Join(modPath, sourceMap.Value.Self().Filename)
 	url := sourceMap.Value.Self().URL
@@ -2197,7 +2229,7 @@ func (mod *userMod) install(ctx context.Context, dag *dagql.Server, opts ...Inst
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			if src := self.GetSource(); src != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
+			if src := self.GetSource(); src != nil && src.SelfCallsEnabled() {
 				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
 			} else {
 				return fmt.Errorf("type %q is already defined by module %q", objDef.Name, modType.SourceMod().Name())
@@ -2392,6 +2424,7 @@ func (mod Module) Clone() *Module {
 			cp.WorkspaceConfig[k] = v
 		}
 	}
+	cp.LegacyArgCustomizations = append([]*modules.ModuleConfigArgument(nil), mod.LegacyArgCustomizations...)
 	return &cp
 }
 

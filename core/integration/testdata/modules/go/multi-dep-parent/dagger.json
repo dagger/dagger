@@ -1,0 +1,17 @@
+{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "foo",
+      "source": "foo"
+    },
+    {
+      "name": "bar",
+      "source": "bar"
+    }
+  ]
+}

@@ -180,7 +180,7 @@ func newTypeDefDetachedResult[T dagql.Typed](t *testing.T, dag *dagql.Server, op
 	return res
 }
 
-func newTypeDefAttachedResult[T dagql.Typed](t *testing.T, ctx context.Context, cache *dagql.Cache, dag *dagql.Server, op string, self T) dagql.ObjectResult[T] {
+func newTypeDefAttachedResult[T dagql.Typed](t testing.TB, ctx context.Context, cache *dagql.Cache, dag *dagql.Server, op string, self T) dagql.ObjectResult[T] {
 	t.Helper()
 	call := moduleObjectTestSyntheticCall(op, self)
 	detached, err := dagql.NewObjectResultForCall(self, dag, call)

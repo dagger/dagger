@@ -68,45 +68,45 @@ dagger call slack \
 package main
 
 import (
-	"context"
+  "context"
 )
 
 type Demo struct{}
 
 func (m *Demo) SlackExample(ctx context.Context, token *Secret) error {
-	threadId, err := dag.
-		Notify().
-		Slack(
-			ctx,
-			token,
-			"#2596be",
-			"Hello world!",
-			"<CHANNEL_ID>",
-			NotifySlackSendMessageOpts{
-				Title:      "My title",
-				Footer:     "My footer",
-				FooterIcon: "https://avatars.githubusercontent.com/u/78824383?s=280&v=4",
-				ImageURL:   "https://framerusercontent.com/images/bJT2c1WWr6bzO8aoEkh0Zz1Ra8.webp",
-			},
-		)
-	if err != nil {
-		return err
-	}
+  threadId, err := dag.
+    Notify().
+    Slack(
+      ctx,
+      token,
+      "#2596be",
+      "Hello world!",
+      "<CHANNEL_ID>",
+      NotifySlackSendMessageOpts{
+        Title:      "My title",
+        Footer:     "My footer",
+        FooterIcon: "https://avatars.githubusercontent.com/u/78824383?s=280&v=4",
+        ImageURL:   "https://framerusercontent.com/images/bJT2c1WWr6bzO8aoEkh0Zz1Ra8.webp",
+      },
+    )
+  if err != nil {
+    return err
+  }
 
-	// Reply to the previous message
-	_, err = dag.
-		Notify().
-		Slack(
-			ctx,
-			token,
-			"danger",
-			"This is a reply in a thread",
-			"<CHANNEL_ID>",
-			NotifySlackSendMessageOpts{
-				ThreadID: threadId,
-			},
-		)
+  // Reply to the previous message
+  _, err = dag.
+    Notify().
+    Slack(
+      ctx,
+      token,
+      "danger",
+      "This is a reply in a thread",
+      "<CHANNEL_ID>",
+      NotifySlackSendMessageOpts{
+        ThreadID: threadId,
+      },
+    )
 
-	return err
+  return err
 }
 ```

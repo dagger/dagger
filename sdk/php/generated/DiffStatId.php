@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
+ * A unique identifier for an object.
  */
-readonly class DiffStatId extends Client\AbstractId
+readonly class DiffStatId extends Client\AbstractScalar
 {
 }

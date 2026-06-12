@@ -40,12 +40,14 @@ defmodule Dagger.Env do
   >
   > "Checks API is highly experimental and may be removed or replaced entirely."
   """
-  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  @spec checks(t(), [{:include, [String.t()]}, {:no_generate, boolean() | nil}]) ::
+          Dagger.CheckGroup.t()
   def checks(%__MODULE__{} = env, optional_args \\ []) do
     query_builder =
       env.query_builder
       |> QB.select("checks")
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
 
     %Dagger.CheckGroup{
       query_builder: query_builder,
@@ -56,7 +58,7 @@ defmodule Dagger.Env do
   @doc """
   A unique identifier for this Env.
   """
-  @spec id(t()) :: {:ok, Dagger.EnvID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = env) do
     query_builder =
       env.query_builder |> QB.select("id")
@@ -92,8 +94,9 @@ defmodule Dagger.Env do
          %Dagger.Binding{
            query_builder:
              QB.query()
-             |> QB.select("loadBindingFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Binding"),
            client: env.client
          }
        end}
@@ -128,8 +131,9 @@ defmodule Dagger.Env do
          %Dagger.Binding{
            query_builder:
              QB.query()
-             |> QB.select("loadBindingFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Binding"),
            client: env.client
          }
        end}
@@ -1288,6 +1292,42 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type WorkspaceGit in the environment
+  """
+  @spec with_workspace_git_input(t(), String.t(), Dagger.WorkspaceGit.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_workspace_git_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceGitInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceGit output to be assigned in the environment
+  """
+  @spec with_workspace_git_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_git_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceGitOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type Workspace in the environment
   """
   @spec with_workspace_input(t(), String.t(), Dagger.Workspace.t(), String.t()) :: Dagger.Env.t()
@@ -1297,6 +1337,158 @@ defmodule Dagger.Env do
       |> QB.select("withWorkspaceInput")
       |> QB.put_arg("name", name)
       |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type WorkspaceMigration in the environment
+  """
+  @spec with_workspace_migration_input(t(), String.t(), Dagger.WorkspaceMigration.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_workspace_migration_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceMigrationInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceMigration output to be assigned in the environment
+  """
+  @spec with_workspace_migration_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_migration_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceMigrationOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type WorkspaceMigrationStep in the environment
+  """
+  @spec with_workspace_migration_step_input(
+          t(),
+          String.t(),
+          Dagger.WorkspaceMigrationStep.t(),
+          String.t()
+        ) :: Dagger.Env.t()
+  def with_workspace_migration_step_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceMigrationStepInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+  """
+  @spec with_workspace_migration_step_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_migration_step_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceMigrationStepOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type WorkspaceModule in the environment
+  """
+  @spec with_workspace_module_input(t(), String.t(), Dagger.WorkspaceModule.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_workspace_module_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceModuleInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceModule output to be assigned in the environment
+  """
+  @spec with_workspace_module_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_module_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceModuleOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type WorkspaceModuleSetting in the environment
+  """
+  @spec with_workspace_module_setting_input(
+          t(),
+          String.t(),
+          Dagger.WorkspaceModuleSetting.t(),
+          String.t()
+        ) :: Dagger.Env.t()
+  def with_workspace_module_setting_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceModuleSettingInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceModuleSetting output to be assigned in the environment
+  """
+  @spec with_workspace_module_setting_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_module_setting_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceModuleSettingOutput")
+      |> QB.put_arg("name", name)
       |> QB.put_arg("description", description)
 
     %Dagger.Env{
@@ -1357,6 +1549,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Env do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_env_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Env{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Env"),
+       client: dag.client
+     }}
   end
 end

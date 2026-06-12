@@ -28,9 +28,9 @@ import (
 )
 
 var runCmd = &cobra.Command{
-	Use:     "run [options] <command>...",
-	Aliases: []string{"r"},
-	Short:   "Run a command in a Dagger session",
+	Use:     "exec [options] <command>...",
+	Aliases: []string{"run", "r"},
+	Short:   "Execute a command in a Dagger session",
 	Long: strings.ReplaceAll(
 		`Executes the specified command in a Dagger Session and displays
 live progress in a TUI.
@@ -41,7 +41,7 @@ injected automatically.
 For example:
 ´´´shell
 jq -n '{query:"{container{id}}"}' | \
-  dagger run sh -c 'curl -s \
+  dagger exec sh -c 'curl -s \
     -u $DAGGER_SESSION_TOKEN: \
     -H "content-type:application/json" \
     -d @- \
@@ -51,17 +51,18 @@ jq -n '{query:"{container{id}}"}' | \
 		"`",
 	),
 	Example: strings.TrimSpace(`
-dagger run go run main.go
-dagger run node index.mjs
-dagger run python main.py
+dagger exec go run main.go
+dagger exec node index.mjs
+dagger exec python main.py
 `,
 	),
-	GroupID:      execGroup.ID,
 	RunE:         Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	Annotations: map[string]string{
-		printTraceLinkKey: "true",
+		hiddenAliasesAnnotation: "run,r",
+		printTraceLinkKey:       "true",
+		showFinalProgressKey:    "true",
 	},
 }
 
@@ -280,7 +281,7 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	return []string{
+	otelEnv := []string{
 		engine.OTelExporterProtocolEnv + "=" + otelProto,
 		engine.OTelExporterEndpointEnv + "=" + otelEndpoint,
 		engine.OTelTracesProtocolEnv + "=" + otelProto,
@@ -293,5 +294,11 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 		engine.OTelLogsEndpointEnv + "=" + otelEndpoint + "/v1/logs",
 		engine.OTelMetricsProtocolEnv + "=" + otelProto,
 		engine.OTelMetricsEndpointEnv + "=" + otelEndpoint + "/v1/metrics",
-	}, nil
+	}
+	// Signal-specific exporter selection enables auto-configuring SDKs; endpoint
+	// vars alone are not enough. Preserve an explicit user setting, e.g. "none".
+	if _, ok := os.LookupEnv(engine.OTelTracesExporterEnv); !ok {
+		otelEnv = append(otelEnv, engine.OTelTracesExporterEnv+"=otlp")
+	}
+	return otelEnv, nil
 }

@@ -94,7 +94,7 @@ func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCred
 		if ctx.Err() == context.DeadlineExceeded {
 			return newGitCredentialErrorResponse(TIMEOUT, "Git credential command timed out"), nil
 		}
-		return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
+		return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %s, %v", stderr.String(), err)), nil
 	}
 
 	// Parse the output

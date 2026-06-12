@@ -17,7 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/client"
@@ -270,7 +269,7 @@ func mainSession() error {
 		return fmt.Errorf("failed to connect to session server: %w", err)
 	}
 
-	attachables := []bksession.Attachable{
+	attachables := []client.SessionAttachable{
 		// secrets
 		secretprovider.NewSecretProvider(),
 		// sockets
@@ -287,7 +286,7 @@ func mainSession() error {
 	}
 	attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 
-	sessionSrv, err := client.ConnectBuildkitSession(ctx, conn, http.Header{}, attachables...)
+	sessionSrv, err := client.ConnectSessionAttachables(ctx, conn, http.Header{}, attachables...)
 	if err != nil {
 		return err
 	}

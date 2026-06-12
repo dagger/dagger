@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `StatID` scalar type represents an identifier for an object of type Stat.
+ * A unique identifier for an object.
  */
-readonly class StatId extends Client\AbstractId
+readonly class StatId extends Client\AbstractScalar
 {
 }

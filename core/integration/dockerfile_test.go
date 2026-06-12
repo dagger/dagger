@@ -1,5 +1,7 @@
 package core
 
+// These tests cover building containers from Dockerfiles through the Dagger API.
+
 import (
 	"context"
 	"errors"
@@ -562,6 +564,47 @@ CMD ["cat", "/copied.txt"]
 		require.Equal(t, "readonly-bind-data", strings.TrimSpace(copied))
 	})
 
+	t.Run("run-mount-bind-file", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("pyproject.toml", "[project]\nname = \"bind-file\"\n").
+			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
+FROM %s
+RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml sh -lc 'cat pyproject.toml > /copied.txt'
+CMD ["cat", "/copied.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "[project]\nname = \"bind-file\"", strings.TrimSpace(out))
+	})
+
+	t.Run("run-mount-bind-file-metadata", func(ctx context.Context, t *testctx.T) {
+		dir := c.Container().
+			From(alpineImage).
+			WithWorkdir("/ctx").
+			WithExec([]string{"sh", "-lc", `
+set -eu
+printf 'exec-file\n' > exec-file
+chmod 0755 exec-file
+printf 'setuid-file\n' > setuid-file
+chmod 4755 setuid-file
+printf 'readonly-file\n' > readonly.txt
+`}).
+			Directory("/ctx").
+			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
+FROM %s
+RUN --mount=type=bind,source=exec-file,target=/exec-file \
+    --mount=type=bind,source=setuid-file,target=/setuid-file \
+    --mount=type=bind,source=readonly.txt,target=/readonly.txt,readonly \
+    sh -lc '{ stat -c "%%a %%n" /exec-file /setuid-file; if sh -c "echo mutate > /readonly.txt" 2>/dev/null; then echo writable; else echo readonly; fi; } > /result.txt'
+CMD ["cat", "/result.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "755 /exec-file\n4755 /setuid-file\nreadonly", strings.TrimSpace(out))
+	})
+
 	t.Run("run-mount-bind-non-sticky", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().
 			WithNewFile("ctx.txt", "non-sticky-bind").
@@ -944,14 +987,16 @@ EXPOSE 8080
 	res, err := testutil.QueryWithClient[struct {
 		Container struct {
 			ExposedPorts []core.Port
-		} `json:"loadContainerFromID"`
+		} `json:"container"`
 	}](c, t, `
-        query Test($id: ContainerID!) {
-            loadContainerFromID(id: $id) {
-                exposedPorts {
-                    port
-                    protocol
-                    description
+        query Test($id: ID!) {
+            container: node(id: $id) {
+                ... on Container {
+                    exposedPorts {
+                        port
+                        protocol
+                        description
+                    }
                 }
             }
         }`,
@@ -1028,18 +1073,20 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		require.NoError(t, err)
 
 		res, err := testutil.QueryWithClient[struct {
-			LoadDirectoryFromID struct {
+			Directory struct {
 				DockerBuild struct {
 					File struct {
 						Contents string
 					}
 				}
-			} `json:"loadDirectoryFromID"`
-		}](c, t, `query Test($dir: DirectoryID!, $sock: SocketID!) {
-			loadDirectoryFromID(id: $dir) {
-				dockerBuild(ssh: $sock) {
-					file(path: "/result") {
-						contents
+			} `json:"directory"`
+		}](c, t, `query Test($dir: ID!, $sock: ID!) {
+			directory: node(id: $dir) {
+				... on Directory {
+					dockerBuild(ssh: $sock) {
+						file(path: "/result") {
+							contents
+						}
 					}
 				}
 			}
@@ -1050,7 +1097,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 			},
 		})
 		require.NoError(t, err)
-		require.Equal(t, "hello", res.LoadDirectoryFromID.DockerBuild.File.Contents)
+		require.Equal(t, "hello", res.Directory.DockerBuild.File.Contents)
 	})
 
 	t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
@@ -1059,18 +1106,20 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		require.NoError(t, err)
 
 		res, err := testutil.QueryWithClient[struct {
-			LoadDirectoryFromID struct {
+			Directory struct {
 				DockerBuild struct {
 					File struct {
 						Contents string
 					}
 				}
-			} `json:"loadDirectoryFromID"`
-		}](c, t, `query Test($dir: DirectoryID!, $sock: SocketID!) {
-			loadDirectoryFromID(id: $dir) {
-				dockerBuild(ssh: $sock) {
-					file(path: "/result") {
-						contents
+			} `json:"directory"`
+		}](c, t, `query Test($dir: ID!, $sock: ID!) {
+			directory: node(id: $dir) {
+				... on Directory {
+					dockerBuild(ssh: $sock) {
+						file(path: "/result") {
+							contents
+						}
 					}
 				}
 			}
@@ -1081,7 +1130,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 			},
 		})
 		require.NoError(t, err)
-		require.Equal(t, "hello", res.LoadDirectoryFromID.DockerBuild.File.Contents)
+		require.Equal(t, "hello", res.Directory.DockerBuild.File.Contents)
 	})
 
 	t.Run("without ssh socket fails", func(ctx context.Context, t *testctx.T) {

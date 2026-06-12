@@ -12,12 +12,12 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/converter"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
 	digest "github.com/opencontainers/go-digest"
 	imagespecidentity "github.com/opencontainers/image-spec/identity"
@@ -26,7 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var g flightcontrol.Group[*leaseutil.LeaseRef]
+var g flightcontrol.Group[*bksnapshots.LeaseRef]
 var gFileList flightcontrol.Group[[]string]
 
 var ErrNoBlobs = errors.Errorf("no blobs for snapshot")
@@ -89,7 +89,7 @@ func computeBlobChain(ctx context.Context, sr *immutableRef, createIfNeeded bool
 
 	if _, ok := filter[sr.ID()]; ok {
 		eg.Go(func() error {
-			l, err := g.Do(ctx, fmt.Sprintf("%s-%t", sr.ID(), createIfNeeded), func(ctx context.Context) (_ *leaseutil.LeaseRef, err error) {
+			l, err := g.Do(ctx, fmt.Sprintf("%s-%t", sr.ID(), createIfNeeded), func(ctx context.Context) (_ *bksnapshots.LeaseRef, err error) {
 				if sr.getBlob() != "" {
 					return nil, nil
 				}
@@ -97,7 +97,7 @@ func computeBlobChain(ctx context.Context, sr *immutableRef, createIfNeeded bool
 					return nil, errors.WithStack(ErrNoBlobs)
 				}
 
-				l, ctx, err := leaseutil.NewLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
+				l, ctx, err := bksnapshots.NewLease(ctx, sr.cm.LeaseManager, bksnapshots.MakeTemporary)
 				if err != nil {
 					return nil, err
 				}
@@ -431,13 +431,13 @@ func isTypeWindows(sr *immutableRef) bool {
 
 // ensureCompression ensures the specified ref has the blob of the specified compression Type.
 func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.Config, s session.Group) error {
-	l, err := g.Do(ctx, fmt.Sprintf("ensureComp-%s-%s", ref.ID(), comp.Type), func(ctx context.Context) (_ *leaseutil.LeaseRef, err error) {
+	l, err := g.Do(ctx, fmt.Sprintf("ensureComp-%s-%s", ref.ID(), comp.Type), func(ctx context.Context) (_ *bksnapshots.LeaseRef, err error) {
 		desc, err := ref.ociDesc(ctx, ref.descHandlers, true)
 		if err != nil {
 			return nil, err
 		}
 
-		l, ctx, err := leaseutil.NewLease(ctx, ref.cm.LeaseManager, leaseutil.MakeTemporary)
+		l, ctx, err := bksnapshots.NewLease(ctx, ref.cm.LeaseManager, bksnapshots.MakeTemporary)
 		if err != nil {
 			return nil, err
 		}

@@ -8,7 +8,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 )
@@ -30,9 +29,13 @@ func (sdk *moduleTypes) ModuleTypes(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dag := sdk.mod.dag()
+	sdkInst, err := sdk.mod.instantiate(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to initialize sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	dag := sdkInst.dag
 
-	source, err := scopeSourceForSDKOperation(ctx, source, "moduleTypes", dag)
+	source, err = scopeSourceForSDKOperation(ctx, source, "moduleTypes", dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module source for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
 	}
@@ -40,9 +43,9 @@ func (sdk *moduleTypes) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
 	}
-	currentModuleID, err := scopedMod.ID()
+	moduleContextID, err := core.ResultIDInput(scopedMod)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get current module ID for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
+		return inst, fmt.Errorf("failed to get module context ID for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
@@ -59,25 +62,18 @@ func (sdk *moduleTypes) ModuleTypes(
 	}
 
 	execMD := engineutil.ExecutionMetadata{
-		ClientID: identity.NewID(),
-		Call:     dagql.CurrentCall(ctx),
-		ExecID:   identity.NewID(),
-		Internal: true,
+		Internal:              true,
+		UseRecipeIDsByDefault: true,
 	}
-	if execMD.Call != nil {
-		callDigest, err := execMD.Call.RecipeDigest(ctx)
+	if curCall := dagql.CurrentCall(ctx); curCall != nil {
+		callDigest, err := curCall.RecipeDigest(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("compute module types exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
 	}
-	execMD.EncodedModuleID, err = currentModuleID.Encode()
-	if err != nil {
-		return inst, err
-	}
-
 	var ctr dagql.ObjectResult[*core.Container]
-	err = dag.Select(ctx, sdk.mod.sdk, &ctr,
+	err = dag.Select(ctx, sdkInst.sdk, &ctr,
 		dagql.Selector{
 			Field: "moduleTypes",
 			Args: []dagql.NamedInput{
@@ -109,6 +105,7 @@ func (sdk *moduleTypes) ModuleTypes(
 				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
 				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
 				{Name: "execMD", Value: dagql.NewDigestedSerializedString(&execMD, moduleTypesExecMDDigest)},
+				{Name: "moduleContext", Value: dagql.Opt(moduleContextID)},
 			},
 		},
 	)
@@ -160,12 +157,14 @@ func (sdk *moduleTypes) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
 	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get engine cache for sdk moduleTypes dependency: %w", err)
-	}
-	if err := cache.AddExplicitDependency(ctx, ctr, inst, "sdk_module_types_generated_module"); err != nil {
-		return inst, fmt.Errorf("failed to retain loaded module result from sdk moduleTypes exec: %w", err)
+	if modCallID.IsHandle() {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get engine cache for sdk moduleTypes dependency: %w", err)
+		}
+		if err := cache.AddExplicitDependency(ctx, ctr, inst, "sdk_module_types_generated_module"); err != nil {
+			return inst, fmt.Errorf("failed to retain loaded module result from sdk moduleTypes exec: %w", err)
+		}
 	}
 
 	return inst, nil

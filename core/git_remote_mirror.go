@@ -84,7 +84,7 @@ func (mirror *RemoteGitMirror) CacheUsageIdentities() []string {
 	return []string{mirror.snapshot.SnapshotID()}
 }
 
-func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context, _ dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if mirror == nil {
 		return 0, false, nil
 	}
@@ -105,15 +105,31 @@ type persistedRemoteGitMirrorPayload struct {
 	RemoteURL string `json:"remoteURL"`
 }
 
-func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = cache
 	if mirror == nil {
-		return nil, fmt.Errorf("encode persisted remote git mirror: nil mirror")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted remote git mirror: nil mirror")
 	}
-	return json.Marshal(persistedRemoteGitMirrorPayload{
+	mirror.mu.Lock()
+	var links []dagql.PersistedSnapshotRefLink
+	if mirror.snapshot != nil {
+		links = []dagql.PersistedSnapshotRefLink{{
+			RefKey: mirror.snapshot.SnapshotID(),
+			Role:   "bare_repo",
+		}}
+	}
+	mirror.mu.Unlock()
+	payload, err := json.Marshal(persistedRemoteGitMirrorPayload{
 		RemoteURL: mirror.RemoteURL,
 	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	return dagql.PersistedObjectEncoding{
+		JSON:          payload,
+		SnapshotLinks: links,
+	}, nil
 }
 
 func (*RemoteGitMirror) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
@@ -133,7 +149,13 @@ func (*RemoteGitMirror) DecodePersistedObject(ctx context.Context, dag *dagql.Se
 	if err != nil {
 		return nil, err
 	}
-	ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
+	ref, err := query.SnapshotManager().GetMutableBySnapshotID(
+		ctx,
+		link.RefKey,
+		bkcache.NoUpdateLastUsed,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
+		bkcache.WithDescription(fmt.Sprintf("git bare repo for %s", mirror.RemoteURL)),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("reopen persisted remote git mirror snapshot %q: %w", link.RefKey, err)
 	}
@@ -170,7 +192,7 @@ func (mirror *RemoteGitMirror) ensureSnapshotLocked(ctx context.Context, query *
 		ctx,
 		nil,
 		nil,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
 		bkcache.WithDescription(fmt.Sprintf("git bare repo for %s", mirror.RemoteURL)),
 	)
 	if err != nil {

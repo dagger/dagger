@@ -1,5 +1,7 @@
 package core
 
+// These tests cover GPU device access through container execution.
+
 import (
 	"context"
 	"fmt"

@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * An individual cache entry in a cache entry set
  */
-class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble
+class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Whether the cache entry is actively being used.
@@ -29,6 +29,15 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('createdTimeUnixNano');
         return (int)$this->queryLeaf($leafQueryBuilder, 'createdTimeUnixNano');
+    }
+
+    /**
+     * The DagQL call that produced this cache entry.
+     */
+    public function dagqlCall(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dagqlCall');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'dagqlCall');
     }
 
     /**
@@ -52,10 +61,10 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EngineCacheEntry.
      */
-    public function id(): EngineCacheEntryId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\EngineCacheEntryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -74,5 +83,14 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('recordType');
         return (string)$this->queryLeaf($leafQueryBuilder, 'recordType');
+    }
+
+    /**
+     * The storage record types represented by this cache entry.
+     */
+    public function recordTypes(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('recordTypes');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'recordTypes');
     }
 }

@@ -1,0 +1,9 @@
+type ModuleA {
+  pub use(container: Dagger.Container!, overlay: Overlay!): String! {
+    overlay.apply(container).file("/marker").contents
+  }
+}
+
+interface Overlay {
+  pub apply(container: Dagger.Container!): Dagger.Container!
+}

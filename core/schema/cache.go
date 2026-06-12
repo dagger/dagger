@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 
 	"github.com/dagger/dagger/core"
@@ -64,22 +63,27 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 		}
 	}
 
-	if args.Sharing == core.CacheSharingModePrivate {
-		// For now, PRIVATE means "always unique cache volume" to avoid
-		// surprising cross-call sharing behavior.
-		if err := req.SetArgInput(ctx, "privateNonce", dagql.NewString(rand.Text()), false); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs) (dagql.Result[*core.CacheVolume], error) {
+	source := dagql.Nullable[dagql.ObjectResult[*core.Directory]]{}
+	if args.Source.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return dagql.Result[*core.CacheVolume]{}, err
+		}
+		loaded, err := args.Source.Value.Load(ctx, srv)
+		if err != nil {
+			return dagql.Result[*core.CacheVolume]{}, err
+		}
+		source = dagql.NonNull(loaded)
+	}
+
 	cache := core.NewCache(
 		args.Key,
 		args.Namespace,
-		args.Source,
+		source,
 		args.Sharing,
 		args.Owner,
 	)

@@ -53,3 +53,18 @@ func TestNamespaceObjects(t *testing.T) {
 		})
 	}
 }
+
+// TestTypeDefWithNameVerbatim guards the invariant that the internal __withName
+// rename stores an already-final GraphQL name as-is. namespaceObject produces
+// the final namespaced name; re-normalizing it here (strcase.ToCamel is not
+// idempotent) corrupted already-cased multi-word names, e.g. turning
+// "ModuleAOverlay" into "ModuleAoverlay".
+func TestTypeDefWithNameVerbatim(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"ModuleAOverlay", "ModuleBFileOverlay"} {
+		require.Equal(t, name, (&ObjectTypeDef{}).WithName(name).Name)
+		require.Equal(t, name, (&InterfaceTypeDef{}).WithName(name).Name)
+		require.Equal(t, name, (&EnumTypeDef{}).WithName(name).Name)
+	}
+}

@@ -32,12 +32,12 @@ export type AddressFileOpts = {
 }
 
 /**
- * The `AddressID` scalar type represents an identifier for an object of type Address.
+ * A unique identifier for an object.
  */
 export type AddressID = string & { __AddressID: never }
 
 /**
- * The `BindingID` scalar type represents an identifier for an object of type Binding.
+ * A unique identifier for an object.
  */
 export type BindingID = string & { __BindingID: never }
 
@@ -107,7 +107,7 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
   }
 }
 /**
- * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
+ * A unique identifier for an object.
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
@@ -126,7 +126,7 @@ export type ChangesetWithChangesetsOpts = {
 }
 
 /**
- * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+ * A unique identifier for an object.
  */
 export type ChangesetID = string & { __ChangesetID: never }
 
@@ -261,24 +261,24 @@ export type CheckGroupRunOpts = {
 }
 
 /**
- * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
+ * A unique identifier for an object.
  */
 export type CheckGroupID = string & { __CheckGroupID: never }
 
 /**
- * The `CheckID` scalar type represents an identifier for an object of type Check.
+ * A unique identifier for an object.
  */
 export type CheckID = string & { __CheckID: never }
 
 /**
- * The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
+ * A unique identifier for an object.
  */
 export type ClientFilesyncMirrorID = string & {
   __ClientFilesyncMirrorID: never
 }
 
 /**
- * The `CloudID` scalar type represents an identifier for an object of type Cloud.
+ * A unique identifier for an object.
  */
 export type CloudID = string & { __CloudID: never }
 
@@ -358,6 +358,11 @@ export type ContainerExistsOpts = {
    * If specified, do not follow symlinks.
    */
   doNotFollowSymlinks?: boolean
+
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  expand?: boolean
 }
 
 export type ContainerExportOpts = {
@@ -418,6 +423,27 @@ export type ContainerFileOpts = {
   expand?: boolean
 }
 
+export type ContainerFromOpts = {
+  /**
+   * Service to use as the registry endpoint for the image address.
+   *
+   * The service will be started only for this pull.
+   */
+  registryService?: Service
+
+  /**
+   * Protocol to use for registry communication.
+   *
+   * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+   */
+  protocol?: RegistryProtocol
+
+  /**
+   * Allow HTTPS registry communication without verifying the server certificate.
+   */
+  insecureSkipTLSVerify?: boolean
+}
+
 export type ContainerImportOpts = {
   /**
    * Identifies the tag to import from the archive, if the archive bundles multiple tags.
@@ -446,6 +472,25 @@ export type ContainerPublishOpts = {
    * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+
+  /**
+   * Service to use as the registry endpoint for the image address.
+   *
+   * The service will be started only for this push.
+   */
+  registryService?: Service
+
+  /**
+   * Protocol to use for registry communication.
+   *
+   * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+   */
+  protocol?: RegistryProtocol
+
+  /**
+   * Allow HTTPS registry communication without verifying the server certificate.
+   */
+  insecureSkipTLSVerify?: boolean
 }
 
 export type ContainerStatOpts = {
@@ -926,7 +971,7 @@ export type ContainerWithoutUnixSocketOpts = {
 }
 
 /**
- * The `ContainerID` scalar type represents an identifier for an object of type Container.
+ * A unique identifier for an object.
  */
 export type ContainerID = string & { __ContainerID: never }
 
@@ -955,12 +1000,12 @@ export type CurrentModuleWorkdirOpts = {
 }
 
 /**
- * The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
+ * A unique identifier for an object.
  */
 export type CurrentModuleID = string & { __CurrentModuleID: never }
 
 /**
- * The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
+ * A unique identifier for an object.
  */
 export type DiffStatID = string & { __DiffStatID: never }
 
@@ -1042,6 +1087,13 @@ export type DirectoryAsModuleSourceOpts = {
    * If not set, the module source code is loaded from the root of the directory.
    */
   sourceRootPath?: string
+}
+
+export type DirectoryAsWorkspaceOpts = {
+  /**
+   * Current working directory inside the workspace root. Defaults to the workspace root.
+   */
+  cwd?: string
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -1287,7 +1339,7 @@ export type DirectoryWithNewFileOpts = {
 }
 
 /**
- * The `DirectoryID` scalar type represents an identifier for an object of type Directory.
+ * A unique identifier for an object.
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
@@ -1323,32 +1375,32 @@ export type EngineCachePruneOpts = {
 }
 
 /**
- * The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
+ * A unique identifier for an object.
  */
 export type EngineCacheEntryID = string & { __EngineCacheEntryID: never }
 
 /**
- * The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
+ * A unique identifier for an object.
  */
 export type EngineCacheEntrySetID = string & { __EngineCacheEntrySetID: never }
 
 /**
- * The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
+ * A unique identifier for an object.
  */
 export type EngineCacheID = string & { __EngineCacheID: never }
 
 /**
- * The `EngineID` scalar type represents an identifier for an object of type Engine.
+ * A unique identifier for an object.
  */
 export type EngineID = string & { __EngineID: never }
 
 /**
- * The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
+ * A unique identifier for an object.
  */
 export type EnumTypeDefID = string & { __EnumTypeDefID: never }
 
 /**
- * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
+ * A unique identifier for an object.
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
@@ -1357,6 +1409,11 @@ export type EnvChecksOpts = {
    * Only include checks matching the specified patterns
    */
   include?: string[]
+
+  /**
+   * When true, only return annotated check functions; exclude generate-as-checks
+   */
+  noGenerate?: boolean
 }
 
 export type EnvServicesOpts = {
@@ -1381,27 +1438,27 @@ export type EnvFileVariablesOpts = {
 }
 
 /**
- * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+ * A unique identifier for an object.
  */
 export type EnvFileID = string & { __EnvFileID: never }
 
 /**
- * The `EnvID` scalar type represents an identifier for an object of type Env.
+ * A unique identifier for an object.
  */
 export type EnvID = string & { __EnvID: never }
 
 /**
- * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
+ * A unique identifier for an object.
  */
 export type EnvVariableID = string & { __EnvVariableID: never }
 
 /**
- * The `ErrorID` scalar type represents an identifier for an object of type Error.
+ * A unique identifier for an object.
  */
 export type ErrorID = string & { __ErrorID: never }
 
 /**
- * The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
+ * A unique identifier for an object.
  */
 export type ErrorValueID = string & { __ErrorValueID: never }
 
@@ -1459,7 +1516,12 @@ function ExistsTypeNameToValue(name: string): ExistsType {
   }
 }
 /**
- * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
+ * A unique identifier for an object.
+ */
+export type ExportableID = string & { __ExportableID: never }
+
+/**
+ * A unique identifier for an object.
  */
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
 
@@ -1555,7 +1617,7 @@ export type FileWithReplacedOpts = {
 }
 
 /**
- * The `FileID` scalar type represents an identifier for an object of type File.
+ * A unique identifier for an object.
  */
 export type FileID = string & { __FileID: never }
 
@@ -1684,7 +1746,7 @@ export type FunctionWithDeprecatedOpts = {
 }
 
 /**
- * The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
+ * A unique identifier for an object.
  */
 export type FunctionArgID = string & { __FunctionArgID: never }
 
@@ -1731,24 +1793,24 @@ function FunctionCachePolicyNameToValue(name: string): FunctionCachePolicy {
   }
 }
 /**
- * The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
+ * A unique identifier for an object.
  */
 export type FunctionCallArgValueID = string & {
   __FunctionCallArgValueID: never
 }
 
 /**
- * The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
+ * A unique identifier for an object.
  */
 export type FunctionCallID = string & { __FunctionCallID: never }
 
 /**
- * The `FunctionID` scalar type represents an identifier for an object of type Function.
+ * A unique identifier for an object.
  */
 export type FunctionID = string & { __FunctionID: never }
 
 /**
- * The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
+ * A unique identifier for an object.
  */
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
@@ -1760,12 +1822,12 @@ export type GeneratorGroupChangesOpts = {
 }
 
 /**
- * The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
+ * A unique identifier for an object.
  */
 export type GeneratorGroupID = string & { __GeneratorGroupID: never }
 
 /**
- * The `GeneratorID` scalar type represents an identifier for an object of type Generator.
+ * A unique identifier for an object.
  */
 export type GeneratorID = string & { __GeneratorID: never }
 
@@ -1787,9 +1849,16 @@ export type GitRefTreeOpts = {
 }
 
 /**
- * The `GitRefID` scalar type represents an identifier for an object of type GitRef.
+ * A unique identifier for an object.
  */
 export type GitRefID = string & { __GitRefID: never }
+
+export type GitRepositoryAsWorkspaceOpts = {
+  /**
+   * Current working directory inside the workspace root. Defaults to the workspace root.
+   */
+  cwd?: string
+}
 
 export type GitRepositoryBranchesOpts = {
   /**
@@ -1806,17 +1875,17 @@ export type GitRepositoryTagsOpts = {
 }
 
 /**
- * The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
+ * A unique identifier for an object.
  */
 export type GitRepositoryID = string & { __GitRepositoryID: never }
 
 /**
- * The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
+ * A unique identifier for an object.
  */
 export type HTTPStateID = string & { __HTTPStateID: never }
 
 /**
- * The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
+ * A unique identifier for an object.
  */
 export type HealthcheckConfigID = string & { __HealthcheckConfigID: never }
 
@@ -1881,9 +1950,14 @@ export type HostTunnelOpts = {
 }
 
 /**
- * The `HostID` scalar type represents an identifier for an object of type Host.
+ * A unique identifier for an object.
  */
 export type HostID = string & { __HostID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type ID = string & { __ID: never }
 
 /**
  * Compression algorithm to use for image layers.
@@ -1975,12 +2049,12 @@ function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
   }
 }
 /**
- * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
+ * A unique identifier for an object.
  */
 export type InputTypeDefID = string & { __InputTypeDefID: never }
 
 /**
- * The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
+ * A unique identifier for an object.
  */
 export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
 
@@ -2002,27 +2076,27 @@ export type JSONValueContentsOpts = {
 }
 
 /**
- * The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+ * A unique identifier for an object.
  */
 export type JSONValueID = string & { __JSONValueID: never }
 
 /**
- * The `LLMID` scalar type represents an identifier for an object of type LLM.
+ * A unique identifier for an object.
  */
 export type LLMID = string & { __LLMID: never }
 
 /**
- * The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
+ * A unique identifier for an object.
  */
 export type LLMTokenUsageID = string & { __LLMTokenUsageID: never }
 
 /**
- * The `LabelID` scalar type represents an identifier for an object of type Label.
+ * A unique identifier for an object.
  */
 export type LabelID = string & { __LabelID: never }
 
 /**
- * The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
+ * A unique identifier for an object.
  */
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
@@ -2031,6 +2105,11 @@ export type ModuleChecksOpts = {
    * Only include checks matching the specified patterns
    */
   include?: string[]
+
+  /**
+   * When true, only return annotated check functions; exclude generate-as-checks
+   */
+  noGenerate?: boolean
 }
 
 export type ModuleGeneratorsOpts = {
@@ -2060,12 +2139,12 @@ export type ModuleServicesOpts = {
 }
 
 /**
- * The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
+ * A unique identifier for an object.
  */
 export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
 
 /**
- * The `ModuleID` scalar type represents an identifier for an object of type Module.
+ * A unique identifier for an object.
  */
 export type ModuleID = string & { __ModuleID: never }
 
@@ -2109,7 +2188,7 @@ function ModuleSourceExperimentalFeatureNameToValue(
   }
 }
 /**
- * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
+ * A unique identifier for an object.
  */
 export type ModuleSourceID = string & { __ModuleSourceID: never }
 
@@ -2196,7 +2275,7 @@ function NetworkProtocolNameToValue(name: string): NetworkProtocol {
   }
 }
 /**
- * The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
+ * A unique identifier for an object.
  */
 export type ObjectTypeDefID = string & { __ObjectTypeDefID: never }
 
@@ -2237,7 +2316,7 @@ export type PortForward = {
 }
 
 /**
- * The `PortID` scalar type represents an identifier for an object of type Port.
+ * A unique identifier for an object.
  */
 export type PortID = string & { __PortID: never }
 
@@ -2396,7 +2475,7 @@ export type ClientModuleSourceOpts = {
   refPin?: string
 
   /**
-   * If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+   * If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
    */
   disableFindUp?: boolean
 
@@ -2423,12 +2502,44 @@ export type ClientSecretOpts = {
 }
 
 /**
- * The `QueryID` scalar type represents an identifier for an object of type Query.
+ * Transport protocol to use for registry operations.
  */
-export type QueryID = string & { __QueryID: never }
+export enum RegistryProtocol {
+  Http = "HTTP",
+  Https = "HTTPS",
+}
 
 /**
- * The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
+ * Utility function to convert a RegistryProtocol value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function RegistryProtocolValueToName(value: RegistryProtocol): string {
+  switch (value) {
+    case RegistryProtocol.Http:
+      return "HTTP"
+    case RegistryProtocol.Https:
+      return "HTTPS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a RegistryProtocol name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function RegistryProtocolNameToValue(name: string): RegistryProtocol {
+  switch (name) {
+    case "HTTP":
+      return RegistryProtocol.Http
+    case "HTTPS":
+      return RegistryProtocol.Https
+    default:
+      return name as RegistryProtocol
+  }
+}
+/**
+ * A unique identifier for an object.
  */
 export type RemoteGitMirrorID = string & { __RemoteGitMirrorID: never }
 
@@ -2486,27 +2597,27 @@ function ReturnTypeNameToValue(name: string): ReturnType {
   }
 }
 /**
- * The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
+ * A unique identifier for an object.
  */
 export type SDKConfigID = string & { __SDKConfigID: never }
 
 /**
- * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
+ * A unique identifier for an object.
  */
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
 
 /**
- * The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+ * A unique identifier for an object.
  */
 export type SearchResultID = string & { __SearchResultID: never }
 
 /**
- * The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
+ * A unique identifier for an object.
  */
 export type SearchSubmatchID = string & { __SearchSubmatchID: never }
 
 /**
- * The `SecretID` scalar type represents an identifier for an object of type Secret.
+ * A unique identifier for an object.
  */
 export type SecretID = string & { __SecretID: never }
 
@@ -2548,27 +2659,32 @@ export type ServiceUpOpts = {
 }
 
 /**
- * The `ServiceID` scalar type represents an identifier for an object of type Service.
+ * A unique identifier for an object.
  */
 export type ServiceID = string & { __ServiceID: never }
 
 /**
- * The `SocketID` scalar type represents an identifier for an object of type Socket.
+ * A unique identifier for an object.
  */
 export type SocketID = string & { __SocketID: never }
 
 /**
- * The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
+ * A unique identifier for an object.
  */
 export type SourceMapID = string & { __SourceMapID: never }
 
 /**
- * The `StatID` scalar type represents an identifier for an object of type Stat.
+ * A unique identifier for an object.
  */
 export type StatID = string & { __StatID: never }
 
 /**
- * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+ * A unique identifier for an object.
+ */
+export type SyncerID = string & { __SyncerID: never }
+
+/**
+ * A unique identifier for an object.
  */
 export type TerminalID = string & { __TerminalID: never }
 
@@ -2656,7 +2772,7 @@ export type TypeDefWithScalarOpts = {
 }
 
 /**
- * The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
+ * A unique identifier for an object.
  */
 export type TypeDefID = string & { __TypeDefID: never }
 
@@ -2861,12 +2977,12 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
   }
 }
 /**
- * The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
+ * A unique identifier for an object.
  */
 export type UpGroupID = string & { __UpGroupID: never }
 
 /**
- * The `UpID` scalar type represents an identifier for an object of type Up.
+ * A unique identifier for an object.
  */
 export type UpID = string & { __UpID: never }
 
@@ -2882,6 +2998,35 @@ export type WorkspaceChecksOpts = {
    * Only include checks matching the specified patterns
    */
   include?: string[]
+
+  /**
+   * Skip checks matching the specified patterns
+   */
+  skip?: string[]
+
+  /**
+   * When true, only return annotated check functions; exclude generate-as-checks
+   */
+  noGenerate?: boolean
+
+  /**
+   * When true, only return generate-as-checks; exclude annotated check functions
+   */
+  onlyGenerate?: boolean
+}
+
+export type WorkspaceConfigReadOpts = {
+  /**
+   * Dotted key path (e.g. modules.greeter.source). Empty for full config.
+   */
+  key?: string
+}
+
+export type WorkspaceConfigWriteOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
 }
 
 export type WorkspaceDirectoryOpts = {
@@ -2901,9 +3046,23 @@ export type WorkspaceDirectoryOpts = {
   gitignore?: boolean
 }
 
+export type WorkspaceEnvCreateOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceEnvRemoveOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
 export type WorkspaceFindUpOpts = {
   /**
-   * Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
+   * Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
    */
   from?: string
 }
@@ -2915,6 +3074,63 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceInitOpts = {
+  /**
+   * Create the workspace config directory at the workspace cwd instead of using the default write target.
+   */
+  here?: boolean
+}
+
+export type WorkspaceInstallOpts = {
+  /**
+   * Override name for the installed module entry.
+   */
+  name?: string
+
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceMigrateOpts = {
+  force?: boolean
+}
+
+export type WorkspaceModuleInitOpts = {
+  /**
+   * SDK to use for the new module.
+   */
+  sdk?: string
+
+  /**
+   * Source subpath within the new module.
+   */
+  source?: string
+
+  /**
+   * Additional include patterns for the module.
+   */
+  include?: string[]
+
+  /**
+   * Enable the self-calls experimental feature for the new module.
+   */
+  selfCalls?: boolean
+
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceModuleListOpts = {
+  /**
+   * Optional module alias to inspect.
+   */
+  module?: string
+}
+
 export type WorkspaceServicesOpts = {
   /**
    * Only include services matching the specified patterns
@@ -2922,10 +3138,46 @@ export type WorkspaceServicesOpts = {
   include?: string[]
 }
 
+export type WorkspaceUninstallOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
 /**
- * The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
+ * A unique identifier for an object.
+ */
+export type WorkspaceGitID = string & { __WorkspaceGitID: never }
+
+/**
+ * A unique identifier for an object.
  */
 export type WorkspaceID = string & { __WorkspaceID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceMigrationID = string & { __WorkspaceMigrationID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceMigrationStepID = string & {
+  __WorkspaceMigrationStepID: never
+}
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceModuleID = string & { __WorkspaceModuleID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceModuleSettingID = string & {
+  __WorkspaceModuleSettingID: never
+}
 
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
@@ -2951,13 +3203,13 @@ export type __TypeInputFieldsOpts = {
  * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
  */
 export class Address extends BaseClient {
-  private readonly _id?: AddressID = undefined
+  private readonly _id?: ID = undefined
   private readonly _value?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: AddressID, _value?: string) {
+  constructor(ctx?: Context, _id?: ID, _value?: string) {
     super(ctx)
 
     this._id = _id
@@ -2967,14 +3219,14 @@ export class Address extends BaseClient {
   /**
    * A unique identifier for this Address.
    */
-  id = async (): Promise<AddressID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<AddressID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -3060,7 +3312,7 @@ export class Address extends BaseClient {
 }
 
 export class Binding extends BaseClient {
-  private readonly _id?: BindingID = undefined
+  private readonly _id?: ID = undefined
   private readonly _asString?: string = undefined
   private readonly _digest?: string = undefined
   private readonly _isNull?: boolean = undefined
@@ -3072,7 +3324,7 @@ export class Binding extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: BindingID,
+    _id?: ID,
     _asString?: string,
     _digest?: string,
     _isNull?: boolean,
@@ -3092,14 +3344,14 @@ export class Binding extends BaseClient {
   /**
    * A unique identifier for this Binding.
    */
-  id = async (): Promise<BindingID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<BindingID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -3360,6 +3612,46 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type WorkspaceGit
+   */
+  asWorkspaceGit = (): WorkspaceGit => {
+    const ctx = this._ctx.select("asWorkspaceGit")
+    return new WorkspaceGit(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceMigration
+   */
+  asWorkspaceMigration = (): WorkspaceMigration => {
+    const ctx = this._ctx.select("asWorkspaceMigration")
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceMigrationStep
+   */
+  asWorkspaceMigrationStep = (): WorkspaceMigrationStep => {
+    const ctx = this._ctx.select("asWorkspaceMigrationStep")
+    return new WorkspaceMigrationStep(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceModule
+   */
+  asWorkspaceModule = (): WorkspaceModule => {
+    const ctx = this._ctx.select("asWorkspaceModule")
+    return new WorkspaceModule(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceModuleSetting
+   */
+  asWorkspaceModuleSetting = (): WorkspaceModuleSetting => {
+    const ctx = this._ctx.select("asWorkspaceModuleSetting")
+    return new WorkspaceModuleSetting(ctx)
+  }
+
+  /**
    * Returns the digest of the binding value
    */
   digest = async (): Promise<string> => {
@@ -3424,12 +3716,12 @@ export class Binding extends BaseClient {
  * A directory whose contents persist across runs.
  */
 export class CacheVolume extends BaseClient {
-  private readonly _id?: CacheVolumeID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: CacheVolumeID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -3438,14 +3730,14 @@ export class CacheVolume extends BaseClient {
   /**
    * A unique identifier for this CacheVolume.
    */
-  id = async (): Promise<CacheVolumeID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<CacheVolumeID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -3455,20 +3747,20 @@ export class CacheVolume extends BaseClient {
  * A comparison between two directories representing changes that can be applied.
  */
 export class Changeset extends BaseClient {
-  private readonly _id?: ChangesetID = undefined
+  private readonly _id?: ID = undefined
   private readonly _export?: string = undefined
   private readonly _isEmpty?: boolean = undefined
-  private readonly _sync?: ChangesetID = undefined
+  private readonly _sync?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     ctx?: Context,
-    _id?: ChangesetID,
+    _id?: ID,
     _export?: string,
     _isEmpty?: boolean,
-    _sync?: ChangesetID,
+    _sync?: ID,
   ) {
     super(ctx)
 
@@ -3481,14 +3773,14 @@ export class Changeset extends BaseClient {
   /**
    * A unique identifier for this Changeset.
    */
-  id = async (): Promise<ChangesetID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ChangesetID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -3533,14 +3825,16 @@ export class Changeset extends BaseClient {
    */
   diffStats = async (): Promise<DiffStat[]> => {
     type diffStats = {
-      id: DiffStatID
+      id: ID
     }
 
     const ctx = this._ctx.select("diffStats").select("id")
 
     const response: Awaited<diffStats[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadDiffStatFromID(r.id))
+    return response.map(
+      (r) => new DiffStat(ctx.copy().selectNode(r.id, "DiffStat")),
+    )
   }
 
   /**
@@ -3610,9 +3904,9 @@ export class Changeset extends BaseClient {
   sync = async (): Promise<Changeset> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<ChangesetID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadChangesetFromID(response)
+    return new Changeset(ctx.copy().selectNode(response, "Changeset"))
   }
 
   /**
@@ -3680,7 +3974,8 @@ export class Changeset extends BaseClient {
 }
 
 export class Check extends BaseClient {
-  private readonly _id?: CheckID = undefined
+  private readonly _id?: ID = undefined
+  private readonly _checkType?: string = undefined
   private readonly _completed?: boolean = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -3692,7 +3987,8 @@ export class Check extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: CheckID,
+    _id?: ID,
+    _checkType?: string,
     _completed?: boolean,
     _description?: string,
     _name?: string,
@@ -3702,6 +3998,7 @@ export class Check extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._checkType = _checkType
     this._completed = _completed
     this._description = _description
     this._name = _name
@@ -3712,14 +4009,29 @@ export class Check extends BaseClient {
   /**
    * A unique identifier for this Check.
    */
-  id = async (): Promise<CheckID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<CheckID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+   */
+  checkType = async (): Promise<string> => {
+    if (this._checkType) {
+      return this._checkType
+    }
+
+    const ctx = this._ctx.select("checkType")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -3845,12 +4157,12 @@ export class Check extends BaseClient {
 }
 
 export class CheckGroup extends BaseClient {
-  private readonly _id?: CheckGroupID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: CheckGroupID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -3859,14 +4171,14 @@ export class CheckGroup extends BaseClient {
   /**
    * A unique identifier for this CheckGroup.
    */
-  id = async (): Promise<CheckGroupID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<CheckGroupID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -3876,14 +4188,14 @@ export class CheckGroup extends BaseClient {
    */
   list = async (): Promise<Check[]> => {
     type list = {
-      id: CheckID
+      id: ID
     }
 
     const ctx = this._ctx.select("list").select("id")
 
     const response: Awaited<list[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadCheckFromID(r.id))
+    return response.map((r) => new Check(ctx.copy().selectNode(r.id, "Check")))
   }
 
   /**
@@ -3917,12 +4229,12 @@ export class CheckGroup extends BaseClient {
  * An internal persistent filesync mirror.
  */
 export class ClientFilesyncMirror extends BaseClient {
-  private readonly _id?: ClientFilesyncMirrorID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ClientFilesyncMirrorID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -3931,14 +4243,14 @@ export class ClientFilesyncMirror extends BaseClient {
   /**
    * A unique identifier for this ClientFilesyncMirror.
    */
-  id = async (): Promise<ClientFilesyncMirrorID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ClientFilesyncMirrorID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -3948,13 +4260,13 @@ export class ClientFilesyncMirror extends BaseClient {
  * Dagger Cloud configuration and state
  */
 export class Cloud extends BaseClient {
-  private readonly _id?: CloudID = undefined
+  private readonly _id?: ID = undefined
   private readonly _traceURL?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: CloudID, _traceURL?: string) {
+  constructor(ctx?: Context, _id?: ID, _traceURL?: string) {
     super(ctx)
 
     this._id = _id
@@ -3964,14 +4276,14 @@ export class Cloud extends BaseClient {
   /**
    * A unique identifier for this Cloud.
    */
-  id = async (): Promise<CloudID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<CloudID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -3996,7 +4308,7 @@ export class Cloud extends BaseClient {
  * An OCI-compatible container, also known as a Docker container.
  */
 export class Container extends BaseClient {
-  private readonly _id?: ContainerID = undefined
+  private readonly _id?: ID = undefined
   private readonly _combinedOutput?: string = undefined
   private readonly _envVariable?: string = undefined
   private readonly _exists?: boolean = undefined
@@ -4009,7 +4321,7 @@ export class Container extends BaseClient {
   private readonly _publish?: string = undefined
   private readonly _stderr?: string = undefined
   private readonly _stdout?: string = undefined
-  private readonly _sync?: ContainerID = undefined
+  private readonly _sync?: ID = undefined
   private readonly _up?: Void = undefined
   private readonly _user?: string = undefined
   private readonly _workdir?: string = undefined
@@ -4019,7 +4331,7 @@ export class Container extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: ContainerID,
+    _id?: ID,
     _combinedOutput?: string,
     _envVariable?: string,
     _exists?: boolean,
@@ -4032,7 +4344,7 @@ export class Container extends BaseClient {
     _publish?: string,
     _stderr?: string,
     _stdout?: string,
-    _sync?: ContainerID,
+    _sync?: ID,
     _up?: Void,
     _user?: string,
     _workdir?: string,
@@ -4061,14 +4373,14 @@ export class Container extends BaseClient {
   /**
    * A unique identifier for this Container.
    */
-  id = async (): Promise<ContainerID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ContainerID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -4178,7 +4490,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the value of the specified environment variable.
+   * Retrieves the value of the specified persistent environment variable.
    * @param name The name of the environment variable to retrieve (e.g., "PATH").
    */
   envVariable = async (name: string): Promise<string> => {
@@ -4194,19 +4506,19 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the list of environment variables passed to commands.
+   * Retrieves the list of persistent environment variables configured on the container.
    */
   envVariables = async (): Promise<EnvVariable[]> => {
     type envVariables = {
-      id: EnvVariableID
+      id: ID
     }
 
     const ctx = this._ctx.select("envVariables").select("id")
 
     const response: Awaited<envVariables[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
+    return response.map(
+      (r) => new EnvVariable(ctx.copy().selectNode(r.id, "EnvVariable")),
     )
   }
 
@@ -4215,6 +4527,7 @@ export class Container extends BaseClient {
    * @param path Path to check (e.g., "/file.txt").
    * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
    * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   exists = async (
     path: string,
@@ -4371,14 +4684,14 @@ export class Container extends BaseClient {
    */
   exposedPorts = async (): Promise<Port[]> => {
     type exposedPorts = {
-      id: PortID
+      id: ID
     }
 
     const ctx = this._ctx.select("exposedPorts").select("id")
 
     const response: Awaited<exposedPorts[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
+    return response.map((r) => new Port(ctx.copy().selectNode(r.id, "Port")))
   }
 
   /**
@@ -4396,9 +4709,24 @@ export class Container extends BaseClient {
   /**
    * Download a container image, and apply it to the container state. All previous state will be lost.
    * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+   * @param opts.registryService Service to use as the registry endpoint for the image address.
+   *
+   * The service will be started only for this pull.
+   * @param opts.protocol Protocol to use for registry communication.
+   *
+   * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+   * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
    */
-  from = (address: string): Container => {
-    const ctx = this._ctx.select("from", { address })
+  from = (address: string, opts?: ContainerFromOpts): Container => {
+    const metadata = {
+      protocol: { is_enum: true, value_to_name: RegistryProtocolValueToName },
+    }
+
+    const ctx = this._ctx.select("from", {
+      address,
+      ...opts,
+      __metadata: metadata,
+    })
     return new Container(ctx)
   }
 
@@ -4448,14 +4776,14 @@ export class Container extends BaseClient {
    */
   labels = async (): Promise<Label[]> => {
     type labels = {
-      id: LabelID
+      id: ID
     }
 
     const ctx = this._ctx.select("labels").select("id")
 
     const response: Awaited<labels[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadLabelFromID(r.id))
+    return response.map((r) => new Label(ctx.copy().selectNode(r.id, "Label")))
   }
 
   /**
@@ -4500,6 +4828,13 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the published image's layers.
    *
    * Defaults to "OCI", which is compatible with most recent registries, but "Docker" may be needed for older registries without OCI support.
+   * @param opts.registryService Service to use as the registry endpoint for the image address.
+   *
+   * The service will be started only for this push.
+   * @param opts.protocol Protocol to use for registry communication.
+   *
+   * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+   * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
    */
   publish = async (
     address: string,
@@ -4515,6 +4850,7 @@ export class Container extends BaseClient {
         value_to_name: ImageLayerCompressionValueToName,
       },
       mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
+      protocol: { is_enum: true, value_to_name: RegistryProtocolValueToName },
     }
 
     const ctx = this._ctx.select("publish", {
@@ -4588,9 +4924,9 @@ export class Container extends BaseClient {
   sync = async (): Promise<Container> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<ContainerID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadContainerFromID(response)
+    return new Container(ctx.copy().selectNode(response, "Container"))
   }
 
   /**
@@ -5119,6 +5455,18 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+   *
+   * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+   * @param name Name of the volatile variable (e.g., "CI_RUN_ID").
+   * @param value Value of the volatile variable.
+   */
+  withVolatileVariable = (name: string, value: string): Container => {
+    const ctx = this._ctx.select("withVolatileVariable", { name, value })
+    return new Container(ctx)
+  }
+
+  /**
    * Change the container's working directory. Like WORKDIR in Dockerfile.
    * @param path The path to set as the working directory (e.g., "/app").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -5294,6 +5642,15 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container minus the given volatile environment variable.
+   * @param name The name of the volatile environment variable (e.g., "CI_RUN_ID").
+   */
+  withoutVolatileVariable = (name: string): Container => {
+    const ctx = this._ctx.select("withoutVolatileVariable", { name })
+    return new Container(ctx)
+  }
+
+  /**
    * Unset the container's working directory.
    *
    * Should default to "/".
@@ -5332,13 +5689,13 @@ export class Container extends BaseClient {
  * Reflective module API provided to functions at runtime.
  */
 export class CurrentModule extends BaseClient {
-  private readonly _id?: CurrentModuleID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: CurrentModuleID, _name?: string) {
+  constructor(ctx?: Context, _id?: ID, _name?: string) {
     super(ctx)
 
     this._id = _id
@@ -5348,14 +5705,14 @@ export class CurrentModule extends BaseClient {
   /**
    * A unique identifier for this CurrentModule.
    */
-  id = async (): Promise<CurrentModuleID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<CurrentModuleID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -5365,14 +5722,16 @@ export class CurrentModule extends BaseClient {
    */
   dependencies = async (): Promise<Module_[]> => {
     type dependencies = {
-      id: ModuleID
+      id: ID
     }
 
     const ctx = this._ctx.select("dependencies").select("id")
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
+    return response.map(
+      (r) => new Module_(ctx.copy().selectNode(r.id, "Module")),
+    )
   }
 
   /**
@@ -5439,7 +5798,7 @@ export class CurrentModule extends BaseClient {
 }
 
 export class DiffStat extends BaseClient {
-  private readonly _id?: DiffStatID = undefined
+  private readonly _id?: ID = undefined
   private readonly _addedLines?: number = undefined
   private readonly _kind?: DiffStatKind = undefined
   private readonly _oldPath?: string = undefined
@@ -5451,7 +5810,7 @@ export class DiffStat extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: DiffStatID,
+    _id?: ID,
     _addedLines?: number,
     _kind?: DiffStatKind,
     _oldPath?: string,
@@ -5471,14 +5830,14 @@ export class DiffStat extends BaseClient {
   /**
    * A unique identifier for this DiffStat.
    */
-  id = async (): Promise<DiffStatID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<DiffStatID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -5563,26 +5922,26 @@ export class DiffStat extends BaseClient {
  * A directory.
  */
 export class Directory extends BaseClient {
-  private readonly _id?: DirectoryID = undefined
+  private readonly _id?: ID = undefined
   private readonly _digest?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
   private readonly _findUp?: string = undefined
   private readonly _name?: string = undefined
-  private readonly _sync?: DirectoryID = undefined
+  private readonly _sync?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     ctx?: Context,
-    _id?: DirectoryID,
+    _id?: ID,
     _digest?: string,
     _exists?: boolean,
     _export?: string,
     _findUp?: string,
     _name?: string,
-    _sync?: DirectoryID,
+    _sync?: ID,
   ) {
     super(ctx)
 
@@ -5598,14 +5957,14 @@ export class Directory extends BaseClient {
   /**
    * A unique identifier for this Directory.
    */
-  id = async (): Promise<DirectoryID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<DirectoryID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -5638,6 +5997,16 @@ export class Directory extends BaseClient {
   asModuleSource = (opts?: DirectoryAsModuleSourceOpts): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource", { ...opts })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Creates a synthetic workspace from this directory.
+   * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
+   * @experimental
+   */
+  asWorkspace = (opts?: DirectoryAsWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("asWorkspace", { ...opts })
+    return new Workspace(ctx)
   }
 
   /**
@@ -5864,15 +6233,15 @@ export class Directory extends BaseClient {
    */
   search = async (opts?: DirectorySearchOpts): Promise<SearchResult[]> => {
     type search = {
-      id: SearchResultID
+      id: ID
     }
 
     const ctx = this._ctx.select("search", { ...opts }).select("id")
 
     const response: Awaited<search[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadSearchResultFromID(r.id),
+    return response.map(
+      (r) => new SearchResult(ctx.copy().selectNode(r.id, "SearchResult")),
     )
   }
 
@@ -5892,9 +6261,9 @@ export class Directory extends BaseClient {
   sync = async (): Promise<Directory> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<DirectoryID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadDirectoryFromID(response)
+    return new Directory(ctx.copy().selectNode(response, "Directory"))
   }
 
   /**
@@ -6095,13 +6464,13 @@ export class Directory extends BaseClient {
  * The Dagger engine configuration and state
  */
 export class Engine extends BaseClient {
-  private readonly _id?: EngineID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: EngineID, _name?: string) {
+  constructor(ctx?: Context, _id?: ID, _name?: string) {
     super(ctx)
 
     this._id = _id
@@ -6111,14 +6480,14 @@ export class Engine extends BaseClient {
   /**
    * A unique identifier for this Engine.
    */
-  id = async (): Promise<EngineID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EngineID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -6162,7 +6531,7 @@ export class Engine extends BaseClient {
  * A cache storage for the Dagger engine
  */
 export class EngineCache extends BaseClient {
-  private readonly _id?: EngineCacheID = undefined
+  private readonly _id?: ID = undefined
   private readonly _maxUsedSpace?: number = undefined
   private readonly _minFreeSpace?: number = undefined
   private readonly _prune?: Void = undefined
@@ -6174,7 +6543,7 @@ export class EngineCache extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: EngineCacheID,
+    _id?: ID,
     _maxUsedSpace?: number,
     _minFreeSpace?: number,
     _prune?: Void,
@@ -6194,14 +6563,14 @@ export class EngineCache extends BaseClient {
   /**
    * A unique identifier for this EngineCache.
    */
-  id = async (): Promise<EngineCacheID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EngineCacheID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -6297,9 +6666,10 @@ export class EngineCache extends BaseClient {
  * An individual cache entry in a cache entry set
  */
 export class EngineCacheEntry extends BaseClient {
-  private readonly _id?: EngineCacheEntryID = undefined
+  private readonly _id?: ID = undefined
   private readonly _activelyUsed?: boolean = undefined
   private readonly _createdTimeUnixNano?: number = undefined
+  private readonly _dagqlCall?: string = undefined
   private readonly _description?: string = undefined
   private readonly _diskSpaceBytes?: number = undefined
   private readonly _mostRecentUseTimeUnixNano?: number = undefined
@@ -6310,9 +6680,10 @@ export class EngineCacheEntry extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: EngineCacheEntryID,
+    _id?: ID,
     _activelyUsed?: boolean,
     _createdTimeUnixNano?: number,
+    _dagqlCall?: string,
     _description?: string,
     _diskSpaceBytes?: number,
     _mostRecentUseTimeUnixNano?: number,
@@ -6323,6 +6694,7 @@ export class EngineCacheEntry extends BaseClient {
     this._id = _id
     this._activelyUsed = _activelyUsed
     this._createdTimeUnixNano = _createdTimeUnixNano
+    this._dagqlCall = _dagqlCall
     this._description = _description
     this._diskSpaceBytes = _diskSpaceBytes
     this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
@@ -6332,14 +6704,14 @@ export class EngineCacheEntry extends BaseClient {
   /**
    * A unique identifier for this EngineCacheEntry.
    */
-  id = async (): Promise<EngineCacheEntryID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EngineCacheEntryID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -6370,6 +6742,21 @@ export class EngineCacheEntry extends BaseClient {
     const ctx = this._ctx.select("createdTimeUnixNano")
 
     const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The DagQL call that produced this cache entry.
+   */
+  dagqlCall = async (): Promise<string> => {
+    if (this._dagqlCall) {
+      return this._dagqlCall
+    }
+
+    const ctx = this._ctx.select("dagqlCall")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -6433,13 +6820,24 @@ export class EngineCacheEntry extends BaseClient {
 
     return response
   }
+
+  /**
+   * The storage record types represented by this cache entry.
+   */
+  recordTypes = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("recordTypes")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
 }
 
 /**
  * A set of cache entries returned by a query to a cache
  */
 export class EngineCacheEntrySet extends BaseClient {
-  private readonly _id?: EngineCacheEntrySetID = undefined
+  private readonly _id?: ID = undefined
   private readonly _diskSpaceBytes?: number = undefined
   private readonly _entryCount?: number = undefined
 
@@ -6448,7 +6846,7 @@ export class EngineCacheEntrySet extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: EngineCacheEntrySetID,
+    _id?: ID,
     _diskSpaceBytes?: number,
     _entryCount?: number,
   ) {
@@ -6462,14 +6860,14 @@ export class EngineCacheEntrySet extends BaseClient {
   /**
    * A unique identifier for this EngineCacheEntrySet.
    */
-  id = async (): Promise<EngineCacheEntrySetID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EngineCacheEntrySetID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -6494,15 +6892,16 @@ export class EngineCacheEntrySet extends BaseClient {
    */
   entries = async (): Promise<EngineCacheEntry[]> => {
     type entries = {
-      id: EngineCacheEntryID
+      id: ID
     }
 
     const ctx = this._ctx.select("entries").select("id")
 
     const response: Awaited<entries[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadEngineCacheEntryFromID(r.id),
+    return response.map(
+      (r) =>
+        new EngineCacheEntry(ctx.copy().selectNode(r.id, "EngineCacheEntry")),
     )
   }
 
@@ -6526,7 +6925,7 @@ export class EngineCacheEntrySet extends BaseClient {
  * A definition of a custom enum defined in a Module.
  */
 export class EnumTypeDef extends BaseClient {
-  private readonly _id?: EnumTypeDefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sourceModuleName?: string = undefined
@@ -6536,7 +6935,7 @@ export class EnumTypeDef extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: EnumTypeDefID,
+    _id?: ID,
     _description?: string,
     _name?: string,
     _sourceModuleName?: string,
@@ -6552,14 +6951,14 @@ export class EnumTypeDef extends BaseClient {
   /**
    * A unique identifier for this EnumTypeDef.
    */
-  id = async (): Promise<EnumTypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EnumTypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -6584,15 +6983,16 @@ export class EnumTypeDef extends BaseClient {
    */
   members = async (): Promise<EnumValueTypeDef[]> => {
     type members = {
-      id: EnumValueTypeDefID
+      id: ID
     }
 
     const ctx = this._ctx.select("members").select("id")
 
     const response: Awaited<members[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
+    return response.map(
+      (r) =>
+        new EnumValueTypeDef(ctx.copy().selectNode(r.id, "EnumValueTypeDef")),
     )
   }
 
@@ -6640,15 +7040,16 @@ export class EnumTypeDef extends BaseClient {
    */
   values = async (): Promise<EnumValueTypeDef[]> => {
     type values = {
-      id: EnumValueTypeDefID
+      id: ID
     }
 
     const ctx = this._ctx.select("values").select("id")
 
     const response: Awaited<values[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
+    return response.map(
+      (r) =>
+        new EnumValueTypeDef(ctx.copy().selectNode(r.id, "EnumValueTypeDef")),
     )
   }
 }
@@ -6657,7 +7058,7 @@ export class EnumTypeDef extends BaseClient {
  * A definition of a value in a custom enum defined in a Module.
  */
 export class EnumValueTypeDef extends BaseClient {
-  private readonly _id?: EnumValueTypeDefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -6668,7 +7069,7 @@ export class EnumValueTypeDef extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: EnumValueTypeDefID,
+    _id?: ID,
     _deprecated?: string,
     _description?: string,
     _name?: string,
@@ -6686,14 +7087,14 @@ export class EnumValueTypeDef extends BaseClient {
   /**
    * A unique identifier for this EnumValueTypeDef.
    */
-  id = async (): Promise<EnumValueTypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EnumValueTypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -6768,12 +7169,12 @@ export class EnumValueTypeDef extends BaseClient {
 }
 
 export class Env extends BaseClient {
-  private readonly _id?: EnvID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: EnvID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -6782,14 +7183,14 @@ export class Env extends BaseClient {
   /**
    * A unique identifier for this Env.
    */
-  id = async (): Promise<EnvID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EnvID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -6807,6 +7208,7 @@ export class Env extends BaseClient {
   /**
    * Return all checks defined by the installed modules
    * @param opts.include Only include checks matching the specified patterns
+   * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
    * @experimental
    */
   checks = (opts?: EnvChecksOpts): CheckGroup => {
@@ -6827,14 +7229,16 @@ export class Env extends BaseClient {
    */
   inputs = async (): Promise<Binding[]> => {
     type inputs = {
-      id: BindingID
+      id: ID
     }
 
     const ctx = this._ctx.select("inputs").select("id")
 
     const response: Awaited<inputs[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+    return response.map(
+      (r) => new Binding(ctx.copy().selectNode(r.id, "Binding")),
+    )
   }
 
   /**
@@ -6850,14 +7254,16 @@ export class Env extends BaseClient {
    */
   outputs = async (): Promise<Binding[]> => {
     type outputs = {
-      id: BindingID
+      id: ID
     }
 
     const ctx = this._ctx.select("outputs").select("id")
 
     const response: Awaited<outputs[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+    return response.map(
+      (r) => new Binding(ctx.copy().selectNode(r.id, "Binding")),
+    )
   }
 
   /**
@@ -7739,6 +8145,38 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type WorkspaceGit in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceGit value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceGitInput = (
+    name: string,
+    value: WorkspaceGit,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceGitInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceGit output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceGitOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceGitOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type Workspace in the environment
    * @param name The name of the binding
    * @param value The Workspace value to assign to the binding
@@ -7752,6 +8190,140 @@ export class Env extends BaseClient {
     const ctx = this._ctx.select("withWorkspaceInput", {
       name,
       value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceMigration in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceMigration value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceMigrationInput = (
+    name: string,
+    value: WorkspaceMigration,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceMigration output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceMigrationOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceMigrationStep in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceMigrationStep value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceMigrationStepInput = (
+    name: string,
+    value: WorkspaceMigrationStep,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationStepInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceMigrationStepOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationStepOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceModule in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceModule value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceModuleInput = (
+    name: string,
+    value: WorkspaceModule,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceModule output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceModuleOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceModuleSetting in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceModuleSetting value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceModuleSettingInput = (
+    name: string,
+    value: WorkspaceModuleSetting,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleSettingInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceModuleSetting output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceModuleSettingOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleSettingOutput", {
+      name,
       description,
     })
     return new Env(ctx)
@@ -7793,19 +8365,14 @@ export class Env extends BaseClient {
  * A collection of environment variables.
  */
 export class EnvFile extends BaseClient {
-  private readonly _id?: EnvFileID = undefined
+  private readonly _id?: ID = undefined
   private readonly _exists?: boolean = undefined
   private readonly _get?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: EnvFileID,
-    _exists?: boolean,
-    _get?: string,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _exists?: boolean, _get?: string) {
     super(ctx)
 
     this._id = _id
@@ -7816,14 +8383,14 @@ export class EnvFile extends BaseClient {
   /**
    * A unique identifier for this EnvFile.
    */
-  id = async (): Promise<EnvFileID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EnvFileID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -7884,15 +8451,15 @@ export class EnvFile extends BaseClient {
    */
   variables = async (opts?: EnvFileVariablesOpts): Promise<EnvVariable[]> => {
     type variables = {
-      id: EnvVariableID
+      id: ID
     }
 
     const ctx = this._ctx.select("variables", { ...opts }).select("id")
 
     const response: Awaited<variables[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
+    return response.map(
+      (r) => new EnvVariable(ctx.copy().selectNode(r.id, "EnvVariable")),
     )
   }
 
@@ -7929,19 +8496,14 @@ export class EnvFile extends BaseClient {
  * An environment variable name and value.
  */
 export class EnvVariable extends BaseClient {
-  private readonly _id?: EnvVariableID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
   private readonly _value?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: EnvVariableID,
-    _name?: string,
-    _value?: string,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _name?: string, _value?: string) {
     super(ctx)
 
     this._id = _id
@@ -7952,14 +8514,14 @@ export class EnvVariable extends BaseClient {
   /**
    * A unique identifier for this EnvVariable.
    */
-  id = async (): Promise<EnvVariableID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<EnvVariableID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -7996,13 +8558,13 @@ export class EnvVariable extends BaseClient {
 }
 
 export class Error extends BaseClient {
-  private readonly _id?: ErrorID = undefined
+  private readonly _id?: ID = undefined
   private readonly _message?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ErrorID, _message?: string) {
+  constructor(ctx?: Context, _id?: ID, _message?: string) {
     super(ctx)
 
     this._id = _id
@@ -8012,14 +8574,14 @@ export class Error extends BaseClient {
   /**
    * A unique identifier for this Error.
    */
-  id = async (): Promise<ErrorID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ErrorID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -8044,15 +8606,15 @@ export class Error extends BaseClient {
    */
   values = async (): Promise<ErrorValue[]> => {
     type values = {
-      id: ErrorValueID
+      id: ID
     }
 
     const ctx = this._ctx.select("values").select("id")
 
     const response: Awaited<values[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadErrorValueFromID(r.id),
+    return response.map(
+      (r) => new ErrorValue(ctx.copy().selectNode(r.id, "ErrorValue")),
     )
   }
 
@@ -8077,19 +8639,14 @@ export class Error extends BaseClient {
 }
 
 export class ErrorValue extends BaseClient {
-  private readonly _id?: ErrorValueID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
   private readonly _value?: JSON = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: ErrorValueID,
-    _name?: string,
-    _value?: JSON,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _name?: string, _value?: JSON) {
     super(ctx)
 
     this._id = _id
@@ -8100,14 +8657,14 @@ export class ErrorValue extends BaseClient {
   /**
    * A unique identifier for this ErrorValue.
    */
-  id = async (): Promise<ErrorValueID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ErrorValueID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -8144,12 +8701,59 @@ export class ErrorValue extends BaseClient {
 }
 
 /**
+ * An object that can be exported to the host.
+ *
+ * Calling export writes the object to a path on the host filesystem and returns the path that was written.
+ */
+export interface Exportable {
+  id(): Promise<ID>
+  export(path: string): Promise<string>
+}
+
+export class _ExportableClient extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _export?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _export?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._export = _export
+  }
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+  export = async (path: string): Promise<string> => {
+    if (this._export) {
+      return this._export
+    }
+
+    const ctx = this._ctx.select("export", { path })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * A definition of a field on a custom object defined in a Module.
  *
  * A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
  */
 export class FieldTypeDef extends BaseClient {
-  private readonly _id?: FieldTypeDefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -8159,7 +8763,7 @@ export class FieldTypeDef extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: FieldTypeDefID,
+    _id?: ID,
     _deprecated?: string,
     _description?: string,
     _name?: string,
@@ -8175,14 +8779,14 @@ export class FieldTypeDef extends BaseClient {
   /**
    * A unique identifier for this FieldTypeDef.
    */
-  id = async (): Promise<FieldTypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<FieldTypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -8253,26 +8857,26 @@ export class FieldTypeDef extends BaseClient {
  * A file.
  */
 export class File extends BaseClient {
-  private readonly _id?: FileID = undefined
+  private readonly _id?: ID = undefined
   private readonly _contents?: string = undefined
   private readonly _digest?: string = undefined
   private readonly _export?: string = undefined
   private readonly _name?: string = undefined
   private readonly _size?: number = undefined
-  private readonly _sync?: FileID = undefined
+  private readonly _sync?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     ctx?: Context,
-    _id?: FileID,
+    _id?: ID,
     _contents?: string,
     _digest?: string,
     _export?: string,
     _name?: string,
     _size?: number,
-    _sync?: FileID,
+    _sync?: ID,
   ) {
     super(ctx)
 
@@ -8288,14 +8892,14 @@ export class File extends BaseClient {
   /**
    * A unique identifier for this File.
    */
-  id = async (): Promise<FileID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<FileID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -8414,15 +9018,15 @@ export class File extends BaseClient {
     opts?: FileSearchOpts,
   ): Promise<SearchResult[]> => {
     type search = {
-      id: SearchResultID
+      id: ID
     }
 
     const ctx = this._ctx.select("search", { pattern, ...opts }).select("id")
 
     const response: Awaited<search[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadSearchResultFromID(r.id),
+    return response.map(
+      (r) => new SearchResult(ctx.copy().selectNode(r.id, "SearchResult")),
     )
   }
 
@@ -8455,9 +9059,9 @@ export class File extends BaseClient {
   sync = async (): Promise<File> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<FileID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadFileFromID(response)
+    return new File(ctx.copy().selectNode(response, "File"))
   }
 
   /**
@@ -8524,7 +9128,7 @@ export class File extends BaseClient {
  * A function always evaluates against a parent object and is given a set of named arguments.
  */
 export class Function_ extends BaseClient {
-  private readonly _id?: FunctionID = undefined
+  private readonly _id?: ID = undefined
   private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -8535,7 +9139,7 @@ export class Function_ extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: FunctionID,
+    _id?: ID,
     _deprecated?: string,
     _description?: string,
     _name?: string,
@@ -8553,14 +9157,14 @@ export class Function_ extends BaseClient {
   /**
    * A unique identifier for this Function.
    */
-  id = async (): Promise<FunctionID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<FunctionID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -8570,15 +9174,15 @@ export class Function_ extends BaseClient {
    */
   args = async (): Promise<FunctionArg[]> => {
     type args = {
-      id: FunctionArgID
+      id: ID
     }
 
     const ctx = this._ctx.select("args").select("id")
 
     const response: Awaited<args[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadFunctionArgFromID(r.id),
+    return response.map(
+      (r) => new FunctionArg(ctx.copy().selectNode(r.id, "FunctionArg")),
     )
   }
 
@@ -8766,7 +9370,7 @@ export class Function_ extends BaseClient {
  * This is a specification for an argument at function definition time, not an argument passed at function call time.
  */
 export class FunctionArg extends BaseClient {
-  private readonly _id?: FunctionArgID = undefined
+  private readonly _id?: ID = undefined
   private readonly _defaultAddress?: string = undefined
   private readonly _defaultPath?: string = undefined
   private readonly _defaultValue?: JSON = undefined
@@ -8779,7 +9383,7 @@ export class FunctionArg extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: FunctionArgID,
+    _id?: ID,
     _defaultAddress?: string,
     _defaultPath?: string,
     _defaultValue?: JSON,
@@ -8801,14 +9405,14 @@ export class FunctionArg extends BaseClient {
   /**
    * A unique identifier for this FunctionArg.
    */
-  id = async (): Promise<FunctionArgID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<FunctionArgID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -8935,7 +9539,7 @@ export class FunctionArg extends BaseClient {
  * An active function call.
  */
 export class FunctionCall extends BaseClient {
-  private readonly _id?: FunctionCallID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
   private readonly _parent?: JSON = undefined
   private readonly _parentName?: string = undefined
@@ -8947,7 +9551,7 @@ export class FunctionCall extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: FunctionCallID,
+    _id?: ID,
     _name?: string,
     _parent?: JSON,
     _parentName?: string,
@@ -8967,14 +9571,14 @@ export class FunctionCall extends BaseClient {
   /**
    * A unique identifier for this FunctionCall.
    */
-  id = async (): Promise<FunctionCallID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<FunctionCallID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -8984,15 +9588,18 @@ export class FunctionCall extends BaseClient {
    */
   inputArgs = async (): Promise<FunctionCallArgValue[]> => {
     type inputArgs = {
-      id: FunctionCallArgValueID
+      id: ID
     }
 
     const ctx = this._ctx.select("inputArgs").select("id")
 
     const response: Awaited<inputArgs[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadFunctionCallArgValueFromID(r.id),
+    return response.map(
+      (r) =>
+        new FunctionCallArgValue(
+          ctx.copy().selectNode(r.id, "FunctionCallArgValue"),
+        ),
     )
   }
 
@@ -9074,19 +9681,14 @@ export class FunctionCall extends BaseClient {
  * A value passed as a named argument to a function call.
  */
 export class FunctionCallArgValue extends BaseClient {
-  private readonly _id?: FunctionCallArgValueID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
   private readonly _value?: JSON = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: FunctionCallArgValueID,
-    _name?: string,
-    _value?: JSON,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _name?: string, _value?: JSON) {
     super(ctx)
 
     this._id = _id
@@ -9097,14 +9699,14 @@ export class FunctionCallArgValue extends BaseClient {
   /**
    * A unique identifier for this FunctionCallArgValue.
    */
-  id = async (): Promise<FunctionCallArgValueID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<FunctionCallArgValueID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -9144,12 +9746,12 @@ export class FunctionCallArgValue extends BaseClient {
  * The result of running an SDK's codegen.
  */
 export class GeneratedCode extends BaseClient {
-  private readonly _id?: GeneratedCodeID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: GeneratedCodeID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -9158,14 +9760,14 @@ export class GeneratedCode extends BaseClient {
   /**
    * A unique identifier for this GeneratedCode.
    */
-  id = async (): Promise<GeneratedCodeID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<GeneratedCodeID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -9227,7 +9829,7 @@ export class GeneratedCode extends BaseClient {
 }
 
 export class Generator extends BaseClient {
-  private readonly _id?: GeneratorID = undefined
+  private readonly _id?: ID = undefined
   private readonly _completed?: boolean = undefined
   private readonly _description?: string = undefined
   private readonly _isEmpty?: boolean = undefined
@@ -9238,7 +9840,7 @@ export class Generator extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: GeneratorID,
+    _id?: ID,
     _completed?: boolean,
     _description?: string,
     _isEmpty?: boolean,
@@ -9256,14 +9858,14 @@ export class Generator extends BaseClient {
   /**
    * A unique identifier for this Generator.
    */
-  id = async (): Promise<GeneratorID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<GeneratorID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -9374,13 +9976,13 @@ export class Generator extends BaseClient {
 }
 
 export class GeneratorGroup extends BaseClient {
-  private readonly _id?: GeneratorGroupID = undefined
+  private readonly _id?: ID = undefined
   private readonly _isEmpty?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: GeneratorGroupID, _isEmpty?: boolean) {
+  constructor(ctx?: Context, _id?: ID, _isEmpty?: boolean) {
     super(ctx)
 
     this._id = _id
@@ -9390,14 +9992,14 @@ export class GeneratorGroup extends BaseClient {
   /**
    * A unique identifier for this GeneratorGroup.
    */
-  id = async (): Promise<GeneratorGroupID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<GeneratorGroupID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -9442,14 +10044,16 @@ export class GeneratorGroup extends BaseClient {
    */
   list = async (): Promise<Generator[]> => {
     type list = {
-      id: GeneratorID
+      id: ID
     }
 
     const ctx = this._ctx.select("list").select("id")
 
     const response: Awaited<list[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadGeneratorFromID(r.id))
+    return response.map(
+      (r) => new Generator(ctx.copy().selectNode(r.id, "Generator")),
+    )
   }
 
   /**
@@ -9474,14 +10078,14 @@ export class GeneratorGroup extends BaseClient {
  * A git ref (tag, branch, or commit).
  */
 export class GitRef extends BaseClient {
-  private readonly _id?: GitRefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _commit?: string = undefined
   private readonly _ref?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: GitRefID, _commit?: string, _ref?: string) {
+  constructor(ctx?: Context, _id?: ID, _commit?: string, _ref?: string) {
     super(ctx)
 
     this._id = _id
@@ -9492,14 +10096,14 @@ export class GitRef extends BaseClient {
   /**
    * A unique identifier for this GitRef.
    */
-  id = async (): Promise<GitRefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<GitRefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -9568,13 +10172,13 @@ export class GitRef extends BaseClient {
  * A git repository.
  */
 export class GitRepository extends BaseClient {
-  private readonly _id?: GitRepositoryID = undefined
+  private readonly _id?: ID = undefined
   private readonly _url?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: GitRepositoryID, _url?: string) {
+  constructor(ctx?: Context, _id?: ID, _url?: string) {
     super(ctx)
 
     this._id = _id
@@ -9584,16 +10188,26 @@ export class GitRepository extends BaseClient {
   /**
    * A unique identifier for this GitRepository.
    */
-  id = async (): Promise<GitRepositoryID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<GitRepositoryID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Creates a synthetic workspace from this git repository.
+   * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
+   * @experimental
+   */
+  asWorkspace = (opts?: GitRepositoryAsWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("asWorkspace", { ...opts })
+    return new Workspace(ctx)
   }
 
   /**
@@ -9700,12 +10314,12 @@ export class GitRepository extends BaseClient {
  * An internal persistent HTTP state.
  */
 export class HTTPState extends BaseClient {
-  private readonly _id?: HTTPStateID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: HTTPStateID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -9714,14 +10328,14 @@ export class HTTPState extends BaseClient {
   /**
    * A unique identifier for this HTTPState.
    */
-  id = async (): Promise<HTTPStateID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<HTTPStateID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -9731,7 +10345,7 @@ export class HTTPState extends BaseClient {
  * Image healthcheck configuration.
  */
 export class HealthcheckConfig extends BaseClient {
-  private readonly _id?: HealthcheckConfigID = undefined
+  private readonly _id?: ID = undefined
   private readonly _interval?: string = undefined
   private readonly _retries?: number = undefined
   private readonly _shell?: boolean = undefined
@@ -9744,7 +10358,7 @@ export class HealthcheckConfig extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: HealthcheckConfigID,
+    _id?: ID,
     _interval?: string,
     _retries?: number,
     _shell?: boolean,
@@ -9766,14 +10380,14 @@ export class HealthcheckConfig extends BaseClient {
   /**
    * A unique identifier for this HealthcheckConfig.
    */
-  id = async (): Promise<HealthcheckConfigID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<HealthcheckConfigID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -9884,13 +10498,13 @@ export class HealthcheckConfig extends BaseClient {
  * Information about the host environment.
  */
 export class Host extends BaseClient {
-  private readonly _id?: HostID = undefined
+  private readonly _id?: ID = undefined
   private readonly _findUp?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: HostID, _findUp?: string) {
+  constructor(ctx?: Context, _id?: ID, _findUp?: string) {
     super(ctx)
 
     this._id = _id
@@ -9900,14 +10514,14 @@ export class Host extends BaseClient {
   /**
    * A unique identifier for this Host.
    */
-  id = async (): Promise<HostID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<HostID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10010,13 +10624,13 @@ export class Host extends BaseClient {
  * module accept input objects via their id rather than graphql input types.
  */
 export class InputTypeDef extends BaseClient {
-  private readonly _id?: InputTypeDefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: InputTypeDefID, _name?: string) {
+  constructor(ctx?: Context, _id?: ID, _name?: string) {
     super(ctx)
 
     this._id = _id
@@ -10026,14 +10640,14 @@ export class InputTypeDef extends BaseClient {
   /**
    * A unique identifier for this InputTypeDef.
    */
-  id = async (): Promise<InputTypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<InputTypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10043,15 +10657,15 @@ export class InputTypeDef extends BaseClient {
    */
   fields = async (): Promise<FieldTypeDef[]> => {
     type fields = {
-      id: FieldTypeDefID
+      id: ID
     }
 
     const ctx = this._ctx.select("fields").select("id")
 
     const response: Awaited<fields[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadFieldTypeDefFromID(r.id),
+    return response.map(
+      (r) => new FieldTypeDef(ctx.copy().selectNode(r.id, "FieldTypeDef")),
     )
   }
 
@@ -10075,7 +10689,7 @@ export class InputTypeDef extends BaseClient {
  * A definition of a custom interface defined in a Module.
  */
 export class InterfaceTypeDef extends BaseClient {
-  private readonly _id?: InterfaceTypeDefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sourceModuleName?: string = undefined
@@ -10085,7 +10699,7 @@ export class InterfaceTypeDef extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: InterfaceTypeDefID,
+    _id?: ID,
     _description?: string,
     _name?: string,
     _sourceModuleName?: string,
@@ -10101,14 +10715,14 @@ export class InterfaceTypeDef extends BaseClient {
   /**
    * A unique identifier for this InterfaceTypeDef.
    */
-  id = async (): Promise<InterfaceTypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<InterfaceTypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10133,14 +10747,16 @@ export class InterfaceTypeDef extends BaseClient {
    */
   functions = async (): Promise<Function_[]> => {
     type functions = {
-      id: FunctionID
+      id: ID
     }
 
     const ctx = this._ctx.select("functions").select("id")
 
     const response: Awaited<functions[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
+    return response.map(
+      (r) => new Function_(ctx.copy().selectNode(r.id, "Function")),
+    )
   }
 
   /**
@@ -10183,7 +10799,7 @@ export class InterfaceTypeDef extends BaseClient {
 }
 
 export class JSONValue extends BaseClient {
-  private readonly _id?: JSONValueID = undefined
+  private readonly _id?: ID = undefined
   private readonly _asBoolean?: boolean = undefined
   private readonly _asInteger?: number = undefined
   private readonly _asString?: string = undefined
@@ -10194,7 +10810,7 @@ export class JSONValue extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: JSONValueID,
+    _id?: ID,
     _asBoolean?: boolean,
     _asInteger?: number,
     _asString?: string,
@@ -10212,14 +10828,14 @@ export class JSONValue extends BaseClient {
   /**
    * A unique identifier for this JSONValue.
    */
-  id = async (): Promise<JSONValueID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<JSONValueID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10229,14 +10845,16 @@ export class JSONValue extends BaseClient {
    */
   asArray = async (): Promise<JSONValue[]> => {
     type asArray = {
-      id: JSONValueID
+      id: ID
     }
 
     const ctx = this._ctx.select("asArray").select("id")
 
     const response: Awaited<asArray[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadJSONValueFromID(r.id))
+    return response.map(
+      (r) => new JSONValue(ctx.copy().selectNode(r.id, "JSONValue")),
+    )
   }
 
   /**
@@ -10378,14 +10996,14 @@ export class JSONValue extends BaseClient {
 }
 
 export class LLM extends BaseClient {
-  private readonly _id?: LLMID = undefined
+  private readonly _id?: ID = undefined
   private readonly _hasPrompt?: boolean = undefined
   private readonly _historyJSON?: JSON = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _provider?: string = undefined
-  private readonly _step?: LLMID = undefined
-  private readonly _sync?: LLMID = undefined
+  private readonly _step?: ID = undefined
+  private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
 
   /**
@@ -10393,14 +11011,14 @@ export class LLM extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: LLMID,
+    _id?: ID,
     _hasPrompt?: boolean,
     _historyJSON?: JSON,
     _lastReply?: string,
     _model?: string,
     _provider?: string,
-    _step?: LLMID,
-    _sync?: LLMID,
+    _step?: ID,
+    _sync?: ID,
     _tools?: string,
   ) {
     super(ctx)
@@ -10419,14 +11037,14 @@ export class LLM extends BaseClient {
   /**
    * A unique identifier for this LLM.
    */
-  id = async (): Promise<LLMID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<LLMID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10557,9 +11175,9 @@ export class LLM extends BaseClient {
   step = async (): Promise<LLM> => {
     const ctx = this._ctx.select("step")
 
-    const response: Awaited<LLMID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadLLMFromID(response)
+    return new LLM(ctx.copy().selectNode(response, "LLM"))
   }
 
   /**
@@ -10568,9 +11186,9 @@ export class LLM extends BaseClient {
   sync = async (): Promise<LLM> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<LLMID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadLLMFromID(response)
+    return new LLM(ctx.copy().selectNode(response, "LLM"))
   }
 
   /**
@@ -10708,7 +11326,7 @@ export class LLM extends BaseClient {
 }
 
 export class LLMTokenUsage extends BaseClient {
-  private readonly _id?: LLMTokenUsageID = undefined
+  private readonly _id?: ID = undefined
   private readonly _cachedTokenReads?: number = undefined
   private readonly _cachedTokenWrites?: number = undefined
   private readonly _inputTokens?: number = undefined
@@ -10720,7 +11338,7 @@ export class LLMTokenUsage extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: LLMTokenUsageID,
+    _id?: ID,
     _cachedTokenReads?: number,
     _cachedTokenWrites?: number,
     _inputTokens?: number,
@@ -10740,14 +11358,14 @@ export class LLMTokenUsage extends BaseClient {
   /**
    * A unique identifier for this LLMTokenUsage.
    */
-  id = async (): Promise<LLMTokenUsageID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<LLMTokenUsageID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10812,14 +11430,14 @@ export class LLMTokenUsage extends BaseClient {
  * A simple key value object that represents a label.
  */
 export class Label extends BaseClient {
-  private readonly _id?: LabelID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
   private readonly _value?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: LabelID, _name?: string, _value?: string) {
+  constructor(ctx?: Context, _id?: ID, _name?: string, _value?: string) {
     super(ctx)
 
     this._id = _id
@@ -10830,14 +11448,14 @@ export class Label extends BaseClient {
   /**
    * A unique identifier for this Label.
    */
-  id = async (): Promise<LabelID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<LabelID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10877,12 +11495,12 @@ export class Label extends BaseClient {
  * A definition of a list type in a Module.
  */
 export class ListTypeDef extends BaseClient {
-  private readonly _id?: ListTypeDefID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ListTypeDefID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -10891,14 +11509,14 @@ export class ListTypeDef extends BaseClient {
   /**
    * A unique identifier for this ListTypeDef.
    */
-  id = async (): Promise<ListTypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ListTypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10916,22 +11534,22 @@ export class ListTypeDef extends BaseClient {
  * A Dagger module.
  */
 export class Module_ extends BaseClient {
-  private readonly _id?: ModuleID = undefined
+  private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _serve?: Void = undefined
-  private readonly _sync?: ModuleID = undefined
+  private readonly _sync?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     ctx?: Context,
-    _id?: ModuleID,
+    _id?: ID,
     _description?: string,
     _name?: string,
     _serve?: Void,
-    _sync?: ModuleID,
+    _sync?: ID,
   ) {
     super(ctx)
 
@@ -10945,14 +11563,14 @@ export class Module_ extends BaseClient {
   /**
    * A unique identifier for this Module.
    */
-  id = async (): Promise<ModuleID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ModuleID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -10970,6 +11588,7 @@ export class Module_ extends BaseClient {
   /**
    * Return all checks defined by the module
    * @param opts.include Only include checks matching the specified patterns
+   * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
    * @experimental
    */
   checks = (opts?: ModuleChecksOpts): CheckGroup => {
@@ -10982,14 +11601,16 @@ export class Module_ extends BaseClient {
    */
   dependencies = async (): Promise<Module_[]> => {
     type dependencies = {
-      id: ModuleID
+      id: ID
     }
 
     const ctx = this._ctx.select("dependencies").select("id")
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
+    return response.map(
+      (r) => new Module_(ctx.copy().selectNode(r.id, "Module")),
+    )
   }
 
   /**
@@ -11012,14 +11633,16 @@ export class Module_ extends BaseClient {
    */
   enums = async (): Promise<TypeDef[]> => {
     type enums = {
-      id: TypeDefID
+      id: ID
     }
 
     const ctx = this._ctx.select("enums").select("id")
 
     const response: Awaited<enums[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+    return response.map(
+      (r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")),
+    )
   }
 
   /**
@@ -11055,14 +11678,16 @@ export class Module_ extends BaseClient {
    */
   interfaces = async (): Promise<TypeDef[]> => {
     type interfaces = {
-      id: TypeDefID
+      id: ID
     }
 
     const ctx = this._ctx.select("interfaces").select("id")
 
     const response: Awaited<interfaces[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+    return response.map(
+      (r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")),
+    )
   }
 
   /**
@@ -11097,14 +11722,16 @@ export class Module_ extends BaseClient {
    */
   objects = async (): Promise<TypeDef[]> => {
     type objects = {
-      id: TypeDefID
+      id: ID
     }
 
     const ctx = this._ctx.select("objects").select("id")
 
     const response: Awaited<objects[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+    return response.map(
+      (r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")),
+    )
   }
 
   /**
@@ -11164,9 +11791,9 @@ export class Module_ extends BaseClient {
   sync = async (): Promise<Module_> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<ModuleID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadModuleFromID(response)
+    return new Module_(ctx.copy().selectNode(response, "Module"))
   }
 
   /**
@@ -11226,7 +11853,7 @@ export class Module_ extends BaseClient {
  * The client generated for the module.
  */
 export class ModuleConfigClient extends BaseClient {
-  private readonly _id?: ModuleConfigClientID = undefined
+  private readonly _id?: ID = undefined
   private readonly _directory?: string = undefined
   private readonly _generator?: string = undefined
 
@@ -11235,7 +11862,7 @@ export class ModuleConfigClient extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: ModuleConfigClientID,
+    _id?: ID,
     _directory?: string,
     _generator?: string,
   ) {
@@ -11249,14 +11876,14 @@ export class ModuleConfigClient extends BaseClient {
   /**
    * A unique identifier for this ModuleConfigClient.
    */
-  id = async (): Promise<ModuleConfigClientID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ModuleConfigClientID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -11296,7 +11923,7 @@ export class ModuleConfigClient extends BaseClient {
  * The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
  */
 export class ModuleSource extends BaseClient {
-  private readonly _id?: ModuleSourceID = undefined
+  private readonly _id?: ID = undefined
   private readonly _asString?: string = undefined
   private readonly _cloneRef?: string = undefined
   private readonly _commit?: string = undefined
@@ -11314,7 +11941,7 @@ export class ModuleSource extends BaseClient {
   private readonly _repoRootPath?: string = undefined
   private readonly _sourceRootSubpath?: string = undefined
   private readonly _sourceSubpath?: string = undefined
-  private readonly _sync?: ModuleSourceID = undefined
+  private readonly _sync?: ID = undefined
   private readonly _version?: string = undefined
 
   /**
@@ -11322,7 +11949,7 @@ export class ModuleSource extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: ModuleSourceID,
+    _id?: ID,
     _asString?: string,
     _cloneRef?: string,
     _commit?: string,
@@ -11340,7 +11967,7 @@ export class ModuleSource extends BaseClient {
     _repoRootPath?: string,
     _sourceRootSubpath?: string,
     _sourceSubpath?: string,
-    _sync?: ModuleSourceID,
+    _sync?: ID,
     _version?: string,
   ) {
     super(ctx)
@@ -11370,14 +11997,14 @@ export class ModuleSource extends BaseClient {
   /**
    * A unique identifier for this ModuleSource.
    */
-  id = async (): Promise<ModuleSourceID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ModuleSourceID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -11407,6 +12034,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The blueprint referenced by the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
    */
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
@@ -11448,20 +12076,23 @@ export class ModuleSource extends BaseClient {
    */
   configClients = async (): Promise<ModuleConfigClient[]> => {
     type configClients = {
-      id: ModuleConfigClientID
+      id: ID
     }
 
     const ctx = this._ctx.select("configClients").select("id")
 
     const response: Awaited<configClients[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadModuleConfigClientFromID(r.id),
+    return response.map(
+      (r) =>
+        new ModuleConfigClient(
+          ctx.copy().selectNode(r.id, "ModuleConfigClient"),
+        ),
     )
   }
 
   /**
-   * Whether an existing dagger.json for the module was found.
+   * Whether an existing module config file was found.
    */
   configExists = async (): Promise<boolean> => {
     if (this._configExists) {
@@ -11488,15 +12119,15 @@ export class ModuleSource extends BaseClient {
    */
   dependencies = async (): Promise<ModuleSource[]> => {
     type dependencies = {
-      id: ModuleSourceID
+      id: ID
     }
 
     const ctx = this._ctx.select("dependencies").select("id")
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
+    return response.map(
+      (r) => new ModuleSource(ctx.copy().selectNode(r.id, "ModuleSource")),
     )
   }
 
@@ -11643,7 +12274,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+   * The original name of the module as read from the module config file (or set for the first time with the withName API).
    */
   moduleOriginalName = async (): Promise<string> => {
     if (this._moduleOriginalName) {
@@ -11711,7 +12342,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The path, relative to the context directory, that contains the module's dagger.json.
+   * The path, relative to the context directory, that contains the module config.
    */
   sourceRootSubpath = async (): Promise<string> => {
     if (this._sourceRootSubpath) {
@@ -11746,25 +12377,26 @@ export class ModuleSource extends BaseClient {
   sync = async (): Promise<ModuleSource> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<ModuleSourceID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadModuleSourceFromID(response)
+    return new ModuleSource(ctx.copy().selectNode(response, "ModuleSource"))
   }
 
   /**
    * The toolchains referenced by the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
    */
   toolchains = async (): Promise<ModuleSource[]> => {
     type toolchains = {
-      id: ModuleSourceID
+      id: ID
     }
 
     const ctx = this._ctx.select("toolchains").select("id")
 
     const response: Awaited<toolchains[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
+    return response.map(
+      (r) => new ModuleSource(ctx.copy().selectNode(r.id, "ModuleSource")),
     )
   }
 
@@ -11794,6 +12426,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Set a blueprint for the module source.
    * @param blueprint The blueprint module to set.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withBlueprint = (blueprint: ModuleSource): ModuleSource => {
     const ctx = this._ctx.select("withBlueprint", { blueprint })
@@ -11878,6 +12511,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Add toolchains to the module source.
    * @param toolchains The toolchain modules to add.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
     const ctx = this._ctx.select("withToolchains", { toolchains })
@@ -11886,6 +12520,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the blueprint module to the latest version.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withUpdateBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withUpdateBlueprint")
@@ -11904,6 +12539,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Update one or more toolchains.
    * @param toolchains The toolchains to update.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withUpdateToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
@@ -11921,6 +12557,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Remove the current blueprint from the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withoutBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withoutBlueprint")
@@ -11959,6 +12596,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Remove the provided toolchains from the module source.
    * @param toolchains The toolchains to remove.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withoutToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutToolchains", { toolchains })
@@ -11976,10 +12614,41 @@ export class ModuleSource extends BaseClient {
 }
 
 /**
+ * An object with a globally unique ID.
+ */
+export interface Node {
+  id(): Promise<ID>
+}
+
+export class _NodeClient extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * A definition of a custom object defined in a Module.
  */
 export class ObjectTypeDef extends BaseClient {
-  private readonly _id?: ObjectTypeDefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -11990,7 +12659,7 @@ export class ObjectTypeDef extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: ObjectTypeDefID,
+    _id?: ID,
     _deprecated?: string,
     _description?: string,
     _name?: string,
@@ -12008,14 +12677,14 @@ export class ObjectTypeDef extends BaseClient {
   /**
    * A unique identifier for this ObjectTypeDef.
    */
-  id = async (): Promise<ObjectTypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ObjectTypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -12063,15 +12732,15 @@ export class ObjectTypeDef extends BaseClient {
    */
   fields = async (): Promise<FieldTypeDef[]> => {
     type fields = {
-      id: FieldTypeDefID
+      id: ID
     }
 
     const ctx = this._ctx.select("fields").select("id")
 
     const response: Awaited<fields[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadFieldTypeDefFromID(r.id),
+    return response.map(
+      (r) => new FieldTypeDef(ctx.copy().selectNode(r.id, "FieldTypeDef")),
     )
   }
 
@@ -12080,14 +12749,16 @@ export class ObjectTypeDef extends BaseClient {
    */
   functions = async (): Promise<Function_[]> => {
     type functions = {
-      id: FunctionID
+      id: ID
     }
 
     const ctx = this._ctx.select("functions").select("id")
 
     const response: Awaited<functions[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
+    return response.map(
+      (r) => new Function_(ctx.copy().selectNode(r.id, "Function")),
+    )
   }
 
   /**
@@ -12133,7 +12804,7 @@ export class ObjectTypeDef extends BaseClient {
  * A port exposed by a container.
  */
 export class Port extends BaseClient {
-  private readonly _id?: PortID = undefined
+  private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _experimentalSkipHealthcheck?: boolean = undefined
   private readonly _port?: number = undefined
@@ -12144,7 +12815,7 @@ export class Port extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: PortID,
+    _id?: ID,
     _description?: string,
     _experimentalSkipHealthcheck?: boolean,
     _port?: number,
@@ -12162,14 +12833,14 @@ export class Port extends BaseClient {
   /**
    * A unique identifier for this Port.
    */
-  id = async (): Promise<PortID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<PortID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -12239,7 +12910,7 @@ export class Port extends BaseClient {
  * The root of the DAG.
  */
 export class Client extends BaseClient {
-  private readonly _id?: QueryID = undefined
+  private readonly _id?: ID = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
 
@@ -12248,7 +12919,7 @@ export class Client extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: QueryID,
+    _id?: ID,
     _defaultPlatform?: Platform,
     _version?: string,
   ) {
@@ -12269,10 +12940,10 @@ export class Client extends BaseClient {
   /**
    * A unique identifier for this Query.
    */
-  id = async (): Promise<QueryID> => {
+  id = async (): Promise<ID> => {
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<QueryID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -12378,14 +13049,16 @@ export class Client extends BaseClient {
     opts?: ClientCurrentTypeDefsOpts,
   ): Promise<TypeDef[]> => {
     type currentTypeDefs = {
-      id: TypeDefID
+      id: ID
     }
 
     const ctx = this._ctx.select("currentTypeDefs", { ...opts }).select("id")
 
     const response: Awaited<currentTypeDefs[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+    return response.map(
+      (r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")),
+    )
   }
 
   /**
@@ -12732,6 +13405,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Exportable from its ID.
+   */
+  loadExportableFromID = (id: ExportableID): Exportable => {
+    const ctx = this._ctx.select("loadExportableFromID", { id })
+    return new _ExportableClient(ctx)
+  }
+
+  /**
    * Load a FieldTypeDef from its ID.
    */
   loadFieldTypeDefFromID = (id: FieldTypeDefID): FieldTypeDef => {
@@ -12946,14 +13627,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a Query from its ID.
-   */
-  loadQueryFromID = (id: QueryID): Client => {
-    const ctx = this._ctx.select("loadQueryFromID", { id })
-    return new Client(ctx)
-  }
-
-  /**
    * Load a RemoteGitMirror from its ID.
    */
   loadRemoteGitMirrorFromID = (id: RemoteGitMirrorID): RemoteGitMirror => {
@@ -13034,6 +13707,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Syncer from its ID.
+   */
+  loadSyncerFromID = (id: SyncerID): Syncer => {
+    const ctx = this._ctx.select("loadSyncerFromID", { id })
+    return new _SyncerClient(ctx)
+  }
+
+  /**
    * Load a Terminal from its ID.
    */
   loadTerminalFromID = (id: TerminalID): Terminal => {
@@ -13074,6 +13755,52 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a WorkspaceGit from its ID.
+   */
+  loadWorkspaceGitFromID = (id: WorkspaceGitID): WorkspaceGit => {
+    const ctx = this._ctx.select("loadWorkspaceGitFromID", { id })
+    return new WorkspaceGit(ctx)
+  }
+
+  /**
+   * Load a WorkspaceMigration from its ID.
+   */
+  loadWorkspaceMigrationFromID = (
+    id: WorkspaceMigrationID,
+  ): WorkspaceMigration => {
+    const ctx = this._ctx.select("loadWorkspaceMigrationFromID", { id })
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Load a WorkspaceMigrationStep from its ID.
+   */
+  loadWorkspaceMigrationStepFromID = (
+    id: WorkspaceMigrationStepID,
+  ): WorkspaceMigrationStep => {
+    const ctx = this._ctx.select("loadWorkspaceMigrationStepFromID", { id })
+    return new WorkspaceMigrationStep(ctx)
+  }
+
+  /**
+   * Load a WorkspaceModule from its ID.
+   */
+  loadWorkspaceModuleFromID = (id: WorkspaceModuleID): WorkspaceModule => {
+    const ctx = this._ctx.select("loadWorkspaceModuleFromID", { id })
+    return new WorkspaceModule(ctx)
+  }
+
+  /**
+   * Load a WorkspaceModuleSetting from its ID.
+   */
+  loadWorkspaceModuleSettingFromID = (
+    id: WorkspaceModuleSettingID,
+  ): WorkspaceModuleSetting => {
+    const ctx = this._ctx.select("loadWorkspaceModuleSettingFromID", { id })
+    return new WorkspaceModuleSetting(ctx)
+  }
+
+  /**
    * Create a new module.
    */
   module_ = (): Module_ => {
@@ -13085,7 +13812,7 @@ export class Client extends BaseClient {
    * Create a new module source instance from a source ref string
    * @param refString The string ref representation of the module source
    * @param opts.refPin The pinned version of the module source
-   * @param opts.disableFindUp If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+   * @param opts.disableFindUp If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
    * @param opts.allowNotExists If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
    * @param opts.requireKind If set, error out if the ref string is not of the provided requireKind.
    */
@@ -13106,6 +13833,14 @@ export class Client extends BaseClient {
       __metadata: metadata,
     })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Load any object by its ID.
+   */
+  node = (id: ID): Node => {
+    const ctx = this._ctx.select("node", { id })
+    return new _NodeClient(ctx)
   }
 
   /**
@@ -13163,27 +13898,18 @@ export class Client extends BaseClient {
 
     return response
   }
-
-  /**
-   * Call the provided function with current Client.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: Client) => Client) => {
-    return arg(this)
-  }
 }
 
 /**
  * An internal persistent bare git mirror.
  */
 export class RemoteGitMirror extends BaseClient {
-  private readonly _id?: RemoteGitMirrorID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: RemoteGitMirrorID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -13192,14 +13918,14 @@ export class RemoteGitMirror extends BaseClient {
   /**
    * A unique identifier for this RemoteGitMirror.
    */
-  id = async (): Promise<RemoteGitMirrorID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<RemoteGitMirrorID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13209,19 +13935,14 @@ export class RemoteGitMirror extends BaseClient {
  * The SDK config of the module.
  */
 export class SDKConfig extends BaseClient {
-  private readonly _id?: SDKConfigID = undefined
+  private readonly _id?: ID = undefined
   private readonly _debug?: boolean = undefined
   private readonly _source?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: SDKConfigID,
-    _debug?: boolean,
-    _source?: string,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _debug?: boolean, _source?: string) {
     super(ctx)
 
     this._id = _id
@@ -13232,14 +13953,14 @@ export class SDKConfig extends BaseClient {
   /**
    * A unique identifier for this SDKConfig.
    */
-  id = async (): Promise<SDKConfigID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<SDKConfigID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13279,7 +14000,7 @@ export class SDKConfig extends BaseClient {
  * A definition of a custom scalar defined in a Module.
  */
 export class ScalarTypeDef extends BaseClient {
-  private readonly _id?: ScalarTypeDefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sourceModuleName?: string = undefined
@@ -13289,7 +14010,7 @@ export class ScalarTypeDef extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: ScalarTypeDefID,
+    _id?: ID,
     _description?: string,
     _name?: string,
     _sourceModuleName?: string,
@@ -13305,14 +14026,14 @@ export class ScalarTypeDef extends BaseClient {
   /**
    * A unique identifier for this ScalarTypeDef.
    */
-  id = async (): Promise<ScalarTypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ScalarTypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13364,7 +14085,7 @@ export class ScalarTypeDef extends BaseClient {
 }
 
 export class SearchResult extends BaseClient {
-  private readonly _id?: SearchResultID = undefined
+  private readonly _id?: ID = undefined
   private readonly _absoluteOffset?: number = undefined
   private readonly _filePath?: string = undefined
   private readonly _lineNumber?: number = undefined
@@ -13375,7 +14096,7 @@ export class SearchResult extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: SearchResultID,
+    _id?: ID,
     _absoluteOffset?: number,
     _filePath?: string,
     _lineNumber?: number,
@@ -13393,14 +14114,14 @@ export class SearchResult extends BaseClient {
   /**
    * A unique identifier for this SearchResult.
    */
-  id = async (): Promise<SearchResultID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<SearchResultID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13470,21 +14191,21 @@ export class SearchResult extends BaseClient {
    */
   submatches = async (): Promise<SearchSubmatch[]> => {
     type submatches = {
-      id: SearchSubmatchID
+      id: ID
     }
 
     const ctx = this._ctx.select("submatches").select("id")
 
     const response: Awaited<submatches[]> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadSearchSubmatchFromID(r.id),
+    return response.map(
+      (r) => new SearchSubmatch(ctx.copy().selectNode(r.id, "SearchSubmatch")),
     )
   }
 }
 
 export class SearchSubmatch extends BaseClient {
-  private readonly _id?: SearchSubmatchID = undefined
+  private readonly _id?: ID = undefined
   private readonly _end?: number = undefined
   private readonly _start?: number = undefined
   private readonly _text?: string = undefined
@@ -13494,7 +14215,7 @@ export class SearchSubmatch extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: SearchSubmatchID,
+    _id?: ID,
     _end?: number,
     _start?: number,
     _text?: string,
@@ -13510,14 +14231,14 @@ export class SearchSubmatch extends BaseClient {
   /**
    * A unique identifier for this SearchSubmatch.
    */
-  id = async (): Promise<SearchSubmatchID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<SearchSubmatchID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13572,7 +14293,7 @@ export class SearchSubmatch extends BaseClient {
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
 export class Secret extends BaseClient {
-  private readonly _id?: SecretID = undefined
+  private readonly _id?: ID = undefined
   private readonly _name?: string = undefined
   private readonly _plaintext?: string = undefined
   private readonly _uri?: string = undefined
@@ -13582,7 +14303,7 @@ export class Secret extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: SecretID,
+    _id?: ID,
     _name?: string,
     _plaintext?: string,
     _uri?: string,
@@ -13598,14 +14319,14 @@ export class Secret extends BaseClient {
   /**
    * A unique identifier for this Secret.
    */
-  id = async (): Promise<SecretID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<SecretID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13660,12 +14381,12 @@ export class Secret extends BaseClient {
  * A content-addressed service providing TCP connectivity.
  */
 export class Service extends BaseClient {
-  private readonly _id?: ServiceID = undefined
+  private readonly _id?: ID = undefined
   private readonly _endpoint?: string = undefined
   private readonly _hostname?: string = undefined
-  private readonly _start?: ServiceID = undefined
-  private readonly _stop?: ServiceID = undefined
-  private readonly _sync?: ServiceID = undefined
+  private readonly _start?: ID = undefined
+  private readonly _stop?: ID = undefined
+  private readonly _sync?: ID = undefined
   private readonly _up?: Void = undefined
 
   /**
@@ -13673,12 +14394,12 @@ export class Service extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: ServiceID,
+    _id?: ID,
     _endpoint?: string,
     _hostname?: string,
-    _start?: ServiceID,
-    _stop?: ServiceID,
-    _sync?: ServiceID,
+    _start?: ID,
+    _stop?: ID,
+    _sync?: ID,
     _up?: Void,
   ) {
     super(ctx)
@@ -13695,14 +14416,14 @@ export class Service extends BaseClient {
   /**
    * A unique identifier for this Service.
    */
-  id = async (): Promise<ServiceID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ServiceID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13748,14 +14469,14 @@ export class Service extends BaseClient {
    */
   ports = async (): Promise<Port[]> => {
     type ports = {
-      id: PortID
+      id: ID
     }
 
     const ctx = this._ctx.select("ports").select("id")
 
     const response: Awaited<ports[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
+    return response.map((r) => new Port(ctx.copy().selectNode(r.id, "Port")))
   }
 
   /**
@@ -13766,9 +14487,9 @@ export class Service extends BaseClient {
   start = async (): Promise<Service> => {
     const ctx = this._ctx.select("start")
 
-    const response: Awaited<ServiceID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadServiceFromID(response)
+    return new Service(ctx.copy().selectNode(response, "Service"))
   }
 
   /**
@@ -13778,9 +14499,9 @@ export class Service extends BaseClient {
   stop = async (opts?: ServiceStopOpts): Promise<Service> => {
     const ctx = this._ctx.select("stop", { ...opts })
 
-    const response: Awaited<ServiceID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadServiceFromID(response)
+    return new Service(ctx.copy().selectNode(response, "Service"))
   }
 
   /**
@@ -13789,9 +14510,9 @@ export class Service extends BaseClient {
   sync = async (): Promise<Service> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<ServiceID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadServiceFromID(response)
+    return new Service(ctx.copy().selectNode(response, "Service"))
   }
   terminal = (opts?: ServiceTerminalOpts): Service => {
     const ctx = this._ctx.select("terminal", { ...opts })
@@ -13838,12 +14559,12 @@ export class Service extends BaseClient {
  * A Unix or TCP/IP socket that can be mounted into a container.
  */
 export class Socket extends BaseClient {
-  private readonly _id?: SocketID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: SocketID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -13852,14 +14573,14 @@ export class Socket extends BaseClient {
   /**
    * A unique identifier for this Socket.
    */
-  id = async (): Promise<SocketID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<SocketID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13869,7 +14590,7 @@ export class Socket extends BaseClient {
  * Source location information.
  */
 export class SourceMap extends BaseClient {
-  private readonly _id?: SourceMapID = undefined
+  private readonly _id?: ID = undefined
   private readonly _column?: number = undefined
   private readonly _filename?: string = undefined
   private readonly _line?: number = undefined
@@ -13881,7 +14602,7 @@ export class SourceMap extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: SourceMapID,
+    _id?: ID,
     _column?: number,
     _filename?: string,
     _line?: number,
@@ -13901,14 +14622,14 @@ export class SourceMap extends BaseClient {
   /**
    * A unique identifier for this SourceMap.
    */
-  id = async (): Promise<SourceMapID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<SourceMapID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -13993,7 +14714,7 @@ export class SourceMap extends BaseClient {
  * A file or directory status object.
  */
 export class Stat extends BaseClient {
-  private readonly _id?: StatID = undefined
+  private readonly _id?: ID = undefined
   private readonly _fileType?: FileType = undefined
   private readonly _name?: string = undefined
   private readonly _permissions?: number = undefined
@@ -14004,7 +14725,7 @@ export class Stat extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: StatID,
+    _id?: ID,
     _fileType?: FileType,
     _name?: string,
     _permissions?: number,
@@ -14022,14 +14743,14 @@ export class Stat extends BaseClient {
   /**
    * A unique identifier for this Stat.
    */
-  id = async (): Promise<StatID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<StatID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -14096,16 +14817,59 @@ export class Stat extends BaseClient {
 }
 
 /**
- * An interactive terminal that clients can connect to.
+ * An object that can be force-evaluated.
+ *
+ * Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
  */
-export class Terminal extends BaseClient {
-  private readonly _id?: TerminalID = undefined
-  private readonly _sync?: TerminalID = undefined
+export interface Syncer {
+  id(): Promise<ID>
+  sync(): Promise<Syncer>
+}
+
+export class _SyncerClient extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _sync?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: TerminalID, _sync?: TerminalID) {
+  constructor(ctx?: Context, _id?: ID, _sync?: ID) {
+    super(ctx)
+
+    this._id = _id
+    this._sync = _sync
+  }
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+  sync = async (): Promise<Syncer> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new _SyncerClient(ctx.copy().selectNode(response, "Syncer"))
+  }
+}
+
+/**
+ * An interactive terminal that clients can connect to.
+ */
+export class Terminal extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _sync?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _sync?: ID) {
     super(ctx)
 
     this._id = _id
@@ -14115,14 +14879,14 @@ export class Terminal extends BaseClient {
   /**
    * A unique identifier for this Terminal.
    */
-  id = async (): Promise<TerminalID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<TerminalID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -14135,9 +14899,9 @@ export class Terminal extends BaseClient {
   sync = async (): Promise<Terminal> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<TerminalID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadTerminalFromID(response)
+    return new Terminal(ctx.copy().selectNode(response, "Terminal"))
   }
 }
 
@@ -14145,7 +14909,7 @@ export class Terminal extends BaseClient {
  * A definition of a parameter or return type in a Module.
  */
 export class TypeDef extends BaseClient {
-  private readonly _id?: TypeDefID = undefined
+  private readonly _id?: ID = undefined
   private readonly _kind?: TypeDefKind = undefined
   private readonly _name?: string = undefined
   private readonly _optional?: boolean = undefined
@@ -14155,7 +14919,7 @@ export class TypeDef extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: TypeDefID,
+    _id?: ID,
     _kind?: TypeDefKind,
     _name?: string,
     _optional?: boolean,
@@ -14171,14 +14935,14 @@ export class TypeDef extends BaseClient {
   /**
    * A unique identifier for this TypeDef.
    */
-  id = async (): Promise<TypeDefID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<TypeDefID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -14420,19 +15184,14 @@ export class TypeDef extends BaseClient {
 }
 
 export class Up extends BaseClient {
-  private readonly _id?: UpID = undefined
+  private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: UpID,
-    _description?: string,
-    _name?: string,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
     super(ctx)
 
     this._id = _id
@@ -14443,14 +15202,14 @@ export class Up extends BaseClient {
   /**
    * A unique identifier for this Up.
    */
-  id = async (): Promise<UpID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<UpID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -14523,12 +15282,12 @@ export class Up extends BaseClient {
 }
 
 export class UpGroup extends BaseClient {
-  private readonly _id?: UpGroupID = undefined
+  private readonly _id?: ID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: UpGroupID) {
+  constructor(ctx?: Context, _id?: ID) {
     super(ctx)
 
     this._id = _id
@@ -14537,14 +15296,14 @@ export class UpGroup extends BaseClient {
   /**
    * A unique identifier for this UpGroup.
    */
-  id = async (): Promise<UpGroupID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<UpGroupID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
@@ -14554,14 +15313,14 @@ export class UpGroup extends BaseClient {
    */
   list = async (): Promise<Up[]> => {
     type list = {
-      id: UpID
+      id: ID
     }
 
     const ctx = this._ctx.select("list").select("id")
 
     const response: Awaited<list[]> = await ctx.execute()
 
-    return response.map((r) => new Client(ctx.copy()).loadUpFromID(r.id))
+    return response.map((r) => new Up(ctx.copy().selectNode(r.id, "Up")))
   }
 
   /**
@@ -14583,61 +15342,79 @@ export class UpGroup extends BaseClient {
 }
 
 /**
- * A Dagger workspace detected from the current working directory.
+ * A Dagger workspace detected from the current working directory or constructed from a Directory.
  */
 export class Workspace extends BaseClient {
-  private readonly _id?: WorkspaceID = undefined
+  private readonly _id?: ID = undefined
   private readonly _address?: string = undefined
   private readonly _clientId?: string = undefined
-  private readonly _configPath?: string = undefined
+  private readonly _configFile?: string = undefined
+  private readonly _configRead?: string = undefined
+  private readonly _configWrite?: string = undefined
+  private readonly _cwd?: string = undefined
+  private readonly _envCreate?: string = undefined
+  private readonly _envRemove?: string = undefined
   private readonly _findUp?: string = undefined
-  private readonly _hasConfig?: boolean = undefined
-  private readonly _initialized?: boolean = undefined
-  private readonly _path?: string = undefined
+  private readonly _init?: string = undefined
+  private readonly _install?: string = undefined
+  private readonly _moduleInit?: string = undefined
+  private readonly _uninstall?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     ctx?: Context,
-    _id?: WorkspaceID,
+    _id?: ID,
     _address?: string,
     _clientId?: string,
-    _configPath?: string,
+    _configFile?: string,
+    _configRead?: string,
+    _configWrite?: string,
+    _cwd?: string,
+    _envCreate?: string,
+    _envRemove?: string,
     _findUp?: string,
-    _hasConfig?: boolean,
-    _initialized?: boolean,
-    _path?: string,
+    _init?: string,
+    _install?: string,
+    _moduleInit?: string,
+    _uninstall?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._address = _address
     this._clientId = _clientId
-    this._configPath = _configPath
+    this._configFile = _configFile
+    this._configRead = _configRead
+    this._configWrite = _configWrite
+    this._cwd = _cwd
+    this._envCreate = _envCreate
+    this._envRemove = _envRemove
     this._findUp = _findUp
-    this._hasConfig = _hasConfig
-    this._initialized = _initialized
-    this._path = _path
+    this._init = _init
+    this._install = _install
+    this._moduleInit = _moduleInit
+    this._uninstall = _uninstall
   }
 
   /**
    * A unique identifier for this Workspace.
    */
-  id = async (): Promise<WorkspaceID> => {
+  id = async (): Promise<ID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<WorkspaceID> = await ctx.execute()
+    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }
 
   /**
-   * Canonical Dagger address of the workspace directory.
+   * Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
    */
   address = async (): Promise<string> => {
     if (this._address) {
@@ -14654,6 +15431,9 @@ export class Workspace extends BaseClient {
   /**
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
+   * @param opts.skip Skip checks matching the specified patterns
+   * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
+   * @param opts.onlyGenerate When true, only return generate-as-checks; exclude annotated check functions
    */
   checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })
@@ -14676,14 +15456,77 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Path to config.toml relative to the workspace boundary (empty if not initialized).
+   * Selected native workspace config file relative to the workspace root, if any.
    */
-  configPath = async (): Promise<string> => {
-    if (this._configPath) {
-      return this._configPath
+  configFile = async (): Promise<string> => {
+    if (this._configFile) {
+      return this._configFile
     }
 
-    const ctx = this._ctx.select("configPath")
+    const ctx = this._ctx.select("configFile")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Read a configuration value from dagger.toml.
+   *
+   * If key is empty, returns the full config.
+   *
+   * If key points to a scalar, returns the value.
+   *
+   * If key points to a table, returns flattened dotted-key output.
+   * @param opts.key Dotted key path (e.g. modules.greeter.source). Empty for full config.
+   */
+  configRead = async (opts?: WorkspaceConfigReadOpts): Promise<string> => {
+    if (this._configRead) {
+      return this._configRead
+    }
+
+    const ctx = this._ctx.select("configRead", { ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Write a configuration value to dagger.toml.
+   * @param key Dotted key path (e.g. modules.greeter.source).
+   * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  configWrite = async (
+    key: string,
+    value: string,
+    opts?: WorkspaceConfigWriteOpts,
+  ): Promise<string> => {
+    if (this._configWrite) {
+      return this._configWrite
+    }
+
+    const ctx = this._ctx.select("configWrite", { key, value, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Current location within the workspace root.
+   *
+   * The workspace root is returned as "/".
+   *
+   * Relative paths in workspace APIs resolve from here.
+   */
+  cwd = async (): Promise<string> => {
+    if (this._cwd) {
+      return this._cwd
+    }
+
+    const ctx = this._ctx.select("cwd")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -14693,8 +15536,8 @@ export class Workspace extends BaseClient {
   /**
    * Returns a Directory from the workspace.
    *
-   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
-   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
+   * Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
+   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace cwd; absolute paths (e.g., "/src") resolve from the workspace root.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.gitignore Apply .gitignore filter rules inside the directory.
@@ -14705,10 +15548,61 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Create a named workspace environment if it does not already exist.
+   * @param name Environment name.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  envCreate = async (
+    name: string,
+    opts?: WorkspaceEnvCreateOpts,
+  ): Promise<string> => {
+    if (this._envCreate) {
+      return this._envCreate
+    }
+
+    const ctx = this._ctx.select("envCreate", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List named environments defined in the workspace configuration.
+   */
+  envList = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("envList")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Remove a named workspace environment.
+   * @param name Environment name.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  envRemove = async (
+    name: string,
+    opts?: WorkspaceEnvRemoveOpts,
+  ): Promise<string> => {
+    if (this._envRemove) {
+      return this._envRemove
+    }
+
+    const ctx = this._ctx.select("envRemove", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Returns a File from the workspace.
    *
-   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
-   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.
+   * Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
+   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the workspace root.
    */
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
@@ -14720,11 +15614,11 @@ export class Workspace extends BaseClient {
    *
    * Returns the absolute workspace path if found, or null if not found.
    *
-   * Relative start paths resolve from the workspace directory.
+   * Relative start paths resolve from the workspace cwd.
    *
-   * The search stops at the workspace boundary and will not traverse above it.
+   * The search stops at the workspace root and will not traverse above it.
    * @param name The name of the file or directory to search for.
-   * @param opts.from Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
+   * @param opts.from Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
    */
   findUp = async (
     name: string,
@@ -14751,48 +15645,103 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Whether a config.toml file exists in the workspace.
+   * Git state for this workspace. Errors if the workspace is not in a git repository.
    */
-  hasConfig = async (): Promise<boolean> => {
-    if (this._hasConfig) {
-      return this._hasConfig
-    }
-
-    const ctx = this._ctx.select("hasConfig")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
+  git = (): WorkspaceGit => {
+    const ctx = this._ctx.select("git")
+    return new WorkspaceGit(ctx)
   }
 
   /**
-   * Whether .dagger/config.toml exists.
+   * Initialize workspace config, creating dagger.toml.
+   * @param opts.here Create the workspace config directory at the workspace cwd instead of using the default write target.
    */
-  initialized = async (): Promise<boolean> => {
-    if (this._initialized) {
-      return this._initialized
+  init = async (opts?: WorkspaceInitOpts): Promise<string> => {
+    if (this._init) {
+      return this._init
     }
 
-    const ctx = this._ctx.select("initialized")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Workspace directory path relative to the workspace boundary.
-   */
-  path = async (): Promise<string> => {
-    if (this._path) {
-      return this._path
-    }
-
-    const ctx = this._ctx.select("path")
+    const ctx = this._ctx.select("init", { ...opts })
 
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Install a module into the workspace, writing dagger.toml to the host.
+   * @param ref Module reference to install.
+   * @param opts.name Override name for the installed module entry.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  install = async (
+    ref: string,
+    opts?: WorkspaceInstallOpts,
+  ): Promise<string> => {
+    if (this._install) {
+      return this._install
+    }
+
+    const ctx = this._ctx.select("install", { ref, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Plan the explicit migration needed for the current workspace.
+   *
+   * The returned plan has an empty changeset and no steps when no migration is needed.
+   */
+  migrate = (opts?: WorkspaceMigrateOpts): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrate", { ...opts })
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Create a new module owned by the workspace and auto-install it in dagger.toml.
+   * @param name Name of the new module.
+   * @param opts.sdk SDK to use for the new module.
+   * @param opts.source Source subpath within the new module.
+   * @param opts.include Additional include patterns for the module.
+   * @param opts.selfCalls Enable the self-calls experimental feature for the new module.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  moduleInit = async (
+    name: string,
+    opts?: WorkspaceModuleInitOpts,
+  ): Promise<string> => {
+    if (this._moduleInit) {
+      return this._moduleInit
+    }
+
+    const ctx = this._ctx.select("moduleInit", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List modules defined in the workspace configuration.
+   * @param opts.module Optional module alias to inspect.
+   */
+  moduleList = async (
+    opts?: WorkspaceModuleListOpts,
+  ): Promise<WorkspaceModule[]> => {
+    type moduleList = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("moduleList", { ...opts }).select("id")
+
+    const response: Awaited<moduleList[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
+    )
   }
 
   /**
@@ -14802,6 +15751,423 @@ export class Workspace extends BaseClient {
   services = (opts?: WorkspaceServicesOpts): UpGroup => {
     const ctx = this._ctx.select("services", { ...opts })
     return new UpGroup(ctx)
+  }
+
+  /**
+   * Uninstall a module from the workspace, writing dagger.toml to the host.
+   * @param name Name of the installed module entry to remove.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  uninstall = async (
+    name: string,
+    opts?: WorkspaceUninstallOpts,
+  ): Promise<string> => {
+    if (this._uninstall) {
+      return this._uninstall
+    }
+
+    const ctx = this._ctx.select("uninstall", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Refresh workspace-managed state and return the resulting changeset.
+   *
+   * Currently this refreshes existing lockfile entries only.
+   * @experimental
+   */
+  update = (): Changeset => {
+    const ctx = this._ctx.select("update")
+    return new Changeset(ctx)
+  }
+}
+
+/**
+ * Local git state for a workspace.
+ */
+export class WorkspaceGit extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this WorkspaceGit.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The checked-out HEAD of this workspace.
+   */
+  head = (): GitRef => {
+    const ctx = this._ctx.select("head")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+   */
+  uncommitted = (): Changeset => {
+    const ctx = this._ctx.select("uncommitted")
+    return new Changeset(ctx)
+  }
+}
+
+/**
+ * A planned workspace migration.
+ */
+export class WorkspaceMigration extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this WorkspaceMigration.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Filesystem changes for the full migration plan.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Logical migration steps, each identified by a stable code.
+   */
+  steps = async (): Promise<WorkspaceMigrationStep[]> => {
+    type steps = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("steps").select("id")
+
+    const response: Awaited<steps[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceMigrationStep(
+          ctx.copy().selectNode(r.id, "WorkspaceMigrationStep"),
+        ),
+    )
+  }
+}
+
+/**
+ * A single logical part of a workspace migration.
+ */
+export class WorkspaceMigrationStep extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _code?: string = undefined
+  private readonly _description?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _code?: string, _description?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._code = _code
+    this._description = _description
+  }
+
+  /**
+   * A unique identifier for this WorkspaceMigrationStep.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Filesystem changes for this step.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Stable code identifying this logical migration step.
+   */
+  code = async (): Promise<string> => {
+    if (this._code) {
+      return this._code
+    }
+
+    const ctx = this._ctx.select("code")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Generic summary of this step's purpose and impact.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Non-fatal warnings raised while planning this step.
+   */
+  warnings = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("warnings")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A module entry in the workspace configuration.
+ */
+export class WorkspaceModule extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _entrypoint?: boolean = undefined
+  private readonly _name?: string = undefined
+  private readonly _source?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _entrypoint?: boolean,
+    _name?: string,
+    _source?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._entrypoint = _entrypoint
+    this._name = _name
+    this._source = _source
+  }
+
+  /**
+   * A unique identifier for this WorkspaceModule.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the module is the workspace entrypoint (functions aliased to Query root).
+   */
+  entrypoint = async (): Promise<boolean> => {
+    if (this._entrypoint) {
+      return this._entrypoint
+    }
+
+    const ctx = this._ctx.select("entrypoint")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List constructor-backed settings for this module.
+   */
+  settings = async (): Promise<WorkspaceModuleSetting[]> => {
+    type settings = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("settings").select("id")
+
+    const response: Awaited<settings[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceModuleSetting(
+          ctx.copy().selectNode(r.id, "WorkspaceModuleSetting"),
+        ),
+    )
+  }
+
+  /**
+   * The module source path.
+   */
+  source = async (): Promise<string> => {
+    if (this._source) {
+      return this._source
+    }
+
+    const ctx = this._ctx.select("source")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A constructor-backed module setting.
+ */
+export class WorkspaceModuleSetting extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _key?: string = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _description?: string,
+    _key?: string,
+    _value?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._key = _key
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this WorkspaceModuleSetting.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The constructor argument description.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The setting key.
+   */
+  key = async (): Promise<string> => {
+    if (this._key) {
+      return this._key
+    }
+
+    const ctx = this._ctx.select("key")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The configured value after applying the selected workspace environment, or empty when unset.
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

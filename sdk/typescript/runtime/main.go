@@ -141,13 +141,28 @@ func (t *TypescriptSdk) Codegen(
 			tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name)))
 	}
 
+	// Generate the static dispatch entrypoint from the (now-present) source
+	// and include it in the codegen overlay so `dagger develop` writes it to
+	// the user's project tree, mirroring how Go's `dagger.gen.go` lands at the
+	// module root. The client bindings (`sdk/client.gen.ts`) were already
+	// emitted into the codegen overlay above; reuse them here.
+	entrypoint := NewIntrospector(t.SDKSourceDir).EmitEntrypoint(
+		cfg.name,
+		codegen.Directory(SrcDir),
+		codegen.Directory(GenDir).File("client.gen.ts"),
+		t.SDKSourceDir,
+	)
+	codegen = codegen.WithFile(EntrypointExecutableFile, entrypoint)
+
 	return dag.GeneratedCode(
 		dag.Directory().WithDirectory(cfg.subPath, codegen),
 	).
 		WithVCSGeneratedPaths([]string{
 			GenDir + "/**",
+			EntrypointExecutableFile,
 		}).
 		WithVCSIgnoredPaths([]string{
+			EntrypointExecutableFile,
 			GenDir,
 			"**/node_modules/**",
 			"**/.pnpm-store/**",

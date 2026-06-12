@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
+ * A unique identifier for an object.
  */
-readonly class TypeDefId extends Client\AbstractId
+readonly class TypeDefId extends Client\AbstractScalar
 {
 }

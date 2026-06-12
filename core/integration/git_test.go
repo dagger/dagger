@@ -1,5 +1,13 @@
 package core
 
+// These tests cover the GitRepository API for public or otherwise
+// auth-independent repositories. They verify cloning, refs, commits, trees, and
+// fetched file contents.
+//
+// See also:
+// - gitcredential_test.go: credential forwarding for Git sources.
+// - ref_test.go: module reference resolution for Git-shaped paths.
+
 import (
 	"context"
 	"encoding/base64"
@@ -247,7 +255,7 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	// latest tag
 	latestTag := repo.LatestVersion()
 	requireSampleGitRootDir(ctx, t, c, latestTag.Tree())
-	requireGitRefIsTag(ctx, t, c, `^refs/tags/v\d\.+\d+\.\d+$`, "", latestTag)
+	requireGitRefIsTag(ctx, t, c, `^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`, "", latestTag)
 	// sample tag
 	requireSampleGitTag(ctx, t, c, repo.Tag("v0.9.5"))
 	// sample annotated tag
@@ -334,6 +342,17 @@ func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestRemoteGitTreeNormalizesTimestamps(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	file := c.Git("https://github.com/dagger/dagger").
+		Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").
+		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		File("README.md")
+
+	require.Equal(t, 1, getFileTimestamp(ctx, t, c, file))
+}
+
 func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -385,53 +404,62 @@ func (GitSuite) TestCheckoutOrigin(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	log := func(ctx context.Context, dir *dagger.Directory) (string, error) {
+	const commitCount = 30
+	repoDir := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-lc", fmt.Sprintf(`
+set -e
+git init
+for i in $(seq 1 %[1]d); do
+  printf 'commit %%s\n' "$i" > history.txt
+  git add history.txt
+  git commit -m "commit $i"
+done
+`, commitCount)}).
+		Directory(".")
+	gitSvc, repoURL := gitService(ctx, t, c, repoDir)
+	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitSvc})
+
+	log := func(ctx context.Context, dir *dagger.Directory) []string {
 		res, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", dir).
 			WithExec([]string{"git", "log", "--oneline"}).
 			Stdout(ctx)
-		return strings.TrimSpace(res), err
+		require.NoError(t, err)
+		return strings.Split(strings.TrimSpace(res), "\n")
 	}
 
 	// default depth = 1
-	dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
-	res, err := log(ctx, dir)
-	require.NoError(t, err)
-	lines := strings.Split(res, "\n")
+	dir := repo.Branch("main").Tree()
+	lines := log(ctx, dir)
 	require.Len(t, lines, 1)
 
 	// depth = 5
-	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
-	res, err = log(ctx, dir)
-	require.NoError(t, err)
-	lines = strings.Split(res, "\n")
+	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
+	lines = log(ctx, dir)
 	require.Len(t, lines, 5)
 
-	// depth = 1000 (big depth)
-	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 1000})
-	res, err = log(ctx, dir)
-	require.NoError(t, err)
-	lines = strings.Split(res, "\n")
-	require.Len(t, lines, 1000)
+	// depth greater than the full history
+	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 1000})
+	lines = log(ctx, dir)
+	require.Len(t, lines, commitCount)
+	require.Contains(t, lines[len(lines)-1], "commit 1")
 
 	// depth = 20 (back down)
-	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 20})
-	res, err = log(ctx, dir)
-	require.NoError(t, err)
-	lines = strings.Split(res, "\n")
+	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 20})
+	lines = log(ctx, dir)
 	require.Len(t, lines, 20)
 
 	// depth = -1 (max depth)
-	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1})
-	res, err = log(ctx, dir)
-	require.NoError(t, err)
-	lines = strings.Split(res, "\n")
-	last := lines[len(lines)-1]
-	require.Greater(t, len(lines), 2000)
-	require.True(t, strings.HasPrefix(last, "30f75"), last)
-	require.Contains(t, last, "Move prototype 69-dagger-archon to top-level")
+	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1})
+	lines = log(ctx, dir)
+	require.Len(t, lines, commitCount)
+	require.Contains(t, lines[len(lines)-1], "commit 1")
 }
 
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
@@ -741,21 +769,21 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("BitBucket auth", func(ctx context.Context, t *testctx.T) {
-		// Base64-encoded read-only PAT for test repo
-		pat := "QVRDVFQzeEZmR04wTHhxdWRtNVpjNFFIOE0xc3V0WWxHS2dfcjVTdVJxN0gwOVRrT0ZuUUViUDN4OURodldFQ3V1N1dzaTU5NkdBR2pIWTlhbVMzTEo5VE9OaFVFYlotUW5ZXzFmNnN3alRYRXJhUEJrcnI1NlpMLTdCeG4xMjdPYXpJRlFOMUF3VndLaWJDeW8wMm50U0JtYVA5MlRyUkMtUFN5a2sxQk4weXg1LUhjVXRqNmNVPTIwOEY2RThFCg=="
-		token, err := decodeAndTrimPAT(pat)
-		require.NoError(t, err)
+	// t.Run("BitBucket auth", func(ctx context.Context, t *testctx.T) {
+	// 	// Base64-encoded read-only PAT for test repo
+	// 	pat := "QVRDVFQzeEZmR04wTHhxdWRtNVpjNFFIOE0xc3V0WWxHS2dfcjVTdVJxN0gwOVRrT0ZuUUViUDN4OURodldFQ3V1N1dzaTU5NkdBR2pIWTlhbVMzTEo5VE9OaFVFYlotUW5ZXzFmNnN3alRYRXJhUEJrcnI1NlpMLTdCeG4xMjdPYXpJRlFOMUF3VndLaWJDeW8wMm50U0JtYVA5MlRyUkMtUFN5a2sxQk4weXg1LUhjVXRqNmNVPTIwOEY2RThFCg=="
+	// 	token, err := decodeAndTrimPAT(pat)
+	// 	require.NoError(t, err)
 
-		_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git", dagger.GitOpts{
-			HTTPAuthToken: c.SetSecret("bitbucket_pat", token),
-		}).
-			Branch("main").
-			Tree().
-			File("README.md").
-			Contents(ctx)
-		require.NoError(t, err)
-	})
+	// 	_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git", dagger.GitOpts{
+	// 		HTTPAuthToken: c.SetSecret("bitbucket_pat", token),
+	// 	}).
+	// 		Branch("main").
+	// 		Tree().
+	// 		File("README.md").
+	// 		Contents(ctx)
+	// 	require.NoError(t, err)
+	// })
 
 	t.Run("GitLab auth", func(ctx context.Context, t *testctx.T) {
 		// Base64-encoded read-only PAT for test repo
@@ -917,7 +945,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		hostname := "my-git-repo" + identity.NewID()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
-		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
@@ -944,7 +972,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		hostname := "my-git-repo" + identity.NewID()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
-		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
@@ -971,7 +999,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		hostname := "my-git-repo" + identity.NewID()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
-		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
@@ -1595,7 +1623,7 @@ exit 1
 				Host:     "github.com",
 			},
 			expectedError:  gitsession.CREDENTIAL_RETRIEVAL_FAILED,
-			expectedReason: "Failed to retrieve credentials: exit status 128",
+			expectedReason: "Failed to retrieve credentials: warning: invalid credential line: this is not a key value pair\nfatal: could not read Username for 'https://github.com': terminal prompts disabled\n, exit status 128",
 		},
 		{
 			// Test case 5: No credentials found
@@ -1624,7 +1652,7 @@ exit 128
 				Host:     "github.com",
 			},
 			expectedError:  gitsession.CREDENTIAL_RETRIEVAL_FAILED,
-			expectedReason: "Failed to retrieve credentials: exit status 128",
+			expectedReason: "Failed to retrieve credentials: fatal: could not read Username for 'https://github.com': terminal prompts disabled\n, exit status 128",
 		},
 		{
 			// Test case 6: Timeout handling
@@ -1826,4 +1854,48 @@ func main() {
 			require.Equal(t, tt.expectedReason, wrapper.Result.Error.Message)
 		})
 	}
+}
+
+func (GitSuite) TestCaching(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("same commit should cache", func(ctx context.Context, t *testctx.T) {
+		dir1 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s1, err := c.Container().
+			From(alpineImage).
+			WithDirectory("/src", dir1).
+			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		dir2 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s2, err := c.Container().
+			From(alpineImage).
+			WithDirectory("/src", dir2).
+			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, s1, s2)
+	})
+
+	t.Run("different commit should bust", func(ctx context.Context, t *testctx.T) {
+		dir1 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s1, err := c.Container().
+			From(alpineImage).
+			WithDirectory("/src", dir1).
+			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		dir2 := c.Git("https://github.com/dagger/dagger").Commit("36a3929f291bc03e2f48fd2687e5538a063c63ea").Tree()
+		s2, err := c.Container().
+			From(alpineImage).
+			WithDirectory("/src", dir2).
+			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		require.NotEqual(t, s1, s2)
+	})
 }

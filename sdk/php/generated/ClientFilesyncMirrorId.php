@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
+ * A unique identifier for an object.
  */
-readonly class ClientFilesyncMirrorId extends Client\AbstractId
+readonly class ClientFilesyncMirrorId extends Client\AbstractScalar
 {
 }

@@ -24,14 +24,14 @@ By default, everything will be built from your local source checkout of dagger/d
 
 **Step 1: Start the playground in the background.**
 
-```
+```text
 Bash(command="skills/engine-dev-testing/with-playground.sh 'dagger version'", run_in_background=true)
 → returns task_id
 ```
 
 **Step 2: Poll for completion.** Use `TaskOutput` with `block: true` and a reasonable timeout (60s). The script prints a heartbeat every 30s, so you'll see `[playground: 30s elapsed, still running...]` while it builds.
 
-```
+```text
 TaskOutput(task_id=<id>, block=true, timeout=60000)
 → if still running: heartbeat messages visible
 → if done: full output with inner command results + status line
@@ -45,19 +45,19 @@ Repeat polling until you see `=== Playground: SUCCESS ===` or `=== Playground: F
 
 Simple command:
 
-```
+```shell
 with-playground.sh "dagger version"
 ```
 
 Working with source code (mounted at `./src`):
 
-```
+```shell
 with-playground.sh "cd src/dagger && dagger functions"
 ```
 
 Multi-line scripts and heredocs work reliably:
 
-```
+```shell
 with-playground.sh '
 mkdir -p /tmp/test/.dagger && cd /tmp/test
 cat > .dagger/config.toml <<TOML

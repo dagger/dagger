@@ -54,6 +54,13 @@ impl FormatTypeFuncs for FormatTypeFunc {
         rep
     }
 
+    fn format_kind_interface(&self, representation: &str, ref_name: &str) -> String {
+        // Interface return types use the FooClient struct.
+        let mut rep = representation.to_string();
+        rep.push_str(&format!("{}{}", format_name(ref_name), "Client"));
+        rep
+    }
+
     fn format_kind_input_object(&self, representation: &str, ref_name: &str) -> String {
         let mut rep = representation.to_string();
         rep.push_str(&format_name(ref_name));

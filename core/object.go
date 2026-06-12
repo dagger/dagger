@@ -52,11 +52,25 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		}
 		return value, nil
 	case map[string]any:
-		return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
+		res, err := dagql.NewResultForCurrentCall(ctx, &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
 			Fields:  value,
 		})
+		if err != nil {
+			return nil, err
+		}
+		// Best-effort upgrade to a selectable ObjectResult so the cache
+		// preserves the concrete ObjectType across module boundaries; without
+		// this it would normalize to Result[Typed] and lose toSelectable info.
+		// Falling through if the current server can't see the type is fine —
+		// the cache's lazy reconstruction handles cross-module lookup later.
+		if dag, err := CurrentDagqlServer(ctx); err == nil {
+			if selectable, err := dag.ToSelectable(ctx, res); err == nil {
+				return selectable, nil
+			}
+		}
+		return res, nil
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
 	}
@@ -78,43 +92,29 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
 		}
 		return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
-	case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-		parentCall, err := x.ResultCall()
-		if err != nil {
-			return nil, fmt.Errorf("interface SDK input call frame: %w", err)
-		}
-		return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
 	case *ModuleObject:
 		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentCall(ctx), x.Fields)
-	case *InterfaceAnnotatedValue:
-		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentCall(ctx), x.Fields)
-	case DynamicID:
+	case dagql.IDable:
 		dag, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("current dagql server: %w", err)
 		}
 		id, err := x.ID()
 		if err != nil {
-			return nil, fmt.Errorf("load DynamicID ID: %w", err)
+			return nil, fmt.Errorf("load object ID: %w", err)
 		}
 		if id == nil || id.EngineResultID() == 0 {
-			return nil, fmt.Errorf("load DynamicID: expected attached result ID")
+			return nil, fmt.Errorf("load object ID: expected attached result ID")
 		}
 		val, err := dag.Load(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("load DynamicID: %w", err)
+			return nil, fmt.Errorf("load ID: %w", err)
 		}
 		switch x := val.(type) {
 		case dagql.ObjectResult[*ModuleObject]:
 			parentCall, err := x.ResultCall()
 			if err != nil {
 				return nil, fmt.Errorf("loaded module object SDK input call frame: %w", err)
-			}
-			return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
-		case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-			parentCall, err := x.ResultCall()
-			if err != nil {
-				return nil, fmt.Errorf("loaded interface SDK input call frame: %w", err)
 			}
 			return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
 		default:
@@ -321,14 +321,12 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 	if value == nil {
 		return content.CollectJSONable(nil)
 	}
-	var objFields map[string]any
-	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		objFields = obj.Fields
-	} else if iface, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
-		objFields = iface.Fields
-	} else {
+
+	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+	if !ok {
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
+	objFields := obj.Fields
 	parentCall, err := value.ResultCall()
 	if err != nil {
 		return fmt.Errorf("resolve module object result call: %w", err)
@@ -384,16 +382,12 @@ func (t *ModuleObjectType) TypeDef(ctx context.Context) (dagql.ObjectResult[*Typ
 			return dagql.ObjectResult[*TypeDef]{}, err
 		}
 	}
-	return SelectTypeDef(ctx, dagql.Selector{
-		Field: "withObject",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(t.typeDef.Name)},
-			{Name: "description", Value: dagql.String(t.typeDef.Description)},
-			{Name: "sourceMap", Value: sourceMap},
-			{Name: "deprecated", Value: OptString(t.typeDef.Deprecated)},
-			{Name: "sourceModuleName", Value: OptSourceModuleName(t.typeDef.SourceModuleName)},
-		},
-	})
+	return SelectReferenceTypeDef(ctx, "withObject", "name", t.typeDef.Name,
+		dagql.NamedInput{Name: "description", Value: dagql.String(t.typeDef.Description)},
+		dagql.NamedInput{Name: "sourceMap", Value: sourceMap},
+		dagql.NamedInput{Name: "deprecated", Value: OptString(t.typeDef.Deprecated)},
+		dagql.NamedInput{Name: "sourceModuleName", Value: OptSourceModuleName(t.typeDef.SourceModuleName)},
+	)
 }
 
 type Callable interface {
@@ -670,9 +664,9 @@ func persistedModuleObjectValueHasCallID(val persistedModuleObjectValue) bool {
 	return false
 }
 
-func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if obj == nil || len(obj.Fields) == 0 {
-		return json.Marshal(persistedModuleObjectPayload{})
+		return encodePersistedObjectPayload(persistedModuleObjectPayload{})
 	}
 	payload := persistedModuleObjectPayload{
 		Fields: make(map[string]persistedModuleObjectValue, len(obj.Fields)),
@@ -682,14 +676,14 @@ func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.
 	for _, name := range fieldNames {
 		encoded, err := encodePersistedModuleObjectValue(cache, obj.Fields[name])
 		if err != nil {
-			return nil, fmt.Errorf("encode persisted module object field %q: %w", name, err)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module object field %q: %w", name, err)
 		}
 		if _, ok := obj.TypeDef.FieldByOriginalName(name); ok && persistedModuleObjectValueHasCallID(encoded) {
-			return nil, fmt.Errorf("encode persisted module object field %q: unexpected raw call ID in semantic field", name)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module object field %q: unexpected raw call ID in semantic field", name)
 		}
 		payload.Fields[name] = encoded
 	}
-	return json.Marshal(payload)
+	return encodePersistedObjectPayload(payload)
 }
 
 func (obj *ModuleObject) DecodePersistedObject(
@@ -1180,9 +1174,23 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if !ok {
 					return nil, fmt.Errorf("expected *Query, got %T", self)
 				}
+				// store only the args the caller actually provided — found in
+				// the call frame, built from the query AST — so the
+				// constructor still applies its own defaults, including .env
+				// user defaults, to the rest.
+				var explicit map[string]bool
+				if frame := dagql.CurrentCall(ctx); frame != nil {
+					explicit = make(map[string]bool, len(frame.Args))
+					for _, arg := range frame.Args {
+						explicit[arg.Name] = true
+					}
+				}
 				cp := query.Clone()
 				cp.ConstructorArgs = make(map[string]dagql.Input, len(args))
 				for k, v := range args {
+					if explicit != nil && !explicit[k] {
+						continue
+					}
 					cp.ConstructorArgs[k] = v
 				}
 				return dagql.NewObjectResultForCurrentCall(ctx, dag, cp)
@@ -1344,6 +1352,7 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *Field
 		Type:             field.TypeDef.Self().ToTyped(),
 		Module:           moduleID,
 		DeprecatedReason: field.Deprecated,
+		Trivial:          true,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,

@@ -35,12 +35,10 @@ import (
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/network/netproviders"
@@ -87,12 +85,10 @@ type Server struct {
 	// buildkit+containerd entities/DBs
 	//
 
-	worker                *engineutil.Worker
+	engineUtilOpts        *engineutil.Opts
 	workerCache           bkcache.SnapshotManager
 	workerGCPolicies      []dagql.CachePrunePolicy
 	workerDefaultGCPolicy *dagql.CachePrunePolicy
-
-	bkSessionManager *bksession.Manager
 
 	containerdMetaBoltDB *bolt.DB
 	containerdMetaDB     *ctdmetadata.DB
@@ -103,7 +99,7 @@ type Server struct {
 	snapshotter        ctdsnapshot.Snapshotter
 	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now
 	snapshotterName    string
-	leaseManager       *leaseutil.Manager
+	leaseManager       *bkcache.LeaseManager
 
 	corruptDBReset bool
 
@@ -136,8 +132,9 @@ type Server struct {
 	//
 	// gc related
 	//
-	throttledGC func()
-	gcmu        sync.Mutex
+	throttledGC             func()
+	throttledDiskPressureGC func()
+	gcmu                    sync.Mutex
 
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelCauseFunc
@@ -160,13 +157,22 @@ type Server struct {
 	secretSalt []byte
 }
 
+var configureBboltDefaultsOnce sync.Once
+
+type localCacheStateResetReason string
+
+const (
+	localCacheStateResetNone             localCacheStateResetReason = ""
+	localCacheStateResetBoltDBInitFailed localCacheStateResetReason = "boltdb_init_failed"
+	localCacheStateResetDagqlOpenFailed  localCacheStateResetReason = "dagql_open_failed"
+)
+
 type NewServerOpts struct {
 	Name           string
 	Config         *config.Config
 	BuildkitConfig *bkconfig.Config
 }
 
-//nolint:gocyclo
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	cfg := opts.Config
 	bkcfg := opts.BuildkitConfig
@@ -222,67 +228,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
 
-	//
-	// setup various buildkit/containerd entities and DBs
-	//
-
-	if err := srv.mkdirBaseDirs(); err != nil {
+	if err := srv.initLocalCacheState(ctx, *cfg, ociCfg); err != nil {
 		return nil, err
 	}
-
-	if err := srv.initBoltDBs(); err != nil {
-		// It's possible for DBs to get corrupted because we run them w/ Sync: false (for performance)
-		// Reset all our state, but set corruptDBReset so it can be reported via metrics
-		srv.corruptDBReset = true
-		slog.Error("failed to initialize boltdbs, resetting all local cache state", "error", err)
-
-		// need to rm paths individually since srv.rootDir is often a mount (and thus rm'ing it gives
-		// a "device busy" error)
-		rootEnts, err := os.ReadDir(srv.rootDir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read root dir entries for boltdb reset: %w", err)
-		}
-		for _, ent := range rootEnts {
-			p := filepath.Join(srv.rootDir, ent.Name())
-			if err := os.RemoveAll(p); err != nil {
-				return nil, fmt.Errorf("failed to remove dir after boltdb init failure: %w", err)
-			}
-		}
-
-		// try again
-		if err := srv.mkdirBaseDirs(); err != nil {
-			return nil, err
-		}
-		if err := srv.initBoltDBs(); err != nil {
-			return nil, fmt.Errorf("failed to initialize boltdbs after reset: %w", err)
-		}
-	}
-
-	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg, srv.snapshotterMDStore)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
-	}
-
-	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create content store: %w", err)
-	}
-
-	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
-		srv.snapshotterName: srv.snapshotter,
-	})
-	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
-		return nil, fmt.Errorf("failed to init metadata db: %w", err)
-	}
-
-	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
-
-	srv.bkSessionManager, err = bksession.NewManager()
-	if err != nil {
-		return nil, err
-	}
-
-	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "dagger")
 
 	//
 	// clean up old hosts/resolv.conf file. ignore errors
@@ -405,39 +353,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		"dagger",
 	)
 
-	workerGCPolicies := getDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
-	workerOpt := engineutil.WorkerOpt{
-		ID:               rand.Text(),
-		Labels:           baseLabels,
-		Platforms:        srv.enabledPlatforms,
-		GCPolicy:         buildkitPruneInfosFromDagqlPolicies(workerGCPolicies),
-		NetworkProviders: srv.networkProviders,
-		Snapshotter:      workerSnapshotter,
-		ContentStore:     srv.contentStore,
-		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
-		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
-		ImageStore:       nil, // explicitly, because that's what upstream does too
-		RegistryHosts:    srv.registryHosts,
-		IdentityMapping:  nil, // no idmapping
-		LeaseManager:     srv.leaseManager,
-		Root:             srv.rootDir,
-	}
-
-	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
-		Snapshotter:   workerSnapshotter,
-		ContentStore:  srv.contentStore,
-		LeaseManager:  srv.leaseManager,
-		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
-		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
-		MountPoolRoot: srv.buildkitMountPoolDir,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create snapshot manager: %w", err)
-	}
-
-	srv.workerGCPolicies = cloneDagqlCachePrunePolicies(workerGCPolicies)
-	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
-
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
 	hostMntNS, err := os.OpenFile("/proc/self/ns/mnt", os.O_RDONLY, 0)
@@ -462,14 +377,19 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
 	}
 
-	srv.worker, err = engineutil.NewWorker(&engineutil.NewWorkerOpts{
-		WorkerOpt:        workerOpt,
-		WorkerRoot:       srv.workerRootDir,
+	srv.engineUtilOpts, err = engineutil.NewOpts(engineutil.Opts{
+		ID:               rand.Text(),
+		Labels:           baseLabels,
+		Platforms:        srv.enabledPlatforms,
+		NetworkProviders: srv.networkProviders,
+		Snapshotter:      workerSnapshotter,
+		ContentStore:     srv.contentStore,
+		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		IdentityMapping:  nil, // no idmapping
 		ExecutorRoot:     srv.executorRootDir,
 		TelemetryPubSub:  srv.telemetryPubSub,
-		BKSessionManager: srv.bkSessionManager,
 		SessionHandler:   srv,
-		DagqlServer:      srv,
 
 		Runc:                srv.runc,
 		DefaultCgroupParent: srv.cgroupParent,
@@ -478,49 +398,24 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		ApparmorProfile:     srv.apparmorProfile,
 		SELinux:             srv.selinux,
 		Entitlements:        srv.entitlements,
-		WorkerCache:         srv.workerCache,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create worker: %w", err)
+		return nil, fmt.Errorf("failed to initialize engine util opts: %w", err)
 	}
 
 	//
 	// setup solver
 	//
 
-	srv.throttledGC = throttle.After(time.Minute, srv.gc)
+	srv.throttledGC = throttle.After(localCacheSessionGCThrottle, srv.gc)
+	srv.throttledDiskPressureGC = throttle.After(localCacheDiskPressureGCThrottle, srv.gcIfDiskPressure)
 	defer func() {
-		time.AfterFunc(time.Second, srv.throttledGC)
+		time.AfterFunc(time.Second, srv.gc)
 	}()
-
-	//
-	// setup dagql caching
-	//
-	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
-	snapshotGC := func(ctx context.Context) error {
-		stats, err := srv.containerdMetaDB.GarbageCollect(ctx)
-		if err != nil {
-			return err
-		}
-		slog.Debug("containerd garbage collect after dagql prune", "stats", stats)
-		return nil
-	}
-	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC)
-	if err != nil {
-		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
-		// db and trying again.
-		slog.Error("failed to create dagql cache, attempting to recover by removing existing cache db", "error", err)
-		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
-			slog.Error("failed to remove existing dagql cache db", "error", err)
-		}
-		srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
-		}
-	}
+	srv.startDiskPressureGCMonitor()
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
@@ -546,6 +441,155 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	return srv, nil
 }
 
+func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) error {
+	for attempt := 0; attempt < 2; attempt++ {
+		resetReason, err := srv.initLocalCacheStateOnce(ctx, cfg, ociCfg)
+		if resetReason == localCacheStateResetNone {
+			return err
+		}
+		if attempt == 1 {
+			if err != nil {
+				return fmt.Errorf("local cache state still invalid after reset (%s): %w", resetReason, err)
+			}
+			return fmt.Errorf("local cache state still invalid after reset (%s)", resetReason)
+		}
+
+		if resetReason == localCacheStateResetBoltDBInitFailed {
+			srv.corruptDBReset = true
+		}
+		slog.Warn("local cache state invalid; resetting worker and dagql persistence state", "reason", resetReason, "error", err)
+		if closeErr := srv.closeLocalCacheStateForReset(); closeErr != nil {
+			return fmt.Errorf("close local cache state before reset: %w", closeErr)
+		}
+		if err := srv.removeLocalCacheStateOnDisk(); err != nil {
+			return fmt.Errorf("remove local cache state after %s: %w", resetReason, err)
+		}
+	}
+	return errors.New("local cache state reset retry exhausted")
+}
+
+func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) (localCacheStateResetReason, error) {
+	if err := srv.mkdirBaseDirs(); err != nil {
+		return localCacheStateResetNone, err
+	}
+
+	if err := srv.initBoltDBs(); err != nil {
+		return localCacheStateResetBoltDBInitFailed, fmt.Errorf("failed to initialize boltdbs: %w", err)
+	}
+
+	var err error
+	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg, srv.snapshotterMDStore)
+	if err != nil {
+		return localCacheStateResetNone, fmt.Errorf("failed to create snapshotter: %w", err)
+	}
+
+	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
+	if err != nil {
+		return localCacheStateResetNone, fmt.Errorf("failed to create content store: %w", err)
+	}
+
+	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
+		srv.snapshotterName: srv.snapshotter,
+	})
+	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
+		return localCacheStateResetNone, fmt.Errorf("failed to init metadata db: %w", err)
+	}
+
+	srv.leaseManager = bkcache.NewLeaseManager(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
+	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "dagger")
+
+	workerSnapshotter := containerdsnapshot.NewSnapshotter(
+		srv.snapshotterName,
+		srv.containerdMetaDB.Snapshotter(srv.snapshotterName),
+		"dagger",
+	)
+
+	workerGCPolicies := getDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
+	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
+		Snapshotter:   workerSnapshotter,
+		ContentStore:  srv.contentStore,
+		LeaseManager:  srv.leaseManager,
+		Applier:       winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:        winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		MountPoolRoot: srv.buildkitMountPoolDir,
+	})
+	if err != nil {
+		return localCacheStateResetNone, fmt.Errorf("failed to create snapshot manager: %w", err)
+	}
+	srv.workerGCPolicies = cloneDagqlCachePrunePolicies(workerGCPolicies)
+	srv.workerDefaultGCPolicy = getDefaultDagqlGCPolicy(cfg, ociCfg.GCConfig, srv.rootDir)
+
+	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
+	snapshotGC := func(ctx context.Context) error {
+		stats, err := srv.containerdMetaDB.GarbageCollect(ctx)
+		if err != nil {
+			return err
+		}
+		slog.Debug("containerd garbage collect after dagql prune", "stats", stats)
+		return nil
+	}
+	srv.engineCache, err = dagql.NewCache(ctx, dagqlCacheDBPath, srv.workerCache, snapshotGC)
+	if err != nil {
+		return localCacheStateResetDagqlOpenFailed, fmt.Errorf("failed to create dagql cache: %w", err)
+	}
+	if resetReason := srv.engineCache.PersistenceResetReason(); resetReason != dagql.CachePersistenceResetNone {
+		return localCacheStateResetReason("dagql_" + string(resetReason)), nil
+	}
+
+	return localCacheStateResetNone, nil
+}
+
+func (srv *Server) closeLocalCacheStateForReset() error {
+	var err error
+	if srv.engineCache != nil {
+		err = errors.Join(err, srv.engineCache.CloseDiscardingPersistence())
+		srv.engineCache = nil
+	}
+	if srv.workerCache != nil {
+		err = errors.Join(err, srv.workerCache.Close())
+		srv.workerCache = nil
+	}
+
+	snapshotterClosedMDStore := false
+	if srv.snapshotter != nil {
+		if closeErr := srv.snapshotter.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		} else if srv.snapshotterName == "overlayfs" {
+			snapshotterClosedMDStore = true
+		}
+		srv.snapshotter = nil
+	}
+	if srv.snapshotterMDStore != nil {
+		if !snapshotterClosedMDStore {
+			err = errors.Join(err, srv.snapshotterMDStore.Close())
+		}
+		srv.snapshotterMDStore = nil
+	}
+	if srv.containerdMetaBoltDB != nil {
+		err = errors.Join(err, srv.containerdMetaBoltDB.Close())
+		srv.containerdMetaBoltDB = nil
+	}
+
+	srv.snapshotterName = ""
+	srv.localContentStore = nil
+	srv.containerdMetaDB = nil
+	srv.leaseManager = nil
+	srv.contentStore = nil
+	srv.workerGCPolicies = nil
+	srv.workerDefaultGCPolicy = nil
+	return err
+}
+
+func (srv *Server) removeLocalCacheStateOnDisk() error {
+	if err := os.RemoveAll(srv.workerRootDir); err != nil {
+		return fmt.Errorf("remove worker state: %w", err)
+	}
+	if err := dagql.RemoveCachePersistenceStore(filepath.Join(srv.rootDir, "dagql-cache.db")); err != nil {
+		return fmt.Errorf("remove dagql persistence state: %w", err)
+	}
+	return nil
+}
+
 func (srv *Server) mkdirBaseDirs() (err error) {
 	if err := os.MkdirAll(srv.workerRootDir, 0700); err != nil {
 		return err
@@ -556,7 +600,18 @@ func (srv *Server) mkdirBaseDirs() (err error) {
 	return nil
 }
 
+func configureBboltDefaults() {
+	configureBboltDefaultsOnce.Do(func() {
+		// Some containerd snapshotter constructors open bbolt internally with nil
+		// options, so set the process default before those paths can run.
+		bolt.DefaultOptions.FreelistType = bolt.FreelistMapType
+		bolt.DefaultOptions.NoStatistics = true
+	})
+}
+
 func (srv *Server) initBoltDBs() (err error) {
+	configureBboltDefaults()
+
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			err = fmt.Errorf("panic while initializing boltdbs: %v", panicErr)
@@ -567,6 +622,8 @@ func (srv *Server) initBoltDBs() (err error) {
 		func(opts *bolt.Options) error {
 			opts.NoSync = true
 			opts.NoFreelistSync = true
+			opts.FreelistType = bolt.FreelistMapType
+			opts.NoStatistics = true
 			opts.NoGrowSync = true
 			return nil
 		},
@@ -577,12 +634,15 @@ func (srv *Server) initBoltDBs() (err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, srv.snapshotterMDStore.Close())
+			srv.snapshotterMDStore = nil
 		}
 	}()
 
 	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, &bolt.Options{
 		NoSync:         true,
 		NoFreelistSync: true,
+		FreelistType:   bolt.FreelistMapType,
+		NoStatistics:   true,
 		NoGrowSync:     true,
 	})
 	if err != nil {
@@ -591,6 +651,7 @@ func (srv *Server) initBoltDBs() (err error) {
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, srv.containerdMetaBoltDB.Close())
+			srv.containerdMetaBoltDB = nil
 		}
 	}()
 
@@ -671,7 +732,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		} else {
 			prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
 			for i := range prunePolicies {
-				prunePolicies[i].CurrentFreeSpace = dstat.Free
+				prunePolicies[i].CurrentFreeSpace = dstat.Available
 			}
 			_, pruneErr := srv.engineCache.Prune(ctx, prunePolicies)
 			if pruneErr != nil {
@@ -692,7 +753,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// DB-close path. When GracefulStop is fixed, it should return those earlier
 	// errors instead of deleting this assignment.
 	//nolint:ineffassign,staticcheck // FIXME: see comment above
-	err = errors.Join(err, srv.worker.Close())
+	err = errors.Join(err, srv.engineUtilOpts.Close())
 
 	// Shutdown the global namespace worker pool
 	engineutil.ShutdownGlobalNamespaceWorkerPool()
@@ -771,8 +832,8 @@ func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.I
 func (srv *Server) ListWorkers(context.Context, *controlapi.ListWorkersRequest) (*controlapi.ListWorkersResponse, error) {
 	resp := &controlapi.ListWorkersResponse{
 		Record: []*apitypes.WorkerRecord{{
-			ID:        srv.worker.ID(),
-			Labels:    srv.worker.Labels(),
+			ID:        srv.engineUtilOpts.ID,
+			Labels:    srv.engineUtilOpts.Labels,
 			Platforms: pb.PlatformsFromSpec(srv.enabledPlatforms),
 		}},
 	}

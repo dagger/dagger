@@ -30,6 +30,7 @@ RESULT_FILE=$(mktemp "${TMPDIR:-/tmp}/playground-result.XXXXXX")
 TRACE_FILE=$(mktemp "${TMPDIR:-/tmp}/playground-trace.XXXXXX")
 
 # Clean up ALL child processes and temp files on exit
+# shellcheck disable=SC2329 # invoked indirectly by the EXIT trap below
 cleanup() {
   [ -n "$DAGGER_PID" ] && kill "$DAGGER_PID" 2>/dev/null
   [ -n "$WATCHDOG_PID" ] && kill "$WATCHDOG_PID" 2>/dev/null

@@ -1,0 +1,16 @@
+type Ci {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub build: String! {
+    "built!"
+  }
+
+  pub deploy: String! {
+    "deployed!"
+  }
+}

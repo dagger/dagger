@@ -64,7 +64,7 @@ type persistedSocketPayload struct {
 	PortForward PortForward                 `json:"portForward,omitempty"`
 }
 
-func (socket *Socket) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (socket *Socket) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	payload := persistedSocketPayload{}
 	if socket != nil {
 		payload.Kind = socket.Kind
@@ -73,7 +73,7 @@ func (socket *Socket) EncodePersistedObject(ctx context.Context, cache dagql.Per
 			payload.PortForward = socket.PortForwardVal
 		}
 	}
-	return json.Marshal(payload)
+	return encodePersistedObjectPayload(payload)
 }
 
 func (*Socket) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
@@ -147,35 +147,122 @@ func (socket *Socket) PortForward(ctx context.Context) (PortForward, error) {
 }
 
 func (socket *Socket) ForwardAgentClient(ctx context.Context) (sshforward.SSH_ForwardAgentClient, error) {
-	resolved, err := ResolveSessionSocket(ctx, socket)
+	if socket == nil {
+		return nil, errors.New("socket is nil")
+	}
+	if socket.Handle == "" {
+		return socket.forwardAgentClient(ctx)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session socket %q: current client metadata: %w", socket.Handle, err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("resolve session socket %q: empty session ID", socket.Handle)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session socket %q: current dagql cache: %w", socket.Handle, err)
+	}
+	// Session-wide in-flight dedupe can make this call run under a client whose
+	// attachables disconnect before other waiters finish. Try each same-session
+	// binding so another live client can still provide the socket.
+	candidates, err := cache.ResolveSessionResourceCandidates(ctx, clientMetadata.SessionID, clientMetadata.ClientID, socket.Handle)
 	if err != nil {
 		return nil, err
 	}
-	if resolved == nil {
+
+	var errs error
+	for _, candidate := range candidates {
+		resolved, ok := candidate.Value.(*Socket)
+		if !ok {
+			return nil, fmt.Errorf("resolve session socket %q: bound value for client %q is %T", socket.Handle, candidate.ClientID, candidate.Value)
+		}
+		stream, retry, err := resolved.forwardAgentClientFromSessionResourceCandidate(ctx)
+		if err == nil {
+			return stream, nil
+		}
+		if !retry {
+			return nil, err
+		}
+		errs = errors.Join(errs, fmt.Errorf("client %q: %w", candidate.ClientID, err))
+	}
+
+	if errs != nil {
+		return nil, fmt.Errorf("resolve session socket %q: no available client binding: %w", socket.Handle, errs)
+	}
+	return nil, fmt.Errorf("resolve session socket %q: no available client binding", socket.Handle)
+}
+
+func (socket *Socket) forwardAgentClient(ctx context.Context) (sshforward.SSH_ForwardAgentClient, error) {
+	if socket == nil {
 		return nil, errors.New("socket is nil")
 	}
-	if resolved.URLVal == "" {
+	if socket.URLVal == "" {
 		return nil, fmt.Errorf("socket has no URL")
 	}
-	if resolved.SourceClientID == "" {
-		return nil, fmt.Errorf("socket %q: missing source client ID", resolved.URLVal)
+	if socket.SourceClientID == "" {
+		return nil, fmt.Errorf("socket %q: missing source client ID", socket.URLVal)
 	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := query.SpecificClientAttachableConn(ctx, resolved.SourceClientID)
+	conn, _, err := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{})
 	if err != nil {
 		return nil, err
 	}
 	outgoingMD, _ := metadata.FromOutgoingContext(ctx)
 	outgoingMD = outgoingMD.Copy()
-	outgoingMD.Set(engine.SocketURLEncodedKey, resolved.URLVal)
+	outgoingMD.Set(engine.SocketURLEncodedKey, socket.URLVal)
 	stream, err := sshforward.NewSSHClient(conn).ForwardAgent(metadata.NewOutgoingContext(ctx, outgoingMD))
 	if err != nil {
 		return nil, err
 	}
 	return stream, nil
+}
+
+func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context.Context) (sshforward.SSH_ForwardAgentClient, bool, error) {
+	if socket == nil {
+		return nil, false, errors.New("socket is nil")
+	}
+	if socket.URLVal == "" {
+		return nil, false, fmt.Errorf("socket has no URL")
+	}
+	if socket.SourceClientID == "" {
+		return nil, false, fmt.Errorf("socket %q: missing source client ID", socket.URLVal)
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	conn, ok, err := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{
+		IfAvailable: true,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if !ok {
+		return nil, true, fmt.Errorf("no active session attachables for client %q", socket.SourceClientID)
+	}
+	outgoingMD, _ := metadata.FromOutgoingContext(ctx)
+	outgoingMD = outgoingMD.Copy()
+	outgoingMD.Set(engine.SocketURLEncodedKey, socket.URLVal)
+	stream, err := sshforward.NewSSHClient(conn).ForwardAgent(metadata.NewOutgoingContext(ctx, outgoingMD))
+	if err != nil {
+		_, active, lookupErr := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{
+			IfAvailable: true,
+		})
+		if lookupErr != nil {
+			return nil, false, lookupErr
+		}
+		if !active || isRetryableSessionAttachableErr(ctx, err) {
+			return nil, true, err
+		}
+		return nil, false, err
+	}
+	return stream, false, nil
 }
 
 func (socket *Socket) MountSSHAgent(ctx context.Context) (string, func() error, error) {

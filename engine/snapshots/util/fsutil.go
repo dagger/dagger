@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/continuity/fs"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
+	snapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/pkg/errors"
@@ -23,8 +23,8 @@ type FileRange struct {
 	Length int
 }
 
-func withMount(mount snapshot.Mountable, cb func(string) error) error {
-	lm := snapshot.LocalMounter(mount)
+func withMount(mount snapshots.MountableRef, cb func(string) error) error {
+	lm := snapshots.LocalMounter(mount)
 
 	root, err := lm.Mount()
 	if err != nil {
@@ -48,7 +48,7 @@ func withMount(mount snapshot.Mountable, cb func(string) error) error {
 	return nil
 }
 
-func ReadFile(ctx context.Context, mount snapshot.Mountable, req ReadRequest) ([]byte, error) {
+func ReadFile(ctx context.Context, mount snapshots.MountableRef, req ReadRequest) ([]byte, error) {
 	var dt []byte
 
 	err := withMount(mount, func(root string) error {
@@ -87,7 +87,7 @@ type ReadDirRequest struct {
 	IncludePattern string
 }
 
-func ReadDir(ctx context.Context, mount snapshot.Mountable, req ReadDirRequest) ([]*fstypes.Stat, error) {
+func ReadDir(ctx context.Context, mount snapshots.MountableRef, req ReadDirRequest) ([]*fstypes.Stat, error) {
 	var (
 		rd []*fstypes.Stat
 		fo fsutil.FilterOpt
@@ -120,7 +120,7 @@ func ReadDir(ctx context.Context, mount snapshot.Mountable, req ReadDirRequest) 
 	return rd, err
 }
 
-func StatFile(ctx context.Context, mount snapshot.Mountable, path string) (*fstypes.Stat, error) {
+func StatFile(ctx context.Context, mount snapshots.MountableRef, path string) (*fstypes.Stat, error) {
 	var st *fstypes.Stat
 	err := withMount(mount, func(root string) error {
 		fp, err := fs.RootPath(root, path)

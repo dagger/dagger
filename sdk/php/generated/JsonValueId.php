@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+ * A unique identifier for an object.
  */
-readonly class JsonValueId extends Client\AbstractId
+readonly class JsonValueId extends Client\AbstractScalar
 {
 }

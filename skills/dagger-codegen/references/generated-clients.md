@@ -31,7 +31,7 @@ type ClientGenerator interface {
 
 ## Output (Go)
 
-```
+```text
 output/
 ├── dagger/
 │   ├── dagger.gen.go    # Types + Connect() + Close()

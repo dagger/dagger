@@ -1,5 +1,12 @@
 package core
 
+// These tests cover Dagger Secret values. They verify secret injection,
+// redaction boundaries, and mounting secrets as files or environment variables.
+//
+// See also:
+// - secretprovider_test.go: provider-backed secret resolution.
+// - secret_gcp_test.go: GCP-backed secret provider integration.
+
 import (
 	"bytes"
 	"context"
@@ -27,7 +34,7 @@ func TestSecret(t *testing.T) {
 
 func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
 	_, err := testutil.Query[any](t,
-		`query Test($secret: SecretID!) {
+		`query Test($secret: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withSecretVariable(name: "SECRET", secret: $secret) {
@@ -45,7 +52,7 @@ func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
 
 func (SecretSuite) TestMountFromFile(ctx context.Context, t *testctx.T) {
 	_, err := testutil.Query[any](t,
-		`query Test($secret: SecretID!) {
+		`query Test($secret: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
@@ -78,7 +85,7 @@ func (SecretSuite) TestMountFromFileWithOverridingMount(ctx context.Context, t *
 			}
 		}
 	}](t,
-		`query Test($secret: SecretID!, $file: FileID!) {
+		`query Test($secret: ID!, $file: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
@@ -137,6 +144,18 @@ func (SecretSuite) TestSet(ctx context.Context, t *testctx.T) {
 	require.Equal(t, secretName, name)
 }
 
+func (SecretSuite) TestSetWithEmptyName(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	s := c.SetSecret("", "very-secret-text")
+
+	_, err := c.Container().From(alpineImage).
+		WithSecretVariable("SECRET", s).
+		WithExec([]string{"sh", "-ec", `test "$SECRET" = "very-secret-text"`}).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
 func (SecretSuite) TestUnsetVariable(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -151,6 +170,24 @@ func (SecretSuite) TestUnsetVariable(ctx context.Context, t *testctx.T) {
 
 	require.NoError(t, err)
 	require.NotContains(t, out, "AWS_KEY")
+}
+
+func (SecretSuite) TestSecretVariableOverride(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	short := c.SetSecret("short", "AA")
+	long := c.SetSecret("long", "BBBBBBBBB")
+	cmd := []string{"sh", "-c", `printf '%d' "${#T}"`}
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithSecretVariable("T", short).
+		WithSecretVariable("T", long).
+		WithExec(cmd).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "9", out)
 }
 
 func (SecretSuite) TestWhitespaceScrubbed(ctx context.Context, t *testctx.T) {
@@ -188,50 +225,9 @@ func (SecretSuite) TestBigScrubbed(ctx context.Context, t *testctx.T) {
 
 func (SecretSuite) TestEmptySecretPlaintext(ctx context.Context, t *testctx.T) {
 	callMod := func(c *dagger.Client) (string, error) {
-		return goGitBase(t, c).
-			WithWorkdir("/work/secreter").
-			With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-
-	"dagger/secreter/internal/dagger"
-)
-
-type Secreter struct {}
-
-func (*Secreter) CheckEmptyPlaintext(ctx context.Context, s *dagger.Secret) error {
-	plaintext, err := s.Plaintext(ctx)
-	if err != nil {
-		return err
-	}
-	if plaintext != "" {
-		return fmt.Errorf("expected empty plaintext, got %q", plaintext)
-	}
-	return nil
-}
-`,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=caller", "--sdk=go", "--source=.")).
-			With(daggerExec("install", "./secreter")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-)
-
-type Caller struct {}
-
-func (*Caller) Test(ctx context.Context) error {
-	return dag.Secreter().CheckEmptyPlaintext(ctx, dag.SetSecret("FOO", ""))
-}
-`,
-			).
+		return moduleFixture(t, c, "go/secret-empty-plaintext").
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
-			With(daggerCall("test")).
+			With(daggerCallAt(".", "test")).
 			Stdout(ctx)
 	}
 
@@ -242,27 +238,8 @@ func (*Caller) Test(ctx context.Context) error {
 
 func (SecretSuite) TestSetSecretInModuleCaching(ctx context.Context, t *testctx.T) {
 	callMod := func(c *dagger.Client) (string, error) {
-		return goGitBase(t, c).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-)
-
-type Test struct {}
-
-func (*Test) Fn(ctx context.Context, rand string) (string, error) {
-	s := dag.SetSecret("FOO", "bar")
-	return dag.Container().From("alpine:3.20").
-		WithSecretVariable("FOO", s).
-		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
-		Stdout(ctx)
-}
-`,
-			).
-			With(daggerCall("fn", "--rand", identity.NewID())).
+		return moduleFixture(t, c, "go/set-secret-caching").
+			With(daggerCallAt(".", "fn", "--rand", identity.NewID())).
 			Stdout(ctx)
 	}
 

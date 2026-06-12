@@ -1,0 +1,72 @@
+### Continue using a container after command execution fails
+
+The following Dagger Function demonstrates how to continue using a container after a command executed within it fails. A common use case for this is to export a report that a test suite tool generates.
+
+:::note
+The caveat with this approach is that forcing a zero exit code on a failure caches the failure. This may not be desired depending on the use case.
+:::
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/continue-after-errors/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/continue-after-errors/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/continue-after-errors/typescript/src/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Continue executing a Dagger Function even after a command within it fails. The Dagger Function returns a custom `TestResult` object containing a test report and the exit code of the failed command.
+
+Obtain the exit code:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'test | exit-code'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+test | exit-code
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call test exit-code
+```
+</TabItem>
+</Tabs>
+
+Obtain the report:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'test | report | contents'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+test | report | contents
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call test report contents
+```
+</TabItem>
+</Tabs>

@@ -14,10 +14,13 @@ import (
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine"
+	snapshots "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -36,14 +39,54 @@ type cacheTestOnReleaseInt struct {
 type cacheTestLeaseProvider struct {
 	nextLeaseID atomic.Int32
 	releases    atomic.Int32
+	resourcesMu sync.Mutex
+	resources   map[string][]leases.Resource
 }
 
 func (p *cacheTestLeaseProvider) WithOperationLease(ctx context.Context) (context.Context, func(context.Context) error, error) {
-	leaseID := fmt.Sprintf("shared-%d", p.nextLeaseID.Add(1))
-	return leases.WithLease(ctx, leaseID), func(context.Context) error {
-		p.releases.Add(1)
+	return snapshots.WithLazyLease(ctx, p, func(l *leases.Lease) error {
+		l.ID = fmt.Sprintf("shared-%d", p.nextLeaseID.Add(1))
 		return nil
-	}, nil
+	})
+}
+
+func (p *cacheTestLeaseProvider) Create(_ context.Context, opts ...leases.Opt) (leases.Lease, error) {
+	l := leases.Lease{}
+	for _, opt := range opts {
+		if err := opt(&l); err != nil {
+			return leases.Lease{}, err
+		}
+	}
+	return l, nil
+}
+
+func (p *cacheTestLeaseProvider) Delete(_ context.Context, _ leases.Lease, _ ...leases.DeleteOpt) error {
+	p.releases.Add(1)
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) List(context.Context, ...string) ([]leases.Lease, error) {
+	return nil, nil
+}
+
+func (p *cacheTestLeaseProvider) AddResource(_ context.Context, lease leases.Lease, resource leases.Resource) error {
+	p.resourcesMu.Lock()
+	defer p.resourcesMu.Unlock()
+	if p.resources == nil {
+		p.resources = map[string][]leases.Resource{}
+	}
+	p.resources[lease.ID] = append(p.resources[lease.ID], resource)
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) DeleteResource(context.Context, leases.Lease, leases.Resource) error {
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) ListResources(_ context.Context, lease leases.Lease) ([]leases.Resource, error) {
+	p.resourcesMu.Lock()
+	defer p.resourcesMu.Unlock()
+	return append([]leases.Resource(nil), p.resources[lease.ID]...), nil
 }
 
 type cacheTestLeaseCheckedInt struct {
@@ -90,7 +133,7 @@ type cacheTestSizedInt struct {
 	sizeMayChange        bool
 }
 
-func (v cacheTestSizedInt) CacheUsageSize(_ context.Context, identity string) (int64, bool, error) {
+func (v cacheTestSizedInt) CacheUsageSize(_ context.Context, _ CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if v.sizeCalls != nil {
 		v.sizeCalls.Add(1)
 	}
@@ -345,6 +388,90 @@ func TestCaptureSessionLazySpanContextFirstWriterWinsAndRelease(t *testing.T) {
 	assert.Assert(t, !ok)
 }
 
+func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
+	t.Parallel()
+
+	c := &Cache{}
+	spanCtxB := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{2},
+		SpanID:  trace.SpanID{2},
+	})
+	spanCtxA := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB, false)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxA, false)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB, false)
+
+	got := c.sessionResultInstallSpanContexts("test-session", 1)
+	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
+}
+
+// Install-span lookups walk dep edges upward: a result sees its own direct
+// install spans plus closure-owning (module API call return) install spans of
+// results that transitively depend on it. Non-owning installs on ancestors
+// (plain chained API calls) must not propagate downward.
+func TestInstallSpanLookupWalksClosureOwnersUpward(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	moduleReturn := &sharedResult{id: 1}
+	chained := &sharedResult{id: 2}
+	leaf := &sharedResult{id: 3}
+	c.resultsByID[moduleReturn.id] = moduleReturn
+	c.resultsByID[chained.id] = chained
+	c.resultsByID[leaf.id] = leaf
+
+	c.egraphMu.Lock()
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, moduleReturn, chained, "test"))
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, chained, leaf, "test"))
+	moduleReturnAncestors := c.installAncestorIDsLocked(moduleReturn.id)
+	leafAncestors := c.installAncestorIDsLocked(leaf.id)
+	c.egraphMu.Unlock()
+
+	assert.DeepEqual(t, moduleReturnAncestors, []sharedResultID(nil))
+	assert.DeepEqual(t, leafAncestors, []sharedResultID{chained.id, moduleReturn.id})
+
+	moduleSpanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+	chainedSpanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{2},
+		SpanID:  trace.SpanID{2},
+	})
+	leafSpanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{3},
+		SpanID:  trace.SpanID{3},
+	})
+
+	// The module API call returned moduleReturn: closure-owning install.
+	c.recordSessionResultInstallSpanLocked("test-session", moduleReturn.id, moduleSpanCtx, true)
+	// chained was returned by a plain API call: direct install only.
+	c.recordSessionResultInstallSpanLocked("test-session", chained.id, chainedSpanCtx, false)
+	// leaf was returned by a plain API call too.
+	c.recordSessionResultInstallSpanLocked("test-session", leaf.id, leafSpanCtx, false)
+
+	// leaf sees its own install plus the module span via closure ownership,
+	// but not the chained result's plain install.
+	assert.DeepEqual(t,
+		c.sessionResultInstallSpanContexts("test-session", leaf.id),
+		[]trace.SpanContext{moduleSpanCtx, leafSpanCtx})
+
+	// chained likewise sees itself plus the module span.
+	assert.DeepEqual(t,
+		c.sessionResultInstallSpanContexts("test-session", chained.id),
+		[]trace.SpanContext{moduleSpanCtx, chainedSpanCtx})
+
+	// moduleReturn has no ancestors; it sees only its own install.
+	assert.DeepEqual(t,
+		c.sessionResultInstallSpanContexts("test-session", moduleReturn.id),
+		[]trace.SpanContext{moduleSpanCtx})
+}
+
 func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
 	t.Parallel()
 
@@ -426,6 +553,184 @@ func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
 	}
 	assert.Assert(t, sawChild, "expected nested lazy child span to be recorded")
 	assert.Assert(t, sawResume, "expected hidden resume span to be recorded")
+}
+
+// When a lazy callback fails only because a prerequisite result's evaluation
+// failed, the callback's own resume span must be marked blocked
+// (dagger.io/dag.blocked) so the UI returns the owning API spans to pending.
+// The prerequisite's own resume span carries the real failure unmarked.
+func TestEvaluateLazyPrerequisiteFailureMarksResumeBlocked(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, cacheIface)
+	c := cacheIface
+	srv := cacheTestServer(t)
+
+	spanExporter := &cacheTestSpanExporter{}
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+	defer tracerProvider.Shutdown(t.Context())
+
+	originalCtx, originalSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "original")
+
+	depErr := errors.New("dep exploded")
+	depCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "lazyDep",
+	}
+	depRes, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: depCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, depCall, &cacheTestObject{
+			Value: 1,
+			lazyEval: func(context.Context) error {
+				return depErr
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	tipCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "lazyTip",
+	}
+	tipRes, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: tipCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, tipCall, &cacheTestObject{
+			Value: 2,
+			lazyEval: func(ctx context.Context) error {
+				return c.Evaluate(ctx, depRes)
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	triggerCtx, triggerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "trigger")
+	evalErr := c.Evaluate(triggerCtx, tipRes)
+	assert.Assert(t, evalErr != nil)
+	assert.ErrorContains(t, evalErr, "dep exploded")
+	triggerSpan.End()
+	originalSpan.End()
+
+	assert.NilError(t, tracerProvider.ForceFlush(t.Context()))
+
+	spanExporter.mu.Lock()
+	spans := append([]sdktrace.ReadOnlySpan(nil), spanExporter.spans...)
+	spanExporter.mu.Unlock()
+
+	spanBlocked := func(span sdktrace.ReadOnlySpan) bool {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == telemetryattrs.DagBlockedAttr {
+				return attr.Value.AsBool()
+			}
+		}
+		return false
+	}
+
+	var sawTipResume, sawDepResume bool
+	for _, span := range spans {
+		switch span.Name() {
+		case "resume lazyTip":
+			sawTipResume = true
+			assert.Equal(t, span.Status().Code, codes.Error)
+			assert.Assert(t, spanBlocked(span), "tip resume span should be marked blocked")
+		case "resume lazyDep":
+			sawDepResume = true
+			assert.Equal(t, span.Status().Code, codes.Error)
+			assert.Assert(t, !spanBlocked(span), "dep resume span carries the real failure and must not be blocked")
+			assert.Equal(t, span.Status().Description, "dep exploded")
+		}
+	}
+	assert.Assert(t, sawTipResume, "expected tip resume span to be recorded")
+	assert.Assert(t, sawDepResume, "expected dep resume span to be recorded")
+}
+
+// A lazy callback that fails its own work (no prerequisite involved) must not
+// be classified as blocked, even when other evaluations happened earlier.
+func TestEvaluateLazyOwnFailureNotMarkedBlocked(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	ctx := ContextWithCache(baseCtx, cacheIface)
+	c := cacheIface
+	srv := cacheTestServer(t)
+
+	spanExporter := &cacheTestSpanExporter{}
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+	defer tracerProvider.Shutdown(t.Context())
+
+	originalCtx, originalSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "original")
+
+	depCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "okDep",
+	}
+	depRes, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: depCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, depCall, &cacheTestObject{
+			Value: 1,
+			lazyEval: func(context.Context) error {
+				return nil
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	tipCall := &ResultCall{
+		Type: NewResultCallType(&ast.Type{
+			NamedType: "CacheTestObject",
+			NonNull:   true,
+		}),
+		Field: "ownFailTip",
+	}
+	tipRes, err := c.GetOrInitCall(originalCtx, "test-session", srv, &CallRequest{ResultCall: tipCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResultWithValue(t, srv, tipCall, &cacheTestObject{
+			Value: 2,
+			lazyEval: func(ctx context.Context) error {
+				if err := c.Evaluate(ctx, depRes); err != nil {
+					return err
+				}
+				return errors.New("my own work failed")
+			},
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	triggerCtx, triggerSpan := tracerProvider.Tracer("dagger.io/test").Start(ctx, "trigger")
+	evalErr := c.Evaluate(triggerCtx, tipRes)
+	assert.Assert(t, evalErr != nil)
+	assert.ErrorContains(t, evalErr, "my own work failed")
+	triggerSpan.End()
+	originalSpan.End()
+
+	assert.NilError(t, tracerProvider.ForceFlush(t.Context()))
+
+	spanExporter.mu.Lock()
+	spans := append([]sdktrace.ReadOnlySpan(nil), spanExporter.spans...)
+	spanExporter.mu.Unlock()
+
+	var sawTipResume bool
+	for _, span := range spans {
+		if span.Name() != "resume ownFailTip" {
+			continue
+		}
+		sawTipResume = true
+		assert.Equal(t, span.Status().Code, codes.Error)
+		for _, attr := range span.Attributes() {
+			assert.Assert(t, string(attr.Key) != telemetryattrs.DagBlockedAttr,
+				"own failure must not be marked blocked")
+		}
+	}
+	assert.Assert(t, sawTipResume, "expected tip resume span to be recorded")
 }
 
 func (*cacheTestObject) Type() *ast.Type {
@@ -545,6 +850,458 @@ func cacheTestObjectResultWithValue(
 	res, err := NewObjectResultForCall(obj, srv, frame)
 	assert.NilError(t, err)
 	return res
+}
+
+const cacheTestVolatileValueSentinel = "dagql.cache-test.volatile-value"
+
+func cacheTestVolatileSessionResourceHandle(slot string) SessionResourceHandle {
+	return SessionResourceHandle(digest.FromString("cache-test volatile session resource: " + slot).String())
+}
+
+func cacheTestSessionResourceLeaf(ctx context.Context, handle SessionResourceHandle) (Result[String], error) {
+	leaf, err := NewResultForCall(NewString("volatile"), &ResultCall{
+		Kind:        ResultCallKindSynthetic,
+		Type:        NewResultCallType(NewString("").Type()),
+		SyntheticOp: "cache-test.volatile-session-resource",
+		Args: []*ResultCallArg{{
+			Name: "handle",
+			Value: &ResultCallLiteral{
+				Kind:        ResultCallLiteralKindString,
+				StringValue: string(handle),
+			},
+		}},
+	})
+	if err != nil {
+		return Result[String]{}, err
+	}
+	leaf, err = leaf.WithContentDigest(ctx, digest.Digest(handle))
+	if err != nil {
+		return Result[String]{}, err
+	}
+	return leaf.WithSessionResourceHandle(ctx, handle)
+}
+
+func cacheTestStringResultCallArg(t *testing.T, frame *ResultCall, name string) string {
+	t.Helper()
+	for _, arg := range frame.Args {
+		if arg == nil || arg.Name != name {
+			continue
+		}
+		assert.Assert(t, arg.Value != nil, "expected arg %q to have a value", name)
+		assert.Equal(t, ResultCallLiteralKindString, arg.Value.Kind)
+		return arg.Value.StringValue
+	}
+	t.Fatalf("expected result call arg %q", name)
+	return ""
+}
+
+func cacheTestSessionResourceSetContains(handles *set.TreeSet[SessionResourceHandle], handle SessionResourceHandle) bool {
+	if handles == nil {
+		return false
+	}
+	for candidate := range handles.Items() {
+		if candidate == handle {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCacheVolatileSessionResourceInvariants(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	ctx := ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+
+	type volatileArgs struct {
+		Slot  String `name:"slot"`
+		Value String `name:"value"`
+	}
+
+	var calls atomic.Int32
+	Fields[cacheTestQuery]{
+		NodeFuncWithDynamicInputs(
+			"volatileSessionParent",
+			func(ctx context.Context, _ ObjectResult[cacheTestQuery], args volatileArgs) (Result[*cacheTestObject], error) {
+				if got := string(args.Value); got != cacheTestVolatileValueSentinel {
+					return Result[*cacheTestObject]{}, fmt.Errorf("resolver saw unrewritten volatile value %q", got)
+				}
+				leaf, err := cacheTestSessionResourceLeaf(ctx, cacheTestVolatileSessionResourceHandle(string(args.Slot)))
+				if err != nil {
+					return Result[*cacheTestObject]{}, err
+				}
+				return NewResultForCurrentCall(ctx, &cacheTestObject{
+					Value:             int(calls.Add(1)),
+					dependencyResults: []AnyResult{leaf},
+				})
+			},
+			func(ctx context.Context, _ ObjectResult[cacheTestQuery], args volatileArgs, req *CallRequest) error {
+				cache, err := EngineCache(ctx)
+				if err != nil {
+					return err
+				}
+				clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return err
+				}
+				handle := cacheTestVolatileSessionResourceHandle(string(args.Slot))
+				if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, string(args.Value)); err != nil {
+					return err
+				}
+				return req.SetArgInput(ctx, "value", NewString(cacheTestVolatileValueSentinel), false)
+			},
+		),
+	}.Install(srv)
+
+	const slot = "CI_JOB_ID"
+	handle := cacheTestVolatileSessionResourceHandle(slot)
+	selectVolatile := func(ctx context.Context, value string) ObjectResult[*cacheTestObject] {
+		t.Helper()
+		var res ObjectResult[*cacheTestObject]
+		err := srv.Select(ctx, srv.Root(), &res, Selector{
+			Field: "volatileSessionParent",
+			Args: []NamedInput{
+				{Name: "slot", Value: NewString(slot)},
+				{Name: "value", Value: NewString(value)},
+			},
+		})
+		assert.NilError(t, err)
+		return res
+	}
+
+	first := selectVolatile(ctx, "first")
+	assert.Assert(t, !first.HitCache())
+	assert.Equal(t, 1, first.Self().Value)
+	assert.Equal(t, int32(1), calls.Load())
+
+	firstCall, err := first.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, slot, cacheTestStringResultCallArg(t, firstCall, "slot"))
+	assert.Equal(t, cacheTestVolatileValueSentinel, cacheTestStringResultCallArg(t, firstCall, "value"))
+
+	firstShared := first.cacheSharedResult()
+	assert.Assert(t, firstShared != nil)
+	assert.Assert(t, firstShared.id != 0)
+	c.egraphMu.Lock()
+	parentRequiresHandle := cacheTestSessionResourceSetContains(firstShared.requiredSessionResources, handle)
+	var leafShared *sharedResult
+	for depID := range firstShared.deps {
+		dep := c.resultsByID[depID]
+		if dep != nil && dep.sessionResourceHandle == handle {
+			leafShared = dep
+			break
+		}
+	}
+	leafRequiresHandle := leafShared != nil && cacheTestSessionResourceSetContains(leafShared.requiredSessionResources, handle)
+	leafHandle := SessionResourceHandle("")
+	if leafShared != nil {
+		leafHandle = leafShared.sessionResourceHandle
+	}
+	c.egraphMu.Unlock()
+	assert.Assert(t, parentRequiresHandle)
+	assert.Assert(t, leafShared != nil, "expected volatile session resource leaf dependency")
+	assert.Equal(t, handle, leafHandle)
+	assert.Assert(t, leafRequiresHandle)
+
+	second := selectVolatile(ctx, "second")
+	assert.Assert(t, second.HitCache())
+	assert.Equal(t, firstShared.id, second.cacheSharedResult().id)
+	assert.Equal(t, 1, second.Self().Value)
+	assert.Equal(t, int32(1), calls.Load())
+	resolved, err := c.ResolveSessionResource(ctx, "test-session", "dagql-test-client", handle)
+	assert.NilError(t, err)
+	assert.Equal(t, "second", resolved)
+
+	boundCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "volatile-bound-client",
+		SessionID: "volatile-bound-session",
+	})
+	boundCtx = ContextWithCache(boundCtx, c)
+	extraHandle := cacheTestVolatileSessionResourceHandle("EXTRA_VOLATILE")
+	assert.NilError(t, c.BindSessionResource(boundCtx, "volatile-bound-session", "volatile-bound-client", handle, "bound"))
+	assert.NilError(t, c.BindSessionResource(boundCtx, "volatile-bound-session", "volatile-bound-client", extraHandle, "extra"))
+	boundHit, hit, err := c.lookupCallRequest(boundCtx, "volatile-bound-session", srv, &CallRequest{ResultCall: firstCall.clone()})
+	assert.NilError(t, err)
+	assert.Assert(t, hit)
+	assert.Assert(t, boundHit.HitCache())
+	assert.Equal(t, firstShared.id, boundHit.cacheSharedResult().id)
+
+	unboundCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "volatile-unbound-client",
+		SessionID: "volatile-unbound-session",
+	})
+	unboundCtx = ContextWithCache(unboundCtx, c)
+	var unboundInitCalls int
+	unbound, err := c.GetOrInitCall(unboundCtx, "volatile-unbound-session", srv, &CallRequest{ResultCall: firstCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+		unboundInitCalls++
+		return NewObjectResultForCurrentCall(ctx, srv, &cacheTestObject{Value: 99})
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, unboundInitCalls)
+	assert.Assert(t, !unbound.HitCache())
+	unboundObj, ok := unbound.(ObjectResult[*cacheTestObject])
+	assert.Assert(t, ok, "expected unbound miss to return cacheTestObject, got %T", unbound)
+	assert.Equal(t, 99, unboundObj.Self().Value)
+
+	assert.NilError(t, c.ReleaseSession(ctx, "test-session"))
+	assert.NilError(t, c.ReleaseSession(boundCtx, "volatile-bound-session"))
+	assert.NilError(t, c.ReleaseSession(unboundCtx, "volatile-unbound-session"))
+}
+
+// TestCacheVolatileConcurrentSessionsDivergentValues verifies that two sessions
+// with different volatile values for the same slot both get correct results.
+// Session A binds handle→"alpha", session B binds handle→"beta". Both look up
+// the same broad cache key. Each session's resolved resource must reflect its
+// own binding, not the other's.
+func TestCacheVolatileConcurrentSessionsDivergentValues(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	ctx := ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+
+	type volatileArgs struct {
+		Slot  String `name:"slot"`
+		Value String `name:"value"`
+	}
+
+	var calls atomic.Int32
+	Fields[cacheTestQuery]{
+		NodeFuncWithDynamicInputs(
+			"volatileConcurrentParent",
+			func(ctx context.Context, _ ObjectResult[cacheTestQuery], args volatileArgs) (Result[*cacheTestObject], error) {
+				if got := string(args.Value); got != cacheTestVolatileValueSentinel {
+					return Result[*cacheTestObject]{}, fmt.Errorf("resolver saw unrewritten volatile value %q", got)
+				}
+				leaf, err := cacheTestSessionResourceLeaf(ctx, cacheTestVolatileSessionResourceHandle(string(args.Slot)))
+				if err != nil {
+					return Result[*cacheTestObject]{}, err
+				}
+				return NewResultForCurrentCall(ctx, &cacheTestObject{
+					Value:             int(calls.Add(1)),
+					dependencyResults: []AnyResult{leaf},
+				})
+			},
+			func(ctx context.Context, _ ObjectResult[cacheTestQuery], args volatileArgs, req *CallRequest) error {
+				cache, err := EngineCache(ctx)
+				if err != nil {
+					return err
+				}
+				clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return err
+				}
+				handle := cacheTestVolatileSessionResourceHandle(string(args.Slot))
+				if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, string(args.Value)); err != nil {
+					return err
+				}
+				return req.SetArgInput(ctx, "value", NewString(cacheTestVolatileValueSentinel), false)
+			},
+		),
+	}.Install(srv)
+
+	const slot = "CONCURRENT_SLOT"
+	handle := cacheTestVolatileSessionResourceHandle(slot)
+
+	selectVolatile := func(ctx context.Context, value string) ObjectResult[*cacheTestObject] {
+		t.Helper()
+		var res ObjectResult[*cacheTestObject]
+		err := srv.Select(ctx, srv.Root(), &res, Selector{
+			Field: "volatileConcurrentParent",
+			Args: []NamedInput{
+				{Name: "slot", Value: NewString(slot)},
+				{Name: "value", Value: NewString(value)},
+			},
+		})
+		assert.NilError(t, err)
+		return res
+	}
+
+	// Session A: bind "alpha"
+	sessionACtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "client-a",
+		SessionID: "session-a",
+	})
+	sessionACtx = ContextWithCache(sessionACtx, c)
+	assert.NilError(t, c.BindSessionResource(sessionACtx, "session-a", "client-a", handle, "alpha"))
+
+	// Prime cache from default session
+	first := selectVolatile(ctx, "alpha")
+	assert.Assert(t, !first.HitCache())
+	assert.Equal(t, int32(1), calls.Load())
+
+	// Session B: bind "beta", same slot
+	sessionBCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "client-b",
+		SessionID: "session-b",
+	})
+	sessionBCtx = ContextWithCache(sessionBCtx, c)
+	assert.NilError(t, c.BindSessionResource(sessionBCtx, "session-b", "client-b", handle, "beta"))
+
+	// Both sessions look up the same broad cache key
+	hitA, hitAOk, err := c.lookupCallRequest(sessionACtx, "session-a", srv, &CallRequest{
+		ResultCall: func() *ResultCall {
+			rc, err := first.ResultCall()
+			assert.NilError(t, err)
+			return rc.clone()
+		}(),
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, hitAOk, "session A should hit cache")
+	assert.Assert(t, hitA.HitCache())
+
+	hitB, hitBOk, err := c.lookupCallRequest(sessionBCtx, "session-b", srv, &CallRequest{
+		ResultCall: func() *ResultCall {
+			rc, err := first.ResultCall()
+			assert.NilError(t, err)
+			return rc.clone()
+		}(),
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, hitBOk, "session B should hit cache")
+	assert.Assert(t, hitB.HitCache())
+
+	// Verify each session resolves its own volatile value
+	resolvedA, err := c.ResolveSessionResource(sessionACtx, "session-a", "client-a", handle)
+	assert.NilError(t, err)
+	assert.Equal(t, "alpha", resolvedA)
+
+	resolvedB, err := c.ResolveSessionResource(sessionBCtx, "session-b", "client-b", handle)
+	assert.NilError(t, err)
+	assert.Equal(t, "beta", resolvedB)
+
+	// Resolver should NOT have been called again — both are cache hits
+	assert.Equal(t, int32(1), calls.Load())
+
+	assert.NilError(t, c.ReleaseSession(ctx, "test-session"))
+	assert.NilError(t, c.ReleaseSession(sessionACtx, "session-a"))
+	assert.NilError(t, c.ReleaseSession(sessionBCtx, "session-b"))
+}
+
+// TestCacheVolatileNestedWithNonVolatile verifies that a volatile exec followed
+// by a non-volatile exec produces correct cache behavior: changing only the
+// volatile value should reuse the volatile exec but still run the non-volatile
+// exec if its non-volatile inputs changed.
+func TestCacheVolatileNestedWithNonVolatile(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	ctx := ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+
+	type volatileArgs struct {
+		Slot  String `name:"slot"`
+		Value String `name:"value"`
+	}
+
+	var volatileCalls atomic.Int32
+	Fields[cacheTestQuery]{
+		NodeFuncWithDynamicInputs(
+			"volatileNestedParent",
+			func(ctx context.Context, _ ObjectResult[cacheTestQuery], args volatileArgs) (Result[*cacheTestObject], error) {
+				if got := string(args.Value); got != cacheTestVolatileValueSentinel {
+					return Result[*cacheTestObject]{}, fmt.Errorf("resolver saw unrewritten volatile value %q", got)
+				}
+				leaf, err := cacheTestSessionResourceLeaf(ctx, cacheTestVolatileSessionResourceHandle(string(args.Slot)))
+				if err != nil {
+					return Result[*cacheTestObject]{}, err
+				}
+				return NewResultForCurrentCall(ctx, &cacheTestObject{
+					Value:             int(volatileCalls.Add(1)),
+					dependencyResults: []AnyResult{leaf},
+				})
+			},
+			func(ctx context.Context, _ ObjectResult[cacheTestQuery], args volatileArgs, req *CallRequest) error {
+				cache, err := EngineCache(ctx)
+				if err != nil {
+					return err
+				}
+				clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return err
+				}
+				handle := cacheTestVolatileSessionResourceHandle(string(args.Slot))
+				if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, string(args.Value)); err != nil {
+					return err
+				}
+				return req.SetArgInput(ctx, "value", NewString(cacheTestVolatileValueSentinel), false)
+			},
+		),
+	}.Install(srv)
+
+	type regularArgs struct {
+		Marker String `name:"marker"`
+	}
+	var regularCalls atomic.Int32
+	Fields[*cacheTestObject]{
+		NodeFunc("regularChild", func(ctx context.Context, self ObjectResult[*cacheTestObject], args regularArgs) (Result[*cacheTestObject], error) {
+			return NewResultForCurrentCall(ctx, &cacheTestObject{
+				Value: int(regularCalls.Add(1)),
+			})
+		}),
+	}.Install(srv)
+
+	const slot = "NESTED_SLOT"
+
+	selectChain := func(ctx context.Context, volatileValue, marker string) ObjectResult[*cacheTestObject] {
+		t.Helper()
+		var parent ObjectResult[*cacheTestObject]
+		err := srv.Select(ctx, srv.Root(), &parent, Selector{
+			Field: "volatileNestedParent",
+			Args: []NamedInput{
+				{Name: "slot", Value: NewString(slot)},
+				{Name: "value", Value: NewString(volatileValue)},
+			},
+		})
+		assert.NilError(t, err)
+		var child ObjectResult[*cacheTestObject]
+		err = srv.Select(ctx, parent, &child, Selector{
+			Field: "regularChild",
+			Args: []NamedInput{
+				{Name: "marker", Value: NewString(marker)},
+			},
+		})
+		assert.NilError(t, err)
+		return child
+	}
+
+	// First call: volatile=v1, marker=m1
+	first := selectChain(ctx, "v1", "m1")
+	assert.Assert(t, !first.HitCache())
+	assert.Equal(t, int32(1), volatileCalls.Load())
+	assert.Equal(t, int32(1), regularCalls.Load())
+
+	// Same volatile, same marker → full cache hit
+	second := selectChain(ctx, "v1", "m1")
+	assert.Assert(t, second.HitCache())
+	assert.Equal(t, int32(1), volatileCalls.Load())
+	assert.Equal(t, int32(1), regularCalls.Load())
+
+	// Different volatile, same marker → volatile exec hits cache, regular child
+	// also hits cache because its non-volatile inputs (marker) didn't change
+	third := selectChain(ctx, "v2", "m1")
+	assert.Assert(t, third.HitCache())
+	assert.Equal(t, int32(1), volatileCalls.Load())
+	assert.Equal(t, int32(1), regularCalls.Load())
+
+	// Different volatile AND different marker → volatile exec hits cache,
+	// regular child misses because marker changed
+	fourth := selectChain(ctx, "v3", "m2")
+	assert.Assert(t, !fourth.HitCache())
+	assert.Equal(t, int32(1), volatileCalls.Load())
+	assert.Equal(t, int32(2), regularCalls.Load())
+
+	assert.NilError(t, c.ReleaseSession(ctx, "test-session"))
 }
 
 func TestCacheConcurrent(t *testing.T) {
@@ -741,6 +1498,11 @@ func TestCacheEvaluate(t *testing.T) {
 			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
 				Value: 1,
 				lazyEval: func(ctx context.Context) error {
+					var err error
+					ctx, err = snapshots.EnsureLease(ctx)
+					if err != nil {
+						return err
+					}
 					leaseID, ok := leases.FromContext(ctx)
 					if !ok || leaseID == "" {
 						return fmt.Errorf("lazy evaluation missing operation lease")
@@ -763,6 +1525,42 @@ func TestCacheEvaluate(t *testing.T) {
 		assert.Assert(t, leaseProvider.nextLeaseID.Load() > 0)
 		assert.Equal(t, leaseProvider.nextLeaseID.Load(), leaseProvider.releases.Load())
 
+		assert.NilError(t, cacheIface.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
+	t.Run("lazy evaluation without lease-sensitive work does not acquire lease", func(t *testing.T) {
+		t.Parallel()
+		ctx := cacheTestContext(t.Context())
+		leaseProvider := &cacheTestLeaseProvider{}
+		ctx = ContextWithOperationLeaseProvider(ctx, leaseProvider)
+		ctx = leases.WithLease(ctx, "request-1")
+		cacheIface, err := NewCache(ctx, "", nil, nil)
+		assert.NilError(t, err)
+		ctx = ContextWithCache(ctx, cacheIface)
+		srv := cacheTestServer(t)
+
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-no-lease",
+		}
+
+		resAny, err := cacheIface.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(ctx context.Context) error {
+					if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
+						return fmt.Errorf("lazy evaluation unexpectedly had operation lease %q", leaseID)
+					}
+					return nil
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+
+		assert.NilError(t, cacheIface.Evaluate(ctx, resAny))
+		assert.Equal(t, int32(0), leaseProvider.nextLeaseID.Load())
+		assert.Equal(t, int32(0), leaseProvider.releases.Load())
 		assert.NilError(t, cacheIface.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
 	})
 
@@ -1270,6 +2068,11 @@ func TestCacheContextCancel(t *testing.T) {
 				ResultCall:     reqCall,
 				ConcurrencyKey: "shared-lease",
 			}, func(ctx context.Context) (AnyResult, error) {
+				var err error
+				ctx, err = snapshots.EnsureLease(ctx)
+				if err != nil {
+					return nil, err
+				}
 				leaseID, ok := leases.FromContext(ctx)
 				if !ok || leaseID == "" {
 					return nil, fmt.Errorf("shared call missing operation lease")
@@ -1282,6 +2085,11 @@ func TestCacheContextCancel(t *testing.T) {
 				return cacheTestDetachedResult(reqCall, cacheTestLeaseCheckedInt{
 					Int: NewInt(1),
 					onAttach: func(ctx context.Context) error {
+						var err error
+						ctx, err = snapshots.EnsureLease(ctx)
+						if err != nil {
+							return err
+						}
 						attachLeaseID, ok := leases.FromContext(ctx)
 						if !ok || attachLeaseID == "" {
 							return fmt.Errorf("attach dependency results missing operation lease")
@@ -2789,9 +3597,9 @@ func TestPendingResultCallRefRecipeID(t *testing.T) {
 		},
 	}
 
-	parentRecipeID, err := parentCall.recipeID(nil)
+	parentRecipeID, err := parentCall.recipeID(t.Context(), nil)
 	assert.NilError(t, err)
-	childRecipeID, err := childCall.recipeID(nil)
+	childRecipeID, err := childCall.recipeID(t.Context(), nil)
 	assert.NilError(t, err)
 	assert.Assert(t, childRecipeID.Receiver() != nil)
 	assert.Equal(t, parentRecipeID.Digest(), childRecipeID.Receiver().Digest())
@@ -2859,50 +3667,6 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 
 	parentID, err := attachedParent.ID()
 	assert.NilError(t, err)
-	parentDig, err := attachedParent.ContentPreferredDigest(ctx)
-	assert.NilError(t, err)
-	parentRecipeID, err := attachedParent.RecipeID(ctx)
-	assert.NilError(t, err)
-	assert.Equal(t, parentRecipeID.ContentPreferredDigest().String(), parentDig.String())
-
-	argOnlyFrame := &ResultCall{
-		Kind:  ResultCallKindField,
-		Field: "argOnly",
-		Type:  NewResultCallType(objType),
-		Args: []*ResultCallArg{
-			{
-				Name:  "msg",
-				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "hello"},
-			},
-		},
-	}
-	argOnlyRes := cacheTestObjectResult(t, srv, argOnlyFrame, 12, nil)
-	attachedArgOnlyAny, err := cacheIface.AttachResult(ctx, "test-session", srv, argOnlyRes)
-	assert.NilError(t, err)
-	attachedArgOnly := attachedArgOnlyAny.(ObjectResult[*cacheTestObject])
-	argOnlyDig, err := attachedArgOnly.ContentPreferredDigest(ctx)
-	assert.NilError(t, err)
-	argOnlyRecipeID, err := attachedArgOnly.RecipeID(ctx)
-	assert.NilError(t, err)
-	assert.Equal(t, argOnlyRecipeID.ContentPreferredDigest().String(), argOnlyDig.String())
-
-	receiverOnlyFrame := &ResultCall{
-		Kind:  ResultCallKindField,
-		Field: "receiverOnly",
-		Type:  NewResultCallType(objType),
-		Receiver: &ResultCallRef{
-			ResultID: parentID.EngineResultID(),
-		},
-	}
-	receiverOnlyRes := cacheTestObjectResult(t, srv, receiverOnlyFrame, 13, nil)
-	attachedReceiverOnlyAny, err := cacheIface.AttachResult(ctx, "test-session", srv, receiverOnlyRes)
-	assert.NilError(t, err)
-	attachedReceiverOnly := attachedReceiverOnlyAny.(ObjectResult[*cacheTestObject])
-	receiverOnlyDig, err := attachedReceiverOnly.ContentPreferredDigest(ctx)
-	assert.NilError(t, err)
-	receiverOnlyRecipeID, err := attachedReceiverOnly.RecipeID(ctx)
-	assert.NilError(t, err)
-	assert.Equal(t, receiverOnlyRecipeID.ContentPreferredDigest().String(), receiverOnlyDig.String())
 
 	childFrame := &ResultCall{
 		Kind:  ResultCallKindField,
@@ -2989,55 +3753,6 @@ func TestInputSpecsInputsFromResultCallArgs(t *testing.T) {
 	assert.Equal(t, 7, count.Int())
 }
 
-func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
-	t.Parallel()
-	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil, nil)
-	assert.NilError(t, err)
-	ctx = ContextWithCache(ctx, cacheIface)
-	srv := cacheTestServer(t)
-
-	objType := (&cacheTestObject{}).Type()
-
-	parentFrame := &ResultCall{
-		Kind:  ResultCallKindField,
-		Field: "parent",
-		Type:  NewResultCallType(objType),
-	}
-	parentRes := cacheTestObjectResult(t, srv, parentFrame, 11, nil)
-	attachedParentAny, err := cacheIface.AttachResult(ctx, "test-session", srv, parentRes)
-	assert.NilError(t, err)
-	attachedParent := attachedParentAny.(ObjectResult[*cacheTestObject])
-
-	parentID, err := attachedParent.ID()
-	assert.NilError(t, err)
-
-	childFrame := &ResultCall{
-		Kind:  ResultCallKindField,
-		Field: "child",
-		Type:  NewResultCallType(objType),
-		Receiver: &ResultCallRef{
-			ResultID: parentID.EngineResultID(),
-		},
-		Args: []*ResultCallArg{
-			{
-				Name:  "msg",
-				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "hello"},
-			},
-		},
-	}
-	childRes := cacheTestObjectResult(t, srv, childFrame, 22, nil)
-	attachedChildAny, err := cacheIface.AttachResult(ctx, "test-session", srv, childRes)
-	assert.NilError(t, err)
-	attachedChild := attachedChildAny.(ObjectResult[*cacheTestObject])
-
-	got, err := attachedChild.ContentPreferredDigest(ctx)
-	assert.NilError(t, err)
-	recipeID, err := attachedChild.RecipeID(ctx)
-	assert.NilError(t, err)
-	assert.Equal(t, recipeID.ContentPreferredDigest().String(), got.String())
-}
-
 func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
@@ -3065,7 +3780,7 @@ func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 
 	recipeID, err := attached.RecipeID(ctx)
 	assert.NilError(t, err)
-	assert.Equal(t, contentDig.String(), recipeID.ContentPreferredDigest().String())
+	assert.Equal(t, contentDig.String(), recipeID.ContentDigest().String())
 }
 
 func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
@@ -3096,9 +3811,10 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Assert(t, !sourceRes.HitCache())
 
-		requestKey := sourceKey.
-			WithArgument(call.NewArgument("variant", call.NewLiteralInt(1), false)).
-			With(call.WithExtraDigest(shared))
+		requestKey := sourceKey.With(
+			call.WithArgs(call.NewArgument("variant", call.NewLiteralInt(1), false)),
+			call.WithExtraDigest(shared),
+		)
 		requestCall := &ResultCall{
 			Kind:         ResultCallKindField,
 			Type:         NewResultCallType(Int(0).Type()),
@@ -3186,7 +3902,6 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 		Label:  "eq-shared",
 	}
 
-	parentBKey := call.New().Append(Int(0).Type(), "teach-hit-parent-b")
 	parentACall := cacheTestIntCall("teach-hit-parent-a")
 	parentBCall := cacheTestIntCall("teach-hit-parent-b")
 	parentAOutCall := cacheTestIntCall("teach-hit-parent-a", shared)
@@ -3204,8 +3919,6 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !parentBRes.HitCache())
 
-	childBKey := parentBKey.Append(Int(0).Type(), "teach-hit-child")
-
 	childARes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
@@ -3217,13 +3930,14 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !childARes.HitCache())
 
-	childBInitCalls := 0
-	childBRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
+	childBReq := &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "teach-hit-child",
 		Receiver: &ResultCallRef{ResultID: uint64(parentBRes.cacheSharedResult().id)},
-	}}, func(context.Context) (AnyResult, error) {
+	}}
+	childBInitCalls := 0
+	childBRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, childBReq, func(context.Context) (AnyResult, error) {
 		childBInitCalls++
 		return cacheTestPlainResult(NewInt(1002)), nil
 	})
@@ -3232,12 +3946,12 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	assert.Assert(t, childBRes.HitCache())
 	assert.Equal(t, cacheTestMustEncodeID(t, childARes), cacheTestMustEncodeID(t, childBRes))
 
-	c.egraphMu.RLock()
-	resolvedChildB, resolveErr := c.resolveSharedResultForInputIDLocked(childBKey)
-	c.egraphMu.RUnlock()
-	assert.NilError(t, resolveErr)
-	assert.Assert(t, resolvedChildB != nil)
-	assert.Equal(t, childBRes.cacheSharedResult().id, resolvedChildB.id)
+	childBDigest, err := childBReq.deriveRecipeDigest(c)
+	assert.NilError(t, err)
+	resolvedChildB, hit, err := c.lookupCacheForDigests(ctx, "test-session", noopTypeResolver{}, childBDigest, childBReq.ExtraDigests)
+	assert.NilError(t, err)
+	assert.Assert(t, hit)
+	assert.Equal(t, childBRes.cacheSharedResult().id, resolvedChildB.cacheSharedResult().id)
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, c.Size())
@@ -3648,22 +4362,21 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 
 	storageID := call.New().Append(Int(0).Type(), "storage-key")
 	storageCall := cacheTestIntCall("storage-key")
-	resultID := storageID.
-		With(call.WithExtraDigest(call.ExtraDigest{Digest: digest.FromString("result-digest")})).
-		With(call.WithContentDigest(digest.FromString("result-content")))
+	resultDigest := digest.FromString("result-digest")
+	resultContent := digest.FromString("result-content")
 
 	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: storageCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(&ResultCall{
 			Kind:         ResultCallKindField,
 			Type:         NewResultCallType(Int(0).Type()),
 			Field:        "storage-key",
-			ExtraDigests: []call.ExtraDigest{{Digest: digest.FromString("result-digest")}},
-		}, 44).(Result[Int]).WithContentDigest(ctx, digest.FromString("result-content"))
+			ExtraDigests: []call.ExtraDigest{{Digest: resultDigest}},
+		}, 44).(Result[Int]).WithContentDigest(ctx, resultContent)
 	})
 	assert.NilError(t, err)
 
 	storageKey := storageID.Digest().String()
-	resultOutputEq := resultID.ContentPreferredDigest().String()
+	resultOutputEq := resultContent.String()
 	assert.Assert(t, storageKey != resultOutputEq)
 	assert.Equal(t, 1, len(c.resultOutputEqClasses))
 	assert.Assert(t, len(c.egraphTerms) > 0)
@@ -5286,6 +5999,24 @@ func TestCachePruneThresholdTargetSpace(t *testing.T) {
 	assert.Equal(t, cacheTestSharedResultEntryID(results[1]), report.Entries[1].ID)
 }
 
+func TestCachePruneMinFreeSpaceUsesCurrentFreeSpace(t *testing.T) {
+	t.Parallel()
+
+	target, triggered := pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 150,
+	}, 50)
+	assert.Assert(t, triggered)
+	assert.Equal(t, int64(50), target)
+
+	target, triggered = pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 250,
+	}, 50)
+	assert.Assert(t, !triggered)
+	assert.Equal(t, int64(0), target)
+}
+
 func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {
 	t.Parallel()
 
@@ -6108,4 +6839,33 @@ func TestCacheArbitraryRecursiveCall(t *testing.T) {
 		return nil, err
 	})
 	assert.Assert(t, is.ErrorIs(err, ErrCacheRecursiveCall))
+}
+
+func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
+	ctx := t.Context()
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	const sessionID = "test-session"
+	const preferredClientID = "preferred-client"
+	const latestClientID = "latest-client"
+	handle := SessionResourceHandle("test-resource")
+
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, "alpha-client", handle, "alpha"))
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, preferredClientID, handle, "preferred"))
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, latestClientID, handle, "latest"))
+
+	resolved, err := cache.ResolveSessionResource(ctx, sessionID, preferredClientID, handle)
+	assert.NilError(t, err)
+	assert.Equal(t, resolved, "preferred")
+
+	candidates, err := cache.ResolveSessionResourceCandidates(ctx, sessionID, preferredClientID, handle)
+	assert.NilError(t, err)
+	assert.Assert(t, is.Len(candidates, 3))
+	assert.Equal(t, candidates[0].ClientID, preferredClientID)
+	assert.Equal(t, candidates[0].Value, "preferred")
+	assert.Equal(t, candidates[1].ClientID, latestClientID)
+	assert.Equal(t, candidates[1].Value, "latest")
+	assert.Equal(t, candidates[2].ClientID, "alpha-client")
+	assert.Equal(t, candidates[2].Value, "alpha")
 }
