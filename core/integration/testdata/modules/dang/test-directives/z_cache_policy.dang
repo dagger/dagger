@@ -1,0 +1,8 @@
+"""
+Exercises directive argument evaluation in a sibling file.
+"""
+type CacheDirective {
+  pub value(): String! @cache(policy: FunctionCachePolicy.Never) {
+    "never"
+  }
+}
