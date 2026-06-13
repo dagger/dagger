@@ -87,6 +87,10 @@ func (sdk *dangSDK) AsClientInitializer() (core.ClientInitializer, bool) {
 	return nil, false
 }
 
+func (sdk *dangSDK) AsRuntimeTarget() (core.RuntimeTarget, bool) {
+	return nil, false
+}
+
 func (sdk *dangSDK) AttachDependencyResults(
 	context.Context,
 	func(dagql.AnyResult) (dagql.AnyResult, error),
