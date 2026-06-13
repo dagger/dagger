@@ -160,7 +160,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`).
+					View(AfterVersion("v0.21.0")),
 			),
 		dagql.NodeFunc("__withDirectoryDockerfileCompat", s.withDirectoryDockerfileCompat).
 			IsPersistable().
@@ -279,6 +280,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("asWorkspace", s.asWorkspace).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Creates a synthetic workspace from this directory.").
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),

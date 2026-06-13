@@ -30,6 +30,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		PassthroughTelemetry()
 
 	migrateField := dagql.Func("migrate", s.migrate).
+		View(AfterVersion("v1.0.0-0")).
 		DoNotCache("Plans workspace migration against live host filesystem").
 		Doc("Plan the explicit migration needed for the current workspace.",
 			"The returned plan has an empty changeset and no steps when no migration is needed.").
@@ -40,7 +41,23 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
-		dagql.Func("__workspaceModule", s.workspaceModule),
+		dagql.Func("__workspaceModule", s.workspaceModule).
+			View(AfterVersion("v1.0.0-0")),
+		dagql.Func("path", s.legacyPath).
+			View(BeforeVersion("v1.0.0-0")).
+			Doc("Workspace directory path relative to the workspace boundary."),
+		dagql.Func("configPath", s.legacyConfigPath).
+			View(BeforeVersion("v1.0.0-0")).
+			Doc("Path to config.toml relative to the workspace boundary (empty if not initialized)."),
+		dagql.Func("configFile", s.configFile).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Selected native workspace config file relative to the workspace root, if any."),
+		dagql.Func("hasConfig", s.legacyHasConfig).
+			View(BeforeVersion("v1.0.0-0")).
+			Doc("Whether a config.toml file exists in the workspace."),
+		dagql.Func("initialized", s.legacyInitialized).
+			View(BeforeVersion("v1.0.0-0")).
+			Doc("Whether .dagger/config.toml exists."),
 		dagql.NodeFunc("directory", s.directory).
 			WithInput(dagql.PerClientInput).
 			Doc(`Returns a Directory from the workspace.`,
@@ -69,15 +86,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.`),
 			),
 		dagql.NodeFunc("git", s.git).
+			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
 			Doc("Git state for this workspace. Errors if the workspace is not in a git repository."),
 		dagql.Func("init", s.workspaceInit).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Mutates workspace on host").
 			Doc("Initialize workspace config, creating dagger.toml.").
 			Args(
 				dagql.Arg("here").Doc("Create the workspace config directory at the workspace cwd instead of using the default write target."),
 			),
 		dagql.Func("install", s.install).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Install a module into the workspace, writing dagger.toml to the host.").
 			Args(
@@ -86,6 +106,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("uninstall", s.uninstall).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Uninstall a module from the workspace, writing dagger.toml to the host.").
 			Args(
@@ -93,6 +114,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("moduleInit", s.moduleInit).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Mutates workspace config and host filesystem").
 			Doc("Create a new module owned by the workspace and auto-install it in dagger.toml.").
 			Args(
@@ -104,6 +126,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("configRead", s.configRead).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
 			Doc("Read a configuration value from dagger.toml.",
 				"If key is empty, returns the full config.",
@@ -113,6 +136,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
 			),
 		dagql.Func("configWrite", s.configWrite).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Write a configuration value to dagger.toml.").
 			Args(
@@ -121,9 +145,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("envList", s.envList).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
 			Doc("List named environments defined in the workspace configuration."),
 		dagql.Func("envCreate", s.envCreate).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Create a named workspace environment if it does not already exist.").
 			Args(
@@ -131,6 +157,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("envRemove", s.envRemove).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Remove a named workspace environment.").
 			Args(
@@ -138,12 +165,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("moduleList", s.moduleList).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").
 			Doc("List modules defined in the workspace configuration.").
 			Args(
 				dagql.Arg("module").Doc("Optional module alias to inspect."),
 			),
 		dagql.Func("cwd", s.cwd).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Current location within the workspace root.",
 				`The workspace root is returned as "/".`,
 				"Relative paths in workspace APIs resolve from here."),
@@ -151,9 +180,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
-				dagql.Arg("skip").Doc("Skip checks matching the specified patterns"),
-				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
-				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions"),
+				dagql.Arg("skip").Doc("Skip checks matching the specified patterns").
+					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks").
+					View(AfterVersion("v0.21.0")),
+				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions").
+					View(AfterVersion("v0.21.4")),
 			),
 		dagql.Func("generators", s.generators).
 			Doc("Return all generators from modules loaded in the workspace.").
@@ -166,11 +198,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
 		dagql.NodeFunc("update", s.update).
+			View(AfterVersion("v0.21.0")).
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
 			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
 		migrateField,
 	}.Install(srv)
+
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceGit](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceModule](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceModuleSetting](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceMigration](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.WorkspaceMigrationStep](srv).View(AfterVersion("v1.0.0-0")))
 
 	dagql.Fields[*core.WorkspaceGit]{
 		dagql.NodeFunc("__repository", s.workspaceGitRepository).
@@ -238,6 +277,55 @@ func (s *workspaceSchema) cwd(
 ) (dagql.String, error) {
 	_ = ctx
 	return dagql.NewString(workspaceAPIPath(parent.Cwd)), nil
+}
+
+func (s *workspaceSchema) configFile(
+	ctx context.Context,
+	parent *core.Workspace,
+	_ struct{},
+) (dagql.String, error) {
+	_ = ctx
+	return dagql.NewString(parent.ConfigFile), nil
+}
+
+func (s *workspaceSchema) legacyPath(
+	ctx context.Context,
+	parent *core.Workspace,
+	_ struct{},
+) (dagql.String, error) {
+	_ = ctx
+	p := cleanWorkspaceRelPath(parent.Cwd)
+	if p == "." {
+		p = ""
+	}
+	return dagql.NewString(p), nil
+}
+
+func (s *workspaceSchema) legacyConfigPath(
+	ctx context.Context,
+	parent *core.Workspace,
+	_ struct{},
+) (dagql.String, error) {
+	_ = ctx
+	return dagql.NewString(parent.ConfigFile), nil
+}
+
+func (s *workspaceSchema) legacyHasConfig(
+	ctx context.Context,
+	parent *core.Workspace,
+	_ struct{},
+) (dagql.Boolean, error) {
+	_ = ctx
+	return dagql.NewBoolean(parent.ConfigFile != ""), nil
+}
+
+func (s *workspaceSchema) legacyInitialized(
+	ctx context.Context,
+	parent *core.Workspace,
+	_ struct{},
+) (dagql.Boolean, error) {
+	_ = ctx
+	return dagql.NewBoolean(parent.ConfigFile != ""), nil
 }
 
 type workspaceDirectoryArgs struct {

@@ -122,6 +122,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("uncommitted", s.uncommitted).
 			Doc("Returns the changeset of uncommitted changes in the git repository."),
 		dagql.NodeFunc("asWorkspace", s.asWorkspace).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Creates a synthetic workspace from this git repository.").
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),

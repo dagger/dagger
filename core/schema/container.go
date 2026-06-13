@@ -73,11 +73,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				),
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
-					`The service will be started only for this pull.`),
+					`The service will be started only for this pull.`).
+					View(AfterVersion("v0.21.6")),
 				dagql.Arg("protocol").Doc(
 					`Protocol to use for registry communication.`,
-					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`),
-				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`),
+					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
+					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
+					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("build", s.build).
 			View(BeforeVersion("v0.19.0")).
@@ -376,7 +379,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`),
+				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`).
+					View(AfterVersion("v0.21.0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -560,6 +564,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+				dagql.Arg("permissions").View(AfterVersion("v0.21.0")),
 			),
 
 		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).
@@ -714,11 +719,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				support.`),
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
-					`The service will be started only for this push.`),
+					`The service will be started only for this push.`).
+					View(AfterVersion("v0.21.6")),
 				dagql.Arg("protocol").Doc(
 					`Protocol to use for registry communication.`,
-					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`),
-				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`),
+					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
+					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
+					View(AfterVersion("v1.0.0-0")),
 			),
 
 		dagql.NodeFunc("platform", s.platform).

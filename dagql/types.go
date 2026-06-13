@@ -1647,9 +1647,8 @@ func (e *EnumValues[T]) AliasView(val T, target T, view ViewFilter) T {
 	panic(fmt.Sprintf("cannot find enum %q", target))
 }
 
-func (e *EnumValues[T]) Install(srv *Server) {
-	var zero T
-	srv.scalars[zero.Type().Name()] = e
+func (e *EnumValues[T]) Install(srv *Server, filter ...ViewFilter) {
+	srv.InstallScalar(e, filter...)
 }
 
 type EnumValueName struct {
@@ -1725,8 +1724,8 @@ type InputObjectSpec struct {
 	Fields      InputSpecs
 }
 
-func (spec InputObjectSpec) Install(srv *Server) {
-	srv.InstallTypeDef(spec)
+func (spec InputObjectSpec) Install(srv *Server, filter ...ViewFilter) {
+	srv.InstallTypeDef(spec, filter...)
 }
 
 func (spec InputObjectSpec) Type() *ast.Type {

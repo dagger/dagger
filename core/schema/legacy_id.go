@@ -8,6 +8,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // legacyIDView is the view in which per-type FooID scalars and the
@@ -33,22 +34,22 @@ func (h *legacyIDHook) InstallObject(class dagql.ObjectType, _ ...*ast.Directive
 	if _, ok := class.IDType(); !ok {
 		return
 	}
-	h.installLegacyID(class.TypeName(), class.Typed(), nil)
+	h.installLegacyID(class.TypeName(), class.Typed(), nil, legacyIDObjectView(class))
 }
 
 func (h *legacyIDHook) InstallInterface(iface *dagql.Interface, _ ...*ast.Directive) {
-	h.installLegacyID(iface.TypeName(), iface.Typed(), iface)
+	h.installLegacyID(iface.TypeName(), iface.Typed(), iface, legacyIDView)
 }
 
 // installLegacyID registers the FooID scalar and load<Foo>FromID root
 // field for a single type. When the type is an interface, iface is
 // non-nil and is used to verify that the loaded result implements it.
-func (h *legacyIDHook) installLegacyID(typeName string, returnType dagql.Typed, iface *dagql.Interface) {
+func (h *legacyIDHook) installLegacyID(typeName string, returnType dagql.Typed, iface *dagql.Interface, view dagql.ViewFilter) {
 	if strings.HasPrefix(typeName, "_") {
 		return
 	}
 	idScalar := dagql.NewScalar(typeName+"ID", dagql.AnyID{})
-	h.server.InstallScalar(idScalar, legacyIDView)
+	h.server.InstallScalar(idScalar, view)
 	h.server.Root().ObjectType().Extend(dagql.FieldSpec{
 		Name:        fmt.Sprintf("load%sFromID", typeName),
 		Description: fmt.Sprintf("Load a %s from its ID.", typeName),
@@ -57,7 +58,7 @@ func (h *legacyIDHook) installLegacyID(typeName string, returnType dagql.Typed, 
 			Name: "id",
 			Type: idScalar,
 		}),
-		ViewFilter: legacyIDView,
+		ViewFilter: view,
 	}, func(ctx context.Context, _ dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 		idable, ok := dagql.UnwrapAs[dagql.IDable](args["id"])
 		if !ok {
@@ -81,4 +82,23 @@ func (h *legacyIDHook) installLegacyID(typeName string, returnType dagql.Typed, 
 		}
 		return res, nil
 	})
+}
+
+func legacyIDObjectView(class dagql.ObjectType) dagql.ViewFilter {
+	viewFiltered, ok := class.(interface{ ViewFilter() dagql.ViewFilter })
+	if !ok || viewFiltered.ViewFilter() == nil {
+		return legacyIDView
+	}
+	return legacyIDAndView{legacyIDView, viewFiltered.ViewFilter()}
+}
+
+type legacyIDAndView []dagql.ViewFilter
+
+func (filters legacyIDAndView) Contains(view call.View) bool {
+	for _, filter := range filters {
+		if filter != nil && !filter.Contains(view) {
+			return false
+		}
+	}
+	return true
 }
