@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,50 @@ type graphQLError struct {
 
 func (e graphQLError) String() string {
 	return e.Message
+}
+
+type graphQLErrors []graphQLError
+
+func (errs graphQLErrors) Error() string {
+	msgs := make([]string, 0, len(errs))
+	for _, gqlErr := range errs {
+		msgs = append(msgs, gqlErr.Message)
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// IsGraphQLFieldUnavailable reports whether err is Cloud GraphQL telling us a
+// field is not present in the deployed schema. This lets clients ship before a
+// new Cloud field is everywhere and keep an older fallback path.
+func IsGraphQLFieldUnavailable(err error, field string) bool {
+	var gqlErrs graphQLErrors
+	if !errors.As(err, &gqlErrs) {
+		return false
+	}
+	needle := fmt.Sprintf("Cannot query field %q", field)
+	for _, gqlErr := range gqlErrs {
+		if strings.Contains(gqlErr.Message, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsCheckReportUnavailable(err error) bool {
+	if IsGraphQLFieldUnavailable(err, "report") || IsGraphQLFieldUnavailable(err, "check") {
+		return true
+	}
+	var gqlErrs graphQLErrors
+	if !errors.As(err, &gqlErrs) {
+		return false
+	}
+	for _, gqlErr := range gqlErrs {
+		if strings.Contains(gqlErr.Message, "CheckReportInput") ||
+			strings.Contains(gqlErr.Message, "CheckReport") {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) doGraphQL(ctx context.Context, opName string, query string, variables map[string]any, out any) error {
@@ -57,11 +102,7 @@ func (c *Client) doGraphQL(ctx context.Context, opName string, query string, var
 		return fmt.Errorf("decode %s response: %w", opName, err)
 	}
 	if len(envelope.Errors) > 0 {
-		msgs := make([]string, 0, len(envelope.Errors))
-		for _, gqlErr := range envelope.Errors {
-			msgs = append(msgs, gqlErr.Message)
-		}
-		return fmt.Errorf("%s: %s", opName, strings.Join(msgs, "; "))
+		return fmt.Errorf("%s: %w", opName, graphQLErrors(envelope.Errors))
 	}
 	if out == nil {
 		return nil

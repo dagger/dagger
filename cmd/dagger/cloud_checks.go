@@ -132,6 +132,19 @@ func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQ
 	result := aggregateCloudResult(rows)
 	renderCloudCheckReplayBanner(cmd, commit, rows, result)
 
+	if result != "green" && res.OrgName != "" {
+		rendered, err := renderCloudCheckReportsForChecks(cmd, res.Client, res.OrgName, checks)
+		if rendered {
+			if result != "green" {
+				return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("cloud checks are %s", result)}
+			}
+			return nil
+		}
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Cloud check report failed: %v; replaying trace.\n\n", err)
+		}
+	}
+
 	if cloudChecksHaveTraces(checks) {
 		if err := replayCloudChecks(cmd, res.Client, res.OrgID, commit, checks); err != nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "Cloud trace replay failed: %v\n\n", err)
@@ -145,6 +158,34 @@ func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQ
 		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("cloud checks are %s", result)}
 	}
 	return nil
+}
+
+func renderCloudCheckReportsForChecks(cmd *cobra.Command, client *cloudapi.Client, orgName string, checks []cloudapi.Check) (bool, error) {
+	if client == nil || orgName == "" || len(checks) == 0 {
+		return false, nil
+	}
+
+	reports := make([]cloudapi.CheckReport, 0, len(checks))
+	for _, check := range checks {
+		if check.ID == "" {
+			return false, nil
+		}
+		report, err := client.CheckReport(cmd.Context(), orgName, check.ID, cloudapi.CheckReportOptions{
+			LogLines:       120,
+			MaxFailedSpans: 20,
+			MaxTests:       50,
+		})
+		if err != nil {
+			if cloudapi.IsCheckReportUnavailable(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		reports = append(reports, *report)
+	}
+
+	renderCloudCheckReports(cmd, reports)
+	return true, nil
 }
 
 func (cli *CloudCLI) loadCloudCheckRowsAcrossUserOrgs(ctx context.Context, selectors cloudCheckSelectorFlags, login bool) (*cloudCheckQueryResult, error) {
@@ -680,6 +721,96 @@ func renderCloudCheckReplayBanner(cmd *cobra.Command, commit cloudapi.CheckCommi
 func renderCloudCheckRows(cmd *cobra.Command, orgName string, rows []cloudCheckRow) {
 	_ = orgName
 	renderCloudList(cmd, rows, []string{"check"})
+}
+
+func renderCloudCheckReports(cmd *cobra.Command, reports []cloudapi.CheckReport) {
+	for i, report := range reports {
+		if i > 0 {
+			fmt.Fprintln(cmd.OutOrStdout())
+		}
+
+		name := firstNonEmpty(report.CheckName, report.CheckID)
+		status := strings.ToLower(report.Status)
+		if status == "" {
+			status = "unknown"
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", name, status)
+		if report.Summary != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", report.Summary)
+		}
+
+		if report.Failure != nil {
+			if report.Failure.Message != "" && report.Failure.Message != report.Summary {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", report.Failure.Message)
+			}
+			for _, root := range report.Failure.Roots {
+				renderCloudCheckFailureRoot(cmd, root)
+			}
+		}
+
+		if report.Tests != nil && report.Tests.Total > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "  Tests: %d total, %d failed, %d skipped",
+				report.Tests.Total,
+				report.Tests.Failed,
+				report.Tests.Skipped)
+			if report.Tests.Running > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), ", %d running", report.Tests.Running)
+			}
+			fmt.Fprintln(cmd.OutOrStdout())
+			for _, tc := range report.Tests.Failures {
+				renderCloudCheckTestCase(cmd, "FAIL", tc)
+			}
+			for _, tc := range report.Tests.SkippedTests {
+				renderCloudCheckTestCase(cmd, "SKIP", tc)
+			}
+		}
+
+		for _, notice := range report.Notices {
+			fmt.Fprintf(cmd.OutOrStdout(), "  Notice: %s\n", notice)
+		}
+		if report.TraceURL != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "  Trace: %s\n", report.TraceURL)
+		}
+	}
+}
+
+func renderCloudCheckFailureRoot(cmd *cobra.Command, root cloudapi.CheckFailureRoot) {
+	name := firstNonEmpty(root.Name, root.SpanID)
+	fmt.Fprintf(cmd.OutOrStdout(), "  Failure root: %s\n", name)
+	if root.Message != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "    %s\n", root.Message)
+	}
+	renderCloudCheckLogExcerpt(cmd, root.Logs, "    ")
+	if root.TraceURL != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "    Trace: %s\n", root.TraceURL)
+	}
+}
+
+func renderCloudCheckTestCase(cmd *cobra.Command, label string, tc cloudapi.CheckTestCase) {
+	name := tc.Name
+	if tc.Suite != "" {
+		name = tc.Suite + "/" + name
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "    %s %s\n", label, name)
+	if tc.Message != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "      %s\n", tc.Message)
+	}
+	renderCloudCheckLogExcerpt(cmd, tc.Logs, "      ")
+	if tc.TraceURL != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "      Trace: %s\n", tc.TraceURL)
+	}
+}
+
+func renderCloudCheckLogExcerpt(cmd *cobra.Command, logs *cloudapi.CheckLogExcerpt, indent string) {
+	if logs == nil || len(logs.Lines) == 0 {
+		return
+	}
+	for _, line := range logs.Lines {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s%s\n", indent, line)
+	}
+	if logs.Truncated {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s... logs truncated ...\n", indent)
+	}
 }
 
 func renderCloudList(cmd *cobra.Command, rows []cloudCheckRow, columns []string) {
