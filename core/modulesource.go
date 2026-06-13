@@ -413,6 +413,7 @@ type persistedModuleSourceSDKCapabilities struct {
 	ClientGenerator   bool `json:"clientGenerator,omitempty"`
 	ModuleInitializer bool `json:"moduleInitializer,omitempty"`
 	ClientInitializer bool `json:"clientInitializer,omitempty"`
+	RuntimeTarget     bool `json:"runtimeTarget,omitempty"`
 }
 
 type persistedModuleSourcePayload struct {
@@ -522,6 +523,13 @@ func (sdk *persistedModuleSourceLazySDK) AsClientInitializer() (ClientInitialize
 		return nil, false
 	}
 	return persistedModuleSourceLazyClientInitializer{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsRuntimeTarget() (RuntimeTarget, bool) {
+	if sdk == nil || !sdk.capabilities.RuntimeTarget {
+		return nil, false
+	}
+	return persistedModuleSourceLazyRuntimeTarget{sdk: sdk}, true
 }
 
 type persistedModuleSourceLazyRuntime struct {
@@ -676,6 +684,24 @@ func (sdk persistedModuleSourceLazyClientInitializer) InitClient(
 	return initSDK.InitClient(ctx, workspace, path, module, args)
 }
 
+type persistedModuleSourceLazyRuntimeTarget struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ RuntimeTarget = persistedModuleSourceLazyRuntimeTarget{}
+
+func (sdk persistedModuleSourceLazyRuntimeTarget) TargetRuntime(ctx context.Context) (string, error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return "", err
+	}
+	targetSDK, ok := loaded.AsRuntimeTarget()
+	if !ok {
+		return "", fmt.Errorf("persisted module source sdk does not implement runtime target")
+	}
+	return targetSDK.TargetRuntime(ctx)
+}
+
 func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if src == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: nil module source")
@@ -713,6 +739,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		_, hasClientGenerator := src.SDKImpl.AsClientGenerator()
 		_, hasModuleInitializer := src.SDKImpl.AsModuleInitializer()
 		_, hasClientInitializer := src.SDKImpl.AsClientInitializer()
+		_, hasRuntimeTarget := src.SDKImpl.AsRuntimeTarget()
 		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
 			Runtime:           hasRuntime,
 			ModuleTypes:       hasModuleTypes,
@@ -720,6 +747,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			ClientGenerator:   hasClientGenerator,
 			ModuleInitializer: hasModuleInitializer,
 			ClientInitializer: hasClientInitializer,
+			RuntimeTarget:     hasRuntimeTarget,
 		}
 	}
 	if src.ContextDirectory.Self() != nil {

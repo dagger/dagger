@@ -38,4 +38,5 @@ var sdkFunctions = []string{
 	"generateClient",
 	"initModule",
 	"initClient",
+	"targetRuntime",
 }

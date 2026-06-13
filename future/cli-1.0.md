@@ -733,6 +733,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 
 - ✅ **`Workspace.moduleInit`** — returns `Changeset!` (was `String!`); atomic preview-and-apply via `handleChangesetResponseAt`. `sdk` is now the installed SDK name, not a source ref; the SDK must already carry the `as-sdk` marker. No callers in main; Go SDK regen pending so CLI currently calls via raw GraphQL.
 - ✅ **`Workspace.clientInit` / `Workspace.clientGenerate`** — new engine methods backing `dagger api client init` and `dagger generate`. `clientInit` uses the installed SDK entry and records the generated client under `[[modules.<sdk>.as-sdk.clients]]`.
+- ✅ **`targetRuntime` introspection wiring** — `core.RuntimeTarget` interface added and surfaced via `SDK.AsRuntimeTarget()`. When an SDK module exposes a `targetRuntime: String!` field on its main object, the engine calls it at `dagger module init` time and writes the returned value into the new module's `dagger-module.toml [runtime] source`. Self-hosting SDKs (today's common case) don't implement it; the engine falls back to the SDK's own installed ref. The persisted lazy-SDK path threads the capability through `persistedModuleSourceSDKCapabilities.RuntimeTarget`.
 - ✅ **Self-calls graduation** — per-module `experimental.SELF_CALLS` flag still in the schema for back-compat but the engine no longer consults it. Runtime-capability check (does the SDK implement `moduleTypes`?) replaces it.
 
 ### Shipped — flag rename
@@ -755,7 +756,6 @@ Tracked as implementation tasks #120–#130 with body-level notes.
 #### SDK contract
 
 - ⬜ **Concrete SDK `initModule` / `initClient` implementations** — the core CLI/engine contract is wired, but each SDK still needs to add the initializer functions it actually supports and regenerate its bindings. Task #129.
-- ⬜ **`targetRuntime` introspection wiring** — the engine hook (`resolveModuleRuntimeRef` / `lookupSDKTargetRuntime`) is in place but always returns `("", false)`. Activate when the first SDK opts in. Task #129.
 
 #### Ergonomic follow-ups
 
