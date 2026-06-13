@@ -340,15 +340,25 @@ func (s *workspaceSchema) resolveModuleRuntimeRef(ctx context.Context, sdkRef st
 // `targetRuntime` field. Returns ("", false) when the field is absent or
 // any step of the lookup fails — callers fall back to the SDK ref itself.
 //
-// Implementation note: the full lookup requires loading the SDK as a
-// callable module and selecting `targetRuntime` on its main object. That
-// dagql chain isn't wired here yet — no SDK currently exposes the field,
-// so adding the call would be untested speculation. The function signature
-// is the integration seam; when an SDK opts into the runtime/SDK split,
-// the body of this function is where the moduleSource → asModule → select
-// chain lands.
-func (s *workspaceSchema) lookupSDKTargetRuntime(_ context.Context, _ string) (string, bool) {
-	return "", false
+// Resolution chain: load the SDK module via the standard SDK loader, ask
+// for the RuntimeTarget capability, and if implemented, call it. Fail-soft
+// on every error path — the override is opt-in, not load-bearing, so any
+// failure to load or call the field falls through to the default and the
+// caller records the SDK's own ref as the runtime.
+func (s *workspaceSchema) lookupSDKTargetRuntime(ctx context.Context, sdkRef string) (string, bool) {
+	loaded, err := s.loadWorkspaceSDK(ctx, sdkRef)
+	if err != nil {
+		return "", false
+	}
+	target, ok := loaded.AsRuntimeTarget()
+	if !ok {
+		return "", false
+	}
+	ref, err := target.TargetRuntime(ctx)
+	if err != nil || ref == "" {
+		return "", false
+	}
+	return ref, true
 }
 
 func workspaceModuleInitSourceSelector(refPath string) dagql.Selector {
