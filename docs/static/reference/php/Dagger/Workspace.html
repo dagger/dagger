@@ -163,12 +163,32 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_clientGenerate">clientGenerate</a>()
+        
+                                            <p><p>Regenerate all generated API clients registered in workspace config and return the resulting Changeset.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     string
                 </div>
                 <div class="col-md-8">
                     <a href="#method_clientId">clientId</a>()
         
                                             <p><p>The client ID that owns this workspace's host filesystem.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_clientInit">clientInit</a>(string $path, string $sdk, string $module, bool|null $here = false, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $args = null)
+        
+                                            <p><p>Plan the workspace changes for initializing a generated API client: generated client files at <code>path</code> plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -316,7 +336,7 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_install">install</a>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false)
+                    <a href="#method_install">install</a>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false, bool|null $asSdk = false)
         
                                             <p><p>Install a module into the workspace, writing dagger.toml to the host.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -333,12 +353,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_moduleInit">moduleInit</a>(string $name, string|null $sdk = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = [], bool|null $selfCalls = false, bool|null $here = false)
+                    <a href="#method_moduleInit">moduleInit</a>(string $name, string|null $sdk = &#039;&#039;, string|null $path = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = [], bool|null $here = false, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $args = null)
         
-                                            <p><p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p></p>                </div>
+                                            <p><p>Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at <code>path</code>, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -561,8 +581,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_clientId">
+                    <h3 id="method_clientGenerate">
         <div class="location">at line 46</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>clientGenerate</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Regenerate all generated API clients registered in workspace config and return the resulting Changeset.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_clientId">
+        <div class="location">at line 55</div>
         <code>                    string
     <strong>clientId</strong>()
         </code>
@@ -593,8 +645,70 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_clientInit">
+        <div class="location">at line 64</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>clientInit</strong>(string $path, string $sdk, string $module, bool|null $here = false, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $args = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Plan the workspace changes for initializing a generated API client: generated client files at <code>path</code> plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$path</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$sdk</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$module</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$here</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\Json">Json</abbr>|null</td>
+                <td>$args</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_configFile">
-        <div class="location">at line 55</div>
+        <div class="location">at line 87</div>
         <code>                    string
     <strong>configFile</strong>()
         </code>
@@ -626,7 +740,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_configRead">
-        <div class="location">at line 70</div>
+        <div class="location">at line 102</div>
         <code>                    string
     <strong>configRead</strong>(string|null $key = &#039;&#039;)
         </code>
@@ -670,7 +784,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_configWrite">
-        <div class="location">at line 82</div>
+        <div class="location">at line 114</div>
         <code>                    string
     <strong>configWrite</strong>(string $key, string $value, bool|null $here = false)
         </code>
@@ -722,7 +836,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_cwd">
-        <div class="location">at line 100</div>
+        <div class="location">at line 132</div>
         <code>                    string
     <strong>cwd</strong>()
         </code>
@@ -755,7 +869,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_directory">
-        <div class="location">at line 111</div>
+        <div class="location">at line 143</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>directory</strong>(string $path, array|null $exclude = [], array|null $include = [], bool|null $gitignore = false)
         </code>
@@ -812,7 +926,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_envCreate">
-        <div class="location">at line 134</div>
+        <div class="location">at line 166</div>
         <code>                    string
     <strong>envCreate</strong>(string $name, bool|null $here = false)
         </code>
@@ -859,7 +973,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_envList">
-        <div class="location">at line 147</div>
+        <div class="location">at line 179</div>
         <code>                    array
     <strong>envList</strong>()
         </code>
@@ -891,7 +1005,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_envRemove">
-        <div class="location">at line 156</div>
+        <div class="location">at line 188</div>
         <code>                    string
     <strong>envRemove</strong>(string $name, bool|null $here = false)
         </code>
@@ -938,7 +1052,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 171</div>
+        <div class="location">at line 203</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>file</strong>(string $path)
         </code>
@@ -980,7 +1094,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_findUp">
-        <div class="location">at line 187</div>
+        <div class="location">at line 219</div>
         <code>                    string
     <strong>findUp</strong>(string $name, string|null $from = &#039;.&#039;)
         </code>
@@ -1029,7 +1143,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_generators">
-        <div class="location">at line 200</div>
+        <div class="location">at line 232</div>
         <code>                    <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
     <strong>generators</strong>(array|null $include = null)
         </code>
@@ -1071,7 +1185,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_git">
-        <div class="location">at line 212</div>
+        <div class="location">at line 244</div>
         <code>                    <a href="../Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a>
     <strong>git</strong>()
         </code>
@@ -1103,7 +1217,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 221</div>
+        <div class="location">at line 253</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -1135,7 +1249,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_init">
-        <div class="location">at line 230</div>
+        <div class="location">at line 262</div>
         <code>                    string
     <strong>init</strong>(bool|null $here = false)
         </code>
@@ -1177,9 +1291,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_install">
-        <div class="location">at line 242</div>
+        <div class="location">at line 274</div>
         <code>                    string
-    <strong>install</strong>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false)
+    <strong>install</strong>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false, bool|null $asSdk = false)
         </code>
     </h3>
     <div class="details">    
@@ -1208,6 +1322,11 @@
                 <td>$here</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$asSdk</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -1229,7 +1348,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_migrate">
-        <div class="location">at line 260</div>
+        <div class="location">at line 295</div>
         <code>                    <a href="../Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a>
     <strong>migrate</strong>(bool|null $force = false)
         </code>
@@ -1271,9 +1390,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleInit">
-        <div class="location">at line 272</div>
-        <code>                    string
-    <strong>moduleInit</strong>(string $name, string|null $sdk = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = [], bool|null $selfCalls = false, bool|null $here = false)
+        <div class="location">at line 307</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>moduleInit</strong>(string $name, string|null $sdk = &#039;&#039;, string|null $path = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = [], bool|null $here = false, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $args = null)
         </code>
     </h3>
     <div class="details">    
@@ -1281,7 +1400,7 @@
             
 
         <div class="method-description">
-                            <p><p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p></p>                        
+                            <p><p>Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at <code>path</code>, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1299,6 +1418,11 @@
             </tr>
                     <tr>
                 <td>string|null</td>
+                <td>$path</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
                 <td>$source</td>
                 <td></td>
             </tr>
@@ -1309,12 +1433,12 @@
             </tr>
                     <tr>
                 <td>bool|null</td>
-                <td>$selfCalls</td>
+                <td>$here</td>
                 <td></td>
             </tr>
                     <tr>
-                <td>bool|null</td>
-                <td>$here</td>
+                <td><abbr title="Dagger\Dagger\Json">Json</abbr>|null</td>
+                <td>$args</td>
                 <td></td>
             </tr>
             </table>
@@ -1324,7 +1448,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>string</td>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -1338,7 +1462,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleList">
-        <div class="location">at line 303</div>
+        <div class="location">at line 342</div>
         <code>                    array
     <strong>moduleList</strong>(string|null $module = &#039;&#039;)
         </code>
@@ -1380,7 +1504,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_services">
-        <div class="location">at line 315</div>
+        <div class="location">at line 354</div>
         <code>                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
     <strong>services</strong>(array|null $include = null)
         </code>
@@ -1422,7 +1546,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_uninstall">
-        <div class="location">at line 327</div>
+        <div class="location">at line 366</div>
         <code>                    string
     <strong>uninstall</strong>(string $name, bool|null $here = false)
         </code>
@@ -1469,7 +1593,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_update">
-        <div class="location">at line 342</div>
+        <div class="location">at line 381</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>update</strong>()
         </code>

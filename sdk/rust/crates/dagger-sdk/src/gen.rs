@@ -16682,6 +16682,14 @@ pub struct WorkspaceChecksOpts<'a> {
     pub only_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceClientInitOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Json>,
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceConfigReadOpts<'a> {
     /// Dotted key path (e.g. modules.greeter.source). Empty for full config.
     #[builder(setter(into, strip_option), default)]
@@ -16737,6 +16745,9 @@ pub struct WorkspaceInitOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceInstallOpts<'a> {
+    /// Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`).
+    #[builder(setter(into, strip_option), default)]
+    pub as_sdk: Option<bool>,
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
@@ -16751,18 +16762,20 @@ pub struct WorkspaceMigrateOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceModuleInitOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Json>,
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
     /// Additional include patterns for the module.
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// SDK to use for the new module.
+    /// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+    #[builder(setter(into, strip_option), default)]
+    pub path: Option<&'a str>,
+    /// Workspace install name of the SDK to use.
     #[builder(setter(into, strip_option), default)]
     pub sdk: Option<&'a str>,
-    /// Enable the self-calls experimental feature for the new module.
-    #[builder(setter(into, strip_option), default)]
-    pub self_calls: Option<bool>,
     /// Source subpath within the new module.
     #[builder(setter(into, strip_option), default)]
     pub source: Option<&'a str>,
@@ -16849,10 +16862,74 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+    pub fn client_generate(&self) -> Changeset {
+        let query = self.selection.select("clientGenerate");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The client ID that owns this workspace's host filesystem.
     pub async fn client_id(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("clientId");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Workspace-relative output directory for the generated client.
+    /// * `sdk` - Workspace install name of the SDK to use.
+    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn client_init(
+        &self,
+        path: impl Into<String>,
+        sdk: impl Into<String>,
+        module: impl Into<String>,
+    ) -> Changeset {
+        let mut query = self.selection.select("clientInit");
+        query = query.arg("path", path.into());
+        query = query.arg("sdk", sdk.into());
+        query = query.arg("module", module.into());
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Workspace-relative output directory for the generated client.
+    /// * `sdk` - Workspace install name of the SDK to use.
+    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn client_init_opts(
+        &self,
+        path: impl Into<String>,
+        sdk: impl Into<String>,
+        module: impl Into<String>,
+        opts: WorkspaceClientInitOpts,
+    ) -> Changeset {
+        let mut query = self.selection.select("clientInit");
+        query = query.arg("path", path.into());
+        query = query.arg("sdk", sdk.into());
+        query = query.arg("module", module.into());
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Selected native workspace config file relative to the workspace root, if any.
     pub async fn config_file(&self) -> Result<String, DaggerError> {
@@ -17186,6 +17263,9 @@ impl Workspace {
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
+        if let Some(as_sdk) = opts.as_sdk {
+            query = query.arg("asSdk", as_sdk);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Plan the explicit migration needed for the current workspace.
@@ -17219,32 +17299,39 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create a new module owned by the workspace and auto-install it in dagger.toml.
+    /// Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
     ///
     /// # Arguments
     ///
     /// * `name` - Name of the new module.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn module_init(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+    pub fn module_init(&self, name: impl Into<String>) -> Changeset {
         let mut query = self.selection.select("moduleInit");
         query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
-    /// Create a new module owned by the workspace and auto-install it in dagger.toml.
+    /// Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
     ///
     /// # Arguments
     ///
     /// * `name` - Name of the new module.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn module_init_opts<'a>(
+    pub fn module_init_opts<'a>(
         &self,
         name: impl Into<String>,
         opts: WorkspaceModuleInitOpts<'a>,
-    ) -> Result<String, DaggerError> {
+    ) -> Changeset {
         let mut query = self.selection.select("moduleInit");
         query = query.arg("name", name.into());
         if let Some(sdk) = opts.sdk {
             query = query.arg("sdk", sdk);
+        }
+        if let Some(path) = opts.path {
+            query = query.arg("path", path);
         }
         if let Some(source) = opts.source {
             query = query.arg("source", source);
@@ -17252,13 +17339,17 @@ impl Workspace {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
-        if let Some(self_calls) = opts.self_calls {
-            query = query.arg("selfCalls", self_calls);
-        }
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
-        query.execute(self.graphql_client.clone()).await
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// List modules defined in the workspace configuration.
     ///

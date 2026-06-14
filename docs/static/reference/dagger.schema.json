@@ -214,18 +214,23 @@
         "source": {
           "type": "string"
         },
+        "pin": {
+          "type": "string"
+        },
         "config": {
-          "type": "object"
+          "type": "object",
+          "description": "Deprecated: not persisted by current TOML schema. Legacy JSON read-only."
         },
         "debug": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Deprecated: not persisted by current TOML schema. Legacy JSON read-only."
         },
         "experimental": {
           "additionalProperties": {
             "type": "boolean"
           },
           "type": "object",
-          "description": "The experimental features enabled for this module."
+          "description": "Deprecated: self-calls graduated; not persisted by current TOML schema. Legacy JSON read-only."
         }
       },
       "additionalProperties": false,

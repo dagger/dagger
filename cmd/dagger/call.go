@@ -29,7 +29,7 @@ var callCoreCmd = &FuncCommand{
 	Name:              "core [options]",
 	Short:             "Call a core function",
 	Hidden:            true,
-	Deprecated:        "use 'dagger -m core function call' instead",
+	Deprecated:        "use 'dagger -m core api call' instead",
 	DisableModuleLoad: true,
 	Annotations: map[string]string{
 		"experimental":       "true",
@@ -65,15 +65,15 @@ func newFunctionListCmd(use string, hidden bool) *cobra.Command {
 		Short: `List available functions`,
 		Long: strings.ReplaceAll(`List available functions in a module.
 
-This is similar to ´dagger function call --help´, but only focused on showing the
+This is similar to ´dagger api call --help´, but only focused on showing the
 available functions.
 
 Examples:
-  dagger function list                           # List top-level functions in current workspace
-  dagger function list container                 # List functions on container
-  dagger -m core function list                   # List core functions
-  dagger -W github.com/acme/ws function list     # List top-level functions in explicit workspace
-  dagger -W github.com/acme/ws function list container from
+  dagger api functions                           # List top-level functions in current workspace
+  dagger api functions container                 # List functions on container
+  dagger -m core api functions                   # List core functions
+  dagger -W github.com/acme/ws api functions     # List top-level functions in explicit workspace
+  dagger -W github.com/acme/ws api functions container from
 `,
 			"´",
 			"`",

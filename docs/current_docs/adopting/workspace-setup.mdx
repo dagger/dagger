@@ -37,10 +37,10 @@ dagger install github.com/dagger/vitest
 dagger install github.com/dagger/prettier
 ```
 
-The first install creates `dagger.toml` at the workspace root. To create the config in the current directory instead - for a workspace nested inside a larger repository - initialize it explicitly with `--here`:
+The first install creates `dagger.toml` at the workspace root. To create the config in the current directory instead - for a workspace nested inside a larger repository - pass `--here` on the first install:
 
 ```shell
-dagger ws init --here
+dagger install --here github.com/dagger/eslint
 ```
 
 ## Configure modules
@@ -48,13 +48,13 @@ dagger ws init --here
 Many modules expose settings — a base image, a package manager, and so on. List the settings for your installed modules:
 
 ```shell
-dagger ws settings
+dagger settings
 ```
 
 Set one with `module`, `key`, and `value`:
 
 ```shell
-dagger ws settings eslint packageManager yarn
+dagger settings eslint packageManager yarn
 ```
 
 Settings are stored in `dagger.toml` alongside each module, so they're shared with everyone who uses the workspace.
@@ -64,13 +64,13 @@ Settings are stored in `dagger.toml` alongside each module, so they're shared wi
 If your project already uses a legacy `dagger.json`, convert it to the workspace format:
 
 ```shell
-dagger ws migrate
+dagger setup
 ```
 
 This writes `dagger.toml` from your existing configuration. See [Upgrade to Workspaces](/reference/upgrade-to-workspaces) for details.
 
 ## What's next
 
-- **Add to CI** — `dagger ws autocheck on` enables [Cloud Checks](/adopting/triggers) for a GitHub repository, or `dagger check` can run in any existing CI provider
+- **Add to CI** — `dagger cloud check on` enables [Cloud Checks](/adopting/triggers) for a GitHub repository, or `dagger check` can run in any existing CI provider
 - **Vary config per environment** — use [Environments](/using-dagger/environments) when staging and production need different settings
 - **Manage secrets** — if your checks need credentials, see [Secrets](/adopting/secrets)

@@ -6960,9 +6960,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::clientGenerate",
+			"p": "Dagger/Workspace.html#method_clientGenerate",
+			"d": "<p>Regenerate all generated API clients registered in workspace config and return the resulting Changeset.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::clientId",
 			"p": "Dagger/Workspace.html#method_clientId",
 			"d": "<p>The client ID that owns this workspace's host filesystem.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::clientInit",
+			"p": "Dagger/Workspace.html#method_clientInit",
+			"d": "<p>Plan the workspace changes for initializing a generated API client: generated client files at <code>path</code> plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.</p>"
 		},
 		{
 			"t": "M",
@@ -7064,7 +7076,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::moduleInit",
 			"p": "Dagger/Workspace.html#method_moduleInit",
-			"d": "<p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p>"
+			"d": "<p>Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at <code>path</code>, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.</p>"
 		},
 		{
 			"t": "M",

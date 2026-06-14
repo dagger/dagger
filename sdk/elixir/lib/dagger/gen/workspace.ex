@@ -49,6 +49,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+  """
+  @spec client_generate(t()) :: Dagger.Changeset.t()
+  def client_generate(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("clientGenerate")
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   The client ID that owns this workspace's host filesystem.
   """
   @spec client_id(t()) :: {:ok, String.t()} | {:error, term()}
@@ -57,6 +71,29 @@ defmodule Dagger.Workspace do
       workspace.query_builder |> QB.select("clientId")
 
     Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+  """
+  @spec client_init(t(), String.t(), String.t(), String.t(), [
+          {:here, boolean() | nil},
+          {:args, Dagger.JSON.t() | nil}
+        ]) :: Dagger.Changeset.t()
+  def client_init(%__MODULE__{} = workspace, path, sdk, module, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("clientInit")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("sdk", sdk)
+      |> QB.put_arg("module", module)
+      |> QB.maybe_put_arg("here", optional_args[:here])
+      |> QB.maybe_put_arg("args", optional_args[:args])
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace.client
+    }
   end
 
   @doc """
@@ -280,8 +317,11 @@ defmodule Dagger.Workspace do
   @doc """
   Install a module into the workspace, writing dagger.toml to the host.
   """
-  @spec install(t(), String.t(), [{:name, String.t() | nil}, {:here, boolean() | nil}]) ::
-          {:ok, String.t()} | {:error, term()}
+  @spec install(t(), String.t(), [
+          {:name, String.t() | nil},
+          {:here, boolean() | nil},
+          {:as_sdk, boolean() | nil}
+        ]) :: {:ok, String.t()} | {:error, term()}
   def install(%__MODULE__{} = workspace, ref, optional_args \\ []) do
     query_builder =
       workspace.query_builder
@@ -289,6 +329,7 @@ defmodule Dagger.Workspace do
       |> QB.put_arg("ref", ref)
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("here", optional_args[:here])
+      |> QB.maybe_put_arg("asSdk", optional_args[:as_sdk])
 
     Client.execute(workspace.client, query_builder)
   end
@@ -312,27 +353,32 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Create a new module owned by the workspace and auto-install it in dagger.toml.
+  Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
   """
   @spec module_init(t(), String.t(), [
           {:sdk, String.t() | nil},
+          {:path, String.t() | nil},
           {:source, String.t() | nil},
           {:include, [String.t()]},
-          {:self_calls, boolean() | nil},
-          {:here, boolean() | nil}
-        ]) :: {:ok, String.t()} | {:error, term()}
+          {:here, boolean() | nil},
+          {:args, Dagger.JSON.t() | nil}
+        ]) :: Dagger.Changeset.t()
   def module_init(%__MODULE__{} = workspace, name, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("moduleInit")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("sdk", optional_args[:sdk])
+      |> QB.maybe_put_arg("path", optional_args[:path])
       |> QB.maybe_put_arg("source", optional_args[:source])
       |> QB.maybe_put_arg("include", optional_args[:include])
-      |> QB.maybe_put_arg("selfCalls", optional_args[:self_calls])
       |> QB.maybe_put_arg("here", optional_args[:here])
+      |> QB.maybe_put_arg("args", optional_args[:args])
 
-    Client.execute(workspace.client, query_builder)
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace.client
+    }
   end
 
   @doc """
