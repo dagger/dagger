@@ -15175,6 +15175,14 @@ class Workspace(Type):
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
+    def client_generate(self) -> Changeset:
+        """Regenerate all generated API clients registered in workspace config
+        and return the resulting Changeset.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("clientGenerate", _args)
+        return Changeset(_ctx)
+
     async def client_id(self) -> str:
         """The client ID that owns this workspace's host filesystem.
 
@@ -15195,6 +15203,43 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("clientId", _args)
         return await _ctx.execute(str)
+
+    def client_init(
+        self,
+        path: str,
+        sdk: str,
+        module: str,
+        *,
+        here: bool | None = False,
+        args: JSON | None = None,
+    ) -> Changeset:
+        """Plan the workspace changes for initializing a generated API client:
+        generated client files at `path` plus a [[modules.<sdk-name>.as-
+        sdk.clients]] entry in dagger.toml. Returns the resulting Changeset
+        for the caller to preview and apply.
+
+        Parameters
+        ----------
+        path:
+            Workspace-relative output directory for the generated client.
+        sdk:
+            Workspace install name of the SDK to use.
+        module:
+            Workspace-relative path or canonical ref for the module the client
+            binds to.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        args:
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sdk", sdk),
+            Arg("module", module),
+            Arg("here", here, False),
+            Arg("args", args, None),
+        ]
+        _ctx = self._select("clientInit", _args)
+        return Changeset(_ctx)
 
     async def config_file(self) -> str:
         """Selected native workspace config file relative to the workspace root,
@@ -15601,6 +15646,7 @@ class Workspace(Type):
         *,
         name: str | None = "",
         here: bool | None = False,
+        as_sdk: bool | None = False,
     ) -> str:
         """Install a module into the workspace, writing dagger.toml to the host.
 
@@ -15612,6 +15658,10 @@ class Workspace(Type):
             Override name for the installed module entry.
         here:
             Write to the workspace config directory at the workspace cwd.
+        as_sdk:
+            Mark the install as an SDK (writes the empty `[modules.<name>.as-
+            sdk]` marker that dispatches `dagger module init <name>` and
+            `dagger api client init <name>`).
 
         Returns
         -------
@@ -15631,6 +15681,7 @@ class Workspace(Type):
             Arg("ref", ref),
             Arg("name", name, ""),
             Arg("here", here, False),
+            Arg("asSdk", as_sdk, False),
         ]
         _ctx = self._select("install", _args)
         return await _ctx.execute(str)
@@ -15647,58 +15698,52 @@ class Workspace(Type):
         _ctx = self._select("migrate", _args)
         return WorkspaceMigration(_ctx)
 
-    async def module_init(
+    def module_init(
         self,
         name: str,
         *,
         sdk: str | None = "",
+        path: str | None = "",
         source: str | None = "",
         include: list[str] | None = None,
-        self_calls: bool | None = False,
         here: bool | None = False,
-    ) -> str:
-        """Create a new module owned by the workspace and auto-install it in
-        dagger.toml.
+        args: JSON | None = None,
+    ) -> Changeset:
+        """Plan the workspace changes for initializing a new module: dagger-
+        module.toml + SDK codegen output at `path`, the authoring entry under
+        [[modules.<sdk>.as-sdk.modules]], and (when path defaults)
+        [modules.<name>]. The SDK must already be installed as an SDK. Returns
+        the resulting Changeset for the caller to preview and apply.
 
         Parameters
         ----------
         name:
             Name of the new module.
         sdk:
-            SDK to use for the new module.
+            Workspace install name of the SDK to use.
+        path:
+            Workspace-relative path for the new module. Defaults to
+            ".dagger/modules/<name>"; using the default also installs the
+            module in [modules.<name>].
         source:
             Source subpath within the new module.
         include:
             Additional include patterns for the module.
-        self_calls:
-            Enable the self-calls experimental feature for the new module.
         here:
             Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        args:
         """
         _args = [
             Arg("name", name),
             Arg("sdk", sdk, ""),
+            Arg("path", path, ""),
             Arg("source", source, ""),
             Arg("include", [] if include is None else include, []),
-            Arg("selfCalls", self_calls, False),
             Arg("here", here, False),
+            Arg("args", args, None),
         ]
         _ctx = self._select("moduleInit", _args)
-        return await _ctx.execute(str)
+        return Changeset(_ctx)
 
     async def module_list(self, *, module: str | None = "") -> list["WorkspaceModule"]:
         """List modules defined in the workspace configuration.

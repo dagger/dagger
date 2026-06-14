@@ -15371,7 +15371,6 @@ type Workspace struct {
 	id          *ID
 	init        *string
 	install     *string
-	moduleInit  *string
 	uninstall   *string
 }
 
@@ -15433,6 +15432,15 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	}
 }
 
+// Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+func (r *Workspace) ClientGenerate() *Changeset {
+	q := r.query.Select("clientGenerate")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // The client ID that owns this workspace's host filesystem.
 func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 	if r.clientId != nil {
@@ -15444,6 +15452,36 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// WorkspaceClientInitOpts contains options for Workspace.ClientInit
+type WorkspaceClientInitOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+
+	Args JSON
+}
+
+// Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+func (r *Workspace) ClientInit(path string, sdk string, module string, opts ...WorkspaceClientInitOpts) *Changeset {
+	q := r.query.Select("clientInit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("module", module)
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // Selected native workspace config file relative to the workspace root, if any.
@@ -15779,6 +15817,8 @@ type WorkspaceInstallOpts struct {
 	Name string
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+	// Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`).
+	AsSDK bool
 }
 
 // Install a module into the workspace, writing dagger.toml to the host.
@@ -15795,6 +15835,10 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
+		}
+		// `asSdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AsSDK) {
+			q = q.Arg("asSdk", opts[i].AsSDK)
 		}
 	}
 	q = q.Arg("ref", ref)
@@ -15829,28 +15873,31 @@ func (r *Workspace) Migrate(opts ...WorkspaceMigrateOpts) *WorkspaceMigration {
 
 // WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
 type WorkspaceModuleInitOpts struct {
-	// SDK to use for the new module.
+	// Workspace install name of the SDK to use.
 	SDK string
+	// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+	Path string
 	// Source subpath within the new module.
 	Source string
 	// Additional include patterns for the module.
 	Include []string
-	// Enable the self-calls experimental feature for the new module.
-	SelfCalls bool
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+
+	Args JSON
 }
 
-// Create a new module owned by the workspace and auto-install it in dagger.toml.
-func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...WorkspaceModuleInitOpts) (string, error) {
-	if r.moduleInit != nil {
-		return *r.moduleInit, nil
-	}
+// Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
+func (r *Workspace) ModuleInit(name string, opts ...WorkspaceModuleInitOpts) *Changeset {
 	q := r.query.Select("moduleInit")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sdk` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SDK) {
 			q = q.Arg("sdk", opts[i].SDK)
+		}
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
 		}
 		// `source` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Source) {
@@ -15860,21 +15907,20 @@ func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...Workspa
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
-		// `selfCalls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SelfCalls) {
-			q = q.Arg("selfCalls", opts[i].SelfCalls)
-		}
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
 		}
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
 	}
 	q = q.Arg("name", name)
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &Changeset{
+		query: q,
+	}
 }
 
 // WorkspaceModuleListOpts contains options for Workspace.ModuleList
