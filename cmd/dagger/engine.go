@@ -78,9 +78,26 @@ func runnerHostForEngineVersion(version string) string {
 
 type runClientCallback func(context.Context, *client.Client) error
 
+type engineRunConfig struct {
+	// Silent setup-style engine calls do not need live engine telemetry; leaving
+	// it enabled can keep the telemetry subscription alive after prompts abort.
+	ForwardEngineTelemetry bool
+}
+
 func withEngine(
 	ctx context.Context,
 	params client.Params,
+	fn runClientCallback,
+) (rerr error) {
+	return withEngineConfigured(ctx, params, engineRunConfig{
+		ForwardEngineTelemetry: true,
+	}, fn)
+}
+
+func withEngineConfigured(
+	ctx context.Context,
+	params client.Params,
+	cfg engineRunConfig,
 	fn runClientCallback,
 ) (rerr error) {
 	if err := applyWorkspaceClientParams(&params); err != nil {
@@ -140,13 +157,15 @@ func withEngine(
 
 		params.CloudURLCallback = Frontend.SetCloudURL
 
-		params.EngineTrace = telemetry.SpanForwarder{
-			Processors: telemetry.SpanProcessors,
+		if cfg.ForwardEngineTelemetry {
+			params.EngineTrace = telemetry.SpanForwarder{
+				Processors: telemetry.SpanProcessors,
+			}
+			params.EngineLogs = telemetry.LogForwarder{
+				Processors: telemetry.LogProcessors,
+			}
+			params.EngineMetrics = telemetry.MetricExporters
 		}
-		params.EngineLogs = telemetry.LogForwarder{
-			Processors: telemetry.LogProcessors,
-		}
-		params.EngineMetrics = telemetry.MetricExporters
 
 		params.WithTerminal = withTerminal
 

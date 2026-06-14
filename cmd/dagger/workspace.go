@@ -682,7 +682,9 @@ func withEngineSilent(ctx context.Context, params client.Params, fn runClientCal
 		Frontend = oldFrontend
 		opts = oldOpts
 	}()
-	return withEngine(ctx, params, fn)
+	return withEngineConfigured(ctx, params, engineRunConfig{
+		ForwardEngineTelemetry: false,
+	}, fn)
 }
 
 type workspaceRemoteAddress struct {
