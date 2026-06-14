@@ -157,6 +157,6 @@ func TestModuleInitCommandShape(t *testing.T) {
 	require.Same(t, moduleInitCmd, cmd)
 	require.Equal(t, "init <sdk> <name>", cmd.Use)
 	require.Nil(t, cmd.Flags().Lookup("sdk"))
-	require.NotNil(t, cmd.Flags().Lookup("path"))
+	require.NotNil(t, cmd.PersistentFlags().Lookup("path"))
 	require.Contains(t, cmd.Long, "to add more choices")
 }
