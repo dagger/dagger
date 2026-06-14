@@ -48,12 +48,44 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+     */
+    public function clientGenerate(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientGenerate');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The client ID that owns this workspace's host filesystem.
      */
     public function clientId(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clientId');
         return (string)$this->queryLeaf($leafQueryBuilder, 'clientId');
+    }
+
+    /**
+     * Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+     */
+    public function clientInit(
+        string $path,
+        string $sdk,
+        string $module,
+        ?bool $here = false,
+        ?Json $args = null,
+    ): Changeset {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientInit');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        $innerQueryBuilder->setArgument('module', $module);
+        if (null !== $here) {
+        $innerQueryBuilder->setArgument('here', $here);
+        }
+        if (null !== $args) {
+        $innerQueryBuilder->setArgument('args', $args);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -246,7 +278,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Install a module into the workspace, writing dagger.toml to the host.
      */
-    public function install(string $ref, ?string $name = '', ?bool $here = false): string
+    public function install(string $ref, ?string $name = '', ?bool $here = false, ?bool $asSdk = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('install');
         $leafQueryBuilder->setArgument('ref', $ref);
@@ -255,6 +287,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $here) {
         $leafQueryBuilder->setArgument('here', $here);
+        }
+        if (null !== $asSdk) {
+        $leafQueryBuilder->setArgument('asSdk', $asSdk);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'install');
     }
@@ -274,34 +309,38 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Create a new module owned by the workspace and auto-install it in dagger.toml.
+     * Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
      */
     public function moduleInit(
         string $name,
         ?string $sdk = '',
+        ?string $path = '',
         ?string $source = '',
         ?array $include = [],
-        ?bool $selfCalls = false,
         ?bool $here = false,
-    ): string {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
-        $leafQueryBuilder->setArgument('name', $name);
+        ?Json $args = null,
+    ): Changeset {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
+        $innerQueryBuilder->setArgument('name', $name);
         if (null !== $sdk) {
-        $leafQueryBuilder->setArgument('sdk', $sdk);
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        }
+        if (null !== $path) {
+        $innerQueryBuilder->setArgument('path', $path);
         }
         if (null !== $source) {
-        $leafQueryBuilder->setArgument('source', $source);
+        $innerQueryBuilder->setArgument('source', $source);
         }
         if (null !== $include) {
-        $leafQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $selfCalls) {
-        $leafQueryBuilder->setArgument('selfCalls', $selfCalls);
+        $innerQueryBuilder->setArgument('include', $include);
         }
         if (null !== $here) {
-        $leafQueryBuilder->setArgument('here', $here);
+        $innerQueryBuilder->setArgument('here', $here);
         }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'moduleInit');
+        if (null !== $args) {
+        $innerQueryBuilder->setArgument('args', $args);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
