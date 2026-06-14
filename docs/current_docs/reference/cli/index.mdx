@@ -44,11 +44,11 @@ dagger [options] [subcommand | file...]
 * [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
 * [dagger check](#dagger-check)	 - Verify your project — tests, linters, type checks, security scans, etc.
 * [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
-* [dagger exec](#dagger-exec)	 - Run a command with a connected Dagger session (DAGGER_SESSION_PORT/TOKEN injected)
 * [dagger generate](#dagger-generate)	 - Generate derived files for your project — code, SDKs, types, docs, etc.
 * [dagger install](#dagger-install)	 - Install a module into your workspace
 * [dagger installed](#dagger-installed)	 - List installed modules
 * [dagger module](#dagger-module)	 - Author a module: edit dependencies, engine version, etc.
+* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
 * [dagger search](#dagger-search)	 - Search for modules you can install
 * [dagger settings](#dagger-settings)	 - Get or set module settings (use --env for an env overlay)
 * [dagger setup](#dagger-setup)	 - Ensure Dagger is properly set up and operational in the workspace
@@ -135,6 +135,7 @@ See https://docs.dagger.io/api for the full overview.
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 * [dagger api call](#dagger-api-call)	 - Call one or more functions, interconnected into a pipeline
 * [dagger api client](#dagger-api-client)	 - Manage generated API clients
+* [dagger api exec](#dagger-api-exec)	 - Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)
 * [dagger api functions](#dagger-api-functions)	 - List available functions
 * [dagger api query](#dagger-api-query)	 - Send API queries to a dagger engine
 
@@ -306,6 +307,71 @@ dagger api client list
 
 * [dagger api client](#dagger-api-client)	 - Manage generated API clients
 
+## dagger api exec
+
+Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)
+
+### Synopsis
+
+Run an external command with a live Dagger API session attached.
+
+`DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` are injected into the
+command's environment so the command can talk to the engine directly.
+Progress is rendered live in the TUI.
+
+For example:
+```shell
+jq -n '{query:"{container{id}}"}' | \
+  dagger api exec sh -c 'curl -s \
+    -u $DAGGER_SESSION_TOKEN: \
+    -H "content-type:application/json" \
+    -d @- \
+    http://127.0.0.1:$DAGGER_SESSION_PORT/query'
+```
+
+```
+dagger api exec [options] <command>...
+```
+
+### Examples
+
+```
+dagger api exec go run main.go
+dagger api exec node index.mjs
+dagger api exec python main.py
+```
+
+### Options
+
+```
+      --cleanup-timeout duration   max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s)
+      --focus                      Only show output for focused commands.
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger api](#dagger-api)	 - Interact with the Dagger API (advanced)
+
 ## dagger api functions
 
 List available functions
@@ -314,15 +380,15 @@ List available functions
 
 List available functions in a module.
 
-This is similar to `dagger function call --help`, but only focused on showing the
+This is similar to `dagger api call --help`, but only focused on showing the
 available functions.
 
 Examples:
-  dagger function list                           # List top-level functions in current workspace
-  dagger function list container                 # List functions on container
-  dagger -m core function list                   # List core functions
-  dagger -W github.com/acme/ws function list     # List top-level functions in explicit workspace
-  dagger -W github.com/acme/ws function list container from
+  dagger api functions                           # List top-level functions in current workspace
+  dagger api functions container                 # List functions on container
+  dagger -m core api functions                   # List core functions
+  dagger -W github.com/acme/ws api functions     # List top-level functions in explicit workspace
+  dagger -W github.com/acme/ws api functions container from
 
 
 ```
@@ -1164,71 +1230,6 @@ dagger cloud org use <org> [flags]
 
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
 
-## dagger exec
-
-Run a command with a connected Dagger session (DAGGER_SESSION_PORT/TOKEN injected)
-
-### Synopsis
-
-Executes the specified command in a Dagger Session and displays
-live progress in a TUI.
-
-`DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` will be conveniently
-injected automatically.
-
-For example:
-```shell
-jq -n '{query:"{container{id}}"}' | \
-  dagger exec sh -c 'curl -s \
-    -u $DAGGER_SESSION_TOKEN: \
-    -H "content-type:application/json" \
-    -d @- \
-    http://127.0.0.1:$DAGGER_SESSION_PORT/query'
-```
-
-```
-dagger exec [options] <command>...
-```
-
-### Examples
-
-```
-dagger exec go run main.go
-dagger exec node index.mjs
-dagger exec python main.py
-```
-
-### Options
-
-```
-      --cleanup-timeout duration   max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s)
-      --focus                      Only show output for focused commands.
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-      --env string                   Apply the named workspace environment overlay
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
-  -E, --no-exit                      Leave the TUI running after completion
-      --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace location to load from (local path or git ref)
-      --x-release string             Run an experimental release from a Dagger git ref
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - A tool to run composable workflows in containers
-
 ## dagger generate
 
 Generate derived files for your project — code, SDKs, types, docs, etc.
@@ -1824,6 +1825,323 @@ dagger module sdk <subcommand> [args...] [flags]
 
 * [dagger module](#dagger-module)	 - Author a module: edit dependencies, engine version, etc.
 
+## dagger sdk
+
+Install and manage SDKs (the modules that author other modules)
+
+### Synopsis
+
+Install and manage SDKs.
+
+SDKs are workspace modules whose role is to scaffold/codegen other things:
+new Dagger modules (`dagger module init`) or typed clients against the
+Dagger API (`dagger api client init`). An install becomes an SDK when
+added through this group — `dagger sdk install go` marks the install
+with the [modules.go.as-sdk] table that `dagger module init` /
+`dagger api client init` use to dispatch.
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger sdk client-options](#dagger-sdk-client-options)	 - Show SDK-specific flags accepted by `dagger api client init <sdk>`
+* [dagger sdk install](#dagger-sdk-install)	 - Install an SDK and mark it
+* [dagger sdk list](#dagger-sdk-list)	 - List installed SDKs
+* [dagger sdk module-options](#dagger-sdk-module-options)	 - Show SDK-specific flags accepted by `dagger module init <sdk>`
+* [dagger sdk search](#dagger-sdk-search)	 - Discover SDKs in the SDK registry
+* [dagger sdk uninstall](#dagger-sdk-uninstall)	 - Remove an SDK install
+
+## dagger sdk client-options
+
+Show SDK-specific flags accepted by `dagger api client init <sdk>`
+
+### Synopsis
+
+Print the SDK-specific flags `dagger api client init <sdk>`
+accepts, introspected from the SDK's initClient function.
+
+Requires the SDK to implement the initClient capability.
+
+```
+dagger sdk client-options <sdk> [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
+
+## dagger sdk install
+
+Install an SDK and mark it
+
+### Synopsis
+
+Install an SDK into the current workspace and mark it with the
+[modules.<name>.as-sdk] table.
+
+Alias resolution: `dagger sdk install go` resolves "go" via the
+embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
+install name is the alias you typed (`go`), not the basename of
+the canonical ref (`go-sdk`). Direct refs work too:
+`dagger sdk install github.com/foo/sdk` is installed as
+[modules.sdk] by basename.
+
+Generic `dagger install <ref>` does NOT mark anything as an SDK.
+The marker is opt-in via this verb.
+
+```
+dagger sdk install [options] <name-or-ref> [flags]
+```
+
+### Examples
+
+```
+dagger sdk install go
+```
+
+### Options
+
+```
+      --here          Write to the workspace config directory at the workspace cwd
+  -n, --name string   Override the workspace install name (defaults to the alias you typed, or the basename of a direct ref)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
+
+## dagger sdk list
+
+List installed SDKs
+
+### Synopsis
+
+List installs in the current workspace that carry the
+[modules.<name>.as-sdk] marker.
+
+The M and C columns count workspace-local modules and clients authored
+under each SDK (the entries in [[modules.<name>.as-sdk.modules]] and
+[[modules.<name>.as-sdk.clients]]).
+
+```
+dagger sdk list [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
+
+## dagger sdk module-options
+
+Show SDK-specific flags accepted by `dagger module init <sdk>`
+
+### Synopsis
+
+Print the SDK-specific flags `dagger module init <sdk> <name>`
+accepts, introspected from the SDK's initModule function.
+
+Requires the SDK to implement the initModule capability.
+
+```
+dagger sdk module-options <sdk> [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
+
+## dagger sdk search
+
+Discover SDKs in the SDK registry
+
+### Synopsis
+
+List entries in the embedded SDK registry (sdks.json).
+
+With no query, prints all known SDKs and their aliases. With a query,
+filters by case-insensitive substring on name, description, alias, or repo.
+
+```
+dagger sdk search [query] [flags]
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
+
+## dagger sdk uninstall
+
+Remove an SDK install
+
+### Synopsis
+
+Remove an SDK install from the current workspace.
+
+Refuses if anything is authored under the SDK (entries in
+[[modules.<name>.as-sdk.modules]] or [[modules.<name>.as-sdk.clients]]).
+Pass --force to override and remove anyway; the authored module/client
+files are left on disk untouched, only the workspace entries go away.
+
+```
+dagger sdk uninstall [options] <name> [flags]
+```
+
+### Examples
+
+```
+dagger sdk uninstall go
+```
+
+### Options
+
+```
+      --force   Remove even if modules or clients are authored under this SDK
+      --here    Write to the workspace config directory at the workspace cwd
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
+
 ## dagger search
 
 Search for modules you can install
@@ -2395,3 +2713,4 @@ dagger workspace root [flags]
 ### SEE ALSO
 
 * [dagger workspace](#dagger-workspace)	 - Inspect or configure your workspace (cwd, remotes, config, etc.)
+

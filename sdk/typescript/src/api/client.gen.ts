@@ -2731,6 +2731,14 @@ export type WorkspaceChecksOpts = {
   onlyGenerate?: boolean
 }
 
+export type WorkspaceClientInitOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+  args?: JSON
+}
+
 export type WorkspaceConfigReadOpts = {
   /**
    * Dotted key path (e.g. modules.greeter.source). Empty for full config.
@@ -2807,6 +2815,11 @@ export type WorkspaceInstallOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+
+  /**
+   * Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`).
+   */
+  asSdk?: boolean
 }
 
 export type WorkspaceMigrateOpts = {
@@ -2815,9 +2828,14 @@ export type WorkspaceMigrateOpts = {
 
 export type WorkspaceModuleInitOpts = {
   /**
-   * SDK to use for the new module.
+   * Workspace install name of the SDK to use.
    */
   sdk?: string
+
+  /**
+   * Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+   */
+  path?: string
 
   /**
    * Source subpath within the new module.
@@ -2830,14 +2848,10 @@ export type WorkspaceModuleInitOpts = {
   include?: string[]
 
   /**
-   * Enable the self-calls experimental feature for the new module.
-   */
-  selfCalls?: boolean
-
-  /**
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+  args?: JSON
 }
 
 export type WorkspaceModuleListOpts = {
@@ -14474,7 +14488,6 @@ export class Workspace extends BaseClient {
   private readonly _findUp?: string = undefined
   private readonly _init?: string = undefined
   private readonly _install?: string = undefined
-  private readonly _moduleInit?: string = undefined
   private readonly _uninstall?: string = undefined
 
   /**
@@ -14494,7 +14507,6 @@ export class Workspace extends BaseClient {
     _findUp?: string,
     _init?: string,
     _install?: string,
-    _moduleInit?: string,
     _uninstall?: string,
   ) {
     super(ctx)
@@ -14511,7 +14523,6 @@ export class Workspace extends BaseClient {
     this._findUp = _findUp
     this._init = _init
     this._install = _install
-    this._moduleInit = _moduleInit
     this._uninstall = _uninstall
   }
 
@@ -14558,6 +14569,14 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+   */
+  clientGenerate = (): Changeset => {
+    const ctx = this._ctx.select("clientGenerate")
+    return new Changeset(ctx)
+  }
+
+  /**
    * The client ID that owns this workspace's host filesystem.
    */
   clientId = async (): Promise<string> => {
@@ -14570,6 +14589,28 @@ export class Workspace extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+   * @param path Workspace-relative output directory for the generated client.
+   * @param sdk Workspace install name of the SDK to use.
+   * @param module Workspace-relative path or canonical ref for the module the client binds to.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  clientInit = (
+    path: string,
+    sdk: string,
+    module_: string,
+    opts?: WorkspaceClientInitOpts,
+  ): Changeset => {
+    const ctx = this._ctx.select("clientInit", {
+      path,
+      sdk,
+      module: module_,
+      ...opts,
+    })
+    return new Changeset(ctx)
   }
 
   /**
@@ -14790,6 +14831,7 @@ export class Workspace extends BaseClient {
    * @param ref Module reference to install.
    * @param opts.name Override name for the installed module entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.asSdk Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`).
    */
   install = async (
     ref: string,
@@ -14817,27 +14859,17 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Create a new module owned by the workspace and auto-install it in dagger.toml.
+   * Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
    * @param name Name of the new module.
-   * @param opts.sdk SDK to use for the new module.
+   * @param opts.sdk Workspace install name of the SDK to use.
+   * @param opts.path Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
    * @param opts.source Source subpath within the new module.
    * @param opts.include Additional include patterns for the module.
-   * @param opts.selfCalls Enable the self-calls experimental feature for the new module.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
-  moduleInit = async (
-    name: string,
-    opts?: WorkspaceModuleInitOpts,
-  ): Promise<string> => {
-    if (this._moduleInit) {
-      return this._moduleInit
-    }
-
+  moduleInit = (name: string, opts?: WorkspaceModuleInitOpts): Changeset => {
     const ctx = this._ctx.select("moduleInit", { name, ...opts })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+    return new Changeset(ctx)
   }
 
   /**

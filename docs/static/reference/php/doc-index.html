@@ -395,9 +395,13 @@
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::column</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
                     <dd><p>The column number within the line.</p></dd><dt><a href="Dagger/Workspace.html#method_checks">
 <abbr title="Dagger\Workspace">Workspace</abbr>::checks</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_clientId">
+                    <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_clientGenerate">
+<abbr title="Dagger\Workspace">Workspace</abbr>::clientGenerate</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Regenerate all generated API clients registered in workspace config and return the resulting Changeset.</p></dd><dt><a href="Dagger/Workspace.html#method_clientId">
 <abbr title="Dagger\Workspace">Workspace</abbr>::clientId</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>The client ID that owns this workspace's host filesystem.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
+                    <dd><p>The client ID that owns this workspace's host filesystem.</p></dd><dt><a href="Dagger/Workspace.html#method_clientInit">
+<abbr title="Dagger\Workspace">Workspace</abbr>::clientInit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Plan the workspace changes for initializing a generated API client: generated client files at <code>path</code> plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Selected native workspace config file relative to the workspace root, if any.</p></dd><dt><a href="Dagger/Workspace.html#method_configRead">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configRead</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -1059,7 +1063,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::migrate</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Plan the explicit migration needed for the current workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleInit">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleInit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleList">
+                    <dd><p>Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at <code>path</code>, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleList">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleList</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>List modules defined in the workspace configuration.</p></dd>        </dl><h2 id="letterN">N</h2>
         <dl id="indexN"><dt><a href="Dagger/Binding.html#method_name">

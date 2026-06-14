@@ -5892,8 +5892,37 @@ type Workspace implements Node {
     onlyGenerate: Boolean
   ): CheckGroup!
 
+  """
+  Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+  """
+  clientGenerate: Changeset!
+
   """The client ID that owns this workspace's host filesystem."""
   clientId: String!
+
+  """
+  Plan the workspace changes for initializing a generated API client: generated
+  client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in
+  dagger.toml. Returns the resulting Changeset for the caller to preview and
+  apply.
+  """
+  clientInit(
+    """Workspace-relative output directory for the generated client."""
+    path: String!
+
+    """Workspace install name of the SDK to use."""
+    sdk: String!
+
+    """
+    Workspace-relative path or canonical ref for the module the client binds to.
+    """
+    module: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+
+    args: JSON
+  ): Changeset!
 
   """
   Selected native workspace config file relative to the workspace root, if any.
@@ -6051,6 +6080,13 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+
+    """
+    Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]`
+    marker that dispatches `dagger module init <name>` and `dagger api client
+    init <name>`).
+    """
+    asSdk: Boolean = false
   ): String!
 
   """
@@ -6061,14 +6097,25 @@ type Workspace implements Node {
   migrate(force: Boolean = false): WorkspaceMigration!
 
   """
-  Create a new module owned by the workspace and auto-install it in dagger.toml.
+  Plan the workspace changes for initializing a new module: dagger-module.toml +
+  SDK codegen output at `path`, the authoring entry under
+  [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>].
+  The SDK must already be installed as an SDK. Returns the resulting Changeset
+  for the caller to preview and apply.
   """
   moduleInit(
     """Name of the new module."""
     name: String!
 
-    """SDK to use for the new module."""
+    """Workspace install name of the SDK to use."""
     sdk: String = ""
+
+    """
+    Workspace-relative path for the new module. Defaults to
+    ".dagger/modules/<name>"; using the default also installs the module in
+    [modules.<name>].
+    """
+    path: String = ""
 
     """Source subpath within the new module."""
     source: String = ""
@@ -6076,12 +6123,11 @@ type Workspace implements Node {
     """Additional include patterns for the module."""
     include: [String!] = []
 
-    """Enable the self-calls experimental feature for the new module."""
-    selfCalls: Boolean = false
-
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
-  ): String!
+
+    args: JSON
+  ): Changeset!
 
   """List modules defined in the workspace configuration."""
   moduleList(
