@@ -30,6 +30,16 @@ func (e *UnsupportedFlagError) Error() string {
 	return msg
 }
 
+// FlagExistsError is returned when a flag with the same name
+// already exists in the flag set.
+type FlagExistsError struct {
+	Name string
+}
+
+func (e *FlagExistsError) Error() string {
+	return fmt.Sprintf("flag already exists: %s", e.Name)
+}
+
 // GetCustomFlagValue returns a pflag.Value instance for a dagger.ObjectTypeDef name.
 func GetCustomFlagValue(name string) DaggerValue {
 	switch name {
@@ -644,7 +654,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 	usage := r.Description
 
 	if flags.Lookup(name) != nil {
-		return fmt.Errorf("flag already exists: %s", name)
+		return &FlagExistsError{Name: name}
 	}
 
 	switch r.TypeDef.Kind {

@@ -583,8 +583,19 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 		}
 
 		if err := arg.AddFlag(cmd.Flags()); err != nil {
-			var e *UnsupportedFlagError
-			if errors.As(err, &e) {
+			var unsupportedErr *UnsupportedFlagError
+			if errors.As(err, &unsupportedErr) {
+				skipped = append(skipped, arg.FlagName())
+				continue
+			}
+			// NEW: Handle flag name collision with inherited persistent flags
+			var flagExistsErr *FlagExistsError
+			if errors.As(err, &flagExistsErr) {
+				// Flag name conflicts with an inherited persistent flag
+				// from a parent command. This is expected when a function
+				// arg name (e.g., "workspace") matches a global persistent
+				// flag. We skip it since the persistent flag already
+				// provides the needed functionality.
 				skipped = append(skipped, arg.FlagName())
 				continue
 			}
