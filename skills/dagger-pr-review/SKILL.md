@@ -27,12 +27,15 @@ Identify what you're reviewing:
 **Given a PR number or URL** (requires `gh`):
 
 ```bash
-gh pr view <num> --repo dagger/dagger --json title,body,author,baseRefName,headRefName,files,labels
+gh pr view <num> --repo dagger/dagger --json title,body,author,baseRefName,headRefName,headRefOid,files,labels
 gh pr diff <num> --repo dagger/dagger
 # Linked issues and discussion give design intent:
 gh pr view <num> --repo dagger/dagger --json body --jq .body   # look for "Fixes #..."
 gh api repos/dagger/dagger/pulls/<num>/comments --paginate     # existing review comments — don't repeat them
+gh pr checks <num> --repo dagger/dagger                         # CI status — failing lint/test checks are the cheapest signal
 ```
+
+`headRefOid` is the head SHA — you'll need it as `commit_id` when posting inline comments in Step 5B. Read CI before hand-checking lint or tests: a red `*:lint` or `*:test` check tells you what to look at (and a green one means you can skip re-deriving it).
 
 **Given a local branch**:
 
@@ -46,14 +49,14 @@ For either mode, also read the *surrounding code*, not just the diff. A diff onl
 
 ## Step 2 — Triage by area and load the right reference
 
-Map the changed paths to areas, and read the matching reference file(s) in `references/` before reviewing those hunks:
+Map the changed paths to areas, and read the matching reference file(s) in this skill directory before reviewing those hunks:
 
 | Paths | Area | Reference |
 |---|---|---|
-| `engine/`, `core/`, `dagql/`, `cmd/engine`, `auth/`, `network/` | Engine (Go) | `references/go.md` |
-| `cmd/codegen/`, `**/dagger.gen.go`, codegen templates | Codegen | `references/go.md` + repo skill `skills/dagger-codegen` |
-| `sdk/typescript/` | TypeScript SDK | `references/typescript.md` |
-| `sdk/go/`, `sdk/python/`, `sdk/elixir/`, etc. | Other SDKs | `references/go.md` for Go; general lenses otherwise |
+| `engine/`, `core/`, `dagql/`, `cmd/engine`, `auth/`, `network/` | Engine (Go) | `go.md` |
+| `cmd/codegen/`, `**/dagger.gen.go`, codegen templates | Codegen | `go.md` + repo skill `skills/dagger-codegen` |
+| `sdk/typescript/` | TypeScript SDK | `typescript.md` |
+| `sdk/go/`, `sdk/python/`, `sdk/elixir/`, etc. | Other SDKs | `go.md` for Go; general lenses otherwise |
 | `docs/` | Docs | general lenses; check examples actually compile/run |
 | `.changes/`, `CHANGELOG` | Release notes | checklist section below |
 
@@ -101,7 +104,7 @@ Verify the mechanical requirements from CONTRIBUTING.md; report any miss as a fi
 - **Changie**: user-facing changes need a `.changes/unreleased/*.yaml` entry with the right kind (Breaking/Added/Changed/Deprecated/Removed/Fixed/Experimental/Security/Dependencies). Internal refactors don't.
 - **DCO**: every commit has `Signed-off-by` matching the author.
 - **Commit messages**: imperative mood, concise subject, body explains why (per chris.beams.io guidance referenced in CONTRIBUTING.md).
-- **Lint**: would `dagger checks *:lint` pass? Apply the lint rules from the reference files mentally; flag obvious violations.
+- **Lint**: would `dagger check *:lint` pass? Don't eyeball the linter config — run the relevant `*:lint` check (or read CI status, gathered in Step 1) and only flag lint-class issues manually if it looks like the author never ran the linters.
 - **Docs**: user-visible behavior or API changes should update `docs/` when relevant.
 
 ## Step 5 — Produce the output
@@ -151,6 +154,8 @@ gh api repos/dagger/dagger/pulls/<num>/comments \
   -f path="core/foo.go" \
   -F line=123 -f side=RIGHT
 ```
+
+The API rejects (422) an inline comment whose `line` isn't part of the diff for `commit_id`, so anchor comments to lines the PR actually changed; for a multi-line range add `-F start_line=<n> -f start_side=RIGHT`. Use `side=LEFT` to comment on a removed/old line.
 
 Comment text style: direct, specific, kind. Lead with the issue, then the suggestion. Use GitHub suggestion blocks (```suggestion fenced blocks) for small concrete fixes. Phrase `question` items as genuine questions. Never post anything yourself — drafting only; the user posts.
 

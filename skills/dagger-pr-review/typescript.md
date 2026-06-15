@@ -7,7 +7,7 @@
 - `src/provisioning/`, `src/connect.ts` — engine provisioning and connection
 - `src/telemetry/` — OTel integration
 - `src/common/` — shared errors/utilities
-- `runtime/` — the **Go** module implementing the TS runtime (entrypoint generation, package-manager detection, node/bun/deno specifics). Review with `references/go.md`. Pinned tool versions live in `runtime/tsdistconsts`.
+- `runtime/` — the **Go** module implementing the TS runtime (entrypoint generation, package-manager detection, node/bun/deno specifics). Review with `go.md`. Pinned tool versions live in `runtime/tsdistconsts`.
 
 ## Multi-runtime support is the trap zone
 
