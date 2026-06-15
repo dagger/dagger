@@ -371,11 +371,11 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 		}
 		switch val := binding.Value.(type) {
 		case *dang.ConstructorFunction:
-			objDef, err := createObjectTypeDef(ctx, srv, binding.Key, val, env, localTypes)
+			objDef, err := createObjectTypeDef(ctx, srv, binding.Key, val, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create object %s: %w", binding.Key, err)
 			}
-			fnDef, err := createFunction(ctx, srv, val.ObjectType, binding.Key, val.FnType, env, localTypes)
+			fnDef, err := createFunction(ctx, srv, val.ObjectType, binding.Key, val.FnType, val.Closure, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create constructor for %s: %w", binding.Key, err)
 			}
@@ -452,7 +452,12 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 	return res, nil
 }
 
-func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name string, fn *hm.FunctionType, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.Function], error) {
+// createFunction builds a core.Function for the named slot. directiveScope is the
+// file-local scope used to evaluate directive arguments; it must be the owning
+// type's captured closure (ConstructorFunction.Closure) so that directive args
+// referencing imported symbols (e.g. @cache(policy: FunctionCachePolicy.Never))
+// resolve the same way the type's own source does. See issue #13440.
+func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name string, fn *hm.FunctionType, directiveScope dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.Function], error) {
 	var res dagql.ObjectResult[*core.Function]
 
 	retTypeDef, err := dangTypeToTypeDef(ctx, srv, fn.Ret(false), localTypes)
@@ -481,7 +486,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 		})
 	}
 
-	dirSels, err := functionDirectiveSelectors(ctx, env, mod.GetDirectives(name))
+	dirSels, err := functionDirectiveSelectors(ctx, directiveScope, mod.GetDirectives(name))
 	if err != nil {
 		return res, fmt.Errorf("directives for %s: %w", name, err)
 	}
@@ -522,7 +527,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Type, name
 			argArgs = append(argArgs, dagql.NamedInput{Name: "description", Value: dagql.String(doc)})
 		}
 
-		argArgs, err = applyArgDirectives(ctx, env, argArgs, arg.Key, args.Directives)
+		argArgs, err = applyArgDirectives(ctx, directiveScope, argArgs, arg.Key, args.Directives)
 		if err != nil {
 			return res, err
 		}
@@ -684,7 +689,7 @@ func dangValToGo(val dang.Value) (any, error) {
 	}
 }
 
-func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, module *dang.ConstructorFunction, env dang.ValueScope, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
+func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, module *dang.ConstructorFunction, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
 	classMod := module.ObjectType
@@ -719,7 +724,7 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		}
 		switch x := slotType.(type) {
 		case *hm.FunctionType:
-			fnDef, err := createFunction(ctx, srv, classMod, bindingName, x, env, localTypes)
+			fnDef, err := createFunction(ctx, srv, classMod, bindingName, x, module.Closure, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create method %s for %s: %w", bindingName, name, err)
 			}
