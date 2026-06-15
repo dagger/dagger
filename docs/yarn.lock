@@ -6041,6 +6041,11 @@ graceful-fs@^4.1.2, graceful-fs@^4.1.6, graceful-fs@^4.2.0, graceful-fs@^4.2.11,
   resolved "https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz"
   integrity sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==
 
+graphql@^16:
+  version "16.14.1"
+  resolved "https://registry.yarnpkg.com/graphql/-/graphql-16.14.1.tgz#e692888b5103480a71e48cd9c3ed1dd8b0c5af7f"
+  integrity sha512-cQOsSMS/IrDz82PVyRDvf/Q1F/bRbBVjJlh+xYOkI1qw2bWRvWGiWc+m2O0d6l4Bt1fyY+8kzJ8JFWGJqNeDBg==
+
 gray-matter@^4.0.3:
   version "4.0.3"
   resolved "https://registry.npmjs.org/gray-matter/-/gray-matter-4.0.3.tgz"

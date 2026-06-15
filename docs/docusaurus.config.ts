@@ -4,6 +4,7 @@ import { themes as prismThemes } from "prism-react-renderer";
 import remarkCodeImport from "remark-code-import";
 import remarkTemplate from "./plugins/remark-template";
 import llmsTxtPlugin from "./plugins/llms-txt-plugin";
+import daggerApiReference from "./plugins/dagger-api-reference";
 import path from "path";
 
 import { daggerVersion } from "./current_docs/partials/version";
@@ -24,6 +25,42 @@ const versionSelectOptions = [
 const versionSelectHtml = `<select class="docs-version-select" aria-label="Docs version" onchange="window.location.href=this.value">
   ${versionSelectOptions.map(({ label, path }) => `<option value="${path}">${label}</option>`).join("")}
 </select>`;
+
+function daggerWebFontsPlugin() {
+  return {
+    name: "dagger-webfonts",
+    injectHtmlTags() {
+      return {
+        headTags: [
+          {
+            tagName: "script",
+            attributes: {
+              src: "https://ajax.googleapis.com/ajax/libs/webfont/1.6.26/webfont.js",
+            },
+          },
+          {
+            tagName: "script",
+            attributes: {},
+            innerHTML: `
+              WebFont.load({
+                custom: {
+                  families: ["Hack", "Material Symbols Rounded"],
+                  urls: [
+                    "https://cdn.jsdelivr.net/npm/hack-font@3.3.0/build/web/hack.min.css",
+                    "https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:FILL@1"
+                  ]
+                },
+                google: {
+                  families: ["Open Sans:400,600,700", "Montserrat:400,600,700,800"]
+                }
+              });
+            `,
+          },
+        ],
+      };
+    },
+  };
+}
 
 const config: Config = {
   title: "Dagger",
@@ -117,6 +154,7 @@ const config: Config = {
     ],
   ],
   plugins: [
+    daggerWebFontsPlugin,
     // Custom webpack configuration for path aliases
     function (context, options) {
       return {
@@ -140,6 +178,9 @@ const config: Config = {
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content
     [llmsTxtPlugin, { docsPath }],
+    // Parses docs-graphql/schema.graphqls into the model rendered by the
+    // API reference components on the type reference pages.
+    daggerApiReference,
     [
       "posthog-docusaurus",
       {

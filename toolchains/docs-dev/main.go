@@ -89,19 +89,22 @@ func (d DocsDev) References(
 			Version: version,
 		}),
 	)
-	// 2. Generate the API reference docs
-	withAPIReference := dag.Container().
-		From("node:22").
-		WithMountedDirectory("/src", withGqlSchema).
-		WithMountedDirectory("/mnt/spectaql", spectaql()).
-		WithWorkdir("/src/docs").
-		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).
-		// -t specifies the target directory where spectaql will write the generated output
-		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "./static/api/reference/"}).
+	// 2. Generate the API reference stubs.
+	//
+	// The reference pages under docs/current_docs/reference/api are rendered
+	// from docs-graphql/schema.graphqls at site-build time by the
+	// dagger-api-reference Docusaurus plugin (see docs/plugins and
+	// docs/src/components/api). All this step regenerates is the thin per-type
+	// MDX stubs, so they stay in sync with the published core-type list.
+	opts := dagger.DocusaurusOpts{
+		Dir:  "./docs",
+		Yarn: true,
+	}
+	withAPIReference := dag.Docusaurus(withGqlSchema, opts).
+		Base().
+		WithExec([]string{"node", "plugins/dagger-api-reference/generate-stubs.js"}).
 		Directory("/src").
-		WithoutDirectory("docs/node_modules").
-		WithFile("docs/yarn.lock", src.File("docs/yarn.lock")).
-		WithFile("docs/package.json", src.File("docs/package.json"))
+		WithoutDirectory("docs/node_modules")
 	// 3. Generate CLI reference
 	withCliReference := src.WithFile("docs/current_docs/reference/cli/index.mdx", dag.DaggerCli().Reference(
 		dagger.DaggerCliReferenceOpts{
@@ -241,17 +244,4 @@ func (d DocsDev) Publish(
 	}
 
 	return nil
-}
-
-func spectaql() *dagger.Directory {
-	// HACK: return a custom build of spectaql that has reproducible example
-	// snippets (can be removed if anvilco/spectaql#976 is merged and released)
-	return dag.Container().
-		From("node:18").
-		// https://github.com/jedevc/spectaql/commit/174cde65e8457cea4f594a71686a1cfcd6042fd0
-		WithMountedDirectory("/src", dag.Git("https://github.com/jedevc/spectaql").Commit("174cde65e8457cea4f594a71686a1cfcd6042fd0").Tree()).
-		WithWorkdir("/src").
-		WithExec([]string{"yarn", "install"}).
-		WithExec([]string{"yarn", "run", "build"}).
-		Directory("./")
 }

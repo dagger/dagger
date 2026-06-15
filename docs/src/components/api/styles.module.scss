@@ -1,0 +1,590 @@
+// Reference styling for the schema-generated API pages. Everything is built on
+// Infima variables so light/dark themes Just Work and the reference feels
+// native to the rest of the Dagger docs.
+
+.apiType {
+  --api-border: var(--color-blackAlpha-200);
+  --api-muted: var(--color-gray-600);
+  --api-accent: var(--color-primary);
+  --api-literal: var(--color-yellow-600);
+  --api-type-name: var(--color-blue-600);
+  // A warm tint that sits on the docs' cream background instead of the cold
+  // Infima grays. Translucent black darkens the cream into a warm beige; dark
+  // mode uses a translucent white instead (see below).
+  --api-tint: var(--color-blackAlpha-50);
+  --api-tint-hover: var(--color-blackAlpha-100);
+  --api-popover-bg: var(--color-white);
+  --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-200);
+  --api-return-scalar: var(--color-blue-400);
+  --api-return-other: var(--color-blue-500);
+  --api-warning-text: var(--color-yellow-800);
+  --api-warning-bg: var(--color-yellow-50);
+  --api-warning-border: var(--color-yellow-300);
+  --api-danger-text: var(--color-red-700);
+  --api-danger-bg: var(--color-red-50);
+  --api-danger-border: var(--color-red-300);
+  --api-card-heading-bg: var(--api-tint);
+}
+
+:global(html[data-theme="dark"]) .apiType {
+  --api-border: var(--color-whiteAlpha-200);
+  --api-muted: var(--color-gray-300);
+  --api-accent: var(--color-purple-200);
+  --api-literal: var(--color-yellow-400);
+  --api-type-name: var(--color-blue-200);
+  --api-tint: var(--color-whiteAlpha-100);
+  --api-tint-hover: var(--color-whiteAlpha-200);
+  --api-popover-bg: var(--color-raisinBlack-700);
+  --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-500);
+  --api-return-scalar: var(--color-purple-200);
+  --api-return-other: var(--color-purple-300);
+  --api-warning-text: var(--color-yellow-200);
+  --api-warning-bg: var(--color-yellow-900);
+  --api-warning-border: var(--color-yellow-700);
+  --api-danger-text: var(--color-red-200);
+  --api-danger-bg: var(--color-red-900);
+  --api-danger-border: var(--color-red-700);
+  --api-card-heading-bg: var(--ifm-background-color);
+}
+
+.typeDesc {
+  font-size: 1.05rem;
+}
+
+.implements {
+  color: var(--api-muted);
+  font-size: 0.9rem;
+  margin-bottom: 2rem;
+
+  a {
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
+  code {
+    background: var(--api-tint);
+    border: none;
+  }
+
+  a code {
+    color: var(--api-accent);
+  }
+}
+
+/* ── quick-scan index ───────────────────────────────────────────── */
+// A plain two-column glossary: field names hug the right edge of their column,
+// sitting flush against their descriptions. No borders, zebra, or chrome — and
+// as a <dl> it dodges the site-wide `.markdown table` styling entirely.
+.index {
+  display: grid;
+  grid-template-columns: minmax(20%, max-content) minmax(0, 1fr);
+  column-gap: 1.25rem;
+  row-gap: 0.4rem;
+  align-items: baseline;
+  margin: 0 0 2.25rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.indexName {
+  grid-column: 1;
+  margin: 0;
+  text-align: right;
+  white-space: nowrap;
+
+  // Align baseline with description text (different fonts)
+  position: relative;
+  top: -1px;
+
+  a {
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+  // Monospace in the link color; no border or background — hover just underlines.
+  code {
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: var(--api-accent);
+    font-size: 14px;
+  }
+
+  &[data-return="scalar"] code {
+    color: var(--api-return-scalar);
+  }
+
+  &[data-return="other"] code {
+    color: var(--api-return-other);
+  }
+}
+
+.indexDesc {
+  grid-column: 2;
+  margin: 0;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.indexName[data-group-start="true"],
+.indexDesc[data-group-start="true"] {
+  padding-top: 0.45rem;
+}
+
+/* ── field cards ────────────────────────────────────────────────── */
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.card {
+  position: relative;
+  overflow: visible; // allow inline type popovers to escape the card body
+  scroll-margin-top: 1rem;
+}
+
+.cardHeading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.3rem 0.6rem;
+  background: var(--api-card-heading-bg);
+  border: none;
+  border-left: 3px solid var(--api-accent);
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: normal;
+  line-height: 1.6;
+}
+
+.cardHeadingSignature {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cardHeadingBadges {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.cardBody {
+  padding: 1rem 1.2rem 0.4rem;
+}
+
+/* ── signature ──────────────────────────────────────────────────── */
+// On the heading band the signature is the heading itself, so it carries no
+// code-chip background of its own.
+.signature {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.95rem;
+  white-space: normal;
+}
+
+.fieldName {
+  color: var(--api-accent);
+  text-decoration: none;
+  text-underline-offset: 0.15em;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.card[data-return="scalar"] {
+  .cardHeading {
+    border-left-color: var(--api-return-scalar);
+  }
+  .fieldName {
+    color: var(--api-return-scalar);
+  }
+}
+
+.card[data-return="other"] {
+  .cardHeading {
+    border-left-color: var(--api-return-other);
+  }
+  .fieldName {
+    color: var(--api-return-other);
+  }
+}
+
+.argName {
+  color: var(--ifm-color-emphasis-800);
+}
+
+.punct {
+  color: var(--api-muted);
+}
+
+.literal {
+  color: var(--api-literal);
+}
+
+.typeLink {
+  color: var(--api-accent);
+  text-decoration: none;
+  text-underline-offset: 0.15em;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.typeName {
+  color: var(--api-type-name);
+}
+
+// wrapped, one-per-line argument list for long signatures:
+//
+//   withNewFile(
+//     path: String!,
+//     contents: String!,
+//     permissions: Int = 420,
+//   ): Directory!
+//
+// inline-block gives the <code> its own block context so the argument lines
+// break cleanly beneath the opening paren instead of running on.
+.signatureMultiline {
+  display: inline-block;
+}
+.argsBlock {
+  display: block;
+}
+.argLine {
+  display: block;
+  padding-left: 2ch;
+}
+.retLine {
+  display: block;
+}
+
+/* ── badges ─────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.6rem;
+}
+
+.badge-experimental {
+  color: var(--api-warning-text);
+  background: var(--api-warning-bg);
+  border: 1px solid var(--api-warning-border);
+}
+
+.badge-deprecated {
+  color: var(--api-danger-text);
+  background: var(--api-danger-bg);
+  border: 1px solid var(--api-danger-border);
+}
+
+.cardDesc {
+  color: var(--ifm-font-color-base);
+
+  p:last-child {
+    margin-bottom: 0.8rem;
+  }
+}
+
+.deprecatedNote,
+.experimentalNote {
+  font-size: 0.88rem;
+  margin-bottom: 0.8rem;
+}
+.deprecatedNote {
+  color: var(--api-danger-text);
+}
+.experimentalNote {
+  color: var(--api-warning-text);
+}
+
+/* ── arguments ──────────────────────────────────────────────────── */
+.args {
+  display: flex;
+  flex-direction: column;
+  margin: 0.85rem 0 1rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--api-card-heading-bg);
+  border-radius: var(--ifm-global-radius);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.argList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+}
+
+.arg {
+  margin: 0;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--api-border);
+
+  &:first-child {
+    padding-top: 0;
+    border-top: none;
+  }
+
+  &:last-child {
+    padding-bottom: 0;
+  }
+}
+
+.argSignature {
+  margin: 0;
+
+  code {
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+}
+
+.argDesc {
+  margin: 0.2rem 0 0;
+  color: var(--ifm-color-emphasis-800);
+
+  p {
+    margin: 0.2rem 0 0;
+  }
+
+  p:first-child {
+    margin-top: 0;
+  }
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+}
+
+/* ── Dagger-directive notes (defaultPath / cache / ...) ─────────── */
+.note {
+  font-size: 0.85rem;
+  color: var(--api-muted);
+  margin-bottom: 0.6rem;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--api-border);
+}
+
+/* ── inline docs for non-core type tokens ───────────────────────── */
+.typeToken {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.typeInfo {
+  display: inline-flex;
+  position: relative;
+  margin-left: 0.3rem;
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.78rem;
+  font-weight: normal;
+  vertical-align: baseline;
+
+  &[data-open="true"] {
+    z-index: 20;
+  }
+}
+
+.typeInfoButton {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.45rem 0 0.35rem;
+  background: var(--api-tint);
+  color: var(--api-accent);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.35;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+
+  &::before {
+    content: "";
+    display: inline-block;
+    width: 0.3rem;
+    height: 0.3rem;
+    margin-right: 0.35rem;
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(-45deg);
+    transition: transform 120ms ease;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: var(--api-tint-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--api-accent);
+    outline-offset: 2px;
+  }
+}
+
+.typeInfo[data-open="true"] .typeInfoButton::before {
+  transform: rotate(45deg);
+}
+
+.typePopover {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  width: max-content;
+  min-width: 18rem;
+  max-width: min(46rem, calc(100vw - 3rem));
+  max-height: min(18rem, 60vh);
+  overflow: auto;
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  background: var(--api-popover-bg);
+  border: 1px solid var(--api-border);
+  border-radius: var(--ifm-global-radius);
+  box-shadow: var(--api-popover-shadow);
+  color: var(--ifm-font-color-base);
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.83rem;
+  font-weight: normal;
+  line-height: 1.45;
+  user-select: text;
+  white-space: normal;
+}
+
+.typeValueList,
+.inputSchema {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.typeValue,
+.inputField,
+.typePopoverIntro,
+.typePopoverDesc {
+  display: block;
+}
+
+.typePopoverIntro {
+  margin-bottom: 0.45rem;
+  color: var(--api-muted);
+}
+
+.typePopoverDesc {
+  color: var(--api-muted);
+}
+
+.popoverCode {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ifm-font-color-base);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.95em;
+}
+
+.inputField {
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--api-border);
+
+  &:first-child {
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .typePopoverDesc {
+    margin-top: 0.1rem;
+  }
+}
+
+.typeValue {
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--api-border);
+
+  &:first-child {
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .typePopoverDesc {
+    margin-top: 0.1rem;
+  }
+}
+
+/* ── deprecated fields ──────────────────────────────────────────── */
+.cardDeprecated {
+  .cardHeading {
+    border-left-color: var(--api-danger-border);
+  }
+  .fieldName {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+    opacity: 0.75;
+  }
+}
+
+/* ── references (returned by / accepted by) ─────────────────────── */
+.references {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--api-border);
+
+  h2 {
+    font-size: 1.3rem;
+  }
+}
+
+.refHeading {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--api-muted);
+  margin: 1.2rem 0 0.6rem;
+}
+
+.refList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+}
+
+.ref {
+  text-decoration: none;
+
+  code {
+    background: var(--api-tint);
+    border: none;
+    font-size: 0.82rem;
+    transition: background-color 0.15s ease;
+  }
+  &:hover code {
+    background: var(--api-tint-hover);
+  }
+}
+
+.refField {
+  color: var(--api-accent);
+}
+
+.refArg {
+  color: var(--api-muted);
+}
