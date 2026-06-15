@@ -133,11 +133,7 @@ func runGenerators(ctx context.Context, dag *dagger.Client, generatorGroup *dagg
 		return err
 	}
 	if includeClients {
-		clientChangesID, err := callClientGenerate(ctx, dag)
-		if err != nil {
-			return err
-		}
-		clientChanges := dag.LoadChangesetFromID(dagger.ChangesetID(clientChangesID))
+		clientChanges := dag.CurrentWorkspace().ClientGenerate()
 		cs, err = dag.Changeset().
 			WithChangesets(
 				[]*dagger.Changeset{cs, clientChanges},
