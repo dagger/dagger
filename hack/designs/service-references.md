@@ -47,8 +47,13 @@ settings.app = { from = "docusaurus:serve" }
 settings.base = { from = "base-images:chromium" }
 ```
 
-The path format is `<module>:<function>` for singleton functions, or
-`<module>:<function>:<collection-key>` for functions exposed by a collection member.
+The path format is `<module>:<function>` for singleton functions. Each
+colon-separated segment is a navigation step (a zero-arg function/field). When
+collections land (see [#13299](https://github.com/dagger/dagger/pull/13299)), a
+collection member is selected by appending `[<key>]` to the collection segment —
+e.g. `<module>:<collection>[<key>]:<function>`. Brackets distinguish a keyed
+member selection (`get(<key>)`) from a plain navigation step, so the path scales
+to arbitrary nesting and multiple collections (see [Collection Case](#collection-case)).
 
 ### Constraints
 
@@ -64,7 +69,10 @@ The path format is `<module>:<function>` for singleton functions, or
   `*dagger.Container` (typically optional).
 - Referenced functions take no arguments; a provider is parameterized via its
   own `settings.*` block, not at the reference site.
-- The colon separator is consistent with existing `ModTreeNode.PathString()` convention.
+- The colon separator is consistent with existing `ModTreeNode.PathString()`
+  convention. The `[<key>]` member-selection syntax (collections only) extends
+  that convention; `dagger up -l` is expected to print bracketed keys so refs are
+  always copied, not hand-constructed.
 - Invalid references (nonexistent module, nonexistent function, type mismatch)
   fail at runtime, not at config parse time.
 
@@ -111,6 +119,9 @@ When the engine processes constructor arg defaults from `WorkspaceConfig`:
    referenced workspace module. The engine evaluates the function and selects the
    ID of the object it returns (`Service`, `Container`). Resolution is type-agnostic:
    it builds dagql selectors from the path segments and grabs `id` off the result.
+   A bare segment becomes a zero-arg field selector; once collections land, a
+   `[<key>]` suffix becomes a `get(<key>)` selector on the preceding collection.
+   (Today only the bare-segment path is implemented.)
 
 3. **Injection**: The resolved object is passed as the constructor argument default,
    the same way primitive values are injected today via `UserDefault()`.
@@ -121,15 +132,52 @@ When the engine processes constructor arg defaults from `WorkspaceConfig`:
 
 ### Collection Case
 
-When a module uses Collections to dynamically expose multiple services:
+> Collections are still in design ([#13299](https://github.com/dagger/dagger/pull/13299)).
+> This section is forward-looking; nothing here is implemented yet, and the
+> singleton `<module>:<function>` path above is unaffected.
+
+When a module uses Collections to dynamically expose multiple members, a member
+is selected by key with `[<key>]`:
 
 ```toml
-# docusaurus detects 3 sites, exposes collection with keys "docs", "blog", "api"
-settings.app = { from = "docusaurus:serve:docs" }
+# docusaurus detects 3 sites, exposing a `sites` collection with keys
+# "docs", "blog", "api"; each member has a +up `serve` function.
+settings.app = { from = "docusaurus:sites[docs]:serve" }
 ```
 
-The third path segment identifies the collection member whose `+up` function provides
-the service.
+A bare segment is a navigation step (a zero-arg function/field); `[<key>]`
+selects a collection member, resolving to `get(<key>)` on the preceding
+collection per the collections algebra. This is why `[]` is needed rather than a
+third bare segment: a member is reached via a keyed `get`, not a field named
+after the key.
+
+#### Why `[<key>]` instead of `<module>:<function>:<key>`
+
+The earlier `:`-only form assumed a single, terminal collection dimension. A path
+is really an arbitrary-depth chain that interleaves navigation steps with keyed
+member selections, so the bracket form is needed to:
+
+- **Nest arbitrarily** — collections within collections:
+
+  ```toml
+  settings.app = { from = "docusaurus:sites[docs]:regions[us-east]:serve" }
+  ```
+
+- **Disambiguate multiple collections of the same type** — collections are
+  addressed by their field path, not their type, so two `Site` collections at
+  different locations stay distinct:
+
+  ```toml
+  settings.a = { from = "infra:staging[web]:serve" }
+  settings.b = { from = "infra:prod[web]:serve" }
+  ```
+
+- **Distinguish a key from a field** — `[<key>]` is unambiguous even when a
+  collection key collides with a sibling field name.
+
+For keys containing `:`, `[`, or `]`, a structured escape hatch may be added
+later (e.g. `{ from = { module = "docusaurus", path = ["sites", { get = "docs" }, "serve"] } }`);
+the common case stays the string form.
 
 ## Non-Goals
 
@@ -151,7 +199,10 @@ the service.
 
 - **Service resolution**: `core/up.go` / `core/modtree.go` — The `ModTreeNode` tree
   already supports discovering `+up` functions by path. Resolution evaluates the
-  function via `DagqlValue()` to obtain a `Service`.
+  function via `DagqlValue()` to obtain a `Service`. `resolveFunctionRef` in
+  `core/modfunc.go` splits the path on `:` and builds one zero-arg selector per
+  segment. Collection support (future) parses a `[<key>]` suffix into a
+  `get(<key>)` selector; the bare-segment path is unchanged.
 
 - **Config loading**: `engine/server/session_workspaces.go` — `ConfigDefaults` are
   marshaled as JSON and passed to `asModule`. The `from` map structure must survive
