@@ -123,32 +123,6 @@ func callClientInit(
 	return res.CurrentWorkspace.ClientInit.ID, nil
 }
 
-func callClientGenerate(ctx context.Context, dag *dagger.Client) (string, error) {
-	var res struct {
-		CurrentWorkspace struct {
-			ClientGenerate struct {
-				ID string `json:"id"`
-			} `json:"clientGenerate"`
-		} `json:"currentWorkspace"`
-	}
-	err := dag.Do(ctx, &dagger.Request{
-		Query: `query ClientGenerate {
-  currentWorkspace {
-    clientGenerate {
-      id
-    }
-  }
-}`,
-	}, &dagger.Response{Data: &res})
-	if err != nil {
-		return "", fmt.Errorf("generate api clients: %w", err)
-	}
-	if res.CurrentWorkspace.ClientGenerate.ID == "" {
-		return "", fmt.Errorf("api client generation returned an empty changeset id")
-	}
-	return res.CurrentWorkspace.ClientGenerate.ID, nil
-}
-
 type apiClientListEntry struct {
 	SDK     string            `json:"sdk"`
 	Path    string            `json:"path"`
