@@ -251,12 +251,14 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.FunctionCall]{
 		dagql.Func("returnValue", s.functionCallReturnValue).
 			WithInput(dagql.PerClientInput).
+			DoNotCache("Imperatively records the active function call result.").
 			Doc(`Set the return value of the function call to the provided value.`).
 			Args(
 				dagql.Arg("value").Doc(`JSON serialization of the return value.`),
 			),
 		dagql.Func("returnError", s.functionCallReturnError).
 			WithInput(dagql.PerClientInput).
+			DoNotCache("Imperatively records the active function call result.").
 			Doc(`Return an error from the function.`).
 			Args(
 				dagql.Arg("error").Doc(`The error to return.`),
@@ -273,7 +275,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
-				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks").
+					View(AfterVersion("v0.21.0")),
 			),
 
 		dagql.NodeFunc("check", s.moduleCheck).
@@ -604,7 +607,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The type of the elements in the list.`),
 		dagql.Func("__withElementTypeDef", s.listTypeDefWithElementTypeDef),
 	}.Install(dag)
-	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ScalarTypeDef]{
+		dagql.Func("__withName", s.scalarTypeDefWithName),
+	}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", s.enumTypeDefValues).
 			Deprecated("use members instead").
@@ -1953,6 +1958,12 @@ func (s *moduleSchema) enumTypeDefWithName(ctx context.Context, enum *core.EnumT
 	return enum.WithName(args.Name), nil
 }
 
+func (s *moduleSchema) scalarTypeDefWithName(ctx context.Context, scalar *core.ScalarTypeDef, args struct {
+	Name string
+}) (*core.ScalarTypeDef, error) {
+	return scalar.WithName(args.Name), nil
+}
+
 func (s *moduleSchema) enumTypeDefWithSourceMap(ctx context.Context, enum *core.EnumTypeDef, args struct {
 	SourceMap dagql.Optional[core.SourceMapID]
 }) (*core.EnumTypeDef, error) {
@@ -3024,7 +3035,7 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, parentMod.Self())
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, parentMod.Self().Clone())
 	if err != nil {
 		return inst, err
 	}

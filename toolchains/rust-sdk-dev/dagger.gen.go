@@ -286,7 +286,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cargoRegistryToken", err))
 				}
 			}
-			return nil, (*RustSdkDev).Release(&parent, ctx, sourceTag, cargoRegistryToken)
+			var cargoRegistryIndex string
+			if inputArgs["cargoRegistryIndex"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cargoRegistryIndex"]), &cargoRegistryIndex)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cargoRegistryIndex", err))
+				}
+			}
+			return nil, (*RustSdkDev).Release(&parent, ctx, sourceTag, cargoRegistryToken, cargoRegistryIndex)
 		case "ReleaseDryRun":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)

@@ -262,3 +262,15 @@ export class Registry {
  * The default registry used in any module.
  */
 export const registry = new Registry()
+
+/**
+ * Retrieve a class registered via the `@object()` decorator by its name.
+ *
+ * Useful for generated code (e.g. the static dispatch entrypoint) when the
+ * user's class isn't `export`'d but still needs to be reachable to construct
+ * instances and walk its prototype.
+ */
+export function getRegisteredClass(name: string): Class | undefined {
+  const meta = Reflect.getMetadata(name, registry) as RegistryClass | undefined
+  return meta?.class_
+}

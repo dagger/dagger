@@ -1,0 +1,168 @@
+---
+title: "Custom Runner"
+description: "Learn how to set up and configure a custom Dagger runner for executing workflows in your environment."
+slug: /reference/configuration/custom-runner
+sidebar_label: "Custom Runner"
+---
+
+
+A runner is the "backend" of Dagger where containers are actually executed.
+
+Runners are responsible for:
+
+- Executing containers specified by functions
+- Pulling container images, Git repos and other sources needed for function execution
+- Pushing container images to registries
+- Managing the cache backing function execution
+
+The runner is distributed as a container image, making it easy to run on various container runtimes like Docker, Kubernetes, Podman, etc.
+
+The consolidated steps to use a custom runner are:
+
+- Determine the runner version by using the same version as the CLI or SDK you
+  are using - e.g. if you are using the `v0.14.0` Python SDK, you should use
+  `v0.14.0` of the engine.
+- If changes to the base image are needed, make those and push them to a
+  registry. If no changes are needed, just use it as is.
+- Start the runner image in your target of choice, [requirements](#execution-requirements) and [configuration](#configuration) in mind.
+- Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with a [value pointing to your target](#connection-interface).
+- Call `dagger call` or execute SDK code directly with that environment variable set.
+
+:::important
+The `_EXPERIMENTAL_DAGGER_RUNNER_HOST` variable is experimental and may change in future.
+:::
+
+## Distribution and versioning
+
+The runner is distributed as a container image at `registry.dagger.io/engine`.
+
+- Tags are made for the version of each release.
+- For example, the [`v0.12.3` release](https://github.com/dagger/dagger/releases/tag/v0.12.3) has a corresponding image at `registry.dagger.io/engine:v0.12.3`
+
+## Execution requirements
+
+1. The runner container currently needs root capabilities, including among others `CAP_SYS_ADMIN`, in order to execute workflows. For example, this will be granted when using the `--privileged` flag of `docker run`.
+1. The runner container should be given a volume at `/var/lib/dagger`.
+    - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
+    - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`.
+1. The container image comes with a default entrypoint which should be used to start the runner; no extra arguments are needed.
+
+## Configuration
+
+To configure a manually started Dagger Engine, see the [Dagger Engine configuration documentation](./engine.mdx).
+
+## Connection interface
+
+After the runner starts up, the CLI needs to connect to it. In the default
+situation, this will happen automatically.
+
+However, if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable is set,
+then the CLI will instead connect to the endpoint specified there. This
+environment variable currently accepts values in the following format:
+
+1. `docker-container://<container name>` - Connect to the runner inside the given Docker container.
+    - Requires the `docker` CLI to be present and usable. Will result in shelling out to `docker exec`.
+1. `docker-image://<container image reference>` - Start the runner in Docker using the provided container image, pulling it locally if needed
+    - Requires the Docker CLI to be present and usable.
+1. `podman-container://<container name>` - Connect to the runner inside the given Podman container.
+1. `kube-pod://<podname>?context=<context>&namespace=<namespace>&container=<container>` - Connect to the runner inside the given Kubernetes pod.
+    - Query strings params like context and namespace are optional.
+1. `unix://<path to unix socket>` - Connect to the runner over the provided UNIX socket.
+1. `tcp://<address:port>` - Connect to the runner over TCP using the provided address and port.
+
+:::warning
+Dagger itself does not set up any encryption of data sent "over the wire". It
+relies on the underlying connection type to implement this when needed. If you
+are using a connection type that does not provide encryption, then all queries
+and responses will be sent in plaintext over the wire from the Dagger CLI to
+the runner.
+:::
+
+## GPU support
+
+:::warning
+GPU support is currently experimental and only works with NVIDIA GPUs.
+:::
+
+In order to use a GPU, Dagger needs a custom, GPU-enabled runner and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installing-the-nvidia-container-toolkit).
+
+Assuming that Dagger and the NVIDIA Container Toolkit are already installed on a GPU-capable host, use the instructions below to replace the default runner with a GPU-enabled runner.
+
+:::note
+The sections below provide instructions for the local host and for cloud infrastructure providers [Fly.io](https://fly.io/) and [Lambda Labs](https://lambdalabs.com/). These instructions can be adapted for use on other cloud providers, so long as the host has access to an NVIDIA GPU.
+:::
+
+<Tabs>
+<TabItem value="Local host">
+
+Use the following commands to deploy a GPU-enabled Dagger runner on the local host:
+
+```shell
+VERSION=$(dagger version | cut -d' ' -f2)
+docker rm -f dagger-engine-${VERSION} 2>/dev/null && docker run --gpus all -d --privileged -e _EXPERIMENTAL_DAGGER_GPU_SUPPORT=true --name dagger-engine-${VERSION} registry.dagger.io/engine:${VERSION}-gpu -- --debug
+```
+
+</TabItem>
+<TabItem value="Fly.io">
+In order for the runner to access a remote Dagger Engine on Fly.io, it must have access to a [Fly.io private network](https://fly.io/docs/networking/private-networking/) via a VPN.
+
+Use the following commands to deploy a GPU-enabled Dagger runner on Fly.io:
+
+```shell
+export FLYIO_TOKEN=YOUR-FLY.IO-TOKEN
+export FLYIO_ORG=YOUR-FLY.IO-ORG-NAME
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu call deploy-dagger-on-fly --token env://FLYIO_TOKEN --org env://FLYIO_ORG
+```
+
+:::note
+By default, the previous Dagger Function call uses the region `ord` and an NVIDIA L40s GPU, but you can easily [fork and modify the module code](https://github.com/samalba/dagger-modules/blob/7273f9528f91021cf0e41766349e1f3f9f5a90d7/nvidia-gpu/main.go#L34) for other requirements.
+:::
+
+The Dagger Function returns a message in your terminal, with an environment variable to export. For example:
+
+```shell
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=tcp://dagger-v0-14-0-smart-gerhard-2024-12-06.internal:2345
+```
+
+Copy and paste the previous command in your active terminal. From now on, Dagger will execute all function calls using the remote Dagger Engine running on Fly.io.
+
+To stop using the remote Dagger Engine on Fly.io and return to using your local Dagger Engine, use the following commands:
+
+```shell
+unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+# Make sure the Fly app name matches the one that was provisioned earlier
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu call destroy-dagger-on-fly --token env://FLYIO_TOKEN --app dagger-v0-14-0-smart-gerhard-2024-12-06
+```
+</TabItem>
+<TabItem value="Lambda Labs">
+Lambda Labs provides traditional virtual machines with a GPU attached.
+
+Use the following commands to deploy a GPU-enabled Dagger runner on a Lambda Labs virtual machine:
+
+```shell
+VERSION=$(dagger version | cut -d' ' -f2)
+docker rm -f dagger-engine-${VERSION} 2>/dev/null && docker run --gpus all -d --privileged -e _EXPERIMENTAL_DAGGER_GPU_SUPPORT=true --name dagger-engine-${VERSION} registry.dagger.io/engine:${VERSION}-gpu -- --debug
+```
+
+:::note
+The default user `ubuntu` does not have access to the Docker socket. Fix this with the command `sudo usermod -aG docker ubuntu`, restart the shell session, and try the command again.
+:::
+
+</TabItem>
+</Tabs>
+
+Once your GPU-enabled Dagger runner is configured, use the following Dagger Function to test if Dagger has access to the GPU:
+
+```shell
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu call has-gpu
+```
+
+If the GPU is properly configured, this Dagger Function returns `true`.
+
+Here's a more complex Dagger Function:
+
+```shell
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu call ollama-run --prompt "What color is the sky?"
+```
+
+This Dagger Function sets up an Ollama server, pulls a model, and prompts it with a question. It returns the response query from the prompt passed as argument.

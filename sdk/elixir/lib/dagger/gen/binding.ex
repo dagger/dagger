@@ -447,6 +447,76 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type WorkspaceGit
+  """
+  @spec as_workspace_git(t()) :: Dagger.WorkspaceGit.t()
+  def as_workspace_git(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspaceGit")
+
+    %Dagger.WorkspaceGit{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type WorkspaceMigration
+  """
+  @spec as_workspace_migration(t()) :: Dagger.WorkspaceMigration.t()
+  def as_workspace_migration(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspaceMigration")
+
+    %Dagger.WorkspaceMigration{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type WorkspaceMigrationStep
+  """
+  @spec as_workspace_migration_step(t()) :: Dagger.WorkspaceMigrationStep.t()
+  def as_workspace_migration_step(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspaceMigrationStep")
+
+    %Dagger.WorkspaceMigrationStep{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type WorkspaceModule
+  """
+  @spec as_workspace_module(t()) :: Dagger.WorkspaceModule.t()
+  def as_workspace_module(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspaceModule")
+
+    %Dagger.WorkspaceModule{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type WorkspaceModuleSetting
+  """
+  @spec as_workspace_module_setting(t()) :: Dagger.WorkspaceModuleSetting.t()
+  def as_workspace_module_setting(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspaceModuleSetting")
+
+    %Dagger.WorkspaceModuleSetting{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Returns the digest of the binding value
   """
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}

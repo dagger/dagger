@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -84,6 +85,9 @@ type Container struct {
 
 	// Secrets to expose to the container.
 	Secrets []ContainerSecret
+
+	// Volatile env vars exposed to future execs but not persisted in image config.
+	VolatileEnv []string
 
 	// Sockets to expose to the container.
 	Sockets []ContainerSocket
@@ -177,7 +181,20 @@ type ContainerWithSystemEnvVariableLazy struct {
 	Name   string
 }
 
+type ContainerWithVolatileVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+	Value  string
+}
+
 type ContainerWithoutEnvVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithoutVolatileVariableLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
 	Name   string
@@ -512,6 +529,7 @@ type persistedContainerPayload struct {
 	Services           []persistedServiceBinding           `json:"services,omitempty"`
 	DefaultTerminalCmd DefaultTerminalCmdOpts              `json:"defaultTerminalCmd"`
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
+	VolatileEnv        []string                            `json:"volatileEnv,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
 	LazyJSON           json.RawMessage                     `json:"lazyJSON,omitempty"`
 }
@@ -577,7 +595,18 @@ type persistedContainerWithSystemEnvVariableLazy struct {
 	Name           string `json:"name"`
 }
 
+type persistedContainerWithVolatileVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+	Value          string `json:"value"`
+}
+
 type persistedContainerWithoutEnvVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithoutVolatileVariableLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Name           string `json:"name"`
 }
@@ -661,11 +690,13 @@ type persistedContainerWithDefaultTerminalCmdLazy struct {
 }
 
 type persistedContainerFromLazy struct {
-	ParentResultID uint64                          `json:"parentResultID"`
-	CanonicalRef   string                          `json:"canonicalRef"`
-	Config         dockerspec.DockerOCIImageConfig `json:"config"`
-	ImageRef       string                          `json:"imageRef,omitempty"`
-	Platform       Platform                        `json:"platform"`
+	ParentResultID    uint64                           `json:"parentResultID"`
+	CanonicalRef      string                           `json:"canonicalRef"`
+	Config            dockerspec.DockerOCIImageConfig  `json:"config"`
+	ImageRef          string                           `json:"imageRef,omitempty"`
+	Platform          Platform                         `json:"platform"`
+	RegistryServices  []persistedServiceBinding        `json:"registryServices,omitempty"`
+	RegistryTransport serverresolver.RegistryTransport `json:"registryTransport,omitempty"`
 }
 
 type persistedContainerWithRootFSLazy struct {
@@ -996,6 +1027,7 @@ func materializeContainerStateFromParent(ctx context.Context, dst *Container, pa
 	dst.Platform = parent.Self().Platform
 	dst.Annotations = slices.Clone(parent.Self().Annotations)
 	dst.Secrets = slices.Clone(parent.Self().Secrets)
+	dst.VolatileEnv = slices.Clone(parent.Self().VolatileEnv)
 	dst.Sockets = slices.Clone(parent.Self().Sockets)
 	dst.ImageRef = parent.Self().ImageRef
 	dst.Ports = slices.Clone(parent.Self().Ports)
@@ -1440,6 +1472,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		Services:           services,
 		DefaultTerminalCmd: container.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
+		VolatileEnv:        slices.Clone(container.VolatileEnv),
 		DefaultArgs:        container.DefaultArgs,
 	}
 	if container.Lazy != nil {
@@ -1678,6 +1711,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		Services:           services,
 		DefaultTerminalCmd: persisted.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
+		VolatileEnv:        slices.Clone(persisted.VolatileEnv),
 		DefaultArgs:        persisted.DefaultArgs,
 	}
 	if persisted.Form != persistedContainerFormLazy {
@@ -1882,7 +1916,7 @@ func targetParentDirectoryForContainerPath(ctx context.Context, parent dagql.Obj
 	}
 }
 
-func expandContainerInput(container *Container, input string, expand bool) (string, error) {
+func ExpandContainerInput(container *Container, input string, expand bool) (string, error) {
 	if !expand {
 		return input, nil
 	}
@@ -1891,11 +1925,19 @@ func expandContainerInput(container *Container, input string, expand bool) (stri
 	for _, secret := range container.Secrets {
 		secretEnvs = append(secretEnvs, secret.EnvName)
 	}
+	volatileEnvs := []string{}
+	WalkEnv(container.VolatileEnv, func(name, _, _ string) {
+		volatileEnvs = append(volatileEnvs, name)
+	})
 
 	var secretEnvFoundError error
 	expanded := os.Expand(input, func(k string) string {
 		if slices.Contains(secretEnvs, k) {
 			secretEnvFoundError = fmt.Errorf("expand cannot be used with secret env variable %q", k)
+			return ""
+		}
+		if slices.Contains(volatileEnvs, k) {
+			secretEnvFoundError = fmt.Errorf("expand cannot be used with volatile env variable %q", k)
 			return ""
 		}
 
@@ -1909,7 +1951,7 @@ func expandContainerInput(container *Container, input string, expand bool) (stri
 }
 
 func resolveContainerInputPath(container *Container, rawPath string, expand bool) (string, error) {
-	path, err := expandContainerInput(container, rawPath, expand)
+	path, err := ExpandContainerInput(container, rawPath, expand)
 	if err != nil {
 		return "", err
 	}
@@ -2238,7 +2280,7 @@ func (lazy *ContainerWithEnvVariableLazy) Evaluate(ctx context.Context, containe
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		value, err := expandContainerInput(container, lazy.Value, lazy.Expand)
+		value, err := ExpandContainerInput(container, lazy.Value, lazy.Expand)
 		if err != nil {
 			return err
 		}
@@ -2366,6 +2408,38 @@ func (lazy *ContainerWithSystemEnvVariableLazy) EncodePersisted(ctx context.Cont
 	})
 }
 
+func (lazy *ContainerWithVolatileVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withVolatileVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.WithVolatileVariable(lazy.Name, lazy.Value)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithVolatileVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+		Value:          lazy.Value,
+	})
+}
+
 func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withoutEnvVariable", func(ctx context.Context) error {
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
@@ -2386,6 +2460,37 @@ func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, conta
 		}
 		container.Lazy = nil
 		return nil
+	})
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutVolatileVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.WithoutVolatileVariable(lazy.Name)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutVolatileVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
 	})
 }
 
@@ -4176,6 +4281,22 @@ func decodePersistedContainerLazy(
 			Name:      persisted.Name,
 		}
 		return nil
+	case "withVolatileVariable":
+		var persisted persistedContainerWithVolatileVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withVolatileVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withVolatileVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithVolatileVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+			Value:     persisted.Value,
+		}
+		return nil
 	case "withoutEnvVariable":
 		var persisted persistedContainerWithoutEnvVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -4186,6 +4307,21 @@ func decodePersistedContainerLazy(
 			return err
 		}
 		container.Lazy = &ContainerWithoutEnvVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "withoutVolatileVariable":
+		var persisted persistedContainerWithoutVolatileVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutVolatileVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutVolatileVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutVolatileVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
@@ -4426,15 +4562,24 @@ func decodePersistedContainerLazy(
 		if err != nil {
 			return err
 		}
-		container.Lazy = &ContainerFromImageRefLazy{
-			Parent:       parent,
-			LazyState:    NewLazyState(),
-			CanonicalRef: persisted.CanonicalRef,
-			Config:       persisted.Config,
-			ImageRef:     persisted.ImageRef,
-			Platform:     persisted.Platform,
-			ResolveMode:  serverresolver.ResolveModeDefault,
+		lazy := &ContainerFromImageRefLazy{
+			Parent:            parent,
+			LazyState:         NewLazyState(),
+			CanonicalRef:      persisted.CanonicalRef,
+			Config:            persisted.Config,
+			ImageRef:          persisted.ImageRef,
+			Platform:          persisted.Platform,
+			ResolveMode:       serverresolver.ResolveModeDefault,
+			RegistryTransport: persisted.RegistryTransport,
 		}
+		if len(persisted.RegistryServices) > 0 {
+			services, err := decodePersistedServiceBindings(ctx, dag, "container from registry", persisted.RegistryServices)
+			if err != nil {
+				return err
+			}
+			lazy.RegistryServices = services
+		}
+		container.Lazy = lazy
 		return nil
 	case "withRootfs":
 		var persisted persistedContainerWithRootFSLazy
@@ -4834,9 +4979,16 @@ func (container *Container) FromCanonicalRef(
 	if err != nil {
 		return fmt.Errorf("failed to get registry resolver: %w", err)
 	}
+	network, detach, err := ContainerRegistryNetwork(ctx, container.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
 	pulled, err := rslvr.Pull(ctx, refStr, serverresolver.PullOpts{
 		Platform:    platform.Spec(),
 		ResolveMode: serverresolver.ResolveModeDefault,
+		Network:     network,
 	})
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", refStr, err)
@@ -5861,6 +6013,32 @@ func (container *Container) WithSecretVariable(
 }
 
 // mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithVolatileVariable(name string, value string) *Container {
+	container.VolatileEnv = AddEnv(container.VolatileEnv, name, value)
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithoutVolatileVariable(name string) *Container {
+	newEnv := []string{}
+	WalkEnv(container.VolatileEnv, func(k, _, env string) {
+		if !shell.EqualEnvKeys(k, name) {
+			newEnv = append(newEnv, env)
+		}
+	})
+	container.VolatileEnv = newEnv
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container
+}
+
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithoutSecretVariable(ctx context.Context, name string) (*Container, error) {
 	for i, secret := range container.Secrets {
 		if secret.EnvName == name {
@@ -6194,6 +6372,8 @@ func (container *Container) Publish(
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
+	registryServices ServiceBindings,
+	registryTransport serverresolver.RegistryTransport,
 ) (string, error) {
 	variants := filterEmptyContainers(append([]*Container{container}, platformVariants...))
 	inputByPlatform, err := getVariantRefs(ctx, variants)
@@ -6209,8 +6389,13 @@ func (container *Container) Publish(
 	if err != nil {
 		return "", fmt.Errorf("failed to get engine client: %w", err)
 	}
+	network, detach, err := ContainerRegistryNetwork(ctx, registryServices)
+	if err != nil {
+		return "", err
+	}
+	defer detach()
 
-	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), network, registryTransport)
 	if err != nil {
 		return "", err
 	}
@@ -6435,6 +6620,82 @@ func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Ob
 	})
 
 	return container, nil
+}
+
+// ContainerRegistryNetwork starts service bindings for a registry operation and
+// returns the Dagger DNS view that should apply while that operation is running.
+func ContainerRegistryNetwork(ctx context.Context, bindings ServiceBindings) (serverresolver.NetworkConfig, func(), error) {
+	if len(bindings) == 0 {
+		return serverresolver.NetworkConfig{}, func() {}, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, bindings)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+
+	dns, err := DNSConfig(ctx)
+	if err != nil {
+		detach()
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+
+	hostAliases := map[string]string{}
+	for _, binding := range bindings {
+		// Registry refs use the caller's binding aliases, while Dagger DNS knows
+		// the service by its canonical hostname.
+		hostAliases[binding.Hostname] = binding.Hostname
+		aliases := slices.Clone(binding.Aliases)
+		slices.Sort(aliases)
+		for _, alias := range aliases {
+			hostAliases[alias] = binding.Hostname
+		}
+	}
+
+	return serverresolver.NetworkConfig{
+		DNS:         dns,
+		HostAliases: hostAliases,
+	}, detach, nil
+}
+
+func ContainerRegistryServiceBinding(ctx context.Context, ref string, service dagql.ObjectResult[*Service]) (ServiceBindings, error) {
+	if service.Self() == nil {
+		return nil, nil
+	}
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image address %s: %w", ref, err)
+	}
+	host := reference.Domain(refName)
+	alias := host
+	// The image ref may include a port, like "registry:5000/app:latest".
+	// Dagger DNS only aliases the hostname, so bind "registry" while leaving
+	// the original ref as "registry:5000/app:latest".
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		alias = h
+	}
+
+	svcDig, err := service.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcHost, err := service.Self().Hostname(ctx, svcDig)
+	if err != nil {
+		return nil, err
+	}
+	return ServiceBindings{{
+		Service:  service,
+		Hostname: svcHost,
+		Aliases:  AliasSet{alias},
+	}}, nil
 }
 
 func (container *Container) ImageRefOrErr(ctx context.Context) (string, error) {

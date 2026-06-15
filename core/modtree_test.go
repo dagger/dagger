@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/querybuilder"
 	"github.com/dagger/testctx"
@@ -94,6 +95,96 @@ func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryForModuleLoadedFromDi
 		validator.ValidateWithRules(schema, doc, rules.NewDefaultRules()),
 		"generated query should validate:\n%s", generated,
 	)
+}
+
+func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryPreservesAsModuleOptions(ctx context.Context, t *testctx.T) {
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	dag := newCoreDagqlServerForTest(t, &Query{})
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*ModuleSource]{Typed: &ModuleSource{}}))
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+
+	source := newTypeDefAttachedResult(t, ctx, cache, dag, "moduleSource", &ModuleSource{
+		Kind:              ModuleSourceKindLocal,
+		ModuleName:        "go",
+		SourceRootSubpath: "toolchains/go",
+		Local: &LocalModuleSource{
+			ContextDirectoryPath: "/repo",
+		},
+	})
+	contextSource := newTypeDefAttachedResult(t, ctx, cache, dag, "contextSource", &ModuleSource{
+		Kind:              ModuleSourceKindLocal,
+		SourceRootSubpath: ".",
+		Local: &LocalModuleSource{
+			ContextDirectoryPath: "/repo",
+		},
+	})
+	mod := newTypeDefAttachedResult(t, ctx, cache, dag, "module", &Module{
+		Source:            dagql.NonNull(source),
+		ContextSource:     dagql.NonNull(contextSource),
+		NameField:         "golang",
+		LegacyDefaultPath: true,
+		LegacyArgCustomizations: []*modules.ModuleConfigArgument{
+			{Argument: "selectModule", Default: "e2e/*"},
+		},
+		WorkspaceConfig:    map[string]any{"target": "default"},
+		DefaultsFromDotEnv: true,
+	})
+
+	query, err := (&ModTreeNode{Module: mod}).buildScaleOutModuleQuery(querybuilder.Query())
+	require.NoError(t, err)
+
+	generated, err := query.Select("id").Build(ctx)
+	require.NoError(t, err)
+	require.Contains(t, generated, `legacyNameOverride: "golang"`)
+	require.Contains(t, generated, `legacyDefaultPath: true`)
+	require.Contains(t, generated, `defaultPathContextSourceRef: "/repo"`)
+	require.Contains(t, generated, `legacyWorkspaceConfigJson:`)
+	require.Contains(t, generated, `legacyDefaultsFromDotEnv: true`)
+	require.Contains(t, generated, `legacyArgCustomizationsJson:`)
+	require.Contains(t, generated, `selectModule`)
+}
+
+func (s *ModTreeNodeTestSuite) TestModuleLocalPathString(ctx context.Context, t *testctx.T) {
+	cache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	dag := newCoreDagqlServerForTest(t, &Query{})
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*Module]{Typed: &Module{}}))
+
+	mod := newTypeDefAttachedResult(t, ctx, cache, dag, "module", &Module{})
+
+	moduleRoot := &ModTreeNode{Module: mod}
+	require.Equal(t, "generate-dagger-runtimes", (&ModTreeNode{
+		Parent: moduleRoot,
+		Name:   "GenerateDaggerRuntimes",
+		Module: mod,
+	}).moduleLocalPathString())
+
+	workspaceRoot := &ModTreeNode{
+		Parent: &ModTreeNode{},
+		Name:   "Go",
+		Module: mod,
+	}
+	require.Equal(t, "generate-dagger-runtimes", (&ModTreeNode{
+		Parent: workspaceRoot,
+		Name:   "GenerateDaggerRuntimes",
+		Module: mod,
+	}).moduleLocalPathString())
+
+	workspaceNested := &ModTreeNode{
+		Parent: workspaceRoot,
+		Name:   "TestSplit",
+		Module: mod,
+	}
+	require.Equal(t, "test-split:test-cli-engine", (&ModTreeNode{
+		Parent: workspaceNested,
+		Name:   "TestCliEngine",
+		Module: mod,
+	}).moduleLocalPathString())
 }
 
 func (s *ModTreePathTestSuite) TestIsParentOf(ctx context.Context, t *testctx.T) {

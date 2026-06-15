@@ -258,8 +258,8 @@ func (r *GoSDKDev) Test(ctx context.Context) error { // go-sdk-dev (../../../../
 }
 
 // Workspace with all the files needed to develop the SDK
-func (r *GoSDKDev) Workspace() *Directory { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *GoSDKDev) WorkspaceDir() *Directory { // go-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,
@@ -279,7 +279,7 @@ type GoSDKDevOpts struct {
 	//
 	// Workspace with all the files needed to develop the SDK
 	//
-	Workspace *Directory // go-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // go-sdk-dev (../../../../:0:0)
 	//
 	// Path of the Go SDK source within the workspace
 	//
@@ -289,9 +289,9 @@ type GoSDKDevOpts struct {
 func (r *Query) GoSDKDev(opts ...GoSDKDevOpts) *GoSDKDev { // go-sdk-dev (../../../../:0:0)
 	q := r.query.Select("goSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {

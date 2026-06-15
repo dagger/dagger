@@ -56,6 +56,11 @@ func NewGraphEvaluator(environ []string, systemLookup func(string) string, noUns
 
 // parseEntry parses a line into a parsedEntry without expanding variables
 func (g *GraphEvaluator) parseEntry(line string) (*parsedEntry, error) {
+	// Strip an optional leading `export` keyword. This is a widely supported
+	// dotenv convention (direnv, `set -a; . ./.env`, shell `source`, and most
+	// .env loaders), so we treat `export KEY=value` the same as `KEY=value`.
+	line = StripExportPrefix(line)
+
 	// Try fast path first for simple assignments
 	if idx := strings.Index(line, "="); idx != -1 {
 		key := line[:idx]
@@ -245,6 +250,7 @@ func AllRaw(environ []string) map[string]string {
 		if kv == "" {
 			continue // skip empty lines
 		}
+		kv = StripExportPrefix(kv)
 		name, value, _ := strings.Cut(kv, "=")
 		vars[name] = value
 	}
@@ -275,6 +281,7 @@ func Exists(environ []string, name string) bool {
 		if kv == "" {
 			continue // skip empty lines
 		}
+		kv = StripExportPrefix(kv)
 		k, _, _ := strings.Cut(kv, "=")
 		if k == name {
 			return true
@@ -285,6 +292,18 @@ func Exists(environ []string, name string) bool {
 
 // simpleKeyRegexp checks if a key is a valid environment variable name
 var simpleKeyRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// exportPrefixRegexp matches a leading `export` keyword (with trailing
+// whitespace), as commonly used in .env files.
+var exportPrefixRegexp = regexp.MustCompile(`^export\s+`)
+
+// StripExportPrefix removes an optional leading `export` keyword from a dotenv
+// line. This is a widely supported convention (direnv, `set -a; . ./.env`,
+// shell `source`, and most .env loaders), so `export KEY=value` is treated the
+// same as `KEY=value`.
+func StripExportPrefix(line string) string {
+	return exportPrefixRegexp.ReplaceAllString(line, "")
+}
 
 // containsShellFeatures checks if a value contains shell features that require parsing
 func containsShellFeatures(value string) bool {

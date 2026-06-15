@@ -476,4 +476,122 @@ mod tests {
                 .join("\n")
         );
     }
+
+    /// Schema with optional enum and string args. Enum names can contain `str`
+    /// without borrowing anything, e.g. `RegistryProtocol`.
+    fn optional_arg_lifetime_schema() -> &'static str {
+        r#"{
+  "__schema": {
+    "queryType": {"name": "Query"},
+    "mutationType": null,
+    "subscriptionType": null,
+    "types": [
+      {
+        "kind": "SCALAR", "name": "ID", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR", "name": "String", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR", "name": "Boolean", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR", "name": "Int", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      },
+      {
+        "kind": "ENUM", "name": "RegistryProtocol", "description": null,
+        "fields": null, "inputFields": null, "interfaces": null,
+        "possibleTypes": null,
+        "enumValues": [
+          {"name": "HTTPS", "description": null, "isDeprecated": false, "deprecationReason": null},
+          {"name": "HTTP", "description": null, "isDeprecated": false, "deprecationReason": null}
+        ]
+      },
+      {
+        "kind": "OBJECT", "name": "Query",
+        "description": null,
+        "fields": [
+          {
+            "name": "enumOption", "description": null,
+            "args": [{
+              "name": "protocol", "description": null,
+              "type": {"kind": "ENUM", "name": "RegistryProtocol", "ofType": null},
+              "defaultValue": null
+            }],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null
+          },
+          {
+            "name": "stringOption", "description": null,
+            "args": [{
+              "name": "name", "description": null,
+              "type": {"kind": "SCALAR", "name": "String", "ofType": null},
+              "defaultValue": null
+            }],
+            "type": {"kind": "NON_NULL", "name": null,
+              "ofType": {"kind": "SCALAR", "name": "String", "ofType": null}},
+            "isDeprecated": false, "deprecationReason": null
+          }
+        ],
+        "inputFields": null, "interfaces": null,
+        "enumValues": null, "possibleTypes": null
+      }
+    ],
+    "directives": []
+  }
+}"#
+    }
+
+    #[test]
+    fn optional_enum_arg_does_not_add_lifetime() {
+        let code = generate_from_json(optional_arg_lifetime_schema());
+
+        assert!(
+            code.contains("pub enum RegistryProtocol"),
+            "expected RegistryProtocol enum in generated code"
+        );
+        assert!(
+            code.contains("pub struct QueryEnumOptionOpts {"),
+            "optional enum args should not add a lifetime, got:\n{}",
+            code.lines()
+                .filter(|l| l.contains("QueryEnumOptionOpts"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(
+            !code.contains("pub struct QueryEnumOptionOpts<'a>"),
+            "RegistryProtocol contains `str` in its name but does not borrow"
+        );
+        assert!(
+            code.contains("pub protocol: Option<RegistryProtocol>,"),
+            "expected optional enum field to use RegistryProtocol"
+        );
+    }
+
+    #[test]
+    fn optional_string_arg_still_adds_lifetime() {
+        let code = generate_from_json(optional_arg_lifetime_schema());
+
+        assert!(
+            code.contains("pub struct QueryStringOptionOpts<'a>"),
+            "optional string args should still add a lifetime, got:\n{}",
+            code.lines()
+                .filter(|l| l.contains("QueryStringOptionOpts"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert!(
+            code.contains("pub name: Option<&'a str>,"),
+            "expected optional string field to borrow with &'a str"
+        );
+    }
 }

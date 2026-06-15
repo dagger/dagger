@@ -55,6 +55,13 @@ func (d DocsDev) Site() *dagger.Directory {
 	return dag.Docusaurus(d.Source, opts).Build()
 }
 
+// Check the docs website build
+// +check
+func (d DocsDev) Check(ctx context.Context) error {
+	_, err := d.Site().Sync(ctx)
+	return err
+}
+
 // Build the docs server
 func (d DocsDev) Server() *dagger.Container {
 	return dag.
@@ -105,7 +112,8 @@ func (d DocsDev) References(
 	// 4. Generate config file schemas?
 	withConfigSchemas := src.
 		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json")).
-		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json"))
+		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev().ConfigSchema("dagger-module.toml")).
+		WithFile("docs/static/reference/dagger-workspace.schema.json", dag.EngineDev().ConfigSchema("dagger.toml"))
 
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).
@@ -166,8 +174,13 @@ func (d DocsDev) Publish(
 	netlifyToken *dagger.Secret,
 	// +optional
 	deployment string,
+	// +optional
+	apiURL string,
 ) error {
 	api := "https://api.netlify.com/api/v1"
+	if apiURL != "" {
+		api = strings.TrimRight(apiURL, "/")
+	}
 	site := "docs.dagger.io"
 	branch := "main"
 	client := http.Client{}

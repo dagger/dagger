@@ -1,5 +1,12 @@
 package core
 
+// These tests cover `dag.Cloud().TraceURL`. They verify the trace URL returned
+// to direct API callers and to module code, including the error when no Dagger
+// Cloud organization is configured.
+//
+// See also:
+// - telemetry_test.go: local telemetry collection and export behavior.
+
 import (
 	"context"
 	"testing"
@@ -37,19 +44,7 @@ func (CloudSuite) TestTraceURLNested(ctx context.Context, t *testctx.T) {
 	// depends on where the test runs - in an already nested test, we're *not* logged in
 	org, _ := auth.CurrentOrgName()
 
-	src := `package main
-
-import (
-	"context"
-)
-
-type Test struct {}
-
-func (m *Test) TraceURL(ctx context.Context) (string, error) {
-	return dag.Cloud().TraceURL(ctx)
-}
-`
-	modGen := modInit(t, c, "go", src)
+	modGen := moduleEntrypointFixture(t, c, "test", "go/cloud-trace-url")
 	out, err := modGen.With(daggerCall("trace-url")).Stdout(ctx)
 	if org == "" {
 		requireErrOut(t, err, "no cloud organization configured")

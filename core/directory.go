@@ -2791,7 +2791,6 @@ func (dir *Directory) Diff(ctx context.Context, parent dagql.ObjectResult[*Direc
 	return nil
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult[*Directory], changes dagql.ObjectResult[*Changeset]) error {
 	cache, err := dagql.EngineCache(ctx)
 	if err != nil {
@@ -2806,10 +2805,6 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 	}
 	dir.Dir.setValue(ourDir)
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get dagql server: %w", err)
@@ -2817,6 +2812,24 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 	currentSnapshot, err := parent.Self().Snapshot.GetOrEval(ctx, parent.Result)
 	if err != nil {
 		return err
+	}
+
+	paths, err := changes.Self().ComputePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("compute paths: %w", err)
+	}
+	if changesetPathsEmpty(paths) {
+		if currentSnapshot == nil {
+			scratchDir, scratchSnapshot, err := loadCanonicalScratchDirectory(ctx)
+			if err != nil {
+				return err
+			}
+			dir.Dir.setValue(scratchDir)
+			dir.Snapshot.setValue(scratchSnapshot)
+			return nil
+		}
+		dir.Snapshot.setValue(currentSnapshot)
+		return nil
 	}
 
 	var diffDir dagql.ObjectResult[*Directory]
@@ -2839,96 +2852,24 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 	}
 
 	var diffSnapshot bkcache.ImmutableRef
+	diffPath := "/"
 	if diffDir.Self() != nil {
 		diffSnapshot, err = diffDir.Self().Snapshot.GetOrEval(ctx, diffDir.Result)
 		if err != nil {
 			return fmt.Errorf("diff snapshot: %w", err)
 		}
-	}
-	if ourDir != "" && ourDir != "/" && diffSnapshot != nil {
-		diffID, err := diffDir.ID()
+		diffPath, err = diffDir.Self().Dir.GetOrEval(ctx, diffDir.Result)
 		if err != nil {
-			return fmt.Errorf("diff ID: %w", err)
+			return fmt.Errorf("diff path: %w", err)
 		}
-		var rebasedDiff dagql.ObjectResult[*Directory]
-		if err := srv.Select(ctx, srv.Root(), &rebasedDiff,
-			dagql.Selector{Field: "directory"},
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(ourDir)},
-					{Name: "source", Value: dagql.NewID[*Directory](diffID)},
-				},
-			},
-		); err != nil {
-			return fmt.Errorf("rebase diff to target path: %w", err)
-		}
-		if err := cache.Evaluate(ctx, rebasedDiff); err != nil {
-			return fmt.Errorf("evaluate rebased diff: %w", err)
-		}
-		diffSnapshot, err = rebasedDiff.Self().Snapshot.GetOrEval(ctx, rebasedDiff.Result)
-		if err != nil {
-			return fmt.Errorf("rebased diff snapshot: %w", err)
+		if diffPath == "" {
+			diffPath = "/"
 		}
 	}
 
-	currentSnapshot, err = query.SnapshotManager().Merge(
-		ctx,
-		[]bkcache.ImmutableRef{currentSnapshot, diffSnapshot},
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("Directory.withChanges"),
-	)
+	currentSnapshot, err = dir.applyChangesToSnapshot(ctx, currentSnapshot, ourDir, diffSnapshot, diffPath, paths)
 	if err != nil {
-		return fmt.Errorf("merge changes into target: %w", err)
-	}
-
-	paths, err := changes.Self().ComputePaths(ctx)
-	if err != nil {
-		return fmt.Errorf("compute paths: %w", err)
-	}
-	if len(paths.Removed) > 0 {
-		currentSnapshot, _, err = dir.withoutPathsFromSnapshot(ctx, currentSnapshot, ourDir, paths.Removed...)
-		if err != nil {
-			return fmt.Errorf("remove paths: %w", err)
-		}
-	}
-
-	var addedDirs []string
-	for _, p := range paths.Added {
-		if strings.HasSuffix(p, "/") {
-			addedDirs = append(addedDirs, strings.TrimSuffix(p, "/"))
-		}
-	}
-	if len(addedDirs) > 0 {
-		newRef, err := query.SnapshotManager().New(
-			ctx,
-			currentSnapshot,
-			nil,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-			bkcache.WithDescription(fmt.Sprintf("withChanges add dirs %s", strings.Join(addedDirs, ","))),
-		)
-		if err != nil {
-			return err
-		}
-		err = MountRef(ctx, newRef, func(root string, _ *mount.Mount) error {
-			for _, p := range addedDirs {
-				resolvedDir, err := containerdfs.RootPath(root, path.Join(ourDir, p))
-				if err != nil {
-					return err
-				}
-				if err := os.MkdirAll(resolvedDir, 0o755); err != nil {
-					return TrimErrPathPrefix(err, root)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		currentSnapshot, err = newRef.Commit(ctx)
-		if err != nil {
-			return err
-		}
+		return fmt.Errorf("apply changes to target: %w", err)
 	}
 
 	if currentSnapshot == nil {
@@ -2942,6 +2883,140 @@ func (dir *Directory) WithChanges(ctx context.Context, parent dagql.ObjectResult
 	}
 	dir.Snapshot.setValue(currentSnapshot)
 	return nil
+}
+
+func (dir *Directory) applyChangesToSnapshot(
+	ctx context.Context,
+	parentSnapshot bkcache.ImmutableRef,
+	targetDir string,
+	diffSnapshot bkcache.ImmutableRef,
+	diffPath string,
+	paths *ChangesetPaths,
+) (bkcache.ImmutableRef, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	newRef, err := query.SnapshotManager().New(
+		ctx,
+		parentSnapshot,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("Directory.withChanges"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer newRef.Release(context.WithoutCancel(ctx))
+
+	var usage snapshots.Usage
+	err = MountRef(ctx, newRef, func(root string, destMnt *mount.Mount) error {
+		copier, err := layercopy.NewCopier(layercopy.Mount{Root: root, Mount: destMnt})
+		if err != nil {
+			return err
+		}
+		defer copier.Close()
+
+		if err := removeChangesetPaths(root, targetDir, paths.Removed); err != nil {
+			return err
+		}
+
+		if diffSnapshot != nil {
+			err = MountRef(ctx, diffSnapshot, func(srcRoot string, srcMnt *mount.Mount) error {
+				return copier.Copy(ctx,
+					layercopy.Mount{Root: srcRoot, Mount: srcMnt},
+					diffPath,
+					targetDir,
+					layercopy.CopyOptions{
+						CopyDirContents: true,
+						ReplaceExisting: true,
+					},
+				)
+			}, mountRefAsReadOnly)
+			if err != nil {
+				return fmt.Errorf("copy changed paths: %w", err)
+			}
+		}
+
+		if err := mkdirChangesetAddedDirs(ctx, copier, targetDir, paths); err != nil {
+			return err
+		}
+
+		usage, err = copier.Usage()
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := newRef.CommitWithUsage(ctx, usage)
+	if err != nil {
+		return nil, fmt.Errorf("commit changed directory: %w", err)
+	}
+	return ref, nil
+}
+
+func changesetPathsEmpty(paths *ChangesetPaths) bool {
+	return paths == nil || (len(paths.Added) == 0 && len(paths.Modified) == 0 && len(paths.Removed) == 0)
+}
+
+func removeChangesetPaths(root, targetDir string, removed []string) error {
+	for _, p := range removed {
+		fullPath, err := RootPathWithoutFinalSymlink(root, path.Join(targetDir, p))
+		if err != nil {
+			return err
+		}
+		_, statErr := os.Lstat(fullPath)
+		if errors.Is(statErr, os.ErrNotExist) {
+			continue
+		} else if statErr != nil {
+			return TrimErrPathPrefix(statErr, root)
+		}
+		if err := os.RemoveAll(fullPath); err != nil {
+			return TrimErrPathPrefix(err, root)
+		}
+	}
+	return nil
+}
+
+func mkdirChangesetAddedDirs(ctx context.Context, copier *layercopy.Copier, targetDir string, paths *ChangesetPaths) error {
+	for _, p := range changesetEmptyAddedDirs(paths) {
+		if err := copier.Mkdir(ctx, path.Join(targetDir, p), layercopy.CopyOptions{
+			ReplaceExisting: true,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func changesetEmptyAddedDirs(paths *ChangesetPaths) []string {
+	var contentPaths []string
+	for _, p := range paths.Added {
+		if !strings.HasSuffix(p, "/") {
+			contentPaths = append(contentPaths, p)
+		}
+	}
+	contentPaths = append(contentPaths, paths.Modified...)
+
+	var addedDirs []string
+	for _, p := range paths.Added {
+		if !strings.HasSuffix(p, "/") {
+			continue
+		}
+		dir := strings.TrimSuffix(p, "/")
+		prefix := dir + "/"
+		empty := true
+		for _, contentPath := range contentPaths {
+			if strings.HasPrefix(contentPath, prefix) {
+				empty = false
+				break
+			}
+		}
+		if empty {
+			addedDirs = append(addedDirs, dir)
+		}
+	}
+	return addedDirs
 }
 
 func (dir *Directory) Without(ctx context.Context, parent dagql.ObjectResult[*Directory], opCall *dagql.ResultCall, teachNoopEquivalence bool, paths ...string) error {
@@ -3022,6 +3097,9 @@ type Stat struct {
 	Permissions int      `field:"true" doc:"permission bits"`
 }
 
+var _ dagql.PersistedObject = (*Stat)(nil)
+var _ dagql.PersistedObjectDecoder = (*Stat)(nil)
+
 func (*Stat) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Stat",
@@ -3031,6 +3109,25 @@ func (*Stat) Type() *ast.Type {
 
 func (*Stat) TypeDescription() string {
 	return "A file or directory status object."
+}
+
+func (s *Stat) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	if s == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted stat: nil stat")
+	}
+	return encodePersistedObjectPayload(s)
+}
+
+func (*Stat) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var s Stat
+	if err := json.Unmarshal(payload, &s); err != nil {
+		return nil, fmt.Errorf("decode persisted stat payload: %w", err)
+	}
+	return &s, nil
 }
 
 func (s *Stat) IsDir() bool {

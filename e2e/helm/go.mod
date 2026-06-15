@@ -1,8 +1,11 @@
 module github.com/dagger/dagger/e2e/helm
 
-go 1.25.6
+go 1.26.1
 
-require dagger.io/dagger v0.21.0 // indirect
+require (
+	dagger.io/dagger v0.21.6 // indirect
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 // indirect
+)
 
 require (
 	github.com/99designs/gqlgen v0.17.89 // indirect

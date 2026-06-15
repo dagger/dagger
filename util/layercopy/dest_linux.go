@@ -72,6 +72,32 @@ func newDestination(m Mount) (*destination, error) {
 }
 
 func (d *destination) mkdir(destPath string, opts CopyOptions) error {
+	destPath = cleanContainerPath(destPath)
+	if opts.ReplaceExisting {
+		destInfo, exists, err := d.statView(destPath)
+		if err != nil {
+			return err
+		}
+		if exists && !destInfo.IsDir() {
+			realPath, err := d.realPath(destPath)
+			if err != nil {
+				return err
+			}
+			if err := os.RemoveAll(realPath); err != nil {
+				return err
+			}
+			if d.overlay {
+				if err := os.Mkdir(realPath, mkdirMode(nil, opts)); err != nil && !os.IsExist(err) {
+					return err
+				}
+				if err := d.markOpaque(realPath); err != nil {
+					return err
+				}
+				return d.applyMetadataPath(realPath, nil, opts)
+			}
+		}
+	}
+
 	rel, created, err := d.ensureDir(destPath, nil, opts, false)
 	if err != nil {
 		return err
@@ -102,42 +128,135 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 		return "", false, nil
 	}
 
-	if viewPath, err := rootPath(d.viewRoot, destPath, true); err == nil {
-		if info, statErr := os.Stat(viewPath); statErr == nil {
-			if !info.IsDir() {
-				return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
-			}
-			rel, err := filepath.Rel(d.viewRoot, viewPath)
-			if err != nil {
-				return "", false, err
-			}
-			rel = cleanRel(rel)
-			if parent := filepath.Dir(destPath); parent != "/" && parent != "." {
-				if _, _, err := d.ensureDir(parent, nil, CopyOptions{}, false); err != nil {
-					return "", false, err
-				}
-			}
-			realPath, materialized, err := d.materializeExistingDir(rel, viewPath)
-			if err != nil {
-				return "", false, err
-			}
-			if overwriteMetadata || materialized {
-				if err := d.applyMetadataPath(realPath, src, opts); err != nil {
-					return "", false, err
-				}
-			}
-			return rel, false, nil
-		} else if !os.IsNotExist(statErr) && !isNotDir(statErr) {
-			return "", false, statErr
-		}
+	if rel, exists, err := d.ensureExistingDir(destPath, src, opts, overwriteMetadata); err != nil || exists {
+		return rel, false, err
 	}
 
+	return d.createDir(destPath, src, opts)
+}
+
+func (d *destination) ensureExistingDir(destPath string, src *sourceEntry, opts CopyOptions, overwriteMetadata bool) (string, bool, error) {
+	viewPath, err := rootPath(d.viewRoot, destPath, true)
+	if err != nil {
+		if os.IsNotExist(err) || isNotDir(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+
+	info, err := os.Stat(viewPath)
+	if err != nil {
+		if os.IsNotExist(err) || isNotDir(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if !info.IsDir() {
+		return d.ensureOverlayReplacementDir(destPath, viewPath, src, opts, overwriteMetadata)
+	}
+
+	rel, err := filepath.Rel(d.viewRoot, viewPath)
+	if err != nil {
+		return "", false, err
+	}
+	rel = cleanRel(rel)
+	// Recurse on the parent of the resolved path, not destPath, to handle
+	// symlinks on dest paths.
+	if parent := filepath.Dir(cleanContainerPath(rel)); parent != "/" && parent != "." {
+		if _, _, err := d.ensureDir(parent, nil, CopyOptions{}, false); err != nil {
+			return "", false, err
+		}
+	}
+	realPath, materialized, err := d.materializeExistingDir(rel, viewPath)
+	if err != nil {
+		return "", false, err
+	}
+	if overwriteMetadata || materialized {
+		if err := d.applyMetadataPath(realPath, src, opts); err != nil {
+			return "", false, err
+		}
+	}
+	return rel, true, nil
+}
+
+func (d *destination) ensureOverlayReplacementDir(destPath, viewPath string, src *sourceEntry, opts CopyOptions, overwriteMetadata bool) (string, bool, error) {
+	if !d.overlay {
+		return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
+	}
+
+	rel, err := filepath.Rel(d.viewRoot, viewPath)
+	if err != nil {
+		return "", false, err
+	}
+	rel = cleanRel(rel)
+	realPath := filepath.Join(d.writeRoot, rel)
+	upperInfo, err := os.Lstat(realPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
+		}
+		return "", false, err
+	}
+	if !upperInfo.IsDir() {
+		return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
+	}
+	if err := d.markOpaque(realPath); err != nil {
+		return "", false, err
+	}
+	if overwriteMetadata {
+		if err := d.applyMetadataPath(realPath, src, opts); err != nil {
+			return "", false, err
+		}
+	}
+	return rel, true, nil
+}
+
+func (d *destination) createDir(destPath string, src *sourceEntry, opts CopyOptions) (string, bool, error) {
 	parentRel, _, err := d.ensureDir(filepath.Dir(destPath), nil, CopyOptions{}, false)
 	if err != nil {
 		return "", false, err
 	}
 	rel := filepath.Join(parentRel, filepath.Base(destPath))
 	realPath := filepath.Join(d.writeRoot, rel)
+	mode := mkdirMode(src, opts)
+	if err := os.Mkdir(realPath, mode); err != nil {
+		if !os.IsExist(err) {
+			return "", false, err
+		}
+		if err := d.replaceCreateDir(realPath, mode, opts); err != nil {
+			return "", false, err
+		}
+	}
+	if err := d.applyMetadataPath(realPath, src, opts); err != nil {
+		return "", false, err
+	}
+	return rel, true, nil
+}
+
+func (d *destination) replaceCreateDir(realPath string, mode os.FileMode, opts CopyOptions) error {
+	if !opts.ReplaceExisting {
+		return nil
+	}
+	info, err := os.Lstat(realPath)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return nil
+	}
+	if err := os.RemoveAll(realPath); err != nil {
+		return err
+	}
+	if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if d.overlay {
+		return d.markOpaque(realPath)
+	}
+	return nil
+}
+
+func mkdirMode(src *sourceEntry, opts CopyOptions) os.FileMode {
 	mode := os.FileMode(0o755)
 	if src != nil {
 		mode = src.Info.Mode().Perm()
@@ -145,13 +264,7 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 	if opts.Mode != nil {
 		mode = *opts.Mode
 	}
-	if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
-		return "", false, err
-	}
-	if err := d.applyMetadataPath(realPath, src, opts); err != nil {
-		return "", false, err
-	}
-	return rel, true, nil
+	return mode
 }
 
 func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool, error) {
@@ -172,7 +285,7 @@ func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool
 	if err := os.Mkdir(realPath, info.Mode().Perm()); err != nil && !os.IsExist(err) {
 		return "", false, err
 	}
-	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil); err != nil {
+	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil, false); err != nil {
 		return "", false, err
 	}
 	return realPath, true, nil
@@ -230,6 +343,9 @@ func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opt
 		if err := os.Mkdir(realPath, srcInfo.Mode().Perm()); err != nil && !os.IsExist(err) {
 			return err
 		}
+		if err := d.markOpaque(realPath); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -241,7 +357,7 @@ func (d *destination) applyMetadataPath(dstPath string, src *sourceEntry, opts C
 		info = src.Info
 		srcPath = src.RealPath
 	}
-	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr, opts.XAttrErrorHandler)
+	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr, opts.XAttrErrorHandler, opts.DisableXAttrs)
 }
 
 func (d *destination) flush() error {
@@ -278,7 +394,7 @@ func (d *destination) usage() (snapshots.Usage, error) {
 	return usage, err
 }
 
-func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool, xattrErrorHandler XAttrErrorHandler) error {
+func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool, xattrErrorHandler XAttrErrorHandler, disableXAttrs bool) error {
 	if srcInfo != nil {
 		st, ok := srcInfo.Sys().(*syscall.Stat_t)
 		if !ok {
@@ -302,7 +418,7 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 			}
 		}
 
-		if srcPath != "" {
+		if srcPath != "" && !disableXAttrs {
 			if err := copyXattrs(dstPath, srcPath, userxattr, xattrErrorHandler); err != nil {
 				return err
 			}
@@ -366,6 +482,17 @@ func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHan
 	return nil
 }
 
+func (d *destination) markOpaque(path string) error {
+	return sysx.LSetxattr(path, opaqueXattr(d.userxattr), []byte{'y'}, 0)
+}
+
+func opaqueXattr(userxattr bool) string {
+	if userxattr {
+		return "user.overlay.opaque"
+	}
+	return "trusted.overlay.opaque"
+}
+
 func overlayLayers(m *mount.Mount) ([]string, error) {
 	var upper string
 	var lower []string
@@ -410,12 +537,4 @@ func cleanContainerPath(p string) string {
 		return "/"
 	}
 	return p
-}
-
-func cleanRel(p string) string {
-	p = filepath.Clean(p)
-	if p == "." || p == string(filepath.Separator) {
-		return ""
-	}
-	return strings.TrimPrefix(p, string(filepath.Separator))
 }

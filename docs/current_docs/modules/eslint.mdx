@@ -1,0 +1,47 @@
+---
+title: "ESLint"
+slug: /modules/eslint
+description: "Lint JavaScript and TypeScript source with ESLint."
+---
+
+# ESLint
+
+The ESLint module checks JavaScript and TypeScript source with ESLint, running the same lint check locally and in CI so issues get caught before a PR lands. Reach for it when the repo already has ESLint config and you want linting to run as a Dagger check, with a repair workflow available for fixable issues.
+
+Official module: [dagger/eslint](https://github.com/dagger/eslint)
+
+## Add it to your workspace
+
+```bash
+dagger mod install github.com/dagger/eslint
+```
+
+## Run the check
+
+```bash
+dagger check             # run every check in the workspace
+dagger check eslint:lint # run ESLint against the workspace source
+```
+
+`eslint:lint` installs dependencies and runs `eslint .` over the whole workspace using the project's own ESLint configuration, so the result matches what developers see locally and fails on lint errors.
+
+## Fix issues
+
+ESLint also exposes a `fix` function that runs `eslint . --fix` and returns the repaired source as a changeset (excluding `node_modules`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger function call` (run `dagger function list` to see available functions).
+
+## Configure it
+
+List the current settings and their values with `dagger settings eslint`, then set one with `dagger settings eslint <key> <value>`. Settings are stored in `dagger.toml` under `[modules.eslint.settings]`.
+
+- **`packageManager`** (default `npm`): the package manager used to install dependencies before linting. Set it to `yarn` or `pnpm` to match the project, so the same lockfile and dependency versions are used.
+- **`baseImageAddress`** (default `node:25-alpine`): the Node base image ESLint runs in. Pin it to the project's Node version, for example `node:22-alpine`.
+
+```toml
+[modules.eslint.settings]
+packageManager = "pnpm"
+baseImageAddress = "node:22-alpine"
+```
+
+## Working with other modules
+
+Use ESLint with Prettier when the project separates lint rules from formatting. Use Biome when the project has moved linting and formatting into one tool.

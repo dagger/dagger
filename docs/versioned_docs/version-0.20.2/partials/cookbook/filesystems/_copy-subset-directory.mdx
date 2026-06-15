@@ -1,0 +1,115 @@
+
+### Copy a subset of a directory or remote repository to a container using filters specified at run-time
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../../../extending/modules/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, using a filter pattern specified at call-time to exclude specified sub-directories and files, and returns the modified container.
+
+:::note
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../../../extending/modules/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+:::
+
+:::note
+This is an example of [post-call filtering](../../../getting-started/types/directory.mdx#post-call-filtering) with [directory filters](../../../getting-started/types/directory.mdx#filters).
+:::
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/copy-filter-dir-post/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/copy-filter-dir-post/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/copy-filter-dir-post/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/copy-filter-dir-post/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+**Examples**
+
+Copy the current host directory to `/src` in the container, excluding all sub-directories and files starting with `dagger`, and return the modified container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'copy-directory-with-exclusions . --exclude=dagger*'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory-with-exclusions . --exclude=dagger*
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call copy-directory-with-exclusions --source=. --exclude=dagger*
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the public `dagger/dagger` GitHub repository to `/src` in the container, excluding all Markdown files, and list the contents of the directory:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    copy-directory-with-exclusions https://github.com/dagger/dagger#main --exclude=*.md |
+      directory /src |
+      entries
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory-with-exclusions https://github.com/dagger/dagger#main --exclude=*.md | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main --exclude=*.md \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>
+
+Copy the private `user/foo` GitHub repository to `/src` in the container, excluding all Markdown files, and list the contents of the directory:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    copy-directory-with-exclusions ssh://git@github.com/user/foo#main --exclude=*.md |
+      directory /src |
+      entries
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    copy-directory-with-exclusions ssh://git@github.com/user/foo#main --exclude=*.md | directory /src | entries
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      copy-directory-with-exclusions --source=ssh://git@github.com/user/foo#main --exclude=*.md \
+      directory --path=/src \
+      entries
+    ```
+    </TabItem>
+    </Tabs>

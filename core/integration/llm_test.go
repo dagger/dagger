@@ -1,5 +1,9 @@
 package core
 
+// These tests cover module functions that call Dagger's LLM API. They verify
+// direct calls, `dagger shell` argument handling, API limit errors, and the
+// `--allow-llm` permission gate.
+
 import (
 	"context"
 	"encoding/base64"
@@ -93,7 +97,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 			if golden.FlagUpdate() {
 				out, err := ctr.
 					With(daggerForwardSecrets(c)).
-					With(daggerCall(append([]string{"save"}, flags...)...)).
+					With(daggerCallAt(".", append([]string{"save"}, flags...)...)).
 					Stdout(ctx)
 				require.NoError(t, err)
 
@@ -113,7 +117,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 				cmd := []string{"--model=" + model, "run"}
 				cmd = append(cmd, flags...)
 				cmd = append(cmd, "file", "--path=main.go", "contents")
-				out, err := ctr.With(daggerCall(cmd...)).Stdout(ctx)
+				out, err := ctr.With(daggerCallAt(".", cmd...)).Stdout(ctx)
 				require.NoError(t, err)
 				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
 			})
@@ -124,7 +128,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 					flags = append(flags, flag.ToShell()...)
 				}
 				out, err := ctr.
-					With(daggerShell(fmt.Sprintf(`. --model="%s" | run %s | file main.go | contents`, model, strings.Join(flags, " ")))).
+					With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | run %s | file main.go | contents`, model, strings.Join(flags, " ")))).
 					Stdout(ctx)
 				require.NoError(t, err)
 				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
@@ -174,7 +178,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 		out, err := daggerCliBase(t, c).
 			With(daggerForwardSecrets(c)).
 			// shared recording amongst subtests, they all do basically the same thing
-			With(daggerCall("-m", directCallModuleRef, "--allow-llm=all", "save", "--string-arg", "greet me")).
+			With(daggerCallAt(directCallModuleRef, "--allow-llm=all", "save", "--string-arg", "greet me")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		if dir := filepath.Dir(recording); dir != "." {
@@ -249,7 +253,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "-m", dependerModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "shell", "-m", dependerModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`. %s | save "greet me"`, modelFlag),
 				ExperimentalPrivilegedNesting: true,
 			}).
@@ -259,7 +263,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "--allow-llm", directCallModuleRef}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "shell", "--allow-llm", directCallModuleRef}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`%s %s | save "greet me"`, dependerModuleRef, modelFlag),
 				ExperimentalPrivilegedNesting: true,
 			}).

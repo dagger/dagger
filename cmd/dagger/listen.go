@@ -11,8 +11,6 @@ import (
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
@@ -24,18 +22,28 @@ var (
 	allowCORS     bool
 )
 
-var listenCmd = &cobra.Command{
-	Use:     "listen [options]",
-	Aliases: []string{"l"},
-	RunE:    optionalModCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN")),
-	Hidden:  true,
-	Short:   "Starts the engine server",
+var apiListenCmd = newListenCmd(true)
+var listenCmd = newListenCmd(true)
+
+func newListenCmd(hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "listen [options]",
+		Aliases: []string{"l"},
+		RunE:    optionalModCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN")),
+		Hidden:  hidden,
+		Short:   "Starts the engine server",
+		Annotations: map[string]string{
+			showFinalProgressKey: "true",
+		},
+	}
+	addListenFlags(cmd)
+	return cmd
 }
 
-func init() {
-	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", "127.0.0.1:8080", "Listen on network address ADDR")
-	listenCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
-	listenCmd.Flags().BoolVar(&allowCORS, "allow-cors", false, "allow Cross-Origin Resource Sharing (CORS) requests")
+func addListenFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&listenAddress, "listen", "", "127.0.0.1:8080", "Listen on network address ADDR")
+	cmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
+	cmd.Flags().BoolVar(&allowCORS, "allow-cors", false, "allow Cross-Origin Resource Sharing (CORS) requests")
 }
 
 func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, _ []string) error {
@@ -57,8 +65,9 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 		return fmt.Sprintf("%s: HTTP %s %s", o, r.Method, r.URL.Path)
 	}))
 
-	http2Srv := &http2.Server{}
-	handler = h2c.NewHandler(handler, http2Srv)
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
 
 	srv := &http.Server{
 		Handler: handler,
@@ -67,9 +76,7 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},
-	}
-	if err := http2.ConfigureServer(srv, http2Srv); err != nil {
-		return fmt.Errorf("http2 server configuration: %w", err)
+		Protocols: protocols,
 	}
 
 	go func() {

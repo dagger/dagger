@@ -63,10 +63,14 @@ func (r Gh) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Token      *dagger.Secret
 		Repository string
+		Host       string
+		CACert     *dagger.File
 		Source     *dagger.Directory
 	}
 	concrete.Token = r.Token
 	concrete.Repository = r.Repository
+	concrete.Host = r.Host
+	concrete.CACert = r.CACert
 	concrete.Source = r.Source
 	return json.Marshal(&concrete)
 }
@@ -75,6 +79,8 @@ func (r *Gh) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		Token      *dagger.Secret
 		Repository string
+		Host       string
+		CACert     *dagger.File
 		Source     *dagger.Directory
 	}
 	err := json.Unmarshal(bs, &concrete)
@@ -83,6 +89,8 @@ func (r *Gh) UnmarshalJSON(bs []byte) error {
 	}
 	r.Token = concrete.Token
 	r.Repository = concrete.Repository
+	r.Host = concrete.Host
+	r.CACert = concrete.CACert
 	r.Source = concrete.Source
 	return nil
 }
@@ -460,6 +468,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Gh).Terminal(&parent, token, repo), nil
+		case "WithCACert":
+			var parent Gh
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var caCert *dagger.File
+			if inputArgs["caCert"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["caCert"]), &caCert)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg caCert", err))
+				}
+			}
+			return (*Gh).WithCACert(&parent, caCert), nil
 		case "WithGitExec":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)
@@ -474,6 +496,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Gh).WithGitExec(&parent, args)
+		case "WithHost":
+			var parent Gh
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var host string
+			if inputArgs["host"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["host"]), &host)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg host", err))
+				}
+			}
+			return (*Gh).WithHost(&parent, host), nil
 		case "WithRepo":
 			var parent Gh
 			err = json.Unmarshal(parentJSON, &parent)
@@ -536,6 +572,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
 				}
 			}
+			var host string
+			if inputArgs["host"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["host"]), &host)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg host", err))
+				}
+			}
+			var caCert *dagger.File
+			if inputArgs["caCert"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["caCert"]), &caCert)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg caCert", err))
+				}
+			}
 			var source *dagger.Directory
 			if inputArgs["source"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
@@ -543,7 +593,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
 				}
 			}
-			return New(token, repo, source), nil
+			return New(token, repo, host, caCert, source), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

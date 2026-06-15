@@ -1,0 +1,51 @@
+---
+title: "Pytest"
+slug: /modules/pytest
+description: "Run Pytest as a Dagger workspace check."
+---
+
+# Pytest
+
+The Pytest module runs your Python tests with Pytest, the same way locally, in CI, and in Dagger Cloud. Reach for it when your workspace already has Python tests and you want a single test check that runs from a standard source directory — or from a custom Python container when the default environment is not enough.
+
+Official module: [dagger/pytest](https://github.com/dagger/pytest)
+
+## Add it to your workspace
+
+```bash
+dagger mod install github.com/dagger/pytest
+```
+
+## Run the tests
+
+```bash
+dagger check             # run every check in the workspace
+dagger check pytest:test # run Pytest against the project source
+```
+
+`pytest:test` injects `pytest_otel` automatically, so individual Python tests appear as spans in the Dagger TUI and Dagger Cloud with no project changes. Dependencies are installed from the project itself: `uv run` for `pyproject.toml` projects, or `pip install -r requirements.txt` for requirements-based projects.
+
+## Test options
+
+The `pytest:test` check runs with default options. Call the `test` function directly with `dagger function call` to override them:
+
+- **`version`** (default `3.14`): the Python version the default container provisions, such as `3.13` or `3.12`. Ignored when a custom `container` is set, since that container's Python is used as-is.
+- **`args`** (default `["-v"]`): arguments passed straight to `pytest`, such as `["-x", "--tb=short"]`.
+
+Keep this module focused on tests; use separate modules for formatting, linting, shell scripts, or generated files.
+
+## Configure it
+
+List the current settings and their values with `dagger settings pytest`, then set one with `dagger settings pytest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.pytest.settings]`:
+
+- **`source`** (default: workspace root): the directory containing the Python project to test. Point it at a subdirectory when the project is not at the workspace root.
+- **`container`** (default: none): a custom container that already has Python and `uv` installed. By default the module uses an Alpine base and provisions Python with `uv`; set a container when tests need system packages, a private index, or other setup the default image lacks.
+
+```toml
+[modules.pytest.settings]
+source = "./service"
+```
+
+## Working with other modules
+
+This module is a good first check for Python repos. Once it passes locally, it is a natural candidate for autocheck and PR validation.

@@ -1,0 +1,7 @@
+[modules.first]
+source = ".dagger/modules/app"
+entrypoint = true
+
+[modules.second]
+source = ".dagger/modules/app"
+entrypoint = true

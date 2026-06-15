@@ -16,7 +16,7 @@ func initModuleParams(a []string) client.Params {
 }
 
 func shouldLoadWorkspaceModules(disableModuleLoad bool) bool {
-	return !disableModuleLoad && !moduleNoURL
+	return !disableModuleLoad && !moduleNoURL && !isCoreModuleSelected()
 }
 
 func functionName(args []string) string {

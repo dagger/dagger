@@ -27,7 +27,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "fedae8c6cc63771edf096310967725004d82ec88" // v0.21.3
+	goSDKLibVersion = "336f7b79a6df9834f16d8b4d105e05b9b1a39981" // v0.21.6
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
@@ -48,6 +48,20 @@ type goSDK struct {
 
 type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
+}
+
+func (sdk *goSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	if sdk.rawConfig != nil {
+		cp.rawConfig = make(map[string]any, len(sdk.rawConfig))
+		for k, v := range sdk.rawConfig {
+			cp.rawConfig[k] = v
+		}
+	}
+	return &cp
 }
 
 func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {

@@ -1,5 +1,12 @@
 package core
 
+// These tests cover the GraphQL Directory object: creating, reading, filtering,
+// mounting, exporting, and comparing directory contents.
+//
+// See also:
+// - file_test.go: core File object behavior.
+// - ownership_test.go: file and directory ownership propagation.
+
 import (
 	"context"
 	"crypto/rand"
@@ -335,6 +342,23 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 
 		_, err = dir.File("skip.txt").Contents(ctx)
 		require.Error(t, err)
+	})
+
+	t.Run("directory replacing file hides older lower directory contents", func(ctx context.Context, t *testctx.T) {
+		seed := c.Container().
+			WithDirectory("/node", c.Directory().WithNewFile("hidden.txt", "hidden")).
+			WithoutDirectory("/node").
+			WithNewFile("/node", "file")
+
+		seedRef, err := seed.Publish(ctx, registryRef("with-directory-file-to-dir-opaque-seed"))
+		require.NoError(t, err)
+
+		baseDir := c.Container().From(seedRef).Rootfs()
+		resultDir := baseDir.WithDirectory("/node", c.Directory().WithNewFile("new.txt", "new"))
+
+		nodeEntries, err := resultDir.Directory("node").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"new.txt"}, nodeEntries)
 	})
 }
 

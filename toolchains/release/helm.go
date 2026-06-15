@@ -55,10 +55,19 @@ func (r *Release) helmSetVersion(ctx context.Context, version string) (*dagger.F
 }
 
 func (r *Release) helmReleaseDryRun(ctx context.Context) error {
-	return r.helmPublish(ctx, "main", nil, true)
+	return r.helmPublish(ctx, "main", nil, "", true)
 }
 
-func (r *Release) helmPublish(ctx context.Context, target string, githubToken *dagger.Secret, dryRun bool) error {
+func (r *Release) helmPublish(
+	ctx context.Context,
+	target string,
+	githubToken *dagger.Secret,
+	registry string,
+	dryRun bool,
+) error {
+	if registry == "" {
+		registry = "ghcr.io/dagger"
+	}
 	version := strings.TrimPrefix(target, "helm/chart/")
 	_, err := r.helmChart().
 		With(func(c *dagger.Container) *dagger.Container {
@@ -73,10 +82,10 @@ func (r *Release) helmPublish(ctx context.Context, target string, githubToken *d
 			}
 			script := strings.Join([]string{
 				"set -x",
-				"helm registry login ghcr.io/dagger --username dagger --password $GITHUB_TOKEN",
+				"helm registry login " + registry + " --username dagger --password $GITHUB_TOKEN",
 				"helm package .",
-				"helm push dagger-helm-" + strings.TrimPrefix(version, "v") + ".tgz oci://ghcr.io/dagger",
-				"helm registry logout ghcr.io/dagger",
+				"helm push dagger-helm-" + strings.TrimPrefix(version, "v") + ".tgz oci://" + registry,
+				"helm registry logout " + registry,
 			}, " && \\")
 			return c.WithExec([]string{"sh", "-c", script})
 		}).

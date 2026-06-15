@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
@@ -22,6 +22,8 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/auth"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
@@ -64,19 +66,47 @@ type Opts struct {
 }
 
 type ResolveImageConfigOpts struct {
-	Platform    *ocispecs.Platform
-	ResolveMode ResolveMode
+	Platform          *ocispecs.Platform
+	ResolveMode       ResolveMode
+	Network           NetworkConfig
+	RegistryTransport RegistryTransport
 }
 
 type PullOpts struct {
-	Platform    ocispecs.Platform
-	ResolveMode ResolveMode
-	LayerLimit  *int
+	Platform          ocispecs.Platform
+	ResolveMode       ResolveMode
+	LayerLimit        *int
+	Network           NetworkConfig
+	RegistryTransport RegistryTransport
 }
 
 type PushOpts struct {
-	Insecure bool
-	ByDigest bool
+	RegistryTransport RegistryTransport
+	ByDigest          bool
+	Network           NetworkConfig
+}
+
+type RegistryProtocol string
+
+const (
+	RegistryProtocolHTTPS RegistryProtocol = "https"
+	RegistryProtocolHTTP  RegistryProtocol = "http"
+)
+
+type RegistryTransport struct {
+	Protocol              RegistryProtocol
+	InsecureSkipTLSVerify bool
+}
+
+func (transport RegistryTransport) CacheKey() string {
+	return fmt.Sprintf("%s:%t", transport.Protocol, transport.InsecureSkipTLSVerify)
+}
+
+// NetworkConfig carries the Dagger DNS view used by registry operations for a
+// container with service bindings.
+type NetworkConfig struct {
+	DNS         *oci.DNSConfig
+	HostAliases map[string]string
 }
 
 type PushedImage struct {
@@ -146,7 +176,7 @@ func (r *Resolver) ResolveImageConfig(
 	ref string,
 	opts ResolveImageConfigOpts,
 ) (_ string, _ digest.Digest, _ []byte, rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "resolving "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
@@ -156,8 +186,9 @@ func (r *Resolver) ResolveImageConfig(
 		key += platforms.Format(platforms.Normalize(*opts.Platform))
 	}
 	key += fmt.Sprintf(":%d", opts.ResolveMode)
+	key += ":" + opts.RegistryTransport.CacheKey()
 
-	resolved, err := r.resolveConfigG.Do(ctx, key, func(ctx context.Context) (*resolveImageConfigResult, error) {
+	resolve := func(ctx context.Context) (*resolveImageConfigResult, error) {
 		if opts.ResolveMode == ResolveModeDefault {
 			if resolvedRef, dgst, configBytes, found, err := r.tryLocalCanonicalConfig(ctx, ref, opts); err != nil {
 				return nil, err
@@ -170,7 +201,7 @@ func (r *Resolver) ResolveImageConfig(
 			}
 		}
 
-		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref)
+		resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
 		if err != nil {
 			return nil, err
 		}
@@ -179,10 +210,19 @@ func (r *Resolver) ResolveImageConfig(
 			return nil, err
 		}
 
-		platformMatcher := platforms.Default()
-		if opts.Platform != nil {
-			platformMatcher = platforms.Only(platforms.Normalize(*opts.Platform))
+		platformMatcher := imageConfigPlatformMatcher(opts.Platform)
+		if opts.ResolveMode == ResolveModeDefault {
+			metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher, false)
+			if err != nil {
+				return nil, err
+			}
+			return &resolveImageConfigResult{
+				ref:    resolvedRef,
+				digest: rootDesc.Digest,
+				config: metadata.configBytes,
+			}, nil
 		}
+
 		provider := contentutil.FromFetcher(fetcher)
 		configDesc, err := images.Config(ctx, provider, rootDesc, platformMatcher)
 		if err != nil {
@@ -198,7 +238,20 @@ func (r *Resolver) ResolveImageConfig(
 			digest: rootDesc.Digest,
 			config: configBytes,
 		}, nil
-	})
+	}
+
+	var resolved *resolveImageConfigResult
+	var err error
+	if len(opts.Network.HostAliases) > 0 {
+		// Normal registry refs can be shared through singleflight because the
+		// same ref, platform, and resolve mode go to the same registry endpoint.
+		// Service-bound refs are different: "registry:5000/app:latest" may point
+		// to registryServiceA for one caller and registryServiceB for another, so
+		// the ref string alone is not enough to share an in-flight resolve.
+		resolved, err = resolve(ctx)
+	} else {
+		resolved, err = r.resolveConfigG.Do(ctx, key, resolve)
+	}
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -206,7 +259,7 @@ func (r *Resolver) ResolveImageConfig(
 }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "pulling "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "pulling "+bkcache.DisplayRef(ref), telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
@@ -239,7 +292,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		}
 	}
 
-	resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref)
+	resolvedRef, rootDesc, resolver, err := r.resolveRemoteRootDescriptor(ctx, ref, opts.Network, opts.RegistryTransport)
 	if err != nil {
 		return nil, err
 	}
@@ -247,13 +300,25 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	if err != nil {
 		return nil, err
 	}
-	provider := contentutil.FromFetcher(fetcher)
-	manifestDesc, manifest, err := resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher)
-	if err != nil {
-		return nil, err
+	var manifestDesc ocispecs.Descriptor
+	var manifest ocispecs.Manifest
+	if opts.ResolveMode == ResolveModeDefault {
+		metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher, true)
+		if err != nil {
+			return nil, err
+		}
+		manifestDesc = metadata.manifestDesc
+		manifest = metadata.manifest
+	} else {
+		provider := contentutil.FromFetcher(fetcher)
+		var err error
+		manifestDesc, manifest, err = resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher, true)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(5*time.Minute), bkcache.MakeTemporary)
+	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +342,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	childrenHandler := images.ChildrenHandler(r.contentStore)
 	handler := images.Handlers(
 		recordNonLayers,
-		remotes.FetchHandler(r.contentStore, fetcher),
+		remotes.FetchHandler(progressIngester{r.contentStore}, fetcher),
 		childrenHandler,
 		dslHandler,
 	)
@@ -338,9 +403,9 @@ type localizedImageClosure struct {
 	Nonlayers    []ocispecs.Descriptor
 }
 
-func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string) (string, ocispecs.Descriptor, remotes.Resolver, error) {
+func (r *Resolver) resolveRemoteRootDescriptor(ctx context.Context, ref string, network NetworkConfig, registryTransport RegistryTransport) (string, ocispecs.Descriptor, remotes.Resolver, error) {
 	resolver := docker.NewResolver(docker.ResolverOptions{
-		Hosts: r.registryHosts(),
+		Hosts: r.registryHosts(network, registryTransport),
 	})
 	resolvedRef, rootDesc, err := resolver.Resolve(ctx, ref)
 	if err != nil {
@@ -354,35 +419,7 @@ func (r *Resolver) tryLocalCanonicalConfig(
 	ref string,
 	opts ResolveImageConfigOpts,
 ) (string, digest.Digest, []byte, bool, error) {
-	parsed, err := reference.ParseNormalizedNamed(ref)
-	if err != nil {
-		return "", "", nil, false, nil
-	}
-	canonical, ok := parsed.(reference.Canonical)
-	if !ok {
-		return "", "", nil, false, nil
-	}
-	rootDesc, found, err := r.localCanonicalRootDescriptor(ctx, canonical.Digest())
-	if err != nil || !found {
-		return "", "", nil, found, err
-	}
-	platformMatcher := platforms.Default()
-	if opts.Platform != nil {
-		platformMatcher = platforms.Only(platforms.Normalize(*opts.Platform))
-	}
-	closure, found, release, err := r.tryLocalCanonicalClosure(ctx, canonical.String(), rootDesc, platformMatcher, nil)
-	if err != nil || !found {
-		return "", "", nil, found, err
-	}
-	defer release(context.WithoutCancel(ctx))
-	configBytes, err := content.ReadBlob(ctx, r.contentStore, closure.ConfigDesc)
-	if err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return "", "", nil, false, nil
-		}
-		return "", "", nil, false, err
-	}
-	return canonical.String(), rootDesc.Digest, configBytes, true, nil
+	return r.tryLocalCanonicalConfigMetadata(ctx, ref, opts)
 }
 
 func (r *Resolver) tryLocalCanonicalClosure(
@@ -397,11 +434,8 @@ func (r *Resolver) tryLocalCanonicalClosure(
 		return nil, found, nil, err
 	}
 
-	manifestDesc, manifest, err := resolveManifestDescriptor(ctx, r.contentStore, rootDesc, matcher)
-	if err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return nil, false, nil, nil
-		}
+	manifestDesc, manifest, found, err := tryResolveLocalManifestDescriptor(ctx, r.contentStore, rootDesc, matcher, true)
+	if err != nil || !found {
 		return nil, false, nil, err
 	}
 
@@ -488,7 +522,7 @@ func (r *Resolver) tryLocalCanonicalClosure(
 		return nil, false, nil, nil
 	}
 
-	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(5*time.Minute), bkcache.MakeTemporary)
+	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
 	if err != nil {
 		return nil, false, nil, err
 	}
@@ -529,31 +563,11 @@ func (r *Resolver) localClosureHasMatchingSource(ctx context.Context, refspec ct
 }
 
 func (r *Resolver) attachLocalizedClosureToLease(ctx context.Context, closure *localizedImageClosure) error {
-	leaseID, ok := leases.FromContext(ctx)
-	if !ok {
-		return errors.New("attach localized closure: missing lease")
-	}
-	seen := map[digest.Digest]struct{}{}
 	descs := make([]ocispecs.Descriptor, 0, 2+len(closure.Layers)+len(closure.Nonlayers))
 	descs = append(descs, closure.ManifestDesc, closure.ConfigDesc)
 	descs = append(descs, closure.Layers...)
 	descs = append(descs, closure.Nonlayers...)
-	for _, desc := range descs {
-		if desc.Digest == "" {
-			continue
-		}
-		if _, ok := seen[desc.Digest]; ok {
-			continue
-		}
-		seen[desc.Digest] = struct{}{}
-		if err := r.leaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
-			ID:   desc.Digest.String(),
-			Type: "content",
-		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-			return err
-		}
-	}
-	return nil
+	return r.attachContentToLease(ctx, descs)
 }
 
 func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest.Digest) (ocispecs.Descriptor, bool, error) {
@@ -581,7 +595,7 @@ func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest
 }
 
 func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, opts PushOpts) (rerr error) {
-	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated())
+	span, ctx := tracing.StartSpan(ctx, "pushing "+ref, telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer func() {
 		tracing.FinishWithError(span, rerr)
 	}()
@@ -607,7 +621,7 @@ func (r *Resolver) PushImage(ctx context.Context, img *PushedImage, ref string, 
 	}
 
 	resolver := docker.NewResolver(docker.ResolverOptions{
-		Hosts: r.pushRegistryHosts(opts.Insecure),
+		Hosts: r.pushRegistryHosts(opts.RegistryTransport, opts.Network),
 	})
 	pusher, err := buildkitpush.Pusher(ctx, resolver, ref)
 	if err != nil {
@@ -723,13 +737,14 @@ func (s *sessionAuthSource) Credentials(ctx context.Context, host string) (Crede
 	}, nil
 }
 
-func (r *Resolver) registryHosts() docker.RegistryHosts {
+func (r *Resolver) registryHosts(network NetworkConfig, registryTransport RegistryTransport) docker.RegistryHosts {
 	authorizers := newRegistryHostAuthorizerCache()
 	return func(domain string) ([]docker.RegistryHost, error) {
 		hosts, err := r.registryHostConfigs(domain)
 		if err != nil {
 			return nil, err
 		}
+		hosts = withRegistryHostNetwork(hosts, network, registryTransport)
 		return r.withRegistryHostAuthorizers(hosts, authorizers), nil
 	}
 }
@@ -872,11 +887,178 @@ func cloneRegistryHosts(src []docker.RegistryHost) []docker.RegistryHost {
 	return dst
 }
 
+type localManifestResolutionStatus int
+
+const (
+	localManifestResolutionFound localManifestResolutionStatus = iota
+	localManifestResolutionIncomplete
+	localManifestResolutionNoPlatformMatch
+)
+
+func tryResolveLocalManifestDescriptor(
+	ctx context.Context,
+	provider content.Provider,
+	desc ocispecs.Descriptor,
+	matcher platforms.MatchComparer,
+	checkRootManifestPlatform bool,
+) (ocispecs.Descriptor, ocispecs.Manifest, bool, error) {
+	manifestDesc, manifest, status, err := resolveLocalManifestDescriptor(ctx, provider, desc, matcher, checkRootManifestPlatform)
+	if err != nil {
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, err
+	}
+	switch status {
+	case localManifestResolutionFound:
+		return manifestDesc, manifest, true, nil
+	case localManifestResolutionIncomplete:
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, nil
+	case localManifestResolutionNoPlatformMatch:
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, fmt.Errorf("no manifest matches requested platform for %s", desc.Digest)
+	default:
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, fmt.Errorf("unknown local manifest resolution status %d", status)
+	}
+}
+
+func resolveLocalManifestDescriptor(
+	ctx context.Context,
+	provider content.Provider,
+	desc ocispecs.Descriptor,
+	matcher platforms.MatchComparer,
+	checkManifestPlatform bool,
+) (ocispecs.Descriptor, ocispecs.Manifest, localManifestResolutionStatus, error) {
+	switch {
+	case images.IsManifestType(desc.MediaType):
+		p, err := content.ReadBlob(ctx, provider, desc)
+		if err != nil {
+			if cerrdefs.IsNotFound(err) {
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionIncomplete, nil
+			}
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+		}
+		var manifest ocispecs.Manifest
+		if err := json.Unmarshal(p, &manifest); err != nil {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+		}
+		if checkManifestPlatform && desc.Platform != nil && !matcher.Match(*desc.Platform) {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
+		}
+		if checkManifestPlatform && desc.Platform == nil {
+			imagePlatform, err := images.ConfigPlatform(ctx, provider, manifest.Config)
+			if err != nil {
+				if cerrdefs.IsNotFound(err) {
+					return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionIncomplete, nil
+				}
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+			}
+			if !matcher.Match(imagePlatform) {
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
+			}
+		}
+		return desc, manifest, localManifestResolutionFound, nil
+
+	case images.IsIndexType(desc.MediaType):
+		p, err := content.ReadBlob(ctx, provider, desc)
+		if err != nil {
+			if cerrdefs.IsNotFound(err) {
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionIncomplete, nil
+			}
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+		}
+		var idx ocispecs.Index
+		if err := json.Unmarshal(p, &idx); err != nil {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+		}
+		candidates := matchingPlatformManifests(idx.Manifests, matcher)
+		if len(candidates) == 0 {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
+		}
+		incomplete := false
+		for _, candidate := range candidates {
+			manifestDesc, manifest, status, err := resolveLocalManifestDescriptor(ctx, provider, candidate, matcher, true)
+			if err != nil {
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+			}
+			switch status {
+			case localManifestResolutionFound:
+				return manifestDesc, manifest, localManifestResolutionFound, nil
+			case localManifestResolutionIncomplete:
+				incomplete = true
+			case localManifestResolutionNoPlatformMatch:
+			default:
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, fmt.Errorf("unknown local manifest resolution status %d", status)
+			}
+		}
+		if incomplete {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionIncomplete, nil
+		}
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
+
+	default:
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, fmt.Errorf("unsupported descriptor media type %s", desc.MediaType)
+	}
+}
+
+func withRegistryHostNetwork(hosts []docker.RegistryHost, network NetworkConfig, registryTransport RegistryTransport) []docker.RegistryHost {
+	out := cloneRegistryHosts(hosts)
+	for i := range out {
+		if registryTransport.Protocol != "" {
+			switch registryTransport.Protocol {
+			case RegistryProtocolHTTPS:
+				out[i].Scheme = "https"
+			case RegistryProtocolHTTP:
+				out[i].Scheme = "http"
+			}
+		}
+		// Registry hosts are cached and reused; copy the client before replacing
+		// its transport for this operation's service bindings.
+		client := cloneHTTPClient(out[i].Client)
+		transport := client.Transport
+		if transport == nil {
+			transport = http.DefaultTransport
+		}
+		if httpTransport, ok := transport.(*http.Transport); ok {
+			if registryTransport.InsecureSkipTLSVerify && out[i].Scheme != "http" {
+				httpTransport = cloneHTTPTransportWithInsecureTLS(httpTransport)
+			}
+			transport = httpTransport
+			if len(network.HostAliases) > 0 {
+				transport = netconfhttp.NewDialTransportWithHostAliases(httpTransport, network.DNS, network.HostAliases)
+			}
+		}
+		// Add tracing after any per-call transport changes so the concrete
+		// *http.Transport stays available while service DNS is installed.
+		client.Transport = tracing.NewTransport(transport)
+		out[i].Client = client
+	}
+	return out
+}
+
+func cloneHTTPTransportWithInsecureTLS(rt *http.Transport) *http.Transport {
+	cloned := rt.Clone()
+	tlsConfig := cloned.TLSClientConfig
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{}
+	} else {
+		tlsConfig = tlsConfig.Clone()
+	}
+	tlsConfig.InsecureSkipVerify = true
+	cloned.TLSClientConfig = tlsConfig
+	return cloned
+}
+
+func cloneHTTPClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	copied := *client
+	return &copied
+}
+
 func resolveManifestDescriptor(
 	ctx context.Context,
 	provider content.Provider,
 	desc ocispecs.Descriptor,
 	matcher platforms.MatchComparer,
+	checkManifestPlatform bool,
 ) (ocispecs.Descriptor, ocispecs.Manifest, error) {
 	switch {
 	case images.IsManifestType(desc.MediaType):
@@ -888,10 +1070,10 @@ func resolveManifestDescriptor(
 		if err := json.Unmarshal(p, &manifest); err != nil {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, err
 		}
-		if desc.Platform != nil && !matcher.Match(*desc.Platform) {
+		if checkManifestPlatform && desc.Platform != nil && !matcher.Match(*desc.Platform) {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, fmt.Errorf("manifest %s does not match requested platform", desc.Digest)
 		}
-		if desc.Platform == nil {
+		if checkManifestPlatform && desc.Platform == nil {
 			imagePlatform, err := images.ConfigPlatform(ctx, provider, manifest.Config)
 			if err != nil {
 				return ocispecs.Descriptor{}, ocispecs.Manifest{}, err
@@ -911,32 +1093,12 @@ func resolveManifestDescriptor(
 		if err := json.Unmarshal(p, &idx); err != nil {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, err
 		}
-		candidates := make([]ocispecs.Descriptor, 0, len(idx.Manifests))
-		for _, child := range idx.Manifests {
-			if child.Platform == nil || matcher.Match(*child.Platform) {
-				candidates = append(candidates, child)
-			}
-		}
-		slices.SortStableFunc(candidates, func(a, b ocispecs.Descriptor) int {
-			if a.Platform == nil {
-				return 1
-			}
-			if b.Platform == nil {
-				return -1
-			}
-			if matcher.Less(*a.Platform, *b.Platform) {
-				return -1
-			}
-			if matcher.Less(*b.Platform, *a.Platform) {
-				return 1
-			}
-			return 0
-		})
+		candidates := matchingPlatformManifests(idx.Manifests, matcher)
 		if len(candidates) == 0 {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, fmt.Errorf("no manifest matches requested platform for %s", desc.Digest)
 		}
 		for _, candidate := range candidates {
-			manifestDesc, manifest, err := resolveManifestDescriptor(ctx, provider, candidate, matcher)
+			manifestDesc, manifest, err := resolveManifestDescriptor(ctx, provider, candidate, matcher, true)
 			if err == nil {
 				return manifestDesc, manifest, nil
 			}
@@ -958,26 +1120,14 @@ func hydratePulledDescriptor(desc ocispecs.Descriptor) ocispecs.Descriptor {
 	return desc
 }
 
-func (r *Resolver) pushRegistryHosts(insecure bool) docker.RegistryHosts {
+func (r *Resolver) pushRegistryHosts(registryTransport RegistryTransport, network NetworkConfig) docker.RegistryHosts {
 	authorizers := newRegistryHostAuthorizerCache()
 	return func(domain string) ([]docker.RegistryHost, error) {
 		hosts, err := r.registryHostConfigs(domain)
 		if err != nil {
 			return nil, err
 		}
-		if insecure {
-			for i := range hosts {
-				hosts[i].Scheme = "http"
-				if hosts[i].Client != nil {
-					hosts[i].Client = &http.Client{
-						Transport:     hosts[i].Client.Transport,
-						CheckRedirect: hosts[i].Client.CheckRedirect,
-						Jar:           hosts[i].Client.Jar,
-						Timeout:       hosts[i].Client.Timeout,
-					}
-				}
-			}
-		}
+		hosts = withRegistryHostNetwork(hosts, network, registryTransport)
 		return r.withRegistryHostAuthorizers(hosts, authorizers), nil
 	}
 }
@@ -1039,7 +1189,10 @@ func limitedPushHandler(pusher remotes.Pusher, provider content.Provider) images
 			return nil, err
 		}
 		defer ra.Close()
-		if err := content.Copy(ctx, cw, content.NewReader(ra), desc.Size, desc.Digest); err != nil {
+		// stream upload progress per layer, attributed to the "pushing
+		// <ref>" span carried by ctx
+		w := wrapProgressWriter(ctx, cw, desc)
+		if err := content.Copy(ctx, w, content.NewReader(ra), desc.Size, desc.Digest); err != nil {
 			if errors.Is(err, cerrdefs.ErrAlreadyExists) {
 				return nil, nil
 			}

@@ -10,9 +10,9 @@ import (
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/util/parallel"
+	"golang.org/x/mod/semver"
 
 	"dagger/engine-dev/build"
-
 	"dagger/engine-dev/internal/dagger"
 )
 
@@ -192,7 +192,10 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{
+		Version:  version,
+		ImageTag: tag,
+	}).Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -355,9 +358,9 @@ func (dev *EngineDev) IntrospectionTool() *dagger.File {
 }
 
 // Generate the json schema for a dagger config file
-// Currently supported: "dagger.json", "engine.json"
+// Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
 func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
-	schemaFilename := strings.TrimSuffix(filename, ".json") + ".schema.json"
+	schemaFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".schema.json"
 	// This tool has runtime dependencies on the engine source code itself
 	return dag.Go(dagger.GoOpts{Source: dev.Source}).
 		Env().
@@ -476,6 +479,7 @@ func (dev *EngineDev) Publish(
 }
 
 func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]targetResult, error) {
+	releaseVersion := releaseVersionFromTags(tags)
 	targetResults := make([]targetResult, len(targets))
 	jobs := parallel.New()
 	for i, target := range targets {
@@ -488,7 +492,7 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := dev.Container(ctx, platform, target.GPUSupport, "", "")
+					ctr, err := dev.Container(ctx, platform, target.GPUSupport, releaseVersion, releaseVersion)
 					if err != nil {
 						return err
 					}
@@ -506,6 +510,15 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		return nil, err
 	}
 	return targetResults, nil
+}
+
+func releaseVersionFromTags(tags []string) string {
+	for _, tag := range tags {
+		if semver.IsValid(tag) {
+			return tag
+		}
+	}
+	return ""
 }
 
 func (dev *EngineDev) pushTargets(

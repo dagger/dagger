@@ -77,7 +77,7 @@ func (c *Copier) Usage() (snapshots.Usage, error) {
 }
 
 func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPath, destPath string, opts CopyOptions) error {
-	if err := src.selectBase(srcPath, false); err != nil {
+	if err := src.selectBase(srcPath, opts.CopyDirContents); err != nil {
 		return err
 	}
 	root := sourceEntry{
@@ -179,6 +179,16 @@ func (c *Copier) copyEntry(
 	include, state, err := matcher.includePath(ent.Rel, ent.ViewPath, ent.Info, parentState)
 	if err != nil {
 		return err
+	}
+
+	if ent.Info == nil {
+		if !include {
+			return nil
+		}
+		if ent.StatErr != nil {
+			return fmt.Errorf("failed to stat source path %s: %w", ent.ViewPath, ent.StatErr)
+		}
+		return fmt.Errorf("source path %q missing file info", ent.ViewPath)
 	}
 
 	if ent.Info.IsDir() {

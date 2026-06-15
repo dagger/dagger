@@ -113,11 +113,33 @@ type LLMTokenUsage struct {
 	TotalTokens       int64 `field:"true" json:"total_tokens"`
 }
 
+var _ dagql.PersistedObject = (*LLMTokenUsage)(nil)
+var _ dagql.PersistedObjectDecoder = (*LLMTokenUsage)(nil)
+
 func (*LLMTokenUsage) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "LLMTokenUsage",
 		NonNull:   true,
 	}
+}
+
+func (usage *LLMTokenUsage) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	if usage == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted LLM token usage: nil LLM token usage")
+	}
+	return encodePersistedObjectPayload(usage)
+}
+
+func (*LLMTokenUsage) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var usage LLMTokenUsage
+	if err := json.Unmarshal(payload, &usage); err != nil {
+		return nil, fmt.Errorf("decode persisted LLM token usage payload: %w", err)
+	}
+	return &usage, nil
 }
 
 // ModelMessage represents a generic message in the LLM conversation
@@ -1089,12 +1111,33 @@ type LLMVariable struct {
 }
 
 var _ dagql.Typed = (*LLMVariable)(nil)
+var _ dagql.PersistedObject = (*LLMVariable)(nil)
+var _ dagql.PersistedObjectDecoder = (*LLMVariable)(nil)
 
 func (v *LLMVariable) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "LLMVariable",
 		NonNull:   true,
 	}
+}
+
+func (v *LLMVariable) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	if v == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted LLM variable: nil LLM variable")
+	}
+	return encodePersistedObjectPayload(v)
+}
+
+func (*LLMVariable) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var v LLMVariable
+	if err := json.Unmarshal(payload, &v); err != nil {
+		return nil, fmt.Errorf("decode persisted LLM variable payload: %w", err)
+	}
+	return &v, nil
 }
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {

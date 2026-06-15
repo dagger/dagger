@@ -1,0 +1,102 @@
+---
+title: "Scalars, Lists, Nullability, and Defaults"
+slug: /extending/type-system/scalars-lists-nullability-defaults
+description: "Use basic values, optionality, and defaults intentionally in module APIs."
+---
+
+# Scalars, Lists, Nullability, and Defaults
+
+Small type decisions shape the caller's first experience with a module. Required strings, optional booleans, default paths, and list arguments all communicate what the caller must know before anything runs.
+
+## Scalars
+
+Use scalar values for simple facts:
+
+- Names.
+- Versions.
+- Tags.
+- Flags.
+- Counts.
+- Modes that are genuinely open-ended.
+
+Pick the *right* scalar: a count is an integer, a toggle is a boolean. A number wearing a string ("`replicas: "3"`") forces the caller and the module to agree on parsing, and pushes a malformed value deep into the workflow before it fails.
+
+Avoid using strings as untyped containers for paths, credentials, structured configuration, or closed choices. If Dagger has a more precise type — a [core type](./core-types.mdx) or an [enum](./enums-and-validation.mdx) — use it.
+
+## Lists
+
+Use lists when the caller naturally thinks in collections: targets, platforms, files, packages, checks, or tags.
+
+A list argument should make four things clear, in its name, its help text, or its behavior:
+
+- Whether order matters.
+- Whether duplicates are accepted.
+- What happens when the list is empty — does the function do nothing, fail, or fall back to a default set?
+- Whether a default list comes from [workspace settings](../../reference/configuration/workspace.mdx).
+
+An empty list and an omitted list can mean different things. Decide which is which, and document it, rather than letting the behavior emerge by accident.
+
+## Nullability
+
+Required values should be truly required. Optional values should have clear behavior when omitted.
+
+Use optionality to mean "the module can choose a sensible behavior without this input." Do not use optionality to avoid deciding what the API means — an optional argument with no defined default behavior just moves the decision onto every caller.
+
+## Defaults
+
+Defaults should encode common intent, not hidden magic.
+
+Good defaults:
+
+- Make the common call short.
+- Are documented in argument help so the caller knows what they got.
+- Come from workspace settings when the default is team-specific.
+- Keep file and directory scopes as narrow as possible.
+
+Bad defaults:
+
+- Read the whole workspace by accident.
+- Depend on host environment state.
+- Change behavior silently across contexts.
+- Hide credentials or network dependencies.
+
+## From scalars to types: a worked example
+
+Consider a `deploy` function that leans entirely on scalars. (The signatures below are language-agnostic sketches — see the [SDK guides](../sdks/index.mdx) for the exact syntax.)
+
+```
+deploy(
+  sourcePath:   string   # required
+  registryUrl:  string   # required
+  imageTag:     string   # required
+  token:        string   # required
+  environment:  string   # required, expected to be "dev" | "staging" | "prod"
+  replicas:     string   # required
+)
+```
+
+Every input is a required string, so the caller must get six things exactly right before anything runs, and the type system can help with none of them. `sourcePath` is a host path the engine cannot track or cache on content. `token` is a credential sitting in plaintext in traces and shell history. `environment` accepts any string, so a typo like `"prprod"` fails deep inside the deploy instead of at the call. `replicas` is a number wearing a string. Nothing has a default, so the shortest valid call is long and unmemorable.
+
+The same workflow, designed with the type system:
+
+```
+deploy(
+  source:       Directory               # required — content-addressed, cache-tracked
+  token:        Secret                  # required — never rendered in traces
+  environment:  Environment = Dev       # enum, defaults to Dev
+  tag:          string = "latest"       # default encodes common intent
+  registry:     string = <from settings>  # workspace setting, not per-call
+  replicas:     int = 1                 # right scalar type, sensible default
+)
+```
+
+What improved, input by input:
+
+- **`sourcePath` → `Directory`.** The engine tracks content and caches accurately, and the host boundary becomes explicit instead of an assumed local path.
+- **`token` → `Secret`.** Secrecy is preserved by construction across callers, generated clients, and traces.
+- **`environment` → an enum.** The closed set of choices shows up in help and generated clients, and an invalid value fails before any expensive work starts. See [Enums and Validation](./enums-and-validation.mdx).
+- **`replicas` → `int`.** A count is a number; no parsing, no "is `"two"` valid?" ambiguity.
+- **`tag` and `replicas` defaults.** The common call collapses to roughly `deploy --source ./app --token env:TOKEN`; defaults encode common intent rather than hidden magic.
+- **`registry` from settings.** A team-wide value moves to a [workspace setting](../../reference/configuration/workspace.mdx) so it is not repeated on every call or hard-coded in the module.
+
+The first version is also a composition dead-end: callers feed strings in and, typically, get a status string back. The second returns real types the caller can keep using — the subject of [Designing for Composability](./designing-for-composability.mdx).

@@ -1,0 +1,21 @@
+type Objects {
+  pub objectA: ObjectsA! {
+    ObjectsA()
+  }
+}
+
+type ObjectsA {
+  pub message: String! {
+    "Hello from A"
+  }
+
+  pub objectB: ObjectsB! {
+    ObjectsB()
+  }
+}
+
+type ObjectsB {
+  pub message: String! {
+    "Hello from B"
+  }
+}

@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/juju/ansiterm/tabwriter"
@@ -24,6 +26,10 @@ var (
 	checksFailFast     bool
 	checksNoGenerate   bool
 	checksOnlyGenerate bool
+	checksPast         bool
+	checksNoPast       bool
+	checksRun          bool
+	checksSkip         []string
 )
 
 //go:embed checks.graphql
@@ -34,45 +40,149 @@ func init() {
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
 	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
 	checksCmd.Flags().BoolVar(&checksOnlyGenerate, "generate", false, "Only run generate-as-checks, skip annotated check functions")
+	checksCmd.Flags().BoolVar(&checksPast, "past", false, "Only replay past Cloud Checks results")
+	checksCmd.Flags().BoolVar(&checksNoPast, "no-past", false, "Disable past Cloud Checks lookup")
+	checksCmd.Flags().BoolVar(&checksRun, "run", false, "Run checks even when past Cloud Checks results are replayed")
+	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching the specified patterns")
 	checksCmd.MarkFlagsMutuallyExclusive("no-generate", "generate")
+	checksCmd.MarkFlagsMutuallyExclusive("past", "no-past", "run")
+	// Past Cloud results can't be filtered by skip patterns, so --skip always
+	// runs checks live.
+	checksCmd.MarkFlagsMutuallyExclusive("past", "skip")
 }
 
 var checksCmd = &cobra.Command{
-	Hidden:  true,
 	Aliases: []string{"checks"},
 	Use:     "check [options] [pattern...]",
 	Short:   "Check the state of your project by running tests, linters, etc.",
+	Annotations: map[string]string{
+		visibleAliasesAnnotation: "checks",
+	},
 	Long: `Check the state of your project by running tests, linters, etc.
 
 Examples:
   dagger check                    # Run all checks
   dagger check -l                 # List all available checks
   dagger check go:lint            # Run the go:lint check and any subchecks
+  dagger check --skip '**e2e'     # Run all checks except those matching '**e2e'
+  dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
 `,
 	Args: cobra.ArbitraryArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		params := client.Params{
-			EnableCloudScaleOut:  enableScaleOut,
-			LoadWorkspaceModules: true,
+	RunE: runChecksCommand,
+}
+
+func runChecksCommand(cmd *cobra.Command, args []string) error {
+	if !checksListMode && len(checksSkip) == 0 {
+		replayed, shouldRun, err := maybeReplayPastChecks(cmd, args)
+		if !shouldRun {
+			return err
 		}
-		return withEngine(
-			cmd.Context(),
-			params,
-			func(ctx context.Context, engineClient *client.Client) error {
-				dag := engineClient.Dagger()
-				ws := dag.CurrentWorkspace()
-				checks := ws.Checks(dagger.WorkspaceChecksOpts{
-					Include:      args,
-					NoGenerate:   checksNoGenerate,
-					OnlyGenerate: checksOnlyGenerate,
-				})
-				if checksListMode {
-					return listChecks(ctx, dag, checks, cmd)
-				}
-				return runChecks(ctx, dag, checks, cmd)
-			},
-		)
-	},
+		if err != nil && !replayed {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Cloud check lookup failed: %v; running checks now.\n\n", err)
+		}
+	}
+
+	return runChecksNow(cmd, args)
+}
+
+func maybeReplayPastChecks(cmd *cobra.Command, args []string) (replayed bool, shouldRun bool, err error) {
+	if checksNoPast {
+		return false, true, nil
+	}
+
+	address, ok, reason, err := checkPastWorkspaceAddress(cmd.Context())
+	if err != nil {
+		if checksPast {
+			return false, false, err
+		}
+		return false, true, err
+	}
+	if !ok {
+		if checksPast {
+			if reason == "" {
+				reason = "no remote workspace is known"
+			}
+			return false, false, idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("past Cloud checks unavailable: %s", reason)}
+		}
+		return false, true, nil
+	}
+
+	res, selectors, err := cloudCLI.loadCloudCheckRowsForWorkspaceAcrossUserOrgs(cmd.Context(), address, args, false)
+	if err != nil {
+		if checksPast {
+			return false, false, err
+		}
+		if errors.Is(err, errCloudNotAuthenticated) {
+			return false, true, nil
+		}
+		return false, true, err
+	}
+	if len(res.Rows) == 0 {
+		if checksPast {
+			return false, false, idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("no Cloud check result found for %s", address)}
+		}
+		if !checksRun {
+			fmt.Fprintf(cmd.OutOrStdout(), "No Cloud Checks result found for %s; running checks now.\n\n", address)
+		}
+		return false, true, nil
+	}
+
+	err = cloudCLI.replayCloudCheckResult(cmd, res, selectors)
+	if checksRun {
+		return true, true, err
+	}
+	return true, false, err
+}
+
+func checkPastWorkspaceAddress(ctx context.Context) (string, bool, string, error) {
+	address := strings.TrimSpace(workspaceRef)
+	if address != "" {
+		_, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+		if err != nil {
+			return "", false, "", err
+		}
+		if ok {
+			return address, true, "", nil
+		}
+	}
+
+	_, inferred, dirty, inferErr := inferCleanLocalWorkspaceRemoteAddress(ctx, address)
+	if inferErr == nil {
+		if dirty {
+			return "", false, "workspace has uncommitted changes", nil
+		}
+		if inferred == "" {
+			return "", false, "no remote workspace is known", nil
+		}
+		return inferred, true, "", nil
+	}
+
+	return "", false, inferErr.Error(), nil
+}
+
+func runChecksNow(cmd *cobra.Command, args []string) error {
+	params := client.Params{
+		EnableCloudScaleOut:  enableScaleOut,
+		LoadWorkspaceModules: true,
+	}
+	return withEngine(
+		cmd.Context(),
+		params,
+		func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+			ws := dag.CurrentWorkspace()
+			checks := ws.Checks(dagger.WorkspaceChecksOpts{
+				Include:      args,
+				Skip:         checksSkip,
+				NoGenerate:   checksNoGenerate,
+				OnlyGenerate: checksOnlyGenerate,
+			})
+			if checksListMode {
+				return listChecks(ctx, dag, checks, cmd)
+			}
+			return runChecks(ctx, dag, checks, cmd)
+		},
+	)
 }
 
 // loadGroupListDetails fetches name+description for every item in a group
@@ -164,37 +274,44 @@ func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Chec
 		return err
 	}
 
-	// Partition into checks and generators
-	var checks, generators []*CheckInfo
-	for _, c := range info.Checks {
+	return writeCheckList(cmd.OutOrStdout(), info.Checks)
+}
+
+func writeCheckList(w io.Writer, checks []*CheckInfo) error {
+	showType := false
+	for _, c := range checks {
 		if c.Type == "generate" {
-			generators = append(generators, c)
-		} else {
-			checks = append(checks, c)
+			showType = true
+			break
 		}
 	}
 
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	fmt.Fprintf(tw, "%s\t%s\n",
-		termenv.String("Name").Bold(),
-		termenv.String("Description").Bold(),
-	)
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+	if showType {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n",
+			termenv.String("Name").Bold(),
+			termenv.String("Type").Bold(),
+			termenv.String("Description").Bold(),
+		)
+	} else {
+		fmt.Fprintf(tw, "%s\t%s\n",
+			termenv.String("Name").Bold(),
+			termenv.String("Description").Bold(),
+		)
+	}
 	for _, check := range checks {
 		firstLine := check.Description
 		if idx := strings.Index(check.Description, "\n"); idx != -1 {
 			firstLine = check.Description[:idx]
 		}
-		fmt.Fprintf(tw, "%s\t%s\n", check.Name, firstLine)
-	}
-	if len(generators) > 0 {
-		fmt.Fprintf(tw, "\t\n")
-		fmt.Fprintf(tw, "%s\t\n", termenv.String("Generators").Bold())
-		for _, gen := range generators {
-			firstLine := gen.Description
-			if idx := strings.Index(gen.Description, "\n"); idx != -1 {
-				firstLine = gen.Description[:idx]
+		if showType {
+			checkType := check.Type
+			if checkType == "" {
+				checkType = "check"
 			}
-			fmt.Fprintf(tw, "%s\t%s\n", gen.Name, firstLine)
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", check.Name, checkType, firstLine)
+		} else {
+			fmt.Fprintf(tw, "%s\t%s\n", check.Name, firstLine)
 		}
 	}
 	return tw.Flush()

@@ -26,6 +26,13 @@ func gqlObjectName(name string) string {
 	return strcase.ToCamel(name)
 }
 
+// NamespaceObject maps a module-local type name to its namespaced schema name.
+// It is the exported entry point for SDK runtimes (e.g. the Dang interpreter)
+// that need to resolve a local type reference to the name the engine installed.
+func NamespaceObject(objOriginalName, modFinalName, modOriginalName string) string {
+	return namespaceObject(objOriginalName, modFinalName, modOriginalName)
+}
+
 func namespaceObject(
 	objOriginalName string,
 	modFinalName string,

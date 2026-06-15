@@ -160,7 +160,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`),
+				dagql.Arg("permissions").Doc(`Permission given to the copied directory and contents (e.g., 0755).`).
+					View(AfterVersion("v0.21.0")),
 			),
 		dagql.NodeFunc("__withDirectoryDockerfileCompat", s.withDirectoryDockerfileCompat).
 			IsPersistable().
@@ -278,6 +279,13 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
+		dagql.NodeFunc("asWorkspace", s.asWorkspace).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Creates a synthetic workspace from this directory.").
+			Args(
+				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
+			).
+			Experimental("Synthetic workspaces currently support filesystem APIs only."),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
@@ -1046,13 +1054,13 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
-type existsArgs struct {
+type directoryExistsArgs struct {
 	Path                string
 	ExpectedType        dagql.Optional[core.ExistsType]
 	DoNotFollowSymlinks bool `default:"false"`
 }
 
-func (s *directorySchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args existsArgs) (dagql.Boolean, error) {
+func (s *directorySchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryExistsArgs) (dagql.Boolean, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return false, err
@@ -1753,6 +1761,14 @@ func (s *directorySchema) asGit(
 		return inst, err
 	}
 	return inst, nil
+}
+
+func (s *directorySchema) asWorkspace(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	args workspaceArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	return syntheticWorkspaceFromRootfs(ctx, dir, args.Cwd, "directory://")
 }
 
 type directoryWithSymlinkArgs struct {

@@ -1,5 +1,13 @@
 package core
 
+// These tests cover the GitRepository API for public or otherwise
+// auth-independent repositories. They verify cloning, refs, commits, trees, and
+// fetched file contents.
+//
+// See also:
+// - gitcredential_test.go: credential forwarding for Git sources.
+// - ref_test.go: module reference resolution for Git-shaped paths.
+
 import (
 	"context"
 	"encoding/base64"
@@ -247,7 +255,7 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	// latest tag
 	latestTag := repo.LatestVersion()
 	requireSampleGitRootDir(ctx, t, c, latestTag.Tree())
-	requireGitRefIsTag(ctx, t, c, `^refs/tags/v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`, "", latestTag)
+	requireGitRefIsTag(ctx, t, c, `^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`, "", latestTag)
 	// sample tag
 	requireSampleGitTag(ctx, t, c, repo.Tag("v0.9.5"))
 	// sample annotated tag
@@ -396,53 +404,62 @@ func (GitSuite) TestCheckoutOrigin(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	log := func(ctx context.Context, dir *dagger.Directory) (string, error) {
+	const commitCount = 30
+	repoDir := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"sh", "-lc", fmt.Sprintf(`
+set -e
+git init
+for i in $(seq 1 %[1]d); do
+  printf 'commit %%s\n' "$i" > history.txt
+  git add history.txt
+  git commit -m "commit $i"
+done
+`, commitCount)}).
+		Directory(".")
+	gitSvc, repoURL := gitService(ctx, t, c, repoDir)
+	repo := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitSvc})
+
+	log := func(ctx context.Context, dir *dagger.Directory) []string {
 		res, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", dir).
 			WithExec([]string{"git", "log", "--oneline"}).
 			Stdout(ctx)
-		return strings.TrimSpace(res), err
+		require.NoError(t, err)
+		return strings.Split(strings.TrimSpace(res), "\n")
 	}
 
 	// default depth = 1
-	dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
-	res, err := log(ctx, dir)
-	require.NoError(t, err)
-	lines := strings.Split(res, "\n")
+	dir := repo.Branch("main").Tree()
+	lines := log(ctx, dir)
 	require.Len(t, lines, 1)
 
 	// depth = 5
-	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
-	res, err = log(ctx, dir)
-	require.NoError(t, err)
-	lines = strings.Split(res, "\n")
+	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 5})
+	lines = log(ctx, dir)
 	require.Len(t, lines, 5)
 
-	// depth = 1000 (big depth)
-	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 1000})
-	res, err = log(ctx, dir)
-	require.NoError(t, err)
-	lines = strings.Split(res, "\n")
-	require.Len(t, lines, 1000)
+	// depth greater than the full history
+	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 1000})
+	lines = log(ctx, dir)
+	require.Len(t, lines, commitCount)
+	require.Contains(t, lines[len(lines)-1], "commit 1")
 
 	// depth = 20 (back down)
-	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 20})
-	res, err = log(ctx, dir)
-	require.NoError(t, err)
-	lines = strings.Split(res, "\n")
+	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: 20})
+	lines = log(ctx, dir)
 	require.Len(t, lines, 20)
 
 	// depth = -1 (max depth)
-	dir = c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1})
-	res, err = log(ctx, dir)
-	require.NoError(t, err)
-	lines = strings.Split(res, "\n")
-	last := lines[len(lines)-1]
-	require.Greater(t, len(lines), 2000)
-	require.True(t, strings.HasPrefix(last, "30f75"), last)
-	require.Contains(t, last, "Move prototype 69-dagger-archon to top-level")
+	dir = repo.Branch("main").Tree(dagger.GitRefTreeOpts{Depth: -1})
+	lines = log(ctx, dir)
+	require.Len(t, lines, commitCount)
+	require.Contains(t, lines[len(lines)-1], "commit 1")
 }
 
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {

@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
-	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/iancoleman/strcase"
@@ -308,7 +308,6 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 	spec.IsPersistable = true
 	switch cachePolicy {
 	case FunctionCachePolicyNever:
-		spec.DoNotCache = "function explicitly marked as never cache"
 		spec.IsPersistable = false
 
 	case FunctionCachePolicyPerSession:
@@ -1314,9 +1313,16 @@ func (obj *ObjectTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]
 	return obj
 }
 
+// WithName renames the object to an already-final GraphQL name. This is an
+// internal rename (the `__withName` field), only ever given a name that has
+// already been normalized — the module-namespaced name from namespaceObject,
+// or an SDK-internal marker. Raw SDK names are normalized once at creation
+// (NewObjectTypeDef); re-running strcase.ToCamel here would corrupt
+// already-cased multi-word names (e.g. "ModuleAOverlay" -> "ModuleAoverlay"),
+// since ToCamel is not idempotent.
 func (obj *ObjectTypeDef) WithName(name string) *ObjectTypeDef {
 	obj = obj.Clone()
-	obj.Name = strcase.ToCamel(name)
+	obj.Name = name
 	return obj
 }
 
@@ -1676,9 +1682,12 @@ func (iface *InterfaceTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*Sourc
 	return iface
 }
 
+// WithName renames the interface to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
 func (iface *InterfaceTypeDef) WithName(name string) *InterfaceTypeDef {
 	iface = iface.Clone()
-	iface.Name = strcase.ToCamel(name)
+	iface.Name = name
 	return iface
 }
 
@@ -1784,6 +1793,15 @@ func (*ScalarTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 
 func (typeDef ScalarTypeDef) Clone() *ScalarTypeDef {
 	return &typeDef
+}
+
+// WithName renames the scalar to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
+func (typeDef *ScalarTypeDef) WithName(name string) *ScalarTypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Name = name
+	return typeDef
 }
 
 type ListTypeDef struct {
@@ -2061,9 +2079,12 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 	return &cp
 }
 
+// WithName renames the enum to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
 func (enum *EnumTypeDef) WithName(name string) *EnumTypeDef {
 	enum = enum.Clone()
-	enum.Name = strcase.ToCamel(name)
+	enum.Name = name
 	return enum
 }
 
@@ -2365,9 +2386,28 @@ type FunctionCall struct {
 	ParentName string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`
 	Parent     JSON                    `field:"true" doc:"The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."`
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
+
+	returnState *functionCallReturnState
 }
 
 type persistedFunctionCall FunctionCall
+
+type functionCallReturnState struct {
+	mu     sync.Mutex
+	set    bool
+	result functionCallReturn
+}
+
+type functionCallReturn struct {
+	Value    any
+	ErrorID  dagql.ID[*Error]
+	HasError bool
+}
+
+func newFunctionCall(fnCall FunctionCall) *FunctionCall {
+	fnCall.returnState = &functionCallReturnState{}
+	return &fnCall
+}
 
 var _ dagql.PersistedObject = (*FunctionCall)(nil)
 var _ dagql.PersistedObjectDecoder = (*FunctionCall)(nil)
@@ -2404,49 +2444,54 @@ func (*FunctionCall) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 }
 
 func (fnCall *FunctionCall) ReturnValue(ctx context.Context, val JSON) error {
-	// The return is implemented by exporting the result back to the caller's
-	// filesystem. This ensures that the result is cached as part of the module
-	// function's Exec while also keeping SDKs as agnostic as possible to the
-	// format + location of that result.
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
+	_ = ctx
+
+	var returnValue any
+	if val != nil {
+		dec := json.NewDecoder(bytes.NewReader(val.Bytes()))
+		dec.UseNumber()
+		if err := dec.Decode(&returnValue); err != nil {
+			return fmt.Errorf("decode function return value: %w", err)
+		}
 	}
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return fmt.Errorf("get engine client: %w", err)
-	}
-	return bk.IOReaderExport(
-		ctx,
-		bytes.NewReader(val),
-		filepath.Join(modMetaDirPath, modMetaOutputPath),
-		0o600,
-	)
+	return fnCall.setReturn(functionCallReturn{Value: returnValue})
 }
 
 func (fnCall *FunctionCall) ReturnError(ctx context.Context, errID dagql.ID[*Error]) error {
-	// The return is implemented by exporting the result back to the caller's
-	// filesystem. This ensures that the result is cached as part of the module
-	// function's Exec while also keeping SDKs as agnostic as possible to the
-	// format + location of that result.
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
+	_ = ctx
+
+	return fnCall.setReturn(functionCallReturn{
+		ErrorID:  errID,
+		HasError: true,
+	})
+}
+
+func (fnCall *FunctionCall) setReturn(result functionCallReturn) error {
+	if fnCall == nil || fnCall.returnState == nil {
+		return fmt.Errorf("function call is not active")
 	}
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return fmt.Errorf("get engine client: %w", err)
+
+	fnCall.returnState.mu.Lock()
+	defer fnCall.returnState.mu.Unlock()
+
+	if fnCall.returnState.set {
+		return fmt.Errorf("function call return already set")
 	}
-	enc, err := errID.Encode()
-	if err != nil {
-		return fmt.Errorf("encode error ID: %w", err)
+
+	fnCall.returnState.result = result
+	fnCall.returnState.set = true
+	return nil
+}
+
+func (fnCall *FunctionCall) returnResult() (functionCallReturn, bool, error) {
+	if fnCall == nil || fnCall.returnState == nil {
+		return functionCallReturn{}, false, fmt.Errorf("function call is not active")
 	}
-	return bk.IOReaderExport(
-		ctx,
-		strings.NewReader(enc),
-		filepath.Join(modMetaDirPath, modMetaErrorPath),
-		0o600,
-	)
+
+	fnCall.returnState.mu.Lock()
+	defer fnCall.returnState.mu.Unlock()
+
+	return fnCall.returnState.result, fnCall.returnState.set, nil
 }
 
 type FunctionCallArgValue struct {

@@ -2,16 +2,46 @@ package workspace
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/dagger/dagger/util/lockfile"
 )
 
 const (
-	LockDirName  = ".dagger"
-	LockFileName = "lock"
+	LockDirName = ".dagger"
 
-	lockModulesResolveOperation = "modules.resolve"
+	LockFileName       = "dagger.lock"
+	LegacyLockFileName = "lock"
+	LegacyLockFilePath = LockDirName + "/" + LegacyLockFileName
 )
+
+// CanonicalLockFilePath maps the legacy .dagger/lock path to its dagger.lock
+// sibling. Other paths are already canonical.
+func CanonicalLockFilePath(lockFile string) string {
+	if lockFile == "" {
+		return ""
+	}
+	lockFile = filepath.Clean(lockFile)
+	if filepath.Base(lockFile) != LegacyLockFileName {
+		return lockFile
+	}
+	lockDir := filepath.Dir(lockFile)
+	if filepath.Base(lockDir) != LockDirName {
+		return lockFile
+	}
+	canonicalDir := filepath.Dir(lockDir)
+	if canonicalDir == "." {
+		return LockFileName
+	}
+	return filepath.Join(canonicalDir, LockFileName)
+}
+
+// LegacyLockFilePathForCanonical returns the legacy lockfile path that used to
+// sit next to a canonical dagger.lock.
+func LegacyLockFilePathForCanonical(lockFile string) string {
+	lockDir := filepath.Dir(CanonicalLockFilePath(lockFile))
+	return filepath.Join(lockDir, LegacyLockFilePath)
+}
 
 // LockMode controls where lookup results come from for a run.
 type LockMode string
@@ -57,7 +87,7 @@ type Lock struct {
 	file *lockfile.Lockfile
 }
 
-// ParseLock parses .dagger/lock data.
+// ParseLock parses dagger.lock data.
 func ParseLock(data []byte) (*Lock, error) {
 	file, err := lockfile.Parse(data)
 	if err != nil {
@@ -109,19 +139,6 @@ func (l *Lock) Merge(other *Lock) error {
 		}
 	}
 	return nil
-}
-
-// GetModuleResolve retrieves the lock result for a module source lookup.
-func (l *Lock) GetModuleResolve(source string) (LookupResult, bool, error) {
-	return l.GetLookup("", lockModulesResolveOperation, moduleResolveInputs(source))
-}
-
-// SetModuleResolve sets the lock result for a module source lookup.
-func (l *Lock) SetModuleResolve(source string, result LookupResult) error {
-	if source == "" {
-		return fmt.Errorf("module source is required")
-	}
-	return l.SetLookup("", lockModulesResolveOperation, moduleResolveInputs(source), result)
 }
 
 // GetLookup retrieves the lock result for a generic lookup tuple.
@@ -202,10 +219,6 @@ func parseLookupResult(value any, policy string) (LookupResult, error) {
 
 func isValidLockPolicy(policy LockPolicy) bool {
 	return policy == PolicyPin || policy == PolicyFloat
-}
-
-func moduleResolveInputs(source string) []any {
-	return []any{source}
 }
 
 // ParseLockMode validates an explicitly configured lock mode.

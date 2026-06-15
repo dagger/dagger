@@ -32,6 +32,7 @@ type sourceEntry struct {
 	ViewPath string
 	RealPath string
 	Info     os.FileInfo
+	StatErr  error
 }
 
 func newSource(m Mount) (*source, error) {
@@ -124,7 +125,16 @@ func (s *source) readBindDir(rel string) ([]sourceEntry, error) {
 		viewPath := filepath.Join(viewDir, name)
 		info, err := os.Lstat(viewPath)
 		if err != nil {
-			return nil, err
+			if !os.IsNotExist(err) {
+				return nil, err
+			}
+			entries = append(entries, sourceEntry{
+				Rel:      filepath.Join(rel, name),
+				ViewPath: viewPath,
+				RealPath: filepath.Join(realDir, name),
+				StatErr:  err,
+			})
+			continue
 		}
 		entries = append(entries, sourceEntry{
 			Rel:      filepath.Join(rel, name),

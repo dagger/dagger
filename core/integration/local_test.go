@@ -1,10 +1,19 @@
 package core
 
+// These tests cover importing host directories into Dagger with local source
+// APIs. They verify content transfer and reuse across Dagger sessions.
+//
+// See also:
+// - host_test.go: host filesystem access.
+// - cross_session_test.go: behavior that survives session boundaries.
+
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"dagger.io/dagger"
@@ -621,6 +630,113 @@ func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) 
 	require.Equal(t, dgst1A, dgst2A)
 	require.NotEqual(t, dgst2A, dgst3A)
 	require.Equal(t, dgst3A, dgst4A)
+}
+
+func (LocalDirSuite) TestLocalImportParallelFilteredOutMutableEntries(ctx context.Context, t *testctx.T) {
+	const (
+		volatileFiles   = 512
+		filteredFiles   = 1024
+		mutationRounds  = 8
+		filteredWorkers = 8
+	)
+
+	root := t.TempDir()
+	keepDir := "aa-keep"
+
+	require.NoError(t, os.MkdirAll(filepath.Join(root, keepDir), 0o755))
+	for i := range filteredFiles {
+		keepFile := fmt.Sprintf("needle-%04d.txt", i)
+		keepContents := fmt.Sprintf("stable contents %d\n", i)
+		require.NoError(t, os.WriteFile(filepath.Join(root, keepDir, keepFile), []byte(keepContents), 0o644))
+	}
+
+	volatilePath := func(i int) string {
+		return filepath.Join(root, fmt.Sprintf("zz-volatile-%04d.tmp", i))
+	}
+	writeVolatile := func(round int) error {
+		for i := range volatileFiles {
+			if err := os.WriteFile(volatilePath(i), []byte(fmt.Sprintf("round=%d file=%d\n", round, i)), 0o644); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	removeVolatile := func() error {
+		for i := range volatileFiles {
+			if err := os.Remove(volatilePath(i)); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		return nil
+	}
+
+	c := connect(ctx, t)
+	require.NoError(t, writeVolatile(0))
+	_, err := c.Host().Directory(root, dagger.HostDirectoryOpts{NoCache: true}).Digest(ctx)
+	require.NoError(t, err)
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	startCh := make(chan struct{})
+
+	eg.Go(func() error {
+		<-startCh
+
+		for round := range mutationRounds {
+			if err := writeVolatile(round); err != nil {
+				return fmt.Errorf("write volatile files round %d: %w", round, err)
+			}
+			if _, err := c.Host().Directory(root, dagger.HostDirectoryOpts{NoCache: true}).Digest(egCtx); err != nil {
+				return fmt.Errorf("populate mirror round %d: %w", round, err)
+			}
+			if err := removeVolatile(); err != nil {
+				return fmt.Errorf("remove volatile files round %d: %w", round, err)
+			}
+			if _, err := c.Host().Directory(root, dagger.HostDirectoryOpts{NoCache: true}).Digest(egCtx); err != nil {
+				return fmt.Errorf("delete from mirror round %d: %w", round, err)
+			}
+		}
+		return nil
+	})
+
+	var nextFiltered atomic.Int64
+	var filteredAttempts atomic.Int64
+	for worker := range filteredWorkers {
+		eg.Go(func() error {
+			<-startCh
+			for {
+				select {
+				case <-egCtx.Done():
+					return context.Cause(egCtx)
+				default:
+				}
+
+				idx := int(nextFiltered.Add(1) - 1)
+				if idx >= filteredFiles {
+					return nil
+				}
+				keepFile := fmt.Sprintf("needle-%04d.txt", idx)
+				keepPath := keepDir + "/" + keepFile
+				keepContents := fmt.Sprintf("stable contents %d\n", idx)
+				filteredOpts := dagger.HostDirectoryOpts{
+					Include: []string{keepPath},
+					NoCache: true,
+				}
+
+				got, err := c.Host().Directory(root, filteredOpts).File(keepPath).Contents(egCtx)
+				if err != nil {
+					return fmt.Errorf("filtered import worker %d: %w", worker, err)
+				}
+				if got != keepContents {
+					return fmt.Errorf("filtered import worker %d: got %q, want %q", worker, got, keepContents)
+				}
+				filteredAttempts.Add(1)
+			}
+		})
+	}
+
+	close(startCh)
+	require.NoError(t, eg.Wait())
+	require.Equal(t, int64(filteredFiles), filteredAttempts.Load())
 }
 
 func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {

@@ -1,5 +1,8 @@
 package core
 
+// These tests cover Unix sockets passed between the host and containers. They
+// verify socket mounts and ownership metadata.
+
 import (
 	"context"
 	_ "embed"

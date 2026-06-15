@@ -1,5 +1,8 @@
 package main
 
+// These fixture tests keep the Go interface module self-validating for the
+// integration suite.
+
 import (
 	"context"
 	"testing"

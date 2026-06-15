@@ -115,8 +115,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 			ExcludePatterns: opts.ExcludePatterns,
 			FollowPaths:     opts.FollowPaths,
 			Map: func(p string, st *fstypes.Stat) fsutil.MapResult {
-				st.Uid = 0
-				st.Gid = 0
+				normalizeLocalImportStat(st)
 				return fsutil.MapResultKeep
 			},
 		})
@@ -131,6 +130,12 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		}
 		return fsutil.Send(stream.Context(), stream, filteredFS, nil)
 	}
+}
+
+func normalizeLocalImportStat(st *fstypes.Stat) {
+	st.Uid = 0
+	st.Gid = 0
+	st.Xattrs = nil
 }
 
 type FilesyncTarget Filesyncer

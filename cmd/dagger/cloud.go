@@ -16,30 +16,46 @@ import (
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
-var cloudGroup = &cobra.Group{
-	ID:    "cloud",
-	Title: "Dagger Cloud Commands",
-}
-
 var cloudCLI = &CloudCLI{}
 
-var loginCmd = &cobra.Command{
-	Use:     "login [options] [org]",
-	Short:   "Log in to Dagger Cloud",
-	GroupID: cloudGroup.ID,
-	RunE:    cloudCLI.Login,
+var loginSwitchAccount bool
+
+var cloudCmd = &cobra.Command{
+	Use:   "cloud",
+	Short: "Manage Dagger Cloud",
 }
 
-var logoutCmd = &cobra.Command{
-	Use:     "logout",
-	Short:   "Log out from Dagger Cloud",
-	GroupID: cloudGroup.ID,
-	RunE:    cloudCLI.Logout,
-}
+var cloudLoginCmd = newLoginCmd(false)
+var loginCmd = newLoginCmd(true)
+
+var cloudLogoutCmd = newLogoutCmd(false)
+var logoutCmd = newLogoutCmd(true)
 
 func init() {
-	rootCmd.AddGroup(cloudGroup)
-	rootCmd.AddCommand(loginCmd, logoutCmd)
+	cloudCmd.AddCommand(cloudLoginCmd, cloudLogoutCmd)
+	rootCmd.AddCommand(cloudCmd, loginCmd, logoutCmd)
+}
+
+func newLoginCmd(hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "login [options] [org]",
+		Short:  "Log in to Dagger Cloud",
+		Args:   cobra.MaximumNArgs(1),
+		Hidden: hidden,
+		RunE:   cloudCLI.Login,
+	}
+	cmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
+	return cmd
+}
+
+func newLogoutCmd(hidden bool) *cobra.Command {
+	return &cobra.Command{
+		Use:    "logout",
+		Short:  "Log out from Dagger Cloud",
+		Args:   cobra.NoArgs,
+		Hidden: hidden,
+		RunE:   cloudCLI.Logout,
+	}
 }
 
 type CloudCLI struct{}
@@ -54,8 +70,15 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		orgName = args[0]
 	}
+	if orgName == "" {
+		orgName = cloudOrgFlag
+	}
 
-	if err := auth.Login(ctx, outW); err != nil {
+	loginOpts := []auth.LoginOption{}
+	if loginSwitchAccount {
+		loginOpts = append(loginOpts, auth.WithSwitchAccount())
+	}
+	if err := auth.Login(ctx, outW, loginOpts...); err != nil {
 		return err
 	}
 
@@ -77,7 +100,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	var selectedOrg *auth.Org
 	switch len(user.Orgs) {
 	case 0:
-		fmt.Fprintln(errW, "You are not a member of any organizations, creating a new one...")
+		fmt.Fprintln(errW, "You are not a member of any Dagger Cloud organizations.")
 		selectedOrg, err = createNewOrg(ctx, client, errW)
 		if err != nil {
 			// logging out user here so terminal is not filled with 403
@@ -88,6 +111,10 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 			return idtui.Fail
 		}
 	case 1:
+		if orgName != "" && user.Orgs[0].Name != orgName {
+			fmt.Fprintln(errW, "Organization", orgName, "not found.")
+			return idtui.Fail
+		}
 		selectedOrg = &user.Orgs[0]
 	default:
 		if orgName == "" {
@@ -120,12 +147,13 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 
 func createNewOrg(ctx context.Context, cli *cloud.Client, w io.Writer) (*auth.Org, error) {
 	url := "https://dagger.cloud/traces/setup"
+	fmt.Fprintf(w, "Create or select an organization here: %s\n", url)
 	err := browser.OpenURL(url)
 	if err != nil {
-		fmt.Fprintf(w, "Unable to open browser automatically, please visit %s to create an organization.\n", url)
+		fmt.Fprintf(w, "Unable to open browser automatically; open the URL above to continue.\n")
 	}
 
-	timer := time.After(15 * time.Second)
+	timer := time.After(5 * time.Minute)
 	t := time.NewTicker(1 * time.Second)
 
 	defer t.Stop()

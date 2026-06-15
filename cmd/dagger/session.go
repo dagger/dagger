@@ -29,12 +29,22 @@ var (
 )
 
 func sessionCmd() *cobra.Command {
+	return newSessionCmd(true)
+}
+
+var apiSessionCmd = newSessionCmd(true)
+var sessionAliasCmd = newSessionCmd(true)
+
+func newSessionCmd(hidden bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "session [options]",
 		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger Engine. It is not intended to be used by humans directly.",
-		Hidden:       true,
+		Hidden:       hidden,
 		RunE:         EngineSession,
 		SilenceUsage: true,
+		Annotations: map[string]string{
+			showFinalProgressKey: "true",
+		},
 	}
 	cmd.Flags().StringVar(&sessionVersion, "version", "", "")
 	// This is not used by kept for backward compatibility.
@@ -143,5 +153,6 @@ func sessionClientParams(secretToken string) (client.Params, error) {
 	if sessionWorkspace != "" {
 		params.Workspace = &sessionWorkspace
 	}
+	applyWorkspaceClientParams(&params)
 	return params, nil
 }

@@ -1,0 +1,5 @@
+[modules.build]
+source = ".dagger/modules/build"
+
+[modules.lint]
+source = ".dagger/modules/lint"

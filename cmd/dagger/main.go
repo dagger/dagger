@@ -54,12 +54,9 @@ var (
 	cpuprofile = os.Getenv("CPUPROFILE")
 	pprofAddr  = os.Getenv("PPROF")
 
-	execGroup = &cobra.Group{
-		ID:    "exec",
-		Title: "Execution Commands",
-	}
-
-	workdir string
+	workdir      string
+	workspaceRef string
+	workspaceEnv string
 
 	silent                   bool
 	verbose                  int
@@ -75,6 +72,7 @@ var (
 	web                      bool
 	noExit                   bool
 	xRelease                 string
+	autoApply                bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
 	enableScaleOut           bool
 
@@ -149,39 +147,44 @@ func init() {
 		versionCmd(),
 		queryCmd,
 		runCmd,
+		apiCmd,
 		traceCmd,
 		lockCmd,
 		configCmd,
+		envCmd,
+		settingsCmd,
 		checksCmd,
 		upCmd,
 		generateCmd,
-		moduleInitCmd,
+		workspaceCmd,
+		migrateCmd,
 		moduleDepInstallCmd,
-		moduleUnInstallCmd,
+		moduleDepUninstallCmd,
 		moduleUpdateCmd,
-		moduleDevelopCmd,
-		modulePublishCmd,
-		toolchainCmd,
+		modCmd,
+		functionCmd,
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
-		sessionCmd(),
+		sessionAliasCmd,
 		newGenCmd(),
 		shellCmd,
 		clientCmd,
 		mcpCmd,
 	)
 
-	rootCmd.AddGroup(moduleGroup)
-	rootCmd.AddGroup(execGroup)
+	rootCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name for Cloud-scoped commands")
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	cobra.AddTemplateFunc("hasInheritedFlags", hasInheritedFlags)
-	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
+	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
+	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
+	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
+	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
 	cobra.AddTemplateFunc("indent", indent.String)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
@@ -189,6 +192,7 @@ func init() {
 	// we'll add it in the last line of the usage template
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
 	rootCmd.PersistentFlags().Lookup("help").Hidden = true
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 
 	disableFlagsInUseLine(rootCmd)
 }
@@ -203,6 +207,7 @@ var rootCmd = &cobra.Command{
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
 		cmd.SilenceUsage = true
+		applyCommandProgressDefaults(cmd)
 
 		if cpuprofile != "" {
 			profF, err := os.Create(cpuprofile)
@@ -235,14 +240,9 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-		normalized, err := NormalizeWorkdir(workdir)
-		if err != nil {
+		if err := validateWorkspaceFlagPolicy(cmd, args); err != nil {
 			return err
 		}
-		if err := os.Chdir(normalized); err != nil {
-			return fmt.Errorf("change workdir: %w", err)
-		}
-		workdir = normalized
 
 		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
 		t := analytics.New(analytics.DefaultConfig(labels))
@@ -263,13 +263,36 @@ var rootCmd = &cobra.Command{
 
 		return nil
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) > 0 && !isFile(args[0]) {
-			return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+	RunE: runRoot,
+}
+
+func runRoot(cmd *cobra.Command, args []string) error {
+	// Historically, the root command fell back to the hidden shell command:
+	// `dagger`, `dagger -c ...`, and `dagger file.dsh` all executed shell.
+	// Bare `dagger` now prints regular CLI usage, but explicit shell-style root
+	// invocations still take the old fallback below.
+	if len(args) == 0 && !hasChangedRootShellFlag(cmd) {
+		return cmd.Usage()
+	}
+	if len(args) > 0 && !isFile(args[0]) {
+		return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+	}
+	cmd.SetArgs(append([]string{"shell"}, args...))
+	return cmd.Execute()
+}
+
+func hasChangedRootShellFlag(cmd *cobra.Command) bool {
+	// Cobra stores parsed persistent and local flags together in cmd.Flags().
+	// Only root-local flags signal an explicit shell-style invocation; global
+	// flags like `--debug` should not keep the old shell fallback.
+	changed := false
+	persistent := cmd.PersistentFlags()
+	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		if persistent.Lookup(flag.Name) == nil {
+			changed = true
 		}
-		cmd.SetArgs(append([]string{"shell"}, args...))
-		return cmd.Execute()
-	},
+	})
+	return changed
 }
 
 func isFile(name string) bool {
@@ -344,7 +367,9 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&workdir, "workdir", ".", "Set the working directory")
+	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
+	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
+	flags.StringVar(&workspaceEnv, "env", "", "Apply the named workspace environment overlay")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
@@ -372,10 +397,10 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.Lookup("scale-out").Hidden = true
 
 	for _, fl := range []string{
-		"workdir",
 		"dot-output",
 		"dot-focus-field",
 		"dot-show-internal",
+		"workdir",
 	} {
 		if err := flags.MarkHidden(fl); err != nil {
 			fmt.Fprintln(stdout, "Error hiding flag: "+fl, err)
@@ -529,12 +554,12 @@ func shouldCleanupOldEngines() bool {
 	return !leaveOldEngine
 }
 
-func parseGlobalFlags() *pflag.FlagSet {
+func parseGlobalFlags(args []string) {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
 	flags.ParseErrorsAllowlist.UnknownFlags = true
 	installGlobalFlags(flags)
-	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
+	if err := flags.Parse(args); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)
 		os.Exit(1)
 	}
@@ -542,7 +567,6 @@ func parseGlobalFlags() *pflag.FlagSet {
 		xRelease = os.Getenv(daggerXReleaseEnv)
 	}
 	xRelease = strings.TrimSpace(xRelease)
-	return flags
 }
 
 func xReleaseLogLine(msg string) string {
@@ -551,6 +575,88 @@ func xReleaseLogLine(msg string) string {
 		return idtui.NewOutput(stderr).String(line).Bold().Foreground(termenv.ANSIYellow).String()
 	}
 	return line
+}
+
+func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[workspaceFlagPolicyAnnotation] = policy
+}
+
+func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
+	if workspaceRef == "" {
+		return nil
+	}
+
+	switch workspaceFlagPolicy(cmd, args) {
+	case workspaceFlagPolicyDisallow:
+		return fmt.Errorf("--workspace is not supported for %q", cmd.CommandPath())
+	case workspaceFlagPolicyLocalOnly:
+		if isObviouslyRemoteWorkspaceRef(workspaceRef) {
+			return fmt.Errorf("--workspace must be a local path for %q", cmd.CommandPath())
+		}
+	}
+
+	return nil
+}
+
+func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
+	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
+		return workspaceFlagPolicyLocalOnly
+	}
+	if isWorkspaceSettingsWriteCommand(cmd, args) {
+		return workspaceFlagPolicyLocalOnly
+	}
+
+	for c := cmd; c != nil; c = c.Parent() {
+		if policy := c.Annotations[workspaceFlagPolicyAnnotation]; policy != "" {
+			return policy
+		}
+	}
+
+	return ""
+}
+
+func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
+	switch commandName(cmd) {
+	case "config", "workspace config":
+		return true
+	default:
+		return false
+	}
+}
+
+func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
+	switch commandName(cmd) {
+	case "settings", "workspace settings":
+		return len(args) == 3
+	default:
+		return false
+	}
+}
+
+func isObviouslyRemoteWorkspaceRef(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	if strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "../") || strings.HasPrefix(ref, "/") {
+		return false
+	}
+	if strings.Contains(ref, "://") || strings.HasPrefix(ref, "git@") {
+		return true
+	}
+
+	if abs, err := pathutil.Abs(ref); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			return false
+		} else if !os.IsNotExist(err) {
+			return false
+		}
+	}
+
+	head, _, hasSlash := strings.Cut(ref, "/")
+	return hasSlash && strings.Contains(head, ".")
 }
 
 func Tracer() trace.Tracer {
@@ -583,8 +689,49 @@ const InstrumentationLibrary = "dagger.io/cli"
 
 var opts dagui.FrontendOpts
 
+const (
+	workspaceFlagPolicyAnnotation = "workspaceFlagPolicy"
+	workspaceFlagPolicyDisallow   = "disallow"
+	workspaceFlagPolicyLocalOnly  = "local-only"
+
+	showFinalProgressKey = "showFinalProgress"
+)
+
+func commandShowsFinalProgress(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Annotations[showFinalProgressKey] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func applyCommandProgressDefaults(cmd *cobra.Command) {
+	verbosity := dagui.HideCompletedVerbosity
+	if commandShowsFinalProgress(cmd) {
+		verbosity = dagui.ShowCompletedVerbosity
+	}
+	verbosity += verbose
+	verbosity -= quiet
+	opts.Verbosity = verbosity
+}
+
 func main() {
-	parseGlobalFlags()
+	installGlobalFlags(rootCmd.PersistentFlags())
+
+	// Some global flags affect how the client connects, so read them before
+	// Cobra executes the command tree. Cobra still does the normal parse later.
+	parseGlobalFlags(os.Args[1:])
+	resolvedWorkdir, err := NormalizeWorkdir(workdir)
+	if err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
+	if err := os.Chdir(resolvedWorkdir); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), fmt.Errorf("change workdir: %w", err))
+		os.Exit(1)
+	}
+	workdir = resolvedWorkdir
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	exitWithCode := func(code int) {
@@ -600,13 +747,10 @@ func main() {
 		exitWithCode(1)
 	}
 
-	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
-	opts.Verbosity += verbose                      // raise verbosity with -v
-	opts.Verbosity -= quiet                        // lower verbosity with -q
-	opts.Silent = silent                           // show no progress
-	opts.Debug = debugFlag                         // show everything
-	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
-	opts.ExpandCompleted = expandCompleted         // leave things expanded as they complete
+	opts.Silent = silent                   // show no progress
+	opts.Debug = debugFlag                 // show everything
+	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
+	opts.ExpandCompleted = expandCompleted // leave things expanded as they complete
 	opts.OpenWeb = web
 	opts.NoExit = noExit
 	opts.DotOutputFilePath = dotOutputFilePath
@@ -655,8 +799,6 @@ func main() {
 		exitWithCode(1)
 	}
 	interactiveCommandParsed = parsedCommand
-
-	installGlobalFlags(rootCmd.PersistentFlags())
 
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
@@ -746,16 +888,8 @@ func flagUsagesWrapped(flags *pflag.FlagSet) string {
 	return flags.FlagUsagesWrapped(getViewWidth())
 }
 
-// cmdShortWrapped returns the short description for the given command wrapped
-// to the width of the terminal.
-//
-// This reduces visual noise by preventing `c.Short` descriptions from showing
-// above the next command name.
-//
-// Ideally `c.Short` fields should be as short as possible.
-func cmdShortWrapped(c *cobra.Command) string {
-	return wrapCmdDescription(c.Name(), c.Short, c.NamePadding())
-}
+const visibleAliasesAnnotation = "help:visibleAliases"
+const hiddenAliasesAnnotation = "help:hiddenAliases"
 
 func wrapCmdDescription(name, short string, padding int) string {
 	width := getViewWidth()
@@ -772,6 +906,119 @@ func wrapCmdDescription(name, short string, padding int) string {
 		short = strings.TrimLeftFunc(indented, unicode.IsSpace)
 	}
 	return name + short
+}
+
+func cmdShortWrappedList(cmds []*cobra.Command, parents bool) string {
+	var available []*cobra.Command
+	padding := 0
+	for _, cmd := range cmds {
+		if parents != isParentCommand(cmd) {
+			continue
+		}
+		if !isHelpOrAvailableCommand(cmd) {
+			continue
+		}
+		available = append(available, cmd)
+		padding = max(padding, len(cmdDisplayName(cmd)))
+	}
+
+	var builder strings.Builder
+	for i, cmd := range available {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString(wrapCmdDescription(cmdDisplayName(cmd), cmd.Short, padding))
+	}
+	return builder.String()
+}
+
+func cmdDisplayName(cmd *cobra.Command) string {
+	aliases := visibleAliases(cmd)
+	if len(aliases) == 0 {
+		return cmd.Name()
+	}
+	return cmd.Name() + ", " + strings.Join(aliases, ", ")
+}
+
+func visibleAliases(cmd *cobra.Command) []string {
+	if cmd.Annotations == nil {
+		return nil
+	}
+	raw := cmd.Annotations[visibleAliasesAnnotation]
+	if raw == "" {
+		return nil
+	}
+
+	var aliases []string
+	for _, alias := range strings.Split(raw, ",") {
+		alias = strings.TrimSpace(alias)
+		if alias != "" {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func hiddenAliases(cmd *cobra.Command) map[string]struct{} {
+	if cmd.Annotations == nil {
+		return nil
+	}
+	raw := cmd.Annotations[hiddenAliasesAnnotation]
+	if raw == "" {
+		return nil
+	}
+
+	hidden := map[string]struct{}{}
+	for _, alias := range strings.Split(raw, ",") {
+		alias = strings.TrimSpace(alias)
+		if alias != "" {
+			hidden[alias] = struct{}{}
+		}
+	}
+	return hidden
+}
+
+func helpAliases(cmd *cobra.Command) []string {
+	hidden := hiddenAliases(cmd)
+	if len(hidden) == 0 {
+		return cmd.Aliases
+	}
+
+	aliases := make([]string, 0, len(cmd.Aliases))
+	for _, alias := range cmd.Aliases {
+		if _, ok := hidden[alias]; !ok {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func hasHelpAliases(cmd *cobra.Command) bool {
+	return len(helpAliases(cmd)) > 0
+}
+
+func nameAndHelpAliases(cmd *cobra.Command) string {
+	return strings.Join(append([]string{cmd.Name()}, helpAliases(cmd)...), ", ")
+}
+
+func isParentCommand(cmd *cobra.Command) bool {
+	if !isHelpOrAvailableCommand(cmd) {
+		return false
+	}
+	return cmd.HasAvailableSubCommands()
+}
+
+func hasParentCommands(cmds []*cobra.Command) bool {
+	for _, cmd := range cmds {
+		if isParentCommand(cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHelpOrAvailableCommand(cmd *cobra.Command) bool {
+	return cmd.IsAvailableCommand() || cmd.Name() == "help"
 }
 
 func nameShortWrapped[S ~[]E, E any](s S, f func(e E) (string, string)) string {
@@ -897,10 +1144,10 @@ func groupFlags(flags *pflag.FlagSet) string {
 const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
   {{.UseLine}}{{ end }}
 
-{{- if gt (len .Aliases) 0}}
+{{- if hasHelpAliases .}}
 
 {{ "Aliases" | toUpperBold }}
-  {{.NameAndAliases}}
+  {{nameAndHelpAliases .}}
 
 {{- end}}
 
@@ -919,36 +1166,12 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 {{- end}}
 
 {{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
-{{- if eq (len .Groups) 0}}
 
 {{ "Available Commands" | toUpperBold }}
-{{- range $cmds }}
-{{- if (or .IsAvailableCommand (eq .Name "help"))}}
-{{cmdShortWrapped .}}
-{{- end}}
-{{- end}}
-
-{{- else}}
-{{- range $group := .Groups}}
-
-{{.Title | toUpperBold}}
-{{- range $cmds }}
-{{- if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-{{cmdShortWrapped .}}
-{{- end}}
-{{- end}}{{/* range $cmds */}}
-{{- end}}{{/* range $group := .Groups */}}
-
-{{- if not .AllChildCommandsHaveGroup}}
-
-{{ "Additional Commands" | toUpperBold }}
-{{- range $cmds }}
-{{- if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
-{{cmdShortWrapped .}}
-{{- end}}
-{{- end}}{{/* range $cmds */}}
-{{- end}}{{/* if not .AllChildCommandsHaveGroup */}}
-{{- end}}{{/* if eq (len .Groups) 0 */}}
+{{cmdShortWrappedList $cmds false}}
+{{ if hasParentCommands $cmds}}
+{{cmdShortWrappedList $cmds true}}
+{{- end}}{{/* if hasParentCommands */}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
 
 {{- if .HasAvailableLocalFlags}}

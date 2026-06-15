@@ -42,7 +42,7 @@ func New(
 	//   "!sdk/python/README.md",
 	//   "!sdk/python/LICENSE"
 	// ]
-	workspace *dagger.Directory,
+	workspaceDir *dagger.Directory,
 
 	// +default="sdk/python"
 	sourcePath string,
@@ -57,11 +57,11 @@ func New(
 					"/root/.local/bin:/usr/local/bin:$PATH",
 					dagger.ContainerWithEnvVariableOpts{Expand: true}).
 				With(toolsCache("uv", "ruff", "mypy")).
-				With(uvTool(workspace)).
-				WithDirectory("/src/sdk/python", workspace.Directory(sourcePath)).
+				With(uvTool(workspaceDir)).
+				WithDirectory("/src/sdk/python", workspaceDir.Directory(sourcePath)).
 				WithWorkdir("/src/sdk/python").
 				WithExec(uv("sync"))),
-		Workspace:         workspace,
+		Workspace:         workspaceDir,
 		SourcePath:        sourcePath,
 		SupportedVersions: supportedVersions,
 	}
@@ -76,7 +76,8 @@ func (t PythonSdkDev) LintDocsSnippets(
 	// +ignore=[
 	//  "*",
 	//  "!docs/current_docs/**/*.py",
-	//  "!**/.ruff.toml"
+	//  "!docs/current_docs/**/.ruff.toml",
+	//  "!.ruff.toml"
 	// ]
 	workspace *dagger.Directory,
 ) *dagger.Container {
@@ -224,6 +225,7 @@ func (t PythonSdkDev) ReleaseDryRun(ctx context.Context) error {
 		"HEAD", // sourceTag
 		true,   // dryRun
 		"",     // pypiRepo
+		"",     // pypiURL
 		nil,    // pypiToken
 	)
 }
@@ -242,6 +244,9 @@ func (t PythonSdkDev) Release(
 	pypiRepo string,
 
 	// +optional
+	pypiURL string,
+
+	// +optional
 	pypiToken *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(sourceTag, "sdk/python/")
@@ -250,8 +255,8 @@ func (t PythonSdkDev) Release(
 	if dryRun {
 		ctr = t.Build("0.0.0") // no default arg in Go, without self call just replicate the default value
 	} else {
-		var url string
-		if pypiRepo == "test" {
+		url := pypiURL
+		if url == "" && pypiRepo == "test" {
 			url = "https://test.pypi.org/legacy/"
 		}
 		ctr = t.Publish(pypiToken, strings.TrimPrefix(version, "v"), url)

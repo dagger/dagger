@@ -247,11 +247,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
 				}
 			}
-			var goreleaserKey *dagger.Secret
-			if inputArgs["goreleaserKey"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["goreleaserKey"]), &goreleaserKey)
+			var commit string
+			if inputArgs["commit"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["commit"]), &commit)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg goreleaserKey", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg commit", err))
 				}
 			}
 			var githubOrgName string
@@ -268,11 +268,18 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg githubToken", err))
 				}
 			}
-			var git *dagger.GitRepository
-			if inputArgs["git"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["git"]), &git)
+			var githubHost string
+			if inputArgs["githubHost"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["githubHost"]), &githubHost)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg git", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg githubHost", err))
+				}
+			}
+			var githubCaCert *dagger.File
+			if inputArgs["githubCaCert"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["githubCaCert"]), &githubCaCert)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg githubCaCert", err))
 				}
 			}
 			var awsAccessKeyId *dagger.Secret
@@ -310,6 +317,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg artefactsFQDN", err))
 				}
 			}
+			var awsEndpointUrl string
+			if inputArgs["awsEndpointURL"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["awsEndpointURL"]), &awsEndpointUrl)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg awsEndpointURL", err))
+				}
+			}
 			var dryRun bool
 			if inputArgs["dryRun"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
@@ -317,7 +331,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
 				}
 			}
-			return (*CliDev).Publish(&parent, ctx, tag, goreleaserKey, githubOrgName, githubToken, git, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, artefactsFqdn, dryRun)
+			return (*CliDev).Publish(&parent, ctx, tag, commit, githubOrgName, githubToken, githubHost, githubCaCert, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, artefactsFqdn, awsEndpointUrl, dryRun)
 		case "PublishMetadata":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -359,7 +373,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg awsCloudfrontDistribution", err))
 				}
 			}
-			return nil, (*CliDev).PublishMetadata(&parent, ctx, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
+			var awsEndpointUrl string
+			if inputArgs["awsEndpointURL"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["awsEndpointURL"]), &awsEndpointUrl)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg awsEndpointURL", err))
+				}
+			}
+			return nil, (*CliDev).PublishMetadata(&parent, ctx, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl)
 		case "Reference":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -422,7 +443,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return New(ctx, runnerHost, source, base, version)
+			var imageTag string
+			if inputArgs["imageTag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["imageTag"]), &imageTag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg imageTag", err))
+				}
+			}
+			return New(ctx, runnerHost, source, base, version, imageTag)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

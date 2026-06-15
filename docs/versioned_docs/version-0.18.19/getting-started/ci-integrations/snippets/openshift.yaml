@@ -1,0 +1,18 @@
+nameOverride: ""
+fullnameOverride: ""
+
+engine:
+  image:
+    repository: registry.dagger.io/engine
+    tag: latest
+  tolerations:
+    - effect: NoSchedule
+      key: dagger-node
+      operator: Exists
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: dagger-node
+            operator: Exists

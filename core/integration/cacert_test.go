@@ -1,10 +1,15 @@
 package core
 
+// These tests cover custom CA certificates made available to containers and
+// network clients so TLS connections trust expected certificate authorities.
+//
+// See also:
+// - http_test.go: HTTP and HTTPS resource fetching.
+
 import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -348,101 +353,170 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
+		caCertsTest{"nixos-like basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+			ctr := nixosLikeContainer(c, c.Container().From(alpineImage).
+				WithExec([]string{"apk", "add", "ca-certificates", "curl"}))
+			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, initialBundleContents)
+
+			ctr, err = ctr.
+				WithExec([]string{"curl", "https://server"}).
+				Sync(ctx)
+			require.NoError(t, err)
+
+			// verify no system CAs are leftover
+			ents, err := ctr.Directory("/usr/local/share/ca-certificates").Entries(ctx)
+			require.NoError(t, err)
+			require.Empty(t, ents)
+
+			bundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, bundleContents, f.caCertContents)
+			require.Equal(t, initialBundleContents, bundleContents)
+		}},
+
+		caCertsTest{"nixos-like ca-certificates not installed", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+			// golangImage is alpine-based — strip its ca-certificates+update-ca-certificates so
+			// the no-update-cmd fallback path is the only one available, mirroring "alpine
+			// ca-certificates not installed".
+			ctr := nixosLikeContainer(c, c.Container().From(golangImage).
+				WithExec([]string{"apk", "update"}).
+				WithExec([]string{"apk", "del", "ca-certificates"}))
+
+			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, initialBundleContents)
+			require.NotContains(t, initialBundleContents, f.caCertContents)
+
+			ctr, err = ctr.
+				WithNewFile("/src/main.go", `package main
+
+					import (
+						"fmt"
+						"net/http"
+						"io"
+					)
+
+					func main() {
+						resp, err := http.Get("https://server")
+						if err != nil {
+							panic(err)
+						}
+						if resp.StatusCode != 200 {
+							panic(fmt.Sprintf("unexpected status code: %d", resp.StatusCode))
+						}
+						bs, err := io.ReadAll(resp.Body)
+						if err != nil {
+							panic(err)
+						}
+						if string(bs) != "hello" {
+							panic("unexpected response: " + string(bs))
+						}
+					}
+                    `,
+				).
+				WithWorkdir("/src").
+				WithExec([]string{"go", "mod", "init", "test"}).
+				WithExec([]string{"go", "run", "main.go"}).
+				Sync(ctx)
+			require.NoError(t, err)
+
+			// verify no system CAs are leftover
+			_, err = ctr.Directory("/usr/local/share/ca-certificates").Entries(ctx)
+			requireErrOut(t, err, "no such file or directory")
+
+			// Bundle path should resolve through the restored symlink to the original
+			// content (no test CA leaked). Equal-with-initial implicitly validates
+			// that nixosLike.Uninstall restored the symlink to the same target; if
+			// the swap path had been bypassed and a different installer had written
+			// through to a regular file, the contents wouldn't match initial state.
+			bundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, initialBundleContents, bundleContents)
+			require.NotContains(t, bundleContents, f.caCertContents)
+		}},
+
+		caCertsTest{"nixos-like non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+			ctr := nixosLikeContainer(c, c.Container().From(alpineImage).
+				WithExec([]string{"apk", "add", "ca-certificates", "curl"}))
+			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
+			require.NoError(t, err)
+
+			ctr, err = ctr.
+				WithUser("nobody").
+				WithExec([]string{"/usr/bin/curl", "https://server"}).
+				Sync(ctx)
+			require.NoError(t, err)
+
+			bundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, bundleContents, f.caCertContents)
+			require.Equal(t, initialBundleContents, bundleContents)
+		}},
+
+		caCertsTest{"nixos-like SSL_CERT_FILE override", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+			// SSL_CERT_FILE honoring works via commonInstaller's no-update-cmd
+			// fallback path — that path appends directly to bundlePath. The
+			// update-cmd path can't honor SSL_CERT_FILE because update-ca-certificates
+			// writes to its own hard-coded output path. So this test deliberately
+			// uses an image without `ca-certificates` installed, putting the bundle
+			// at a non-canonical path the image points at via SSL_CERT_FILE.
+			bundleSrc := c.Container().From(alpineImage).
+				WithExec([]string{"apk", "add", "ca-certificates"}).
+				File("/etc/ssl/certs/ca-certificates.crt")
+
+			ctr := c.Container().From(alpineImage).
+				WithExec([]string{"apk", "add", "curl"}).
+				WithoutFile("/etc/alpine-release").
+				WithNewFile("/etc/NIXOS", "").
+				WithNewFile("/etc/os-release", "ID=nixos\n").
+				WithSymlink("/opt/ro-bundle/ca-bundle.crt", "/opt/custom/bundle.crt").
+				WithFile("/opt/ro-bundle/ca-bundle.crt", bundleSrc).
+				WithEnvVariable("SSL_CERT_FILE", "/opt/custom/bundle.crt")
+
+			// Alpine ships /etc/ssl/certs/ca-certificates.crt via libcrypto/openssl
+			// even when ca-certificates isn't installed, so the canonical path
+			// exists baseline. The honoring-SSL_CERT_FILE invariant is that the
+			// installer (running via the no-update-cmd fallback) only touches
+			// bundlePath = $SSL_CERT_FILE — the canonical bundle's bytes must
+			// be identical before and after the exec.
+			canonicalBundleBefore, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, canonicalBundleBefore)
+			require.NotContains(t, canonicalBundleBefore, f.caCertContents,
+				"fixture invariant: canonical bundle must not contain the test CA up front")
+
+			ctr, err = ctr.WithExec([]string{"curl", "https://server"}).Sync(ctx)
+			require.NoError(t, err)
+
+			canonicalBundleAfter, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, canonicalBundleBefore, canonicalBundleAfter,
+				"installer wrote to the canonical bundle path instead of honoring SSL_CERT_FILE")
+			require.NotContains(t, canonicalBundleAfter, f.caCertContents,
+				"installer leaked the test CA into the canonical bundle")
+		}},
+
 		caCertsTest{"go module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			out, err := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go")).
-				With(sdkSource("go", `package main
-
-import (
-	"context"
-	"fmt"
-	"io"
-	"net/http"
-)
-
-type Test struct {}
-
-func (m *Test) GetHttp(ctx context.Context) (string, error) {
-	resp, err := http.Get("https://server")
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-	bs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return string(bs), nil
-}
-`)).
-				With(daggerCall("get-http")).
+			out, err := moduleFixture(t, c, "go/https-client").
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
 		caCertsTest{"python module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			out, err := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=python")).
-				With(sdkSource("python", `
-import urllib.request
-
-import dagger
-
-@dagger.object_type
-class Test:
-    @dagger.function
-    def get_http(self) -> str:
-            return urllib.request.urlopen("https://server").read().decode("utf-8")
-`)).
-				With(daggerCall("get-http")).
+			out, err := moduleFixture(t, c, "python/https-client").
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
 		caCertsTest{"typescript module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			out, err := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=typescript")).
-				With(sdkSource("typescript", `
-import { object, func } from "@dagger.io/dagger";
-import * as https from "https";
-
-@object()
-export class Test {
-	@func()
-    async getHttp(): Promise<string> {
-        const url = "https://server";
-				// thanks chatGPT for this, sorry to anyone else if this is awful
-        return new Promise((resolve, reject) => {
-            https.get(url, (res) => {
-                let data = '';
-                res.on('data', (chunk) => {
-                    data += chunk;
-                });
-                res.on('end', () => {
-                    if (res.statusCode === 200) {
-                        resolve(data);
-                    } else {
-                        reject("Request failed with status code " + res.statusCode);
-                    }
-                });
-            }).on('error', (err) => {
-                reject("Error: " + err.message);
-            });
-        });
-    }
-}
-`)).
-				With(daggerCall("get-http")).
+			out, err := moduleFixture(t, c, "typescript/https-client").
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
@@ -450,36 +524,10 @@ export class Test {
 
 		caCertsTest{"terminal", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			modDir := t.TempDir()
-			err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
-
-	import (
-		"context"
-		"dagger/test/internal/dagger"
-	)
-
-	func New(ctx context.Context) *Test {
-		return &Test{
-			Ctr: dag.Container().
-				From("%s").
-				WithExec([]string{"apk", "add", "curl"}).
-				WithDefaultTerminalCmd([]string{"/bin/sh"}),
-		}
-	}
-
-	type Test struct {
-		Ctr *dagger.Container
-	}
-	`, alpineImage), 0644)
-			require.NoError(t, err)
-
-			initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-			copy(initCmd.Env, os.Environ())
-			initCmd.Env = append(initCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
-			initOutput, err := initCmd.CombinedOutput()
-			require.NoError(t, err, initOutput)
+			copyTestdataFixture(ctx, t, modDir, "modules", "go", "cacert-terminal")
 
 			// cache the module load itself so there's less to wait for in the shell invocation below
-			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions")
+			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions", "-m", ".")
 			copy(functionsCmd.Env, os.Environ())
 			functionsCmd.Env = append(functionsCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			functionsOutput, err := functionsCmd.CombinedOutput()
@@ -498,7 +546,7 @@ export class Test {
 			err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 			require.NoError(t, err)
 
-			cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+			cmd := hostDaggerCommand(ctx, t, modDir, "call", "-m", ".", "ctr", "terminal")
 			copy(cmd.Env, os.Environ())
 			cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			cmd.Stdin = tty
@@ -550,6 +598,26 @@ type caCertsTest struct {
 type caCertsTestFixtures struct {
 	caCertContents string
 	engineEndpoint string
+}
+
+// nixosLikeContainer turns an existing container into one that detects as
+// NixOS-style and exposes /etc/ssl/certs/ca-certificates.crt as a symlink to
+// a baked-in bundle file. All ops are layer-level (no exec) so the
+// synthesis doesn't itself trigger the cacerts install path mid-setup.
+// WithFile (not WithMountedFile) for the bundle target — mounts aren't
+// visible to client-side File reads or to the engine-side cacerts
+// installer's rootfs view, so a mounted target makes the symlink unresolvable.
+func nixosLikeContainer(c *dagger.Client, base *dagger.Container) *dagger.Container {
+	bundleSrc := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "ca-certificates"}).
+		File("/etc/ssl/certs/ca-certificates.crt")
+	return base.
+		WithoutFile("/etc/alpine-release").
+		WithNewFile("/etc/NIXOS", "").
+		WithNewFile("/etc/os-release", "ID=nixos\nID_LIKE=nixos\n").
+		WithoutFile("/etc/ssl/certs/ca-certificates.crt").
+		WithSymlink("/opt/ro-bundle/ca-bundle.crt", "/etc/ssl/certs/ca-certificates.crt").
+		WithFile("/opt/ro-bundle/ca-bundle.crt", bundleSrc)
 }
 
 func customCACertTests(

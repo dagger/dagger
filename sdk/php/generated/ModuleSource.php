@@ -68,7 +68,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * Whether an existing dagger.json for the module was found.
+     * Whether an existing module config file was found.
      */
     public function configExists(): bool
     {
@@ -208,7 +208,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+     * The original name of the module as read from the module config file (or set for the first time with the withName API).
      */
     public function moduleOriginalName(): string
     {
@@ -253,7 +253,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
-     * The path, relative to the context directory, that contains the module's dagger.json.
+     * The path, relative to the context directory, that contains the module config.
      */
     public function sourceRootSubpath(): string
     {

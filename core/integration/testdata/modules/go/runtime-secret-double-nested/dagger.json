@@ -1,0 +1,13 @@
+{
+  "name": "mymodule",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "keychain",
+      "source": "keychain"
+    }
+  ]
+}
