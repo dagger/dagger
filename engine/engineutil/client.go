@@ -304,6 +304,18 @@ func (c *Client) ListenHostToContainer(
 				continue
 			}
 
+			if res.GetClose() {
+				// The host side closed its end; release our upstream conn.
+				connsL.Lock()
+				conn, found := conns[connID]
+				delete(conns, connID)
+				connsL.Unlock()
+				if found {
+					conn.Close()
+				}
+				continue
+			}
+
 			connsL.Lock()
 			conn, found := conns[connID]
 			connsL.Unlock()
@@ -331,6 +343,22 @@ func (c *Client) ListenHostToContainer(
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
+					// Always release the upstream conn and notify the host
+					// when this goroutine exits, otherwise stale conns
+					// accumulate in the map and leak FDs.
+					defer func() {
+						connsL.Lock()
+						delete(conns, connID)
+						connsL.Unlock()
+						conn.Close()
+
+						sendL.Lock()
+						_ = listener.Send(&h2c.ListenRequest{
+							ConnId: connID,
+							Close:  true,
+						})
+						sendL.Unlock()
+					}()
 
 					data := make([]byte, 32*1024)
 					for {
@@ -349,13 +377,6 @@ func (c *Client) ListenHostToContainer(
 							break
 						}
 					}
-
-					sendL.Lock()
-					_ = listener.Send(&h2c.ListenRequest{
-						ConnId: connID,
-						Close:  true,
-					})
-					sendL.Unlock()
 				}()
 			}
 
