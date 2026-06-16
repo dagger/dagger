@@ -441,7 +441,17 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		}
 	}
 
+	// clients may be mutated under clientMu alone (e.g. getOrInitClient's
+	// failure cleanup deletes entries without holding stateMu), so snapshot
+	// under clientMu rather than iterating the live map below.
+	sess.clientMu.RLock()
+	clients := make([]*daggerClient, 0, len(sess.clients))
 	for _, client := range sess.clients {
+		clients = append(clients, client)
+	}
+	sess.clientMu.RUnlock()
+
+	for _, client := range clients {
 		releaseGroup.Go(func() error {
 			var errs error
 

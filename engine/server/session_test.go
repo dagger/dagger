@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -29,6 +30,57 @@ func (caller *fakeSessionCaller) Supports(string) bool {
 
 func (caller *fakeSessionCaller) Conn() *grpc.ClientConn {
 	return caller.conn
+}
+
+func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
+	t.Parallel()
+
+	// Regression test: activeClientIDs must read sess.clients under clientMu.
+	// Without the lock, ranging the map while another goroutine writes it is a
+	// fatal "concurrent map iteration and map write" (caught here under -race).
+	sess := &daggerSession{
+		state: sessionStateInitialized,
+		clients: map[string]*daggerClient{
+			"client-a": {clientID: "client-a"},
+		},
+	}
+	srv := &Server{
+		daggerSessions: map[string]*daggerSession{
+			"session-a": sess,
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	t.Cleanup(func() {
+		cancel()
+		wg.Wait()
+	})
+
+	started := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		close(started)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			sess.clientMu.Lock()
+			sess.clients["transient"] = &daggerClient{clientID: "transient"}
+			delete(sess.clients, "transient")
+			sess.clientMu.Unlock()
+		}
+	}()
+	<-started
+
+	for i := 0; i < 1000; i++ {
+		require.True(t, srv.activeClientIDs()["client-a"])
+	}
 }
 
 func TestPendingLegacyModule(t *testing.T) {
