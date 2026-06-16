@@ -183,7 +183,8 @@ func generateResourceOpts(meta executor.Meta) []oci.SpecOpts {
 				if period == 0 {
 					period = 100000
 				}
-				s.Linux.Resources.CPU.Quota = &meta.CPUQuota
+				quota := meta.CPUQuota
+				s.Linux.Resources.CPU.Quota = &quota
 				s.Linux.Resources.CPU.Period = &period
 			}
 			if meta.CPUShares != 0 {
