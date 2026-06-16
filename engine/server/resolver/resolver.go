@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
+	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -68,6 +71,11 @@ type Opts struct {
 type ResolveImageConfigOpts struct {
 	Platform          *ocispecs.Platform
 	ResolveMode       ResolveMode
+	Network           NetworkConfig
+	RegistryTransport RegistryTransport
+}
+
+type ListTagsOpts struct {
 	Network           NetworkConfig
 	RegistryTransport RegistryTransport
 }
@@ -256,6 +264,207 @@ func (r *Resolver) ResolveImageConfig(
 		return "", "", nil, err
 	}
 	return resolved.ref, resolved.digest, resolved.config, nil
+}
+
+func (r *Resolver) ListTags(ctx context.Context, ref string, opts ListTagsOpts) ([]string, error) {
+	refspec, err := ctdreference.Parse(ref)
+	if err != nil {
+		return nil, fmt.Errorf("parse image address %q: %w", ref, err)
+	}
+	if refspec.Locator == "" {
+		return nil, fmt.Errorf("parse image address %q: missing repository", ref)
+	}
+
+	hosts, err := r.registryHosts(opts.Network, opts.RegistryTransport)(refspec.Hostname())
+	if err != nil {
+		return nil, err
+	}
+	hosts = filterRegistryHosts(hosts, docker.HostCapabilityResolve)
+	if len(hosts) == 0 {
+		return nil, fmt.Errorf("no tag listing hosts for %q: %w", ref, cerrdefs.ErrNotFound)
+	}
+
+	ctx, err = docker.ContextWithRepositoryScope(ctx, refspec, false)
+	if err != nil {
+		return nil, err
+	}
+
+	repository := strings.TrimPrefix(refspec.Locator, refspec.Hostname()+"/")
+	var firstErr error
+	for i, host := range hosts {
+		tags, err := listTagsFromRegistryHost(ctx, host, refspec.Hostname(), repository)
+		if err == nil {
+			return tags, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		if i == len(hosts)-1 {
+			break
+		}
+	}
+	return nil, fmt.Errorf("list tags for %q: %w", ref, firstErr)
+}
+
+type registryTagsResponse struct {
+	Name string   `json:"name"`
+	Tags []string `json:"tags"`
+}
+
+func filterRegistryHosts(hosts []docker.RegistryHost, caps docker.HostCapabilities) []docker.RegistryHost {
+	filtered := make([]docker.RegistryHost, 0, len(hosts))
+	for _, host := range hosts {
+		if host.Capabilities.Has(caps) {
+			filtered = append(filtered, host)
+		}
+	}
+	return filtered
+}
+
+func listTagsFromRegistryHost(ctx context.Context, host docker.RegistryHost, refHost, repository string) ([]string, error) {
+	tagsURL := url.URL{
+		Scheme: host.Scheme,
+		Host:   host.Host,
+		Path:   path.Join("/", host.Path, repository, "tags/list"),
+	}
+	query := tagsURL.Query()
+	query.Set("n", "1000")
+	if registryHostIsProxy(host, refHost) {
+		query.Set("ns", refHost)
+	}
+	tagsURL.RawQuery = query.Encode()
+
+	var tags []string
+	nextURL := tagsURL.String()
+	for nextURL != "" {
+		resp, err := doRegistryRequestWithRetries(ctx, host, http.MethodGet, nextURL)
+		if err != nil {
+			return nil, err
+		}
+
+		var page registryTagsResponse
+		err = json.NewDecoder(resp.Body).Decode(&page)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		closeErr := resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("decode tags response from %q: %w", nextURL, err)
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+
+		tags = append(tags, page.Tags...)
+		nextURL, err = registryNextLink(resp.Request.URL, resp.Header.Get("Link"))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return tags, nil
+}
+
+func doRegistryRequestWithRetries(ctx context.Context, host docker.RegistryHost, method, rawURL string) (*http.Response, error) {
+	var responses []*http.Response
+	for len(responses) < 5 {
+		req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header = host.Header.Clone()
+
+		if host.Authorizer != nil {
+			if err := host.Authorizer.Authorize(ctx, req); err != nil {
+				return nil, fmt.Errorf("authorize registry request: %w", err)
+			}
+		}
+
+		client := &http.Client{}
+		if host.Client != nil {
+			*client = *host.Client
+		}
+		if client.CheckRedirect == nil {
+			client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return errors.New("stopped after 10 redirects")
+				}
+				if host.Authorizer != nil {
+					if err := host.Authorizer.Authorize(ctx, req); err != nil {
+						return fmt.Errorf("authorize registry redirect: %w", err)
+					}
+				}
+				return nil
+			}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("registry request %q: %w", rawURL, err)
+		}
+		responses = append(responses, resp)
+
+		if resp.StatusCode == http.StatusUnauthorized && host.Authorizer != nil {
+			if err := host.Authorizer.AddResponses(ctx, responses); err == nil {
+				resp.Body.Close()
+				continue
+			} else if !cerrdefs.IsNotImplemented(err) {
+				resp.Body.Close()
+				return nil, err
+			}
+		}
+		if shouldRetryRegistryRequest(resp.StatusCode) {
+			resp.Body.Close()
+			continue
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			return nil, cerrdefs.ErrNotFound
+		}
+		if resp.StatusCode > 299 {
+			status := resp.Status
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected registry response for %q: %s", rawURL, status)
+		}
+		return resp, nil
+	}
+	return nil, fmt.Errorf("registry request %q: too many retries", rawURL)
+}
+
+func shouldRetryRegistryRequest(status int) bool {
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError:
+		return true
+	default:
+		return false
+	}
+}
+
+func registryNextLink(base *url.URL, linkHeader string) (string, error) {
+	for _, link := range strings.Split(linkHeader, ",") {
+		link = strings.TrimSpace(link)
+		if !strings.Contains(link, `rel="next"`) && !strings.Contains(link, `rel=next`) {
+			continue
+		}
+		start := strings.Index(link, "<")
+		end := strings.Index(link, ">")
+		if start == -1 || end == -1 || end <= start+1 {
+			return "", fmt.Errorf("invalid registry pagination link %q", link)
+		}
+		nextRef := link[start+1 : end]
+		nextURL, err := url.Parse(nextRef)
+		if err != nil {
+			return "", err
+		}
+		return base.ResolveReference(nextURL).String(), nil
+	}
+	return "", nil
+}
+
+func registryHostIsProxy(host docker.RegistryHost, refHost string) bool {
+	if refHost != host.Host {
+		if refHost != "docker.io" || host.Host != "registry-1.docker.io" {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *PulledImage, rerr error) {

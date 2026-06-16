@@ -71,6 +71,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("address").Doc(
 					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
 				),
+				dagql.Arg("latestIncludeSubreleases").Doc(
+					`Include prerelease tags when selecting the latest release for an untagged image address.`,
+				).View(AfterVersion("v1.0.0")),
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
 					`The service will be started only for this pull.`).
@@ -972,10 +975,11 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 }
 
 type containerFromArgs struct {
-	Address               string
-	RegistryService       dagql.Optional[core.ServiceID]
-	Protocol              dagql.Optional[core.RegistryProtocol]
-	InsecureSkipTLSVerify bool `name:"insecureSkipTLSVerify" default:"false"`
+	Address                  string
+	LatestIncludeSubreleases bool `name:"latestIncludeSubreleases" default:"false"`
+	RegistryService          dagql.Optional[core.ServiceID]
+	Protocol                 dagql.Optional[core.RegistryProtocol]
+	InsecureSkipTLSVerify    bool `name:"insecureSkipTLSVerify" default:"false"`
 }
 
 func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], insecureSkipTLSVerify bool) (serverresolver.RegistryTransport, error) {
@@ -1009,6 +1013,24 @@ func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], i
 }
 
 const lockContainerFromOperation = "container.from"
+
+func imageRefWithLockPin(refName reference.Named, pin string) (reference.Named, error) {
+	if pinnedRef, err := reference.ParseNormalizedNamed(pin); err == nil {
+		if _, ok := pinnedRef.(reference.Canonical); !ok {
+			return nil, fmt.Errorf("image lock pin %q must include a digest", pin)
+		}
+		return pinnedRef, nil
+	}
+
+	resolvedDigest, err := digest.Parse(pin)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := refName.(reference.NamedTagged); !ok {
+		refName = reference.TagNameOnly(refName)
+	}
+	return reference.WithDigest(refName, resolvedDigest)
+}
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
 // we scope to the session so that resolution of a tag->digest is cached within the session but not across.
@@ -1071,8 +1093,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
-	// add a default :latest if no tag or digest, otherwise this is a no-op
-	refName = reference.TagNameOnly(refName)
+	_, hasTag := refName.(reference.NamedTagged)
+	_, hasDigest := refName.(reference.Canonical)
+	useLatestRelease := !hasTag && !hasDigest
+	if args.LatestIncludeSubreleases && !useLatestRelease {
+		return inst, errors.New("latestIncludeSubreleases can only be used with an untagged image address")
+	}
+	if !useLatestRelease && !hasDigest {
+		// add a default :latest if no digest, otherwise this is a no-op
+		refName = reference.TagNameOnly(refName)
+	}
 	if args.RegistryService.Valid {
 		service, err := args.RegistryService.Value.Load(ctx, srv)
 		if err != nil {
@@ -1191,7 +1221,17 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 	}
 
-	lockInputs := []any{refName.String(), platform.Format()}
+	var lockInputs []any
+	if useLatestRelease {
+		lockInputs = []any{
+			refName.String(),
+			platform.Format(),
+			core.ContainerLatestReleaseLockInput,
+			args.LatestIncludeSubreleases,
+		}
+	} else {
+		lockInputs = []any{refName.String(), platform.Format()}
+	}
 	if registryTransport.Protocol != "" {
 		lockInputs = append(lockInputs, registryTransport.Protocol)
 	}
@@ -1210,13 +1250,9 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	if lockResolution.Pin != "" {
-		resolvedDigest, err := digest.Parse(lockResolution.Pin)
+		refName, err = imageRefWithLockPin(refName, lockResolution.Pin)
 		if err != nil {
-			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
-		}
-		refName, err = reference.WithDigest(refName, resolvedDigest)
-		if err != nil {
-			return inst, fmt.Errorf("failed to apply lock digest on image %s: %w", refName.String(), err)
+			return inst, fmt.Errorf("invalid lock pin %q for image %q: %w", lockResolution.Pin, refName.String(), err)
 		}
 	} else {
 		// Doesn't have a digest, resolve that now and re-call this field using the canonical
@@ -1231,6 +1267,24 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			return inst, err
 		}
 		defer detach()
+
+		if useLatestRelease {
+			tags, err := rslvr.ListTags(ctx, refName.String(), serverresolver.ListTagsOpts{
+				Network:           network,
+				RegistryTransport: registryTransport,
+			})
+			if err != nil {
+				return inst, fmt.Errorf("failed to list tags for image %q: %w", refName.String(), err)
+			}
+			tag, ok := core.SelectLatestReleaseTag(tags, args.LatestIncludeSubreleases)
+			if !ok {
+				tag = "latest"
+			}
+			refName, err = reference.WithTag(refName, tag)
+			if err != nil {
+				return inst, fmt.Errorf("failed to select image tag %q for %s: %w", tag, args.Address, err)
+			}
+		}
 
 		_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
 			Platform:          ptr(platform.Spec()),
@@ -1252,7 +1306,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 				lockContainerFromOperation,
 				lockInputs,
 				workspace.LookupResult{
-					Value:  resolvedDigest.String(),
+					Value:  refName.String(),
 					Policy: lockResolution.Policy,
 				},
 			); err != nil {

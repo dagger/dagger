@@ -128,7 +128,7 @@ func (LockfileSuite) TestFromLockfilePinnedUsesPinEntry(ctx context.Context, t *
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=pinned", "query", "--doc", queryPath)
 	require.Error(t, err)
-	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
+	require.ErrorContains(t, err, `invalid lock pin "not-a-digest"`)
 }
 
 func hostGitInit(t *testctx.T, dir string) {
@@ -164,7 +164,7 @@ func (LockfileSuite) TestFromLockfileFrozenUsesFloatEntry(ctx context.Context, t
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "query", "--doc", queryPath)
 	require.Error(t, err)
-	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
+	require.ErrorContains(t, err, `invalid lock pin "not-a-digest"`)
 }
 
 func (LockfileSuite) TestFromLockfileFrozenRequiresEntry(ctx context.Context, t *testctx.T) {
@@ -516,7 +516,7 @@ func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte, expectedPolicy
 
 		value, ok := entry.Value.(string)
 		require.True(t, ok)
-		require.True(t, strings.HasPrefix(value, "sha256:"))
+		require.Contains(t, value, "alpine:latest@sha256:")
 	}
 
 	require.True(t, found, "expected container.from entry in lockfile")
