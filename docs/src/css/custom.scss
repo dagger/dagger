@@ -5,13 +5,9 @@ $tablet-width: 1180px;
 $desktop-width: 1200px;
 $desktop-xl-width: 1400px;
 
-// branding colors
-$oat-color: rgb(248, 244, 239);
-$tangerine-color: rgb(239, 123, 26);
-$lemon-color: rgb(252, 2192, 9);
+// Legacy Sass colors still used by dark-mode-only rules.
 $crimson-color: rgb(190, 29, 67);
 $aqua-color: rgb(64, 185, 188);
-$cloud-color: rgb(208, 224, 249);
 $plum-color: rgb(62, 59, 107);
 $inkberry-color: rgb(26, 24, 51);
 // The recessed dark surface (code blocks, search button, flowcharts): the page
@@ -69,7 +65,7 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
   --inset-shadow-md: none;
   --inset-shadow-dark: none;
 
-  --shadow-login: 0rem 2rem 2.5rem -0.75rem rgb(13, 12, 27);
+  --shadow-login: 0rem 2rem 2.5rem -0.75rem var(--color-blackHole);
 
   --color-blackHole: #0d0c1b;
   --color-white: #ffffff;
@@ -226,17 +222,113 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
   --color-raisinBlack-700: #26243e;
   --color-raisinBlack-800: #1a192b;
 
-  --ifm-background-color: #{$oat-color};
-  --ifm-heading-color: #{$dagger-dark-mode-background-color};
-  --ifm-hover-overlay: #e1f5fb;
-  --ifm-menu-color-background-active: rgba($inkberry-color, 0.1);
-  --ifm-menu-color-background-hover: rgba($inkberry-color, 0.1);
-  --ifm-menu-color: #4b4b5a;
-  --ifm-navbar-background-color: #{$oat-color};
+  --ifm-color-white: var(--color-white);
+  --ifm-color-black: var(--color-blackHole);
+  --ifm-color-gray-0: var(--color-white);
+  --ifm-color-gray-100: var(--color-gray-50);
+  --ifm-color-gray-200: var(--color-gray-100);
+  --ifm-color-gray-300: var(--color-gray-200);
+  --ifm-color-gray-400: var(--color-gray-300);
+  --ifm-color-gray-500: var(--color-gray-400);
+  --ifm-color-gray-600: var(--color-gray-500);
+  --ifm-color-gray-700: var(--color-gray-600);
+  --ifm-color-gray-800: var(--color-gray-700);
+  --ifm-color-gray-900: var(--color-gray-800);
+  --ifm-color-gray-1000: var(--color-gray-900);
+  --ifm-background-color: var(--color-backgroundSecondary);
+  --ifm-background-surface-color: var(--color-white);
+  --ifm-color-content: var(--color-gray-800);
+  --ifm-color-content-secondary: var(--color-gray-600);
+  --ifm-font-color-base: var(--color-gray-800);
+  --ifm-font-color-secondary: var(--color-gray-600);
+  --ifm-heading-color: var(--color-blackHole);
+  --ifm-color-secondary-lightest: var(--color-gray-50);
+  --ifm-color-secondary-lighter: var(--color-gray-100);
+  --ifm-color-secondary-light: var(--color-gray-200);
+  --ifm-color-secondary: var(--color-gray-300);
+  --ifm-color-secondary-dark: var(--color-gray-400);
+  --ifm-color-secondary-darker: var(--color-gray-500);
+  --ifm-color-secondary-darkest: var(--color-gray-600);
+  --ifm-color-secondary-contrast-background: var(--color-gray-50);
+  --ifm-color-secondary-contrast-foreground: var(--color-gray-800);
+  --ifm-color-primary-lightest: var(--color-blue-200);
+  --ifm-color-primary-lighter: var(--color-blue-300);
+  --ifm-color-primary-light: var(--color-blue-400);
+  --ifm-color-primary: var(--color-blue-500);
+  --ifm-color-primary-dark: var(--color-blue-600);
+  --ifm-color-primary-darker: var(--color-blue-700);
+  --ifm-color-primary-darkest: var(--color-blue-800);
+  --ifm-color-primary-contrast-background: var(--color-blue-50);
+  --ifm-color-primary-contrast-foreground: var(--color-blue-800);
+  --ifm-color-success-lightest: var(--color-green-200);
+  --ifm-color-success-lighter: var(--color-green-300);
+  --ifm-color-success-light: var(--color-green-400);
+  --ifm-color-success: var(--color-green-500);
+  --ifm-color-success-dark: var(--color-green-600);
+  --ifm-color-success-darker: var(--color-green-700);
+  --ifm-color-success-darkest: var(--color-green-800);
+  --ifm-color-success-contrast-background: var(--color-green-50);
+  --ifm-color-success-contrast-foreground: var(--color-green-800);
+  --ifm-color-info-lightest: var(--color-cyan-200);
+  --ifm-color-info-lighter: var(--color-cyan-300);
+  --ifm-color-info-light: var(--color-cyan-400);
+  --ifm-color-info: var(--color-cyan-500);
+  --ifm-color-info-dark: var(--color-cyan-600);
+  --ifm-color-info-darker: var(--color-cyan-700);
+  --ifm-color-info-darkest: var(--color-cyan-800);
+  --ifm-color-info-contrast-background: var(--color-cyan-50);
+  --ifm-color-info-contrast-foreground: var(--color-cyan-800);
+  --ifm-color-warning-lightest: var(--color-yellow-200);
+  --ifm-color-warning-lighter: var(--color-yellow-300);
+  --ifm-color-warning-light: var(--color-yellow-400);
+  --ifm-color-warning: var(--color-yellow-500);
+  --ifm-color-warning-dark: var(--color-yellow-600);
+  --ifm-color-warning-darker: var(--color-yellow-700);
+  --ifm-color-warning-darkest: var(--color-yellow-800);
+  --ifm-color-warning-contrast-background: var(--color-yellow-50);
+  --ifm-color-warning-contrast-foreground: var(--color-yellow-800);
+  --ifm-color-danger: var(--color-red-500);
+  --ifm-color-danger-dark: var(--color-red-600);
+  --ifm-color-danger-darker: var(--color-red-700);
+  --ifm-color-danger-darkest: var(--color-red-800);
+  --ifm-color-danger-light: var(--color-red-400);
+  --ifm-color-danger-lighter: var(--color-red-300);
+  --ifm-color-danger-lightest: var(--color-red-200);
+  --ifm-color-danger-contrast-background: var(--color-red-50);
+  --ifm-color-danger-contrast-foreground: var(--color-red-800);
+  --ifm-color-emphasis-0: var(--color-white);
+  --ifm-color-emphasis-100: var(--color-gray-50);
+  --ifm-color-emphasis-200: var(--color-gray-100);
+  --ifm-color-emphasis-300: var(--color-gray-200);
+  --ifm-color-emphasis-400: var(--color-gray-300);
+  --ifm-color-emphasis-500: var(--color-gray-400);
+  --ifm-color-emphasis-600: var(--color-gray-500);
+  --ifm-color-emphasis-700: var(--color-gray-600);
+  --ifm-color-emphasis-800: var(--color-gray-700);
+  --ifm-color-emphasis-900: var(--color-gray-800);
+  --ifm-color-emphasis-1000: var(--color-gray-900);
+  --ifm-code-background: var(--color-backgroundSecondary);
+  --ifm-code-color: var(--color-purple-600);
+  --ifm-global-shadow-lw: 0 1px 2px 0 var(--color-blackAlpha-200);
+  --ifm-global-shadow-md: 0 5px 40px var(--color-blackAlpha-500);
+  --ifm-global-shadow-tl: 0 12px 28px 0 var(--color-blackAlpha-500),
+    0 2px 4px 0 var(--color-blackAlpha-200);
+  --ifm-hover-overlay: var(--color-cyan-50);
+  --ifm-table-background: var(--color-transparent);
+  --ifm-table-stripe-background: var(--color-blackAlpha-50);
+  --ifm-scrollbar-track-background-color: var(--color-gray-50);
+  --ifm-scrollbar-thumb-background-color: var(--color-gray-300);
+  --ifm-scrollbar-thumb-hover-background-color: var(--color-gray-400);
+  --docusaurus-highlighted-code-line-bg: var(--color-blackAlpha-100);
+  --ifm-menu-color-active: var(--color-blue-600);
+  --ifm-menu-color-background-active: var(--color-blackAlpha-200);
+  --ifm-menu-color-background-hover: var(--color-blackAlpha-200);
+  --ifm-menu-color: var(--color-gray-600);
+  --ifm-navbar-background-color: var(--color-backgroundSecondary);
   --ifm-navbar-height: 4.5rem;
   --ifm-navbar-padding-vertical: 0.75rem;
-  --ifm-navbar-link-color: rgb(80, 80, 81);
-  --ifm-toc-link-color: #4b4b5a;
+  --ifm-navbar-link-color: var(--color-gray-600);
+  --ifm-toc-link-color: var(--color-gray-600);
 }
 
 html[data-theme="dark"] {
@@ -275,7 +367,7 @@ html[data-theme="dark"] {
   // Make announcement bar use plum color in dark mode
   .theme-announcement-bar {
     background-color: #{$plum-color} !important; /* Using plum color for branding */
-    color: white !important; /* Using white text for contrast */
+    color: var(--color-white) !important; /* Using white text for contrast */
   }
 }
 
@@ -305,9 +397,9 @@ html[data-theme="dark"] {
   button,
   .closeButton_CVFx,
   .announcementBarClose_gvF7 {
-    color: white !important;
+    color: var(--color-white) !important;
     font-size: 0.875rem !important; /* 14px relative */
-    background-color: transparent !important;
+    background-color: var(--color-transparent) !important;
     transition: all 0.2s ease-in-out !important;
     position: absolute !important;
     right: 1rem !important;
@@ -383,7 +475,7 @@ aside[class*="docSidebarContainer"] {
 
     /* Custom scrollbar styling for better UX */
     scrollbar-width: thin !important; /* Firefox - show thin scrollbar */
-    scrollbar-color: rgba(0, 0, 0, 0.2) transparent !important; /* Firefox scrollbar colors */
+    scrollbar-color: var(--color-blackAlpha-500) var(--color-transparent) !important; /* Firefox scrollbar colors */
 
     /* WebKit browsers (Chrome, Safari, Edge) - show minimal scrollbar */
     &::-webkit-scrollbar {
@@ -391,16 +483,16 @@ aside[class*="docSidebarContainer"] {
     }
 
     &::-webkit-scrollbar-track {
-      background: transparent !important;
+      background: var(--color-transparent) !important;
     }
 
     &::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.2) !important;
+      background: var(--color-blackAlpha-500) !important;
       border-radius: 3px !important;
     }
 
     &::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 0, 0, 0.4) !important;
+      background: var(--color-blackAlpha-700) !important;
     }
   }
 }
@@ -443,7 +535,7 @@ div[class*="docSidebarMenu"],
   font-size: 00.8175rem;
   font-weight: normal !important; /* Normal weight for inactive items */
   padding: 0.5rem 0.5rem !important; /* Increased vertical padding for consistent height */
-  border-bottom: 3px solid transparent !important; /* Add transparent border to prevent layout shift */
+  border-bottom: 3px solid var(--color-transparent) !important; /* Add transparent border to prevent layout shift */
   height: 36px !important; /* Set consistent height */
   display: flex !important;
   align-items: center !important;
@@ -477,9 +569,9 @@ div[class*="docSidebarMenu"],
   .docs-version-select {
     max-width: 88px;
     height: 36px;
-    border: 1px solid rgba(255, 255, 255, 0.35);
+    border: 1px solid var(--color-gray-100);
     border-radius: 4px;
-    background: transparent;
+    background: var(--color-transparent);
     color: var(--ifm-navbar-link-color);
     font: inherit;
     font-size: 0.8175rem;
@@ -503,7 +595,7 @@ html[data-theme="light"] {
     .navbar-blog-link:not(.navbar__link--active):not(
       .dagger-cloud-button
     ):hover {
-    border-bottom: 3px solid rgba(239, 123, 26, 0.5) !important; // tangerine, 50% opacity
+    border-bottom: 3px solid var(--color-orange-300) !important;
   }
 }
 
@@ -529,26 +621,26 @@ html[data-theme="light"] {
     .navbar__item
     .navbar__link.navbar__link--active:not(.dagger-cloud-button),
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
-    color: rgb(23, 23, 24) !important;
+    color: var(--color-gray-900) !important;
     font-weight: 600 !important; /* Bold weight for active items */
-    border-bottom: 3px solid #{$tangerine-color} !important;
+    border-bottom: 3px solid var(--color-orange-400) !important;
   }
 
   // Make announcement bar use inkberry color in light mode
   .theme-announcement-bar {
-    background-color: #{$inkberry-color} !important; /* Using inkberry color for branding */
-    color: white !important; /* Using white text for contrast */
+    background-color: var(--color-blackHole) !important;
+    color: var(--color-white) !important;
   }
 
   /* Style for active links in the sidebar - light mode only */
   .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
-    background-color: rgba(26, 24, 51, 0.1) !important;
+    background-color: var(--color-blackAlpha-200) !important;
     border-radius: 4px !important;
   }
 
   /* Hover effect for menu links - light mode only */
   .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
-    background-color: rgba(26, 24, 51, 0.1) !important;
+    background-color: var(--color-blackAlpha-200) !important;
     border-radius: 4px !important;
   }
 }
@@ -559,7 +651,7 @@ html[data-theme="dark"] {
     .navbar__item
     .navbar__link.navbar__link--active:not(.dagger-cloud-button),
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
-    color: white !important;
+    color: var(--color-white) !important;
     font-weight: 600 !important; /* Bold weight for active items */
     border-bottom: 3px solid #{$crimson-color} !important;
   }
@@ -636,12 +728,12 @@ html[data-theme="dark"] {
 }
 
 .theme-layout-footer {
-  background-color: #{$dagger-dark-mode-background-color};
-  color: white;
+  background-color: var(--color-blackHole);
+  color: var(--color-white);
 }
 
 .theme-layout-footer a {
-  color: white;
+  color: var(--color-white);
   text-decoration: none;
   // font size relative to 13px
   font-size: 0.8125rem; // 13px
@@ -671,7 +763,7 @@ body {
   height: 36px !important; /* Match navbar links height */
   display: flex !important;
   align-items: center !important;
-  margin-bottom: 3px transparent;
+  margin-bottom: 3px;
 
   // Hide on tablet resolutions
   @include tablet {
@@ -686,17 +778,13 @@ body {
 /* Light mode styling for Dagger Cloud button */
 html[data-theme="light"] {
   .dagger-cloud-button {
-    background-color: #{$plum-color} !important; /* Dark blue/purple color */
-    color: white !important;
-    border: 1px solid #{$plum-color} !important; /* Use same color for consistent border */
+    background-color: var(--color-purple-800) !important;
+    color: var(--color-white) !important;
+    border: 1px solid var(--color-purple-800) !important;
 
     &:hover {
-      background-color: rgb(
-        29,
-        26,
-        56
-      ) !important; /* Slightly lighter on hover */
-      border-color: rgb(29, 26, 56) !important;
+      background-color: var(--color-raisinBlack-800) !important;
+      border-color: var(--color-raisinBlack-800) !important;
       transform: none !important; /* Prevent any transform effects */
     }
   }
@@ -706,7 +794,7 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
   .dagger-cloud-button {
     background-color: #{$plum-color} !important; /* Using plum color for branding */
-    color: white !important; /* White text for contrast */
+    color: var(--color-white) !important; /* White text for contrast */
     border: 1px solid #{$plum-color} !important;
 
     &:hover {
@@ -744,7 +832,7 @@ h4 {
 }
 
 .footer {
-  color: white;
+  color: var(--color-white);
   padding: 4rem 0 1.5rem;
 
   .flex {
@@ -756,7 +844,7 @@ h4 {
   }
 
   hr {
-    background-color: #4b4968;
+    background-color: var(--color-gray-600);
   }
 
   .justify-between {
@@ -764,12 +852,12 @@ h4 {
   }
 
   .footer__link-item {
-    color: white;
+    color: var(--color-white);
     font-size: 0.875rem;
   }
 
   .discord-icon {
-    background-color: white;
+    background-color: var(--color-white);
     mask-image: url("/img/discord-icon.svg");
     mask-size: 100%;
 
@@ -795,7 +883,7 @@ h4 {
   .footer-discord-link {
     background-image: url("/img/discord-icon.svg");
     /* Discord icon is often black, so force it to white */
-    filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+    filter: invert(1) brightness(2) drop-shadow(0 0 2px var(--color-blackHole));
   }
   .footer-x-link {
     background-image: url("/img/x-icon.svg");
@@ -805,17 +893,17 @@ h4 {
   .footer-discord-link:hover,
   .footer-x-link:hover {
     opacity: 1;
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--color-whiteAlpha-100);
     border-radius: 6px;
   }
 }
 
 // Ensure footer icons are visible in both themes
 html[data-theme="light"] .footer-discord-link {
-  filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+  filter: invert(1) brightness(2) drop-shadow(0 0 2px var(--color-blackHole));
 }
 html[data-theme="dark"] .footer-discord-link {
-  filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+  filter: invert(1) brightness(2) drop-shadow(0 0 2px var(--color-blackHole));
 }
 html[data-theme="light"] .footer-x-link {
   filter: none;
@@ -826,7 +914,7 @@ html[data-theme="dark"] .footer-x-link {
 
 .footer__copyright {
   font-size: 0.875rem !important; // 14px
-  color: white;
+  color: var(--color-white);
   align-content: left;
 }
 
@@ -834,7 +922,7 @@ html[data-theme="dark"] .footer-x-link {
   height: 35px;
   margin: 0;
   padding: 0;
-  background-color: white;
+  background-color: var(--color-white);
   mask-image: url("/img/github-icon.svg");
   mask-size: 100%;
   width: 30px;
@@ -854,7 +942,7 @@ html[data-theme="dark"] .footer-x-link {
   @include mobile {
     margin: auto;
     html[data-theme="light"] {
-      background-color: black;
+      background-color: var(--color-blackHole);
     }
   }
 }
@@ -864,14 +952,14 @@ html[data-theme="dark"] .footer-x-link {
   // No background here: this selector matches the content wrapper around the
   // <pre>, so a solid color leaks out behind the code block's rounded corners
   // (a white fringe in dark mode). Let the pre's own background show through.
-  color: #{$plum-color};
+  color: var(--color-purple-800);
   font-style: italic;
 }
 
 // Style for pre elements with different modes
 html[data-theme="light"] pre {
-  border: 1px solid rgb(223, 223, 224); // Obsidian color with transparency
-  color: #{$inkberry-color};
+  border: 1px solid var(--color-gray-100);
+  color: var(--color-gray-900);
 }
 
 html[data-theme="dark"] pre {
@@ -895,7 +983,7 @@ html[data-theme="dark"] .theme-code-block {
 
 // DocSearch button styling to match background color in both themes
 html[data-theme="light"] .DocSearch.DocSearch-Button {
-  background-color: #fff !important;
+  background-color: var(--color-white) !important;
   border: none !important;
   box-shadow: none !important;
   border-radius: 8px !important; /* Match Dagger Cloud button radius */
@@ -903,7 +991,7 @@ html[data-theme="light"] .DocSearch.DocSearch-Button {
   padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
 
   &:hover {
-    background-color: #f7f7f7 !important;
+    background-color: var(--color-backgroundSecondary) !important;
   }
 }
 
@@ -1025,7 +1113,7 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
 // Style tabs to match sidebar hover effects
 // Add consistent bottom border to tab container
 ul.tabs {
-  border-bottom: 1px solid rgb(218, 221, 225) !important;
+  border-bottom: 1px solid var(--color-gray-100) !important;
   display: flex !important;
   width: 100% !important;
 }
@@ -1043,15 +1131,15 @@ ul.tabs {
 
 html[data-theme="light"] {
   .tabs__item:hover {
-    background-color: rgba(26, 24, 51, 0.1) !important;
+    background-color: var(--color-blackAlpha-200) !important;
     color: var(--ifm-menu-color-active);
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
   }
 
   .tabs__item--active {
-    background-color: rgba(26, 24, 51, 0.1) !important;
-    border-bottom: 1px solid #{$plum-color} !important;
+    background-color: var(--color-blackAlpha-200) !important;
+    border-bottom: 1px solid var(--color-purple-800) !important;
     color: var(--ifm-menu-color-active);
     font-weight: 600;
   }
@@ -1088,8 +1176,8 @@ html[data-theme="dark"] {
 
 // Light mode flowchart styling
 html[data-theme="light"] .flowchart {
-  background-color: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: var(--color-white);
+  box-shadow: 0 2px 4px var(--color-blackAlpha-200);
 }
 
 // Dark mode flowchart styling using brand variables
@@ -1114,7 +1202,7 @@ html[data-theme="dark"] .flowchart {
 }
 
 .markdown table thead {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--color-blackAlpha-50);
 }
 
 html[data-theme="dark"] .markdown table thead {
@@ -1124,7 +1212,7 @@ html[data-theme="dark"] .markdown table thead {
 .markdown table th,
 .markdown table td {
   padding: 0.75rem;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-blackAlpha-200);
 }
 
 html[data-theme="dark"] .markdown table th,
@@ -1145,7 +1233,7 @@ html[data-theme="dark"] .markdown table td {
     color: var(--ifm-menu-color);
     transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     text-decoration: none;
-    border-left: 3px solid transparent;
+    border-left: 3px solid var(--color-transparent);
 
     &:hover {
       text-decoration: none;
@@ -1159,14 +1247,14 @@ html[data-theme="light"] {
     &:hover {
       // background-color: rgba(26, 24, 51, 0.05) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid rgba(239, 123, 26, 0.5); // Light version of tangerine color
+      border-left: 3px solid var(--color-orange-300);
       padding-left: 0.5rem;
     }
 
     &.table-of-contents__link--active {
-      background-color: rgba(26, 24, 51, 0.1) !important;
+      background-color: var(--color-blackAlpha-200) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid #{$tangerine-color} !important; // Matching navbar border color
+      border-left: 3px solid var(--color-orange-400) !important;
       padding-left: 0.5rem;
     }
   }
@@ -1236,12 +1324,12 @@ html[data-theme="dark"] {
 }
 
 /* ── content "sheet" ──────────────────────────────────────────────
-   The doc content sits on a white sheet that rises from the cream page
+   The doc content sits on a white sheet that rises from the palette page
    background like a rounded sheet of paper. The article column is the sheet;
    the left nav and (when present) the right table of contents stay on the
-   cream background to either side. */
+   page background to either side. */
 :root {
-  --doc-sheet-bg: #ffffff;
+  --doc-sheet-bg: var(--color-white);
   --doc-sheet-radius: 18px;
 }
 html[data-theme="dark"] {
@@ -1251,7 +1339,7 @@ html[data-theme="dark"] {
 }
 
 main[class*="docMainContainer"] {
-  // cream gap between the left nav and the sheet, mirroring the gutter the
+  // page-background gap between the left nav and the sheet, mirroring the gutter the
   // table of contents leaves on the right
   padding-left: 1.5rem;
 
@@ -1263,9 +1351,9 @@ main[class*="docMainContainer"] {
     border-radius: var(--doc-sheet-radius);
   }
 
-  // Keep the right-hand table of contents on the cream background, so the
+  // Keep the right-hand table of contents on the page background, so the
   // sheet's rounded top-right corner reads against it.
   .col--3 {
-    background: transparent;
+    background: var(--color-transparent);
   }
 }

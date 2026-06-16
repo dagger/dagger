@@ -18,18 +18,18 @@
     padding-bottom: 300px;
     background-color: var(--ifm-background-color);
   }
-  
+
   .spinner {
     width: 48px;
     height: 48px;
     border-radius: 50%;
     display: inline-block;
     border-top: 3px solid var(--ifm-code-color);
-    border-right: 3px solid transparent;
+    border-right: 3px solid var(--color-transparent);
     box-sizing: border-box;
     animation: rotation 0.8s linear infinite;
   }
-  
+
   @keyframes rotation {
     0% {
       transform: rotate(0deg);
@@ -38,4 +38,3 @@
       transform: rotate(360deg);
     }
   }
-  

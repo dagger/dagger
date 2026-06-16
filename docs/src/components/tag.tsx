@@ -22,7 +22,7 @@ export default function Tag({
       {removable && (
         <div className={styles.close} onClick={onCloseClick}>
           <svg viewBox="0 0 15 15" width="5" height="5">
-            <g stroke="black" strokeWidth="3">
+            <g stroke="currentColor" strokeWidth="3">
               <path d="M.75.75l13.5 13.5M14.25.75L.75 14.25" />
             </g>
           </svg>

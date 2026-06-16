@@ -8,9 +8,8 @@
   --api-accent: var(--color-primary);
   --api-literal: var(--color-yellow-600);
   --api-type-name: var(--color-blue-600);
-  // A warm tint that sits on the docs' cream background instead of the cold
-  // Infima grays. Translucent black darkens the cream into a warm beige; dark
-  // mode uses a translucent white instead (see below).
+  // A subtle palette tint for the docs page background; dark mode uses a
+  // translucent white instead (see below).
   --api-tint: var(--color-blackAlpha-50);
   --api-tint-hover: var(--color-blackAlpha-100);
   --api-popover-bg: var(--color-white);
@@ -110,7 +109,7 @@
   // Monospace in the link color; no border or background — hover just underlines.
   code {
     border: none;
-    background: transparent;
+    background: var(--color-transparent);
     padding: 0;
     color: var(--api-accent);
     font-size: 14px;
@@ -185,7 +184,7 @@
 // On the heading band the signature is the heading itself, so it carries no
 // code-chip background of its own.
 .signature {
-  background: transparent;
+  background: var(--color-transparent);
   border: none;
   padding: 0;
   font-size: 0.95rem;
@@ -351,7 +350,7 @@
   margin: 0;
 
   code {
-    background: transparent;
+    background: var(--color-transparent);
     border: none;
     padding: 0;
   }
@@ -496,7 +495,7 @@
   display: inline;
   padding: 0;
   border: none;
-  background: transparent;
+  background: var(--color-transparent);
   color: var(--ifm-font-color-base);
   font-family: var(--ifm-font-family-monospace);
   font-size: 0.95em;
