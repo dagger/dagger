@@ -320,6 +320,66 @@ func TestCoreModTypeDefs(t *testing.T) {
 	require.True(t, exportFnAllowParentDirPathArg.TypeDef.Self().Optional)
 }
 
+func TestVolumeConstructorsHiddenFromModuleSchema(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "volume-schema-client",
+		SessionID: "volume-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	hiddenTypes := append([]string{}, core.TypesToIgnoreForModuleIntrospection...)
+	for _, typed := range core.TypesHiddenFromModuleSDKs {
+		hiddenTypes = append(hiddenTypes, typed.Type().Name())
+	}
+	moduleBytes, err := getSchemaJSON(hiddenTypes, core.FieldsToIgnoreForModuleIntrospection, "", dag)
+	require.NoError(t, err)
+	moduleSchema := decodeSchemaResponse(t, moduleBytes).Schema
+
+	require.NotNil(t, moduleSchema.Types.Get("Volume"))
+	require.NotNil(t, schemaField(moduleSchema.Types.Get("Container"), "withMountedVolume"))
+	require.Nil(t, schemaField(moduleSchema.Query(), "sshfsVolume"))
+	require.Nil(t, schemaField(moduleSchema.Types.Get("Address"), "volume"))
+
+	clientBytes, err := getSchemaJSON(nil, nil, "", dag)
+	require.NoError(t, err)
+	clientSchema := decodeSchemaResponse(t, clientBytes).Schema
+	require.NotNil(t, clientSchema.Types.Get("Volume"))
+	require.NotNil(t, schemaField(clientSchema.Types.Get("Container"), "withMountedVolume"))
+	require.NotNil(t, schemaField(clientSchema.Query(), "sshfsVolume"))
+	require.NotNil(t, schemaField(clientSchema.Types.Get("Address"), "volume"))
+}
+
+func TestSchemaJSONRejectsInvalidHiddenFields(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "hidden-field-client",
+		SessionID: "hidden-field-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	for _, hiddenField := range []string{"NoDot", "Query.", ".sshfsVolume"} {
+		_, err := getSchemaJSON(nil, []string{hiddenField}, "", dag)
+		require.Error(t, err, hiddenField)
+	}
+}
+
 func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {
 	ctx := context.Background()
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)

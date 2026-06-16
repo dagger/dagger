@@ -982,6 +982,27 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Retrieves this container plus a volume mounted at the given path.
+     */
+    public function withMountedVolume(
+        string $path,
+        Volume $volume,
+        ?bool $readOnly = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedVolume');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('volume', $volume);
+        if (null !== $readOnly) {
+        $innerQueryBuilder->setArgument('readOnly', $readOnly);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return a new container snapshot, with a file added to its filesystem with text content
      */
     public function withNewFile(

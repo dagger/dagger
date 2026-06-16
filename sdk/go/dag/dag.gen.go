@@ -256,6 +256,12 @@ func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	return client.SourceMap(filename, line, column)
 }
 
+// Constructs an SSHFS volume.
+func SshfsVolume(endpoint string, privateKey *dagger.Secret, opts ...dagger.SshfsVolumeOpts) *dagger.Volume {
+	client := initClient()
+	return client.SshfsVolume(endpoint, privateKey, opts...)
+}
+
 // Create a new TypeDef.
 func TypeDef() *dagger.TypeDef {
 	client := initClient()

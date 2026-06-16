@@ -531,6 +531,10 @@ type execSSHMountConfig struct {
 	Mode   fs.FileMode
 }
 
+type execVolumeMountConfig struct {
+	Volume dagql.ObjectResult[*Volume]
+}
+
 type execMountState struct {
 	Dest      string
 	Selector  string
@@ -542,6 +546,7 @@ type execMountState struct {
 	TmpfsOpt *pb.TmpfsOpt
 	Secret   *execSecretMountConfig
 	SSH      *execSSHMountConfig
+	Volume   *execVolumeMountConfig
 
 	ApplyOutput func(bkcache.ImmutableRef) error
 
@@ -666,37 +671,60 @@ func prepareMounts(
 			mountable = state.SourceRef
 		}
 
-		switch state.MountType {
-		case pb.MountType_BIND:
-			if state.ApplyOutput != nil {
-				if state.Readonly && state.SourceRef != nil && state.Dest != pb.RootMount {
-					iref, ok := state.SourceRef.(bkcache.ImmutableRef)
-					if !ok {
-						return fmt.Errorf("mount %s readonly output needs immutable input, got %T", state.Dest, state.SourceRef)
-					}
-					reopened, err := cache.GetBySnapshotID(ctx, iref.SnapshotID(), bkcache.NoUpdateLastUsed)
-					if err != nil {
-						return err
-					}
-					state.OutputImmutable = reopened
-				} else {
-					iref, ok := state.SourceRef.(bkcache.ImmutableRef)
-					if state.SourceRef != nil && !ok {
-						return fmt.Errorf("mount %s writable output needs immutable input, got %T", state.Dest, state.SourceRef)
-					}
-					active, err := makeMutable(state.Dest, iref)
-					if err != nil {
-						return err
-					}
-					mountable = active
-					state.OutputMutable = active
-				}
-			} else {
-				if !state.Readonly && state.SourceRef != nil {
-					if mutable, ok := state.SourceRef.(bkcache.MutableRef); ok {
-						mountable = mutable
+		if state.Volume != nil {
+			var err error
+			mountable, err = prepareExecVolumeMount(state.Volume)
+			if err != nil {
+				return err
+			}
+		} else {
+			switch state.MountType {
+			case pb.MountType_BIND:
+				if state.ApplyOutput != nil {
+					if state.Readonly && state.SourceRef != nil && state.Dest != pb.RootMount {
+						iref, ok := state.SourceRef.(bkcache.ImmutableRef)
+						if !ok {
+							return fmt.Errorf("mount %s readonly output needs immutable input, got %T", state.Dest, state.SourceRef)
+						}
+						reopened, err := cache.GetBySnapshotID(ctx, iref.SnapshotID(), bkcache.NoUpdateLastUsed)
+						if err != nil {
+							return err
+						}
+						state.OutputImmutable = reopened
 					} else {
-						iref := state.SourceRef.(bkcache.ImmutableRef)
+						iref, ok := state.SourceRef.(bkcache.ImmutableRef)
+						if state.SourceRef != nil && !ok {
+							return fmt.Errorf("mount %s writable output needs immutable input, got %T", state.Dest, state.SourceRef)
+						}
+						active, err := makeMutable(state.Dest, iref)
+						if err != nil {
+							return err
+						}
+						mountable = active
+						state.OutputMutable = active
+					}
+				} else {
+					if !state.Readonly && state.SourceRef != nil {
+						if mutable, ok := state.SourceRef.(bkcache.MutableRef); ok {
+							mountable = mutable
+						} else {
+							iref := state.SourceRef.(bkcache.ImmutableRef)
+							active, err := makeMutable(state.Dest, iref)
+							if err != nil {
+								return err
+							}
+							mountable = active
+							state.ActiveRef = active
+						}
+					} else if !state.Readonly || state.SourceRef == nil {
+						var iref bkcache.ImmutableRef
+						if state.SourceRef != nil {
+							parsed, ok := state.SourceRef.(bkcache.ImmutableRef)
+							if !ok {
+								return fmt.Errorf("mount %s writable bind needs immutable or mutable input, got %T", state.Dest, state.SourceRef)
+							}
+							iref = parsed
+						}
 						active, err := makeMutable(state.Dest, iref)
 						if err != nil {
 							return err
@@ -704,41 +732,26 @@ func prepareMounts(
 						mountable = active
 						state.ActiveRef = active
 					}
-				} else if !state.Readonly || state.SourceRef == nil {
-					var iref bkcache.ImmutableRef
-					if state.SourceRef != nil {
-						parsed, ok := state.SourceRef.(bkcache.ImmutableRef)
-						if !ok {
-							return fmt.Errorf("mount %s writable bind needs immutable or mutable input, got %T", state.Dest, state.SourceRef)
-						}
-						iref = parsed
-					}
-					active, err := makeMutable(state.Dest, iref)
-					if err != nil {
-						return err
-					}
-					mountable = active
-					state.ActiveRef = active
 				}
+
+			case pb.MountType_TMPFS:
+				mountable = execTmpFSMountable(state.TmpfsOpt)
+
+			case pb.MountType_SECRET:
+				mountable, err = prepareExecSecretMount(ctx, state.Secret)
+				if err != nil {
+					return err
+				}
+
+			case pb.MountType_SSH:
+				mountable, err = prepareExecSSHMount(state.SSH)
+				if err != nil {
+					return err
+				}
+
+			default:
+				return fmt.Errorf("mount type %s not implemented", state.MountType)
 			}
-
-		case pb.MountType_TMPFS:
-			mountable = execTmpFSMountable(state.TmpfsOpt)
-
-		case pb.MountType_SECRET:
-			mountable, err = prepareExecSecretMount(ctx, state.Secret)
-			if err != nil {
-				return err
-			}
-
-		case pb.MountType_SSH:
-			mountable, err = prepareExecSSHMount(state.SSH)
-			if err != nil {
-				return err
-			}
-
-		default:
-			return fmt.Errorf("mount type %s not implemented", state.MountType)
 		}
 
 		if state.Dest == pb.RootMount && state.Readonly && state.ApplyOutput == nil {
@@ -871,6 +884,14 @@ func prepareMounts(
 			}
 			mountState.SourceRef = cacheSnapshot
 			mountState.Selector = cacheSrc.Volume.Self().getSnapshotSelector()
+
+		case ctrMount.VolumeSource != nil:
+			if ctrMount.VolumeSource.Volume.Self() == nil {
+				return materialized, fmt.Errorf("mount %d has nil volume source", i)
+			}
+			mountState.Volume = &execVolumeMountConfig{
+				Volume: ctrMount.VolumeSource.Volume,
+			}
 
 		case ctrMount.TmpfsSource != nil:
 			mountState.MountType = pb.MountType_TMPFS
@@ -1462,37 +1483,59 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				mountable = state.SourceRef
 			}
 
-			switch state.MountType {
-			case pb.MountType_BIND:
-				if state.ApplyOutput != nil {
-					if state.Readonly && state.SourceRef != nil && state.Dest != pb.RootMount {
-						iref, ok := state.SourceRef.(bkcache.ImmutableRef)
-						if !ok {
-							return fmt.Errorf("mount %s readonly output needs immutable input, got %T", state.Dest, state.SourceRef)
-						}
-						reopened, err := cache.GetBySnapshotID(ctx, iref.SnapshotID(), bkcache.NoUpdateLastUsed)
-						if err != nil {
-							return err
-						}
-						state.OutputImmutable = reopened
-					} else {
-						iref, ok := state.SourceRef.(bkcache.ImmutableRef)
-						if state.SourceRef != nil && !ok {
-							return fmt.Errorf("mount %s writable output needs immutable input, got %T", state.Dest, state.SourceRef)
-						}
-						active, err := makeMutable(state.Dest, iref)
-						if err != nil {
-							return err
-						}
-						mountable = active
-						state.OutputMutable = active
-					}
-				} else {
-					if !state.Readonly && state.SourceRef != nil {
-						if mutable, ok := state.SourceRef.(bkcache.MutableRef); ok {
-							mountable = mutable
+			if state.Volume != nil {
+				mountable, err = prepareExecVolumeMount(state.Volume)
+				if err != nil {
+					return err
+				}
+			} else {
+				switch state.MountType {
+				case pb.MountType_BIND:
+					if state.ApplyOutput != nil {
+						if state.Readonly && state.SourceRef != nil && state.Dest != pb.RootMount {
+							iref, ok := state.SourceRef.(bkcache.ImmutableRef)
+							if !ok {
+								return fmt.Errorf("mount %s readonly output needs immutable input, got %T", state.Dest, state.SourceRef)
+							}
+							reopened, err := cache.GetBySnapshotID(ctx, iref.SnapshotID(), bkcache.NoUpdateLastUsed)
+							if err != nil {
+								return err
+							}
+							state.OutputImmutable = reopened
 						} else {
-							iref := state.SourceRef.(bkcache.ImmutableRef)
+							iref, ok := state.SourceRef.(bkcache.ImmutableRef)
+							if state.SourceRef != nil && !ok {
+								return fmt.Errorf("mount %s writable output needs immutable input, got %T", state.Dest, state.SourceRef)
+							}
+							active, err := makeMutable(state.Dest, iref)
+							if err != nil {
+								return err
+							}
+							mountable = active
+							state.OutputMutable = active
+						}
+					} else {
+						if !state.Readonly && state.SourceRef != nil {
+							if mutable, ok := state.SourceRef.(bkcache.MutableRef); ok {
+								mountable = mutable
+							} else {
+								iref := state.SourceRef.(bkcache.ImmutableRef)
+								active, err := makeMutable(state.Dest, iref)
+								if err != nil {
+									return err
+								}
+								mountable = active
+								state.ActiveRef = active
+							}
+						} else if !state.Readonly || state.SourceRef == nil {
+							var iref bkcache.ImmutableRef
+							if state.SourceRef != nil {
+								parsed, ok := state.SourceRef.(bkcache.ImmutableRef)
+								if !ok {
+									return fmt.Errorf("mount %s writable bind needs immutable or mutable input, got %T", state.Dest, state.SourceRef)
+								}
+								iref = parsed
+							}
 							active, err := makeMutable(state.Dest, iref)
 							if err != nil {
 								return err
@@ -1500,41 +1543,26 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 							mountable = active
 							state.ActiveRef = active
 						}
-					} else if !state.Readonly || state.SourceRef == nil {
-						var iref bkcache.ImmutableRef
-						if state.SourceRef != nil {
-							parsed, ok := state.SourceRef.(bkcache.ImmutableRef)
-							if !ok {
-								return fmt.Errorf("mount %s writable bind needs immutable or mutable input, got %T", state.Dest, state.SourceRef)
-							}
-							iref = parsed
-						}
-						active, err := makeMutable(state.Dest, iref)
-						if err != nil {
-							return err
-						}
-						mountable = active
-						state.ActiveRef = active
 					}
+
+				case pb.MountType_TMPFS:
+					mountable = execTmpFSMountable(state.TmpfsOpt)
+
+				case pb.MountType_SECRET:
+					mountable, err = prepareExecSecretMount(ctx, state.Secret)
+					if err != nil {
+						return err
+					}
+
+				case pb.MountType_SSH:
+					mountable, err = prepareExecSSHMount(state.SSH)
+					if err != nil {
+						return err
+					}
+
+				default:
+					return fmt.Errorf("mount type %s not implemented", state.MountType)
 				}
-
-			case pb.MountType_TMPFS:
-				mountable = execTmpFSMountable(state.TmpfsOpt)
-
-			case pb.MountType_SECRET:
-				mountable, err = prepareExecSecretMount(ctx, state.Secret)
-				if err != nil {
-					return err
-				}
-
-			case pb.MountType_SSH:
-				mountable, err = prepareExecSSHMount(state.SSH)
-				if err != nil {
-					return err
-				}
-
-			default:
-				return fmt.Errorf("mount type %s not implemented", state.MountType)
 			}
 
 			if state.Dest == pb.RootMount && state.Readonly && state.ApplyOutput == nil {
@@ -1671,6 +1699,14 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				}
 				mountState.SourceRef = cacheSnapshot
 				mountState.Selector = cacheSrc.Volume.Self().getSnapshotSelector()
+
+			case ctrMount.VolumeSource != nil:
+				if ctrMount.VolumeSource.Volume.Self() == nil {
+					return failPrepare(fmt.Errorf("mount %d has nil volume source", i))
+				}
+				mountState.Volume = &execVolumeMountConfig{
+					Volume: ctrMount.VolumeSource.Volume,
+				}
 
 			case ctrMount.TmpfsSource != nil:
 				mountState.MountType = pb.MountType_TMPFS

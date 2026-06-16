@@ -435,6 +435,17 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
+		dagql.NodeFunc("withMountedVolume", s.withMountedVolume).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Retrieves this container plus a volume mounted at the given path.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the volume mount (e.g., "/mnt/volume").`),
+				dagql.Arg("volume").Doc(`Identifier of the volume to mount.`),
+				dagql.Arg("readOnly").Doc(`Mount the volume read-only.`),
+				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+			),
+
 		dagql.NodeFunc("withMountedSecret", s.withMountedSecret).
 			Doc(`Retrieves this container plus a secret mounted into a file at the given path.`).
 			Args(
@@ -2841,6 +2852,54 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent dagql.Obj
 		Target: target,
 		CacheSource: &core.CacheMountSource{
 			Volume: cache,
+		},
+	})
+	return ctr, nil
+}
+
+type containerWithMountedVolumeArgs struct {
+	Path     string
+	Volume   core.VolumeID
+	ReadOnly bool `default:"false"`
+	Expand   bool `default:"false"`
+}
+
+func (s *containerSchema) withMountedVolume(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedVolumeArgs) (*core.Container, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	volume, err := args.Volume.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	if volume.Self() == nil {
+		return nil, errors.New("volume is nil")
+	}
+
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	target := absPath(parent.Self().Config.WorkingDir, path)
+	ctr.Lazy = &core.ContainerWithMountedVolumeLazy{
+		LazyState: core.NewLazyState(),
+		Parent:    parent,
+		Target:    target,
+		Volume:    volume,
+		Readonly:  args.ReadOnly,
+	}
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target:   target,
+		Readonly: args.ReadOnly,
+		VolumeSource: &core.VolumeMountSource{
+			Volume: volume,
 		},
 	})
 	return ctr, nil

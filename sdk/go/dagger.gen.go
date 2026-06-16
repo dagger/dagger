@@ -401,6 +401,15 @@ func (r *Address) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Load a volume from the address.
+func (r *Address) Volume() *Volume {
+	q := r.query.Select("volume")
+
+	return &Volume{
+		query: q,
+	}
+}
+
 // AsNode returns this Address as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Address) AsNode() Node {
@@ -750,6 +759,15 @@ func (r *Binding) AsUpGroup() *UpGroup {
 	q := r.query.Select("asUpGroup")
 
 	return &UpGroup{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Volume
+func (r *Binding) AsVolume() *Volume {
+	q := r.query.Select("asVolume")
+
+	return &Volume{
 		query: q,
 	}
 }
@@ -3321,6 +3339,36 @@ func (r *Container) WithMountedTemp(path string, opts ...ContainerWithMountedTem
 		}
 	}
 	q = q.Arg("path", path)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// ContainerWithMountedVolumeOpts contains options for Container.WithMountedVolume
+type ContainerWithMountedVolumeOpts struct {
+	// Mount the volume read-only.
+	ReadOnly bool
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	Expand bool
+}
+
+// Retrieves this container plus a volume mounted at the given path.
+func (r *Container) WithMountedVolume(path string, volume *Volume, opts ...ContainerWithMountedVolumeOpts) *Container {
+	assertNotNil("volume", volume)
+	q := r.query.Select("withMountedVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `readOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
+			q = q.Arg("readOnly", opts[i].ReadOnly)
+		}
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("volume", volume)
 
 	return &Container{
 		query: q,
@@ -7360,6 +7408,30 @@ func (r *Env) WithUpInput(name string, value *Up, description string) *Env {
 // Declare a desired Up output to be assigned in the environment
 func (r *Env) WithUpOutput(name string, description string) *Env {
 	q := r.query.Select("withUpOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Volume in the environment
+func (r *Env) WithVolumeInput(name string, value *Volume, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withVolumeInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Volume output to be assigned in the environment
+func (r *Env) WithVolumeOutput(name string, description string) *Env {
+	q := r.query.Select("withVolumeOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -14528,6 +14600,48 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
+// SshfsVolumeOpts contains options for Query.SshfsVolume
+type SshfsVolumeOpts struct {
+	// known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+	KnownHosts *Secret
+	// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+	CacheKey string
+	// Disable SSH host key verification. This is insecure and must be explicitly opted into.
+	InsecureSkipHostKeyCheck bool
+	// Service to use as the SSHFS network endpoint while verifying the original host key.
+	ExperimentalServiceHost *Service
+}
+
+// Constructs an SSHFS volume.
+func (r *Query) SshfsVolume(endpoint string, privateKey *Secret, opts ...SshfsVolumeOpts) *Volume {
+	assertNotNil("privateKey", privateKey)
+	q := r.query.Select("sshfsVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `knownHosts` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KnownHosts) {
+			q = q.Arg("knownHosts", opts[i].KnownHosts)
+		}
+		// `cacheKey` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CacheKey) {
+			q = q.Arg("cacheKey", opts[i].CacheKey)
+		}
+		// `insecureSkipHostKeyCheck` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureSkipHostKeyCheck) {
+			q = q.Arg("insecureSkipHostKeyCheck", opts[i].InsecureSkipHostKeyCheck)
+		}
+		// `experimentalServiceHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
+		}
+	}
+	q = q.Arg("endpoint", endpoint)
+	q = q.Arg("privateKey", privateKey)
+
+	return &Volume{
+		query: q,
+	}
+}
+
 // Create a new TypeDef.
 func (r *Query) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
@@ -16598,6 +16712,67 @@ func (r *UpGroup) Run() *UpGroup {
 // AsNode returns this UpGroup as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *UpGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A filesystem volume that can be mounted into containers.
+type Volume struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *Volume) WithGraphQLQuery(q *querybuilder.Selection) *Volume {
+	return &Volume{
+		query: q,
+	}
+}
+
+// A unique identifier for this Volume.
+func (r *Volume) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Volume) XXX_GraphQLType() string {
+	return "Volume"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Volume) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Volume) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Volume) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this Volume as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Volume) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
