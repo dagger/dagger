@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/docker/docker/pkg/idtools"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -85,6 +86,11 @@ func generateRlimitOpts(ulimits []*pb.Ulimit) ([]oci.SpecOpts, error) {
 		return nil, nil
 	}
 	return nil, errors.New("no support for POSIXRlimit on Windows")
+}
+
+// generateResourceOpts is a no-op on Windows; cgroup resource limits are Linux-only.
+func generateResourceOpts(_ executor.Meta) []oci.SpecOpts {
+	return nil
 }
 
 func getTracingSocketMount(socket string) *specs.Mount {

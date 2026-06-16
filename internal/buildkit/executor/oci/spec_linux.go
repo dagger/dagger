@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/oci"
 	cdseccomp "github.com/containerd/containerd/v2/pkg/seccomp"
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements/security"
@@ -140,6 +141,67 @@ func generateRlimitOpts(ulimits []*pb.Ulimit) ([]oci.SpecOpts, error) {
 			return nil
 		},
 	}, nil
+}
+
+// generateResourceOpts returns oci.SpecOpts that populate spec.Linux.Resources
+// from the cgroup limit fields in meta. Returns nil when all limit fields are
+// zero — preserving current unlimited behaviour.
+func generateResourceOpts(meta executor.Meta) []oci.SpecOpts {
+	if meta.MemoryBytes == 0 && meta.MemorySoftBytes == 0 &&
+		meta.CPUQuota == 0 && meta.CPUShares == 0 && meta.PidsLimit == 0 {
+		return nil
+	}
+
+	return []oci.SpecOpts{func(_ context.Context, _ oci.Client, _ *containers.Container, s *specs.Spec) error {
+		if s.Linux == nil {
+			s.Linux = &specs.Linux{}
+		}
+		if s.Linux.Resources == nil {
+			s.Linux.Resources = &specs.LinuxResources{}
+		}
+
+		if meta.MemoryBytes != 0 || meta.MemorySoftBytes != 0 {
+			if s.Linux.Resources.Memory == nil {
+				s.Linux.Resources.Memory = &specs.LinuxMemory{}
+			}
+			if meta.MemoryBytes != 0 {
+				v := meta.MemoryBytes
+				s.Linux.Resources.Memory.Limit = &v
+			}
+			if meta.MemorySoftBytes != 0 {
+				v := meta.MemorySoftBytes
+				s.Linux.Resources.Memory.Reservation = &v
+			}
+		}
+
+		if meta.CPUQuota != 0 || meta.CPUShares != 0 {
+			if s.Linux.Resources.CPU == nil {
+				s.Linux.Resources.CPU = &specs.LinuxCPU{}
+			}
+			if meta.CPUQuota != 0 {
+				period := meta.CPUPeriod
+				if period == 0 {
+					period = 100000
+				}
+				s.Linux.Resources.CPU.Quota = &meta.CPUQuota
+				s.Linux.Resources.CPU.Period = &period
+			}
+			if meta.CPUShares != 0 {
+				shares := uint64(meta.CPUShares)
+				s.Linux.Resources.CPU.Shares = &shares
+			}
+		}
+
+		if meta.PidsLimit != 0 {
+			if s.Linux.Resources.Pids == nil {
+				s.Linux.Resources.Pids = &specs.LinuxPids{}
+			}
+			v := meta.PidsLimit
+			s.Linux.Resources.Pids.Limit = &v
+		}
+
+		return nil
+	}}
 }
 
 // withDefaultProfile sets the default seccomp profile to the spec.
