@@ -260,10 +260,6 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 	})
 }
 
-func initWorkspace(ctx context.Context, dag *dagger.Client) (string, error) {
-	return dag.CurrentWorkspace().Init(ctx, dagger.WorkspaceInitOpts{Here: workspaceHere})
-}
-
 func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key string) error {
 	value, err := ws.ConfigRead(ctx, dagger.WorkspaceConfigReadOpts{Key: key})
 	if err != nil {

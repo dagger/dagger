@@ -43,6 +43,8 @@ type workspaceModuleInitArgs struct {
 // `handleChangesetResponseAt` (or any other Changeset consumer) and decides
 // whether to apply. This eliminates the half-mutated-workspace failure
 // window the previous immediate-apply shape inherited.
+//
+//nolint:gocyclo // inherently branchy orchestration (validate args, resolve SDK, plan changes)
 func (s *workspaceSchema) moduleInit(
 	ctx context.Context,
 	parent *core.Workspace,

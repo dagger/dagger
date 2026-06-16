@@ -91,7 +91,7 @@ func sdkResolve(input string) (string, error) {
 			names = append(names, m.Name)
 		}
 		sort.Strings(names)
-		return "", fmt.Errorf("SDK %q is ambiguous: matches %s. Pick one.", input, strings.Join(names, ", "))
+		return "", fmt.Errorf("SDK %q is ambiguous: matches %s; pick one", input, strings.Join(names, ", "))
 	}
 }
 
