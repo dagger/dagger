@@ -1,27 +1,29 @@
 // Package helm contains e2e contract tests for Dagger's Helm chart.
 //
-// workspace:include dagger.json
-// workspace:include k3s-entrypoint.sh
-// workspace:include ../../helm/dagger
-// workspace:include ../../.changes/.next
-// workspace:include ../../analytics
-// workspace:include ../../cmd/codegen
-// workspace:include ../../cmd/dagger
-// workspace:include ../../core/modules
-// workspace:include ../../core/openrouter
-// workspace:include ../../core/prompts
-// workspace:include ../../dagql
-// workspace:include ../../engine
-// workspace:include ../../go.mod
-// workspace:include ../../go.sum
-// workspace:include ../../internal
-// workspace:include ../../modules/alpine
-// workspace:include ../../modules/wolfi
-// workspace:include ../../sdk/go
-// workspace:include ../../toolchains/cli-dev
-// workspace:include ../../toolchains/go
-// workspace:include ../../util
-// workspace:include ../../version
+//go:test:include dagger.json
+//go:test:include k3s-entrypoint.sh
+//go:test:include ../../helm/dagger
+//go:test:include ../../.changes/.next
+//go:test:include ../../analytics
+//go:test:include ../../cmd/codegen
+//go:test:include ../../cmd/dagger
+//go:test:include ../../core/gitref
+//go:test:include ../../core/modules
+//go:test:include ../../core/openrouter
+//go:test:include ../../core/prompts
+//go:test:include ../../core/workspace
+//go:test:include ../../dagql
+//go:test:include ../../engine
+//go:test:include ../../go.mod
+//go:test:include ../../go.sum
+//go:test:include ../../internal
+//go:test:include ../../modules/alpine
+//go:test:include ../../modules/wolfi
+//go:test:include ../../sdk/go
+//go:test:include ../../toolchains/cli-dev
+//go:test:include ../../toolchains/go
+//go:test:include ../../util
+//go:test:include ../../version
 package helm
 
 import (

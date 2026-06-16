@@ -67,7 +67,7 @@
     {
       "name": "golang",
       "source": "github.com/dagger/go@main",
-      "pin": "f35c13de6dba9131093f6969ba79b32e19b26428",
+      "pin": "5683fb4f7e2e909a453eba727fb982077d5d11b5",
       "customizations": [
         {
           "argument": "test",
@@ -81,11 +81,6 @@
           "argument": "generate",
           "default": "docs/current_docs/reference"
         }
-      ],
-      "ignoreChecks": [
-        "generate-all",
-        "lint-all",
-        "test-all"
       ]
     },
     {
