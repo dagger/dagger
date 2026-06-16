@@ -167,7 +167,6 @@ func init() {
 		callCoreCmd.Command(),
 		callModCmd.Command(),
 		sessionAliasCmd,
-		newGenCmd(),
 		shellCmd,
 		clientCmd,
 		mcpCmd,

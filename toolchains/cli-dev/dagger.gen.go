@@ -381,27 +381,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*CliDev).PublishMetadata(&parent, ctx, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl)
-		case "Reference":
-			var parent CliDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var frontmatter string
-			if inputArgs["frontmatter"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["frontmatter"]), &frontmatter)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg frontmatter", err))
-				}
-			}
-			var includeExperimental bool
-			if inputArgs["includeExperimental"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["includeExperimental"]), &includeExperimental)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg includeExperimental", err))
-				}
-			}
-			return (*CliDev).Reference(&parent, frontmatter, includeExperimental), nil
 		case "ReleaseDryRun":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)
