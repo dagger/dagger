@@ -9,6 +9,7 @@
 // nothing to include a newly added one on the All types page and as a published
 // reference page.
 module.exports = [
+  "Query",
   "Container",
   "Directory",
   "File",
@@ -18,5 +19,6 @@ module.exports = [
   "GitRepository",
   "Env",
   "LLM",
-  "CurrentModule",
+  "Changeset",
+  "Workspace",
 ];

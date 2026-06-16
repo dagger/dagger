@@ -2,6 +2,10 @@ const promotedApiTypes: string[] = require(
   "./plugins/dagger-api-reference/coreTypes.js"
 );
 
+const promotedApiTypeLabels: Record<string, string> = {
+  Query: "Query (top-level)",
+};
+
 // Keep in sync with typeSlug in src/components/api/data.ts and
 // plugins/dagger-api-reference/generate-stubs.js.
 function typeSlug(name: string): string {
@@ -11,9 +15,11 @@ function typeSlug(name: string): string {
     .toLowerCase();
 }
 
-const promotedApiTypeItems = promotedApiTypes.map(
-  (name) => `extending/types/${typeSlug(name)}`
-);
+const promotedApiTypeItems = promotedApiTypes.map((name) => {
+  const id = `extending/types/${typeSlug(name)}`;
+  const label = promotedApiTypeLabels[name];
+  return label ? { type: "doc", id, label } : id;
+});
 
 module.exports = {
   current: [
