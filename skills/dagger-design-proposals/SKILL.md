@@ -11,7 +11,7 @@ Guidelines for writing design proposals for Dagger features.
 
 **Always research first:**
 
-1. Check relevant skills, such as dagger-codegen, and internal docs for context
+1. Check relevant internal docs, such as `internal-docs/dagger-codegen.md`, for context
 2. Look at related code in the Dagger codebase:
    - GraphQL schema: `core/schema/*.go`
    - CLI commands: `cmd/dagger/*.go`
@@ -128,7 +128,7 @@ When writing proposals, reference actual Dagger code:
 | CLI commands | `cmd/dagger/*.go` |
 | Core types (Directory, File, etc.) | `core/*.go` |
 | Engine internals | `engine/*.go` |
-| SDK codegen | `cmd/codegen/*.go` |
+| SDK codegen | `internal-docs/dagger-codegen.md`, `cmd/codegen/*.go` |
 
 Example: To understand how `Host.findUp` works before proposing `Workspace.findUp`:
 
@@ -161,6 +161,6 @@ gh api --method POST /gists/GIST_ID/comments -f body="## Changelog
 
 Check for other Dagger skills that may help with research:
 
-- `dagger-codegen` - SDK codegen, templates, bindings
 - `engine-debugging` - Engine debugging workflows, trace replay, cache snapshots
+- `internal-docs/dagger-codegen.md` - SDK codegen, templates, bindings
 - `internal-docs/` - Cache and engine implementation references
