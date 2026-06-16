@@ -1,11 +1,14 @@
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
-import { themes as prismThemes } from "prism-react-renderer";
 import remarkCodeImport from "remark-code-import";
 import remarkTemplate from "./plugins/remark-template";
 import llmsTxtPlugin from "./plugins/llms-txt-plugin";
 import daggerApiReference from "./plugins/dagger-api-reference";
 import path from "path";
+import {
+  daggerDarkPrismTheme,
+  daggerLightPrismTheme,
+} from "./src/prism/theme";
 
 import { daggerVersion } from "./current_docs/partials/version";
 
@@ -261,8 +264,8 @@ const config: Config = {
         "powershell",
         "java",
       ],
-      theme: prismThemes.oneLight,
-      darkTheme: prismThemes.oneDark,
+      theme: daggerLightPrismTheme,
+      darkTheme: daggerDarkPrismTheme,
     },
     navbar: {
       logo: {
