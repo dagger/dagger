@@ -994,11 +994,37 @@ func (srv *Server) getOrInitClient(
 	client.activeCount++
 
 	return client, func() error {
-		client.stateMu.Lock()
-		defer client.stateMu.Unlock()
-		client.activeCount--
+		if clientID != sess.mainClientCallerID {
+			client.stateMu.Lock()
+			client.activeCount--
+			activeCount := client.activeCount
+			client.stateMu.Unlock()
 
-		if client.activeCount > 0 {
+			if activeCount > 0 {
+				return nil
+			}
+
+			slog := slog.With(
+				"sessionID", sess.sessionID,
+				"clientID", client.clientID,
+			)
+			slog.Info("all client connections closed")
+			return nil
+		}
+
+		sess.stateMu.Lock()
+		defer sess.stateMu.Unlock()
+
+		// Keep the lock order consistent with getOrInitClient (session before
+		// client). If cleanup took client.stateMu first, a new request could
+		// hold stateMu while waiting on client.stateMu, while cleanup waited
+		// on stateMu.
+		client.stateMu.Lock()
+		client.activeCount--
+		activeCount := client.activeCount
+		client.stateMu.Unlock()
+
+		if activeCount > 0 {
 			return nil
 		}
 
@@ -1008,13 +1034,6 @@ func (srv *Server) getOrInitClient(
 		)
 		slog.Info("all client connections closed")
 
-		// if the main client caller has no more active calls, cleanup the whole session
-		if clientID != sess.mainClientCallerID {
-			return nil
-		}
-
-		sess.stateMu.Lock()
-		defer sess.stateMu.Unlock()
 		switch sess.state {
 		case sessionStateInitialized:
 			return srv.removeDaggerSession(ctx, sess)
