@@ -531,14 +531,23 @@ func (srv *Server) initializeDaggerSession(
 
 var errSessionClosing = errors.New("session is closing")
 
+// sessionTelemetryFlushTimeout is how long the shutdown-time telemetry flush
+// may take. When a command exits, the client gives the engine 10 seconds to
+// shut down (defaultShutdownTimeout in engine/client), then fails the build.
+// The engine flushes telemetry to Dagger Cloud inside that window, and a
+// single export to a hanging Cloud endpoint eats 10s on its own — unbounded,
+// a Cloud outage would spend the whole window: the client gives up first and
+// a successful build exits 1. At 5s the flush gives up early, the engine
+// answers the client in time, and the build passes. A Cloud outage costs
+// telemetry, never the build.
+const sessionTelemetryFlushTimeout = 5 * time.Second
+
 // cloudTokenRefreshTimeout is how long a cloud OAuth token refresh may take.
-// When a command exits, the client gives the engine 10 seconds to shut down
-// (defaultShutdownTimeout in engine/client), then fails the build. The engine
-// flushes telemetry inside that window, and the flush may need to refresh a
-// token. If the refresh were also allowed 10s, a hung refresh would spend the
-// whole window: the client gives up first and a successful build exits 1. At
-// 5s the hung refresh dies early, the flush finishes, and the build passes —
-// losing one batch of telemetry, not the build.
+// A refresh runs on a deliberately uncancellable context (exports happen on
+// background goroutines long after the request that created the session is
+// gone), so this is the only thing that can stop one that hangs: the flush
+// timeout above cancels the *wait* for a hung refresh, but the refresh itself
+// would keep a goroutine stuck forever. Keep it at most the flush timeout.
 const cloudTokenRefreshTimeout = 5 * time.Second
 
 func (sess *daggerSession) beginClosing() {
@@ -2207,20 +2216,22 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	// stragglers from clients that hadn't shut down yet. This must happen before
 	// beginClosing below: the cloud exporters may need to refresh OAuth credentials
 	// from the client host, which requires the session attachables that beginClosing
-	// tears down.
+	// tears down. Bound the flush and keep it best-effort: a Cloud outage may lose
+	// telemetry, but must not fail an otherwise successful command.
+	flushCtx, flushCancel := context.WithTimeout(ctx, sessionTelemetryFlushTimeout)
 	var flushErr error
 	if client.clientID == sess.mainClientCallerID {
 		flushErr = drainPhase("flush session telemetry", func() error {
-			return sess.FlushTelemetry(ctx, "main client shutdown")
+			return sess.FlushTelemetry(flushCtx, "main client shutdown")
 		})
 	} else {
 		flushErr = drainPhase("flush client telemetry", func() error {
-			return client.FlushTelemetry(ctx)
+			return client.FlushTelemetry(flushCtx)
 		})
 	}
+	flushCancel()
 	if flushErr != nil {
 		slog.Error("failed to flush telemetry", "error", flushErr)
-		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
 	}
 
 	if client.clientID == sess.mainClientCallerID {
