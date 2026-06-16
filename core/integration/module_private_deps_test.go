@@ -128,7 +128,7 @@ func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *test
 
 	// Isolated git credential helper for the private repo's host.
 	gitConfigPath := filepath.Join(workDir, ".gitconfig")
-	err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("https://"+tc.expectedHost, "x-token-auth", tc.token())), 0600)
+	err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("https://"+tc.expectedHost, "x-token-auth", tc.token())), 0o600)
 	require.NoError(t, err)
 
 	// run executes a dagger command on the host in workDir with a git
@@ -171,8 +171,8 @@ func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *test
   "source": ".",
   "dependencies": [ { "name": "dep", "source": %q } ]
 }`, testGitModuleRef(tc, ""))
-	require.NoError(t, os.WriteFile(filepath.Join(workDir, "dagger.json"), []byte(daggerJSON), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(workDir, "main.go"), []byte("package main\n\ntype Consumer struct{}\n\nfunc (m *Consumer) Hello() string { return \"hello\" }\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "dagger.json"), []byte(daggerJSON), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "main.go"), []byte("package main\n\ntype Consumer struct{}\n\nfunc (m *Consumer) Hello() string { return \"hello\" }\n"), 0o644))
 
 	out, err = run("generate", "-y", "--progress=plain")
 	require.NoError(t, err, string(out))
