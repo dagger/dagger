@@ -832,6 +832,11 @@ func RootCommand() *cobra.Command {
 	return rootCmd
 }
 
+// IsExperimental reports whether cmd (or any ancestor) is marked experimental.
+func IsExperimental(cmd *cobra.Command) bool {
+	return isExperimental(cmd)
+}
+
 func NormalizeWorkdir(workdir string) (string, error) {
 	if workdir == "" {
 		workdir = os.Getenv("DAGGER_WORKDIR")
