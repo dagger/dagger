@@ -510,7 +510,7 @@ dagger module init <sdk> <name> [--path=<dir>] [SDK-SPECIFIC FLAGS]
 
 The CLI is a thin dispatch wrapper. Steps:
 
-1. **CLI resolves `<sdk>` against the workspace.** Looks for `[modules.<sdk>]` with the `as-sdk` marker. Errors out if not found, with a hint: `"<sdk> is not installed as an SDK in this workspace; run `dagger sdk install <sdk>` first."`
+1. **CLI resolves `<sdk>` against the workspace.** Looks for `[modules.<sdk>]` with the `as-sdk` marker. Errors out if not found, with a hint: `"<sdk> is not installed as an SDK in this workspace; run`dagger sdk install <sdk>`first."`
 2. **CLI introspects the SDK's `initModule`** schema. Maps positional `<name>` to the function's `name` arg, optional `--path` to `path`, and any extra SDK args (e.g. `--go-version`) to their schema counterparts.
 3. **CLI defaults `--path`** to `.dagger/modules/<name>` if not supplied.
 4. **CLI invokes the engine:**
@@ -677,7 +677,6 @@ Available subcommands depend entirely on what the SDK exposes. The CLI surface i
 
 - Whether `dagger search` surfaces SDKs alongside other modules. Tentative: yes.
 - Whether the runtime-as-builtin-name namespace (`"go"`, `"python"`, …) is a closed set defined by the engine or extensible. Today's answer: closed, matching what the engine bundles. Extension would mean reserving a name for a future runtime module, which is unnecessary while engine builtins exist.
-
 
 ## Discrete changes from current CLI
 
