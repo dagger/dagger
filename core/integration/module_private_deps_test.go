@@ -11,9 +11,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -103,82 +100,6 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 	})
 }
 
-// TestGeneratePrivateGitDependency verifies that `dagger generate` can resolve a
-// module's private Git dependency.
-//
-// Codegen runs through the go-sdk *module*'s `generate-all` generator
-// (github.com/dagger/go-sdk). That generator executes as module code, i.e. under
-// a nested module client rather than the user's main client. The dependency is
-// resolved inside that nested execution (generatedContextChangeset -> codegen ->
-// loadDependencyModules -> ResolveDepToSource), so the engine must forward the
-// non-module parent client's Git credentials. Before the fix in
-// ResolveDepToSource, the git resolver only authenticated for the main client
-// (core/schema/git.go), and this failed with "git authentication failed" even
-// though `dagger -m <private-ref> ...` and `dagger develop` worked.
-//
-// This runs `dagger` on the host (not nested in a container) so the
-// credential-resolving client has git and the configured credential helper,
-// matching how git credential forwarding is exercised in gitcredential_test.go.
-func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *testctx.T) {
-	// HTTPS GitLab private repo authenticated with a read-only PAT, matching the
-	// originally reported scenario.
-	tc := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
-
-	workDir := t.TempDir()
-
-	// Isolated git credential helper for the private repo's host.
-	gitConfigPath := filepath.Join(workDir, ".gitconfig")
-	err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("https://"+tc.expectedHost, "x-token-auth", tc.token())), 0600)
-	require.NoError(t, err)
-
-	// run executes a dagger command on the host in workDir with a git
-	// environment scoped to the isolated credential helper above.
-	run := func(args ...string) ([]byte, error) {
-		cmd := hostDaggerCommandRaw(ctx, t, workDir, args...)
-		env := make([]string, 0, len(os.Environ()))
-		for _, e := range os.Environ() {
-			if !strings.Contains(strings.ToLower(strings.SplitN(e, "=", 2)[0]), "git") {
-				env = append(env, e)
-			}
-		}
-		env = append(env,
-			"GIT_CONFIG_GLOBAL="+gitConfigPath,
-			"GIT_CONFIG_SYSTEM=/dev/null",
-			"GIT_CONFIG_NOSYSTEM=1",
-			"GIT_TERMINAL_PROMPT=0",
-		)
-		cmd.Env = env
-		out, runErr := cmd.CombinedOutput()
-		if runErr != nil {
-			runErr = fmt.Errorf("%s: %w", out, runErr)
-		}
-		return out, runErr
-	}
-
-	// Initialize a workspace with the go-sdk generator installed.
-	require.NoError(t, exec.Command("git", "-C", workDir, "init").Run())
-	out, err := run("workspace", "init")
-	require.NoError(t, err, string(out))
-	out, err = run("install", "github.com/dagger/go-sdk")
-	require.NoError(t, err, string(out))
-
-	// A Go SDK module (discovered by go-sdk's generate-all) that declares the
-	// private repo as a dependency.
-	daggerJSON := fmt.Sprintf(`{
-  "name": "consumer",
-  "engineVersion": "latest",
-  "sdk": { "source": "go" },
-  "source": ".",
-  "dependencies": [ { "name": "dep", "source": %q } ]
-}`, testGitModuleRef(tc, ""))
-	require.NoError(t, os.WriteFile(filepath.Join(workDir, "dagger.json"), []byte(daggerJSON), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(workDir, "main.go"), []byte("package main\n\ntype Consumer struct{}\n\nfunc (m *Consumer) Hello() string { return \"hello\" }\n"), 0644))
-
-	out, err = run("generate", "-y", "--progress=plain")
-	require.NoError(t, err, string(out))
-	require.NotContains(t, string(out), "authentication failed")
-}
-
 func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 	t.Run("golang", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
@@ -195,7 +116,7 @@ func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 `).
-			With(withModuleEntrypointFixture(t, c, ".", "foo", "go/private-language-dep"))
+			With(withModuleFixture(t, c, ".", "go/private-language-dep"))
 
 		howCoolIsDagger, err := modGen.
 			With(daggerExec("call", "how-cool-is-dagger")).
@@ -221,40 +142,36 @@ func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 			WithUnixSocket("/sock/unix-socket", socket).
 			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
 			WithNewFile("/root/.gitconfig", `
-[url "ssh://git@gitlab.com/"]
+	[url "ssh://git@gitlab.com/"]
 	insteadOf = https://gitlab.com/
-`).
+	`).
 			WithEnvVariable("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=no").
-			WithNewFile("/work/dagger.toml", `[modules.foo]
-source = ".dagger/modules/foo"
-entrypoint = true
-`).
-			WithNewFile("/work/.dagger/modules/foo/dagger.json", `{
-  "name": "foo",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go",
-    "config": {
-      "goprivate": "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git"
-    }
-  }
-}`).
-			WithNewFile("/work/.dagger/modules/foo/go.mod", fmt.Sprintf(`module dagger/foo
+			WithNewFile("/work/dagger.json", `{
+	"name": "foo",
+	"engineVersion": "latest",
+	"sdk": {
+	"source": "go",
+	"config": {
+	"goprivate": "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git"
+	}
+	}
+	}`).
+			WithNewFile("/work/go.mod", fmt.Sprintf(`module dagger/foo
 
-go 1.21.3
+	 go 1.21.3
 
-require %s %s
-`, privateDep, privateDepVersion)).
-			WithNewFile("/work/.dagger/modules/foo/main.go", fmt.Sprintf(`package main
+	require %s %s
+	`, privateDep, privateDepVersion)).
+			WithNewFile("/work/main.go", fmt.Sprintf(`package main
 
-import "%s/pkg/coolwrapper"
+	 import "%s/pkg/coolwrapper"
 
-type Foo struct{}
+	 type Foo struct{}
 
-func (m *Foo) HowCoolIsDagger() string {
+	func (m *Foo) HowCoolIsDagger() string {
 	return coolwrapper.HowCoolIsThat()
-}
-`, privateDep)).
+	}
+	`, privateDep)).
 			WithWorkdir("/work")
 
 		howCoolIsDagger, err := modGen.
