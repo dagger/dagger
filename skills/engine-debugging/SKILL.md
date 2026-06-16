@@ -1,9 +1,12 @@
 ---
 name: engine-debugging
-description: Debug Dagger engine, core, dagql, filesync, cache, CI trace, panic, hang, leak, and performance issues. Use when investigating failing engine-dev tests, replaying Dagger Cloud traces, inspecting debug endpoints or pprof, capturing goroutine dumps, triaging dagql cache leaks, or analyzing /debug/dagql/cache snapshots.
+description: Run Dagger repo tests and debug Dagger engine, core, dagql, filesync, cache, CI trace, panic, hang, leak, and performance issues. Use whenever an agent needs to run tests, choose a test command, or interpret test output in this repository, even before a failure is diagnosed; also use for engine-dev tests, Dagger Cloud trace replay, debug endpoints or pprof, goroutine dumps, panics, hangs, leaks, performance issues, and /debug/dagql/cache snapshots.
 ---
 
 # Engine Debugging
+
+This is the default guide for running Dagger engine/core tests and for debugging
+the failures those tests expose.
 
 Start from evidence, not broad guesses.
 
