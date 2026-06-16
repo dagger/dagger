@@ -99,51 +99,6 @@ func initializeModule(
 	return def, nil
 }
 
-var ErrConfigNotFound = errors.New("module config file not found")
-
-//nolint:unparam
-func initializeClientGeneratorModule(
-	ctx context.Context,
-	dag *dagger.Client,
-	srcRef string,
-	srcOpts ...dagger.ModuleSourceOpts,
-) (gdef *clientGeneratorModuleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "load module: "+srcRef)
-
-	var telemetryErr error
-	defer telemetry.EndWithCause(span, &telemetryErr)
-	defer func() {
-		// To not confuse the user, we don't want to show the error if the config
-		// doesn't exist here. It should be handled in an upper function.
-		if !errors.Is(rerr, ErrConfigNotFound) {
-			telemetryErr = rerr
-		}
-	}()
-
-	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	modSrc := dag.ModuleSource(srcRef, srcOpts...)
-	configExists, err := modSrc.ConfigExists(findCtx)
-	telemetry.EndWithCause(findSpan, &err)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get configured module: %w", err)
-	}
-
-	if !configExists {
-		return nil, ErrConfigNotFound
-	}
-
-	dependencies, err := modSrc.Dependencies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
-	}
-
-	return &clientGeneratorModuleDef{
-		Source:       modSrc,
-		Dependencies: dependencies,
-	}, nil
-}
-
 // moduleDef is a representation of a dagger module.
 type moduleDef struct {
 	Name           string
@@ -167,12 +122,6 @@ type moduleDef struct {
 	HTMLRepoURL       string
 
 	Dependencies []*moduleDef
-}
-
-type clientGeneratorModuleDef struct {
-	Source *dagger.ModuleSource
-
-	Dependencies []dagger.ModuleSource
 }
 
 func (m *moduleDef) Short() string {

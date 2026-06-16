@@ -613,6 +613,10 @@ func xReleaseLogLine(msg string) string {
 	return line
 }
 
+// policy is currently always workspaceFlagPolicyLocalOnly, but the annotation
+// also supports workspaceFlagPolicyDisallow, so keep it parameterized.
+//
+//nolint:unparam
 func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
