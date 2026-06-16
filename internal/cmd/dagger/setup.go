@@ -13,6 +13,8 @@ import (
 	"text/tabwriter"
 
 	"dagger.io/dagger"
+	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/mattn/go-isatty"
@@ -44,7 +46,6 @@ default is to skip steps that would mutate state.`,
 }
 
 func runSetup(cmd *cobra.Command, _ []string) error {
-	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 
 	if err := setupStepLogin(cmd); err != nil {
@@ -52,18 +53,50 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		// Login failures shouldn't block migration/recommend.
 	}
 
-	return withEngine(ctx, client.Params{
-		SkipWorkspaceModules:           true,
-		SuppressCompatWorkspaceWarning: true,
-	}, func(ctx context.Context, ec *client.Client) error {
-		dag := ec.Dagger()
-
-		if err := setupStepMigrate(ctx, cmd, dag); err != nil {
-			return fmt.Errorf("step 2 (migrate): %w", err)
+	// All steps run under ONE Frontend (one live TUI) so their prompts can be
+	// huh forms the TUI renders — a raw stdin prompt would be drawn over by the
+	// progress display. withSetupSessions provides connect() so the install can
+	// run in a FRESH engine session: the per-client workspace is detected once
+	// and cached for a session's lifetime, so install must not reuse the
+	// migrate session or it would still see the legacy dagger.json.
+	return withSetupSessions(cmd.Context(), func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error {
+		// Session 1: migrate (apply form) + recommend (compute + install
+		// confirm form). The migrate write lands here; the session is closed
+		// before the install session opens so the workspace lock is released.
+		var (
+			recs    []recommendation
+			install bool
+		)
+		if err := func() error {
+			sess, closeSess, err := connect(ctx)
+			if err != nil {
+				return err
+			}
+			defer closeSess()
+			dag := sess.Dagger()
+			if err := setupStepMigrate(ctx, cmd, dag); err != nil {
+				return fmt.Errorf("step 2 (migrate): %w", err)
+			}
+			recs, install, err = planRecommend(ctx, cmd, dag)
+			if err != nil {
+				return fmt.Errorf("step 3 (recommend): %w", err)
+			}
+			return nil
+		}(); err != nil {
+			return err
 		}
 
-		if err := setupStepRecommend(ctx, cmd, dag); err != nil {
-			return fmt.Errorf("step 3 (recommend): %w", err)
+		// Session 2: install in a fresh session, which re-detects the workspace
+		// migrated in session 1 as native.
+		if install && len(recs) > 0 {
+			sess, closeSess, err := connect(ctx)
+			if err != nil {
+				return err
+			}
+			defer closeSess()
+			if err := installRecommended(ctx, cmd, sess.Dagger(), recs); err != nil {
+				return fmt.Errorf("step 3 (install): %w", err)
+			}
 		}
 
 		fmt.Fprintln(out, "\nSetup complete.")
@@ -133,7 +166,11 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 
 // --- Step 3: Recommend modules ---
 
-func setupStepRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) error {
+// planRecommend computes the recommended modules and prompts (via a Frontend
+// form) whether to install them. It runs in the same session as migrate and
+// returns the modules plus the user's decision; the actual install runs later
+// in a fresh session (see runSetup) so it re-detects the migrated workspace.
+func planRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (recs []recommendation, install bool, _ error) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "\nStep 3: Recommended modules")
 
@@ -143,28 +180,33 @@ func setupStepRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Cli
 		errors.Is(err, context.DeadlineExceeded) {
 		// Login or context issues shouldn't fail setup as a whole.
 		fmt.Fprintf(out, "  Skipped: %v\n", err)
-		return nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return err
+		return nil, false, err
 	}
 	if len(recs) == 0 {
 		fmt.Fprintln(out, "  No recommendations.")
-		return nil
+		return nil, false, nil
 	}
 
-	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "  ADDRESS\tDESCRIPTION\tMATCHED")
-	for _, r := range recs {
-		fmt.Fprintf(w, "  %s\t%s\t%s\n", r.Module.Repo, r.Module.Description, r.Match)
+	install, err = confirmInstallRecommended(ctx, cmd, recs)
+	if err != nil {
+		return nil, false, err
 	}
-	_ = w.Flush()
-
-	if !confirm(cmd, "  Install recommended modules?") {
+	if !install {
 		fmt.Fprintln(out, "  Skipped.")
-		return nil
+		return nil, false, nil
 	}
+	return recs, true, nil
+}
 
+// installRecommended installs the accepted recommended modules. It runs in a
+// fresh session so dag.CurrentWorkspace() re-detects the workspace migrated in
+// the migrate session as native — without this, install sees the cached legacy
+// dagger.json and fails with "run dagger setup first".
+func installRecommended(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, recs []recommendation) error {
+	out := cmd.OutOrStdout()
 	for _, r := range recs {
 		fmt.Fprintf(out, "  Installing %s...\n", r.Module.Repo)
 		if err := installWorkspaceModule(ctx, out, dag, r.Module.Repo, "", false); err != nil {
@@ -172,6 +214,46 @@ func setupStepRecommend(ctx context.Context, cmd *cobra.Command, dag *dagger.Cli
 		}
 	}
 	return nil
+}
+
+// confirmInstallRecommended asks whether to install the recommended modules.
+// It prompts through the Frontend (a huh confirm with the recommendation table
+// as its description) so it renders inside the live progress TUI — the same
+// mechanism the migrate step uses for its apply prompt. With --auto-apply it
+// returns true without prompting; in non-interactive mode it skips (the safe
+// default — don't mutate state without a TTY).
+func confirmInstallRecommended(ctx context.Context, cmd *cobra.Command, recs []recommendation) (bool, error) {
+	if autoApply {
+		return true, nil
+	}
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		fmt.Fprintln(cmd.OutOrStdout(), "  Install recommended modules? [skipped: non-interactive — use --auto-apply to accept]")
+		return false, nil
+	}
+
+	var table strings.Builder
+	w := tabwriter.NewWriter(&table, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "ADDRESS\tDESCRIPTION\tMATCHED")
+	for _, r := range recs {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", r.Module.Repo, r.Module.Description, r.Match)
+	}
+	_ = w.Flush()
+
+	var install bool
+	form := idtui.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Install recommended modules?").
+				Description(table.String()).
+				Affirmative("Install").
+				Negative("Skip").
+				Value(&install),
+		),
+	)
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		return false, err
+	}
+	return install, nil
 }
 
 // currentWorkspaceExportPath returns the host filesystem path the current
