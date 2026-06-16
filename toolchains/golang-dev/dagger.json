@@ -1,0 +1,14 @@
+{
+  "name": "golang",
+  "engineVersion": "v0.21.6",
+  "sdk": {
+    "source": "dang"
+  },
+  "dependencies": [
+    {
+      "name": "go",
+      "source": "github.com/dagger/go@main",
+      "pin": "f35c13de6dba9131093f6969ba79b32e19b26428"
+    }
+  ]
+}
