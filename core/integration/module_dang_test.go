@@ -72,6 +72,16 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		assertEntries(t, out, "keep.log", "keep.txt")
 	})
+
+	t.Run("cache directive with enum argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-directives").
+			With(daggerCall("with-never-cache")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "never", strings.TrimSpace(out))
+	})
 }
 
 func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
