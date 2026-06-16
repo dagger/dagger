@@ -1480,6 +1480,7 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, r
 	}
 }
 
+//nolint:gocyclo // flat persisted-container dispatch over mount, secret, and socket kinds.
 func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if container == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
@@ -1618,6 +1619,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	}, nil
 }
 
+//nolint:gocyclo // flat persisted-container dispatch over mount, secret, and socket kinds.
 func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedContainerPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
