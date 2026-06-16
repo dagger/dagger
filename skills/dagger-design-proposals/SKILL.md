@@ -11,7 +11,7 @@ Guidelines for writing design proposals for Dagger features.
 
 **Always research first:**
 
-1. Check existing skills (dagger-codegen, cache-expert, etc.) for relevant context
+1. Check relevant skills, such as dagger-codegen, and internal docs for context
 2. Look at related code in the Dagger codebase:
    - GraphQL schema: `core/schema/*.go`
    - CLI commands: `cmd/dagger/*.go`
@@ -162,4 +162,5 @@ gh api --method POST /gists/GIST_ID/comments -f body="## Changelog
 Check for other Dagger skills that may help with research:
 
 - `dagger-codegen` - SDK codegen, templates, bindings
-- `cache-expert` - Caching internals, invalidation
+- `engine-debugging` - Engine debugging workflows, trace replay, cache snapshots
+- `internal-docs/` - Cache and engine implementation references
