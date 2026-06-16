@@ -6,8 +6,9 @@ the e-graph in `dagql/cache.go` and `dagql/cache_egraph.go`.
 The code is the source of truth. This doc is meant to make the current model
 faster to load into your head, not replace reading the code.
 
-For test-running and debugging workflow, see `debugging.md`. This doc is about
-how the cache is structured and how it behaves.
+For test-running and debugging workflow, see
+`../skills/engine-debugging/SKILL.md`. This doc is about how the cache is
+structured and how it behaves.
 
 ## What This "E-Graph" Is Here
 
