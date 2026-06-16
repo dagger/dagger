@@ -118,56 +118,10 @@ func withEngine(
 			return nil
 		})
 
-		if debugFlag {
-			params.LogLevel = slog.LevelDebug
-		}
-
-		if useCloudEngine {
-			params.RunnerHost = engine.DefaultCloudRunnerHost
-		} else if params.RunnerHost == "" {
-			params.RunnerHost = RunnerHost
-		}
-
-		if RunnerImageLoader != "" {
-			backend, err := imageload.GetBackend(RunnerImageLoader)
-			if err != nil {
-				return cleanup.Run, err
-			}
-			params.ImageLoaderBackend = backend
-		}
-
-		params.AllowedLLMModules = allowedLLMModules
-
-		params.CloudURLCallback = Frontend.SetCloudURL
-
-		params.EngineTrace = telemetry.SpanForwarder{
-			Processors: telemetry.SpanProcessors,
-		}
-		params.EngineLogs = telemetry.LogForwarder{
-			Processors: telemetry.LogProcessors,
-		}
-		params.EngineMetrics = telemetry.MetricExporters
-
-		params.WithTerminal = withTerminal
-
-		params.Interactive = interactive
-		params.InteractiveCommand = interactiveCommandParsed
-
-		effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
+		params, err := finalizeEngineParams(ctx, params)
 		if err != nil {
 			return cleanup.Run, err
 		}
-		params.LockMode = effectiveLockMode
-
-		if hasTTY {
-			params.PromptHandler = Frontend
-		}
-
-		ca, err := auth.GetCloudAuth(ctx)
-		if err != nil {
-			return cleanup.Run, err
-		}
-		params.CloudAuth = ca
 
 		// Connect to and run with the engine
 		sess, err := client.Connect(ctx, params)
@@ -179,6 +133,118 @@ func withEngine(
 		Frontend.SetClient(sess.Dagger())
 
 		return cleanup.Run, fn(ctx, sess)
+	})
+}
+
+// finalizeEngineParams fills in the run-scoped client params that depend on the
+// frontend and telemetry being set up. Must be called inside Frontend.Run,
+// after initEngineTelemetry. Shared by withEngine and withSetupSessions.
+func finalizeEngineParams(ctx context.Context, params client.Params) (client.Params, error) {
+	if debugFlag {
+		params.LogLevel = slog.LevelDebug
+	}
+
+	if useCloudEngine {
+		params.RunnerHost = engine.DefaultCloudRunnerHost
+	} else if params.RunnerHost == "" {
+		params.RunnerHost = RunnerHost
+	}
+
+	if RunnerImageLoader != "" {
+		backend, err := imageload.GetBackend(RunnerImageLoader)
+		if err != nil {
+			return params, err
+		}
+		params.ImageLoaderBackend = backend
+	}
+
+	params.AllowedLLMModules = allowedLLMModules
+
+	params.CloudURLCallback = Frontend.SetCloudURL
+
+	params.EngineTrace = telemetry.SpanForwarder{
+		Processors: telemetry.SpanProcessors,
+	}
+	params.EngineLogs = telemetry.LogForwarder{
+		Processors: telemetry.LogProcessors,
+	}
+	params.EngineMetrics = telemetry.MetricExporters
+
+	params.WithTerminal = withTerminal
+
+	params.Interactive = interactive
+	params.InteractiveCommand = interactiveCommandParsed
+
+	effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
+	if err != nil {
+		return params, err
+	}
+	params.LockMode = effectiveLockMode
+
+	if hasTTY {
+		params.PromptHandler = Frontend
+	}
+
+	ca, err := auth.GetCloudAuth(ctx)
+	if err != nil {
+		return params, err
+	}
+	params.CloudAuth = ca
+
+	return params, nil
+}
+
+// withSetupSessions runs fn under a single Frontend (one live TUI) while letting
+// it open more than one engine session via connect. dagger setup needs both:
+// its prompts are Frontend forms (which require the single-TUI run), and its
+// recommended-module install must run in a FRESH session so it re-detects the
+// workspace migrated earlier in the same command — the per-client workspace is
+// detected once and cached for a session's lifetime, so reusing the migrate
+// session would keep seeing the legacy dagger.json ("run dagger setup first").
+func withSetupSessions(
+	ctx context.Context,
+	fn func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error,
+) (rerr error) {
+	params := client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}
+	if err := applyWorkspaceClientParams(&params); err != nil {
+		return err
+	}
+	if sessionWorkspace != "" && params.Workspace == nil {
+		params.Workspace = &sessionWorkspace
+	}
+	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
+		var cleanup cleanups.Cleanups
+
+		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+			if opts.Debug {
+				slog.Error("failed to emit telemetry", "error", err)
+			}
+			Frontend.SetTelemetryError(err)
+		}))
+		cleanup.Add("close telemetry", func() error {
+			cleanupTelemetry(rerr)
+			return nil
+		})
+
+		fp, err := finalizeEngineParams(ctx, params)
+		if err != nil {
+			return cleanup.Run, err
+		}
+
+		connect := func(ctx context.Context) (*client.Client, func(), error) {
+			sess, err := client.Connect(ctx, fp)
+			if err != nil {
+				return nil, nil, err
+			}
+			Frontend.SetClient(sess.Dagger())
+			return sess, func() { _ = sess.Close() }, nil
+		}
+
+		return cleanup.Run, fn(ctx, connect)
 	})
 }
 
