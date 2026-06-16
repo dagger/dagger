@@ -21,6 +21,7 @@ func New(
 	//   "*",
 	//   ".*",
 	//   "!cmd/dagger/*",
+	//   "!internal/cmd/dagger/**",
 	//   "!**/go.sum",
 	//   "!**/go.mod",
 	//   "!**/*.go",
