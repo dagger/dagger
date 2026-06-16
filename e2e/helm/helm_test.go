@@ -7,9 +7,11 @@
 // workspace:include ../../analytics
 // workspace:include ../../cmd/codegen
 // workspace:include ../../cmd/dagger
+// workspace:include ../../core/gitref
 // workspace:include ../../core/modules
 // workspace:include ../../core/openrouter
 // workspace:include ../../core/prompts
+// workspace:include ../../core/workspace
 // workspace:include ../../dagql
 // workspace:include ../../engine
 // workspace:include ../../go.mod
@@ -30,9 +32,11 @@
 //go:test:include ../../analytics
 //go:test:include ../../cmd/codegen
 //go:test:include ../../cmd/dagger
+//go:test:include ../../core/gitref
 //go:test:include ../../core/modules
 //go:test:include ../../core/openrouter
 //go:test:include ../../core/prompts
+//go:test:include ../../core/workspace
 //go:test:include ../../dagql
 //go:test:include ../../engine
 //go:test:include ../../go.mod
