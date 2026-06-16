@@ -2244,6 +2244,54 @@ class Container(Type):
         _ctx = self._select("labels", _args)
         return await _ctx.execute_object_list(Label)
 
+    def layer(
+        self,
+        id: str,
+        *,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> "File":
+        """Returns the layer with the given digest as a File.
+
+        Parameters
+        ----------
+        id:
+            Digest of the layer (e.g. "sha256:abc123...").
+        forced_compression:
+            Compression to use for image layers. Defaults to Gzip.
+        media_types:
+            Media types to use for image layers. Defaults to OCI.
+        """
+        _args = [
+            Arg("id", id),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("layer", _args)
+        return File(_ctx)
+
+    def manifest(
+        self,
+        *,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> "File":
+        """Computes and returns the manifest for this container as a File.
+
+        Parameters
+        ----------
+        forced_compression:
+            Compression to use for image layers. Defaults to Gzip.
+        media_types:
+            Media types to use for image layers. Defaults to OCI.
+        """
+        _args = [
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("manifest", _args)
+        return File(_ctx)
+
     async def mounts(self) -> list[str]:
         """Retrieves the list of paths where a directory is mounted.
 

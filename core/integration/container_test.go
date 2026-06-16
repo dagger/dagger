@@ -6564,3 +6564,127 @@ func (ContainerSuite) TestWithoutHealthcheck(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	require.Empty(t, healthcheckArgs)
 }
+
+func (ContainerSuite) TestManifest(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage)
+
+	// Assert that the manifest can be exported.
+	manifestFile := ctr.Manifest()
+	require.NotEmpty(t, manifestFile)
+
+	manifestContent, err := manifestFile.Contents(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, manifestContent)
+
+	// Assert that the manifest is valid.
+	var manifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal([]byte(manifestContent), &manifest))
+
+	// Assert that the manifest matches that of the full export, indicating parity.
+	tarPath := filepath.Join(t.TempDir(), "export.tar")
+	_, err = ctr.Export(ctx, tarPath)
+	require.NoError(t, err)
+
+	dockerManifestBytes := readTarFile(t, tarPath, "manifest.json")
+	require.NotNil(t, dockerManifestBytes)
+
+	indexBytes := readTarFile(t, tarPath, "index.json")
+	var index ocispecs.Index
+	require.NoError(t, json.Unmarshal(indexBytes, &index))
+	require.NotEmpty(t, index.Manifests)
+
+	exportedManifestDigest := index.Manifests[0].Digest
+	exportedManifestBytes := readTarFile(t, tarPath, "blobs/sha256/"+exportedManifestDigest.Encoded())
+	var exportedManifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal(exportedManifestBytes, &exportedManifest))
+
+	require.Equal(t, exportedManifest, manifest)
+}
+
+func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage)
+
+	// Note that the manifest's ForcedCompression must match the layer's,
+	// else the layer will not be found in the Container nor in its export.
+	for _, forcedCompression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionUncompressed, dagger.ImageLayerCompressionGzip} {
+		t.Run(fmt.Sprintf("forcedCompression=%q", forcedCompression), func(ctx context.Context, t *testctx.T) {
+			manifestFile := ctr.Manifest(dagger.ContainerManifestOpts{
+				ForcedCompression: forcedCompression,
+			})
+			require.NotEmpty(t, manifestFile)
+
+			manifestContents, err := manifestFile.Contents(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, manifestContents)
+
+			var manifest ocispecs.Manifest
+			require.NoError(t, json.Unmarshal([]byte(manifestContents), &manifest))
+			require.NotEmpty(t, manifest)
+
+			// Assert that the config layer can be exported.
+			require.NotEmpty(t, manifest.Config)
+			require.NotEmpty(t, manifest.Config.Digest)
+			configFile := ctr.Layer(manifest.Config.Digest.String())
+			require.NotEmpty(t, configFile)
+
+			// Assert that the config layer is valid and has some of the expected contents.
+			configContents, err := configFile.Contents(ctx)
+			require.NoError(t, err)
+			var image ocispecs.Image
+			require.NoError(t, json.Unmarshal([]byte(configContents), &image))
+			require.NotEmpty(t, image)
+			cmd, err := ctr.DefaultArgs(ctx)
+			require.NoError(t, err)
+			require.Equal(t, cmd, image.Config.Cmd)
+
+			// Assert that a layer with the digest indicated by the manifest can be exported.
+			// Alpine has one layer as of writing.
+			require.NotEmpty(t, manifest.Layers)
+			layer := manifest.Layers[0]
+			require.NotEmpty(t, layer.Digest)
+			layerFile := ctr.Layer(layer.Digest.String(), dagger.ContainerLayerOpts{
+				ForcedCompression: forcedCompression,
+			})
+			require.NotEmpty(t, layerFile)
+
+			// Assert that the layer has the expected size.
+			layerFileSize, err := layerFile.Size(ctx)
+			require.NoError(t, err)
+			require.Equal(t, layer.Size, int64(layerFileSize))
+
+			// Assert that the layer has some of the expected contents.
+			// Only do this for Uncompressed for compatibility with the existing [tarEntries] helper.
+			if forcedCompression == dagger.ImageLayerCompressionUncompressed {
+				base, err := layerFile.Name(ctx)
+				require.NoError(t, err)
+				layerFileDir, err := layerFile.Export(ctx, t.TempDir(), dagger.FileExportOpts{
+					AllowParentDirPath: true,
+				})
+				layerFilePath := filepath.Join(layerFileDir, base)
+				require.NoError(t, err)
+				entries := tarEntries(t, layerFilePath)
+				for _, entry := range []string{
+					"etc/os-release",
+					"bin/busybox",
+				} {
+					require.Contains(t, entries, entry)
+				}
+			}
+
+			// Assert that the layer also appears in the full export, indicating parity.
+			tarPath := filepath.Join(t.TempDir(), "export.tar")
+			_, err = ctr.Export(ctx, tarPath, dagger.ContainerExportOpts{
+				ForcedCompression: forcedCompression,
+			})
+			require.NoError(t, err)
+			exportedLayerBytes := readTarFile(t, tarPath, "blobs/sha256/"+layer.Digest.Encoded())
+			require.Len(t, exportedLayerBytes, layerFileSize)
+		})
+	}
+}

@@ -2276,6 +2276,65 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	return convert(response), nil
 }
 
+// ContainerLayerOpts contains options for Container.Layer
+type ContainerLayerOpts struct {
+	// Compression to use for image layers. Defaults to Gzip.
+	ForcedCompression ImageLayerCompression
+	// Media types to use for image layers. Defaults to OCI.
+	//
+	// Default: OCIMediaTypes
+	MediaTypes ImageMediaTypes
+}
+
+// Returns the layer with the given digest as a File.
+func (r *Container) Layer(id string, opts ...ContainerLayerOpts) *File {
+	q := r.query.Select("layer")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+	q = q.Arg("id", id)
+
+	return &File{
+		query: q,
+	}
+}
+
+// ContainerManifestOpts contains options for Container.Manifest
+type ContainerManifestOpts struct {
+	// Compression to use for image layers. Defaults to Gzip.
+	ForcedCompression ImageLayerCompression
+	// Media types to use for image layers. Defaults to OCI.
+	//
+	// Default: OCIMediaTypes
+	MediaTypes ImageMediaTypes
+}
+
+// Computes and returns the manifest for this container as a File.
+func (r *Container) Manifest(opts ...ContainerManifestOpts) *File {
+	q := r.query.Select("manifest")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
+}
+
 // Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	q := r.query.Select("mounts")

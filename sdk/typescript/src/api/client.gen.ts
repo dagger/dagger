@@ -409,6 +409,30 @@ export type ContainerImportOpts = {
   tag?: string
 }
 
+export type ContainerLayerOpts = {
+  /**
+   * Compression to use for image layers. Defaults to Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
+
+  /**
+   * Media types to use for image layers. Defaults to OCI.
+   */
+  mediaTypes?: ImageMediaTypes
+}
+
+export type ContainerManifestOpts = {
+  /**
+   * Compression to use for image layers. Defaults to Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
+
+  /**
+   * Media types to use for image layers. Defaults to OCI.
+   */
+  mediaTypes?: ImageMediaTypes
+}
+
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -4421,6 +4445,43 @@ export class Container extends BaseClient {
     const response: Awaited<labels[]> = await ctx.execute()
 
     return response.map((r) => new Label(ctx.copy().selectNode(r.id, "Label")))
+  }
+
+  /**
+   * Returns the layer with the given digest as a File.
+   * @param id Digest of the layer (e.g. "sha256:abc123...").
+   * @param opts.forcedCompression Compression to use for image layers. Defaults to Gzip.
+   * @param opts.mediaTypes Media types to use for image layers. Defaults to OCI.
+   */
+  layer = (id: string, opts?: ContainerLayerOpts): File => {
+    const metadata = {
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
+    }
+
+    const ctx = this._ctx.select("layer", { id, ...opts, __metadata: metadata })
+    return new File(ctx)
+  }
+
+  /**
+   * Computes and returns the manifest for this container as a File.
+   * @param opts.forcedCompression Compression to use for image layers. Defaults to Gzip.
+   * @param opts.mediaTypes Media types to use for image layers. Defaults to OCI.
+   */
+  manifest = (opts?: ContainerManifestOpts): File => {
+    const metadata = {
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
+    }
+
+    const ctx = this._ctx.select("manifest", { ...opts, __metadata: metadata })
+    return new File(ctx)
   }
 
   /**

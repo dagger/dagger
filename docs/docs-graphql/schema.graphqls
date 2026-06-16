@@ -756,6 +756,27 @@ type Container implements Exportable & Node & Syncer {
   """Retrieves the list of labels passed to container."""
   labels: [Label!]!
 
+  """Returns the layer with the given digest as a File."""
+  layer(
+    """Digest of the layer (e.g. "sha256:abc123...")."""
+    id: String!
+
+    """Compression to use for image layers. Defaults to Gzip."""
+    forcedCompression: ImageLayerCompression
+
+    """Media types to use for image layers. Defaults to OCI."""
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+  ): File!
+
+  """Computes and returns the manifest for this container as a File."""
+  manifest(
+    """Compression to use for image layers. Defaults to Gzip."""
+    forcedCompression: ImageLayerCompression
+
+    """Media types to use for image layers. Defaults to OCI."""
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+  ): File!
+
   """Retrieves the list of paths where a directory is mounted."""
   mounts: [String!]!
 

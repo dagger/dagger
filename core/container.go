@@ -6412,6 +6412,113 @@ func (container *Container) Publish(
 	return withDig.String(), nil
 }
 
+func (container *Container) Manifest(
+	ctx context.Context,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+) (f *File, rerr error) {
+	variants := filterEmptyContainers([]*Container{container})
+	inputByPlatform, err := getVariantRefs(ctx, variants)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
+	}
+
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	content, err := bk.ContainerManifest(ctx, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+	if err != nil {
+		return nil, err
+	}
+
+	var newFile dagql.ObjectResult[*File]
+	args := []dagql.NamedInput{
+		{Name: "name", Value: dagql.String("manifest.json")},
+		{Name: "contents", Value: dagql.String(string(content))},
+	}
+	err = srv.Select(ctx, srv.Root(), &newFile, dagql.Selector{
+		Field: "file",
+		Args:  args,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create file for manifest: %w", err)
+	}
+
+	return newFile.Self(), nil
+}
+
+func (container *Container) Layer(
+	ctx context.Context,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+	id string,
+) (f *File, rerr error) {
+	variants := filterEmptyContainers([]*Container{container})
+	inputByPlatform, err := getVariantRefs(ctx, variants)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
+	}
+
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	content, err := bk.ContainerLayer(ctx, inputByPlatform, useOCIMediaTypes(mediaTypes), string(forcedCompression), id)
+	if err != nil {
+		return nil, err
+	}
+
+	before, name, ok := strings.Cut(id, ":")
+	if !ok {
+		name = before
+	}
+	name += ".tar"
+	switch forcedCompression {
+	case CompressionGzip, CompressionEStarGZ:
+		name += ".gz"
+	case CompressionZstd:
+		name += ".zst"
+	}
+
+	var newFile dagql.ObjectResult[*File]
+	args := []dagql.NamedInput{
+		{Name: "name", Value: dagql.String(name)},
+		{Name: "contents", Value: dagql.String(string(content))},
+	}
+	err = srv.Select(ctx, srv.Root(), &newFile, dagql.Selector{
+		Field: "file",
+		Args:  args,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create file for layer %s: %w", id, err)
+	}
+
+	return newFile.Self(), nil
+}
+
 type ExportOpts struct {
 	Dest              string
 	PlatformVariants  []*Container
