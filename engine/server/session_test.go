@@ -83,6 +83,73 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 	}
 }
 
+func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
+	t.Parallel()
+
+	// Regression test: clientFromIDs must read sess.state/sess.clients under
+	// stateMu while another goroutine reassigns those fields during session
+	// initialization. Without the stateMu gate this is a data race (caught
+	// here under -race).
+	sess := &daggerSession{
+		state: sessionStateUninitialized,
+	}
+	srv := &Server{
+		daggerSessions: map[string]*daggerSession{
+			"session-a": sess,
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	t.Cleanup(func() {
+		cancel()
+		wg.Wait()
+	})
+
+	started := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		close(started)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			_, _ = srv.clientFromIDs("session-a", "client-a")
+		}
+	}()
+	<-started
+
+	for i := 0; i < 1000; i++ {
+		sess.stateMu.Lock()
+		sess.clients = map[string]*daggerClient{
+			"client-a": {clientID: "client-a"},
+		}
+		sess.state = sessionStateInitialized
+		sess.state = sessionStateUninitialized
+		sess.clients = nil
+		sess.stateMu.Unlock()
+	}
+
+	client := &daggerClient{clientID: "client-a"}
+	sess.stateMu.Lock()
+	sess.clientMu.Lock()
+	sess.clients = map[string]*daggerClient{
+		client.clientID: client,
+	}
+	sess.clientMu.Unlock()
+	sess.state = sessionStateInitialized
+	sess.stateMu.Unlock()
+
+	got, err := srv.clientFromIDs("session-a", client.clientID)
+	require.NoError(t, err)
+	require.Same(t, client, got)
+}
+
 func TestPendingLegacyModule(t *testing.T) {
 	t.Parallel()
 

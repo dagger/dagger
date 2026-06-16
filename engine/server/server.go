@@ -690,12 +690,27 @@ func (srv *Server) EngineName() string {
 }
 
 func (srv *Server) Clients() []string {
+	// Snapshot under daggerSessionsMu, then read mainClientCallerID under
+	// stateMu (it is set during initialization). Releasing daggerSessionsMu
+	// before taking stateMu avoids inverting removeDaggerSession's
+	// stateMu->daggerSessionsMu lock order; skip sessions that aren't
+	// initialized yet.
 	srv.daggerSessionsMu.RLock()
-	defer srv.daggerSessionsMu.RUnlock()
+	sessions := make([]*daggerSession, 0, len(srv.daggerSessions))
+	for _, sess := range srv.daggerSessions {
+		sessions = append(sessions, sess)
+	}
+	srv.daggerSessionsMu.RUnlock()
 
 	clients := map[string]struct{}{}
-	for _, sess := range srv.daggerSessions {
+	for _, sess := range sessions {
+		sess.stateMu.RLock()
+		if sess.state != sessionStateInitialized {
+			sess.stateMu.RUnlock()
+			continue
+		}
 		clients[sess.mainClientCallerID] = struct{}{}
+		sess.stateMu.RUnlock()
 	}
 
 	return slices.Collect(maps.Keys(clients))
