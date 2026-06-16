@@ -1,3 +1,7 @@
+const path = require("path");
+const { orderedTypeNames } = require(
+  "./plugins/dagger-api-reference/schema.js"
+);
 const promotedApiTypes: string[] = require(
   "./plugins/dagger-api-reference/coreTypes.js"
 );
@@ -15,11 +19,22 @@ function typeSlug(name: string): string {
     .toLowerCase();
 }
 
-const promotedApiTypeItems = promotedApiTypes.map((name) => {
+function apiTypeSidebarItem(name: string) {
   const id = `extending/types/${typeSlug(name)}`;
   const label = promotedApiTypeLabels[name];
   return label ? { type: "doc", id, label } : id;
-});
+}
+
+const allApiTypes: string[] = orderedTypeNames(
+  path.resolve(__dirname, "docs-graphql/schema.graphqls"),
+  promotedApiTypes
+);
+const promotedApiTypeSet = new Set(promotedApiTypes);
+const promotedApiTypeItems = promotedApiTypes.map(apiTypeSidebarItem);
+const otherApiTypeItems = allApiTypes
+  .filter((name) => !promotedApiTypeSet.has(name))
+  .sort((a, b) => a.localeCompare(b))
+  .map(apiTypeSidebarItem);
 
 module.exports = {
   current: [
@@ -203,6 +218,13 @@ module.exports = {
           items: [
             "extending/types/index",
             ...promotedApiTypeItems,
+            {
+              type: "category",
+              label: "Other types",
+              collapsible: true,
+              collapsed: true,
+              items: otherApiTypeItems,
+            },
             "extending/types/all",
           ],
         },
