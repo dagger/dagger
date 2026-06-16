@@ -531,6 +531,16 @@ func (srv *Server) initializeDaggerSession(
 
 var errSessionClosing = errors.New("session is closing")
 
+// cloudTokenRefreshTimeout is how long a cloud OAuth token refresh may take.
+// When a command exits, the client gives the engine 10 seconds to shut down
+// (defaultShutdownTimeout in engine/client), then fails the build. The engine
+// flushes telemetry inside that window, and the flush may need to refresh a
+// token. If the refresh were also allowed 10s, a hung refresh would spend the
+// whole window: the client gives up first and a successful build exits 1. At
+// 5s the hung refresh dies early, the flush finishes, and the build passes —
+// losing one batch of telemetry, not the build.
+const cloudTokenRefreshTimeout = 5 * time.Second
+
 func (sess *daggerSession) beginClosing() {
 	sess.closeClosingOnce.Do(func() {
 		if sess.cancelClosing != nil {
@@ -960,6 +970,8 @@ func (srv *Server) initializeDaggerClient(
 		// needs (the main client's metadata and query) at creation time.
 		refreshCtx := cloudRefreshContext(ctx, client)
 		tokenRefresh := func(context.Context) (*oauth2.Token, error) {
+			refreshCtx, cancel := context.WithTimeout(refreshCtx, cloudTokenRefreshTimeout)
+			defer cancel()
 			return refreshAndPersistCredentials(refreshCtx, srv, md.CredentialsPath, md.ClientID)
 		}
 		sess.cloudSpans, sess.cloudLogs, sess.cloudMetrics, err = enginetel.NewCloudExporters(ctx, md.CloudAuth, tokenRefresh, md.CloudURL)
@@ -2158,9 +2170,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 
-		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host)
-		sess.beginClosing()
-
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop. Stop errors are not surfaced
 		// (matching prior behavior), so the phase always returns nil.
@@ -2195,7 +2204,10 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	// flushes, multiplying exporter work and spill pressure enough to blow the
 	// client's shutdown budget. The main client (which shuts down last and whose
 	// DB the CLI ultimately drains) still does a session-wide flush to sweep up any
-	// stragglers from clients that hadn't shut down yet.
+	// stragglers from clients that hadn't shut down yet. This must happen before
+	// beginClosing below: the cloud exporters may need to refresh OAuth credentials
+	// from the client host, which requires the session attachables that beginClosing
+	// tears down.
 	var flushErr error
 	if client.clientID == sess.mainClientCallerID {
 		flushErr = drainPhase("flush session telemetry", func() error {
@@ -2209,6 +2221,12 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	if flushErr != nil {
 		slog.Error("failed to flush telemetry", "error", flushErr)
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
+	}
+
+	if client.clientID == sess.mainClientCallerID {
+		// This must be done after lockfile and telemetry flushing, since both
+		// can use attachables to write data back to the client host.
+		sess.beginClosing()
 	}
 
 	client.closeShutdownOnce.Do(func() {
