@@ -97,17 +97,19 @@ type ContainerExecResources struct {
 	// The process is OOM-killed if it exceeds this.
 	MemoryBytes int64 `default:"0" doc:"Hard memory limit in bytes (cgroup memory.max). The process is OOM-killed if it exceeds this."`
 
-	// Soft memory limit in bytes (cgroup memory.high).
-	// The kernel throttles the process under pressure rather than killing it.
-	MemorySoftBytes int64 `default:"0" doc:"Soft memory limit in bytes (cgroup memory.high). The kernel throttles the process under pressure rather than killing it."`
+	// Soft memory limit in bytes (OCI memory reservation / cgroup memory.low on v2,
+	// soft_limit_in_bytes on v1). The kernel reclaims from this process first under
+	// memory pressure; it is not a hard cap and does not trigger OOM-kill.
+	MemorySoftBytes int64 `default:"0" doc:"Soft memory reservation in bytes (OCI memory.reservation). The kernel reclaims from this process first under memory pressure; no hard cap."`
 
 	// CPU limit in fractional cores, e.g. 1.5 (cgroup cpu.max quota/period).
 	// Translated to quota=int64(CPUs*1e5), period=100000.
 	CPUs float64 `default:"0" doc:"CPU limit in fractional cores (cgroup cpu.max quota/period). E.g. 1.5 for one-and-a-half cores."`
 
-	// Relative CPU weight under contention (cgroup cpu.weight, range 1-10000).
+	// Relative CPU scheduling weight (OCI cpu.shares / cgroup v1 cpu.shares scale,
+	// 2-262144; runc converts to cgroup v2 cpu.weight on v2 hosts).
 	// Does not cap CPU; only affects sharing when the engine is saturated.
-	CPUShares int64 `default:"0" doc:"Relative CPU weight under contention (cgroup cpu.weight, range 1-10000). Does not cap CPU; only affects scheduling priority."`
+	CPUShares int64 `default:"0" doc:"Relative CPU scheduling weight (OCI cpu.shares, 2-262144). Does not cap CPU; only affects priority under contention."`
 
 	// Maximum number of processes/threads (cgroup pids.max).
 	Pids int64 `default:"0" doc:"Maximum number of processes/threads allowed (cgroup pids.max)."`
