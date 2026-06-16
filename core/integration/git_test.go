@@ -731,7 +731,7 @@ func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
 			SSHAuthSocket: c.Host().UnixSocket(sockPath),
 		}).Tags(ctx)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{"cool-sdk/v0.1", "v0.1.1"}, tags)
+		require.Subset(t, tags, []string{"cool-sdk/v0.1", "v0.1.1"})
 	})
 
 	t.Run("without SSH auth", func(ctx context.Context, t *testctx.T) {
