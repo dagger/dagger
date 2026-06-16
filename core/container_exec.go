@@ -383,6 +383,16 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
 	}
 
+	if opts.Resources != nil {
+		rm := resourcesIntoMeta(opts.Resources)
+		metaSpec.MemoryBytes = rm.MemoryBytes
+		metaSpec.MemorySoftBytes = rm.MemorySoftBytes
+		metaSpec.CPUQuota = rm.CPUQuota
+		metaSpec.CPUPeriod = rm.CPUPeriod
+		metaSpec.CPUShares = rm.CPUShares
+		metaSpec.PidsLimit = rm.PidsLimit
+	}
+
 	return &metaSpec, nil
 }
 
@@ -397,6 +407,26 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 		return pb.NetMode_HOST, nil
 	}
 	return pb.NetMode_UNSET, nil
+}
+
+// resourcesIntoMeta converts ContainerExecResources fields into executor.Meta
+// cgroup resource fields. A nil r is a no-op (returns zero Meta).
+func resourcesIntoMeta(r *ContainerExecResources) executor.Meta {
+	if r == nil {
+		return executor.Meta{}
+	}
+	m := executor.Meta{
+		MemoryBytes:     r.MemoryBytes,
+		MemorySoftBytes: r.MemorySoftBytes,
+		CPUShares:       r.CPUShares,
+		PidsLimit:       r.Pids,
+	}
+	if r.CPUs > 0 {
+		const period = 100000
+		m.CPUQuota = int64(r.CPUs * period)
+		m.CPUPeriod = period
+	}
+	return m
 }
 
 type serviceBindingExitError struct {
