@@ -81,6 +81,8 @@ const (
 	cacheExportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG"
 	// allow enabling scale-out of checks to support cloud
 	enableChecksScaleOutEnvName = "_EXPERIMENTAL_DAGGER_CHECKS_SCALE_OUT"
+	// how much telemetry scaled-out cloud engines stream back ("" or "full")
+	scaleOutTelemetryEnvName = "DAGGER_SCALEOUT_TELEMETRY"
 	// shutdown timeout, default is 10s
 	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
 )
@@ -147,6 +149,11 @@ type Params struct {
 
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
+
+	// ScaleOutTelemetry controls how much telemetry scaled-out cloud engines
+	// stream back through this session: "" (default) filters out data hidden
+	// at normal verbosity, "full" streams everything.
+	ScaleOutTelemetry string
 }
 
 type Client struct {
@@ -218,6 +225,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	}
 
 	c.EnableCloudScaleOut = c.EnableCloudScaleOut || os.Getenv(enableChecksScaleOutEnvName) != ""
+	if c.ScaleOutTelemetry == "" {
+		c.ScaleOutTelemetry = os.Getenv(scaleOutTelemetryEnvName)
+	}
 
 	// NB: decouple from the originator's cancel ctx
 	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
@@ -1445,6 +1455,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		SuppressCompatWorkspaceWarning: c.SuppressCompatWorkspaceWarning,
 		CloudAuth:                      c.CloudAuth,
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
+		ScaleOutTelemetry:              c.ScaleOutTelemetry,
 		CloudScaleOutEngineID:          remoteEngineID,
 		LockMode:                       c.LockMode,
 	}

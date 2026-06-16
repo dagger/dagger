@@ -402,14 +402,24 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 	}
 	defer db.Close()
 
+	// Insert the whole batch in one transaction; per-span transactions are
+	// prohibitively expensive when many nested/remote clients stream spans
+	// through this client at once.
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin span insert: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+
+	qtx := db.Queries.WithTx(tx)
 	for _, insert := range inserts {
-		_, err = db.InsertSpan(ctx, *insert)
+		_, err = qtx.InsertSpan(ctx, *insert)
 		if err != nil {
 			return fmt.Errorf("insert span: %w", err)
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 func (ps clientSpans) ForceFlush(ctx context.Context) error { return nil }
@@ -465,14 +475,24 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	}
 	defer db.Close()
 
+	// Insert the whole batch in one transaction; per-log transactions are
+	// prohibitively expensive when many nested/remote clients stream logs
+	// through this client at once.
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin log insert: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+
+	qtx := db.Queries.WithTx(tx)
 	for _, insert := range inserts {
-		if _, err := db.InsertLog(ctx, *insert); err != nil {
+		if _, err := qtx.InsertLog(ctx, *insert); err != nil {
 			slog.Warn("failed to insert log record", "error", err)
 			continue
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 func (ps clientLogs) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }

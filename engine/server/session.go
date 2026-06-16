@@ -2218,6 +2218,19 @@ func (srv *Server) CloudEngineClient(
 
 	// TODO: cloud support for "run on yourself", return (nil, false, nil) in that case
 
+	// By default, filter the telemetry streamed back from the cloud engine
+	// down to what the UI shows at normal verbosity. Large scale-outs (e.g.
+	// `dagger check` fanning out to one engine per check) otherwise firehose
+	// the full telemetry of every remote engine through this session to the
+	// client. The complete stream is always available in Dagger Cloud.
+	engineTrace := parentClient.spanExporter
+	engineLogs := parentClient.logExporter
+	if parentClient.clientMetadata.ScaleOutTelemetry != ScaleOutTelemetryFull {
+		filter := newScaleOutTelemetryFilter()
+		engineTrace = filter.Spans(engineTrace)
+		engineLogs = filter.Logs(engineLogs)
+	}
+
 	engineClient, err := engineclient.ConnectEngineToEngine(ctx, engineclient.EngineToEngineParams{
 		Params: engineclient.Params{
 			RunnerHost: engine.DefaultCloudRunnerHost,
@@ -2228,8 +2241,8 @@ func (srv *Server) CloudEngineClient(
 
 			CloudAuth: parentClient.clientMetadata.CloudAuth,
 
-			EngineTrace:   parentClient.spanExporter,
-			EngineLogs:    parentClient.logExporter,
+			EngineTrace:   engineTrace,
+			EngineLogs:    engineLogs,
 			EngineMetrics: []sdkmetric.Exporter{parentClient.metricExporter},
 
 			// FIXME: for now, disable recursive scale out to prevent any

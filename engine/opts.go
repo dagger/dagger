@@ -106,6 +106,12 @@ type ClientMetadata struct {
 	// If true, this client enables scaling checks out to cloud engines
 	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`
 
+	// ScaleOutTelemetry controls how much telemetry from scaled-out cloud
+	// engines is streamed back through this client's session. Empty (the
+	// default) filters out data hidden at normal verbosity (internal spans,
+	// verbose logs); "full" streams everything.
+	ScaleOutTelemetry string `json:"scale_out_telemetry,omitempty"`
+
 	// if set, this client is another engine scaling out to the current one, and the current
 	// one has this ID. Should be included in OTEL span sttrs so we can correlate spans to engine.
 	// TODO: This is a bit convoluted; it would be nicer if an engine could figure out its own ID
