@@ -22,6 +22,29 @@
 // workspace:include ../../toolchains/go
 // workspace:include ../../util
 // workspace:include ../../version
+//
+//go:test:include dagger.json
+//go:test:include k3s-entrypoint.sh
+//go:test:include ../../helm/dagger
+//go:test:include ../../.changes/.next
+//go:test:include ../../analytics
+//go:test:include ../../cmd/codegen
+//go:test:include ../../cmd/dagger
+//go:test:include ../../core/modules
+//go:test:include ../../core/openrouter
+//go:test:include ../../core/prompts
+//go:test:include ../../dagql
+//go:test:include ../../engine
+//go:test:include ../../go.mod
+//go:test:include ../../go.sum
+//go:test:include ../../internal
+//go:test:include ../../modules/alpine
+//go:test:include ../../modules/wolfi
+//go:test:include ../../sdk/go
+//go:test:include ../../toolchains/cli-dev
+//go:test:include ../../toolchains/go
+//go:test:include ../../util
+//go:test:include ../../version
 package helm
 
 import (
