@@ -85,7 +85,10 @@ const (
 	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
 )
 
-const defaultTelemetryDrainTimeout = 10 * time.Second
+const (
+	defaultTelemetryDrainTimeout = 10 * time.Second
+	telemetryCancelGrace         = time.Second
+)
 
 type Params struct {
 	// The id to connect to the API server with. If blank, will be set to a
@@ -169,13 +172,11 @@ type Client struct {
 	closeRequests context.CancelCauseFunc
 	closeMu       sync.RWMutex
 
-	telemetry *errgroup.Group
-	// telemetryDone/telemetryErr let tests observe consumer completion; the
-	// drain behavior itself is introduced by the follow-up fix.
-	telemetryDone chan struct{}
-	telemetryErr  error
-	// overridable in tests; defaults to defaultTelemetryDrainTimeout once the
-	// drain timeout is wired by the follow-up fix.
+	telemetry       *errgroup.Group
+	telemetryDone   chan struct{}
+	telemetryErr    error
+	telemetryCancel context.CancelFunc
+	// overridable in tests; defaults to defaultTelemetryDrainTimeout
 	telemetryDrainTimeout time.Duration
 
 	httpClient *httpClient
@@ -334,8 +335,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	return c, nil
 }
 
-// newClient creates a Client with its lifecycle contexts wired. Tests use it
-// directly so they can exercise Close with a fake engine transport.
+// newClient creates a Client with its lifecycle contexts wired: internalCtx
+// and closeCtx are decoupled from the originator's cancellation so shutdown,
+// telemetry draining, and teardown stay under the client's control.
 func newClient(ctx context.Context, params Params) *Client {
 	c := &Client{Params: params}
 	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
@@ -547,7 +549,13 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) startTelemetryConsumers(ctx context.Context, httpClient *httpClient) error {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stopInternalCancel := context.AfterFunc(c.internalCtx, cancel)
 	c.telemetry = new(errgroup.Group)
+	c.telemetryCancel = func() {
+		stopInternalCancel()
+		cancel()
+	}
 	if c.EngineTrace != nil {
 		if err := c.exportTraces(ctx, httpClient); err != nil {
 			return fmt.Errorf("export traces: %w", err)
@@ -829,8 +837,19 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 
 func (c *Client) Close() (rerr error) {
 	// shutdown happens outside of c.closeMu, since it requires a connection
-	if err := c.shutdownServer(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
+	shutdownErr := c.shutdownServer()
+	if shutdownErr != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", shutdownErr))
+	} else {
+		// After a successful shutdown the engine drains any queued telemetry to
+		// the SSE streams and ends them with a graceful EOF (the server half of
+		// this contract lives in PubSub.sseHandler). Wait for that *before*
+		// tearing down local resources: the streams run over the local transport,
+		// and ripping it out mid-drain turns a successful command into a
+		// spurious telemetry error.
+		if err := c.waitForTelemetry(c.effectiveTelemetryDrainTimeout()); err != nil {
+			rerr = errors.Join(rerr, err)
+		}
 	}
 
 	c.closeMu.Lock()
@@ -847,6 +866,9 @@ func (c *Client) Close() (rerr error) {
 
 	if c.internalCancel != nil {
 		c.internalCancel(errors.New("Client.Close"))
+	}
+	if c.telemetryCancel != nil {
+		c.telemetryCancel()
 	}
 
 	if c.daggerClient != nil {
@@ -879,14 +901,43 @@ func (c *Client) Close() (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
-	// Wait for telemetry to finish draining
-	if c.telemetry != nil {
-		if err := c.telemetry.Wait(); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
-		}
-	}
+	// Teardown canceled the telemetry context, which unblocks any telemetry
+	// consumer still running (failed shutdown, or a stream that never reached
+	// EOF). Give those goroutines a bounded grace period so Close doesn't leak
+	// them, but don't let telemetry delay command shutdown any further.
+	c.waitForTelemetry(telemetryCancelGrace) //nolint:errcheck // already reported above
 
 	return rerr
+}
+
+func (c *Client) effectiveTelemetryDrainTimeout() time.Duration {
+	if c.telemetryDrainTimeout > 0 {
+		return c.telemetryDrainTimeout
+	}
+	return defaultTelemetryDrainTimeout
+}
+
+func (c *Client) waitForTelemetry(timeout time.Duration) error {
+	if c.telemetryDone == nil {
+		return nil
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-c.telemetryDone:
+		return c.telemetryWaitErr()
+	case <-timer.C:
+		slog.Warn("timed out draining telemetry", "timeout", timeout)
+		return nil
+	}
+}
+
+func (c *Client) telemetryWaitErr() error {
+	if c.telemetryErr != nil {
+		return fmt.Errorf("wait for telemetry: %w", c.telemetryErr)
+	}
+	return nil
 }
 
 type otlpConsumer struct {
@@ -911,33 +962,51 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 		}
 	}()
 
-	sseConn, err := sse.Connect(c.httpClient, time.Second, func() *http.Request {
-		return (&http.Request{
+	var (
+		lastEventID   string
+		retryInterval = time.Second
+	)
+
+	consumeStream := func() error {
+		req := (&http.Request{
 			Method: http.MethodGet,
+			Header: http.Header{},
 			URL: &url.URL{
 				Scheme: "http",
 				Host:   "dagger",
 				Path:   c.path,
 			},
 		}).WithContext(ctx)
-	})
-	if err != nil {
-		return fmt.Errorf("connect to SSE: %w", err)
-	}
+		if lastEventID != "" {
+			req.Header.Set("Last-Event-ID", lastEventID)
+			req.Header.Set("X-Last-Event-ID", lastEventID)
+		}
 
-	c.eg.Go(func() error {
-		defer sseConn.Close()
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			defer resp.Body.Close()
+			return sse.BadResponseError{Response: resp}
+		}
+
+		events := sse.NewReadCloser(resp.Body)
+		defer events.Close()
 
 		for {
-			event, err := sseConn.Next()
+			event, err := events.Next()
 			if err != nil {
-				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-					return nil
-				}
-				return fmt.Errorf("decode: %w", err)
+				return err
 			}
 			if event.Name == "subscribed" {
 				continue
+			}
+			if event.ID != "" {
+				lastEventID = event.ID
+			}
+			if event.Retry != 0 {
+				retryInterval = event.Retry
 			}
 
 			data := event.Data
@@ -958,16 +1027,53 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 				))
 			}
 		}
+	}
+
+	c.eg.Go(func() error {
+		for {
+			err := consumeStream()
+			if err == nil || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				return nil
+			}
+			if ctx.Err() != nil {
+				return nil //nolint:nilerr // Shutdown cancellation owns the stream; ignore stale consume errors.
+			}
+
+			if !isRetriableSSEError(err) {
+				return fmt.Errorf("decode: %w", err)
+			}
+
+			timer := time.NewTimer(retryInterval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil
+			case <-timer.C:
+			}
+		}
 	})
 
 	return nil
 }
 
-func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
+func isRetriableSSEError(err error) bool {
+	var badResp sse.BadResponseError
+	if !errors.As(err, &badResp) {
+		return true
+	}
 
+	switch badResp.Response.StatusCode {
+	case http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
@@ -999,10 +1105,6 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 }
 
 func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
-
 	exp := &otlpConsumer{
 		path:       "/v1/logs",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
@@ -1024,10 +1126,6 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 }
 
 func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) error {
-	// NB: we never actually want to interrupt this, since it's relied upon for
-	// seeing what's going on, even during shutdown
-	ctx = context.WithoutCancel(ctx)
-
 	exp := &otlpConsumer{
 		path:       "/v1/metrics",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
@@ -1463,7 +1561,6 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		SingleQuery:                    c.SingleQuery,
 		SuppressCompatWorkspaceWarning: c.SuppressCompatWorkspaceWarning,
 		CloudAuth:                      c.CloudAuth,
-		CloudURL:                       os.Getenv("DAGGER_CLOUD_URL"),
 		CredentialsPath:                auth.CredentialsFile(),
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
