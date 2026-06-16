@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/containerd/containerd/v2/plugins/snapshots/native"
+	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	bkcontainerd "github.com/dagger/dagger/engine/snapshots/containerd"
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/util/fsxutil"
 	"gotest.tools/v3/assert"
@@ -66,6 +70,50 @@ func TestSyncReincludedFileUnderIgnoredParent(t *testing.T) {
 
 	_, err = os.ReadFile(filepath.Join(mirrorRoot, "foo/ignored.txt"))
 	assert.Assert(t, os.IsNotExist(err))
+}
+
+// Verify that a full sync records the ignored parent directory it creates for
+// a re-included child, so parent checksums do not report "not found".
+func TestSyncReincludedFileUnderIgnoredParentCacheContext(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clientRoot := writeTree(t, map[string]string{
+		".gitignore":      "foo/\n!foo/bar.txt\n",
+		"foo/bar.txt":     "keep",
+		"foo/ignored.txt": "drop",
+	})
+	base, err := fsutil.NewFS(clientRoot)
+	assert.NilError(t, err)
+	client, err := fsxutil.NewGitIgnoreMarkedFS(base, nil)
+	assert.NilError(t, err)
+
+	local, err := newLocalFS(NewMirrorSharedState(t.TempDir()), "", nil, nil, nil, "")
+	assert.NilError(t, err)
+
+	snapshotter, err := native.NewSnapshotter(t.TempDir())
+	assert.NilError(t, err)
+	t.Cleanup(func() {
+		assert.NilError(t, snapshotter.Close())
+	})
+	cacheManager, err := bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
+		Snapshotter:   bkcontainerd.NewSnapshotter("native", snapshotter, "filesync-test"),
+		MountPoolRoot: t.TempDir(),
+	})
+	assert.NilError(t, err)
+	t.Cleanup(func() {
+		assert.NilError(t, cacheManager.Close())
+	})
+
+	ref, _, err := local.Sync(ctx, readFS{client}, cacheManager, false)
+	assert.NilError(t, err)
+	t.Cleanup(func() {
+		assert.NilError(t, ref.Release(context.Background()))
+	})
+
+	dgst, err := bkcontenthash.Checksum(ctx, ref, "/foo", bkcontenthash.ChecksumOpts{})
+	assert.NilError(t, err)
+	assert.Assert(t, dgst != "")
 }
 
 type readFS struct {
