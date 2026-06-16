@@ -935,7 +935,7 @@ func (srv *Server) initializeDaggerClient(
 	// export to Dagger Cloud if the client has cloud auth
 	if client.clientMetadata.CloudAuth != nil {
 		// in-memory token refresher since this code runs in the engine
-		cloudSpans, cloudLogs, cloudMetrics, err = enginetel.NewCloudExporters(ctx, client.clientMetadata.CloudAuth, refreshAndPersistCredentials)
+		cloudSpans, cloudLogs, cloudMetrics, err = enginetel.NewCloudExporters(ctx, client.clientMetadata.CloudAuth, refreshAndPersistCredentials, "")
 		if err != nil {
 			slog.Warn("failed to configure cloud exporters for session", "error", err)
 		}
@@ -1077,6 +1077,13 @@ func (client *daggerClient) resolveHostServiceCaller(
 	}
 
 	return client.getClientCaller(ctx, id)
+}
+
+// cloudRefreshContext is introduced with the regression tests so they compile.
+// The follow-up OAuth-refresh fix populates it with the session state exporters
+// need when OTel calls them from background goroutines.
+func cloudRefreshContext(ctx context.Context, _ *daggerClient) context.Context {
+	return ctx
 }
 
 func refreshAndPersistCredentials(ctx context.Context) (*oauth2.Token, error) {

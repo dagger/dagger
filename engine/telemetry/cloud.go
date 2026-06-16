@@ -29,14 +29,16 @@ var (
 	configuredCloudExportersOnce   sync.Once
 )
 
-func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error)) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
+func NewCloudExporters(ctx context.Context, cloudAuth *auth.Cloud, tokenRefreshFn func(context.Context) (*oauth2.Token, error), cloudURL string) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, error) {
 	if cloudAuth == nil || cloudAuth.Token == nil {
 		return nil, nil, nil, fmt.Errorf("no cloud auth provided")
 	}
 
 	authHeader := cloudAuthHeader(cloudAuth)
 
-	cloudURL := os.Getenv("DAGGER_CLOUD_URL")
+	// The explicit cloudURL parameter is added with the tests so they compile;
+	// the follow-up fix wires it into endpoint selection.
+	cloudURL = os.Getenv("DAGGER_CLOUD_URL")
 	if cloudURL == "" {
 		cloudURL = "https://api.dagger.cloud"
 	}
@@ -153,7 +155,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 			return
 		}
 
-		spans, logs, metrics, err := NewCloudExporters(ctx, cloudAuth, auth.Token)
+		spans, logs, metrics, err := NewCloudExporters(ctx, cloudAuth, auth.Token, "")
 		if err != nil {
 			slog.Warn("failed to configure cloud exporters", "error", err)
 			return

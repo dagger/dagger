@@ -260,3 +260,275 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		Sync(ctx)
 	require.NoError(t, err)
 }
+
+// Engine-side telemetry must reach Dagger Cloud with the auth and endpoint
+// the client provides through its metadata: since the client/engine telemetry
+// split, this is the only route for it. The fake cloud rejects any request
+// without the expected Basic authorization.
+//
+// A marker is a unique string planted in an exec's output: finding it in
+// what the fake cloud recorded proves that exec's telemetry arrived. Two
+// things about the markers are load-bearing:
+//
+//   - The full marker must never appear on the dagger command line. The
+//     client exports its own telemetry to the same fake cloud, and its root
+//     span is named after the command line — that alone would satisfy the
+//     grep even with engine-side export broken. So each marker ships as two
+//     env var halves, assembled only inside the exec.
+//
+//   - The nested marker must run through a module call. A module runtime is
+//     a real nested client; a privileged-nesting exec that never calls
+//     dagger and a `dagger run` program both emit as the main client.
+func (ClientSuite) TestEngineTelemetryToCloud(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{
+			"core/integration/testdata/telemetry/",
+			"go.mod",
+			"go.sum",
+		},
+	})
+
+	eventsVol := c.CacheVolume("dagger-cloud-events-" + identity.NewID())
+	eventsID := identity.NewID()
+
+	fakeCloud := c.Container().
+		From(golangImage).
+		With(goCache(c)).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src").
+		WithMountedCache("/events", eventsVol).
+		WithDefaultArgs([]string{"go", "run", "./core/integration/testdata/telemetry/"}).
+		WithExposedPort(8080).
+		AsService()
+
+	// the engine-side exporters dial the cloud URL from the engine process,
+	// so the engine needs to resolve the fake cloud, not just the client
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("cloud", fakeCloud)
+	}))
+
+	mainMarkerID := identity.NewID()
+	nestedMarkerID := identity.NewID()
+	mainMarker := "main-marker-" + mainMarkerID
+	nestedMarker := "nested-marker-" + nestedMarkerID
+
+	// the module function runs as a nested client and assembles the marker
+	// inside its container exec, the only place the full string exists
+	markerModuleSrc := fmt.Sprintf(`package main
+
+import "context"
+
+type Marker struct{}
+
+func (m *Marker) Emit(ctx context.Context, prefix string, id string) error {
+	_, err := dag.Container().
+		From(%q).
+		WithEnvVariable("MARKER_PREFIX", prefix).
+		WithEnvVariable("MARKER_ID", id).
+		WithExec([]string{"sh", "-c", "echo $MARKER_PREFIX$MARKER_ID"}).
+		Sync(ctx)
+	return err
+}
+`, alpineImage)
+
+	_, err = engineClientContainer(ctx, t, c, devEngine).
+		WithServiceBinding("cloud", fakeCloud).
+		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
+		WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
+		WithExec([]string{
+			"dagger", "core", "container",
+			"from", "--address=" + alpineImage,
+			"with-env-variable", "--name=MARKER_PREFIX", "--value=main-marker-",
+			"with-env-variable", "--name=MARKER_ID", "--value=" + mainMarkerID,
+			"with-exec", "--args=sh", "--args=-c", "--args=echo $MARKER_PREFIX$MARKER_ID",
+			"stdout",
+		}).
+		WithWorkdir("/work/marker").
+		WithNewFile("/work/marker/dagger.json", `{"name": "marker", "sdk": "go", "source": "."}`).
+		WithNewFile("/work/marker/main.go", markerModuleSrc).
+		WithExec([]string{"dagger", "call", "-m", ".", "emit", "--prefix=nested-marker-", "--id=" + nestedMarkerID}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	// the engine flushes telemetry while handling /shutdown, before the
+	// command above exits, so the fake cloud has everything by now
+	events := c.Container().From(alpineImage).WithMountedCache("/events", eventsVol)
+	for name, marker := range map[string]string{
+		"main client":                     mainMarker,
+		"nested client (module function)": nestedMarker,
+	} {
+		_, err := events.
+			WithExec([]string{"grep", "-r", "-a", marker, fmt.Sprintf("/events/%s/", eventsID)}).
+			Sync(ctx)
+		require.NoError(t, err, "%s telemetry did not reach the fake cloud", name)
+	}
+
+	// all three signals must export, each through its own OTLP endpoint;
+	// metrics regressed silently once before, when only spans and logs were
+	// wired for auth refresh
+	for _, signal := range []string{"traces", "logs", "metrics"} {
+		_, err := events.
+			WithExec([]string{"test", "-s", fmt.Sprintf("/events/%s/v1/%s.json", eventsID, signal)}).
+			Sync(ctx)
+		require.NoError(t, err, "no %s reached the fake cloud", signal)
+	}
+}
+
+// OAuth sessions outlive their access tokens: OTel invokes the cloud
+// exporters from background goroutines long after the original request
+// contexts are gone, and the engine must still be able to refresh — reading
+// the refresh token from the *client host's* credentials file through the
+// session attachables, persisting the new token back, and exporting with it.
+// The fake cloud only issues instantly-expiring tokens, so every export has
+// to take that path; and it rejects any token it didn't issue, so telemetry
+// arriving at all proves no export ever ran with stale auth.
+//
+// The engine and client refresh through separate token endpoints, so
+// engine-issued tokens are recognizable in the fake cloud's request log. The
+// per-signal assertions rely on that: the client exports its own telemetry to
+// the same fake cloud, so file contents alone can't tell the two apart. The
+// marker ships as env var halves for the same reason — see
+// TestEngineTelemetryToCloud.
+func (ClientSuite) TestEngineTelemetryCloudOAuthRefresh(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{
+			"core/integration/testdata/telemetry/",
+			"go.mod",
+			"go.sum",
+		},
+	})
+
+	eventsVol := c.CacheVolume("dagger-cloud-events-" + identity.NewID())
+	eventsID := identity.NewID()
+
+	fakeCloud := c.Container().
+		From(golangImage).
+		With(goCache(c)).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src").
+		WithMountedCache("/events", eventsVol).
+		WithDefaultArgs([]string{"go", "run", "./core/integration/testdata/telemetry/"}).
+		WithExposedPort(8080).
+		AsService()
+
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithServiceBinding("cloud", fakeCloud).
+			WithEnvVariable("DAGGER_CLOUD_AUTH_URL", "http://cloud:8080/"+eventsID+"/engine")
+	}))
+
+	markerID := identity.NewID()
+	marker := "refresh-marker-" + markerID
+	staleCreds := `{"access_token":"stale-token","token_type":"Bearer","refresh_token":"test-refresh-token","expiry":"2020-01-01T00:00:00Z"}`
+
+	clientCtr := engineClientContainer(ctx, t, c, devEngine).
+		WithServiceBinding("cloud", fakeCloud).
+		WithEnvVariable("XDG_CONFIG_HOME", "/root/.config").
+		WithNewFile("/root/.config/dagger/credentials.json", staleCreds).
+		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
+		WithEnvVariable("DAGGER_CLOUD_AUTH_URL", "http://cloud:8080/"+eventsID+"/client").
+		WithExec([]string{
+			"dagger", "core", "container",
+			"from", "--address=" + alpineImage,
+			"with-env-variable", "--name=MARKER_PREFIX", "--value=refresh-marker-",
+			"with-env-variable", "--name=MARKER_ID", "--value=" + markerID,
+			"with-exec", "--args=sh", "--args=-c", "--args=echo $MARKER_PREFIX$MARKER_ID",
+			"stdout",
+		})
+	_, err = clientCtr.Sync(ctx)
+	require.NoError(t, err)
+
+	events := c.Container().From(alpineImage).WithMountedCache("/events", eventsVol)
+
+	// telemetry arrived, and only issued (refreshed) tokens are accepted
+	_, err = events.
+		WithExec([]string{"grep", "-r", "-a", marker, fmt.Sprintf("/events/%s/", eventsID)}).
+		Sync(ctx)
+	require.NoError(t, err, "engine telemetry did not reach the fake cloud")
+
+	// the engine refreshed through its own endpoint: it read the refresh
+	// token from the client host's credentials file and exchanged it
+	_, err = events.
+		WithExec([]string{"test", "-s", fmt.Sprintf("/events/%s/engine/issued-tokens.txt", eventsID)}).
+		Sync(ctx)
+	require.NoError(t, err, "the engine never refreshed the OAuth token")
+
+	// all three signals must keep flowing across refreshes *from the engine*:
+	// the engine-side metric exporter once missed the refresh wiring, so after
+	// the first expiry traces and logs kept arriving while metrics silently
+	// stopped. The request log pins each signal to an engine-issued token
+	// (fresh-token-<id>-engine-N), so the client's own exports can't mask an
+	// engine-side regression.
+	for _, signal := range []string{"traces", "logs", "metrics"} {
+		_, err := events.
+			WithExec([]string{
+				"grep", "-E",
+				fmt.Sprintf("^fresh-token-.*-engine-[0-9]+ /%s/v1/%s$", eventsID, signal),
+				"/events/requests.log",
+			}).
+			Sync(ctx)
+		require.NoError(t, err, "the engine exported no %s with a refreshed token", signal)
+	}
+
+	// refreshed credentials were persisted back over the stale ones
+	creds, err := clientCtr.WithExec([]string{"cat", "/root/.config/dagger/credentials.json"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, creds, "fresh-token-")
+	require.NotContains(t, creds, "stale-token")
+}
+
+// A Dagger Cloud outage must cost telemetry, never the build. The fake cloud
+// here simulates the worst outage mode: it accepts requests and never answers
+// (a hard-down endpoint at least fails exports fast; a hanging one eats
+// timeouts). When a command exits, the client gives the engine 10 seconds to
+// shut down, then fails the build — and the engine pushes its remaining
+// telemetry to Cloud inside that window. The engine must give up on Cloud
+// early enough to answer the client in time: the command has to exit 0, just
+// without its telemetry.
+func (ClientSuite) TestEngineTelemetryCloudOutage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{
+			"core/integration/testdata/telemetry/",
+			"go.mod",
+			"go.sum",
+		},
+	})
+
+	fakeCloud := c.Container().
+		From(golangImage).
+		With(goCache(c)).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src").
+		WithDefaultArgs([]string{"go", "run", "./core/integration/testdata/telemetry/"}).
+		WithExposedPort(8080).
+		AsService()
+
+	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("cloud", fakeCloud)
+	}))
+
+	_, err = engineClientContainer(ctx, t, c, devEngine).
+		WithServiceBinding("cloud", fakeCloud).
+		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/hang/"+identity.NewID()).
+		WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
+		WithExec([]string{
+			"dagger", "core", "container",
+			"from", "--address=" + alpineImage,
+			"with-exec", "--args=true",
+			"stdout",
+		}).
+		Sync(ctx)
+	require.NoError(t, err, "a hanging cloud must never fail the build")
+}
