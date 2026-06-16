@@ -151,6 +151,11 @@ type ClientMetadata struct {
 	// request explicitly passes a recipe argument. This is engine-internal
 	// nested-client state and must not be forwarded through client headers.
 	UseRecipeIDsByDefault bool `json:"-"`
+
+	// Profile enables engine wall-clock profiling (wcprof) for the duration
+	// of this client's work. Experimental; the recorded events are retrieved
+	// via the engine debug endpoints.
+	Profile bool `json:"profile,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}

@@ -138,6 +138,8 @@ func withEngine(
 
 		params.AllowedLLMModules = allowedLLMModules
 
+		params.Profile = profileFlag
+
 		params.CloudURLCallback = Frontend.SetCloudURL
 
 		params.EngineTrace = telemetry.SpanForwarder{

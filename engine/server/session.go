@@ -54,12 +54,19 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/util/cleanups"
 )
 
 type daggerSession struct {
 	sessionID          string
 	mainClientCallerID string
+
+	// wcprofEnabled means this session opted into wall-clock profiling
+	// (ClientMetadata.Profile); work for all its clients (including nested
+	// module/SDK clients) is recorded even when engine-global recording is
+	// off.
+	wcprofEnabled bool
 
 	state   daggerSessionState
 	stateMu sync.RWMutex
@@ -323,6 +330,7 @@ func (srv *Server) initializeDaggerSession(
 
 	sess.sessionID = clientMetadata.SessionID
 	sess.mainClientCallerID = clientMetadata.ClientID
+	sess.wcprofEnabled = clientMetadata.Profile
 	sess.clients = map[string]*daggerClient{}
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
@@ -1351,6 +1359,16 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	sess := client.daggerSession
+
+	// Profiling is recorded for this request if the engine is recording
+	// globally, or this session opted in (in which case contexts are marked
+	// so only this session's work records).
+	profiledSession := sess.wcprofEnabled ||
+		(client.clientMetadata != nil && client.clientMetadata.Profile)
+	if profiledSession {
+		wcprof.EnsureRecorder()
+	}
+	profiling := profiledSession || wcprof.GloballyEnabled()
 	sess.dagqlMu.Lock()
 	if sess.dagqlClosing {
 		sess.dagqlMu.Unlock()
@@ -1420,10 +1438,26 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
+	var profServeOp *wcprof.Op
+	if profiling {
+		if profiledSession {
+			ctx = wcprof.ContextWithProfiling(ctx)
+		}
+		ctx, profServeOp = wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.serveQuery", wcprof.OpOpts{
+			ClientID: client.clientID,
+		})
+		defer func() {
+			profServeOp.EndErr(rerr)
+		}()
+	}
+
 	r = r.WithContext(ctx)
 
 	if client.hostServiceProxyClientID == "" {
-		if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+		profWait := wcprof.BeginWaitIdent(ctx, "session:attachables", wcprof.WaitReasonIO)
+		_, err := client.getClientCaller(ctx, client.clientID)
+		profWait.End()
+		if err != nil {
 			return gqlErr(fmt.Errorf("waiting for client session attachables: %w", err), http.StatusInternalServerError)
 		}
 	}
@@ -1441,18 +1475,26 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// deferred from initializeDaggerClient because they need the client's
 	// session attachables, which only become available after the session
 	// attachables handshake completes (after init locks are released).
-	if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil {
+	wsCtx, wsOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.workspaceLoad", wcprof.OpOpts{ClientID: client.clientID})
+	err = srv.ensureWorkspaceLoaded(wsCtx, client)
+	wsOp.EndErr(err)
+	if err != nil {
 		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
 	}
 	if peekRootFieldsOK {
 		client.narrowPendingWorkspaceModulesForSingleQuery(peekRootFields)
 	}
-	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
+	modCtx, modOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.modulesLoad", wcprof.OpOpts{ClientID: client.clientID})
+	err = srv.ensureModulesLoaded(modCtx, client)
+	modOp.EndErr(err)
+	if err != nil {
 		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
 	}
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
-	schema, err := client.servedMods.Schema(ctx)
+	schemaCtx, schemaOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.schemaBuild", wcprof.OpOpts{ClientID: client.clientID})
+	schema, err := client.servedMods.Schema(schemaCtx)
+	schemaOp.EndErr(err)
 	if err != nil {
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
@@ -1465,6 +1507,12 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// 	slog.Debug("graphql response", "response", string(pl), "error", err)
 	// 	return res
 	// })
+
+	if profiling {
+		queryCtx, queryOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.query", wcprof.OpOpts{ClientID: client.clientID})
+		defer queryOp.End(wcprof.OutcomeOK)
+		r = r.WithContext(queryCtx)
+	}
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
