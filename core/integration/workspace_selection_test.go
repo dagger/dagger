@@ -38,15 +38,6 @@ func workspaceSelectionDaggerExec(args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func workspaceSelectionDaggerExecFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
-		})
-	}
-}
-
 func workspaceSelectionDaggerCall(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{

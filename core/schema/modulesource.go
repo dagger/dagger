@@ -1005,9 +1005,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
 			Source:       modCfg.SDK.Source,
-			Debug:        modCfg.SDK.Debug,
-			Config:       modCfg.SDK.Config,
-			Experimental: modCfg.SDK.Experimental,
+			Debug:        modCfg.SDK.Debug,        //nolint:staticcheck // deprecated; read for legacy JSON config compat
+			Config:       modCfg.SDK.Config,       //nolint:staticcheck // deprecated; read for legacy JSON config compat
+			Experimental: modCfg.SDK.Experimental, //nolint:staticcheck // deprecated; read for legacy JSON config compat
 		}
 	}
 
