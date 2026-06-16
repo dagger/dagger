@@ -86,6 +86,9 @@ type Address implements Node {
 
   """The address value"""
   value: String!
+
+  """Load a volume from the address."""
+  volume: Volume!
 }
 
 type Binding implements Node {
@@ -178,6 +181,9 @@ type Binding implements Node {
 
   """Retrieve the binding value, as type UpGroup"""
   asUpGroup: UpGroup!
+
+  """Retrieve the binding value, as type Volume"""
+  asVolume: Volume!
 
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
@@ -1392,6 +1398,24 @@ type Container implements Exportable & Node & Syncer {
 
     """Size of the temporary directory in bytes."""
     size: Int
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+  ): Container!
+
+  """Retrieves this container plus a volume mounted at the given path."""
+  withMountedVolume(
+    """Location of the volume mount (e.g., "/mnt/volume")."""
+    path: String!
+
+    """Identifier of the volume to mount."""
+    volume: ID! @expectedType(name: "Volume")
+
+    """Mount the volume read-only."""
+    readOnly: Boolean = false
 
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -3134,6 +3158,27 @@ type Env implements Node {
 
   """Declare a desired Up output to be assigned in the environment"""
   withUpOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Volume in the environment"""
+  withVolumeInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Volume value to assign to the binding"""
+    value: ID! @expectedType(name: "Volume")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Volume output to be assigned in the environment"""
+  withVolumeOutput(
     """The name of the binding"""
     name: String!
 
@@ -5260,6 +5305,37 @@ type Query implements Node {
     column: Int!
   ): SourceMap!
 
+  """Constructs an SSHFS volume."""
+  sshfsVolume(
+    """SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path."""
+    endpoint: String!
+
+    """Private key secret used to authenticate to the remote host."""
+    privateKey: ID! @expectedType(name: "Secret")
+
+    """
+    known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+    """
+    knownHosts: ID @expectedType(name: "Secret")
+
+    """
+    Optional cache equivalence key. If set, volumes with the same cacheKey may
+    be considered equivalent for cache lookups, still subject to their resource
+    dependencies.
+    """
+    cacheKey: String
+
+    """
+    Disable SSH host key verification. This is insecure and must be explicitly opted into.
+    """
+    insecureSkipHostKeyCheck: Boolean = false
+
+    """
+    Service to use as the SSHFS network endpoint while verifying the original host key.
+    """
+    experimentalServiceHost: ID @expectedType(name: "Service")
+  ): Volume!
+
   """Create a new TypeDef."""
   typeDef: TypeDef!
 
@@ -5825,6 +5901,12 @@ The absence of a value.
 A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
+
+"""A filesystem volume that can be mounted into containers."""
+type Volume implements Node {
+  """A unique identifier for this Volume."""
+  id: ID!
+}
 
 """
 A Dagger workspace detected from the current working directory or constructed from a Directory.

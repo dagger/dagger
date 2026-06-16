@@ -461,6 +461,15 @@ impl Address {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Load a volume from the address.
+    pub fn volume(&self) -> Volume {
+        let query = self.selection.select("volume");
+        Volume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 impl Node for Address {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
@@ -760,6 +769,15 @@ impl Binding {
     pub fn as_up_group(&self) -> UpGroup {
         let query = self.selection.select("asUpGroup");
         UpGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Volume
+    pub fn as_volume(&self) -> Volume {
+        let query = self.selection.select("asVolume");
+        Volume {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -1867,6 +1885,15 @@ pub struct ContainerWithMountedTempOpts {
     /// Size of the temporary directory in bytes.
     #[builder(setter(into, strip_option), default)]
     pub size: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithMountedVolumeOpts {
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+    /// Mount the volume read-only.
+    #[builder(setter(into, strip_option), default)]
+    pub read_only: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
@@ -3560,6 +3587,67 @@ impl Container {
         query = query.arg("path", path.into());
         if let Some(size) = opts.size {
             query = query.arg("size", size);
+        }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container plus a volume mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the volume mount (e.g., "/mnt/volume").
+    /// * `volume` - Identifier of the volume to mount.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_volume(
+        &self,
+        path: impl Into<String>,
+        volume: impl IntoID<Id>,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedVolume");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "volume",
+            Box::new(move || {
+                let volume = volume.clone();
+                Box::pin(async move { volume.into_id().await.unwrap().quote() })
+            }),
+        );
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container plus a volume mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the volume mount (e.g., "/mnt/volume").
+    /// * `volume` - Identifier of the volume to mount.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_volume_opts(
+        &self,
+        path: impl Into<String>,
+        volume: impl IntoID<Id>,
+        opts: ContainerWithMountedVolumeOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedVolume");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "volume",
+            Box::new(move || {
+                let volume = volume.clone();
+                Box::pin(async move { volume.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(read_only) = opts.read_only {
+            query = query.arg("readOnly", read_only);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -7985,6 +8073,55 @@ impl Env {
     /// * `description` - A description of the desired value of the binding
     pub fn with_up_output(&self, name: impl Into<String>, description: impl Into<String>) -> Env {
         let mut query = self.selection.select("withUpOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Volume in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Volume value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_volume_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withVolumeInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Volume output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_volume_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withVolumeOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
@@ -13180,6 +13317,21 @@ pub struct QuerySecretOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub cache_key: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct QuerySshfsVolumeOpts<'a> {
+    /// Optional cache equivalence key. If set, volumes with the same cacheKey may be considered equivalent for cache lookups, still subject to their resource dependencies.
+    #[builder(setter(into, strip_option), default)]
+    pub cache_key: Option<&'a str>,
+    /// Service to use as the SSHFS network endpoint while verifying the original host key.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_service_host: Option<Id>,
+    /// Disable SSH host key verification. This is insecure and must be explicitly opted into.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_skip_host_key_check: Option<bool>,
+    /// known_hosts material used to verify the remote host key. Required unless insecureSkipHostKeyCheck is true.
+    #[builder(setter(into, strip_option), default)]
+    pub known_hosts: Option<Id>,
+}
 impl IntoID<Id> for Query {
     fn into_id(
         self,
@@ -13867,6 +14019,73 @@ impl Query {
         query = query.arg("line", line);
         query = query.arg("column", column);
         SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Constructs an SSHFS volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint` - SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path.
+    /// * `private_key` - Private key secret used to authenticate to the remote host.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn sshfs_volume(
+        &self,
+        endpoint: impl Into<String>,
+        private_key: impl IntoID<Id>,
+    ) -> Volume {
+        let mut query = self.selection.select("sshfsVolume");
+        query = query.arg("endpoint", endpoint.into());
+        query = query.arg_lazy(
+            "privateKey",
+            Box::new(move || {
+                let private_key = private_key.clone();
+                Box::pin(async move { private_key.into_id().await.unwrap().quote() })
+            }),
+        );
+        Volume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Constructs an SSHFS volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint` - SSHFS endpoint URL in the form sshfs://user@host[:port]/absolute/path.
+    /// * `private_key` - Private key secret used to authenticate to the remote host.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn sshfs_volume_opts<'a>(
+        &self,
+        endpoint: impl Into<String>,
+        private_key: impl IntoID<Id>,
+        opts: QuerySshfsVolumeOpts<'a>,
+    ) -> Volume {
+        let mut query = self.selection.select("sshfsVolume");
+        query = query.arg("endpoint", endpoint.into());
+        query = query.arg_lazy(
+            "privateKey",
+            Box::new(move || {
+                let private_key = private_key.clone();
+                Box::pin(async move { private_key.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(known_hosts) = opts.known_hosts {
+            query = query.arg("knownHosts", known_hosts);
+        }
+        if let Some(cache_key) = opts.cache_key {
+            query = query.arg("cacheKey", cache_key);
+        }
+        if let Some(insecure_skip_host_key_check) = opts.insecure_skip_host_key_check {
+            query = query.arg("insecureSkipHostKeyCheck", insecure_skip_host_key_check);
+        }
+        if let Some(experimental_service_host) = opts.experimental_service_host {
+            query = query.arg("experimentalServiceHost", experimental_service_host);
+        }
+        Volume {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -15454,6 +15673,49 @@ impl UpGroup {
     }
 }
 impl Node for UpGroup {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct Volume {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Volume {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Volume {
+    fn graphql_type() -> &'static str {
+        "Volume"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Volume {
+    /// A unique identifier for this Volume.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for Volume {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();

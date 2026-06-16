@@ -96,6 +96,39 @@ func TestDependencyNamesEmpty(t *testing.T) {
 	assert.Empty(t, names)
 }
 
+func TestScrubField(t *testing.T) {
+	schema := &Schema{
+		Types: Types{
+			{
+				Kind: TypeKindObject,
+				Name: "Query",
+				Fields: []*Field{
+					{Name: "keep"},
+					{Name: "hide"},
+				},
+			},
+			{
+				Kind:   TypeKindObject,
+				Name:   "Volume",
+				Fields: []*Field{},
+			},
+		},
+	}
+
+	schema.ScrubField("Query", "hide")
+
+	query := schema.Types.Get("Query")
+	assert.NotNil(t, query)
+	assert.Len(t, query.Fields, 1)
+	assert.Equal(t, "keep", query.Fields[0].Name)
+	assert.NotNil(t, schema.Types.Get("Volume"))
+
+	schema.ScrubField("Query", "missing")
+	assert.Len(t, query.Fields, 1)
+	schema.ScrubField("Missing", "hide")
+	assert.NotNil(t, schema.Types.Get("Query"))
+}
+
 func TestExcludeSub1AndSub2(t *testing.T) {
 	schemaJSON, err := os.ReadFile(filepath.Join(testDataDir, "schema.json"))
 	assert.NoError(t, err)

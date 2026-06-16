@@ -68,6 +68,14 @@ func (s *Schema) ScrubType(typeName string) {
 	s.Types = filteredTypes
 }
 
+// ScrubField removes a single field from a type while keeping the referenced
+// return and argument types visible elsewhere in the schema.
+func (s *Schema) ScrubField(typeName, fieldName string) {
+	if t := s.Types.Get(typeName); t != nil {
+		t.ScrubField(fieldName)
+	}
+}
+
 type DirectiveDef struct {
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
@@ -158,6 +166,17 @@ func (t *Type) ScrubType(typeName string) bool {
 	// be removed itself
 	isEmpty := len(t.Fields) == 0 && len(t.InputFields) == 0 && len(t.EnumValues) == 0
 	return t.Name == typeName || isEmpty
+}
+
+func (t *Type) ScrubField(fieldName string) {
+	filteredFields := make([]*Field, 0, len(t.Fields))
+	for _, f := range t.Fields {
+		if f.Name == fieldName {
+			continue
+		}
+		filteredFields = append(filteredFields, f)
+	}
+	t.Fields = filteredFields
 }
 
 type Types []*Type

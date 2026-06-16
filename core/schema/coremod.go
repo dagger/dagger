@@ -181,6 +181,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&gitSchema{},
 		&containerSchema{},
 		&cacheSchema{},
+		&volumeSchema{},
 		&secretSchema{},
 		&serviceSchema{},
 		&hostSchema{},

@@ -530,6 +530,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_sshfsVolume">sshfsVolume</a>(string $endpoint, <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a> $privateKey, <abbr title="Dagger\Dagger\Secret">Secret</abbr>|null $knownHosts = null, string|null $cacheKey = null, bool|null $insecureSkipHostKeyCheck = false, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $experimentalServiceHost = null)
+        
+                                            <p><p>Constructs an SSHFS volume.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -2241,8 +2251,75 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_typeDef">
+                    <h3 id="method_sshfsVolume">
         <div class="location">at line 466</div>
+        <code>                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+    <strong>sshfsVolume</strong>(string $endpoint, <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a> $privateKey, <abbr title="Dagger\Dagger\Secret">Secret</abbr>|null $knownHosts = null, string|null $cacheKey = null, bool|null $insecureSkipHostKeyCheck = false, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $experimentalServiceHost = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Constructs an SSHFS volume.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$endpoint</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></td>
+                <td>$privateKey</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\Secret">Secret</abbr>|null</td>
+                <td>$knownHosts</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$cacheKey</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$insecureSkipHostKeyCheck</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\Service">Service</abbr>|null</td>
+                <td>$experimentalServiceHost</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_typeDef">
+        <div class="location">at line 495</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -2274,7 +2351,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 475</div>
+        <div class="location">at line 504</div>
         <code>                    string
     <strong>version</strong>()
         </code>
@@ -2306,7 +2383,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_with">
-        <div class="location">at line 484</div>
+        <div class="location">at line 513</div>
         <code>                    <a href="../Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a>
     <strong>with</strong>(<abbr title="Dagger\Dagger\Directory">Directory</abbr>|null $sdkSourceDir = null)
         </code>
