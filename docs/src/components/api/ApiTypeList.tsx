@@ -7,6 +7,7 @@ import styles from "./styles.module.scss";
 export default function ApiTypeList(): JSX.Element {
   const model = useApiModel();
   const typeHref = useTypeHref();
+  const typeNames = [...model.coreTypes].sort((a, b) => a.localeCompare(b));
 
   return (
     <div className={`api-reference ${styles.apiType}`}>
@@ -18,7 +19,7 @@ export default function ApiTypeList(): JSX.Element {
           </tr>
         </thead>
         <tbody>
-          {model.coreTypes.map((name) => {
+          {typeNames.map((name) => {
             const type = model.types[name];
             return (
               <tr key={name}>
