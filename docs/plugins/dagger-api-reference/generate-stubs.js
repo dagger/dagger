@@ -79,6 +79,7 @@ coreTypes.forEach((name, index) => {
   fs.writeFileSync(
     file,
     `---
+displayed_sidebar: current
 title: "${name}"
 description: "${name} API reference, generated from the Dagger GraphQL schema."
 sidebar_position: ${index + 2}
