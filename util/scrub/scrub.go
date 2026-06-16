@@ -183,6 +183,12 @@ var scrubs = []scrubber{
 		"1048576000 bytes",
 		"XX bytes",
 	},
+	// Packet loss depends on transient network conditions in the test environment.
+	{
+		regexp.MustCompile(` \(\d+(\.\d+)?(e[+-]?\d+)?% dropped\)`),
+		" (5.88% dropped)",
+		"",
+	},
 	// duration quantities
 	{
 		regexp.MustCompile(`\d+(\.\d+)?(µs|ms|s)`),
