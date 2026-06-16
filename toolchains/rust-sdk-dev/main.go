@@ -43,6 +43,9 @@ func New(
 	// The path of the SDK source in the workspace
 	// +default="sdk/rust"
 	sourcePath string,
+	// A docker config file with credentials to install on clients.
+	// +optional
+	clientDockerConfig *dagger.Secret,
 ) *RustSdkDev {
 	rustSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
 		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
@@ -55,7 +58,9 @@ func New(
 		WithWorkdir("/src").
 		// FIXME: not all functions need a full engine build (eg. bump). Do this lazily as needed
 		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine().InstallClient(c)
+			return dag.DaggerEngine(dagger.DaggerEngineOpts{
+				ClientDockerConfig: clientDockerConfig,
+			}).InstallClient(c)
 		})
 
 	return &RustSdkDev{
