@@ -8110,6 +8110,15 @@ func makeGitCredentials(url string, username string, token string) string {
 	return contents.String()
 }
 
+func hostDaggerCommandRaw(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(daggerCliPath(t), args...)
+	cleanupExec(t, cmd)
+	cmd.Env = append(os.Environ(), telemetry.PropagationEnv(ctx)...)
+	cmd.Dir = workdir
+	return cmd
+}
+
 func daggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "functions"}, args...), dagger.ContainerWithExecOpts{
@@ -8128,6 +8137,27 @@ func fileContents(path, contents string) dagger.WithContainerFunc {
 func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc {
 	t.Helper()
 	return withTestdataFixture(t, c, dst, "modules", fixture)
+}
+
+func withModuleEntrypointFixture(t testing.TB, c *dagger.Client, dst, name, fixture string) dagger.WithContainerFunc {
+	t.Helper()
+	moduleDir := fixtureJoin(dst, ".dagger/modules/"+name)
+	configPath := fixtureJoin(dst, "dagger.toml")
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			With(withModuleFixture(t, c, moduleDir, fixture)).
+			WithNewFile(configPath, fmt.Sprintf(`[modules.%s]
+source = ".dagger/modules/%s"
+entrypoint = true
+`, name, name))
+	}
+}
+
+func fixtureJoin(dst, elem string) string {
+	if dst == "" || dst == "." {
+		return elem
+	}
+	return strings.TrimRight(dst, "/") + "/" + elem
 }
 
 func withTestdataFixture(t testing.TB, c *dagger.Client, dst string, elems ...string) dagger.WithContainerFunc {
