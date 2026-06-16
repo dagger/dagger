@@ -136,6 +136,34 @@
   padding-top: 0.45rem;
 }
 
+/* ── all types list ─────────────────────────────────────────────── */
+.typeList {
+  width: 100%;
+
+  th:first-child,
+  td:first-child {
+    width: 14rem;
+  }
+
+  a {
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
+  code {
+    color: var(--api-accent);
+    white-space: nowrap;
+  }
+}
+
+.typeListName {
+  vertical-align: top;
+}
+
 /* ── field cards ────────────────────────────────────────────────── */
 .fields {
   display: flex;

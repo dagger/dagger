@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "@docusaurus/Link";
-import { orderedApiFields, useApiModel, useApiType, typeHref } from "./data";
+import { orderedApiFields, useApiModel, useApiType, useTypeHref } from "./data";
 import Markdown from "./Markdown";
 import FieldIndex from "./FieldIndex";
 import FieldCard from "./FieldCard";
@@ -13,6 +13,7 @@ const INDEX_THRESHOLD = 8;
 
 function ImplementsLine({ names }: { names: string[] }): JSX.Element | null {
   const published = new Set(useApiModel().coreTypes);
+  const typeHref = useTypeHref();
   if (names.length === 0) return null;
   return (
     <p className={styles.implements}>
