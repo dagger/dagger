@@ -16,24 +16,6 @@ type PrismThemeColors = {
   deleted: string;
 };
 
-const lightColors: PrismThemeColors = {
-  background: "var(--color-backgroundSecondary)",
-  text: "var(--color-gray-800)",
-  muted: "var(--color-gray-500)",
-  punctuation: "var(--color-gray-500)",
-  keyword: "var(--color-purple-600)",
-  operator: "var(--color-purple-600)",
-  string: "var(--color-teal-700)",
-  function: "var(--color-blue-500)",
-  builtin: "var(--color-cyan-700)",
-  type: "var(--color-orange-600)",
-  property: "var(--color-blue-500)",
-  constant: "var(--color-yellow-700)",
-  directive: "var(--color-pink-600)",
-  inserted: "var(--color-green-700)",
-  deleted: "var(--color-red-500)",
-};
-
 const darkColors: PrismThemeColors = {
   background: "var(--color-backgroundSecondaryDark)",
   text: "var(--color-gray-100)",
@@ -166,5 +148,4 @@ function createPrismTheme(colors: PrismThemeColors) {
   };
 }
 
-export const daggerLightPrismTheme = createPrismTheme(lightColors);
 export const daggerDarkPrismTheme = createPrismTheme(darkColors);

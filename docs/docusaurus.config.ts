@@ -5,10 +5,7 @@ import remarkTemplate from "./plugins/remark-template";
 import llmsTxtPlugin from "./plugins/llms-txt-plugin";
 import daggerApiReference from "./plugins/dagger-api-reference";
 import path from "path";
-import {
-  daggerDarkPrismTheme,
-  daggerLightPrismTheme,
-} from "./src/prism/theme";
+import { daggerDarkPrismTheme } from "./src/prism/theme";
 
 import { daggerVersion } from "./current_docs/partials/version";
 
@@ -264,7 +261,7 @@ const config: Config = {
         "powershell",
         "java",
       ],
-      theme: daggerLightPrismTheme,
+      theme: daggerDarkPrismTheme,
       darkTheme: daggerDarkPrismTheme,
     },
     navbar: {
