@@ -8,7 +8,7 @@ A redesign of the Dagger CLI's user-facing command surface for 1.0. Untangles th
 - [Solution](#solution)
 - [Target `--help`](#target---help)
 - [Group rationale](#group-rationale)
-- [Flag rename: `--mod` → `--load-module`](#flag-rename---mod---load-module)
+- [Flag rename: `--mod` → `--load-module`](#flag-rename---mod----load-module)
 - [Per-command decision context](#per-command-decision-context)
 - [Subcommand structures](#subcommand-structures)
 - [SDK module interface](#sdk-module-interface)
@@ -35,7 +35,7 @@ Organize the top-level surface into five visually separated groups, each with on
 
 ## Target `--help`
 
-```
+```text
 A tool to run composable workflows in containers
 
 USAGE
@@ -147,7 +147,7 @@ The five group commands (`api`, `module`, `sdk`, `cloud`, `workspace`) each own 
 
 ### `dagger api`
 
-```
+```text
 Every Dagger command — check, up, generate, even install — ultimately
 runs against a GraphQL API served by the Dagger engine, combining
 Dagger's core types with schema extensions loaded from modules. The
@@ -166,7 +166,7 @@ AVAILABLE COMMANDS
 
 ### `dagger workspace` (alias: `ws`)
 
-```
+```text
 Inspect or configure your workspace. Bare invocation prints a digest.
 
 AVAILABLE COMMANDS
@@ -180,7 +180,7 @@ AVAILABLE COMMANDS
 
 ### `dagger module`
 
-```
+```text
 Author a module: scaffold, edit dependencies, engine version, etc.
 Operates on the dagger-module.toml reachable from the current directory.
 
@@ -200,7 +200,7 @@ AVAILABLE COMMANDS
 
 ### `dagger sdk`
 
-```
+```text
 Install and manage SDKs (the modules that author other modules).
 
 SDKs are workspace modules whose role is to scaffold/codegen other things:
@@ -227,7 +227,7 @@ AVAILABLE COMMANDS
 
 #### `dagger module deps`
 
-```
+```text
 Manage this module's dependencies, as declared in dagger-module.toml.
 
 AVAILABLE COMMANDS
@@ -238,7 +238,7 @@ AVAILABLE COMMANDS
 
 #### `dagger module engine`
 
-```
+```text
 Manage the engine version this module requires.
 
 AVAILABLE COMMANDS
@@ -250,7 +250,7 @@ AVAILABLE COMMANDS
 
 ### `dagger cloud`
 
-```
+```text
 Manage Dagger Cloud.
 
 AVAILABLE COMMANDS
@@ -264,7 +264,7 @@ AVAILABLE COMMANDS
 
 #### `dagger cloud integration`
 
-```
+```text
 Manage Cloud integration providers. Mutable shape — configured providers
 come and go.
 
@@ -276,7 +276,7 @@ AVAILABLE COMMANDS
 
 #### `dagger cloud check`
 
-```
+```text
 Manage Cloud-side automated checks for this workspace.
 
 AVAILABLE COMMANDS
