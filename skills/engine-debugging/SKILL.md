@@ -82,6 +82,7 @@ useful when debugging a specific subsystem and needing the current mental model:
 - `dynamicinputs.md`: dynamic inputs and implicit cache scoping
 - `dagqltypes.md`: nullable/list cache behavior
 - `writingcoreapis.md`: practical guide for cache-aware core/schema APIs
+- `version-gating.md`: schema views, `engineVersion` gates, workspace v1 test fixtures
 
 Treat internal docs as context, not authority over the code. If you are changing
 the implementation, your edits may make the docs stale; verify behavior against

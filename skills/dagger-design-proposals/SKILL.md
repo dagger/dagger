@@ -16,7 +16,8 @@ Guidelines for writing design proposals for Dagger features.
    - GraphQL schema: `core/schema/*.go`
    - CLI commands: `cmd/dagger/*.go`
    - Core types: `core/*.go`
-3. Understand existing patterns before proposing new ones
+3. For public API or workspace proposals, read `internal-docs/version-gating.md`
+4. Understand existing patterns before proposing new ones
 
 ## Structure
 
@@ -129,6 +130,7 @@ When writing proposals, reference actual Dagger code:
 | Core types (Directory, File, etc.) | `core/*.go` |
 | Engine internals | `engine/*.go` |
 | SDK codegen | `internal-docs/dagger-codegen.md`, `cmd/codegen/*.go` |
+| API version gates | `internal-docs/version-gating.md`, `core/schema/*.go` |
 
 Example: To understand how `Host.findUp` works before proposing `Workspace.findUp`:
 
@@ -163,4 +165,5 @@ Check for other Dagger skills that may help with research:
 
 - `engine-debugging` - Engine debugging workflows, trace replay, cache snapshots
 - `internal-docs/dagger-codegen.md` - SDK codegen, templates, bindings
+- `internal-docs/version-gating.md` - schema views and public API version gates
 - `internal-docs/` - Cache and engine implementation references

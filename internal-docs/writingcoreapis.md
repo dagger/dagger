@@ -13,6 +13,7 @@ Almost everything here is covered in more depth elsewhere:
 - `lazy_evaluation.md`
 - `dynamicinputs.md`
 - `dagqltypes.md`
+- `version-gating.md`
 
 The point of this doc is not to replace those. The point is to give you a
 workflow for the questions you usually need to answer when adding a new API.
@@ -44,8 +45,14 @@ When writing a core API, these are the cache questions to walk through:
 6. Should the field be persistable across engine restarts?
 7. Am I in one of the rare advanced cases that needs explicit equivalence
    teaching or other specialist APIs?
+8. Which module schema views should see this public API?
 
 If you consciously answer those questions, you usually end up in a good place.
+
+If the API is public GraphQL surface, answer the version question before
+implementation. New fields, arguments, types, enum values, inputs, interfaces,
+or scalars usually need a `View(AfterVersion(...))` gate; see
+`version-gating.md`.
 
 ## Step 1: Pick The Right Caching Mode
 

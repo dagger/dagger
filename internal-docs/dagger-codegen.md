@@ -5,6 +5,9 @@ dispatch, SDK module interfaces, or generated clients. Verify details against
 current code before changing behavior; these notes describe the current model,
 but codegen paths move often.
 
+For schema-view compatibility and `engineVersion` gates that affect generated
+output, also read `version-gating.md`.
+
 ## Four Codegen Meanings
 
 `codegen` can refer to several different surfaces:
