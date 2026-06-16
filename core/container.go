@@ -6731,6 +6731,10 @@ type ContainerAsServiceArgs struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+
+	// Resource constraints for the service container (cgroup limits).
+	// If nil, inherits the container's DefaultExecResources if set.
+	Resources *ContainerExecResources `default:"null"`
 }
 
 func (container *Container) AsService(ctx context.Context, containerRes dagql.ObjectResult[*Container], args ContainerAsServiceArgs) (*Service, error) {
@@ -6766,6 +6770,7 @@ func (container *Container) AsService(ctx context.Context, containerRes dagql.Ob
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
 		NoInit:                        args.NoInit,
+		Resources:                     args.Resources,
 	}, nil
 }
 
