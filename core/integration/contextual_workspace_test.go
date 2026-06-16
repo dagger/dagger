@@ -66,6 +66,7 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceSelection(ctx context.Con
 
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
+  "engineVersion": "v1.0.0",
   "sdk": {"source": "dang"},
   "source": "ci"
 }`, func(ctr *dagger.Container) *dagger.Container {
@@ -122,6 +123,7 @@ type Myapp {
 
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "standalone",
+  "engineVersion": "v1.0.0",
   "sdk": {"source": "dang"}
 }`, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.WithNewFile("main.dang", `
