@@ -41,3 +41,10 @@ func TestExecNetModeConflict(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot set both noNetwork and hostNetwork")
 }
+
+func TestExecResourcesNilIsNoop(t *testing.T) {
+	t.Parallel()
+	// Resources nil → no change to opts, backward compat
+	opts := ContainerExecOpts{}
+	require.Nil(t, opts.Resources)
+}

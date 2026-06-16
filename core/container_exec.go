@@ -85,6 +85,33 @@ type ContainerExecOpts struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+
+	// Resource constraints applied to this exec via cgroups.
+	// All fields are optional; nil means no limit (current behaviour).
+	Resources *ContainerExecResources `default:"null"`
+}
+
+// ContainerExecResources defines cgroup resource constraints for a single exec.
+// All fields are optional; zero/nil means no limit (current behaviour).
+type ContainerExecResources struct {
+	// Hard memory limit in bytes (cgroup memory.max).
+	// The process is OOM-killed if it exceeds this.
+	MemoryBytes int64 `default:"0"`
+
+	// Soft memory limit in bytes (cgroup memory.high).
+	// The kernel throttles the process under pressure rather than killing it.
+	MemorySoftBytes int64 `default:"0"`
+
+	// CPU limit in fractional cores, e.g. 1.5 (cgroup cpu.max quota/period).
+	// Translated to quota=int64(Cpus*1e5), period=100000.
+	Cpus float64 `default:"0"`
+
+	// Relative CPU weight under contention (cgroup cpu.weight, range 1-10000).
+	// Does not cap CPU; only affects sharing when the engine is saturated.
+	CpuShares int64 `default:"0"`
+
+	// Maximum number of processes/threads (cgroup pids.max).
+	Pids int64 `default:"0"`
 }
 
 type ContainerExecState struct {
