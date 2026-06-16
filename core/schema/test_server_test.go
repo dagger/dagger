@@ -24,6 +24,7 @@ import (
 type currentTypeDefsTestServer struct {
 	deps             *core.SchemaBuilder
 	dag              *dagql.Server
+	mainClient       *engine.ClientMetadata
 	workspaceLock    *workspace.Lock
 	workspaceLockOK  bool
 	workspaceLockErr error
@@ -58,6 +59,9 @@ func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.Sc
 }
 
 func (s *currentTypeDefsTestServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
+	if s.mainClient != nil {
+		return s.mainClient, nil
+	}
 	return &engine.ClientMetadata{}, nil
 }
 

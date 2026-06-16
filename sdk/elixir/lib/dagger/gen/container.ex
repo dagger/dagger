@@ -1107,6 +1107,28 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Retrieves this container plus a volume mounted at the given path.
+  """
+  @spec with_mounted_volume(t(), String.t(), Dagger.Volume.t(), [
+          {:read_only, boolean() | nil},
+          {:expand, boolean() | nil}
+        ]) :: Dagger.Container.t()
+  def with_mounted_volume(%__MODULE__{} = container, path, volume, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withMountedVolume")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("volume", Dagger.ID.id!(volume))
+      |> QB.maybe_put_arg("readOnly", optional_args[:read_only])
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Return a new container snapshot, with a file added to its filesystem with text content
   """
   @spec with_new_file(t(), String.t(), String.t(), [

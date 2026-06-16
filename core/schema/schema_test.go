@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
@@ -34,7 +35,7 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
 
-	gotBytes, err := getSchemaJSON(nil, baseSchemaView(), dag)
+	gotBytes, err := getSchemaJSON(nil, nil, baseSchemaView(), dag)
 	require.NoError(t, err)
 	got := canonicalJSON(t, gotBytes)
 
@@ -190,6 +191,88 @@ func TestCoreModTypeDefs(t *testing.T) {
 	require.Equal(t, "allowParentDirPath", exportFnAllowParentDirPathArg.Name)
 	require.Equal(t, core.TypeDefKindBoolean, exportFnAllowParentDirPathArg.TypeDef.Self().Kind)
 	require.True(t, exportFnAllowParentDirPathArg.TypeDef.Self().Optional)
+}
+
+func TestVolumeConstructorsHiddenFromModuleSchema(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "volume-schema-client",
+		SessionID: "volume-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	hiddenTypes := append([]string{}, core.TypesToIgnoreForModuleIntrospection...)
+	for _, typed := range core.TypesHiddenFromModuleSDKs {
+		hiddenTypes = append(hiddenTypes, typed.Type().Name())
+	}
+	moduleBytes, err := getSchemaJSON(hiddenTypes, core.FieldsToIgnoreForModuleIntrospection, "", dag)
+	require.NoError(t, err)
+	moduleSchema := decodeIntrospectionSchema(t, moduleBytes)
+
+	require.NotNil(t, moduleSchema.Types.Get("Volume"))
+	require.NotNil(t, schemaField(moduleSchema, "Container", "withMountedVolume"))
+	require.Nil(t, schemaField(moduleSchema, "Query", "sshfsVolume"))
+	require.Nil(t, schemaField(moduleSchema, "Address", "volume"))
+
+	clientBytes, err := getSchemaJSON(nil, nil, "", dag)
+	require.NoError(t, err)
+	clientSchema := decodeIntrospectionSchema(t, clientBytes)
+	require.NotNil(t, clientSchema.Types.Get("Volume"))
+	require.NotNil(t, schemaField(clientSchema, "Container", "withMountedVolume"))
+	require.NotNil(t, schemaField(clientSchema, "Query", "sshfsVolume"))
+	require.NotNil(t, schemaField(clientSchema, "Address", "volume"))
+}
+
+func TestSchemaJSONRejectsInvalidHiddenFields(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "hidden-field-client",
+		SessionID: "hidden-field-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	for _, hiddenField := range []string{"NoDot", "Query.", ".sshfsVolume"} {
+		_, err := getSchemaJSON(nil, []string{hiddenField}, "", dag)
+		require.Error(t, err, hiddenField)
+	}
+}
+
+func decodeIntrospectionSchema(t *testing.T, data []byte) *codegenintrospection.Schema {
+	t.Helper()
+
+	var response codegenintrospection.Response
+	require.NoError(t, json.Unmarshal(data, &response))
+	require.NotNil(t, response.Schema)
+	return response.Schema
+}
+
+func schemaField(schema *codegenintrospection.Schema, typeName, fieldName string) *codegenintrospection.Field {
+	typ := schema.Types.Get(typeName)
+	if typ == nil {
+		return nil
+	}
+	for _, field := range typ.Fields {
+		if field.Name == fieldName {
+			return field
+		}
+	}
+	return nil
 }
 
 func TestCurrentTypeDefsReturnAllTypes(t *testing.T) {

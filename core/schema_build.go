@@ -135,7 +135,7 @@ func installModules(
 	return nil
 }
 
-func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenTypes []string) (dagql.Result[*File], error) {
+func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenTypes []string, hiddenFields []string) (dagql.Result[*File], error) {
 	var schemaJSONFile dagql.Result[*File]
 	if err := dag.Select(ctx, dag.Root(), &schemaJSONFile,
 		dagql.Selector{
@@ -147,6 +147,10 @@ func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenType
 				{
 					Name:  "hiddenTypes",
 					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
+				},
+				{
+					Name:  "hiddenFields",
+					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenFields...)),
 				},
 			},
 		},

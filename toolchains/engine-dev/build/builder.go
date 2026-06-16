@@ -110,6 +110,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		"mount", "umount", "posix-libc-utils", "coreutils",
 		// for git
 		"git", "openssh-client",
+		// for SSHFS-backed volumes
+		"sshfs", "fuse3",
 		// for compression/decompression, containerd prefers igzip from the isa-l package as it's fastest
 		"isa-l", "pigz", "xz",
 		// for CNI (use nft variants for compatibility with kernels lacking legacy xtables)
@@ -167,7 +169,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", name), file: bin})
 	}
 
-	ctr := base
+	ctr := base.
+		WithExec([]string{"sh", "-c", "mkdir -p /etc && touch /etc/fuse.conf && (grep -qxF user_allow_other /etc/fuse.conf || printf '%s\\n' user_allow_other >> /etc/fuse.conf)"})
 	for _, bin := range bins {
 		ctr = ctr.WithFile(bin.path, bin.file, bin.fileOpts...)
 		eg.Go(func() error {
