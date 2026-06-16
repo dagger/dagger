@@ -85,6 +85,8 @@ const (
 	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
 )
 
+const defaultTelemetryDrainTimeout = 10 * time.Second
+
 type Params struct {
 	// The id to connect to the API server with. If blank, will be set to a
 	// new random value.
@@ -168,6 +170,13 @@ type Client struct {
 	closeMu       sync.RWMutex
 
 	telemetry *errgroup.Group
+	// telemetryDone/telemetryErr let tests observe consumer completion; the
+	// drain behavior itself is introduced by the follow-up fix.
+	telemetryDone chan struct{}
+	telemetryErr  error
+	// overridable in tests; defaults to defaultTelemetryDrainTimeout once the
+	// drain timeout is wired by the follow-up fix.
+	telemetryDrainTimeout time.Duration
 
 	httpClient *httpClient
 	bkClient   *bkclient.Client
@@ -204,7 +213,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	params.LoadWorkspaceModules = loadWorkspaceModules
 	params.SkipWorkspaceModules = false
 
-	c := &Client{Params: params}
+	c := newClient(ctx, params)
 
 	if c.ID == "" {
 		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
@@ -221,12 +230,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	}
 
 	c.EnableCloudScaleOut = c.EnableCloudScaleOut || os.Getenv(enableChecksScaleOutEnvName) != ""
-
-	// NB: decouple from the originator's cancel ctx
-	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
-	c.closeCtx, c.closeRequests = context.WithCancelCause(context.WithoutCancel(ctx))
-
-	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
 
 	defer func() {
 		if rerr != nil {
@@ -331,6 +334,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, rerr error) {
 	return c, nil
 }
 
+// newClient creates a Client with its lifecycle contexts wired. Tests use it
+// directly so they can exercise Close with a fake engine transport.
+func newClient(ctx context.Context, params Params) *Client {
+	c := &Client{Params: params}
+	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
+	c.closeCtx, c.closeRequests = context.WithCancelCause(context.WithoutCancel(ctx))
+	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
+	return c
+}
+
 func normalizeWorkspaceModuleLoading(loadWorkspaceModules, skipWorkspaceModules bool) (bool, error) {
 	if loadWorkspaceModules && skipWorkspaceModules {
 		return false, fmt.Errorf("load workspace modules and skip workspace modules are mutually exclusive")
@@ -367,10 +380,8 @@ func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ 
 	params.LoadWorkspaceModules = loadWorkspaceModules
 	params.SkipWorkspaceModules = false
 
-	c := &Client{
-		Params:                params.Params,
-		isCloudScaleOutClient: true,
-	}
+	c := newClient(ctx, params.Params)
+	c.isCloudScaleOutClient = true
 
 	if c.ID == "" {
 		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
@@ -384,12 +395,6 @@ func ConnectEngineToEngine(ctx context.Context, params EngineToEngineParams) (_ 
 	if c.SecretToken == "" {
 		c.SecretToken = uuid.New().String()
 	}
-
-	// NB: decouple from the originator's cancel ctx
-	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
-	c.closeCtx, c.closeRequests = context.WithCancelCause(context.WithoutCancel(ctx))
-
-	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
 
 	defer func() {
 		if rerr != nil {
@@ -538,8 +543,11 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 
 	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
 
+	return c.startTelemetryConsumers(ctx, c.newTelemetryHTTPClient())
+}
+
+func (c *Client) startTelemetryConsumers(ctx context.Context, httpClient *httpClient) error {
 	c.telemetry = new(errgroup.Group)
-	httpClient := c.newTelemetryHTTPClient()
 	if c.EngineTrace != nil {
 		if err := c.exportTraces(ctx, httpClient); err != nil {
 			return fmt.Errorf("export traces: %w", err)
@@ -555,6 +563,11 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 			return fmt.Errorf("export metrics: %w", err)
 		}
 	}
+	c.telemetryDone = make(chan struct{})
+	go func() {
+		c.telemetryErr = c.telemetry.Wait()
+		close(c.telemetryDone)
+	}()
 	return nil
 }
 
