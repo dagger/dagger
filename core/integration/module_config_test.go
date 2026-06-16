@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -764,42 +763,6 @@ func getVCSTestCase(t *testctx.T, url string) vcsTestCase {
 	return vcsTestCase{}
 }
 
-func requireHTTPStatusOK(ctx context.Context, t *testctx.T, url string) {
-	t.Helper()
-
-	var lastErr error
-	var lastStatus int
-	for attempt := 1; attempt <= 3; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		require.NoError(t, err)
-
-		resp, err := http.DefaultClient.Do(req)
-		if err == nil {
-			lastErr = nil
-			lastStatus = resp.StatusCode
-			_ = resp.Body.Close()
-			if lastStatus == http.StatusOK {
-				return
-			}
-		} else {
-			lastErr = err
-		}
-
-		if attempt < 3 {
-			select {
-			case <-ctx.Done():
-				require.NoError(t, ctx.Err())
-			case <-time.After(time.Duration(attempt) * time.Second):
-			}
-		}
-	}
-
-	if lastErr != nil {
-		require.NoError(t, lastErr)
-	}
-	require.Equal(t, http.StatusOK, lastStatus)
-}
-
 func testGitModuleRef(tc vcsTestCase, subpath string) string {
 	url := tc.gitTestRepoRef
 	if subpath != "" {
@@ -830,7 +793,10 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			// URL format matches public repo from same provider.
 			// No need to test with auth on those refs
 			if !tc.isPrivateRepo {
-				requireHTTPStatusOK(ctx, t, htmlURL)
+				resp, err := http.Get(htmlURL)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				require.Equal(t, http.StatusOK, resp.StatusCode)
 				require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
 			}
 
@@ -858,7 +824,10 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			// URL format matches public repo from same provider.
 			// No need to test with auth on those refs
 			if !tc.isPrivateRepo {
-				requireHTTPStatusOK(ctx, t, htmlURL)
+				resp, err := http.Get(htmlURL)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				require.Equal(t, http.StatusOK, resp.StatusCode)
 			}
 
 			commit, err := base.
@@ -885,7 +854,10 @@ func (ModuleConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			// URL format matches public repo from same provider.
 			// No need to test with auth on those refs
 			if !tc.isPrivateRepo {
-				requireHTTPStatusOK(ctx, t, htmlURL)
+				resp, err := http.Get(htmlURL)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				require.Equal(t, http.StatusOK, resp.StatusCode)
 			}
 
 			commit, err := base.

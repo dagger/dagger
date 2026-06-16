@@ -159,7 +159,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 		caCertsTest{"wolfi basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(wolfiImage).
-				WithExec(retryableApkAdd("ca-certificates", "curl"))
+				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
 
@@ -598,11 +598,6 @@ type caCertsTest struct {
 type caCertsTestFixtures struct {
 	caCertContents string
 	engineEndpoint string
-}
-
-func retryableApkAdd(pkgs ...string) []string {
-	apkAdd := "apk add " + strings.Join(pkgs, " ")
-	return []string{"sh", "-c", fmt.Sprintf("for i in 1 2 3; do %s && exit 0; sleep $((i * 2)); done; %s", apkAdd, apkAdd)}
 }
 
 // nixosLikeContainer turns an existing container into one that detects as

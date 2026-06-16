@@ -16,13 +16,7 @@ import (
 
 func New(
 	// +defaultPath="/"
-	// +ignore=[
-	// "*",
-	// "**/node_modules",
-	// "!docs",
-	// "!sdk/typescript",
-	// "!CONTRIBUTING.md"
-	// ]
+	// +ignore=["bin",".git","**/.git","**/node_modules","**/.venv","**/__pycache__","**/sdk/runtime/**","sdk/typescript/dist","sdk/rust/examples/backend/target","sdk/rust/target","sdk/php/vendor","dagql/idtui/viztest/broken/**","**/broken*/**"]
 	source *dagger.Directory,
 	// +defaultPath="/docs/nginx.conf"
 	nginxConfig *dagger.File,
@@ -97,11 +91,17 @@ func (d DocsDev) References(
 		WithExec([]string{"node", "plugins/dagger-api-reference/generate-stubs.js"}).
 		Directory("/src").
 		WithoutDirectory("docs/node_modules")
-	// The CLI reference (docs/current_docs/reference/cli/index.mdx) is generated
-	// separately by the go toolchain (see docs/current_docs/reference/generate.go)
-	// and committed, so it is already part of src here.
+	// 3. Generate CLI reference by running the committed go:generate directive.
+	cliReference := dag.Go(dagger.GoOpts{
+		Source: src,
+	}).
+		Env().
+		WithWorkdir("docs/current_docs/reference").
+		WithExec([]string{"go", "generate", "./..."}).
+		File("/app/docs/current_docs/reference/cli/index.mdx")
+	withCLIReference := src.WithFile("docs/current_docs/reference/cli/index.mdx", cliReference)
 
-	// 3. Generate config file schemas?
+	// 4. Generate config file schemas?
 	withConfigSchemas := src.
 		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json")).
 		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev().ConfigSchema("dagger-module.toml")).
@@ -110,6 +110,7 @@ func (d DocsDev) References(
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).
 		WithChanges(withAPIReference.Changes(src)).
+		WithChanges(withCLIReference.Changes(src)).
 		WithChanges(withConfigSchemas.Changes(src)).
 		Changes(src)
 	return changes, nil

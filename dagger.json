@@ -65,10 +65,6 @@
       "source": "toolchains/go-sdk-dev"
     },
     {
-      "name": "golang",
-      "source": "toolchains/golang-dev"
-    },
-    {
       "name": "helm",
       "source": "github.com/dagger/helm@main",
       "pin": "d0a7e172e8212b31c6061bb699495b1e8ba0958f"
