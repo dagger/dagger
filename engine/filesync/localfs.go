@@ -251,6 +251,9 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	var ensureIgnoredParentDirs func(path string) error
 	ensureIgnoredParentDirs = func(path string) error {
+		if len(ignoredDirs) == 0 {
+			return nil
+		}
 		dir := filepath.Dir(path)
 		if dir == "." { // paths are relative; "." means we reached the sync root
 			return nil
@@ -518,6 +521,9 @@ func (local *localFS) Sync( //nolint:gocyclo
 			return nil
 
 		case ChangeKindNone:
+			if err := ensureIgnoredParentDirs(path); err != nil {
+				return err
+			}
 			appliedChange, err := local.GetPreviousChange(egCtx, path, lowerStat)
 			if err != nil {
 				return err

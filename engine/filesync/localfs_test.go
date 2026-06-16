@@ -105,15 +105,22 @@ func TestSyncReincludedFileUnderIgnoredParentCacheContext(t *testing.T) {
 		assert.NilError(t, cacheManager.Close())
 	})
 
-	ref, _, err := local.Sync(ctx, readFS{client}, cacheManager, false)
-	assert.NilError(t, err)
-	t.Cleanup(func() {
-		assert.NilError(t, ref.Release(context.Background()))
-	})
+	syncAndAssertParentChecksum := func() {
+		t.Helper()
 
-	dgst, err := bkcontenthash.Checksum(ctx, ref, "/foo", bkcontenthash.ChecksumOpts{})
-	assert.NilError(t, err)
-	assert.Assert(t, dgst != "")
+		ref, _, err := local.Sync(ctx, readFS{client}, cacheManager, false)
+		assert.NilError(t, err)
+		defer func() {
+			assert.NilError(t, ref.Release(context.Background()))
+		}()
+
+		dgst, err := bkcontenthash.Checksum(ctx, ref, "/foo", bkcontenthash.ChecksumOpts{})
+		assert.NilError(t, err)
+		assert.Assert(t, dgst != "")
+	}
+
+	syncAndAssertParentChecksum() // cold mirror
+	syncAndAssertParentChecksum() // warm mirror, re-included file is ChangeKindNone
 }
 
 type readFS struct {
