@@ -1,5 +1,14 @@
 package core
 
+// These tests cover the Dagger engine process and the client/engine contract.
+// They verify signal handling, engine naming, `dagger run`, version
+// compatibility, cancellation, Prometheus metrics, DagQL cache cleanup, and
+// client metadata reuse.
+//
+// See also:
+// - provision_test.go: engine provisioning and driver selection.
+// - engine_persistence_test.go: engine state across restarts.
+
 import (
 	"bytes"
 	"context"
@@ -547,7 +556,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 				// set version to empty, this makes it the latest, we don't want to
 				// test client compat (that's the previous tests)
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "").
-				With(daggerExec("init", "--name=bare", "--sdk=go"))
+				With(withModuleFixture(t, c, "/work", "go/bare"))
 
 			clientCtr = clientCtr.
 				WithNewFile("/work/dagger.json", `{"name": "bare", "sdk": "go", "engineVersion": "`+tc.moduleVersion+`"}`).
@@ -555,10 +564,10 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 			if tc.errs == nil {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "dagger query --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "dagger query -m . --doc /query.graphql"})
 			} else {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "! dagger query --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "! dagger query -m . --doc /query.graphql"})
 			}
 
 			stderr, err := clientCtr.Stderr(ctx)
@@ -577,13 +586,10 @@ func (EngineSuite) TestModuleVersionCompatInvalid(ctx context.Context, t *testct
 
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=bare", "--sdk=go")).
+	modGen := moduleFixture(t, c, "go/bare").
 		WithNewFile("dagger.json", `{ "name": "bare", "engineVersion": "v100.0.0", "sdk": 123 }`)
 	_, err := modGen.
-		With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
+		With(daggerQueryAt(".", `{containerEcho(stringArg:"hello"){stdout}}`)).
 		Stdout(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)
@@ -873,23 +879,48 @@ func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T
 		return found, nil
 	}
 
+	// Seed the workload directly via the Dagger Go API. The CLI commands
+	// 'dagger module init' / 'dagger module install' were removed on this
+	// branch (see commit d2b365b83), so the workload's go module, its
+	// python dependency, and the dep wiring all have to be written by the
+	// test itself. Putting that in Go (instead of shell heredocs in the
+	// WithExec) keeps it readable and confines the WithExec to what the
+	// test is actually measuring: repeated schema loads via dagger
+	// functions.
+	workloadDir := c.Directory().
+		WithNewFile("dagger.json", `{"name":"main","engineVersion":"latest","sdk":{"source":"go"},"dependencies":[{"name":"dep","source":"./dep"}]}`).
+		WithNewFile("main.go", `package main
+
+type Main struct{}
+
+func (m *Main) Hello() string { return "hi" }
+`).
+		WithNewFile("dep/dagger.json", `{"name":"dep","engineVersion":"latest","sdk":{"source":"python"}}`).
+		WithNewFile("dep/pyproject.toml", `[project]
+name = "dep"
+version = "0.0.0"
+requires-python = ">=3.14"
+dependencies = ["dagger-io"]
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
+`).
+		WithNewFile("dep/src/dep/__init__.py", `import dagger
+
+@dagger.object_type
+class Dep:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+`)
+
 	runWorkload := func() error {
 		_, err := engineClientContainer(ctx, t, c, devEngine).
+			WithMountedDirectory("/tmp/main", workloadDir).
+			WithWorkdir("/tmp/main").
 			WithExec([]string{"sh", "-ec", `
 set -eu
-rm -rf /tmp/main
-mkdir -p /tmp/main
-cd /tmp/main
-
-dagger init --name main --sdk=go >/dev/null
-
-mkdir -p dep
-cd dep
-dagger init --name dep --sdk=python >/dev/null
-
-cd /tmp/main
-dagger install ./dep >/dev/null
-
 # Load module + dependency schema a few times to exercise cache lifecycle.
 for i in $(seq 1 4); do
   dagger functions >/dev/null

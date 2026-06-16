@@ -1,13 +1,13 @@
 ---
 title: "Cache"
-description: "Learn how Dagger caches build layers and volumes to improve performance and efficiency in your workflows."
+description: "Learn how Dagger caches build layers, volumes, and function call results to improve performance and efficiency in your workflows."
 slug: /reference/configuration/cache
 ---
 
 
 # Cache
 
-Dagger caches two types of data:
+Dagger caches three types of data:
 
 1. Layers: This refers to build instructions and the results of some API calls.
 2. Volumes: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions.
@@ -18,13 +18,13 @@ Dagger caches two types of data:
 - Show all the cache entry metadata:
 
 ```shell
-dagger core engine local-cache entry-set entries
+dagger -m core function call engine local-cache entry-set entries
 ```
 
 - Show high level summaries of cache usage:
 
 ```shell
-dagger core engine local-cache entry-set
+dagger -m core function call engine local-cache entry-set
 ```
 
 ## Garbage collection
@@ -44,7 +44,7 @@ The cache policy can be manually configured using the [engine config](./engine.m
 To manually free up disk space used by the cache, use the following command:
 
 ```shell
-dagger core engine local-cache prune
+dagger -m core function call engine local-cache prune
 ```
 
 That will remove *all* cache entries not currently being used by connected clients from the disk.
@@ -52,5 +52,5 @@ That will remove *all* cache entries not currently being used by connected clien
 To instead trigger a prune that follows the same rules as specified in the engine's [configured cache garbage collection policy](./engine.mdx), use the following command:
 
 ```shell
-dagger core engine local-cache prune --use-default-policy
+dagger -m core function call engine local-cache prune --use-default-policy
 ```

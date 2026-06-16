@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DocsDevID` scalar type represents an identifier for an object of type DocsDev.
-type DocsDevID string // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
 
 // Retrieve the binding value, as type DocsDev
 func (r *Binding) AsDocsDev() *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
@@ -24,8 +21,9 @@ func (r *Binding) AsDocsDev() *DocsDev { // docs-dev (../../../../toolchains/doc
 type DocsDev struct { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
 	query *querybuilder.Selection
 
+	check   *Void
 	deploy  *string
-	id      *DocsDevID
+	id      *ID
 	publish *Void
 }
 
@@ -36,7 +34,7 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 }
 
 // Bump the Go SDK's Engine dependency
-func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:120:1)
+func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:119:1)
 	q := r.query.Select("bump")
 	q = q.Arg("engineVersion", engineVersion)
 
@@ -45,8 +43,18 @@ func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../
 	}
 }
 
+// Check the docs website build
+func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../toolchains/docs-dev/main.go:52:1)
+	if r.check != nil {
+		return nil
+	}
+	q := r.query.Select("check")
+
+	return q.Execute(ctx)
+}
+
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:135:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:134:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -62,13 +70,13 @@ func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secr
 }
 
 // A unique identifier for this DocsDev.
-func (r *DocsDev) ID(ctx context.Context) (DocsDevID, error) {
+func (r *DocsDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DocsDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -81,7 +89,7 @@ func (r *DocsDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *DocsDev) XXX_GraphQLIDType() string {
-	return "DocsDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -106,17 +114,19 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDocsDevFromID(DocsDevID(id))
+	*r = DocsDev{query: selectNode(dag.query, id, "DocsDev")}
 	return nil
 }
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:168:2)
+	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:167:2)
+
+	APIURL string // docs-dev (../../../../toolchains/docs-dev/main.go:169:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:164:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:163:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -126,6 +136,10 @@ func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...Doc
 		// `deployment` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Deployment) {
 			q = q.Arg("deployment", opts[i].Deployment)
+		}
+		// `apiUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].APIURL) {
+			q = q.Arg("apiUrl", opts[i].APIURL)
 		}
 	}
 	q = q.Arg("netlifyToken", netlifyToken)
@@ -138,11 +152,11 @@ type DocsDevReferencesOpts struct {
 	//
 	// Dagger version to generate API docs for
 	//
-	Version string // docs-dev (../../../../toolchains/docs-dev/main.go:75:2)
+	Version string // docs-dev (../../../../toolchains/docs-dev/main.go:74:2)
 }
 
 // Regenerate the API schema and CLI reference docs
-func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:72:1)
+func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:71:1)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -157,7 +171,7 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs
 }
 
 // Build the docs server
-func (r *DocsDev) Server() *Container { // docs-dev (../../../../toolchains/docs-dev/main.go:59:1)
+func (r *DocsDev) Server() *Container { // docs-dev (../../../../toolchains/docs-dev/main.go:58:1)
 	q := r.query.Select("server")
 
 	return &Container{
@@ -166,7 +180,7 @@ func (r *DocsDev) Server() *Container { // docs-dev (../../../../toolchains/docs
 }
 
 // Build the docs website
-func (r *DocsDev) Site() *Directory { // docs-dev (../../../../toolchains/docs-dev/main.go:50:1)
+func (r *DocsDev) Site() *Directory { // docs-dev (../../../../toolchains/docs-dev/main.go:42:1)
 	q := r.query.Select("site")
 
 	return &Directory{
@@ -179,6 +193,14 @@ func (r *DocsDev) Source() *Directory { // docs-dev (../../../../toolchains/docs
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this DocsDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DocsDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -226,16 +248,6 @@ func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../../..
 			q = q.Arg("nginxConfig", opts[i].NginxConfig)
 		}
 	}
-
-	return &DocsDev{
-		query: q,
-	}
-}
-
-// Load a DocsDev from its ID.
-func (r *Query) LoadDocsDevFromID(id DocsDevID) *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
-	q := r.query.Select("loadDocsDevFromID")
-	q = q.Arg("id", id)
 
 	return &DocsDev{
 		query: q,

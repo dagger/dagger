@@ -1,0 +1,7 @@
+{
+  "name": "relayer",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}

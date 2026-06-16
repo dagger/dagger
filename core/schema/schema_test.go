@@ -2,14 +2,66 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
+
+func TestBaseSchemaAllowlist(t *testing.T) {
+	// base_schema.json is the public API surface visible to the oldest supported
+	// module view. New APIs should not appear here unless they are intentionally
+	// available to historical module versions.
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "base-schema-client",
+		SessionID: "base-schema-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	gotBytes, err := getSchemaJSON(nil, baseSchemaView(), dag)
+	require.NoError(t, err)
+	got := canonicalJSON(t, gotBytes)
+
+	wantBytes, err := os.ReadFile("base_schema.json")
+	require.NoError(t, err)
+	want := canonicalJSON(t, wantBytes)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("base schema allowlist mismatch (-want +got):\n%s\nNew public APIs must be gated with View(AfterVersion(<next release version from .changes/.next>)).", diff)
+	}
+}
+
+func baseSchemaView() call.View {
+	if engine.MinimumModuleVersion == "" {
+		return "v0.9.9"
+	}
+	return call.View(engine.MinimumModuleVersion)
+}
+
+func canonicalJSON(t *testing.T, data []byte) string {
+	t.Helper()
+
+	var value any
+	require.NoError(t, json.Unmarshal(data, &value))
+	formatted, err := json.MarshalIndent(value, "", "  ")
+	require.NoError(t, err)
+	return string(formatted) + "\n"
+}
 
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()

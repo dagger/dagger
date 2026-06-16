@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
+ * A unique identifier for an object.
  */
-readonly class InterfaceTypeDefId extends Client\AbstractId
+readonly class InterfaceTypeDefId extends Client\AbstractScalar
 {
 }

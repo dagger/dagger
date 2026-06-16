@@ -1,9 +1,6 @@
 {
   "name": "dagger-dev",
   "engineVersion": "v0.21.0",
-  "sdk": {
-    "source": "go"
-  },
   "toolchains": [
     {
       "name": "changelog",
@@ -38,6 +35,7 @@
           "ignore": [
             "bin",
             ".git",
+            "**/.git",
             "**/node_modules",
             "**/.venv",
             "**/__pycache__",
@@ -69,12 +67,25 @@
     {
       "name": "golang",
       "source": "github.com/dagger/go@main",
-      "pin": "4985ec6b9752e9deac3d37276c0f8a33ceba30bf",
+      "pin": "f35c13de6dba9131093f6969ba79b32e19b26428",
       "customizations": [
         {
-          "argument": "selectModule",
-          "default": "e2e/*"
+          "argument": "test",
+          "default": "e2e/**"
+        },
+        {
+          "argument": "lint",
+          "default": "!**"
+        },
+        {
+          "argument": "generate",
+          "default": "docs/current_docs/reference"
         }
+      ],
+      "ignoreChecks": [
+        "generate-all",
+        "lint-all",
+        "test-all"
       ]
     },
     {
@@ -120,9 +131,7 @@
       "source": "toolchains/security",
       "customizations": [
         {
-          "function": [
-            "scanSource"
-          ],
+          "function": ["scanSource"],
           "argument": "source",
           "ignore": [
             "bin",
@@ -149,16 +158,5 @@
       "name": "typescript-sdk",
       "source": "toolchains/typescript-sdk-dev"
     }
-  ],
-  "include": [
-    "sdk/typescript/runtime/**/*",
-    "engine/distconsts",
-    "go.mod",
-    "go.sum",
-    "util/patchpreview"
-  ],
-  "source": ".dagger",
-  "codegen": {
-    "automaticGitignore": false
-  }
+  ]
 }

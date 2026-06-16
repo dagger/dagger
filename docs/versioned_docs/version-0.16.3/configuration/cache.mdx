@@ -1,0 +1,47 @@
+---
+slug: /configuration/cache
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Cache
+
+Dagger caches two types of data:
+
+1. Layers: This refers to build instructions and the results of some API calls.
+2. Volumes: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions.
+
+## Cache inspection
+
+- Show all the cache entry metadata:
+
+```shell
+dagger core engine local-cache entry-set entries
+```
+
+- Show high level summaries of cache usage:
+
+```shell
+dagger core engine local-cache entry-set
+```
+
+## Garbage collection
+
+The cache garbage collector runs in the background of the dagger engine,
+looking for unused layers and artifacts, and clears them up once they exceed
+the storage allowed by the cache policy.
+
+The default cache policy attempts to keep the long-term cache storage under 75%
+of the total disk, while also ensuring that at least 20% of the disk remains
+free for other applications and tools.
+
+The cache policy can be manually configured using the [engine config](./engine.mdx).
+
+## Manual pruning
+
+To manually free up disk space used by the cache, use the following command:
+
+```shell
+dagger core engine local-cache prune
+```

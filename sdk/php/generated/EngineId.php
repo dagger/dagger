@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `EngineID` scalar type represents an identifier for an object of type Engine.
+ * A unique identifier for an object.
  */
-readonly class EngineId extends Client\AbstractId
+readonly class EngineId extends Client\AbstractScalar
 {
 }

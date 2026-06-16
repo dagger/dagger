@@ -84,7 +84,7 @@ func (mirror *RemoteGitMirror) CacheUsageIdentities() []string {
 	return []string{mirror.snapshot.SnapshotID()}
 }
 
-func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (mirror *RemoteGitMirror) CacheUsageSize(ctx context.Context, _ dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if mirror == nil {
 		return 0, false, nil
 	}

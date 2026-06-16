@@ -1,0 +1,33 @@
+  #[DaggerFunction]
+  #[Doc('A coding agent for developing new features')]
+  public function develop(
+    #[Doc('Assignment to complete')] string $assignment,
+    #[Doc('Source directory to develop')] #[DefaultPath('/')] Directory $source
+  ): Directory {
+    // Environment with agent inputs and outputs
+    $environment = dag()
+      ->env()
+      ->withStringInput('assignment', $assignment, 'the assignment to complete')
+      ->withWorkspaceInput(
+        'workspace',
+        dag()->workspace($source),
+        'the workspace with tools to edit and test code'
+      )
+      ->withWorkspaceOutput('completed', 'the workspace with the completed assignment');
+
+    // Detailed prompt stored in markdown file
+    $promptFile = dag()->currentModule()->source()->file('develop_prompt.md');
+
+    // Put it all together to form the agent
+    $work = dag()->llm()->withEnv($environment)->withPromptFile($promptFile);
+
+    // Get the output from the agent
+    $completed = $work->env()->output('completed')->asWorkspace();
+    $completedDirectory = $completed->getSource()->withoutDirectory('node_modules');
+
+    // Make sure the tests really pass
+    $this->test($completedDirectory);
+
+    // Return the Directory with the assignment completed
+    return $completedDirectory;
+  }

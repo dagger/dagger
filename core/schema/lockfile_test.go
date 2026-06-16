@@ -15,11 +15,18 @@ import (
 )
 
 type fakeWorkspaceLockReader struct {
-	data []byte
-	err  error
+	data  []byte
+	err   error
+	files map[string][]byte
 }
 
-func (r fakeWorkspaceLockReader) ReadCallerHostFile(context.Context, string) ([]byte, error) {
+func (r fakeWorkspaceLockReader) ReadCallerHostFile(_ context.Context, path string) ([]byte, error) {
+	if r.files != nil {
+		if data, ok := r.files[path]; ok {
+			return data, nil
+		}
+		return nil, os.ErrNotExist
+	}
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -165,22 +172,105 @@ func TestCurrentLookupLockMode(t *testing.T) {
 	})
 }
 
+func TestLookupLockForMode(t *testing.T) {
+	t.Parallel()
+
+	const operation = "container.from"
+
+	t.Run("pinned without workspace lock resolves live without writes", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModePinned),
+		})
+		query := &core.Query{Server: &currentTypeDefsTestServer{}}
+
+		mode, lock, err := lookupLockForMode(ctx, query, operation)
+		require.NoError(t, err)
+		require.Equal(t, workspace.LockModeDisabled, mode)
+		require.Nil(t, lock)
+	})
+
+	t.Run("frozen without workspace lock fails", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModeFrozen),
+		})
+		query := &core.Query{Server: &currentTypeDefsTestServer{}}
+
+		_, _, err := lookupLockForMode(ctx, query, operation)
+		require.ErrorContains(t, err, "no writable workspace lockfile is available")
+	})
+
+	t.Run("uses available workspace lock", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModePinned),
+		})
+		query := &core.Query{Server: &currentTypeDefsTestServer{
+			workspaceLock:   workspace.NewLock(),
+			workspaceLockOK: true,
+		}}
+
+		mode, lock, err := lookupLockForMode(ctx, query, operation)
+		require.NoError(t, err)
+		require.Equal(t, workspace.LockModePinned, mode)
+		require.NotNil(t, lock)
+	})
+}
+
+func TestWorkspaceInstallLookupContext(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults unspecified mode to pinned", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{})
+		ctx = workspaceInstallLookupContext(ctx)
+
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, string(workspace.LockModePinned), clientMetadata.LockMode)
+	})
+
+	t.Run("preserves explicit mode", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModeDisabled),
+		})
+		ctx = workspaceInstallLookupContext(ctx)
+
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, string(workspace.LockModeDisabled), clientMetadata.LockMode)
+	})
+}
+
 func TestLockHostPath(t *testing.T) {
 	t.Parallel()
 
-	ws := &core.Workspace{Path: filepath.Join("apps", "api")}
+	ws := &core.Workspace{
+		ConfigFile: filepath.Join("apps", "api", "dagger.toml"),
+		LockFile:   filepath.Join("apps", "api", "dagger.lock"),
+	}
 	ws.SetHostPath("/repo")
 
 	lockPath, err := lockHostPath(ws)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join("/repo", "apps", "api", ".dagger", "lock"), lockPath)
+	require.Equal(t, filepath.Join("/repo", "apps", "api", "dagger.lock"), lockPath)
 }
 
 func TestReadWorkspaceLock(t *testing.T) {
 	t.Parallel()
 
 	makeWorkspace := func() *core.Workspace {
-		ws := &core.Workspace{Path: "."}
+		ws := &core.Workspace{
+			ConfigFile: "dagger.toml",
+			LockFile:   "dagger.lock",
+		}
 		ws.SetHostPath("/repo")
 		return ws
 	}
@@ -220,5 +310,30 @@ func TestReadWorkspaceLock(t *testing.T) {
 		lockBytes, err := lock.Marshal()
 		require.NoError(t, err)
 		require.Empty(t, lockBytes)
+	})
+
+	t.Run("reads legacy lock when canonical lock is missing", func(t *testing.T) {
+		t.Parallel()
+
+		legacy := workspace.NewLock()
+		require.NoError(t, legacy.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, workspace.LookupResult{
+			Value:  "sha256:deadbeef",
+			Policy: workspace.PolicyPin,
+		}))
+		legacyBytes, err := legacy.Marshal()
+		require.NoError(t, err)
+
+		lock, exists, err := readWorkspaceLockState(context.Background(), fakeWorkspaceLockReader{
+			files: map[string][]byte{
+				filepath.Join("/repo", ".dagger", "lock"): legacyBytes,
+			},
+		}, makeWorkspace())
+		require.NoError(t, err)
+		require.True(t, exists)
+
+		got, ok, err := lock.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Equal(t, workspace.LookupResult{Value: "sha256:deadbeef", Policy: workspace.PolicyPin}, got)
 	})
 }

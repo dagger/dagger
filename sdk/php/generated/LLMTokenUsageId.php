@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
+ * A unique identifier for an object.
  */
-readonly class LLMTokenUsageId extends Client\AbstractId
+readonly class LLMTokenUsageId extends Client\AbstractScalar
 {
 }

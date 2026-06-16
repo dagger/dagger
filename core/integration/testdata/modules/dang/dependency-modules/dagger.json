@@ -1,0 +1,26 @@
+{
+  "name": "test",
+  "engineVersion": "v0.21.5",
+  "sdk": {
+    "source": "dang"
+  },
+  "dependencies": [
+    {
+      "name": "gochild",
+      "source": "./gochild"
+    },
+    {
+      "name": "pychild",
+      "source": "./pychild"
+    },
+    {
+      "name": "tschild",
+      "source": "./tschild"
+    },
+    {
+      "name": "dangchild",
+      "source": "./dangchild"
+    }
+  ],
+  "disableDefaultFunctionCaching": true
+}

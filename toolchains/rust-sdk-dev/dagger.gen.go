@@ -19,7 +19,7 @@ import (
 
 	"dagger/rust-sdk-dev/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -283,7 +286,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cargoRegistryToken", err))
 				}
 			}
-			return nil, (*RustSdkDev).Release(&parent, ctx, sourceTag, cargoRegistryToken)
+			var cargoRegistryIndex string
+			if inputArgs["cargoRegistryIndex"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cargoRegistryIndex"]), &cargoRegistryIndex)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cargoRegistryIndex", err))
+				}
+			}
+			return nil, (*RustSdkDev).Release(&parent, ctx, sourceTag, cargoRegistryToken, cargoRegistryIndex)
 		case "ReleaseDryRun":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -325,7 +335,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var workspace *dagger.Directory
+			var workspace *dagger.Workspace
 			if inputArgs["workspace"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["workspace"]), &workspace)
 				if err != nil {

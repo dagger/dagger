@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DotnetSdkDevID` scalar type represents an identifier for an object of type DotnetSdkDev.
-type DotnetSDKDevID string // dotnet-sdk-dev (../../../../:0:0)
 
 // Retrieve the binding value, as type DotnetSdkDev
 func (r *Binding) AsDotnetSDKDev() *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
@@ -25,7 +22,7 @@ type DotnetSDKDev struct { // dotnet-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
 	csharpier  *Void
-	id         *DotnetSDKDevID
+	id         *ID
 	sourcePath *string
 	test       *Void
 }
@@ -88,13 +85,13 @@ func (r *DotnetSDKDev) DevContainer() *Container { // dotnet-sdk-dev (../../../.
 }
 
 // A unique identifier for this DotnetSdkDev.
-func (r *DotnetSDKDev) ID(ctx context.Context) (DotnetSDKDevID, error) {
+func (r *DotnetSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DotnetSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -107,7 +104,7 @@ func (r *DotnetSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *DotnetSDKDev) XXX_GraphQLIDType() string {
-	return "DotnetSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -132,7 +129,7 @@ func (r *DotnetSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDotnetSDKDevFromID(DotnetSDKDevID(id))
+	*r = DotnetSDKDev{query: selectNode(dag.query, id, "DotnetSdkDev")}
 	return nil
 }
 
@@ -193,11 +190,19 @@ func (r *DotnetSDKDev) WithInstall() *DotnetSDKDev { // dotnet-sdk-dev (../../..
 }
 
 // A directory with all the files needed to develop the SDK.
-func (r *DotnetSDKDev) Workspace() *Directory { // dotnet-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *DotnetSDKDev) WorkspaceDir() *Directory { // dotnet-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this DotnetSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DotnetSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -230,7 +235,7 @@ type DotnetSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK.
 	//
-	Workspace *Directory // dotnet-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // dotnet-sdk-dev (../../../../:0:0)
 	//
 	// The path of the SDK in the workspace.
 	//
@@ -240,25 +245,15 @@ type DotnetSDKDevOpts struct {
 func (r *Query) DotnetSDKDev(opts ...DotnetSDKDevOpts) *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
 	q := r.query.Select("dotnetSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
 	}
-
-	return &DotnetSDKDev{
-		query: q,
-	}
-}
-
-// Load a DotnetSdkDev from its ID.
-func (r *Query) LoadDotnetSDKDevFromID(id DotnetSDKDevID) *DotnetSDKDev { // dotnet-sdk-dev (../../../../:0:0)
-	q := r.query.Select("loadDotnetSdkDevFromID")
-	q = q.Arg("id", id)
 
 	return &DotnetSDKDev{
 		query: q,

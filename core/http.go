@@ -18,6 +18,8 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -126,7 +128,7 @@ func (state *HTTPState) CacheUsageIdentities() []string {
 	return []string{state.snapshotID}
 }
 
-func (state *HTTPState) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (state *HTTPState) CacheUsageSize(ctx context.Context, sizeProvider dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if state == nil {
 		return 0, false, nil
 	}
@@ -150,18 +152,10 @@ func (state *HTTPState) CacheUsageSize(ctx context.Context, identity string) (in
 	if snapshotID == "" {
 		return 0, false, nil
 	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return 0, false, err
+	if sizeProvider == nil {
+		return 0, false, nil
 	}
-	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return 0, false, err
-	}
-	defer func() {
-		_ = ref.Release(context.WithoutCancel(ctx))
-	}()
-	size, err := ref.Size(ctx)
+	size, err := sizeProvider.SnapshotSize(ctx, snapshotID)
 	if err != nil {
 		return 0, false, err
 	}
@@ -245,6 +239,14 @@ func (state *HTTPState) Resolve(
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
+	// Encapsulated like the resolver's "pulling" span: hidden unless it
+	// fails, surfacing as a labeled progress row only when bytes actually
+	// move (a 304 revalidation emits no progress).
+	span, ctx := tracing.StartSpan(ctx, "fetching "+state.URL, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+
 	expectedChecksum, err := parseOptionalChecksum(checksum)
 	if err != nil {
 		return nil, fmt.Errorf("invalid checksum %q: %w", checksum.Value, err)
@@ -280,7 +282,13 @@ func (state *HTTPState) Resolve(
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// close through a closure: resp.Body is replaced with a progress reader
+	// below, and `defer resp.Body.Close()` would capture the original body
+	// at registration, leaving the wrapper (and its final progress emit on
+	// early returns) unclosed
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotModified {
 		return nil, fmt.Errorf("invalid response status %s", resp.Status)
 	}
@@ -301,6 +309,7 @@ func (state *HTTPState) Resolve(
 		return state.fileResult(ctx, query, name, permissions)
 	}
 
+	resp.Body = bkcache.NewProgressReader(ctx, state.URL, resp.ContentLength, resp.Body)
 	newCanonical, newDigest, newLastModified, newETag, err := writeHTTPStateSnapshot(ctx, query, state.URL, resp)
 	if err != nil {
 		return nil, err
@@ -444,6 +453,11 @@ func FetchHTTPFile(
 	query *Query,
 	opts FetchHTTPRequestOpts,
 ) (_ *HTTPFetchResult, rerr error) {
+	span, ctx := tracing.StartSpan(ctx, "fetching "+opts.URL, telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+
 	expectedChecksum, err := parseOptionalChecksum(opts.Checksum)
 	if err != nil {
 		return nil, fmt.Errorf("invalid checksum %q: %w", opts.Checksum.Value, err)
@@ -462,6 +476,7 @@ func FetchHTTPFile(
 	if err != nil {
 		return nil, err
 	}
+	resp.Body = bkcache.NewProgressReader(ctx, opts.URL, resp.ContentLength, resp.Body)
 	defer resp.Body.Close()
 
 	bkref, err := query.SnapshotManager().New(ctx, nil,

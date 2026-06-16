@@ -382,16 +382,12 @@ func (t *ModuleObjectType) TypeDef(ctx context.Context) (dagql.ObjectResult[*Typ
 			return dagql.ObjectResult[*TypeDef]{}, err
 		}
 	}
-	return SelectTypeDef(ctx, dagql.Selector{
-		Field: "withObject",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(t.typeDef.Name)},
-			{Name: "description", Value: dagql.String(t.typeDef.Description)},
-			{Name: "sourceMap", Value: sourceMap},
-			{Name: "deprecated", Value: OptString(t.typeDef.Deprecated)},
-			{Name: "sourceModuleName", Value: OptSourceModuleName(t.typeDef.SourceModuleName)},
-		},
-	})
+	return SelectReferenceTypeDef(ctx, "withObject", "name", t.typeDef.Name,
+		dagql.NamedInput{Name: "description", Value: dagql.String(t.typeDef.Description)},
+		dagql.NamedInput{Name: "sourceMap", Value: sourceMap},
+		dagql.NamedInput{Name: "deprecated", Value: OptString(t.typeDef.Deprecated)},
+		dagql.NamedInput{Name: "sourceModuleName", Value: OptSourceModuleName(t.typeDef.SourceModuleName)},
+	)
 }
 
 type Callable interface {
@@ -1178,9 +1174,23 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 				if !ok {
 					return nil, fmt.Errorf("expected *Query, got %T", self)
 				}
+				// store only the args the caller actually provided — found in
+				// the call frame, built from the query AST — so the
+				// constructor still applies its own defaults, including .env
+				// user defaults, to the rest.
+				var explicit map[string]bool
+				if frame := dagql.CurrentCall(ctx); frame != nil {
+					explicit = make(map[string]bool, len(frame.Args))
+					for _, arg := range frame.Args {
+						explicit[arg.Name] = true
+					}
+				}
 				cp := query.Clone()
 				cp.ConstructorArgs = make(map[string]dagql.Input, len(args))
 				for k, v := range args {
+					if explicit != nil && !explicit[k] {
+						continue
+					}
 					cp.ConstructorArgs[k] = v
 				}
 				return dagql.NewObjectResultForCurrentCall(ctx, dag, cp)

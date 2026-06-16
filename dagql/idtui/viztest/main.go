@@ -197,6 +197,83 @@ func (*Viztest) ManyLines(n int) {
 	}
 }
 
+// PartialProgress emits synthetic streaming-progress log records (the
+// dagger.io/progress.* convention) with hard-coded values that never reach
+// completion, so the final frame deterministically renders partially filled
+// braille bars: complete, in-flight at various fractions, untouched, and
+// indeterminate (unknown total). A child span overflows the per-row item
+// cap to exercise +N truncation.
+// +cache="session"
+func (*Viztest) PartialProgress(ctx context.Context) {
+	// one cell per fill state on the function's own span
+	emitProgress(ctx, "layer-complete", 10_000_000, 10_000_000)
+	emitProgress(ctx, "layer-almost", 9_000_000, 10_000_000)
+	emitProgress(ctx, "layer-half", 5_000_000, 10_000_000)
+	emitProgress(ctx, "layer-started", 1_000_000, 10_000_000)
+	emitProgress(ctx, "layer-untouched", 0, 10_000_000)
+	emitProgress(ctx, "layer-indeterminate", 5_000_000, 0)
+
+	func() {
+		ctx, span := Tracer().Start(ctx, "overflow")
+		defer span.End()
+		for i := range 50 {
+			emitProgress(ctx, fmt.Sprintf("item-%d", i), 1024, 1024)
+		}
+	}()
+}
+
+// emitProgress emits one streaming-progress log record following the
+// dagger.io/progress.* convention.
+func emitProgress(ctx context.Context, item string, current, total int64) {
+	rec := log.Record{}
+	rec.SetTimestamp(time.Now())
+	// explicit empty body: progress records are not log text, and an
+	// unset body does not survive the OTLP round-trip
+	rec.SetBody(log.StringValue(""))
+	rec.AddAttributes(
+		log.String("dagger.io/progress.item", item),
+		log.Int64("dagger.io/progress.current", current),
+		log.Int64("dagger.io/progress.total", total),
+		log.String("dagger.io/progress.unit", "bytes"),
+	)
+	telemetry.Logger(ctx, "dagger.io/progress").Emit(ctx, rec)
+}
+
+// TransientProgress runs a long-lived "syncing layers" span (collapsed by
+// default, so its descendants' progress rolls up onto its row) containing
+// a storm of transfers that complete instantly and one that stays in
+// flight. Exercises the roll-up's quick-transfer fold: the quick ones
+// never earn a live row and merge into one summary line in the final
+// report ("1 transfer, 3 fetches ..."), while the in-flight transfer
+// appears live once it's been active past the threshold and keeps its own
+// row in the report.
+// +cache="session"
+func (*Viztest) TransientProgress(ctx context.Context) {
+	ctx, outer := Tracer().Start(ctx, "syncing layers")
+	defer outer.End()
+
+	func() {
+		ctx, span := Tracer().Start(ctx, "transfer-done")
+		defer span.End()
+		emitProgress(ctx, "blob", 10_000_000, 10_000_000)
+	}()
+
+	for i := range 3 {
+		func() {
+			ctx, span := Tracer().Start(ctx, fmt.Sprintf("fetching https://example.com/pkg-%d.apk", i))
+			defer span.End()
+			emitProgress(ctx, "body", 2_000_000, 2_000_000)
+		}()
+	}
+
+	ctx, span := Tracer().Start(ctx, "transfer-live")
+	defer span.End()
+	for i := int64(1); i <= 8; i++ {
+		emitProgress(ctx, "blob", i*1_000_000, 10_000_000)
+		time.Sleep(time.Second)
+	}
+}
+
 // +cache="session"
 func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
 	ctx, span := Tracer().Start(ctx, "custom span")

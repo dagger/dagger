@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `JavaSdkDevID` scalar type represents an identifier for an object of type JavaSdkDev.
-type JavaSDKDevID string // java-sdk-dev (../../../../:0:0)
 
 // Retrieve the binding value, as type JavaSdkDev
 func (r *Binding) AsJavaSDKDev() *JavaSDKDev { // java-sdk-dev (../../../../:0:0)
@@ -49,7 +46,7 @@ type JavaSDKDev struct { // java-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
 	checkDeps     *Void
-	id            *JavaSDKDevID
+	id            *ID
 	lint          *Void
 	name          *string
 	release       *Void
@@ -103,13 +100,13 @@ func (r *JavaSDKDev) Fmt() *Changeset { // java-sdk-dev (../../../../:0:0)
 }
 
 // A unique identifier for this JavaSdkDev.
-func (r *JavaSDKDev) ID(ctx context.Context) (JavaSDKDevID, error) {
+func (r *JavaSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response JavaSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -122,7 +119,7 @@ func (r *JavaSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *JavaSDKDev) XXX_GraphQLIDType() string {
-	return "JavaSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -147,7 +144,7 @@ func (r *JavaSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadJavaSDKDevFromID(JavaSDKDevID(id))
+	*r = JavaSDKDev{query: selectNode(dag.query, id, "JavaSdkDev")}
 	return nil
 }
 
@@ -242,11 +239,19 @@ func (r *JavaSDKDev) Test(ctx context.Context) error { // java-sdk-dev (../../..
 }
 
 // Workspace with all the files needed to develop the SDK.
-func (r *JavaSDKDev) Workspace() *Directory { // java-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *JavaSDKDev) WorkspaceDir() *Directory { // java-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this JavaSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *JavaSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -255,7 +260,7 @@ type JavaSDKDevOpts struct {
 	//
 	// Workspace with all the files needed to develop the SDK.
 	//
-	Workspace *Directory // java-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // java-sdk-dev (../../../../:0:0)
 	//
 	// The path of the SDK in the workspace
 	//
@@ -265,25 +270,15 @@ type JavaSDKDevOpts struct {
 func (r *Query) JavaSDKDev(opts ...JavaSDKDevOpts) *JavaSDKDev { // java-sdk-dev (../../../../:0:0)
 	q := r.query.Select("javaSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
 	}
-
-	return &JavaSDKDev{
-		query: q,
-	}
-}
-
-// Load a JavaSdkDev from its ID.
-func (r *Query) LoadJavaSDKDevFromID(id JavaSDKDevID) *JavaSDKDev { // java-sdk-dev (../../../../:0:0)
-	q := r.query.Select("loadJavaSdkDevFromID")
-	q = q.Arg("id", id)
 
 	return &JavaSDKDev{
 		query: q,

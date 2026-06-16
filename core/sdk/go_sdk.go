@@ -27,7 +27,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "5dde81db2f77c62bd87837b25b07fe496df89606" // v0.21.0
+	goSDKLibVersion = "336f7b79a6df9834f16d8b4d105e05b9b1a39981" // v0.21.6
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
@@ -50,6 +50,20 @@ type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
 
+func (sdk *goSDK) CloneForModuleSource(*core.ModuleSource) core.SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	if sdk.rawConfig != nil {
+		cp.rawConfig = make(map[string]any, len(sdk.rawConfig))
+		for k, v := range sdk.rawConfig {
+			cp.rawConfig[k] = v
+		}
+	}
+	return &cp
+}
+
 func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
 	return sdk, true
 }
@@ -64,6 +78,13 @@ func (sdk *goSDK) AsCodeGenerator() (core.CodeGenerator, bool) {
 
 func (sdk *goSDK) AsClientGenerator() (core.ClientGenerator, bool) {
 	return sdk, true
+}
+
+func (sdk *goSDK) AttachDependencyResults(
+	context.Context,
+	func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	return nil, nil
 }
 
 func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {

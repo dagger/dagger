@@ -7,3 +7,8 @@ export function isDeno(): boolean {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return typeof (globalThis as any).Deno !== "undefined"
 }
+
+export function isBun(): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return typeof (globalThis as any).Bun !== "undefined"
+}

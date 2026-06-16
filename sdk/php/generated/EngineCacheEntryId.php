@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
+ * A unique identifier for an object.
  */
-readonly class EngineCacheEntryId extends Client\AbstractId
+readonly class EngineCacheEntryId extends Client\AbstractScalar
 {
 }

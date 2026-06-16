@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `FactsWorkspaceID` scalar type represents an identifier for an object of type FactsWorkspace.
-type FactsWorkspaceID string // facts-workspace (../../../../modules/evals/facts-workspace/main.go:5:6)
 
 // Retrieve the binding value, as type FactsWorkspace
 func (r *Binding) AsFactsWorkspace() *FactsWorkspace { // facts-workspace (../../../../modules/evals/facts-workspace/main.go:5:6)
@@ -48,7 +45,7 @@ func (r *Env) WithFactsWorkspaceOutput(name string, description string) *Env { /
 type FactsWorkspace struct { // facts-workspace (../../../../modules/evals/facts-workspace/main.go:5:6)
 	query *querybuilder.Selection
 
-	id       *FactsWorkspaceID
+	id       *ID
 	nextFact *string
 }
 type WithFactsWorkspaceFunc func(r *FactsWorkspace) *FactsWorkspace
@@ -76,13 +73,13 @@ func (r *FactsWorkspace) Facts(ctx context.Context) ([]string, error) { // facts
 }
 
 // A unique identifier for this FactsWorkspace.
-func (r *FactsWorkspace) ID(ctx context.Context) (FactsWorkspaceID, error) {
+func (r *FactsWorkspace) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FactsWorkspaceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -95,7 +92,7 @@ func (r *FactsWorkspace) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *FactsWorkspace) XXX_GraphQLIDType() string {
-	return "FactsWorkspaceID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -120,7 +117,7 @@ func (r *FactsWorkspace) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadFactsWorkspaceFromID(FactsWorkspaceID(id))
+	*r = FactsWorkspace{query: selectNode(dag.query, id, "FactsWorkspace")}
 	return nil
 }
 
@@ -147,19 +144,17 @@ func (r *FactsWorkspace) Record(fact string) *FactsWorkspace { // facts-workspac
 	}
 }
 
-func (r *Query) FactsWorkspace(buster string) *FactsWorkspace { // facts-workspace (../../../../modules/evals/facts-workspace/main.go:9:1)
-	q := r.query.Select("factsWorkspace")
-	q = q.Arg("buster", buster)
-
-	return &FactsWorkspace{
-		query: q,
+// AsNode returns this FactsWorkspace as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *FactsWorkspace) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
-// Load a FactsWorkspace from its ID.
-func (r *Query) LoadFactsWorkspaceFromID(id FactsWorkspaceID) *FactsWorkspace { // facts-workspace (../../../../modules/evals/facts-workspace/main.go:5:6)
-	q := r.query.Select("loadFactsWorkspaceFromID")
-	q = q.Arg("id", id)
+func (r *Query) FactsWorkspace(buster string) *FactsWorkspace { // facts-workspace (../../../../modules/evals/facts-workspace/main.go:9:1)
+	q := r.query.Select("factsWorkspace")
+	q = q.Arg("buster", buster)
 
 	return &FactsWorkspace{
 		query: q,

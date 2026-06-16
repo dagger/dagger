@@ -1,0 +1,33 @@
+[**@dagger.io/dagger**](../../../README.md)
+
+***
+
+[@dagger.io/dagger](../../../modules.md) / [api/client.gen](../README.md) / TypeDefWithEnumValueOpts
+
+# Type Alias: TypeDefWithEnumValueOpts
+
+> **TypeDefWithEnumValueOpts** = `object`
+
+## Properties
+
+### deprecated?
+
+> `optional` **deprecated?**: `string`
+
+If deprecated, the reason or migration path.
+
+***
+
+### description?
+
+> `optional` **description?**: `string`
+
+A doc string for the value, if any
+
+***
+
+### sourceMap?
+
+> `optional` **sourceMap?**: [`SourceMap`](../classes/SourceMap.md)
+
+The source map for the enum value definition.

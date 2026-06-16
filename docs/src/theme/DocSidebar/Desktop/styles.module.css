@@ -1,0 +1,72 @@
+@media (min-width: 997px) {
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding-top: 0;
+    width: var(--doc-sidebar-width);
+  }
+
+  .sidebarHeader {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 0 0 auto;
+    padding: 1rem var(--ifm-navbar-padding-horizontal) 0.75rem;
+  }
+
+  .sidebarBrand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    justify-content: space-between;
+    min-height: 2.5rem;
+  }
+
+  .sidebarLogo {
+    display: flex !important;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 2.5rem;
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+
+  .sidebarLogo img {
+    margin-right: 0.5rem;
+    height: 2rem;
+  }
+
+  .versionSelect {
+    flex: 0 0 auto;
+    max-width: 88px;
+    height: 36px;
+    border: 1px solid var(--ifm-color-emphasis-300);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ifm-navbar-link-color);
+    font: inherit;
+    font-size: 0.8175rem;
+    line-height: 1;
+    padding: 0 0.35rem;
+  }
+
+  :global(html[data-theme="dark"]) .versionSelect {
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+
+  .versionSelect:focus-visible {
+    outline: 2px solid var(--ifm-color-primary);
+    outline-offset: 2px;
+  }
+
+  .sidebarHidden {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.sidebarLogo {
+  display: none;
+}

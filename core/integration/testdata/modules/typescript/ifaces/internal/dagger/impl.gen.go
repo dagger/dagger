@@ -5,33 +5,16 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `ImplID` scalar type represents an identifier for an object of type Impl.
-type ImplID string // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:4:14)
-
-// The `ImplLocalOtherIfaceID` scalar type represents an identifier for an object of type ImplLocalOtherIface.
-type ImplLocalOtherIfaceID string // impl (../../../../../../../../:0:0)
-
-// The `ImplOtherImplID` scalar type represents an identifier for an object of type ImplOtherImpl.
-type ImplOtherImplID string // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:177:14)
 
 // Retrieve the binding value, as type Impl
 func (r *Binding) AsImpl() *Impl { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:4:14)
 	q := r.query.Select("asImpl")
 
 	return &Impl{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type ImplLocalOtherIface
-func (r *Binding) AsImplLocalOtherIface() *ImplLocalOtherIface { // impl (../../../../../../../../:0:0)
-	q := r.query.Select("asImplLocalOtherIface")
-
-	return &ImplLocalOtherIface{
 		query: q,
 	}
 }
@@ -51,30 +34,6 @@ func (r *Env) WithImplInput(name string, value *Impl, description string) *Env {
 	q := r.query.Select("withImplInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type ImplLocalOtherIface in the environment
-func (r *Env) WithImplLocalOtherIfaceInput(name string, value *ImplLocalOtherIface, description string) *Env { // impl (../../../../../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withImplLocalOtherIfaceInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired ImplLocalOtherIface output to be assigned in the environment
-func (r *Env) WithImplLocalOtherIfaceOutput(name string, description string) *Env { // impl (../../../../../../../../:0:0)
-	q := r.query.Select("withImplLocalOtherIfaceOutput")
-	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
 	return &Env{
@@ -141,15 +100,6 @@ func (r *Impl) WithGraphQLQuery(q *querybuilder.Selection) *Impl {
 	}
 }
 
-// Converts this Impl to a TestCustomIface.
-func (r *Impl) AsTestCustomIface() *TestCustomIface {
-	q := r.query.Select("asTestCustomIface")
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
 func (r *Impl) Bool(ctx context.Context) (bool, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:18:3)
 	if r.bool != nil {
 		return *r.bool, nil
@@ -171,36 +121,26 @@ func (r *Impl) BoolList(ctx context.Context) ([]bool, error) { // impl (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *Impl) DynamicOtherIfaceByIfaceList(ctx context.Context) ([]ImplLocalOtherIface, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:171:3)
+func (r *Impl) DynamicOtherIfaceByIfaceList(ctx context.Context) ([]*ImplLocalOtherIface, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:171:3)
 	q := r.query.Select("dynamicOtherIfaceByIfaceList")
 
 	q = q.Select("id")
-
-	type dynamicOtherIfaceByIfaceList struct {
-		Id ImplLocalOtherIfaceID
+	type dynamicOtherIfaceByIfaceListIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []dynamicOtherIfaceByIfaceList) []ImplLocalOtherIface {
-		out := []ImplLocalOtherIface{}
-
-		for i := range fields {
-			val := ImplLocalOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadImplLocalOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []dynamicOtherIfaceByIfaceList
-
-	q = q.Bind(&response)
-
+	var idResults []dynamicOtherIfaceByIfaceListIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*ImplLocalOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &ImplLocalOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "ImplLocalOtherIface"),
+		})
+	}
+	return results, nil
 }
 
 func (r *Impl) DynamicOtherIfaceList(ctx context.Context) ([]ImplOtherImpl, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:160:3)
@@ -217,7 +157,7 @@ func (r *Impl) DynamicOtherIfaceList(ctx context.Context) ([]ImplOtherImpl, erro
 
 		for i := range fields {
 			val := ImplOtherImpl{id: &fields[i].Id}
-			val.query = q.Root().Select("loadImplOtherImplFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ImplOtherImpl")
 			out = append(out, val)
 		}
 
@@ -255,7 +195,7 @@ func (r *Impl) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Impl) XXX_GraphQLIDType() string {
-	return "ImplID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -280,7 +220,7 @@ func (r *Impl) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadImplFromID(ImplID(id))
+	*r = Impl{query: selectNode(dag.query, id, "Impl")}
 	return nil
 }
 
@@ -327,7 +267,7 @@ func (r *Impl) ObjList(ctx context.Context) ([]Directory, error) { // impl (../.
 
 		for i := range fields {
 			val := Directory{id: &fields[i].Id}
-			val.query = q.Root().Select("loadDirectoryFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Directory")
 			out = append(out, val)
 		}
 
@@ -353,36 +293,26 @@ func (r *Impl) OtherIface() *ImplOtherImpl { // impl (../../../../../../../../co
 	}
 }
 
-func (r *Impl) OtherIfaces(ctx context.Context) ([]ImplLocalOtherIface, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:33:3)
+func (r *Impl) OtherIfaces(ctx context.Context) ([]*ImplLocalOtherIface, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:33:3)
 	q := r.query.Select("otherIfaces")
 
 	q = q.Select("id")
-
-	type otherIfaces struct {
-		Id ImplLocalOtherIfaceID
+	type otherIfacesIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []otherIfaces) []ImplLocalOtherIface {
-		out := []ImplLocalOtherIface{}
-
-		for i := range fields {
-			val := ImplLocalOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadImplLocalOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []otherIfaces
-
-	q = q.Bind(&response)
-
+	var idResults []otherIfacesIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*ImplLocalOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &ImplLocalOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "ImplLocalOtherIface"),
+		})
+	}
+	return results, nil
 }
 
 func (r *Impl) Others(ctx context.Context) ([]ImplOtherImpl, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:30:3)
@@ -399,7 +329,7 @@ func (r *Impl) Others(ctx context.Context) ([]ImplOtherImpl, error) { // impl (.
 
 		for i := range fields {
 			val := ImplOtherImpl{id: &fields[i].Id}
-			val.query = q.Root().Select("loadImplOtherImplFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ImplOtherImpl")
 			out = append(out, val)
 		}
 
@@ -439,7 +369,7 @@ func (r *Impl) SelfIfaceList(ctx context.Context) ([]Impl, error) { // impl (../
 
 		for i := range fields {
 			val := Impl{id: &fields[i].Id}
-			val.query = q.Root().Select("loadImplFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Impl")
 			out = append(out, val)
 		}
 
@@ -471,7 +401,7 @@ func (r *Impl) StaticOtherIfaceList(ctx context.Context) ([]ImplOtherImpl, error
 
 		for i := range fields {
 			val := ImplOtherImpl{id: &fields[i].Id}
-			val.query = q.Root().Select("loadImplOtherImplFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ImplOtherImpl")
 			out = append(out, val)
 		}
 
@@ -650,78 +580,20 @@ func (r *Impl) WithStrList(strs []string) *Impl { // impl (../../../../../../../
 	}
 }
 
-type ImplLocalOtherIface struct { // impl (../../../../../../../../:0:0)
-	query *querybuilder.Selection
-
-	foo *string
-	id  *ImplLocalOtherIfaceID
-}
-
-func (r *ImplLocalOtherIface) WithGraphQLQuery(q *querybuilder.Selection) *ImplLocalOtherIface {
-	return &ImplLocalOtherIface{
-		query: q,
+// AsNode returns this Impl as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Impl) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
-func (r *ImplLocalOtherIface) Foo(ctx context.Context) (string, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:191:3)
-	if r.foo != nil {
-		return *r.foo, nil
+// AsTestCustomIface returns this Impl as a TestCustomIface.
+// This is a local type conversion — no GraphQL call.
+func (r *Impl) AsTestCustomIface() *TestCustomIface {
+	return &TestCustomIface{
+		query: r.query,
 	}
-	q := r.query.Select("foo")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this ImplLocalOtherIface.
-func (r *ImplLocalOtherIface) ID(ctx context.Context) (ImplLocalOtherIfaceID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ImplLocalOtherIfaceID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ImplLocalOtherIface) XXX_GraphQLType() string {
-	return "ImplLocalOtherIface"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ImplLocalOtherIface) XXX_GraphQLIDType() string {
-	return "ImplLocalOtherIfaceID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ImplLocalOtherIface) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ImplLocalOtherIface) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *ImplLocalOtherIface) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadImplLocalOtherIfaceFromID(ImplLocalOtherIfaceID(id))
-	return nil
 }
 
 type ImplOtherImpl struct { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:177:14)
@@ -733,24 +605,6 @@ type ImplOtherImpl struct { // impl (../../../../../../../../core/integration/te
 
 func (r *ImplOtherImpl) WithGraphQLQuery(q *querybuilder.Selection) *ImplOtherImpl {
 	return &ImplOtherImpl{
-		query: q,
-	}
-}
-
-// Converts this ImplOtherImpl to a ImplLocalOtherIface.
-func (r *ImplOtherImpl) AsImplLocalOtherIface() *ImplLocalOtherIface {
-	q := r.query.Select("asImplLocalOtherIface")
-
-	return &ImplLocalOtherIface{
-		query: q,
-	}
-}
-
-// Converts this ImplOtherImpl to a TestOtherIface.
-func (r *ImplOtherImpl) AsTestOtherIface() *TestOtherIface {
-	q := r.query.Select("asTestOtherIface")
-
-	return &TestOtherIface{
 		query: q,
 	}
 }
@@ -787,7 +641,7 @@ func (r *ImplOtherImpl) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ImplOtherImpl) XXX_GraphQLIDType() string {
-	return "ImplOtherImplID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -812,8 +666,32 @@ func (r *ImplOtherImpl) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadImplOtherImplFromID(ImplOtherImplID(id))
+	*r = ImplOtherImpl{query: selectNode(dag.query, id, "ImplOtherImpl")}
 	return nil
+}
+
+// AsImplLocalOtherIface returns this ImplOtherImpl as a ImplLocalOtherIface.
+// This is a local type conversion — no GraphQL call.
+func (r *ImplOtherImpl) AsImplLocalOtherIface() *ImplLocalOtherIface {
+	return &ImplLocalOtherIface{
+		query: r.query,
+	}
+}
+
+// AsNode returns this ImplOtherImpl as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ImplOtherImpl) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsTestOtherIface returns this ImplOtherImpl as a TestOtherIface.
+// This is a local type conversion — no GraphQL call.
+func (r *ImplOtherImpl) AsTestOtherIface() *TestOtherIface {
+	return &TestOtherIface{
+		query: r.query,
+	}
 }
 
 func (r *Query) Impl(strs []string, ints []int, bools []bool, dirs []*Directory) *Impl { // impl (../../../../../../../../:0:0)
@@ -828,22 +706,99 @@ func (r *Query) Impl(strs []string, ints []int, bools []bool, dirs []*Directory)
 	}
 }
 
-// Load a Impl from its ID.
-func (r *Query) LoadImplFromID(id ImplID) *Impl { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:4:14)
-	q := r.query.Select("loadImplFromID")
-	q = q.Arg("id", id)
+type ImplLocalOtherIface struct { // impl (../../../../../../../../:0:0)
+	query *querybuilder.Selection
 
-	return &Impl{
+	foo *string
+	id  *ImplLocalOtherIfaceID
+}
+
+type ImplLocalOtherIfaceClient = ImplLocalOtherIface
+
+func (r *ImplLocalOtherIface) WithGraphQLQuery(q *querybuilder.Selection) *ImplLocalOtherIface {
+	return &ImplLocalOtherIface{
 		query: q,
 	}
 }
 
-// Load a ImplOtherImpl from its ID.
-func (r *Query) LoadImplOtherImplFromID(id ImplOtherImplID) *ImplOtherImpl { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:177:14)
-	q := r.query.Select("loadImplOtherImplFromID")
-	q = q.Arg("id", id)
+func (r *ImplLocalOtherIface) Foo(ctx context.Context) (string, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:191:3)
+	if r.foo != nil {
+		return *r.foo, nil
+	}
+	q := r.query.Select("foo")
 
-	return &ImplOtherImpl{
-		query: q,
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ImplLocalOtherIface.
+func (r *ImplLocalOtherIface) ID(ctx context.Context) (ImplLocalOtherIfaceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ImplLocalOtherIfaceID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ImplLocalOtherIface) XXX_GraphQLType() string {
+	return "ImplLocalOtherIface"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ImplLocalOtherIface) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ImplLocalOtherIface) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ImplLocalOtherIface) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *ImplLocalOtherIface) UnmarshalJSON(bs []byte) error {
+	var id ImplLocalOtherIfaceID
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = ImplLocalOtherIface{query: selectNode(dag.query, id, "ImplLocalOtherIface")}
+	return nil
+}
+
+// Concrete loads and returns the underlying concrete type of this
+// interface, which can then be used with a type switch.
+func (r *ImplLocalOtherIface) Concrete(ctx context.Context) (Node, error) {
+	// Query __typename to determine the concrete type.
+	var typeName string
+	q := r.query.Select("__typename")
+	q = q.Bind(&typeName)
+	if err := q.Execute(ctx); err != nil {
+		return nil, err
+	}
+	// Get the ID to load the concrete object.
+	id, err := r.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch typeName {
+	case "ImplOtherImpl":
+		return &ImplOtherImpl{query: selectNode(r.query.Root(), id, "ImplOtherImpl")}, nil
+	default:
+		return nil, fmt.Errorf("unknown ImplLocalOtherIface implementation: %s", typeName)
 	}
 }

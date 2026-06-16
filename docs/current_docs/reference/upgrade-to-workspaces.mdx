@@ -1,0 +1,66 @@
+---
+title: "Upgrading to Workspaces"
+slug: /reference/upgrade-to-workspaces
+description: "What changed in the workspace release and how to migrate"
+---
+
+# Upgrading to Workspaces
+
+:::note
+If you're new to Dagger, you can skip this page. It's for existing users encountering changes.
+:::
+
+## What changed
+
+In previous versions, `dagger.json` served double duty: it defined both your module's code and your project's configuration (toolchains, blueprints, customizations). These are now separate:
+
+- **Module** (`dagger-module.toml`) - A package of code.
+- **Workspace** (`dagger.toml`) - Your project's Dagger configuration: which modules to use, how to configure them.
+
+## What happened to toolchains?
+
+They're now just modules installed in your workspace. `dagger mod install github.com/foo/bar` adds a module to `dagger.toml`. Same functionality, simpler model.
+
+## What happened to blueprints?
+
+They're now workspace modules marked as `entrypoint = true` in `dagger.toml`. The concept of "blueprint" as a distinct thing is gone; it's just a configuration flag.
+
+## What happened to customizations?
+
+The `customizations` array in legacy `dagger.json` is deprecated. Workspace module settings now use `settings` in `dagger.toml`:
+
+```toml
+[modules.go]
+source = "github.com/dagger/go"
+
+[modules.go.settings]
+goVersion = "1.22"
+```
+
+## Do I need to migrate right now?
+
+No. Backwards compatibility will infer a workspace from your existing `dagger.json`. You'll see a warning, but everything will continue to work. When you're ready:
+
+```shell
+dagger migrate
+```
+
+This automatically converts workspace fields from legacy `dagger.json` into `dagger.toml`, and converts plain module-shaped `dagger.json` files to `dagger-module.toml`. If anything needs manual attention, it creates `.dagger/migration-report.md` with instructions.
+
+## What happened to module-management commands?
+
+Workspace modules are managed with module commands. Use `dagger mod recommend` to detect modules for a project, `dagger mod install <module>` and `dagger mod uninstall <module>` to update `dagger.toml`, and `dagger mod list` and `dagger mod search` to inspect available modules.
+
+Module source metadata moves to `dagger-module.toml`. Create or edit that file directly when authoring a module or adding code dependencies.
+
+## Quick reference
+
+| Before | Now |
+|---|---|
+| `dagger -m <ref>` (with toolchains) | `dagger -W <ref>` |
+| `dagger toolchain install <module>` | `dagger mod install <module>` |
+| `dagger install <dep>` (module code dependency) | Add the dependency to `[[dependencies]]` in `dagger-module.toml` |
+| `toolchains` array in `dagger.json` | `[modules.*]` in `dagger.toml` |
+| `blueprint` in `dagger.json` | `entrypoint = true` in `dagger.toml` |
+| `customizations` in `dagger.json` | `[modules.*.settings]` in `dagger.toml` |
+| `.env` for constructor defaults | `[modules.*.settings]` in `dagger.toml` |

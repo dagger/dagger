@@ -9,12 +9,12 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A Dagger workspace detected from the current working directory.
+ * A Dagger workspace detected from the current working directory or constructed from a Directory.
  */
 class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Canonical Dagger address of the workspace directory.
+     * Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
      */
     public function address(): string
     {
@@ -25,14 +25,24 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return all checks from modules loaded in the workspace.
      */
-    public function checks(?array $include = null, ?bool $noGenerate = null): CheckGroup
-    {
+    public function checks(
+        ?array $include = null,
+        ?array $skip = null,
+        ?bool $noGenerate = null,
+        ?bool $onlyGenerate = null,
+    ): CheckGroup {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
+        if (null !== $skip) {
+        $innerQueryBuilder->setArgument('skip', $skip);
+        }
         if (null !== $noGenerate) {
         $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
+        }
+        if (null !== $onlyGenerate) {
+        $innerQueryBuilder->setArgument('onlyGenerate', $onlyGenerate);
         }
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -47,18 +57,63 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Path to config.toml relative to the workspace boundary (empty if not initialized).
+     * Selected native workspace config file relative to the workspace root, if any.
      */
-    public function configPath(): string
+    public function configFile(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configPath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'configPath');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configFile');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configFile');
+    }
+
+    /**
+     * Read a configuration value from dagger.toml.
+     *
+     * If key is empty, returns the full config.
+     *
+     * If key points to a scalar, returns the value.
+     *
+     * If key points to a table, returns flattened dotted-key output.
+     */
+    public function configRead(?string $key = ''): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configRead');
+        if (null !== $key) {
+        $leafQueryBuilder->setArgument('key', $key);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configRead');
+    }
+
+    /**
+     * Write a configuration value to dagger.toml.
+     */
+    public function configWrite(string $key, string $value, ?bool $here = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configWrite');
+        $leafQueryBuilder->setArgument('key', $key);
+        $leafQueryBuilder->setArgument('value', $value);
+        if (null !== $here) {
+        $leafQueryBuilder->setArgument('here', $here);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'configWrite');
+    }
+
+    /**
+     * Current location within the workspace root.
+     *
+     * The workspace root is returned as "/".
+     *
+     * Relative paths in workspace APIs resolve from here.
+     */
+    public function cwd(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cwd');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'cwd');
     }
 
     /**
      * Returns a Directory from the workspace.
      *
-     * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+     * Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
      */
     public function directory(
         string $path,
@@ -81,9 +136,44 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Create a named workspace environment if it does not already exist.
+     */
+    public function envCreate(string $name, ?bool $here = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envCreate');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $here) {
+        $leafQueryBuilder->setArgument('here', $here);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'envCreate');
+    }
+
+    /**
+     * List named environments defined in the workspace configuration.
+     */
+    public function envList(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envList');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'envList');
+    }
+
+    /**
+     * Remove a named workspace environment.
+     */
+    public function envRemove(string $name, ?bool $here = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('envRemove');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $here) {
+        $leafQueryBuilder->setArgument('here', $here);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'envRemove');
+    }
+
+    /**
      * Returns a File from the workspace.
      *
-     * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+     * Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
      */
     public function file(string $path): File
     {
@@ -97,9 +187,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * Returns the absolute workspace path if found, or null if not found.
      *
-     * Relative start paths resolve from the workspace directory.
+     * Relative start paths resolve from the workspace cwd.
      *
-     * The search stops at the workspace boundary and will not traverse above it.
+     * The search stops at the workspace root and will not traverse above it.
      */
     public function findUp(string $name, ?string $from = '.'): string
     {
@@ -124,12 +214,12 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Whether a config.toml file exists in the workspace.
+     * Git state for this workspace. Errors if the workspace is not in a git repository.
      */
-    public function hasConfig(): bool
+    public function git(): WorkspaceGit
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hasConfig');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'hasConfig');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
+        return new \Dagger\WorkspaceGit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -142,21 +232,88 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Whether .dagger/config.toml exists.
+     * Initialize workspace config, creating dagger.toml.
      */
-    public function initialized(): bool
+    public function init(?bool $here = false): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('initialized');
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'initialized');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('init');
+        if (null !== $here) {
+        $leafQueryBuilder->setArgument('here', $here);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'init');
     }
 
     /**
-     * Workspace directory path relative to the workspace boundary.
+     * Install a module into the workspace, writing dagger.toml to the host.
      */
-    public function path(): string
+    public function install(string $ref, ?string $name = '', ?bool $here = false): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('path');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'path');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('install');
+        $leafQueryBuilder->setArgument('ref', $ref);
+        if (null !== $name) {
+        $leafQueryBuilder->setArgument('name', $name);
+        }
+        if (null !== $here) {
+        $leafQueryBuilder->setArgument('here', $here);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'install');
+    }
+
+    /**
+     * Plan the explicit migration needed for the current workspace.
+     *
+     * The returned plan has an empty changeset and no steps when no migration is needed.
+     */
+    public function migrate(?bool $force = false): WorkspaceMigration
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('migrate');
+        if (null !== $force) {
+        $innerQueryBuilder->setArgument('force', $force);
+        }
+        return new \Dagger\WorkspaceMigration($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a new module owned by the workspace and auto-install it in dagger.toml.
+     */
+    public function moduleInit(
+        string $name,
+        ?string $sdk = '',
+        ?string $source = '',
+        ?array $include = [],
+        ?bool $selfCalls = false,
+        ?bool $here = false,
+    ): string {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $sdk) {
+        $leafQueryBuilder->setArgument('sdk', $sdk);
+        }
+        if (null !== $source) {
+        $leafQueryBuilder->setArgument('source', $source);
+        }
+        if (null !== $include) {
+        $leafQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $selfCalls) {
+        $leafQueryBuilder->setArgument('selfCalls', $selfCalls);
+        }
+        if (null !== $here) {
+        $leafQueryBuilder->setArgument('here', $here);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'moduleInit');
+    }
+
+    /**
+     * List modules defined in the workspace configuration.
+     */
+    public function moduleList(?string $module = ''): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleList');
+        if (null !== $module) {
+        $leafQueryBuilder->setArgument('module', $module);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'moduleList');
     }
 
     /**
@@ -169,6 +326,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('include', $include);
         }
         return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Uninstall a module from the workspace, writing dagger.toml to the host.
+     */
+    public function uninstall(string $name, ?bool $here = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uninstall');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $here) {
+        $leafQueryBuilder->setArgument('here', $here);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'uninstall');
     }
 
     /**

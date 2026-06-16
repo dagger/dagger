@@ -1,6 +1,7 @@
 package helm
 
 import (
+	"fmt"
 	"time"
 
 	dagger "github.com/dagger/dagger/e2e/helm/dagger"
@@ -13,6 +14,10 @@ type k3sCluster struct {
 }
 
 func newK3S(dag *dagger.Client, name string) k3sCluster {
+	kubeconfigName := fmt.Sprintf("k3s-%d.yaml", time.Now().UnixNano())
+	kubeconfigPath := "/etc/rancher/k3s/" + kubeconfigName
+	kubeconfigCachePath := "/cache/k3s/" + kubeconfigName
+	waitForKubeconfig := fmt.Sprintf(`while [ ! -f "%s" ]; do echo "%s not ready, is server started?. waiting.. " && sleep 0.5; done`, kubeconfigCachePath, kubeconfigName)
 	k3s := k3sCluster{
 		configCache: dag.CacheVolume("k3s_config_" + name),
 	}
@@ -33,13 +38,13 @@ func newK3S(dag *dagger.Client, name string) k3sCluster {
 		WithMountedTemp("/var/lib/kubelet").
 		WithMountedCache("/var/lib/rancher", dag.CacheVolume("k3s_cache_"+name)).
 		WithEnvVariable("CACHEBUST", time.Now().String()).
-		WithExec([]string{"rm", "-rf", "/var/lib/rancher/k3s/", "/etc/rancher/k3s/k3s.yaml"}).
+		WithExec([]string{"rm", "-rf", "/var/lib/rancher/k3s/", "/etc/rancher/k3s/k3s.yaml", kubeconfigPath}).
 		WithMountedTemp("/var/log").
 		WithExposedPort(6443).
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{
 				"sh", "-c",
-				"k3s server --debug --bind-address $(ip route | grep src | awk '{print $NF}') --disable traefik --disable metrics-server --egress-selector-mode=disabled",
+				"k3s server --debug --bind-address $(ip route | grep src | awk '{print $NF}') --write-kubeconfig " + kubeconfigPath + " --disable traefik --disable metrics-server --egress-selector-mode=disabled",
 			},
 			InsecureRootCapabilities: true,
 			UseEntrypoint:            true,
@@ -49,8 +54,8 @@ func newK3S(dag *dagger.Client, name string) k3sCluster {
 		From("alpine").
 		WithEnvVariable("CACHE", time.Now().String()).
 		WithMountedCache("/cache/k3s", k3s.configCache).
-		WithExec([]string{"sh", "-c", `while [ ! -f "/cache/k3s/k3s.yaml" ]; do echo "k3s.yaml not ready, is server started?. waiting.. " && sleep 0.5; done`}).
-		WithExec([]string{"cp", "/cache/k3s/k3s.yaml", "k3s.yaml"}).
+		WithExec([]string{"sh", "-c", waitForKubeconfig}).
+		WithExec([]string{"cp", kubeconfigCachePath, "k3s.yaml"}).
 		File("k3s.yaml")
 
 	return k3s

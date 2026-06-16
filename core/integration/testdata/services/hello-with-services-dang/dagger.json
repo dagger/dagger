@@ -1,6 +1,6 @@
 {
   "name": "hello-with-services-dang",
-  "engineVersion": "v0.20.1",
+  "engineVersion": "v0.21.5",
   "sdk": {
     "source": "dang"
   }

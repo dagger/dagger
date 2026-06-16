@@ -2699,6 +2699,95 @@ func TestViewsIntrospection(t *testing.T) {
 	})
 }
 
+type viewFilteredEnum string
+
+var viewFilteredEnums = dagql.NewEnum[viewFilteredEnum]()
+
+var _ = viewFilteredEnums.Register("VISIBLE")
+
+var _ dagql.Input = viewFilteredEnum("")
+
+func (viewFilteredEnum) Decoder() dagql.InputDecoder {
+	return viewFilteredEnums
+}
+
+func (v viewFilteredEnum) ToLiteral() call.Literal {
+	return viewFilteredEnums.Literal(v)
+}
+
+func (viewFilteredEnum) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ViewFilteredEnum",
+		NonNull:   true,
+	}
+}
+
+type viewFilteredInput struct {
+	Value string
+}
+
+func (viewFilteredInput) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ViewFilteredInput",
+		NonNull:   true,
+	}
+}
+
+func (viewFilteredInput) TypeName() string {
+	return "ViewFilteredInput"
+}
+
+type viewFilteredInterfaceObject struct{}
+
+func (viewFilteredInterfaceObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ViewFilteredInterfaceObject",
+		NonNull:   true,
+	}
+}
+
+func TestViewsFilterNonObjectTypes(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+
+	viewFilteredEnums.Install(srv, dagql.ExactView("future"))
+	dagql.MustInputSpec(viewFilteredInput{}).Install(srv, dagql.ExactView("future"))
+
+	iface := dagql.NewInterface("ViewFilteredInterface", "future interface").
+		View(dagql.ExactView("future"))
+	iface.AddField(dagql.InterfaceFieldSpec{
+		FieldSpec: dagql.FieldSpec{
+			Name: "value",
+			Type: dagql.String(""),
+		},
+	})
+	srv.InstallInterface(iface)
+
+	class := dagql.NewClass[viewFilteredInterfaceObject](srv)
+	class.Install(dagql.Field[viewFilteredInterfaceObject]{
+		Spec: &dagql.FieldSpec{
+			Name: "value",
+			Type: dagql.String(""),
+		},
+		Func: func(ctx context.Context, self dagql.ObjectResult[viewFilteredInterfaceObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+			return dagql.NewResultForCurrentCall(ctx, dagql.String("value"))
+		},
+	})
+	class.Implements(iface)
+	srv.InstallObject(class)
+
+	oldSchema := srv.SchemaForView("old")
+	require.NotContains(t, oldSchema.Types, "ViewFilteredEnum")
+	require.NotContains(t, oldSchema.Types, "ViewFilteredInput")
+	require.NotContains(t, oldSchema.Types, "ViewFilteredInterface")
+	require.NotContains(t, oldSchema.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+
+	futureSchema := srv.SchemaForView("future")
+	require.Equal(t, ast.Enum, futureSchema.Types["ViewFilteredEnum"].Kind)
+	require.Equal(t, ast.InputObject, futureSchema.Types["ViewFilteredInput"].Kind)
+	require.Equal(t, ast.Interface, futureSchema.Types["ViewFilteredInterface"].Kind)
+	require.Contains(t, futureSchema.Types["ViewFilteredInterfaceObject"].Interfaces, "ViewFilteredInterface")
+}
+
 type CoolInt struct {
 	Val int `field:"true"`
 }
@@ -3436,6 +3525,9 @@ func (tp renamedType) TypeName() string {
 	return tp.Name
 }
 
+func (hook *testInstallHook) InstallInterface(_ *dagql.Interface, _ ...*ast.Directive) {
+}
+
 func (hook *testInstallHook) InstallObject(class dagql.ObjectType, _ ...*ast.Directive) {
 	if strings.HasSuffix(class.TypeName(), "Other") {
 		return
@@ -3526,14 +3618,12 @@ func TestInterfaces(t *testing.T) {
 		})
 		srv.InstallInterface(spatial)
 
-		// Point should satisfy Spatial (it has x and y fields)
+		// Point should satisfy Spatial (it has x and y fields) and the
+		// relationship should be inferred retroactively when Spatial is installed.
 		pointType, ok := srv.ObjectType("Point")
 		assert.Assert(t, ok, "Point type not found")
 		assert.Assert(t, spatial.Satisfies(pointType, ""), "Point should satisfy Spatial")
-
-		// Declare that Point implements Spatial
-		pointClass := pointType.(dagql.Class[*points.Point])
-		pointClass.Implements(spatial)
+		assert.Assert(t, spatial.HasImplementor("Point"), "Point should auto-implement Spatial")
 
 		// Verify the interface shows up in introspection
 		gql := newTestClient(srv)
@@ -3580,6 +3670,77 @@ func TestInterfaces(t *testing.T) {
 			}
 		}
 		assert.Assert(t, foundSpatial, "Point should declare Spatial interface")
+	})
+
+	t.Run("recursive covariant return types are inferred", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+		introspection.Install[Query](srv)
+
+		selfer := dagql.NewInterface("Selfer", "Something that returns itself.")
+		selfer.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "id",
+				Type: dagql.AnyID{},
+			},
+		})
+		selfer.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "self",
+				Type: selfer.Typed(),
+			},
+		})
+		srv.InstallInterface(selfer)
+
+		points.Install[Query](srv)
+
+		gql := newTestClient(srv)
+		var res struct {
+			Type struct {
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Point") { interfaces { name } } }`, &res)
+		var names []string
+		for _, iface := range res.Type.Interfaces {
+			names = append(names, iface.Name)
+		}
+		assert.Assert(t, slices.Contains(names, "Selfer"), "Point interfaces should include Selfer, got: %v", names)
+		assert.Assert(t, selfer.HasImplementor("Point"), "Point.self returning Point should satisfy Selfer.self returning Selfer")
+	})
+
+	t.Run("interface-to-interface relationships are inferred", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+
+		hasX := dagql.NewInterface("HasX", "Something with an X coordinate.")
+		hasX.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(hasX)
+
+		spatial := dagql.NewInterface("Spatial", "Something with spatial coordinates.")
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "y",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(spatial)
+
+		// Reading the type back through the server triggers lazy reconciliation.
+		spatialType, ok := srv.InterfaceType("Spatial")
+		assert.Assert(t, ok, "Spatial type not found")
+		_, ok = spatialType.Interfaces()["HasX"]
+		assert.Assert(t, ok, "Spatial should auto-implement HasX")
+		assert.Assert(t, hasX.HasImplementor("Spatial"), "HasX should list Spatial as an implementor")
 	})
 
 	t.Run("object must have every field required by the interface", func(t *testing.T) {
@@ -3903,11 +4064,11 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, foundPoint, "Node interface should include Point in possibleTypes")
 	})
 
-	t.Run("AddAutoInterface and AutoImplementInterfaces", func(t *testing.T) {
+	t.Run("fields added after install are inferred", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		introspection.Install[Query](srv)
 
-		// Register a custom auto-interface with a "sync" field.
+		// Register a custom interface with a "sync" field.
 		syncable := dagql.NewInterface("Syncable", "Can be synced.")
 		syncable.AddField(dagql.InterfaceFieldSpec{
 			FieldSpec: dagql.FieldSpec{
@@ -3921,7 +4082,7 @@ func TestInterfaces(t *testing.T) {
 				Type: dagql.AnyID{},
 			},
 		})
-		srv.AddAutoInterface(syncable)
+		srv.InstallInterface(syncable)
 
 		gql := newTestClient(srv)
 
@@ -3955,7 +4116,7 @@ func TestInterfaces(t *testing.T) {
 		}
 
 		// Line with sync added via Fields[T].Install SHOULD implement it
-		// (AutoImplementInterfaces is called at the end of Install).
+		// (Fields.Install flags inference stale once the sync field is added).
 		dagql.Fields[*points.Line]{
 			dagql.Func("sync", func(ctx context.Context, self *points.Line, _ struct{}) (dagql.ID[*points.Line], error) {
 				return dagql.ID[*points.Line]{}, nil

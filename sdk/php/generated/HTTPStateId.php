@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
+ * A unique identifier for an object.
  */
-readonly class HTTPStateId extends Client\AbstractId
+readonly class HTTPStateId extends Client\AbstractScalar
 {
 }

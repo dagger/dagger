@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -27,6 +28,9 @@ type EnvFile struct {
 	Expand  bool     `json:"expand"`
 }
 
+var _ dagql.PersistedObject = (*EnvFile)(nil)
+var _ dagql.PersistedObjectDecoder = (*EnvFile)(nil)
+
 func (*EnvFile) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "EnvFile",
@@ -36,6 +40,25 @@ func (*EnvFile) Type() *ast.Type {
 
 func (*EnvFile) TypeDescription() string {
 	return "A collection of environment variables."
+}
+
+func (ef *EnvFile) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	_ = cache
+	if ef == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted env file: nil env file")
+	}
+	return encodePersistedObjectPayload(ef)
+}
+
+func (*EnvFile) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	_ = ctx
+	_ = dag
+	var ef EnvFile
+	if err := json.Unmarshal(payload, &ef); err != nil {
+		return nil, fmt.Errorf("decode persisted env file payload: %w", err)
+	}
+	return &ef, nil
 }
 
 // Len returns the number of variables in the EnvFile
@@ -272,6 +295,9 @@ func (ef *EnvFile) WithContents(contents string) (*EnvFile, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		// Tolerate the common `export KEY=value` convention by stripping the
+		// leading `export` keyword before parsing.
+		line = dotenv.StripExportPrefix(strings.TrimSpace(line))
 		kv := strings.SplitN(line, "=", 2)
 		k := kv[0]
 		var v string

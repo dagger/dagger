@@ -6,14 +6,11 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
-// The `GoID` scalar type represents an identifier for an object of type Go.
-type GoID string // go (../../../../toolchains/go/main.go:138:6)
-
 // Retrieve the binding value, as type Go
-func (r *Binding) AsGo() *Go { // go (../../../../toolchains/go/main.go:138:6)
+func (r *Binding) AsGo() *Go { // go (../../../../toolchains/go/main.go:142:6)
 	q := r.query.Select("asGo")
 
 	return &Go{
@@ -22,7 +19,7 @@ func (r *Binding) AsGo() *Go { // go (../../../../toolchains/go/main.go:138:6)
 }
 
 // Create or update a binding of type Go in the environment
-func (r *Env) WithGoInput(name string, value *Go, description string) *Env { // go (../../../../toolchains/go/main.go:138:6)
+func (r *Env) WithGoInput(name string, value *Go, description string) *Env { // go (../../../../toolchains/go/main.go:142:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withGoInput")
 	q = q.Arg("name", name)
@@ -35,7 +32,7 @@ func (r *Env) WithGoInput(name string, value *Go, description string) *Env { // 
 }
 
 // Declare a desired Go output to be assigned in the environment
-func (r *Env) WithGoOutput(name string, description string) *Env { // go (../../../../toolchains/go/main.go:138:6)
+func (r *Env) WithGoOutput(name string, description string) *Env { // go (../../../../toolchains/go/main.go:142:6)
 	q := r.query.Select("withGoOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -46,12 +43,12 @@ func (r *Env) WithGoOutput(name string, description string) *Env { // go (../../
 }
 
 // A Go project
-type Go struct { // go (../../../../toolchains/go/main.go:138:6)
+type Go struct { // go (../../../../toolchains/go/main.go:142:6)
 	query *querybuilder.Selection
 
 	cgo        *bool
 	checkTidy  *Void
-	id         *GoID
+	id         *ID
 	limit      *int
 	lint       *Void
 	lintModule *Void
@@ -76,7 +73,7 @@ func (r *Go) WithGraphQLQuery(q *querybuilder.Selection) *Go {
 }
 
 // Base container from which to run all operations
-func (r *Go) Base() *Container { // go (../../../../toolchains/go/main.go:152:2)
+func (r *Go) Base() *Container { // go (../../../../toolchains/go/main.go:156:2)
 	q := r.query.Select("base")
 
 	return &Container{
@@ -89,19 +86,19 @@ type GoBinaryOpts struct {
 	//
 	// Disable symbol table
 	//
-	NoSymbols bool // go (../../../../toolchains/go/main.go:326:2)
+	NoSymbols bool // go (../../../../toolchains/go/main.go:330:2)
 	//
 	// Disable DWARF generation
 	//
-	NoDwarf bool // go (../../../../toolchains/go/main.go:329:2)
+	NoDwarf bool // go (../../../../toolchains/go/main.go:333:2)
 	//
 	// Target build platform
 	//
-	Platform Platform // go (../../../../toolchains/go/main.go:332:2)
+	Platform Platform // go (../../../../toolchains/go/main.go:336:2)
 }
 
 // Build a single main package, and return the compiled binary
-func (r *Go) Binary(pkg string, opts ...GoBinaryOpts) *File { // go (../../../../toolchains/go/main.go:320:1)
+func (r *Go) Binary(pkg string, opts ...GoBinaryOpts) *File { // go (../../../../toolchains/go/main.go:324:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `noSymbols` optional argument
@@ -131,29 +128,29 @@ type GoBuildOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../toolchains/go/main.go:268:2)
+	Pkgs []string // go (../../../../toolchains/go/main.go:272:2)
 	//
 	// Disable symbol table
 	//
-	NoSymbols bool // go (../../../../toolchains/go/main.go:271:2)
+	NoSymbols bool // go (../../../../toolchains/go/main.go:275:2)
 	//
 	// Disable DWARF generation
 	//
-	NoDwarf bool // go (../../../../toolchains/go/main.go:274:2)
+	NoDwarf bool // go (../../../../toolchains/go/main.go:278:2)
 	//
 	// Target build platform
 	//
-	Platform Platform // go (../../../../toolchains/go/main.go:277:2)
+	Platform Platform // go (../../../../toolchains/go/main.go:281:2)
 	//
 	// Output directory
 	//
 	//
 	// Default: "./bin/"
-	Output string // go (../../../../toolchains/go/main.go:281:2)
+	Output string // go (../../../../toolchains/go/main.go:285:2)
 }
 
 // Build the given main packages, and return the build directory
-func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../toolchains/go/main.go:263:1)
+func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../toolchains/go/main.go:267:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `pkgs` optional argument
@@ -184,7 +181,7 @@ func (r *Go) Build(opts ...GoBuildOpts) *Directory { // go (../../../../toolchai
 }
 
 // Go build cache
-func (r *Go) BuildCache() *CacheVolume { // go (../../../../toolchains/go/main.go:149:2)
+func (r *Go) BuildCache() *CacheVolume { // go (../../../../toolchains/go/main.go:153:2)
 	q := r.query.Select("buildCache")
 
 	return &CacheVolume{
@@ -193,7 +190,7 @@ func (r *Go) BuildCache() *CacheVolume { // go (../../../../toolchains/go/main.g
 }
 
 // Enable CGO
-func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../toolchains/go/main.go:164:2)
+func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../toolchains/go/main.go:168:2)
 	if r.cgo != nil {
 		return *r.cgo, nil
 	}
@@ -207,13 +204,13 @@ func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../toolcha
 
 // GoCheckTidyOpts contains options for Go.CheckTidy
 type GoCheckTidyOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:655:2)
+	Include []string // go (../../../../toolchains/go/main.go:743:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:656:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:744:2)
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:653:1)
+func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:741:1)
 	if r.checkTidy != nil {
 		return nil
 	}
@@ -233,7 +230,7 @@ func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // 
 }
 
 // Download dependencies into the module cache
-func (r *Go) Download() *Go { // go (../../../../toolchains/go/main.go:187:1)
+func (r *Go) Download() *Go { // go (../../../../toolchains/go/main.go:191:1)
 	q := r.query.Select("download")
 
 	return &Go{
@@ -243,14 +240,14 @@ func (r *Go) Download() *Go { // go (../../../../toolchains/go/main.go:187:1)
 
 // GoEnvOpts contains options for Go.Env
 type GoEnvOpts struct {
-	Platform Platform // go (../../../../toolchains/go/main.go:208:2)
+	Platform Platform // go (../../../../toolchains/go/main.go:212:2)
 }
 
 // Prepare a build environment for the given Go source code:
 //   - Build a base container with Go tooling installed and configured
 //   - Apply configuration
 //   - Mount the source code
-func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../toolchains/go/main.go:206:1)
+func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../toolchains/go/main.go:210:1)
 	q := r.query.Select("env")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -264,7 +261,7 @@ func (r *Go) Env(opts ...GoEnvOpts) *Container { // go (../../../../toolchains/g
 	}
 }
 
-func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:174:2)
+func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:178:2)
 	q := r.query.Select("exclude")
 
 	var response []string
@@ -274,7 +271,7 @@ func (r *Go) Exclude(ctx context.Context) ([]string, error) { // go (../../../..
 }
 
 // Enable go experiments
-func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:170:2)
+func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:174:2)
 	q := r.query.Select("experiment")
 
 	var response []string
@@ -283,7 +280,7 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolchains/go/main.go:578:1)
+func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolchains/go/main.go:582:1)
 	q := r.query.Select("generateDaggerRuntime")
 	q = q.Arg("start", start)
 
@@ -293,7 +290,7 @@ func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolch
 }
 
 // Generate Dagger runtime files for Go SDK modules in the configured source.
-func (r *Go) GenerateDaggerRuntimes() *Changeset { // go (../../../../toolchains/go/main.go:541:1)
+func (r *Go) GenerateDaggerRuntimes() *Changeset { // go (../../../../toolchains/go/main.go:545:1)
 	q := r.query.Select("generateDaggerRuntimes")
 
 	return &Changeset{
@@ -302,13 +299,13 @@ func (r *Go) GenerateDaggerRuntimes() *Changeset { // go (../../../../toolchains
 }
 
 // A unique identifier for this Go.
-func (r *Go) ID(ctx context.Context) (GoID, error) {
+func (r *Go) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GoID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -321,7 +318,7 @@ func (r *Go) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Go) XXX_GraphQLIDType() string {
-	return "GoID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -346,11 +343,11 @@ func (r *Go) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGoFromID(GoID(id))
+	*r = Go{query: selectNode(dag.query, id, "Go")}
 	return nil
 }
 
-func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:172:2)
+func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:176:2)
 	q := r.query.Select("include")
 
 	var response []string
@@ -360,7 +357,7 @@ func (r *Go) Include(ctx context.Context) ([]string, error) { // go (../../../..
 }
 
 // Pass arguments to 'go build -ldflags'
-func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:155:2)
+func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:159:2)
 	q := r.query.Select("ldflags")
 
 	var response []string
@@ -370,7 +367,7 @@ func (r *Go) Ldflags(ctx context.Context) ([]string, error) { // go (../../../..
 }
 
 // Max number of parallel jobs to run
-func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../../../toolchains/go/main.go:177:2)
+func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../../../toolchains/go/main.go:181:2)
 	if r.limit != nil {
 		return *r.limit, nil
 	}
@@ -384,13 +381,13 @@ func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../../../toolch
 
 // GoLintOpts contains options for Go.Lint
 type GoLintOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:725:2)
+	Include []string // go (../../../../toolchains/go/main.go:813:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:726:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:814:2)
 }
 
 // Lint the project
-func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../toolchains/go/main.go:723:1)
+func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../toolchains/go/main.go:811:1)
 	if r.lint != nil {
 		return nil
 	}
@@ -409,7 +406,7 @@ func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../
 	return q.Execute(ctx)
 }
 
-func (r *Go) LintModule(ctx context.Context, module string) error { // go (../../../../toolchains/go/main.go:751:1)
+func (r *Go) LintModule(ctx context.Context, module string) error { // go (../../../../toolchains/go/main.go:839:1)
 	if r.lintModule != nil {
 		return nil
 	}
@@ -426,15 +423,15 @@ type GoListPackagesOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../toolchains/go/main.go:416:2)
+	Pkgs []string // go (../../../../toolchains/go/main.go:420:2)
 	//
 	// Only list main packages
 	//
-	OnlyMain bool // go (../../../../toolchains/go/main.go:419:2)
+	OnlyMain bool // go (../../../../toolchains/go/main.go:423:2)
 }
 
 // List packages matching the specified criteria
-func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]string, error) { // go (../../../../toolchains/go/main.go:411:1)
+func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]string, error) { // go (../../../../toolchains/go/main.go:415:1)
 	q := r.query.Select("listPackages")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `pkgs` optional argument
@@ -454,7 +451,7 @@ func (r *Go) ListPackages(ctx context.Context, opts ...GoListPackagesOpts) ([]st
 }
 
 // Go module cache
-func (r *Go) ModuleCache() *CacheVolume { // go (../../../../toolchains/go/main.go:146:2)
+func (r *Go) ModuleCache() *CacheVolume { // go (../../../../toolchains/go/main.go:150:2)
 	q := r.query.Select("moduleCache")
 
 	return &CacheVolume{
@@ -464,13 +461,13 @@ func (r *Go) ModuleCache() *CacheVolume { // go (../../../../toolchains/go/main.
 
 // GoModulesOpts contains options for Go.Modules
 type GoModulesOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:491:2)
+	Include []string // go (../../../../toolchains/go/main.go:495:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:492:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:496:2)
 }
 
 // Scan the source for go modules, and return their paths
-func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, error) { // go (../../../../toolchains/go/main.go:489:1)
+func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, error) { // go (../../../../toolchains/go/main.go:493:1)
 	q := r.query.Select("modules")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -490,7 +487,7 @@ func (r *Go) Modules(ctx context.Context, opts ...GoModulesOpts) ([]string, erro
 }
 
 // Enable race detector
-func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../toolchains/go/main.go:167:2)
+func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../toolchains/go/main.go:171:2)
 	if r.race != nil {
 		return *r.race, nil
 	}
@@ -503,7 +500,7 @@ func (r *Go) Race(ctx context.Context) (bool, error) { // go (../../../../toolch
 }
 
 // Project source directory
-func (r *Go) Source() *Directory { // go (../../../../toolchains/go/main.go:143:2)
+func (r *Go) Source() *Directory { // go (../../../../toolchains/go/main.go:147:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -512,7 +509,7 @@ func (r *Go) Source() *Directory { // go (../../../../toolchains/go/main.go:143:
 }
 
 // Pass arguments to 'go build -tags'
-func (r *Go) Tags(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:158:2)
+func (r *Go) Tags(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:162:2)
 	q := r.query.Select("tags")
 
 	var response []string
@@ -526,38 +523,38 @@ type GoTestOpts struct {
 	//
 	// Only run these tests
 	//
-	Run string // go (../../../../toolchains/go/main.go:362:2)
+	Run string // go (../../../../toolchains/go/main.go:366:2)
 	//
 	// Skip these tests
 	//
-	Skip string // go (../../../../toolchains/go/main.go:365:2)
+	Skip string // go (../../../../toolchains/go/main.go:369:2)
 	//
 	// Abort test run on first failure
 	//
-	Failfast bool // go (../../../../toolchains/go/main.go:368:2)
+	Failfast bool // go (../../../../toolchains/go/main.go:372:2)
 	//
 	// How many tests to run in parallel - defaults to the number of CPUs
 	//
-	Parallel int // go (../../../../toolchains/go/main.go:372:2)
+	Parallel int // go (../../../../toolchains/go/main.go:376:2)
 	//
 	// How long before timing out the test run
 	//
 	//
 	// Default: "30m"
-	Timeout string // go (../../../../toolchains/go/main.go:376:2)
+	Timeout string // go (../../../../toolchains/go/main.go:380:2)
 
 	// Default: 1
-	Count int // go (../../../../toolchains/go/main.go:379:2)
+	Count int // go (../../../../toolchains/go/main.go:383:2)
 	//
 	// Which packages to test
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../toolchains/go/main.go:383:2)
+	Pkgs []string // go (../../../../toolchains/go/main.go:387:2)
 }
 
 // Run tests for the given packages
-func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../../../toolchains/go/main.go:358:1)
+func (r *Go) Test(ctx context.Context, opts ...GoTestOpts) error { // go (../../../../toolchains/go/main.go:362:1)
 	if r.test != nil {
 		return nil
 	}
@@ -603,11 +600,11 @@ type GoTestsOpts struct {
 	//
 	//
 	// Default: ["./..."]
-	Pkgs []string // go (../../../../toolchains/go/main.go:253:2)
+	Pkgs []string // go (../../../../toolchains/go/main.go:257:2)
 }
 
 // List tests
-func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { // go (../../../../toolchains/go/main.go:248:1)
+func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { // go (../../../../toolchains/go/main.go:252:1)
 	if r.tests != nil {
 		return *r.tests, nil
 	}
@@ -627,12 +624,12 @@ func (r *Go) Tests(ctx context.Context, opts ...GoTestsOpts) (string, error) { /
 
 // GoTidyOpts contains options for Go.Tidy
 type GoTidyOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:514:2)
+	Include []string // go (../../../../toolchains/go/main.go:518:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:515:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:519:2)
 }
 
-func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../toolchains/go/main.go:512:1)
+func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../toolchains/go/main.go:516:1)
 	q := r.query.Select("tidy")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `include` optional argument
@@ -650,7 +647,7 @@ func (r *Go) Tidy(opts ...GoTidyOpts) *Changeset { // go (../../../../toolchains
 	}
 }
 
-func (r *Go) TidyModule(module string) *Changeset { // go (../../../../toolchains/go/main.go:501:1)
+func (r *Go) TidyModule(module string) *Changeset { // go (../../../../toolchains/go/main.go:505:1)
 	q := r.query.Select("tidyModule")
 	q = q.Arg("module", module)
 
@@ -660,7 +657,7 @@ func (r *Go) TidyModule(module string) *Changeset { // go (../../../../toolchain
 }
 
 // Add string value definition of the form importpath.name=value
-func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:161:2)
+func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../toolchains/go/main.go:165:2)
 	q := r.query.Select("values")
 
 	var response []string
@@ -670,7 +667,7 @@ func (r *Go) Values(ctx context.Context) ([]string, error) { // go (../../../../
 }
 
 // Go version
-func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../../toolchains/go/main.go:140:2)
+func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../../toolchains/go/main.go:144:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -682,71 +679,79 @@ func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../../t
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Go as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Go) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // GoOpts contains options for Query.Go
 type GoOpts struct {
 	//
 	// Project source directory
 	//
-	Source *Directory // go (../../../../toolchains/go/main.go:27:2)
+	Source *Directory // go (../../../../toolchains/go/main.go:31:2)
 	//
 	// Go version
 	//
 	//
 	// Default: "1.26"
-	Version string // go (../../../../toolchains/go/main.go:31:2)
+	Version string // go (../../../../toolchains/go/main.go:35:2)
 	//
 	// Use a custom module cache
 	//
-	ModuleCache *CacheVolume // go (../../../../toolchains/go/main.go:34:2)
+	ModuleCache *CacheVolume // go (../../../../toolchains/go/main.go:38:2)
 	//
 	// Use a custom build cache
 	//
-	BuildCache *CacheVolume // go (../../../../toolchains/go/main.go:38:2)
+	BuildCache *CacheVolume // go (../../../../toolchains/go/main.go:42:2)
 	//
 	// Use a custom base container.
 	// The container must have Go installed.
 	//
-	Base *Container // go (../../../../toolchains/go/main.go:43:2)
+	Base *Container // go (../../../../toolchains/go/main.go:47:2)
 	//
 	// Pass arguments to 'go build -ldflags'
 	//
-	Ldflags []string // go (../../../../toolchains/go/main.go:47:2)
+	Ldflags []string // go (../../../../toolchains/go/main.go:51:2)
 	//
 	// Pass arguments to 'go build -tags'
 	//
-	Tags []string // go (../../../../toolchains/go/main.go:51:2)
+	Tags []string // go (../../../../toolchains/go/main.go:55:2)
 	//
 	// Add string value definition of the form importpath.name=value
 	// Example: "github.com/my/module.Foo=bar"
 	//
-	Values []string // go (../../../../toolchains/go/main.go:56:2)
+	Values []string // go (../../../../toolchains/go/main.go:60:2)
 	//
 	// Enable CGO
 	//
-	Cgo bool // go (../../../../toolchains/go/main.go:60:2)
+	Cgo bool // go (../../../../toolchains/go/main.go:64:2)
 	//
 	// Enable race detector. Implies cgo=true
 	//
-	Race bool // go (../../../../toolchains/go/main.go:64:2)
+	Race bool // go (../../../../toolchains/go/main.go:68:2)
 	//
 	// Enable go experiments https://pkg.go.dev/internal/goexperiment
 	//
-	Experiment []string // go (../../../../toolchains/go/main.go:68:2)
+	Experiment []string // go (../../../../toolchains/go/main.go:72:2)
 	//
 	// extra system packages to include in the default base image; only
 	// valid if 'base' arg is nil
 	//
-	ExtraPackages []string // go (../../../../toolchains/go/main.go:73:2)
+	ExtraPackages []string // go (../../../../toolchains/go/main.go:77:2)
 	//
 	// max number of parallel jobs to run for tidy/check tidy/lint/runtime generation
 	//
 	//
 	// Default: 10
-	Limit int // go (../../../../toolchains/go/main.go:77:2)
+	Limit int // go (../../../../toolchains/go/main.go:81:2)
 }
 
 // A Go project
-func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../toolchains/go/main.go:24:1)
+func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../toolchains/go/main.go:28:1)
 	q := r.query.Select("go")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
@@ -802,16 +807,6 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../toolchains/go/main.g
 			q = q.Arg("limit", opts[i].Limit)
 		}
 	}
-
-	return &Go{
-		query: q,
-	}
-}
-
-// Load a Go from its ID.
-func (r *Query) LoadGoFromID(id GoID) *Go { // go (../../../../toolchains/go/main.go:138:6)
-	q := r.query.Select("loadGoFromID")
-	q = q.Arg("id", id)
 
 	return &Go{
 		query: q,

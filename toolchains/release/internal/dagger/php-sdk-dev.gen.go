@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `PhpSdkDevID` scalar type represents an identifier for an object of type PhpSdkDev.
-type PhpSDKDevID string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
 
 // Retrieve the binding value, as type PhpSdkDev
 func (r *Binding) AsPhpSDKDev() *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
@@ -48,7 +45,7 @@ func (r *Env) WithPhpSDKDevOutput(name string, description string) *Env { // php
 type PhpSDKDev struct { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
 	query *querybuilder.Selection
 
-	id             *PhpSDKDevID
+	id             *ID
 	phpCodeSniffer *Void
 	phpStan        *Void
 	release        *Void
@@ -140,13 +137,13 @@ func (r *PhpSDKDev) DoctumConfig() *File { // php-sdk-dev (../../../../toolchain
 }
 
 // A unique identifier for this PhpSdkDev.
-func (r *PhpSDKDev) ID(ctx context.Context) (PhpSDKDevID, error) {
+func (r *PhpSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PhpSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -159,7 +156,7 @@ func (r *PhpSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *PhpSDKDev) XXX_GraphQLIDType() string {
-	return "PhpSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -184,7 +181,7 @@ func (r *PhpSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadPhpSDKDevFromID(PhpSDKDevID(id))
+	*r = PhpSDKDev{query: selectNode(dag.query, id, "PhpSdkDev")}
 	return nil
 }
 
@@ -342,13 +339,11 @@ func (r *PhpSDKDev) WithGeneratedDocs() *PhpSDKDev { // php-sdk-dev (../../../..
 	}
 }
 
-// Load a PhpSdkDev from its ID.
-func (r *Query) LoadPhpSDKDevFromID(id PhpSDKDevID) *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
-	q := r.query.Select("loadPhpSdkDevFromID")
-	q = q.Arg("id", id)
-
-	return &PhpSDKDev{
-		query: q,
+// AsNode returns this PhpSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *PhpSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -357,7 +352,7 @@ type PhpSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK
 	//
-	Workspace *Directory // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:37:2)
+	WorkspaceDir *Directory // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:37:2)
 	//
 	// The path of the SDK source in the workspace
 	//
@@ -376,9 +371,9 @@ type PhpSDKDevOpts struct {
 func (r *Query) PhpSDKDev(opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:33:1)
 	q := r.query.Select("phpSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {

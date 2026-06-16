@@ -1,0 +1,10 @@
+type Paths {
+  pub workspacePath: String!
+  pub workspaceAddress: String!
+
+  new(ws: Workspace!) {
+    self.workspacePath = ws.cwd
+    self.workspaceAddress = ws.address
+    self
+  }
+}

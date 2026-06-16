@@ -14,7 +14,10 @@ $aqua-color: rgb(64, 185, 188);
 $cloud-color: rgb(208, 224, 249);
 $plum-color: rgb(62, 59, 107);
 $inkberry-color: rgb(26, 24, 51);
-$obsidian-color: rgb(25, 25, 34);
+// The recessed dark surface (code blocks, search button, flowcharts): the page
+// background, one step darker. Derived so it shares inkberry's hue and
+// saturation and differs only in lightness, keeping the dark palette coherent.
+$obsidian-color: color.adjust($inkberry-color, $lightness: -3%);
 
 @import url("https://fonts.cdnfonts.com/css/general-sans");
 
@@ -35,14 +38,197 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
   --ifm-font-family-base: "General Sans Medium",
     "General Sans Medium Placeholder", system-ui, -apple-system, Segoe UI,
     Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont;
-  --ifm-font-size-base: 18px;
+  --ifm-font-size-base: 16.2px; // 90% of the previous 18px
   --ifm-font-weight-base: 400;
+  // Inline <code> shipped with Infima's cramped 0.1rem padding, so the border
+  // practically touched the text. Give it room to breathe site-wide.
+  --ifm-code-padding-horizontal: 0.45rem;
+  --ifm-code-padding-vertical: 0.2rem;
+
+  // Shared Dagger product palette.
+  // Source: https://gist.githubusercontent.com/vito/00c2372d1e4c31401e768ba5d2826295/raw/18ebf1c7d6ebf22947b49a4f06fe1651995ac534/gistfile1.txt
+  --font-sans: "Open Sans", sans-serif;
+  --font-mono: "Hack", monospace;
+  --font-heading: "Montserrat", sans-serif;
+  --ifm-font-family-monospace: var(--font-mono);
+
+  --header-height: 75px;
+
+  --scrollbar-track: var(--color-gray-100);
+  --scrollbar-thumb: var(--color-gray-200);
+  --scrollbar-thumb-hover: var(--color-gray-300);
+  --scrollbar-thumb-active: var(--color-gray-400);
+
+  --scrollbar-track-dark: var(--color-gray-800);
+  --scrollbar-thumb-dark: var(--color-gray-700);
+  --scrollbar-thumb-hover-dark: var(--color-gray-600);
+  --scrollbar-thumb-active-dark: var(--color-gray-500);
+
+  --drop-shadow-md: none;
+  --drop-shadow-dark: none;
+  --inset-shadow-md: none;
+  --inset-shadow-dark: none;
+
+  --shadow-login: 0rem 2rem 2.5rem -0.75rem rgb(13, 12, 27);
+
+  --color-blackHole: #0d0c1b;
+  --color-white: #ffffff;
+
+  --color-transparent: transparent;
+
+  --color-primary: var(--color-blue-500);
+  --color-primaryDark: var(--color-blue-200);
+  --color-primaryVariant: var(--color-blue-600);
+
+  --color-secondary: var(--color-cyan-400);
+  --color-secondaryVariant: var(--color-cyan-600);
+
+  --color-background: var(--color-white);
+  --color-backgroundDark: var(--color-blackHole);
+  --color-backgroundSecondary: var(--color-gray-50);
+  --color-backgroundSecondaryDark: var(--color-gray-800);
+
+  --color-error: var(--color-red-500);
+  --color-errorDark: var(--color-red-200);
+
+  --color-whiteAlpha-50: rgba(255, 255, 255, 0.04);
+  --color-whiteAlpha-100: rgba(255, 255, 255, 0.08);
+  --color-whiteAlpha-200: rgba(255, 255, 255, 0.1);
+  --color-whiteAlpha-300: rgba(255, 255, 255, 0.12);
+  --color-whiteAlpha-400: rgba(255, 255, 255, 0.16);
+  --color-whiteAlpha-500: rgba(255, 255, 255, 0.24);
+  --color-whiteAlpha-600: rgba(255, 255, 255, 0.32);
+  --color-whiteAlpha-700: rgba(255, 255, 255, 0.4);
+  --color-whiteAlpha-800: rgba(255, 255, 255, 0.64);
+  --color-whiteAlpha-900: rgba(255, 255, 255, 0.88);
+
+  --color-blackAlpha-50: rgba(13, 12, 27, 0.04);
+  --color-blackAlpha-100: rgba(13, 12, 27, 0.08);
+  --color-blackAlpha-200: rgba(13, 12, 27, 0.1);
+  --color-blackAlpha-300: rgba(13, 12, 27, 0.12);
+  --color-blackAlpha-400: rgba(13, 12, 27, 0.16);
+  --color-blackAlpha-500: rgba(13, 12, 27, 0.24);
+  --color-blackAlpha-600: rgba(13, 12, 27, 0.32);
+  --color-blackAlpha-700: rgba(13, 12, 27, 0.4);
+  --color-blackAlpha-800: rgba(13, 12, 27, 0.64);
+  --color-blackAlpha-900: rgba(13, 12, 27, 0.88);
+
+  --color-gray-50: #f4f4ff;
+  --color-gray-100: #d2d2e3;
+  --color-gray-200: #b5b4cb;
+  --color-gray-300: #9796b5;
+  --color-gray-400: #7a79a0;
+  --color-gray-500: #605e85;
+  --color-gray-600: #4b4968;
+  --color-gray-700: #333248;
+  --color-gray-800: #201f2f;
+  --color-gray-900: #131226;
+
+  --color-red-50: #ffe5eb;
+  --color-red-100: #fbbac4;
+  --color-red-200: #f28e9e;
+  --color-red-300: #eb6177;
+  --color-red-400: #e73853;
+  --color-red-500: #ca1b37;
+  --color-red-600: #9e132b;
+  --color-red-700: #710b1b;
+  --color-red-800: #460410;
+  --color-red-900: #1e0004;
+
+  --color-orange-50: #ffefdd;
+  --color-orange-100: #fdd5b2;
+  --color-orange-200: #f9ba86;
+  --color-orange-300: #f49f57;
+  --color-orange-400: #f08328;
+  --color-orange-500: #d76a0f;
+  --color-orange-600: #a8520a;
+  --color-orange-700: #783a05;
+  --color-orange-800: #4a2200;
+  --color-orange-900: #1e0900;
+
+  --color-yellow-50: #fff4db;
+  --color-yellow-100: #ffe4ae;
+  --color-yellow-200: #fed67e;
+  --color-yellow-300: #fdcc4d;
+  --color-yellow-400: #fcc51d;
+  --color-yellow-500: #c17c0a;
+  --color-yellow-600: #aa6706;
+  --color-yellow-700: #7e4600;
+  --color-yellow-800: #4c2500;
+  --color-yellow-900: #1c0900;
+
+  --color-green-50: #e1fced;
+  --color-green-100: #bfefd2;
+  --color-green-200: #99e3b6;
+  --color-green-300: #72d799;
+  --color-green-400: #4dcc7d;
+  --color-green-500: #209f50;
+  --color-green-600: #228748;
+  --color-green-700: #196336;
+  --color-green-800: #093c1f;
+  --color-green-900: #001605;
+
+  --color-teal-50: #ddfdfd;
+  --color-teal-100: #baf1f2;
+  --color-teal-200: #94e5e7;
+  --color-teal-300: #6dd9db;
+  --color-teal-400: #47ced1;
+  --color-teal-500: #139a9d;
+  --color-teal-600: #148385;
+  --color-teal-700: #0d6667;
+  --color-teal-800: #003d3e;
+  --color-teal-900: #001717;
+
+  --color-blue-50: #e2eeff;
+  --color-blue-100: #b1c8ff;
+  --color-blue-200: #7f9eff;
+  --color-blue-300: #4d72ff;
+  --color-blue-400: #3874ff;
+  --color-blue-500: #064fe5;
+  --color-blue-600: #004ab3;
+  --color-blue-700: #003d81;
+  --color-blue-800: #002a50;
+  --color-blue-900: #001120;
+
+  --color-cyan-50: #ddfbff;
+  --color-cyan-100: #b7eaf7;
+  --color-cyan-200: #90dbee;
+  --color-cyan-300: #66cce6;
+  --color-cyan-400: #3fbddd;
+  --color-cyan-500: #1a96b6;
+  --color-cyan-600: #197f99;
+  --color-cyan-700: #0b5b6e;
+  --color-cyan-800: #003844;
+  --color-cyan-900: #00141b;
+
+  --color-purple-50: #faf5ff;
+  --color-purple-100: #e9d8fd;
+  --color-purple-200: #d6bcfa;
+  --color-purple-300: #b794f4;
+  --color-purple-400: #9f7aea;
+  --color-purple-500: #805ad5;
+  --color-purple-600: #6b46c1;
+  --color-purple-700: #553c9a;
+  --color-purple-800: #44337a;
+  --color-purple-900: #322659;
+
+  --color-pink-50: #fff5f7;
+  --color-pink-100: #fed7e2;
+  --color-pink-200: #fbb6ce;
+  --color-pink-300: #f687b3;
+  --color-pink-400: #ed64a6;
+  --color-pink-500: #d53f8c;
+  --color-pink-600: #b83280;
+  --color-pink-700: #97266d;
+  --color-pink-800: #702459;
+  --color-pink-900: #521b41;
+
+  --color-raisinBlack-700: #26243e;
+  --color-raisinBlack-800: #1a192b;
+
   --ifm-background-color: #{$oat-color};
-  --ifm-color-primary-light: #21798d;
-  --ifm-color-primary: #21798d;
   --ifm-heading-color: #{$dagger-dark-mode-background-color};
   --ifm-hover-overlay: #e1f5fb;
-  --ifm-menu-color-active: #21798d;
   --ifm-menu-color-background-active: rgba($inkberry-color, 0.1);
   --ifm-menu-color-background-hover: rgba($inkberry-color, 0.1);
   --ifm-menu-color: #4b4b5a;
@@ -55,8 +241,15 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
 
 html[data-theme="dark"] {
   --ifm-background-color: #{$inkberry-color};
-  --ifm-color-primary-light: #57c7e3;
-  --ifm-color-primary: #57c7e3;
+  // The note/secondary admonition (and secondary badges) ship with a flat gray
+  // contrast background in dark mode. Tint it to the dark palette — inkberry
+  // lightened, same hue/saturation — so callouts mesh instead of reading gray.
+  --ifm-color-secondary-contrast-background: #{color.adjust(
+      $inkberry-color,
+      $lightness: 13%
+    )};
+  --ifm-color-primary-light: var(--color-purple-100);
+  --ifm-color-primary: var(--color-purple-200);
   --ifm-heading-color: white;
   --ifm-hover-overlay: #2b2f46;
   --ifm-menu-color-active: #57c7e3;
@@ -164,12 +357,11 @@ aside[class*="docSidebarContainer"] {
   box-shadow: none !important;
 
   @include desktop {
-    height: calc(
-      100vh - var(--ifm-navbar-height)
-    ) !important; /* Account for navbar height */
-    min-height: calc(100vh - var(--ifm-navbar-height)) !important;
-    // position: sticky !important;
-    top: var(--ifm-navbar-height) !important; /* Start below navbar */
+    height: 100vh !important;
+    min-height: 100vh !important;
+    margin-top: 0 !important;
+    position: sticky !important;
+    top: 0 !important;
     // overflow: auto !important; /* Prevent container from scrolling */
   }
 
@@ -265,6 +457,34 @@ div[class*="docSidebarMenu"],
 /* Add margin to navbar items except the last one */
 .navbar__items .navbar__item:not(:last-child) {
   margin-right: 3px;
+}
+
+.navbar-version-select-mobile {
+  display: none !important;
+}
+
+@media (max-width: 996px) {
+  .navbar-version-select-mobile {
+    display: flex !important;
+    align-items: center !important;
+    margin-right: 56px !important;
+  }
+
+  .navbar-version-dropdown {
+    display: none !important;
+  }
+
+  .docs-version-select {
+    max-width: 88px;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ifm-navbar-link-color);
+    font: inherit;
+    font-size: 0.8175rem;
+    padding: 0 0.35rem;
+  }
 }
 
 /* Hide specific navbar navigation links on mobile - keep hamburger, logo, search, theme toggle */
@@ -373,6 +593,7 @@ html[data-theme="dark"] {
   border-bottom: none !important;
 
   @include desktop {
+    display: none !important;
     margin-bottom: 1.1rem;
   }
 }
@@ -640,7 +861,9 @@ html[data-theme="dark"] .footer-x-link {
 
 // adjust style for Dagger Shell tab title
 .language-shell > div:nth-child(1) {
-  background-color: white;
+  // No background here: this selector matches the content wrapper around the
+  // <pre>, so a solid color leaks out behind the code block's rounded corners
+  // (a white fringe in dark mode). Let the pre's own background show through.
   color: #{$plum-color};
   font-style: italic;
 }
@@ -653,8 +876,15 @@ html[data-theme="light"] pre {
 
 html[data-theme="dark"] pre {
   background: #{$obsidian-color} !important;
-  border: 1px solid rgba(25, 25, 34, 0.3); // Obsidian color with transparency
+  border: 1px solid rgba($obsidian-color, 0.3); // Obsidian color with transparency
   color: #f8f8f2; // Light color for code text in dark mode
+}
+
+// The code block container is painted by Docusaurus with the lighter Prism
+// background and rounds its own corners, so without this it peeks out behind
+// the pre's rounded corners as a fringe. Match it to the pre.
+html[data-theme="dark"] .theme-code-block {
+  background: #{$obsidian-color} !important;
 }
 
 // Remove top and bottom padding from header-searchbar
@@ -735,6 +965,40 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
 
     &:hover {
       background-color: rgba(62, 59, 107, 0.8) !important;
+    }
+  }
+}
+
+@include desktop {
+  .docs-right-sidebar-cloud-button {
+    display: flex !important;
+  }
+
+  .docs-sidebar-search {
+    display: flex;
+    margin-top: 0.75rem;
+    min-width: 0;
+    width: 100%;
+
+    .DocSearch.DocSearch-Button {
+      flex-grow: 1 !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      justify-content: space-between !important;
+      padding: 0 0.75rem !important;
+      width: auto !important;
+    }
+
+    .DocSearch-Button-Container {
+      min-width: 0 !important;
+    }
+
+    .DocSearch-Button-Placeholder {
+      display: inline !important;
+    }
+
+    .DocSearch-Button-Keys {
+      display: flex !important;
     }
   }
 }
@@ -913,15 +1177,15 @@ html[data-theme="dark"] {
   .table-of-contents__link {
     &:hover {
       background-color: rgba(208, 224, 249, 0.1) !important;
-      color: var(--ifm-menu-color-active);
-      border-left: 3px solid rgba(190, 29, 67, 0.5); // Light version of crimson color
+      color: var(--ifm-menu-color);
+      border-left: 3px solid var(--color-yellow-700);
       padding-left: 0.5rem;
     }
 
     &.table-of-contents__link--active {
       background-color: rgba(208, 224, 249, 0.15) !important;
-      color: var(--ifm-menu-color-active);
-      border-left: 3px solid #{$crimson-color} !important; // Matching navbar border color
+      color: var(--ifm-menu-color);
+      border-left: 3px solid var(--color-yellow-400) !important;
       padding-left: 0.5rem;
     }
   }
@@ -969,4 +1233,39 @@ html[data-theme="dark"] {
 
 .menu__link {
   font-size: 0.875rem !important; // 14px
+}
+
+/* ── content "sheet" ──────────────────────────────────────────────
+   The doc content sits on a white sheet that rises from the cream page
+   background like a rounded sheet of paper. The article column is the sheet;
+   the left nav and (when present) the right table of contents stay on the
+   cream background to either side. */
+:root {
+  --doc-sheet-bg: #ffffff;
+  --doc-sheet-radius: 18px;
+}
+html[data-theme="dark"] {
+  // a touch lighter than the inkberry page background, so it still reads as a
+  // raised surface in dark mode
+  --doc-sheet-bg: #211f3d;
+}
+
+main[class*="docMainContainer"] {
+  // cream gap between the left nav and the sheet, mirroring the gutter the
+  // table of contents leaves on the right
+  padding-left: 1.5rem;
+
+  .row > .col:has(.theme-doc-markdown) {
+    background: var(--doc-sheet-bg);
+    min-height: 100vh;
+    // even 2rem inset on all sides
+    padding: 2rem;
+    border-radius: var(--doc-sheet-radius);
+  }
+
+  // Keep the right-hand table of contents on the cream background, so the
+  // sheet's rounded top-right corner reads against it.
+  .col--3 {
+    background: transparent;
+  }
 }

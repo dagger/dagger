@@ -1,0 +1,32 @@
+[modules.reader]
+source = ".dagger/modules/reader"
+
+[modules.lister]
+source = ".dagger/modules/lister"
+
+[modules.subdir]
+source = ".dagger/modules/subdir"
+
+[modules.filtered]
+source = ".dagger/modules/filtered"
+
+[modules.gi-root]
+source = ".dagger/modules/gi-root"
+
+[modules.gi-sub]
+source = ".dagger/modules/gi-sub"
+
+[modules.gi-off]
+source = ".dagger/modules/gi-off"
+
+[modules.escape-dir]
+source = ".dagger/modules/escape-dir"
+
+[modules.escape-file]
+source = ".dagger/modules/escape-file"
+
+[modules.abs-rel]
+source = ".dagger/modules/abs-rel"
+
+[modules.finder]
+source = ".dagger/modules/finder"

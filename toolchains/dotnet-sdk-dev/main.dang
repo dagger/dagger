@@ -13,7 +13,7 @@ type DotnetSdkDev {
   """
   A directory with all the files needed to develop the SDK.
   """
-  pub workspace: Directory!
+  pub workspaceDir: Directory!
     @defaultPath(path: "/")
     @ignorePatterns(patterns: [
       "*",
@@ -30,7 +30,7 @@ type DotnetSdkDev {
   """
   pub sourcePath: String! = "sdk/dotnet/sdk"
 
-  let originalWorkspace: Directory! = workspace
+  let originalWorkspace: Directory! = workspaceDir
 
   let baseContainer: Container! {
     let ctr = container
@@ -48,7 +48,7 @@ type DotnetSdkDev {
   """
   pub devContainer: Container! {
     baseContainer
-      .withMountedDirectory(".", workspace)
+      .withMountedDirectory(".", workspaceDir)
       .withWorkdir(sourcePath)
   }
 
@@ -101,8 +101,8 @@ type DotnetSdkDev {
   }
 
   pub withInstall: DotnetSdkDev! {
-    self.workspace = self
-      .workspace
+    self.workspaceDir = self
+      .workspaceDir
       .withoutDirectory(sourcePath)
       .withDirectory(
         sourcePath,
@@ -120,7 +120,7 @@ type DotnetSdkDev {
   and save it back to the workspace.
   """
   pub withFormat: DotnetSdkDev! {
-    self.workspace = directory
+    self.workspaceDir = directory
       .withDirectory(
         "/",
         devContainer
@@ -141,6 +141,6 @@ type DotnetSdkDev {
   code on the host.
   """
   pub changes: Changeset! {
-    workspace.changes(originalWorkspace)
+    workspaceDir.changes(originalWorkspace)
   }
 }

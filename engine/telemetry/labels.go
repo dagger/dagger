@@ -196,15 +196,32 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 	// Checks if the commit is a merge commit in the context of pull request
 	// For now, only GitHub needs to be handled, as GitLab doesn't create this
 	// weird /merge ref in a merge-request
-	if ref, ok := os.LookupEnv("GITHUB_REF"); ok {
-		if strings.HasPrefix(ref, "refs/pull/") {
-			ref = strings.Replace(ref, "/merge", "/head", 1)
-			refCommit, err := fetchRef(repo, workdir, "origin", ref)
+	ref := labels.eg.Getenv("GITHUB_REF")
+	if strings.HasPrefix(ref, "refs/pull/") {
+		githubSHA := labels.eg.Getenv("GITHUB_SHA")
+		isSyntheticMergeCheckout := strings.HasSuffix(ref, "/merge") && githubSHA == head.Hash().String()
+
+		var refCommit *object.Commit
+		var err error
+
+		switch {
+		case isSyntheticMergeCheckout:
+			// GitHub checked out refs/pull/N/merge. Parent 2 is refs/pull/N/head.
+			// This only works checkout is not a shallow clone.
+			refCommit, err = prHeadFromMerge(commit)
 			if err != nil {
-				slog.Warn("failed to fetch branch", "err", err)
-			} else {
-				commit = refCommit
+				refCommit, err = fetchPRHead(repo, workdir, ref)
 			}
+		default:
+			// This handles shallow checkouts, refs/pull/N/head, and workflows that
+			// checked out the PR head while GITHUB_REF still points at refs/pull/N/merge.
+			refCommit, err = fetchPRHead(repo, workdir, ref)
+		}
+
+		if err != nil {
+			slog.Warn("failed to fetch branch", "err", err)
+		} else {
+			commit = refCommit
 		}
 	}
 
@@ -549,13 +566,35 @@ func (labels Labels) isCI() bool {
 		labels.eg.Getenv("TF_BUILD") != "" // Azure Pipelines
 }
 
+// prHeadFromMerge returns the pull request head commit for a GitHub-generated
+// refs/pull/N/merge commit. GitHub builds the merge commit with the base branch
+// as its first parent and the PR head as its second parent, so the head commit
+// (equivalent to refs/pull/N/head) can be directly....
+func prHeadFromMerge(merge *object.Commit) (*object.Commit, error) {
+	return merge.Parent(1)
+}
+
+func fetchPRHead(repo *git.Repository, workdir string, ref string) (*object.Commit, error) {
+	ref = strings.Replace(ref, "/merge", "/head", 1)
+	return fetchRef(repo, workdir, "origin", ref)
+}
+
 func fetchRef(repo *git.Repository, workdir string, remote string, target string) (*object.Commit, error) {
 	target = strings.TrimPrefix(target, "refs/")
 	src := fmt.Sprintf("refs/%s", target)
 	dest := fmt.Sprintf("refs/dagger/%s", target)
 
+	// Only allow shortening history when the repository is *already* shallow.
+	// Passing --depth 1 to a full checkout writes .git/shallow and corrupts it,
+	// breaking subsequent git history operations (merge-base, describe, ...).
+	args := []string{"fetch"}
+	if isShallowRepo(workdir) {
+		args = append(args, "--depth", "1")
+	}
+	args = append(args, remote, fmt.Sprintf("+%s:%s", src, dest))
+
 	// Fetch from the origin remote
-	cmd := exec.Command("git", "fetch", "--depth", "1", remote, fmt.Sprintf("+%s:%s", src, dest))
+	cmd := exec.Command("git", args...)
 	cmd.Dir = workdir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -584,6 +623,16 @@ func fetchRef(repo *git.Repository, workdir string, remote string, target string
 	}
 
 	return branchCommit, nil
+}
+
+func isShallowRepo(workdir string) bool {
+	cmd := exec.Command("git", "rev-parse", "--is-shallow-repository")
+	cmd.Dir = workdir
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "true"
 }
 
 type LabelFlag struct {

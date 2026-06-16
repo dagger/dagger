@@ -1,5 +1,9 @@
 package core
 
+// This file contains package-wide integration test setup: `TestMain`, shared
+// `testctx` middleware, Dagger client connection helpers, and common assertion
+// helpers.
+
 import (
 	"archive/tar"
 	"bytes"
@@ -13,14 +17,12 @@ import (
 	"runtime"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/otel-go/oteltestctx"
 	"github.com/dagger/testctx"
@@ -265,13 +267,6 @@ func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
 
 const testCLIBinPath = "/bin/dagger"
 
-func skipSDKAliasIfDevTag(t *testctx.T, sdkName string) {
-	t.Helper()
-	if engine.IsDevVersion(engine.Tag) {
-		t.Skipf("requires %s SDK alias to resolve engine tag to a git ref; engine tag %q is a dev pseudo-version", sdkName, engine.Tag)
-	}
-}
-
 func goCache(c *dagger.Client) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
@@ -297,19 +292,6 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
-}
-
-func limitTicker(interval time.Duration, limit int) <-chan time.Time {
-	ch := make(chan time.Time, limit)
-	ticker := time.NewTicker(interval)
-	go func() {
-		defer ticker.Stop()
-		defer close(ch)
-		for range limit {
-			ch <- <-ticker.C
-		}
-	}()
-	return ch
 }
 
 // ensure the cache mount doesn't get pruned in the middle of the test by having a container

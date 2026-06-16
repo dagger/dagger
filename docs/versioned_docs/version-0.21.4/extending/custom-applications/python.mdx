@@ -1,0 +1,67 @@
+---
+title: "Python Custom Application"
+sidebar_label: "Python"
+slug: /extending/custom-applications/python
+description: "Learn how to use the Dagger SDK to embed into Python applications."
+---
+
+
+
+
+:::note
+The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/using/index.html).
+:::
+
+Install the Dagger Python SDK in your project:
+
+```shell
+uv add dagger-io
+```
+
+If you prefer, you can alternatively add the Dagger Python SDK in your Python program. This is useful in case of dependency conflicts, or to keep your Dagger code self-contained.
+
+```shell
+uv add --script myscript.py dagger-io
+```
+
+This example demonstrates how to test a Python application against multiple Python versions using the Python SDK.
+
+Clone an example project:
+
+```shell
+git clone --branch 0.101.0 https://github.com/tiangolo/fastapi
+cd fastapi
+```
+
+Create a new file named `test.py` in the project directory and add the following code to it.
+
+```python file=./snippets/clients-sdk/python/test.py
+```
+
+This Python program imports the Dagger SDK and defines an asynchronous function named `test()`. This `test()` function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test matrix, consisting of Python versions `3.8` to `3.11` and iterates over this matrix, downloading a Python container image for each specified version and testing the source application in that version.
+
+Add the dependency:
+
+```shell
+uv add --script test.py dagger-io
+```
+
+Run the Python program by executing the command below from the project directory:
+
+```shell
+dagger run uv run test.py
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress. The tool tests the application against each version concurrently and displays the following final output:
+
+```shell
+Starting tests for Python 3.8
+Starting tests for Python 3.9
+Starting tests for Python 3.10
+Starting tests for Python 3.11
+Tests for Python 3.8 succeeded!
+Tests for Python 3.9 succeeded!
+Tests for Python 3.11 succeeded!
+Tests for Python 3.10 succeeded!
+All tasks have finished
+```

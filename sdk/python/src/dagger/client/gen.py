@@ -186,6 +186,14 @@ class NetworkProtocol(Enum):
     UDP = "UDP"
 
 
+class RegistryProtocol(Enum):
+    """Transport protocol to use for registry operations."""
+
+    HTTP = "HTTP"
+
+    HTTPS = "HTTPS"
+
+
 class ReturnType(Enum):
     """Expected return type of an execution"""
 
@@ -820,6 +828,36 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asWorkspace", _args)
         return Workspace(_ctx)
+
+    def as_workspace_git(self) -> "WorkspaceGit":
+        """Retrieve the binding value, as type WorkspaceGit"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceGit", _args)
+        return WorkspaceGit(_ctx)
+
+    def as_workspace_migration(self) -> "WorkspaceMigration":
+        """Retrieve the binding value, as type WorkspaceMigration"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceMigration", _args)
+        return WorkspaceMigration(_ctx)
+
+    def as_workspace_migration_step(self) -> "WorkspaceMigrationStep":
+        """Retrieve the binding value, as type WorkspaceMigrationStep"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceMigrationStep", _args)
+        return WorkspaceMigrationStep(_ctx)
+
+    def as_workspace_module(self) -> "WorkspaceModule":
+        """Retrieve the binding value, as type WorkspaceModule"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceModule", _args)
+        return WorkspaceModule(_ctx)
+
+    def as_workspace_module_setting(self) -> "WorkspaceModuleSetting":
+        """Retrieve the binding value, as type WorkspaceModuleSetting"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceModuleSetting", _args)
+        return WorkspaceModuleSetting(_ctx)
 
     async def digest(self) -> str:
         """Returns the digest of the binding value
@@ -1768,7 +1806,7 @@ class Container(Type):
         return await _ctx.execute(list[str])
 
     async def env_variable(self, name: str) -> str | None:
-        """Retrieves the value of the specified environment variable.
+        """Retrieves the value of the specified persistent environment variable.
 
         Parameters
         ----------
@@ -1796,7 +1834,9 @@ class Container(Type):
         return await _ctx.execute(str | None)
 
     async def env_variables(self) -> list["EnvVariable"]:
-        """Retrieves the list of environment variables passed to commands."""
+        """Retrieves the list of persistent environment variables configured on
+        the container.
+        """
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
         return await _ctx.execute_object_list(EnvVariable)
@@ -1807,6 +1847,7 @@ class Container(Type):
         *,
         expected_type: ExistsType | None = None,
         do_not_follow_symlinks: bool | None = False,
+        expand: bool | None = False,
     ) -> bool:
         """check if a file or directory exists
 
@@ -1819,6 +1860,10 @@ class Container(Type):
             "DIRECTORY_TYPE", or "SYMLINK_TYPE").
         do_not_follow_symlinks:
             If specified, do not follow symlinks.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
 
         Returns
         -------
@@ -1836,6 +1881,7 @@ class Container(Type):
             Arg("path", path),
             Arg("expectedType", expected_type, None),
             Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("exists", _args)
         return await _ctx.execute(bool)
@@ -2055,7 +2101,14 @@ class Container(Type):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    def from_(self, address: str) -> Self:
+    def from_(
+        self,
+        address: str,
+        *,
+        registry_service: "Service | None" = None,
+        protocol: RegistryProtocol | None = None,
+        insecure_skip_tls_verify: bool | None = False,
+    ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
 
@@ -2064,9 +2117,21 @@ class Container(Type):
         address:
             Address of the container image to download, in standard OCI ref
             format. Example:"registry.dagger.io/engine:latest"
+        registry_service:
+            Service to use as the registry endpoint for the image address.
+            The service will be started only for this pull.
+        protocol:
+            Protocol to use for registry communication.
+            Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+        insecure_skip_tls_verify:
+            Allow HTTPS registry communication without verifying the server
+            certificate.
         """
         _args = [
             Arg("address", address),
+            Arg("registryService", registry_service, None),
+            Arg("protocol", protocol, None),
+            Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -2228,6 +2293,9 @@ class Container(Type):
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        registry_service: "Service | None" = None,
+        protocol: RegistryProtocol | None = None,
+        insecure_skip_tls_verify: bool | None = False,
     ) -> str:
         """Package the container state as an OCI image, and publish it to a
         registry
@@ -2257,6 +2325,15 @@ class Container(Type):
             Defaults to "OCI", which is compatible with most recent
             registries, but "Docker" may be needed for older registries
             without OCI support.
+        registry_service:
+            Service to use as the registry endpoint for the image address.
+            The service will be started only for this push.
+        protocol:
+            Protocol to use for registry communication.
+            Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+        insecure_skip_tls_verify:
+            Allow HTTPS registry communication without verifying the server
+            certificate.
 
         Returns
         -------
@@ -2281,6 +2358,9 @@ class Container(Type):
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("registryService", registry_service, None),
+            Arg("protocol", protocol, None),
+            Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -3411,6 +3491,27 @@ class Container(Type):
         _ctx = self._select("withUser", _args)
         return Container(_ctx)
 
+    def with_volatile_variable(self, name: str, value: str) -> Self:
+        """Set a new non-secret environment variable for future execs without
+        invalidating exec cache when only its value changes.
+
+        This is an expert-only escape hatch. If a volatile value affects
+        observable exec results, stale cached results may be reused.
+
+        Parameters
+        ----------
+        name:
+            Name of the volatile variable (e.g., "CI_RUN_ID").
+        value:
+            Value of the volatile variable.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withVolatileVariable", _args)
+        return Container(_ctx)
+
     def with_workdir(
         self,
         path: str,
@@ -3694,6 +3795,21 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("withoutUser", _args)
+        return Container(_ctx)
+
+    def without_volatile_variable(self, name: str) -> Self:
+        """Retrieves this container minus the given volatile environment
+        variable.
+
+        Parameters
+        ----------
+        name:
+            The name of the volatile environment variable (e.g., "CI_RUN_ID").
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutVolatileVariable", _args)
         return Container(_ctx)
 
     def without_workdir(self) -> Self:
@@ -4069,6 +4185,25 @@ class Directory(Type):
         ]
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
+
+    def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
+        """Creates a synthetic workspace from this directory.
+
+        .. caution::
+            Experimental: Synthetic workspaces currently support filesystem
+            APIs only.
+
+        Parameters
+        ----------
+        cwd:
+            Current working directory inside the workspace root. Defaults to
+            the workspace root.
+        """
+        _args = [
+            Arg("cwd", cwd, "/"),
+        ]
+        _ctx = self._select("asWorkspace", _args)
+        return Workspace(_ctx)
 
     def changes(self, from_: Self) -> Changeset:
         """Return the difference between this directory and another directory,
@@ -7162,6 +7297,49 @@ class Env(Type):
         _ctx = self._select("withWorkspace", _args)
         return Env(_ctx)
 
+    def with_workspace_git_input(
+        self,
+        name: str,
+        value: "WorkspaceGit",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceGit in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceGit value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceGitInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_git_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceGit output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceGitOutput", _args)
+        return Env(_ctx)
+
     def with_workspace_input(
         self,
         name: str,
@@ -7185,6 +7363,181 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withWorkspaceInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_migration_input(
+        self,
+        name: str,
+        value: "WorkspaceMigration",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceMigration in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceMigration value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceMigrationInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_migration_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceMigration output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceMigrationOutput", _args)
+        return Env(_ctx)
+
+    def with_workspace_migration_step_input(
+        self,
+        name: str,
+        value: "WorkspaceMigrationStep",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceMigrationStep in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceMigrationStep value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceMigrationStepInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_migration_step_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceMigrationStep output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceMigrationStepOutput", _args)
+        return Env(_ctx)
+
+    def with_workspace_module_input(
+        self,
+        name: str,
+        value: "WorkspaceModule",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceModule in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceModule value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceModuleInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_module_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceModule output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceModuleOutput", _args)
+        return Env(_ctx)
+
+    def with_workspace_module_setting_input(
+        self,
+        name: str,
+        value: "WorkspaceModuleSetting",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceModuleSetting in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceModuleSetting value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceModuleSettingInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_module_setting_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceModuleSetting output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceModuleSettingOutput", _args)
         return Env(_ctx)
 
     def with_workspace_output(self, name: str, description: str) -> Self:
@@ -9311,6 +9664,25 @@ class GitRef(Type):
 class GitRepository(Type):
     """A git repository."""
 
+    def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
+        """Creates a synthetic workspace from this git repository.
+
+        .. caution::
+            Experimental: Synthetic workspaces currently support filesystem
+            APIs only.
+
+        Parameters
+        ----------
+        cwd:
+            Current working directory inside the workspace root. Defaults to
+            the workspace root.
+        """
+        _args = [
+            Arg("cwd", cwd, "/"),
+        ]
+        _ctx = self._select("asWorkspace", _args)
+        return Workspace(_ctx)
+
     def branch(self, name: str) -> GitRef:
         """Returns details of a branch.
 
@@ -11432,7 +11804,17 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     def blueprint(self) -> Self:
-        """The blueprint referenced by the module source."""
+        """The blueprint referenced by the module source.
+
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in dagger.toml instead.
+        """
+        warnings.warn(
+            'Method "blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("blueprint", _args)
         return ModuleSource(_ctx)
@@ -11487,7 +11869,7 @@ class ModuleSource(Type):
         return await _ctx.execute_object_list(ModuleConfigClient)
 
     async def config_exists(self) -> bool:
-        """Whether an existing dagger.json for the module was found.
+        """Whether an existing module config file was found.
 
         Returns
         -------
@@ -11743,7 +12125,7 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def module_original_name(self) -> str:
-        """The original name of the module as read from the module's dagger.json
+        """The original name of the module as read from the module config file
         (or set for the first time with the withName API).
 
         Returns
@@ -11836,8 +12218,8 @@ class ModuleSource(Type):
         return SDKConfig(_ctx)
 
     async def source_root_subpath(self) -> str:
-        """The path, relative to the context directory, that contains the
-        module's dagger.json.
+        """The path, relative to the context directory, that contains the module
+        config.
 
         Returns
         -------
@@ -11897,7 +12279,17 @@ class ModuleSource(Type):
         return self.sync().__await__()
 
     async def toolchains(self) -> list["ModuleSource"]:
-        """The toolchains referenced by the module source."""
+        """The toolchains referenced by the module source.
+
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in dagger.toml instead.
+        """
+        warnings.warn(
+            'Method "toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("toolchains", _args)
         return await _ctx.execute_object_list(ModuleSource)
@@ -11932,11 +12324,20 @@ class ModuleSource(Type):
     def with_blueprint(self, blueprint: Self) -> Self:
         """Set a blueprint for the module source.
 
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `dagger.toml` instead.
+
         Parameters
         ----------
         blueprint:
             The blueprint module to set.
         """
+        warnings.warn(
+            'Method "with_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("blueprint", blueprint),
         ]
@@ -12067,11 +12468,20 @@ class ModuleSource(Type):
     def with_toolchains(self, toolchains: list["ModuleSource"]) -> Self:
         """Add toolchains to the module source.
 
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `dagger.toml` instead.
+
         Parameters
         ----------
         toolchains:
             The toolchain modules to add.
         """
+        warnings.warn(
+            'Method "with_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("toolchains", toolchains),
         ]
@@ -12079,7 +12489,17 @@ class ModuleSource(Type):
         return ModuleSource(_ctx)
 
     def with_update_blueprint(self) -> Self:
-        """Update the blueprint module to the latest version."""
+        """Update the blueprint module to the latest version.
+
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `dagger.toml` instead.
+        """
+        warnings.warn(
+            'Method "with_update_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("withUpdateBlueprint", _args)
         return ModuleSource(_ctx)
@@ -12101,11 +12521,20 @@ class ModuleSource(Type):
     def with_update_toolchains(self, toolchains: list[str]) -> Self:
         """Update one or more toolchains.
 
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `dagger.toml` instead.
+
         Parameters
         ----------
         toolchains:
             The toolchains to update.
         """
+        warnings.warn(
+            'Method "with_update_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("toolchains", toolchains),
         ]
@@ -12127,7 +12556,17 @@ class ModuleSource(Type):
         return ModuleSource(_ctx)
 
     def without_blueprint(self) -> Self:
-        """Remove the current blueprint from the module source."""
+        """Remove the current blueprint from the module source.
+
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `dagger.toml` instead.
+        """
+        warnings.warn(
+            'Method "without_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("withoutBlueprint", _args)
         return ModuleSource(_ctx)
@@ -12181,11 +12620,20 @@ class ModuleSource(Type):
     def without_toolchains(self, toolchains: list[str]) -> Self:
         """Remove the provided toolchains from the module source.
 
+        .. deprecated::
+            Legacy dagger.json field. Generic module loading no longer honors
+            it; use workspace modules in `dagger.toml` instead.
+
         Parameters
         ----------
         toolchains:
             The toolchains to remove.
         """
+        warnings.warn(
+            'Method "without_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("toolchains", toolchains),
         ]
@@ -12934,8 +13382,9 @@ class Query(Root):
         ref_pin:
             The pinned version of the module source
         disable_find_up:
-            If true, do not attempt to find dagger.json in a parent directory
-            of the provided path. Only relevant for local module sources.
+            If true, do not attempt to find a module config file in a parent
+            directory of the provided path. Only relevant for local module
+            sources.
         allow_not_exists:
             If true, do not error out if the provided ref string is a local
             path and does not exist yet. Useful when initializing new modules
@@ -14691,10 +15140,12 @@ class UpGroup(Type):
 
 @typecheck
 class Workspace(Type):
-    """A Dagger workspace detected from the current working directory."""
+    """A Dagger workspace detected from the current working directory or
+    constructed from a Directory."""
 
     async def address(self) -> str:
-        """Canonical Dagger address of the workspace directory.
+        """Canonical Dagger address of the workspace location, or an opaque
+        identity for synthetic workspaces.
 
         Returns
         -------
@@ -14718,7 +15169,9 @@ class Workspace(Type):
         self,
         *,
         include: list[str] | None = None,
+        skip: list[str] | None = None,
         no_generate: bool | None = None,
+        only_generate: bool | None = None,
     ) -> CheckGroup:
         """Return all checks from modules loaded in the workspace.
 
@@ -14726,13 +15179,20 @@ class Workspace(Type):
         ----------
         include:
             Only include checks matching the specified patterns
+        skip:
+            Skip checks matching the specified patterns
         no_generate:
             When true, only return annotated check functions; exclude
             generate-as-checks
+        only_generate:
+            When true, only return generate-as-checks; exclude annotated check
+            functions
         """
         _args = [
             Arg("include", include, None),
+            Arg("skip", skip, None),
             Arg("noGenerate", no_generate, None),
+            Arg("onlyGenerate", only_generate, None),
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
@@ -14758,9 +15218,9 @@ class Workspace(Type):
         _ctx = self._select("clientId", _args)
         return await _ctx.execute(str)
 
-    async def config_path(self) -> str:
-        """Path to config.toml relative to the workspace boundary (empty if not
-        initialized).
+    async def config_file(self) -> str:
+        """Selected native workspace config file relative to the workspace root,
+        if any.
 
         Returns
         -------
@@ -14777,7 +15237,108 @@ class Workspace(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("configPath", _args)
+        _ctx = self._select("configFile", _args)
+        return await _ctx.execute(str)
+
+    async def config_read(self, *, key: str | None = "") -> str:
+        """Read a configuration value from dagger.toml.
+
+        If key is empty, returns the full config.
+
+        If key points to a scalar, returns the value.
+
+        If key points to a table, returns flattened dotted-key output.
+
+        Parameters
+        ----------
+        key:
+            Dotted key path (e.g. modules.greeter.source). Empty for full
+            config.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("key", key, ""),
+        ]
+        _ctx = self._select("configRead", _args)
+        return await _ctx.execute(str)
+
+    async def config_write(
+        self,
+        key: str,
+        value: str,
+        *,
+        here: bool | None = False,
+    ) -> str:
+        """Write a configuration value to dagger.toml.
+
+        Parameters
+        ----------
+        key:
+            Dotted key path (e.g. modules.greeter.source).
+        value:
+            Value to set. Bools, integers, and comma-separated arrays are
+            auto-detected.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("key", key),
+            Arg("value", value),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("configWrite", _args)
+        return await _ctx.execute(str)
+
+    async def cwd(self) -> str:
+        """Current location within the workspace root.
+
+        The workspace root is returned as "/".
+
+        Relative paths in workspace APIs resolve from here.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("cwd", _args)
         return await _ctx.execute(str)
 
     def directory(
@@ -14790,15 +15351,15 @@ class Workspace(Type):
     ) -> Directory:
         """Returns a Directory from the workspace.
 
-        Relative paths resolve from the workspace directory. Absolute paths
-        resolve from the workspace boundary.
+        Relative paths resolve from the workspace cwd. Absolute paths resolve
+        from the workspace root.
 
         Parameters
         ----------
         path:
             Location of the directory to retrieve. Relative paths (e.g.,
-            "src") resolve from the workspace directory; absolute paths (e.g.,
-            "/src") resolve from the workspace boundary.
+            "src") resolve from the workspace cwd; absolute paths (e.g.,
+            "/src") resolve from the workspace root.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
             ["node_modules/", ".git*"]).
@@ -14817,18 +15378,111 @@ class Workspace(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
+    async def env_create(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> str:
+        """Create a named workspace environment if it does not already exist.
+
+        Parameters
+        ----------
+        name:
+            Environment name.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("envCreate", _args)
+        return await _ctx.execute(str)
+
+    async def env_list(self) -> list[str]:
+        """List named environments defined in the workspace configuration.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("envList", _args)
+        return await _ctx.execute(list[str])
+
+    async def env_remove(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> str:
+        """Remove a named workspace environment.
+
+        Parameters
+        ----------
+        name:
+            Environment name.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("envRemove", _args)
+        return await _ctx.execute(str)
+
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
 
-        Relative paths resolve from the workspace directory. Absolute paths
-        resolve from the workspace boundary.
+        Relative paths resolve from the workspace cwd. Absolute paths resolve
+        from the workspace root.
 
         Parameters
         ----------
         path:
             Location of the file to retrieve. Relative paths (e.g., "go.mod")
-            resolve from the workspace directory; absolute paths (e.g.,
-            "/go.mod") resolve from the workspace boundary.
+            resolve from the workspace cwd; absolute paths (e.g., "/go.mod")
+            resolve from the workspace root.
         """
         _args = [
             Arg("path", path),
@@ -14847,10 +15501,9 @@ class Workspace(Type):
 
         Returns the absolute workspace path if found, or null if not found.
 
-        Relative start paths resolve from the workspace directory.
+        Relative start paths resolve from the workspace cwd.
 
-        The search stops at the workspace boundary and will not traverse above
-        it.
+        The search stops at the workspace root and will not traverse above it.
 
         Parameters
         ----------
@@ -14858,8 +15511,7 @@ class Workspace(Type):
             The name of the file or directory to search for.
         from_:
             Path to start the search from. Relative paths resolve from the
-            workspace directory; absolute paths resolve from the workspace
-            boundary.
+            workspace cwd; absolute paths resolve from the workspace root.
 
         Returns
         -------
@@ -14900,24 +15552,13 @@ class Workspace(Type):
         _ctx = self._select("generators", _args)
         return GeneratorGroup(_ctx)
 
-    async def has_config(self) -> bool:
-        """Whether a config.toml file exists in the workspace.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+    def git(self) -> "WorkspaceGit":
+        """Git state for this workspace. Errors if the workspace is not in a git
+        repository.
         """
         _args: list[Arg] = []
-        _ctx = self._select("hasConfig", _args)
-        return await _ctx.execute(bool)
+        _ctx = self._select("git", _args)
+        return WorkspaceGit(_ctx)
 
     async def id(self) -> str:
         """A unique identifier for this Workspace.
@@ -14947,27 +15588,14 @@ class Workspace(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def initialized(self) -> bool:
-        """Whether .dagger/config.toml exists.
+    async def init(self, *, here: bool | None = False) -> str:
+        """Initialize workspace config, creating dagger.toml.
 
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("initialized", _args)
-        return await _ctx.execute(bool)
-
-    async def path(self) -> str:
-        """Workspace directory path relative to the workspace boundary.
+        Parameters
+        ----------
+        here:
+            Create the workspace config directory at the workspace cwd instead
+            of using the default write target.
 
         Returns
         -------
@@ -14983,9 +15611,130 @@ class Workspace(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("path", _args)
+        _args = [
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("init", _args)
         return await _ctx.execute(str)
+
+    async def install(
+        self,
+        ref: str,
+        *,
+        name: str | None = "",
+        here: bool | None = False,
+    ) -> str:
+        """Install a module into the workspace, writing dagger.toml to the host.
+
+        Parameters
+        ----------
+        ref:
+            Module reference to install.
+        name:
+            Override name for the installed module entry.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("ref", ref),
+            Arg("name", name, ""),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("install", _args)
+        return await _ctx.execute(str)
+
+    def migrate(self, *, force: bool | None = False) -> "WorkspaceMigration":
+        """Plan the explicit migration needed for the current workspace.
+
+        The returned plan has an empty changeset and no steps when no
+        migration is needed.
+        """
+        _args = [
+            Arg("force", force, False),
+        ]
+        _ctx = self._select("migrate", _args)
+        return WorkspaceMigration(_ctx)
+
+    async def module_init(
+        self,
+        name: str,
+        *,
+        sdk: str | None = "",
+        source: str | None = "",
+        include: list[str] | None = None,
+        self_calls: bool | None = False,
+        here: bool | None = False,
+    ) -> str:
+        """Create a new module owned by the workspace and auto-install it in
+        dagger.toml.
+
+        Parameters
+        ----------
+        name:
+            Name of the new module.
+        sdk:
+            SDK to use for the new module.
+        source:
+            Source subpath within the new module.
+        include:
+            Additional include patterns for the module.
+        self_calls:
+            Enable the self-calls experimental feature for the new module.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("sdk", sdk, ""),
+            Arg("source", source, ""),
+            Arg("include", [] if include is None else include, []),
+            Arg("selfCalls", self_calls, False),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("moduleInit", _args)
+        return await _ctx.execute(str)
+
+    async def module_list(self, *, module: str | None = "") -> list["WorkspaceModule"]:
+        """List modules defined in the workspace configuration.
+
+        Parameters
+        ----------
+        module:
+            Optional module alias to inspect.
+        """
+        _args = [
+            Arg("module", module, ""),
+        ]
+        _ctx = self._select("moduleList", _args)
+        return await _ctx.execute_object_list(WorkspaceModule)
 
     def services(
         self,
@@ -15005,6 +15754,43 @@ class Workspace(Type):
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
 
+    async def uninstall(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> str:
+        """Uninstall a module from the workspace, writing dagger.toml to the
+        host.
+
+        Parameters
+        ----------
+        name:
+            Name of the installed module entry to remove.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("uninstall", _args)
+        return await _ctx.execute(str)
+
     def update(self) -> Changeset:
         """Refresh workspace-managed state and return the resulting changeset.
 
@@ -15017,6 +15803,398 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("update", _args)
         return Changeset(_ctx)
+
+
+@typecheck
+class WorkspaceGit(Type):
+    """Local git state for a workspace."""
+
+    def head(self) -> GitRef:
+        """The checked-out HEAD of this workspace."""
+        _args: list[Arg] = []
+        _ctx = self._select("head", _args)
+        return GitRef(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceGit.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def uncommitted(self) -> Changeset:
+        """Uncommitted changes in this workspace, using the same rules as
+        GitRepository.uncommitted.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uncommitted", _args)
+        return Changeset(_ctx)
+
+
+@typecheck
+class WorkspaceMigration(Type):
+    """A planned workspace migration."""
+
+    def changes(self) -> Changeset:
+        """Filesystem changes for the full migration plan."""
+        _args: list[Arg] = []
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceMigration.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def steps(self) -> list["WorkspaceMigrationStep"]:
+        """Logical migration steps, each identified by a stable code."""
+        _args: list[Arg] = []
+        _ctx = self._select("steps", _args)
+        return await _ctx.execute_object_list(WorkspaceMigrationStep)
+
+
+@typecheck
+class WorkspaceMigrationStep(Type):
+    """A single logical part of a workspace migration."""
+
+    def changes(self) -> Changeset:
+        """Filesystem changes for this step."""
+        _args: list[Arg] = []
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
+    async def code(self) -> str:
+        """Stable code identifying this logical migration step.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("code", _args)
+        return await _ctx.execute(str)
+
+    async def description(self) -> str:
+        """Generic summary of this step's purpose and impact.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceMigrationStep.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def warnings(self) -> list[str]:
+        """Non-fatal warnings raised while planning this step.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("warnings", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
+class WorkspaceModule(Type):
+    """A module entry in the workspace configuration."""
+
+    async def entrypoint(self) -> bool:
+        """Whether the module is the workspace entrypoint (functions aliased to
+        Query root).
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("entrypoint", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceModule.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The module name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def settings(self) -> list["WorkspaceModuleSetting"]:
+        """List constructor-backed settings for this module."""
+        _args: list[Arg] = []
+        _ctx = self._select("settings", _args)
+        return await _ctx.execute_object_list(WorkspaceModuleSetting)
+
+    async def source(self) -> str:
+        """The module source path.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("source", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class WorkspaceModuleSetting(Type):
+    """A constructor-backed module setting."""
+
+    async def description(self) -> str:
+        """The constructor argument description.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceModuleSetting.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def key(self) -> str:
+        """The setting key.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("key", _args)
+        return await _ctx.execute(str)
+
+    async def value(self) -> str:
+        """The configured value after applying the selected workspace
+        environment, or empty when unset.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
 
 
 class Client(Query):
@@ -15100,6 +16278,7 @@ __all__ = [
     "Port",
     "PortForward",
     "Query",
+    "RegistryProtocol",
     "RemoteGitMirror",
     "ReturnType",
     "SDKConfig",
@@ -15119,5 +16298,10 @@ __all__ = [
     "UpGroup",
     "Void",
     "Workspace",
+    "WorkspaceGit",
+    "WorkspaceMigration",
+    "WorkspaceMigrationStep",
+    "WorkspaceModule",
+    "WorkspaceModuleSetting",
     "dag",
 ]

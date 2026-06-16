@@ -30,7 +30,7 @@ It describes:
 | Lock entry | A recorded mapping from `(namespace, operation, inputs)` to `(value, policy)`. |
 | Lock policy | Entry-level refresh intent: `pin` or `float`. |
 | Lock mode | Run-level read/write behavior: `disabled`, `live`, `pinned`, or `frozen`. |
-| Lockfile snapshot | Parsed `.dagger/lock` state loaded into session-owned live state. |
+| Lockfile snapshot | Parsed `dagger.lock` state loaded into session-owned live state. |
 | Lockfile delta | Tuple upserts buffered in session-owned live state before final export. |
 
 ## Lock Entry Format
@@ -124,7 +124,7 @@ It is intentionally narrow:
 
 | Area | Current branch | Proposed |
 | --- | --- | --- |
-| Ambient reads | each lock-aware consumer rereads `.dagger/lock` from caller host | read `.dagger/lock` at most once per bound workspace in a session, via lazy init into `daggerSession` state |
+| Ambient reads | each lock-aware consumer rereads `dagger.lock` from caller host | read `dagger.lock` at most once per bound workspace in a session, via lazy init into `daggerSession` state |
 | Ambient writes | reread + merge + export on each touched lookup | mutate session-owned workspace state in memory; export once on graceful shutdown |
 | State owner | schema-local `workspaceLookupLock` helper | `daggerSession` |
 | Concurrency | repeated sync caller-host I/O guarded only at export time | one workspace-keyed lock state map on `daggerSession`, guarded by an RW mutex |
@@ -148,7 +148,7 @@ There are three real update paths:
 
 ### `dagger lock update`
 
-Refresh entries already present in `.dagger/lock`.
+Refresh entries already present in `dagger.lock`.
 
 Properties:
 
@@ -165,20 +165,20 @@ Properties:
 
 - refreshes existing entries the run touches
 - discovers missing entries the run touches
-- reads `.dagger/lock` at most once per bound workspace in a session
+- reads `dagger.lock` at most once per bound workspace in a session
 - mutates the lockfile server-side throughout the session
 - exports the final lockfile once on graceful session shutdown
 - is the authoritative discovery path for new lock entries
 
 ### `currentWorkspace.update(): Changeset!`
 
-Engine API for refreshing entries already present in `.dagger/lock`.
+Engine API for refreshing entries already present in `dagger.lock`.
 
 Properties:
 
 - returns a `Changeset` instead of writing directly
 - refreshes supported existing entries only
-- errors if `.dagger/lock` does not exist
+- errors if `dagger.lock` does not exist
 
 This design update leaves explicit maintenance alone. It only changes the ambient live
 path.
@@ -209,7 +209,7 @@ Where:
 Properties:
 
 - lazy init on first lock access
-- read `.dagger/lock` from caller host at most once per bound workspace
+- read `dagger.lock` from caller host at most once per bound workspace
 - all later reads come from in-memory session state
 - all live writes update that same in-memory session state
 - clients that share a bound workspace share one live lock state
@@ -235,8 +235,8 @@ Ambient execution (`--lock=live`, plus the write-through cases of `pinned`) shou
 
 It should not:
 
-- reread `.dagger/lock` from the caller host on each lookup
-- export `.dagger/lock` after each lookup
+- reread `dagger.lock` from the caller host on each lookup
+- export `dagger.lock` after each lookup
 - route lock mutation through nested DagQL calls
 
 ### Final Export
@@ -278,7 +278,6 @@ Current core operation keys:
 | Operation | Inputs | Result |
 | --- | --- | --- |
 | `container.from` | `[imageRef, platform]` | image digest |
-| `modules.resolve` | `[source]` | commit SHA |
 | `git.head` | `[remoteURL]` | commit SHA |
 | `git.branch` | `[remoteURL, branchName]` | commit SHA |
 | `git.tag` | `[remoteURL, tagName]` | commit SHA |
@@ -287,8 +286,9 @@ Current core operation keys:
 Notes:
 
 - `git.commit` is already pinned by input and does not create lock entries
-- `modules.resolve` defaults to `pin` for tags and explicit commits, `float`
-  otherwise
+- module loading does not create a distinct lock entry; module refs are resolved
+  through the underlying Git lookup locks, while declared module dependency pins
+  live in module config
 - `git.ref` only creates lock entries for mutable refs
 - the recorded Git URL should be the resolved canonical remote URL used for transport
 
@@ -305,7 +305,6 @@ Notes:
 - [x] local workspace lockfile read/write helpers
 - [x] serialized lockfile writes with merge against latest on-disk state
 - [x] `container.from` lookup locking
-- [x] `modules.resolve` lookup locking
 - [x] Git lookup locking for `head`, `branch`, `tag`, and mutable `ref`
 - [x] `currentWorkspace.update(): Changeset!` temporary umbrella API
 - [x] `dagger lock update`
@@ -325,7 +324,7 @@ Notes:
 ### Implemented Semantics
 
 - [x] `--lock=disabled|live|pinned|frozen`
-- [x] default lock mode is `disabled`
+- [x] default lock mode is `pinned`
 - [x] `live` writes through
 - [x] `pinned` writes through for `float` and missing entries
 - [x] `frozen` reuses both `pin` and `float` entries and fails on misses
@@ -333,7 +332,6 @@ Notes:
 ### Current Consumer Defaults
 
 - [x] `container.from` defaults to `pin`
-- [x] `modules.resolve` defaults to `pin` for tags and commits, `float` otherwise
 - [x] `git.branch` defaults to `float`
 - [x] `git.head` defaults to `float`
 - [x] `git.tag` defaults to `pin`
@@ -344,10 +342,10 @@ Notes:
 These are current branch facts, not necessarily the final target for all future workspace behavior.
 
 - lockfile location is derived from the detected workspace directory
-- on `workspace-plumbing`, that means `.dagger/lock` sits under the current detected workspace path, not necessarily repo root
+- on `workspace-plumbing`, that means `dagger.lock` sits under the current detected workspace path, not necessarily repo root
 - lockfile mutation is local-only
 - remote workspaces currently error for lock-aware mutation paths
-- hot lookup paths do not reread `.dagger/lock` from the caller host after the session
+- hot lookup paths do not reread `dagger.lock` from the caller host after the session
   snapshot is loaded
 - live lock writes are buffered in session-owned workspace state and exported once on
   graceful shutdown
@@ -371,9 +369,7 @@ Why:
 
 Implication:
 
-- when adding a new consumer such as `modules.resolve`, hook lock read/write behavior
-  into the current module resolution path
-- have that path consult the session-owned live lock state, not raw caller-host
+- have lookup paths consult the session-owned live lock state, not raw caller-host
   file reads
 - do not refactor the engine to create a second resolution hook whose only purpose is
   lockfile integration
@@ -441,14 +437,6 @@ if resolution.ShouldWrite {
 ```
 
 ### `core/schema/modulesource.go`
-
-#### `modules.resolve` lock integration
-
-The shape is the same as `container.from`:
-
-- read session-backed lock state through `loadWorkspaceLookupLock`
-- use `resolveLookupFromLock` for policy/mode behavior
-- stage the updated lookup through `SetLookup` after live resolution
 
 ### `core/schema/git.go`
 
@@ -561,11 +549,11 @@ Important constraints:
 - [ ] `http` lookup locking
 - [ ] decide whether additional Git lookup operations such as `refs`, `symrefs`, or `isPublic` belong in the lock model
 - [ ] remote-workspace read semantics, if any
-- [ ] final initialized-workspace semantics for `.dagger/lock` anchoring
+- [ ] final initialized-workspace semantics for `dagger.lock` anchoring
 
 ### UX and maintenance follow-ups
 
-- [ ] decide whether `disabled` should remain the long-term default
+- [x] decide whether `disabled` should remain the long-term default
 - [ ] decide whether `dagger lock update` should gain richer output or selection flags
 - [ ] decide whether lock update should prune stale entries
 - [ ] decide whether to add a public lockfile DagQL API later
@@ -585,7 +573,8 @@ Why:
 - the lockfile path is derived from the bound workspace
 - host filesystem access for local workspaces routes through the workspace owner
 - deterministic workspace loading eventually needs recorded lookup results
-- `modules.resolve` is the clearest workspace-driven lookup consumer
+- module loading uses the same underlying Git lookup locks as other Git
+  consumers instead of a separate module-resolution lock entry
 
 So the intended long-term shape is:
 

@@ -28,19 +28,38 @@ type ReleaseTest struct {
 	Container *dagger.Container
 }
 
-// Test creating a new module and executing basic commands
+// Test scaffolding a new module via the Go SDK and executing basic commands.
+//
+// `dagger module init` was removed; scaffolding now lives in the installable
+// go-sdk workspace module. This installs github.com/dagger/go-sdk, uses its
+// `init` function (with the legacy template, i.e. the classic
+// ContainerEcho/GrepDir example) to scaffold a module, then calls the generated
+// module. `dagger install` and `dagger call` resolve the workspace root via a
+// .git boundary, so the working directory is initialized as a repo first. The
+// scaffolded module is not auto-registered in the workspace config, so it is
+// invoked by path with `-m`.
 // +check
 func (r *ReleaseTest) NewModule(ctx context.Context) error {
-	ctr := r.Container.WithWorkdir("/work/module")
+	ctr := r.Container.WithWorkdir("/work")
 
-	ctr, err := ctr.WithExec([]string{"dagger", "init", "--name=my-module", "--sdk=go", "--source=."}).Sync(ctx)
+	ctr, err := ctr.WithExec([]string{"git", "init"}).Sync(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to initialize a new module: %w", err)
+		return fmt.Errorf("failed to initialize workspace git repo: %w", err)
 	}
 
-	_, err = ctr.WithExec([]string{"dagger", "call", "container-echo", "--string-arg", "hello-world", "sync"}).Sync(ctx)
+	ctr, err = ctr.WithExec([]string{"dagger", "install", "github.com/dagger/go-sdk"}).Sync(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to run dagger call on existing module: %w", err)
+		return fmt.Errorf("failed to install go-sdk into workspace: %w", err)
+	}
+
+	ctr, err = ctr.WithExec([]string{"dagger", "-y", "call", "go-sdk", "init", "--name=my-module", "--template=legacy"}).Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to scaffold a new module: %w", err)
+	}
+
+	_, err = ctr.WithExec([]string{"dagger", "-m", ".dagger/modules/my-module", "call", "container-echo", "--string-arg", "hello-world", "sync"}).Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to run dagger call on scaffolded module: %w", err)
 	}
 
 	return nil
@@ -58,12 +77,7 @@ func (r *ReleaseTest) ExistingModule(
 		WithDirectory("/work/module", testdata).
 		WithWorkdir("/work/module")
 
-	_, err := ctr.WithExec([]string{"dagger", "develop"}).Sync(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to run dagger develop on existing module: %w", err)
-	}
-
-	_, err = ctr.WithExec([]string{"dagger", "call", "container-echo", "--string-arg", "hello-world", "sync"}).Sync(ctx)
+	_, err := ctr.WithExec([]string{"dagger", "call", "-m", ".", "container-echo", "--string-arg", "hello-world", "sync"}).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to run dagger call on existing module: %w", err)
 	}

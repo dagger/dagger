@@ -1,0 +1,13 @@
+[modules.objects]
+source = ".dagger/modules/objects"
+
+[modules.hello-world]
+source = ".dagger/modules/hello-world"
+entrypoint = false
+
+[modules.greeter]
+source = ".dagger/modules/hello-world"
+
+[modules.configured]
+source = ".dagger/modules/configured"
+entrypoint = true

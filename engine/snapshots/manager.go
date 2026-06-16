@@ -53,6 +53,7 @@ type Accessor interface {
 
 	Get(ctx context.Context, id string, opts ...RefOption) (ImmutableRef, error)
 	GetBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (ImmutableRef, error)
+	Scratch(ctx context.Context) (ImmutableRef, error)
 
 	New(ctx context.Context, parent ImmutableRef, opts ...RefOption) (MutableRef, error)
 	GetMutable(ctx context.Context, id string, opts ...RefOption) (MutableRef, error) // Rebase?
@@ -82,6 +83,7 @@ type SnapshotRecordMetadata struct {
 type snapshotManager struct {
 	records       map[string]*cacheRecord
 	mu            sync.Mutex
+	scratchMu     sync.Mutex
 	Snapshotter   MergeSnapshotter
 	ContentStore  content.Store
 	LeaseManager  leases.Manager
@@ -94,6 +96,7 @@ type snapshotManager struct {
 	importedLayerByDiff    map[ImportedLayerDiffKey]string
 	snapshotOwnerLeases    map[string]map[string]struct{}
 	importLayerLocker      *locker.Locker
+	ownerLeaseLocker       *locker.Locker
 
 	mountPool sharableMountPool
 }
@@ -112,6 +115,7 @@ func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 		importedLayerByDiff:    make(map[ImportedLayerDiffKey]string),
 		snapshotOwnerLeases:    make(map[string]map[string]struct{}),
 		importLayerLocker:      locker.New(),
+		ownerLeaseLocker:       locker.New(),
 	}
 
 	p, err := newSharableMountPool(opt.MountPoolRoot)

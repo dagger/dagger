@@ -27,6 +27,7 @@ type Class[T Typed] struct {
 	idable  bool
 	fields  map[string][]*Field[T]
 	fieldsL *sync.RWMutex
+	view    ViewFilter
 
 	// interfaces records the interfaces this class implements.
 	// Uses a map (reference type) so it's shared across value copies of Class.
@@ -86,6 +87,9 @@ type ClassOpts[T Typed] struct {
 	// The inner type sourceMap directive so additional type
 	// registered by the engine can store also store its origin.
 	SourceMap *ast.Directive
+
+	// View limits the object type and its generated ID/load fields to a schema view.
+	View ViewFilter
 }
 
 // NewClass returns a new empty class for a given type.
@@ -104,6 +108,10 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		if o.SourceMap != nil {
 			opts.SourceMap = o.SourceMap
 		}
+
+		if o.View != nil {
+			opts.View = o.View
+		}
 	}
 
 	class := Class[T]{
@@ -112,6 +120,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		fieldsL:    new(sync.RWMutex),
 		interfaces: map[string]*Interface{},
 		sourceMap:  opts.SourceMap,
+		view:       opts.View,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
@@ -189,6 +198,15 @@ func (class Class[T]) IDType() (IDType, bool) {
 	} else {
 		return nil, false
 	}
+}
+
+func (class Class[T]) View(view ViewFilter) Class[T] {
+	class.view = view
+	return class
+}
+
+func (class Class[T]) ViewFilter() ViewFilter {
+	return class.view
 }
 
 func (class Class[T]) Field(name string, view call.View) (Field[T], bool) {
@@ -326,20 +344,6 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	}
 }
 
-func (class Class[T]) ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc) {
-	class.fieldsL.Lock()
-	spec.BuiltinLoadByIDFunc = fun
-	f := &Field[T]{
-		Spec: &spec,
-	}
-	class.fields[spec.Name] = append(class.fields[spec.Name], f)
-	class.fieldsL.Unlock()
-
-	if class.invalidateSchemaCache != nil {
-		class.invalidateSchemaCache()
-	}
-}
-
 // TypeDefinition returns the schema definition of the class.
 //
 // The definition is derived from the type name, description, and fields. The
@@ -372,7 +376,10 @@ func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
 		return def.Fields[i].Name < def.Fields[j].Name
 	})
 	// Populate interface names on the definition.
-	for name := range class.interfaces {
+	for name, iface := range class.interfaces {
+		if !typeVisibleInView(iface, view) {
+			continue
+		}
 		def.Interfaces = append(def.Interfaces, name)
 	}
 	sort.Strings(def.Interfaces)
@@ -585,9 +592,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 			Args:           frameArgs,
 			ImplicitInputs: implicitInputs,
 		},
-		TTL:           field.Spec.TTL,
-		DoNotCache:    field.Spec.DoNotCache != "",
-		IsPersistable: field.Spec.IsPersistable,
+		TTL:                  field.Spec.TTL,
+		DoNotCache:           field.Spec.DoNotCache != "",
+		IsPersistable:        field.Spec.IsPersistable,
+		PassthroughTelemetry: field.Spec.PassthroughTelemetry,
 	}
 	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
 		slog.Warn("failed to get client metadata from context for call", "err", err)
@@ -639,9 +647,6 @@ func (r ObjectResult[T]) call(
 	}
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
-	}
-	if field.Spec.BuiltinLoadByIDFunc != nil {
-		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
 	}
 	var (
 		res AnyResult
@@ -885,10 +890,6 @@ type FieldSpec struct {
 	Module *ResultCallModule
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
-	// BuiltinLoadByIDFunc is the execution path for schema-generated
-	// load<Type>FromID fields, which re-enter the graph from an object ID
-	// rather than behaving like normal field resolvers.
-	BuiltinLoadByIDFunc LoadByIDFunc
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
@@ -922,6 +923,10 @@ type FieldSpec struct {
 	// for synthetic accessors (e.g. auto-generated module object field
 	// accessors) so they don't claim ownership of values they merely return.
 	Trivial bool
+
+	// PassthroughTelemetry keeps this field's telemetry span available for call
+	// metadata while asking the UI to show its children in its place.
+	PassthroughTelemetry bool
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
@@ -1344,9 +1349,12 @@ func (fields Fields[T]) Install(server *Server) {
 	}
 	class.Install(fields...)
 
-	// Re-check auto-interfaces now that all fields (including sync, etc.)
-	// have been installed. InstallObject only sees the id field.
-	server.AutoImplementInterfaces(class)
+	// Flag interface inference stale now that every field is installed. At
+	// InstallObject time only the id field was present, so fields like sync
+	// weren't yet visible to the structural checks. (Done here, after
+	// class.Install releases the field lock, to preserve installLock -> fieldsL
+	// ordering.)
+	server.markInterfacesDirty()
 }
 
 type GenericDynamicInputFunc func(
@@ -1407,6 +1415,14 @@ func (field Field[T]) IsPersistable() Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.IsPersistable = true
+	return field
+}
+
+func (field Field[T]) PassthroughTelemetry() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.PassthroughTelemetry = true
 	return field
 }
 

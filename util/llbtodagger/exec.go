@@ -121,13 +121,14 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 
 		switch m.MountType {
 		case pb.MountType_BIND:
-			dirID, err := c.resolveExecMountInputDir(opDigest(exec.OpDAG), m, inputIDs)
+			dirID, err := c.resolveExecMountInputBaseDir(opDigest(exec.OpDAG), m, inputIDs)
 			if err != nil {
 				return nil, err
 			}
 			args := []*call.Argument{
 				argString("path", m.Dest),
 				argID("source", dirID),
+				argString("sourcePath", cleanPath(m.Selector)),
 			}
 			if m.Readonly {
 				args = append(args, argBool("readOnly", true))
@@ -135,7 +136,7 @@ func (c *converter) convertExec(exec *engineutil.ExecOp) (*call.ID, error) {
 			ctrID = appendCall(
 				ctrID,
 				containerType(),
-				"withMountedDirectory",
+				"__withMountedPathDockerfileCompat",
 				args...,
 			)
 			path := cleanPath(m.Dest)
@@ -371,19 +372,9 @@ func findMountByOutput(mounts []*pb.Mount, out pb.OutputIndex) (*pb.Mount, bool)
 }
 
 func (c *converter) resolveExecMountInputDir(opDgst digest.Digest, mount *pb.Mount, inputIDs []*call.ID) (*call.ID, error) {
-	var dirID *call.ID
-	if mount.Input == pb.Empty {
-		dirID = scratchDirectoryID()
-	} else {
-		idx := int(mount.Input)
-		if idx < 0 || idx >= len(inputIDs) {
-			return nil, unsupported(opDgst, "exec", fmt.Sprintf("mount input index %d out of range", mount.Input))
-		}
-		var err error
-		dirID, err = asDirectoryID(opDgst, "exec", inputIDs[idx])
-		if err != nil {
-			return nil, err
-		}
+	dirID, err := c.resolveExecMountInputBaseDir(opDgst, mount, inputIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	selector := cleanPath(mount.Selector)
@@ -391,4 +382,16 @@ func (c *converter) resolveExecMountInputDir(opDgst digest.Digest, mount *pb.Mou
 		return dirID, nil
 	}
 	return appendCall(dirID, directoryType(), "directory", argString("path", selector)), nil
+}
+
+func (c *converter) resolveExecMountInputBaseDir(opDgst digest.Digest, mount *pb.Mount, inputIDs []*call.ID) (*call.ID, error) {
+	if mount.Input == pb.Empty {
+		return scratchDirectoryID(), nil
+	}
+
+	idx := int(mount.Input)
+	if idx < 0 || idx >= len(inputIDs) {
+		return nil, unsupported(opDgst, "exec", fmt.Sprintf("mount input index %d out of range", mount.Input))
+	}
+	return asDirectoryID(opDgst, "exec", inputIDs[idx])
 }

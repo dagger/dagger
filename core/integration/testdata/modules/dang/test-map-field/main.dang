@@ -1,0 +1,24 @@
+"""
+Exercises Map values stored in private fields surviving the serialization
+round-trip between function calls.
+"""
+type TestMapField {
+  let env = ["PATH": "/usr/local/bin:/usr/bin:/bin"]
+
+  let config = {{
+    environment: ["FOO": "bar"]
+  }}
+
+  withEnv(name: String!, value: String!): TestMapField! {
+    self.env = env.with(name, value)
+    self
+  }
+
+  envJson: String! {
+    toJSON(env)
+  }
+
+  nestedJson: String! {
+    toJSON(config.environment)
+  }
+}

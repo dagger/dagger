@@ -132,8 +132,9 @@ type Server struct {
 	//
 	// gc related
 	//
-	throttledGC func()
-	gcmu        sync.Mutex
+	throttledGC             func()
+	throttledDiskPressureGC func()
+	gcmu                    sync.Mutex
 
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelCauseFunc
@@ -409,10 +410,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup solver
 	//
 
-	srv.throttledGC = throttle.After(time.Minute, srv.gc)
+	srv.throttledGC = throttle.After(localCacheSessionGCThrottle, srv.gc)
+	srv.throttledDiskPressureGC = throttle.After(localCacheDiskPressureGCThrottle, srv.gcIfDiskPressure)
 	defer func() {
-		time.AfterFunc(time.Second, srv.throttledGC)
+		time.AfterFunc(time.Second, srv.gc)
 	}()
+	srv.startDiskPressureGCMonitor()
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()

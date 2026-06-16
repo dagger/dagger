@@ -1,6 +1,6 @@
 module dagger/rust-sdk-dev
 
-go 1.25.3
+go 1.26.1
 
 require (
 	github.com/Khan/genqlient v0.8.1
@@ -32,10 +32,10 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.7-0.20260522154811-5dde81db2f77
 	github.com/BurntSushi/toml v1.5.0
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect

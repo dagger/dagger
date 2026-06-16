@@ -1,5 +1,12 @@
 package core
 
+// These tests cover Unix ownership metadata on files and directories. They
+// verify uid/gid propagation across Dagger filesystem operations.
+//
+// See also:
+// - file_test.go: core File behavior.
+// - directory_test.go: core Directory behavior.
+
 import (
 	"context"
 	"strings"

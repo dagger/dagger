@@ -66,6 +66,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatReturnType":          funcs.FormatReturnType,
 		"FormatInputType":           funcs.FormatInputType,
 		"FormatOutputType":          funcs.FormatOutputType,
+		"FormatFieldOutputType":     funcs.FormatFieldOutputType,
 		"GetArrayField":             funcs.GetArrayField,
 		"IsListOfObject":            funcs.IsListOfObject,
 		"ToLowerCase":               funcs.ToLowerCase,
@@ -116,6 +117,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsExtendableType":        funcs.isExtendableType,
 		"FullSchemaTypes":         funcs.fullSchemaTypes,
 		"HasIDField":              funcs.hasIDField,
+		"IsLegacyIDAlias":         funcs.isLegacyIDAlias,
 		"json":                    funcs.json,
 	}
 }
@@ -678,4 +680,91 @@ func (funcs goTemplateFuncs) FormatInputType(arg introspection.InputValue, scope
 // isPartial determines if we are in a first-pass or not
 func (funcs goTemplateFuncs) isPartial() bool {
 	return funcs.pass == 0
+}
+
+// legacyIDName returns the Go identifier for the per-type ID name
+// (e.g. "ContainerID") used by pre-cutover Go SDK code.
+func (funcs goTemplateFuncs) legacyIDName(typeName string) string {
+	return formatName(typeName + "ID")
+}
+
+// isLegacyIDAlias returns true when a scalar should be emitted as a Go
+// alias for the unified ID type (`type FooID = ID`) rather than as its
+// own distinct string type. This applies to legacy-view per-type ID
+// scalars whose name is the parent object's name with an "ID" suffix
+// — making typed-ID methods (Container.ID returning ContainerID)
+// still satisfy interfaces declared in terms of the plain ID type.
+func (funcs goTemplateFuncs) isLegacyIDAlias(t introspection.Type) bool {
+	if !funcs.legacyGoSDKCompat() {
+		return false
+	}
+	if !strings.HasSuffix(t.Name, "ID") || t.Name == "ID" {
+		return false
+	}
+	base := strings.TrimSuffix(t.Name, "ID")
+	schema := generator.GetSchema()
+	if schema == nil {
+		return false
+	}
+	parent := schema.Types.Get(base)
+	if parent == nil {
+		return false
+	}
+	return parent.Kind == introspection.TypeKindObject || parent.Kind == introspection.TypeKindInterface
+}
+
+// fieldExpectedIDType returns the @expectedType target for a scalar
+// ID field — or the parent object name for the field literally named
+// "id". Returns "" when no legacy substitution applies.
+func (funcs goTemplateFuncs) fieldExpectedIDType(field introspection.Field) string {
+	if !field.TypeRef.IsScalar() {
+		return ""
+	}
+	ref := field.TypeRef
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	if ref.Kind != introspection.TypeKindScalar || ref.Name != "ID" {
+		return ""
+	}
+	if expectedType := field.Directives.ExpectedType(); expectedType != "" && expectedType != "Node" && expectedType != generator.QueryStructName && !strings.HasPrefix(expectedType, "_") {
+		return expectedType
+	}
+	if field.Name == "id" && field.ParentObject != nil && field.ParentObject.Name != "Node" && field.ParentObject.Name != generator.QueryStructName && !strings.HasPrefix(field.ParentObject.Name, "_") {
+		return field.ParentObject.Name
+	}
+	return ""
+}
+
+// FormatReturnType overrides the common formatter so legacy-mode ID
+// fields with @expectedType return the per-type FooID alias instead of
+// the unified ID scalar.
+func (funcs goTemplateFuncs) FormatReturnType(f introspection.Field, scopes ...string) (string, error) {
+	if !funcs.CommonFunctions.ConvertID(f) && funcs.legacyGoSDKCompat() {
+		if expected := funcs.fieldExpectedIDType(f); expected != "" {
+			scope := strings.Join(scopes, "")
+			if scope != "" {
+				scope += "."
+			}
+			return scope + funcs.legacyIDName(expected), nil
+		}
+	}
+	return funcs.CommonFunctions.FormatReturnType(f, scopes...)
+}
+
+// FormatFieldOutputType is a field-aware variant of FormatOutputType
+// that applies the legacy FooID substitution. Used in template
+// positions where a field's response type and cache field type need to
+// match its method's return type.
+func (funcs goTemplateFuncs) FormatFieldOutputType(f introspection.Field, scopes ...string) (string, error) {
+	if funcs.legacyGoSDKCompat() {
+		if expected := funcs.fieldExpectedIDType(f); expected != "" {
+			scope := strings.Join(scopes, "")
+			if scope != "" {
+				scope += "."
+			}
+			return scope + funcs.legacyIDName(expected), nil
+		}
+	}
+	return funcs.CommonFunctions.FormatOutputType(f.TypeRef, scopes...)
 }

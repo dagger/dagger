@@ -21,12 +21,12 @@ func New(
 	//   "*",
 	//   ".*",
 	//   "!cmd/dagger/*",
+	//   "!internal/cmd/dagger/**",
 	//   "!**/go.sum",
 	//   "!**/go.mod",
 	//   "!**/*.go",
 	//   "!vendor/**/*",
 	//   "!**.graphql",
-	//   "!.goreleaser*.yml",
 	//   "!.changes",
 	//   "!LICENSE",
 	//   "!install.sh",
@@ -43,6 +43,10 @@ func New(
 	// Explicit version to set on the Dagger CLI.
 	// +optional
 	version string,
+
+	// Explicit engine image tag to embed in the Dagger CLI.
+	// +optional
+	imageTag string,
 ) (*CliDev, error) {
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
@@ -56,9 +60,11 @@ func New(
 		}
 	}
 
-	imageTag, err := v.ImageTag(ctx)
-	if err != nil {
-		return nil, err
+	if imageTag == "" {
+		imageTag, err = v.ImageTag(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	values := []string{
 		// FIXME: how to avoid duplication with engine module?
@@ -97,27 +103,6 @@ func (cli CliDev) Binary(
 		NoSymbols: true,
 		NoDwarf:   true,
 	})
-}
-
-// Generate a markdown CLI reference doc
-func (cli CliDev) Reference(
-	// +optional
-	frontmatter string,
-	// +optional
-	// Include experimental commands
-	includeExperimental bool,
-) *dagger.File {
-	cmd := []string{"go", "run", "./cmd/dagger", "gen", "--output", "cli.mdx"}
-	if includeExperimental {
-		cmd = append(cmd, "--include-experimental")
-	}
-	if frontmatter != "" {
-		cmd = append(cmd, "--frontmatter="+frontmatter)
-	}
-	return cli.Go.
-		Env().
-		WithExec(cmd).
-		File("cli.mdx")
 }
 
 // Build dev CLI binaries

@@ -1,9 +1,9 @@
 pub description = "Develop the Dagger Elixir SDK (experimental)"
 
 type ElixirSdkDev {
-  pub baseImage: String! = "elixir:1.18.4-otp-28-alpine@sha256:35777d29cf6c00c66b2c4ae135bf187dd9e3d5d4b75d0922b75e073732a1613a"
+  pub baseImage: String! = "elixir:1.19.5-otp-28-alpine@sha256:1747b3595b6742d2273d18608203457d5b925000cd38aca40c76e23c64d44def"
 
-  pub workspace: Directory!
+  pub workspaceDir: Directory!
     @defaultPath(path: "/")
     @ignorePatterns(patterns: [
       "*",
@@ -13,7 +13,7 @@ type ElixirSdkDev {
   pub sourcePath: String! = "sdk/elixir"
 
   pub source: Directory! {
-    workspace.directory(sourcePath)
+    workspaceDir.directory(sourcePath)
   }
 
   pub devContainer: Container! {
@@ -102,7 +102,7 @@ type ElixirSdkDev {
     publish(
       tag: "HEAD",
       dryRun: true,
-      hexApiKey: null,
+      hexApiKey: setSecret("hex-api-key", ""),
     )
   }
 
@@ -119,6 +119,10 @@ type ElixirSdkDev {
     """
     hexApiKey: Secret,
     """
+    Hex.pm API URL to publish to
+    """
+    hexApiUrl: String! = "",
+    """
     Execute a dry-run release, with no side effects
     """
     dryRun: Boolean! = false,
@@ -129,7 +133,7 @@ type ElixirSdkDev {
     # Update version in mix.exs if this is a valid semver
     if (isSemver(version)) {
       let mixFile = "/sdk/elixir/mix.exs"
-      let mixExs = workspace.file(sourcePath + "/mix.exs")
+      let mixExs = workspaceDir.file(sourcePath + "/mix.exs")
       let newMixExs = mixExs.withReplaced(
         "@version \"0.0.0\"",
         "@version \"" + version.trimPrefix("v") + "\"",
@@ -144,6 +148,9 @@ type ElixirSdkDev {
       ctr = ctr.withEnvVariable("HEX_API_KEY", "")
     } else if (hexApiKey != null) {
       ctr = ctr.withSecretVariable("HEX_API_KEY", hexApiKey)
+    }
+    if (hexApiUrl != "") {
+      ctr = ctr.withEnvVariable("HEX_API_URL", hexApiUrl)
     }
     ctr.withExec(mix).sync
     null

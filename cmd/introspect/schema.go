@@ -40,7 +40,7 @@ func Schema(cmd *cobra.Command, args []string) error {
 		formatType(&result, tp)
 		fmt.Fprintln(&result)
 	}
-	fmt.Println(result.String())
+	fmt.Print(result.String())
 
 	return nil
 }

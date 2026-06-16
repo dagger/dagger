@@ -16,7 +16,6 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/gofrs/flock"
-	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"golang.org/x/oauth2"
 )
@@ -51,34 +50,65 @@ var authConfig = &oauth2.Config{
 	},
 }
 
+type LoginOption func(*loginOptions)
+
+type loginOptions struct {
+	switchAccount bool
+	authGate      bool
+}
+
+type deviceAuthAttempt struct {
+	action string
+	auth   *oauth2.DeviceAuthResponse
+	signup bool
+}
+
+func WithSwitchAccount() LoginOption {
+	return func(opts *loginOptions) {
+		opts.switchAccount = true
+	}
+}
+
+func WithAuthGate() LoginOption {
+	return func(opts *loginOptions) {
+		opts.authGate = true
+	}
+}
+
 // Login logs the user in and stores the credentials for later use.
 // Interactive messages are printed to w.
-func Login(ctx context.Context, out io.Writer) error {
+func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
+	opts := loginOptions{}
+	for _, opt := range loginOpts {
+		opt(&opts)
+	}
+
 	// If the user is already authenticated, skip the login process.
-	if _, err := Token(ctx); err == nil {
+	if _, err := Token(ctx); err == nil && !opts.switchAccount {
 		return nil
 	}
 
-	deviceAuth, err := authConfig.DeviceAuth(ctx)
+	attempt, err := deviceAuthAttemptForLogin(ctx, opts)
 	if err != nil {
 		return err
 	}
 
-	authURL := deviceAuth.VerificationURIComplete
-
 	browserBuf := new(strings.Builder)
+	browserStdout := browser.Stdout
+	browserStderr := browser.Stderr
+	defer func() {
+		browser.Stdout = browserStdout
+		browser.Stderr = browserStderr
+	}()
 	browser.Stdout = browserBuf
 	browser.Stderr = browserBuf
-	if err := browser.OpenURL(authURL); err != nil {
+	if err := browser.OpenURL(deviceAuthURL(attempt.auth)); err != nil {
 		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
-		fmt.Fprintf(out, "Authenticate here: %s\n", authURL)
-	} else {
-		fmt.Fprintf(out, "Browser opened to: %s\n", authURL)
 	}
 
-	fmt.Fprintf(out, "Confirmation code: %s\n\n", termenv.String(deviceAuth.UserCode).Bold())
+	writeDeviceAuthPrompt(out, attempt, opts)
 
-	token, err := authConfig.DeviceAccessToken(ctx, deviceAuth)
+	token, err := authConfig.DeviceAccessToken(ctx, attempt.auth)
 	if err != nil {
 		return err
 	}
@@ -86,13 +116,61 @@ func Login(ctx context.Context, out io.Writer) error {
 	return saveToken(token)
 }
 
+func writeDeviceAuthPrompt(out io.Writer, attempt deviceAuthAttempt, opts loginOptions) {
+	if opts.authGate {
+		fmt.Fprintln(out, "This command requires authentication.")
+		fmt.Fprintln(out)
+	}
+	fmt.Fprintf(out, "%s: %s\n", deviceAuthPromptAction(attempt, opts), deviceAuthURL(attempt.auth))
+	fmt.Fprintf(out, "Verification code: %s\n", attempt.auth.UserCode)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Waiting for authentication. Press Ctrl-C to cancel.")
+}
+
+func deviceAuthPromptAction(attempt deviceAuthAttempt, opts loginOptions) string {
+	if attempt.signup {
+		if opts.authGate {
+			return "Login or sign up to continue"
+		}
+		return "Login or sign up"
+	}
+	return attempt.action
+}
+
+func deviceAuthAttemptForLogin(ctx context.Context, opts loginOptions) (deviceAuthAttempt, error) {
+	if opts.switchAccount {
+		deviceAuth, err := authConfig.DeviceAuth(ctx, oauth2.SetAuthURLParam("prompt", "login"))
+		if err != nil {
+			return deviceAuthAttempt{}, err
+		}
+
+		return deviceAuthAttempt{action: "Choose an account", auth: deviceAuth}, nil
+	}
+
+	deviceAuth, err := authConfig.DeviceAuth(ctx)
+	if err != nil {
+		return deviceAuthAttempt{}, err
+	}
+
+	return deviceAuthAttempt{action: "Authenticate", auth: deviceAuth, signup: true}, nil
+}
+
+func deviceAuthURL(deviceAuth *oauth2.DeviceAuthResponse) string {
+	if deviceAuth.VerificationURIComplete != "" {
+		return deviceAuth.VerificationURIComplete
+	}
+	return deviceAuth.VerificationURI
+}
+
 // Logout deletes the client credentials
 func Logout() error {
-	err := os.Remove(credentialsFile)
-	if os.IsNotExist(err) {
-		return nil
+	for _, path := range []string{credentialsFile, orgFile} {
+		err := os.Remove(path)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
-	return err
+	return nil
 }
 
 func TokenSource(ctx context.Context, token *oauth2.Token) (oauth2.TokenSource, error) {
@@ -334,11 +412,14 @@ func GetCloudAuth(ctx context.Context) (*Cloud, error) {
 			auth = &Cloud{Token: &oauth2.Token{AccessToken: dct, TokenType: "Basic"}}
 		}
 	} else if at, err := Token(ctx); err == nil {
-		org, err := CurrentOrg()
-		if err != nil {
-			return nil, err
+		auth = &Cloud{Token: at}
+		org, orgErr := CurrentOrg()
+		switch {
+		case orgErr == nil:
+			auth.Org = org
+		case !os.IsNotExist(orgErr):
+			return nil, orgErr
 		}
-		auth = &Cloud{Token: at, Org: org}
 	}
 	return auth, nil
 }

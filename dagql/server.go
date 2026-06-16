@@ -37,9 +37,10 @@ type Server struct {
 	telemetry      AroundFunc
 	objects        map[string]ObjectType
 	interfaces     map[string]*Interface
-	autoInterfaces []*Interface // core interfaces auto-implemented by qualifying types
 	scalars        map[string]ScalarType
+	scalarFilters  map[string]ViewFilter
 	typeDefs       map[string]TypeDef
+	typeDefFilters map[string]ViewFilter
 	directives     map[string]DirectiveSpec
 
 	schemas       map[call.View]*ast.Schema
@@ -49,6 +50,13 @@ type Server struct {
 
 	installLock  *sync.RWMutex
 	installHooks []InstallHook
+
+	// interfacesDirty is set when an install changes the set of objects or
+	// interfaces, and cleared when interface implementations are reconciled.
+	// Reconciliation is deferred until the type system is next read (see
+	// reconcileInterfaceImplsIfDirty) so a burst of installs reconciles once,
+	// against the complete schema, rather than once per install.
+	interfacesDirty bool
 
 	// View is the default view that is applied to queries on this server.
 	//
@@ -111,6 +119,7 @@ func (s *Server) SetResultServerForCall(loader func(ctx context.Context, resultC
 
 type InstallHook interface {
 	InstallObject(ObjectType, ...*ast.Directive)
+	InstallInterface(*Interface, ...*ast.Directive)
 	// FIXME: add support for other install functions
 }
 
@@ -147,9 +156,7 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 	srv.root = rootRes
 
 	// Install core interfaces before any objects so that InstallObject
-	// can auto-implement them for qualifying classes.
-	//
-	// autoInterfaces are checked in order for every installed object/interface.
+	// can infer implementations for qualifying classes.
 	nodeIface := NewInterface("Node", "An object with a globally unique ID.")
 	nodeIface.AddField(InterfaceFieldSpec{
 		FieldSpec: FieldSpec{
@@ -158,7 +165,6 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 		},
 	})
 	srv.interfaces[nodeIface.TypeName()] = nodeIface
-	srv.autoInterfaces = []*Interface{nodeIface}
 
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
@@ -210,16 +216,18 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 
 func newBlankServer() *Server {
 	return &Server{
-		objects:       map[string]ObjectType{},
-		interfaces:    map[string]*Interface{},
-		scalars:       map[string]ScalarType{},
-		typeDefs:      map[string]TypeDef{},
-		directives:    map[string]DirectiveSpec{},
-		installLock:   &sync.RWMutex{},
-		schemas:       make(map[call.View]*ast.Schema),
-		schemaDigests: make(map[call.View]digest.Digest),
-		schemaOnces:   make(map[call.View]*sync.Once),
-		schemaLock:    &sync.Mutex{},
+		objects:        map[string]ObjectType{},
+		interfaces:     map[string]*Interface{},
+		scalars:        map[string]ScalarType{},
+		scalarFilters:  map[string]ViewFilter{},
+		typeDefs:       map[string]TypeDef{},
+		typeDefFilters: map[string]ViewFilter{},
+		directives:     map[string]DirectiveSpec{},
+		installLock:    &sync.RWMutex{},
+		schemas:        make(map[call.View]*ast.Schema),
+		schemaDigests:  make(map[call.View]digest.Digest),
+		schemaOnces:    make(map[call.View]*sync.Once),
+		schemaLock:     &sync.Mutex{},
 	}
 }
 
@@ -240,12 +248,17 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	for name, iface := range s.interfaces {
 		out.interfaces[name] = iface
 	}
-	out.autoInterfaces = append(out.autoInterfaces, s.autoInterfaces...)
 	for name, scalar := range s.scalars {
 		out.scalars[name] = scalar
 	}
+	for name, filter := range s.scalarFilters {
+		out.scalarFilters[name] = filter
+	}
 	for name, typeDef := range s.typeDefs {
 		out.typeDefs[name] = typeDef
+	}
+	for name, filter := range s.typeDefFilters {
+		out.typeDefFilters[name] = filter
 	}
 	for name, directive := range s.directives {
 		out.directives[name] = directive
@@ -278,6 +291,10 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 		return nil, fmt.Errorf("new forked root: %w", err)
 	}
 	out.root = rootObj
+
+	// Forked object types are fresh instances, so reconcile their interface
+	// implementations on first read rather than assuming the fork carried them.
+	out.interfacesDirty = true
 
 	return out, nil
 }
@@ -531,15 +548,7 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	s.invalidateSchemaCache()
 
 	s.objects[class.TypeName()] = class
-
-	// Auto-implement core interfaces for qualifying classes.
-	if impl, ok := class.(InterfaceImplementor); ok {
-		for _, iface := range s.autoInterfaces {
-			if iface.Satisfies(class, "") {
-				impl.ImplementInterface(iface)
-			}
-		}
-	}
+	s.interfacesDirty = true
 	s.installLock.Unlock()
 
 	for _, hook := range s.installHooks {
@@ -549,35 +558,35 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	return class
 }
 
-// AutoImplementInterfaces re-checks whether the given object type satisfies
-// any auto-interfaces that it didn't qualify for at InstallObject time. This
-// is needed because fields like "sync" are installed after InstallObject.
-func (s *Server) AutoImplementInterfaces(class ObjectType) {
-	impl, ok := class.(InterfaceImplementor)
-	if !ok {
-		return
-	}
+// markInterfacesDirty flags interface inference as stale, so it re-runs on the
+// next read of the type system (see reconcileInterfaceImplsIfDirty). Install
+// flows that add fields to a class after InstallObject -- e.g. a sync field
+// added via Fields.Install -- call this so the completed class is re-checked;
+// InstallObject's own flag may already have been consumed by an intervening
+// read (such as an install hook). It must not be called while holding a class's
+// field lock: it takes installLock, and reconciliation takes installLock before
+// reading field specs.
+func (s *Server) markInterfacesDirty() {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
-	for _, iface := range s.autoInterfaces {
-		if iface.HasImplementor(class.TypeName()) {
-			continue
-		}
-		if iface.Satisfies(class, "") {
-			impl.ImplementInterface(iface)
-		}
-	}
+	s.interfacesDirty = true
 }
 
 // InstallInterface installs the given Interface type into the schema.
 // If an interface with the same name is already installed, it is returned.
 func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive) *Interface {
 	s.installLock.Lock()
-	defer s.installLock.Unlock()
 	if len(directives) > 0 {
 		iface.addDirectives(directives...)
 	}
-	return s.installInterfaceLocked(iface)
+	installed := s.installInterfaceLocked(iface)
+	s.installLock.Unlock()
+
+	for _, hook := range s.installHooks {
+		hook.InstallInterface(installed, directives...)
+	}
+
+	return installed
 }
 
 // installInterfaceLocked is the lock-held implementation of InstallInterface.
@@ -586,45 +595,239 @@ func (s *Server) installInterfaceLocked(iface *Interface) *Interface {
 		return existing
 	}
 	s.interfaces[iface.TypeName()] = iface
-
-	// Auto-implement core interfaces for qualifying interfaces.
-	for _, autoIface := range s.autoInterfaces {
-		if autoIface.TypeName() == iface.TypeName() {
-			continue
-		}
-		if autoIface.SatisfiedByInterface(iface, "") {
-			iface.ImplementInterface(autoIface)
-		}
-	}
-
+	s.interfacesDirty = true
 	s.invalidateSchemaCache()
 	return iface
 }
 
-// AddAutoInterface registers an interface for automatic implementation.
-// Any subsequently installed object or interface that structurally satisfies
-// it will automatically declare conformance. Already-installed objects are
-// NOT retroactively checked — call this before installing objects, or use
-// AutoImplementInterfaces to re-check specific types.
-func (s *Server) AddAutoInterface(iface *Interface) {
+// interfaceRelationSet records "type implements interface" pairs, keyed by type
+// name then interface name.
+type interfaceRelationSet map[string]map[string]struct{}
+
+func (rels interfaceRelationSet) add(typeName, ifaceName string) {
+	if rels[typeName] == nil {
+		rels[typeName] = map[string]struct{}{}
+	}
+	rels[typeName][ifaceName] = struct{}{}
+}
+
+func (rels interfaceRelationSet) has(typeName, ifaceName string) bool {
+	if rels[typeName] == nil {
+		return false
+	}
+	_, ok := rels[typeName][ifaceName]
+	return ok
+}
+
+func (rels interfaceRelationSet) del(typeName, ifaceName string) bool {
+	if rels[typeName] == nil {
+		return false
+	}
+	if _, ok := rels[typeName][ifaceName]; !ok {
+		return false
+	}
+	delete(rels[typeName], ifaceName)
+	return true
+}
+
+// reconcileInterfaceImplsIfDirty reconciles interface implementations if an
+// install has invalidated them since the last reconcile, then clears the flag.
+// Read paths into the type system (SchemaForView, ObjectType, InterfaceType)
+// call this so reconciliation happens once, lazily, against the fully-installed
+// schema -- recovering the cost of the single post-pass this replaced while
+// keeping InstallInterface retroactive. The common case (not dirty) only takes
+// the read lock, so it stays cheap on the hot query-resolution path.
+func (s *Server) reconcileInterfaceImplsIfDirty() {
+	s.installLock.RLock()
+	dirty := s.interfacesDirty
+	s.installLock.RUnlock()
+	if !dirty {
+		return
+	}
+
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
-	iface = s.installInterfaceLocked(iface)
-	s.autoInterfaces = append(s.autoInterfaces, iface)
+	if s.interfacesDirty {
+		s.interfacesDirty = false
+		s.reconcileInterfaceImplsLocked(s.View)
+	}
+}
 
-	// Resolve interface-implements-interface among all auto-interfaces.
-	for _, other := range s.autoInterfaces {
-		if other.TypeName() == iface.TypeName() {
-			continue
+// reconcileInterfaceImplsLocked recomputes which objects and interfaces
+// structurally implement each installed interface and records the results on
+// the types themselves. It considers every installed object and interface, so
+// an interface is matched against types installed both before and after it;
+// this is what makes InstallInterface retroactive.
+//
+// The caller must hold s.installLock.
+func (s *Server) reconcileInterfaceImplsLocked(view call.View) {
+	if len(s.interfaces) == 0 {
+		return
+	}
+
+	rels := interfaceRelationSet{}
+	permanent := interfaceRelationSet{}
+
+	// Seed every (object, interface) and (interface, interface) pair as a
+	// candidate, then whittle the set down in the loop below. Assuming all
+	// pairs hold and only removing the disproven ones computes a greatest
+	// fixed point, which is what lets mutually recursive, covariant
+	// relationships resolve: e.g. `Obj.self: Obj` satisfies `Iface.self: Iface`
+	// only if Obj implements Iface, which is the very pair we're proving.
+	sortutil.RangeSorted(s.objects, func(objName string, obj ObjectType) {
+		if _, ok := obj.(InterfaceImplementor); !ok {
+			return
 		}
-		if other.SatisfiedByInterface(iface, "") {
-			iface.ImplementInterface(other)
+		sortutil.RangeSorted(s.interfaces, func(ifaceName string, _ *Interface) {
+			rels.add(objName, ifaceName)
+		})
+	})
+	sortutil.RangeSorted(s.interfaces, func(typeName string, _ *Interface) {
+		sortutil.RangeSorted(s.interfaces, func(ifaceName string, _ *Interface) {
+			if typeName != ifaceName {
+				rels.add(typeName, ifaceName)
+			}
+		})
+	})
+
+	// Relationships that were declared explicitly (or inferred by an earlier
+	// pass) are facts, not candidates: keep them in permanent so the loop
+	// never disproves them, and add them to rels so they count as evidence
+	// when checking other pairs.
+	sortutil.RangeSorted(s.objects, func(objName string, obj ObjectType) {
+		withInterfaces, ok := obj.(objectTypeWithInterfaces)
+		if !ok {
+			return
+		}
+		for _, iface := range withInterfaces.Interfaces() {
+			if iface == nil {
+				continue
+			}
+			if _, ok := s.interfaces[iface.TypeName()]; !ok {
+				continue
+			}
+			rels.add(objName, iface.TypeName())
+			permanent.add(objName, iface.TypeName())
+		}
+	})
+	sortutil.RangeSorted(s.interfaces, func(typeName string, iface *Interface) {
+		for ifaceName := range iface.Interfaces() {
+			if _, ok := s.interfaces[ifaceName]; !ok {
+				continue
+			}
+			rels.add(typeName, ifaceName)
+			permanent.add(typeName, ifaceName)
+		}
+	})
+
+	// Drop any candidate pair whose fields don't structurally line up, using
+	// the shrinking rels set as the oracle for nested type comparisons.
+	// Removing one pair can invalidate another, so iterate until stable.
+	changed := true
+	for changed {
+		changed = false
+		checker := func(typeName, ifaceName string) bool {
+			return rels.has(typeName, ifaceName)
+		}
+
+		sortutil.RangeSorted(s.objects, func(objName string, obj ObjectType) {
+			sortutil.RangeSorted(s.interfaces, func(ifaceName string, iface *Interface) {
+				if !rels.has(objName, ifaceName) || permanent.has(objName, ifaceName) {
+					return
+				}
+				if !iface.Satisfies(obj, view, checker) {
+					changed = rels.del(objName, ifaceName) || changed
+				}
+			})
+		})
+
+		sortutil.RangeSorted(s.interfaces, func(typeName string, typ *Interface) {
+			sortutil.RangeSorted(s.interfaces, func(ifaceName string, iface *Interface) {
+				if typeName == ifaceName || !rels.has(typeName, ifaceName) || permanent.has(typeName, ifaceName) {
+					return
+				}
+				if !iface.SatisfiedByInterface(typ, view, checker) {
+					changed = rels.del(typeName, ifaceName) || changed
+				}
+			})
+		})
+	}
+
+	// The surviving pairs are the proven relationships; record them on the
+	// types, skipping any already declared.
+	sortutil.RangeSorted(s.objects, func(objName string, obj ObjectType) {
+		impl, ok := obj.(InterfaceImplementor)
+		if !ok {
+			return
+		}
+		sortutil.RangeSorted(s.interfaces, func(ifaceName string, iface *Interface) {
+			if !rels.has(objName, ifaceName) || objectTypeHasInterface(obj, ifaceName) {
+				return
+			}
+			impl.ImplementInterfaceUnchecked(iface)
+		})
+	})
+
+	sortutil.RangeSorted(s.interfaces, func(typeName string, typ *Interface) {
+		sortutil.RangeSorted(s.interfaces, func(ifaceName string, iface *Interface) {
+			if typeName == ifaceName || !rels.has(typeName, ifaceName) {
+				return
+			}
+			if _, ok := typ.Interfaces()[ifaceName]; ok {
+				return
+			}
+			if interfaceImplementsTransitive(iface, typeName, nil) {
+				return
+			}
+			typ.ImplementInterface(iface)
+			s.invalidateSchemaCache()
+		})
+	})
+}
+
+// objectTypeHasInterface reports whether obj already declares the named
+// interface.
+func objectTypeHasInterface(obj ObjectType, ifaceName string) bool {
+	withInterfaces, ok := obj.(objectTypeWithInterfaces)
+	if !ok {
+		return false
+	}
+	for _, iface := range withInterfaces.Interfaces() {
+		if iface != nil && iface.TypeName() == ifaceName {
+			return true
 		}
 	}
+	return false
+}
+
+// interfaceImplementsTransitive reports whether iface implements target either
+// directly or through another interface it implements. It guards against
+// re-declaring an existing (possibly indirect) relationship and against cycles.
+func interfaceImplementsTransitive(iface *Interface, target string, seen map[string]struct{}) bool {
+	if iface == nil {
+		return false
+	}
+	if iface.TypeName() == target {
+		return true
+	}
+	if seen == nil {
+		seen = map[string]struct{}{}
+	}
+	if _, ok := seen[iface.TypeName()]; ok {
+		return false
+	}
+	seen[iface.TypeName()] = struct{}{}
+	for _, implemented := range iface.Interfaces() {
+		if interfaceImplementsTransitive(implemented, target, seen) {
+			return true
+		}
+	}
+	return false
 }
 
 // InterfaceType returns the Interface with the given name, if it exists.
 func (s *Server) InterfaceType(name string) (*Interface, bool) {
+	s.reconcileInterfaceImplsIfDirty()
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()
 	t, ok := s.interfaces[name]
@@ -632,8 +835,13 @@ func (s *Server) InterfaceType(name string) (*Interface, bool) {
 }
 
 // InstallScalar installs the given Scalar type into the schema, or returns the
-// previously installed type if it was already present
-func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
+// previously installed type if it was already present.
+//
+// If a ViewFilter is supplied, the scalar is only emitted in the schema for
+// views that match the filter. The scalar is always available for input
+// decoding, regardless of view — this lets a view-gated field accept the
+// scalar as an argument value at runtime.
+func (s *Server) InstallScalar(scalar ScalarType, filter ...ViewFilter) ScalarType {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	if scalar, ok := s.scalars[scalar.TypeName()]; ok {
@@ -641,6 +849,9 @@ func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
 	}
 	s.invalidateSchemaCache()
 	s.scalars[scalar.TypeName()] = scalar
+	if len(filter) > 0 && filter[0] != nil {
+		s.scalarFilters[scalar.TypeName()] = filter[0]
+	}
 	return scalar
 }
 
@@ -653,15 +864,19 @@ func (s *Server) InstallDirective(directive DirectiveSpec) {
 }
 
 // InstallTypeDef installs an arbitrary type definition into the schema.
-func (s *Server) InstallTypeDef(def TypeDef) {
+func (s *Server) InstallTypeDef(def TypeDef, filter ...ViewFilter) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	s.typeDefs[def.TypeName()] = def
+	if len(filter) > 0 && filter[0] != nil {
+		s.typeDefFilters[def.TypeName()] = filter[0]
+	}
 	s.invalidateSchemaCache()
 }
 
 // ObjectType returns the ObjectType with the given name, if it exists.
 func (s *Server) ObjectType(name string) (ObjectType, bool) {
+	s.reconcileInterfaceImplsIfDirty()
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()
 	t, ok := s.objects[name]
@@ -708,6 +923,7 @@ func (s *Server) Schema() *ast.Schema {
 }
 
 func (s *Server) SchemaForView(view call.View) *ast.Schema {
+	s.reconcileInterfaceImplsIfDirty()
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()
 	s.schemaLock.Lock()
@@ -724,6 +940,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
 		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
+			if !typeVisibleInView(t, view) {
+				return
+			}
 			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
 				schema.Query = def
@@ -739,15 +958,27 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		})
 		// Emit interface definitions.
 		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
+			if !typeVisibleInView(iface, view) {
+				return
+			}
 			def := iface.Definition(view)
 			schema.AddTypes(def)
 		})
-		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
+		sortutil.RangeSorted(s.scalars, func(name string, t ScalarType) {
+			if filter, ok := s.scalarFilters[name]; ok && !filter.Contains(view) {
+				return
+			}
 			def := definition(ast.Scalar, t, view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
 		})
-		sortutil.RangeSorted(s.typeDefs, func(_ string, t TypeDef) {
+		sortutil.RangeSorted(s.typeDefs, func(name string, t TypeDef) {
+			if !typeVisibleInView(t, view) {
+				return
+			}
+			if filter, ok := s.typeDefFilters[name]; ok && !filter.Contains(view) {
+				return
+			}
 			def := t.TypeDefinition(view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
@@ -763,6 +994,22 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 	})
 
 	return s.schemas[view]
+}
+
+type viewFilteredType interface {
+	ViewFilter() ViewFilter
+}
+
+func viewFilterForType(t Type) ViewFilter {
+	if viewFiltered, ok := t.(viewFilteredType); ok {
+		return viewFiltered.ViewFilter()
+	}
+	return nil
+}
+
+func typeVisibleInView(t Type, view call.View) bool {
+	viewFilter := viewFilterForType(t)
+	return viewFilter == nil || viewFilter.Contains(view)
 }
 
 // SchemaDigest returns the digest of the current schema.

@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `ElixirSdkDevID` scalar type represents an identifier for an object of type ElixirSdkDev.
-type ElixirSDKDevID string // elixir-sdk-dev (../../../../:0:0)
 
 // Retrieve the binding value, as type ElixirSdkDev
 func (r *Binding) AsElixirSDKDev() *ElixirSDKDev { // elixir-sdk-dev (../../../../:0:0)
@@ -26,7 +23,7 @@ type ElixirSDKDev struct { // elixir-sdk-dev (../../../../:0:0)
 
 	baseImage     *string
 	codegenTest   *Void
-	id            *ElixirSDKDevID
+	id            *ID
 	lint          *Void
 	publish       *Void
 	releaseDryRun *Void
@@ -90,13 +87,13 @@ func (r *ElixirSDKDev) DevContainer() *Container { // elixir-sdk-dev (../../../.
 }
 
 // A unique identifier for this ElixirSdkDev.
-func (r *ElixirSDKDev) ID(ctx context.Context) (ElixirSDKDevID, error) {
+func (r *ElixirSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ElixirSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -109,7 +106,7 @@ func (r *ElixirSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ElixirSDKDev) XXX_GraphQLIDType() string {
-	return "ElixirSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -134,7 +131,7 @@ func (r *ElixirSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadElixirSDKDevFromID(ElixirSDKDevID(id))
+	*r = ElixirSDKDev{query: selectNode(dag.query, id, "ElixirSdkDev")}
 	return nil
 }
 
@@ -155,6 +152,10 @@ type ElixirSDKDevPublishOpts struct {
 	//
 	HexAPIKey *Secret // elixir-sdk-dev (../../../../:0:0)
 	//
+	// Hex.pm API URL to publish to
+	//
+	HexAPIURL string // elixir-sdk-dev (../../../../:0:0)
+	//
 	// Execute a dry-run release, with no side effects
 	//
 	DryRun bool // elixir-sdk-dev (../../../../:0:0)
@@ -170,6 +171,10 @@ func (r *ElixirSDKDev) Publish(ctx context.Context, tag string, opts ...ElixirSD
 		// `hexApiKey` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HexAPIKey) {
 			q = q.Arg("hexApiKey", opts[i].HexAPIKey)
+		}
+		// `hexApiUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HexAPIURL) {
+			q = q.Arg("hexApiUrl", opts[i].HexAPIURL)
 		}
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {
@@ -239,11 +244,19 @@ func (r *ElixirSDKDev) UpdateCodegenTests() *Changeset { // elixir-sdk-dev (../.
 	}
 }
 
-func (r *ElixirSDKDev) Workspace() *Directory { // elixir-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *ElixirSDKDev) WorkspaceDir() *Directory { // elixir-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this ElixirSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ElixirSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -275,7 +288,7 @@ func (r *Env) WithElixirSDKDevOutput(name string, description string) *Env { // 
 type ElixirSDKDevOpts struct {
 	BaseImage string // elixir-sdk-dev (../../../../:0:0)
 
-	Workspace *Directory // elixir-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // elixir-sdk-dev (../../../../:0:0)
 
 	SourcePath string // elixir-sdk-dev (../../../../:0:0)
 }
@@ -287,25 +300,15 @@ func (r *Query) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev { // elixir
 		if !querybuilder.IsZeroValue(opts[i].BaseImage) {
 			q = q.Arg("baseImage", opts[i].BaseImage)
 		}
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
 	}
-
-	return &ElixirSDKDev{
-		query: q,
-	}
-}
-
-// Load a ElixirSdkDev from its ID.
-func (r *Query) LoadElixirSDKDevFromID(id ElixirSDKDevID) *ElixirSDKDev { // elixir-sdk-dev (../../../../:0:0)
-	q := r.query.Select("loadElixirSdkDevFromID")
-	q = q.Arg("id", id)
 
 	return &ElixirSDKDev{
 		query: q,

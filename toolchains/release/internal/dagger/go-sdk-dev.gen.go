@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `GoSdkDevID` scalar type represents an identifier for an object of type GoSdkDev.
-type GoSDKDevID string // go-sdk-dev (../../../../:0:0)
 
 // Retrieve the binding value, as type GoSdkDev
 func (r *Binding) AsGoSDKDev() *GoSDKDev { // go-sdk-dev (../../../../:0:0)
@@ -48,7 +45,7 @@ func (r *Env) WithGoSDKDevOutput(name string, description string) *Env { // go-s
 type GoSDKDev struct { // go-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
-	id            *GoSDKDevID
+	id            *ID
 	release       *Void
 	releaseDryRun *Void
 	sourcePath    *string
@@ -90,13 +87,13 @@ func (r *GoSDKDev) Generate() *Changeset { // go-sdk-dev (../../../../:0:0)
 }
 
 // A unique identifier for this GoSdkDev.
-func (r *GoSDKDev) ID(ctx context.Context) (GoSDKDevID, error) {
+func (r *GoSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GoSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -109,7 +106,7 @@ func (r *GoSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GoSDKDev) XXX_GraphQLIDType() string {
-	return "GoSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -134,7 +131,7 @@ func (r *GoSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGoSDKDevFromID(GoSDKDevID(id))
+	*r = GoSDKDev{query: selectNode(dag.query, id, "GoSdkDev")}
 	return nil
 }
 
@@ -261,11 +258,19 @@ func (r *GoSDKDev) Test(ctx context.Context) error { // go-sdk-dev (../../../../
 }
 
 // Workspace with all the files needed to develop the SDK
-func (r *GoSDKDev) Workspace() *Directory { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *GoSDKDev) WorkspaceDir() *Directory { // go-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this GoSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -274,7 +279,7 @@ type GoSDKDevOpts struct {
 	//
 	// Workspace with all the files needed to develop the SDK
 	//
-	Workspace *Directory // go-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // go-sdk-dev (../../../../:0:0)
 	//
 	// Path of the Go SDK source within the workspace
 	//
@@ -284,25 +289,15 @@ type GoSDKDevOpts struct {
 func (r *Query) GoSDKDev(opts ...GoSDKDevOpts) *GoSDKDev { // go-sdk-dev (../../../../:0:0)
 	q := r.query.Select("goSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
 	}
-
-	return &GoSDKDev{
-		query: q,
-	}
-}
-
-// Load a GoSdkDev from its ID.
-func (r *Query) LoadGoSDKDevFromID(id GoSDKDevID) *GoSDKDev { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("loadGoSdkDevFromID")
-	q = q.Arg("id", id)
 
 	return &GoSDKDev{
 		query: q,

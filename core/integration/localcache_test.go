@@ -1,5 +1,11 @@
 package core
 
+// These tests cover the engine's on-disk local cache. They verify garbage
+// collection, retention policy, and local cache configuration.
+//
+// See also:
+// - cache_test.go: cache volumes and cache keys exposed through the API.
+
 import (
 	"context"
 	"fmt"
@@ -376,6 +382,163 @@ func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const (
+		engineRootSizeBytes = 1536 * 1024 * 1024
+		minFreeBytes        = 900 * 1024 * 1024
+		seedMB              = 192
+		pressureMB          = 512
+		pressureBytes       = pressureMB * 1024 * 1024
+		seedSignalBytes     = 96 * 1024 * 1024
+	)
+
+	engine := devEngineContainer(c,
+		engineWithConfig(ctx, t, engineConfigWithGC(
+			"0",
+			fmt.Sprint(minFreeBytes),
+			"4GB",
+			"",
+		)),
+	).WithMountedTemp("/var/lib/dagger", dagger.ContainerWithMountedTempOpts{
+		Size: engineRootSizeBytes,
+	})
+
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	newNestedClient := func() *dagger.Client {
+		t.Helper()
+
+		client, err := dagger.Connect(
+			ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		require.NoError(t, err)
+		return client
+	}
+
+	observer := newNestedClient()
+	t.Cleanup(func() { _ = observer.Close() })
+
+	getUsedBytes := func() int {
+		t.Helper()
+
+		usedBytes, err := observer.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		require.NoError(t, err)
+		return usedBytes
+	}
+
+	dumpCacheSummary := func() {
+		t.Helper()
+
+		entryCount, err := observer.Engine().LocalCache().EntrySet().EntryCount(ctx)
+		if err != nil {
+			t.Logf("failed to get cache entry count for debugging: %v", err)
+			return
+		}
+		t.Logf("cache entry count: %d", entryCount)
+	}
+
+	waitForUsageAtLeast := func(label string, target int, timeout time.Duration) int {
+		t.Helper()
+
+		deadline := time.Now().Add(timeout)
+		var usedBytes int
+		for {
+			usedBytes = getUsedBytes()
+			if usedBytes >= target {
+				return usedBytes
+			}
+			if time.Now().After(deadline) {
+				dumpCacheSummary()
+				t.Fatalf("%s: expected local cache usage >= %d bytes, got %d", label, target, usedBytes)
+			}
+			t.Logf("%s: local cache usage %d < %d, waiting", label, usedBytes, target)
+			time.Sleep(time.Second)
+		}
+	}
+
+	waitForUsageBelow := func(label string, target int, timeout time.Duration) int {
+		t.Helper()
+
+		deadline := time.Now().Add(timeout)
+		var usedBytes int
+		for {
+			usedBytes = getUsedBytes()
+			if usedBytes < target {
+				return usedBytes
+			}
+			if time.Now().After(deadline) {
+				dumpCacheSummary()
+				t.Fatalf("%s: expected local cache usage < %d bytes, got %d", label, target, usedBytes)
+			}
+			t.Logf("%s: local cache usage %d >= %d, waiting for disk-pressure GC", label, usedBytes, target)
+			time.Sleep(time.Second)
+		}
+	}
+
+	baselineUsedBytes := getUsedBytes()
+
+	seedClient := newNestedClient()
+	_, err = seedClient.
+		Container().
+		From(alpineImage).
+		WithEnvVariable("GC_PRESSURE_SEED", identity.NewID()).
+		WithExec([]string{
+			"sh", "-ec",
+			fmt.Sprintf("dd if=/dev/zero of=/seed bs=1M count=%d status=none", seedMB),
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, seedClient.Close())
+
+	usedAfterSeed := waitForUsageAtLeast("seed cache", baselineUsedBytes+seedSignalBytes, 30*time.Second)
+
+	// Let the no-pressure session-end GC run before introducing disk pressure.
+	time.Sleep(10 * time.Second)
+	usedAfterNoPressureGC := getUsedBytes()
+	require.GreaterOrEqual(t, usedAfterNoPressureGC, usedAfterSeed-seedSignalBytes/2, "seed should not be pruned before disk pressure exists")
+
+	activeClient := newNestedClient()
+	t.Cleanup(func() { _ = activeClient.Close() })
+
+	activePressure, err := activeClient.
+		Container().
+		From(alpineImage).
+		WithEnvVariable("GC_PRESSURE_ACTIVE", identity.NewID()).
+		WithExec([]string{
+			"sh", "-ec",
+			fmt.Sprintf("dd if=/dev/zero of=/pressure bs=1M count=%d status=none", pressureMB),
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, activePressure)
+
+	waitForUsageAtLeast("active pressure cache", usedAfterNoPressureGC+seedSignalBytes, 30*time.Second)
+
+	// Disk-pressure GC may prune the inactive seed before we observe the
+	// post-pressure high-water mark, so use the known pressure size as the
+	// target instead of deriving it from usedWithPressure.
+	prunedSeedTarget := usedAfterNoPressureGC + pressureBytes - seedSignalBytes
+
+	waitForUsageBelow(
+		"disk-pressure gc with active session",
+		prunedSeedTarget,
+		45*time.Second,
+	)
+
+	pressureSize, err := activePressure.File("/pressure").Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, pressureBytes, pressureSize)
+}
+
 func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	setup := func(ctx context.Context, t *testctx.T) (endpoint string, c2 *dagger.Client, addCacheBlock func(*testctx.T, string, int), getUsedBytes func(*testctx.T) int) {
@@ -661,6 +824,97 @@ func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context,
 	require.NoError(t, c2.Close())
 
 	require.Equal(t, readmeBeforePrune, readmeAfterPrune)
+}
+
+func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	newNestedClient := func() *dagger.Client {
+		t.Helper()
+
+		client, err := dagger.Connect(
+			ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		require.NoError(t, err)
+		return client
+	}
+
+	tarballDigest := func(t *testctx.T, ctr *dagger.Container) string {
+		t.Helper()
+
+		dgst, err := ctr.AsTarball(dagger.ContainerAsTarballOpts{
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
+		}).Digest(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, dgst)
+		return dgst
+	}
+
+	producer := newNestedClient()
+	source := producer.
+		Container().
+		From(golangImage).
+		WithExec([]string{
+			"sh",
+			"-ec",
+			"mkdir -p /work && printf 'zstd prune repro\\n' > /work/source.txt",
+		})
+
+	sourceID, err := source.ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, sourceID)
+
+	beforeDigest := tarballDigest(t, source)
+	require.NoError(t, producer.Close())
+
+	pinnedClient := newNestedClient()
+	t.Cleanup(func() { _ = pinnedClient.Close() })
+
+	pinned := dagger.Ref[*dagger.Container](pinnedClient, sourceID)
+	pinned, err = pinned.Sync(ctx)
+	require.NoError(t, err)
+
+	ballastClient := newNestedClient()
+	_, err = ballastClient.
+		Container().
+		From(alpineImage).
+		WithEnvVariable("ZSTD_PRUNE_BALLAST", identity.NewID()).
+		WithExec([]string{
+			"sh",
+			"-ec",
+			"dd if=/dev/urandom of=/ballast bs=1M count=64 status=none",
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, ballastClient.Close())
+
+	pruneClient := newNestedClient()
+	err = pruneClient.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		UseDefaultPolicy: false,
+		MaxUsedSpace:     "1",
+		ReservedSpace:    "0",
+		MinFreeSpace:     "0",
+		TargetSpace:      "1",
+	})
+	require.NoError(t, err)
+	require.NoError(t, pruneClient.Close())
+
+	sourceContents, err := pinned.File("/work/source.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "zstd prune repro\n", sourceContents)
+
+	afterDigest := tarballDigest(t, pinned)
+	require.Equal(t, beforeDigest, afterDigest)
 }
 
 func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx context.Context, t *testctx.T) {

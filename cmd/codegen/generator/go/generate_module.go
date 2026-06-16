@@ -249,7 +249,9 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	// Otherwise, we install the given dagger.io/dagger package version.
 	if !isDaggerPkgCustomReplaced(mod.Replace) {
 		genSt.PostCommands = append(genSt.PostCommands,
-			exec.Command("go", "get", "-u", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
+			// Do not pass -u here: LibVersion pins dagger.io/dagger, while -u also
+			// asks Go to upgrade transitive dependencies during generation.
+			exec.Command("go", "get", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,
@@ -273,7 +275,7 @@ func baseModuleSource(pkgInfo *PackageInfo, moduleName string) string {
 
 	return fmt.Sprintf(`// A generated module for %[1]s functions
 //
-// This module has been generated via dagger init and serves as a reference to
+// This module has been generated via dagger module init and serves as a reference to
 // basic module structure as you get started with Dagger.
 //
 // Two functions have been pre-created. You can modify, delete, or add to them,

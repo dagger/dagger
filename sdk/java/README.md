@@ -28,11 +28,11 @@ A [Dagger.io](https://dagger.io) SDK written in Java.
 ### Create a new module
 
 ```console
-$ dagger init --sdk=java my-java-module
+$ dagger module init --sdk=java my-java-module
 
 $ tree my-java-module
 my-java-module
-├── dagger.json
+├── dagger-module.toml
 ├── pom.xml
 └── src
     └── main

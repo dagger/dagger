@@ -32,12 +32,14 @@ type LoadedImportedImage struct {
 
 type ContainerFromImageRefLazy struct {
 	LazyState
-	Parent       dagql.ObjectResult[*Container]
-	CanonicalRef string
-	Config       dockerspec.DockerOCIImageConfig
-	ImageRef     string
-	Platform     Platform
-	ResolveMode  serverresolver.ResolveMode
+	Parent            dagql.ObjectResult[*Container]
+	CanonicalRef      string
+	Config            dockerspec.DockerOCIImageConfig
+	ImageRef          string
+	Platform          Platform
+	ResolveMode       serverresolver.ResolveMode
+	RegistryServices  ServiceBindings
+	RegistryTransport serverresolver.RegistryTransport
 }
 
 type dockerfileImageMetaResolver struct {
@@ -86,9 +88,17 @@ func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *
 		if err != nil {
 			return err
 		}
+		network, detach, err := ContainerRegistryNetwork(ctx, lazy.RegistryServices)
+		if err != nil {
+			return err
+		}
+		defer detach()
+
 		pulled, err := rslvr.Pull(ctx, lazy.CanonicalRef, serverresolver.PullOpts{
-			Platform:    lazy.Platform.Spec(),
-			ResolveMode: lazy.ResolveMode,
+			Platform:          lazy.Platform.Spec(),
+			ResolveMode:       lazy.ResolveMode,
+			Network:           network,
+			RegistryTransport: lazy.RegistryTransport,
 		})
 		if err != nil {
 			return fmt.Errorf("pull image %q: %w", lazy.CanonicalRef, err)
@@ -130,8 +140,19 @@ func (lazy *ContainerFromImageRefLazy) AttachDependencies(ctx context.Context, a
 	if err != nil {
 		return nil, err
 	}
+	attachments := []dagql.AnyResult{parent}
+	// From may run later, so keep the selected registry service with it.
+	for i := range lazy.RegistryServices {
+		binding := &lazy.RegistryServices[i]
+		service, err := attachServiceResult(attach, binding.Service, "attach container from registry service")
+		if err != nil {
+			return nil, err
+		}
+		binding.Service = service
+		attachments = append(attachments, service)
+	}
 	lazy.Parent = parent
-	return []dagql.AnyResult{parent}, nil
+	return attachments, nil
 }
 
 func (lazy *ContainerFromImageRefLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
@@ -139,12 +160,18 @@ func (lazy *ContainerFromImageRefLazy) EncodePersisted(ctx context.Context, cach
 	if err != nil {
 		return nil, err
 	}
+	services, err := encodePersistedServiceBindings(cache, "container from registry", lazy.RegistryServices)
+	if err != nil {
+		return nil, err
+	}
 	return json.Marshal(persistedContainerFromLazy{
-		ParentResultID: parentID,
-		CanonicalRef:   lazy.CanonicalRef,
-		Config:         CloneContainerImageConfig(lazy.Config),
-		ImageRef:       lazy.ImageRef,
-		Platform:       lazy.Platform,
+		ParentResultID:    parentID,
+		CanonicalRef:      lazy.CanonicalRef,
+		Config:            CloneContainerImageConfig(lazy.Config),
+		ImageRef:          lazy.ImageRef,
+		Platform:          lazy.Platform,
+		RegistryServices:  services,
+		RegistryTransport: lazy.RegistryTransport,
 	})
 }
 

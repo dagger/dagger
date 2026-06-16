@@ -4,7 +4,7 @@ import (
 	"context"
 	"dagger/evals/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 // Doug's eval suite.
@@ -33,18 +33,17 @@ func (evals *Evals) Iterate(ctx context.Context) (string, error) {
 
 func (evals *Evals) evaluator() *dagger.Evaluator {
 	return dag.Evaluator().
-		WithEvals([]*dagger.EvaluatorEval{
+		WithEvals([]dagger.EvaluatorEval{
 			evals.eval("andOperator"),
 		})
 }
 
-func (evals *Evals) eval(name string) *dagger.EvaluatorEval {
-	eval := (&dagger.EvaluatorEval{})
+func (evals *Evals) eval(name string) dagger.EvaluatorEval {
+	eval := (&dagger.EvaluatorEvalClient{})
 	eval = eval.WithGraphQLQuery(
 		querybuilder.Query().
 			Client(dag.GraphQLClient()).
 			Select("evals").
-			Select(name).
-			Select("asEvaluatorEval"))
+			Select(name))
 	return eval
 }

@@ -674,12 +674,16 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 	}
 	entries := collectTestSummaryEntries(view)
 	addedContent := false
+	lastMultiline := false
 	appendEntry := func(entry testSummaryEntry) {
-		if addedContent {
+		entryLines := tv.renderTestSummaryEntry(out, entry, width)
+		multiline := len(entryLines) > 1
+		if addedContent && (lastMultiline || multiline) {
 			lines = append(lines, "")
 		}
-		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
+		lines = append(lines, entryLines...)
 		addedContent = true
+		lastMultiline = multiline
 	}
 	for _, entry := range entries.failing {
 		appendEntry(entry)
@@ -894,7 +898,11 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 		case dagui.TestNodeSuite:
 			if node.Span != nil {
 				category := node.Span.TestCategory()
-				addNonPassing(testSummaryEntry{category: category, label: testSummarySuiteLabel(node), span: node.Span})
+				// A skipped suite with no test cases (e.g. a package with
+				// nothing to run) is pure noise in the summary.
+				if category != dagui.TestCategorySkipped || node.Counts.Total() > 0 {
+					addNonPassing(testSummaryEntry{category: category, label: testSummarySuiteLabel(node), span: node.Span})
+				}
 			}
 		}
 		for _, child := range node.Children {

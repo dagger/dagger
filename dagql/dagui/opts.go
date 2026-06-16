@@ -95,8 +95,11 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		// _still_ not interesting
 		return false
 	}
-	if span.IsFailedOrCausedFailure() && verbosity > HideErrorsVerbosity {
-		// prioritize showing failed things, even if they're internal
+	if span.IsFailedOrCausedFailure() && verbosity > HideErrorsVerbosity &&
+		!span.EncapsulationHidden(opts) {
+		// prioritize showing failed things, even if they're internal - but not
+		// encapsulated failures whose parent succeeded (e.g. a registry's
+		// routine 401 auth challenge); those are handled internal details
 		return true
 	}
 	if span.Call() != nil {
@@ -127,6 +130,9 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		return true
 	}
 	if span.IsRunningOrEffectsRunning() {
+		return true
+	}
+	if span.CheckName != "" {
 		return true
 	}
 	// TODO: avoid breaking chains

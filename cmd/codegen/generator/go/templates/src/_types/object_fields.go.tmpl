@@ -102,7 +102,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 
     type {{ $field.Name | ToLowerCase }} struct {
       {{ range $v := $field | GetArrayField }}
-      {{ $v.Name | ToUpperCase }} {{ $v.TypeRef | FormatOutputType }}
+      {{ $v.Name | ToUpperCase }} {{ FormatFieldOutputType $v }}
       {{- end }}
     }
 
@@ -125,7 +125,7 @@ type {{ $field | FieldOptionsStructName }} struct {
     {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
 	var response []{{ $field.Name | ToLowerCase }}
     {{- else }}
-	var response {{ $field.TypeRef | FormatOutputType }}
+	var response {{ FormatFieldOutputType $field }}
     {{- end  }}
 
 	q = q.Bind(&response)

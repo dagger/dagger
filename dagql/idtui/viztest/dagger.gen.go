@@ -19,7 +19,7 @@ import (
 
 	"dagger/viztest/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -569,6 +572,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Viztest).ObjectLists(&parent, ctx)
+		case "PartialProgress":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			(*Viztest).PartialProgress(&parent, ctx)
+			return nil, nil
 		case "PathArgs":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)
@@ -739,6 +750,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*Viztest).TraceRemoteFunctionCalls(&parent, ctx)
+		case "TransientProgress":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			(*Viztest).TransientProgress(&parent, ctx)
+			return nil, nil
 		case "Uppercase":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)

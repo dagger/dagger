@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `FunctionID` scalar type represents an identifier for an object of type Function.
+ * A unique identifier for an object.
  */
-readonly class FunctionId extends Client\AbstractId
+readonly class FunctionId extends Client\AbstractScalar
 {
 }

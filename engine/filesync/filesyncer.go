@@ -69,7 +69,11 @@ func (ls *FileSyncer) snapshot(
 	clientPath string,
 	opts SnapshotOpts,
 ) (_ bkcache.ImmutableRef, _ digest.Digest, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "filesync")
+	// Encapsulated like the resolver's "pulling" span: hidden unless it
+	// fails, surfacing as a labeled progress row only when bytes actually
+	// move (an unchanged directory syncs nothing).
+	ctx, span := Tracer(ctx).Start(ctx, "uploading "+clientPath,
+		telemetry.Encapsulated(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	statCtx := engine.LocalImportOpts{

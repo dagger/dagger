@@ -45,6 +45,7 @@ func NewCoreSchemaBase(ctx context.Context, rootSrv core.Server) (*CoreSchemaBas
 		return nil, err
 	}
 	base.Around(core.AroundFunc)
+	base.AddInstallHook(&legacyIDHook{server: base})
 	coreMod := &CoreMod{}
 	if err := coreMod.Install(ctx, base); err != nil {
 		return nil, err
@@ -202,6 +203,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 	} {
 		schema.Install(dag)
 	}
+
 	return nil
 }
 
@@ -999,10 +1001,10 @@ func resolveIDScalar(ctx context.Context, dag *dagql.Server, typeDef dagql.Objec
 		if _, ok := dag.InterfaceType(expectedName); ok {
 			field = "withInterface"
 		}
-		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-			Field: field,
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(expectedName)}},
-		})
+		// expectedName comes from the @expectedType directive and is an
+		// already-final (possibly module-namespaced) type name; preserve it
+		// verbatim rather than collapsing the separator via strcase.ToCamel.
+		inst, err := core.SelectReferenceTypeDefWithServer(ctx, dag, field, "name", expectedName)
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}
@@ -1072,10 +1074,10 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 				Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindVoid}},
 			})
 		default:
-			inst, err = core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-				Field: "withScalar",
-				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
-			})
+			// introspectionType.Name is an already-final (possibly module-namespaced)
+			// GraphQL type name; preserve it verbatim. A bare withScalar would run it
+			// back through strcase.ToCamel, collapsing the namespace separator.
+			inst, err = core.SelectReferenceTypeDefWithServer(ctx, dag, "withScalar", "name", introspectionType.Name)
 		}
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
@@ -1084,10 +1086,8 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		return inst, true, err
 
 	case introspection.TypeKindEnum:
-		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-			Field: "withEnum",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
-		})
+		// Preserve the already-final type name verbatim; see the scalar case above.
+		inst, err := core.SelectReferenceTypeDefWithServer(ctx, dag, "withEnum", "name", introspectionType.Name)
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}
@@ -1117,10 +1117,8 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		return inst, true, err
 
 	case introspection.TypeKindObject:
-		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-			Field: "withObject",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
-		})
+		// Preserve the already-final type name verbatim; see the scalar case above.
+		inst, err := core.SelectReferenceTypeDefWithServer(ctx, dag, "withObject", "name", introspectionType.Name)
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}
@@ -1128,10 +1126,8 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		return inst, true, err
 
 	case introspection.TypeKindInterface:
-		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-			Field: "withInterface",
-			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
-		})
+		// Preserve the already-final type name verbatim; see the scalar case above.
+		inst, err := core.SelectReferenceTypeDefWithServer(ctx, dag, "withInterface", "name", introspectionType.Name)
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}

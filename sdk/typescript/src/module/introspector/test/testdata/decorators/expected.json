@@ -1,0 +1,291 @@
+{
+  "name": "Decorators",
+  "objects": {
+    "Decorators": {
+      "name": "Decorators",
+      "description": "",
+      "methods": {
+        "withDefaultPath": {
+          "name": "withDefaultPath",
+          "description": "",
+          "arguments": {
+            "source": {
+              "name": "source",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Directory"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultPath": "."
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Directory"
+          }
+        },
+        "withReferencedDefaultPath": {
+          "name": "withReferencedDefaultPath",
+          "description": "",
+          "arguments": {
+            "source": {
+              "name": "source",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Directory"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultPath": "/src"
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Directory"
+          }
+        },
+        "withFileDefaultPath": {
+          "name": "withFileDefaultPath",
+          "description": "",
+          "arguments": {
+            "file": {
+              "name": "file",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "File"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultPath": "./README.md"
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "File"
+          }
+        },
+        "withInlinedIgnore": {
+          "name": "withInlinedIgnore",
+          "description": "",
+          "arguments": {
+            "source": {
+              "name": "source",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Directory"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "ignore": [
+                "foo",
+                "bar",
+                "baz"
+              ]
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Directory"
+          }
+        },
+        "withReferencedIgnore": {
+          "name": "withReferencedIgnore",
+          "description": "",
+          "arguments": {
+            "source": {
+              "name": "source",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Directory"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "ignore": [
+                "foo",
+                "ref",
+                "bar"
+              ]
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Directory"
+          }
+        },
+        "withDefaultPathAndIgnore": {
+          "name": "withDefaultPathAndIgnore",
+          "description": "",
+          "arguments": {
+            "source": {
+              "name": "source",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Directory"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultPath": ".",
+              "ignore": [
+                "foo",
+                "ref",
+                "bar"
+              ]
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Directory"
+          }
+        },
+        "withDefaultAddress": {
+          "name": "withDefaultAddress",
+          "description": "",
+          "arguments": {
+            "ctr": {
+              "name": "ctr",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Container"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": true,
+              "defaultAddress": "alpine:3.21"
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Container"
+          }
+        },
+        "withReferencedDefaultAddress": {
+          "name": "withReferencedDefaultAddress",
+          "description": "",
+          "arguments": {
+            "ctr": {
+              "name": "ctr",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Container"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": true,
+              "defaultAddress": "alpine:3.21"
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Container"
+          }
+        },
+        "stringAlias": {
+          "name": "withStringAlias",
+          "description": "",
+          "alias": "stringAlias",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "objectAlias": {
+          "name": "withObjectAlias",
+          "description": "",
+          "alias": "objectAlias",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "renamedReference": {
+          "name": "withReferencedAlias",
+          "description": "",
+          "alias": "renamedReference",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "withCache": {
+          "name": "withCache",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "cachedAlias": {
+          "name": "withCacheAndAlias",
+          "description": "",
+          "alias": "cachedAlias",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "checkSomething": {
+          "name": "checkSomething",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "VOID_KIND"
+          }
+        },
+        "generateSomething": {
+          "name": "generateSomething",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Changeset"
+          }
+        },
+        "upSomething": {
+          "name": "upSomething",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Service"
+          }
+        }
+      },
+      "properties": {
+        "version": {
+          "name": "version",
+          "description": "A field exposed with the deprecated `@field` decorator.",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        },
+        "aliasedField": {
+          "name": "name",
+          "description": "A field exposed with `@func` using a string alias.",
+          "alias": "aliasedField",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      }
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}

@@ -112,6 +112,42 @@ func TestObjectFieldsTemplateOptionalIDArgUsesExpectedType(t *testing.T) {
 	require.NotContains(t, got, "Source ID")
 }
 
+func TestObjectLegacyIDTypeUsesFormattedGoName(t *testing.T) {
+	schemaJSON := `
+    {
+      "description": "LLM test module",
+      "fields": [
+        {
+          "args": [],
+          "deprecationReason": null,
+          "description": "A unique identifier for this LlmTestModule.",
+          "isDeprecated": false,
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID"
+            }
+          }
+        }
+      ],
+      "kind": "OBJECT",
+      "name": "LlmTestModule"
+    }
+`
+
+	schema, object := loadSchemaFromTypeJSON(t, schemaJSON)
+	tmpl := parseTemplateFiles(t, schema, "_types/object.go.tmpl")
+	require.NotNil(t, tmpl)
+
+	got := renderTemplate(t, tmpl, object)
+
+	require.Contains(t, got, "id *LLMTestModuleID")
+	require.Contains(t, got, "func (r *LLMTestModule) ID(ctx context.Context) (LLMTestModuleID, error)")
+	require.NotContains(t, got, "LlmTestModuleID")
+}
+
 func TestObjectMethodDeprecated(t *testing.T) {
 	schemaJSON := `
     {

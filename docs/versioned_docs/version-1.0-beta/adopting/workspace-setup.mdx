@@ -1,0 +1,84 @@
+---
+title: "Workspace Setup"
+slug: /adopting/workspace-setup
+description: "Add a Dagger workspace to your project"
+---
+
+# Workspace Setup
+
+You've seen Dagger work on [hello-dagger](../getting-started/quickstart.mdx). Now set it up on your own project.
+
+## Get started
+
+From the root of your repository:
+
+```shell
+dagger mod recommend
+```
+
+`dagger mod recommend` scans your project and suggests modules for the tools, frameworks, and languages it detects.
+
+## The feedback loop
+
+Install the modules you want from the recommendations, then run `dagger check`:
+
+```shell
+dagger mod install github.com/dagger/eslint
+dagger check
+```
+
+`dagger mod install` creates a workspace configuration (`.dagger/config.toml`) if needed and adds the selected module. `dagger check` runs checks from installed modules. Repeat until you're happy with your coverage — you don't have to install everything at once.
+
+You can also search for a specific module:
+
+```shell
+dagger mod search eslint
+```
+
+## Manual setup
+
+If you already know which modules you want, install them directly:
+
+```shell
+dagger mod install github.com/dagger/eslint
+dagger mod install github.com/dagger/vitest
+dagger mod install github.com/dagger/prettier
+```
+
+The first install creates `.dagger/config.toml` at the workspace root. To create the config in the current directory instead — for a workspace nested inside a larger repository — initialize it explicitly with `--here`:
+
+```shell
+dagger ws init --here
+```
+
+## Configure modules
+
+Many modules expose settings — a base image, a package manager, and so on. List the settings for your installed modules:
+
+```shell
+dagger ws settings
+```
+
+Set one with `module`, `key`, and `value`:
+
+```shell
+dagger ws settings eslint packageManager yarn
+```
+
+Settings are stored in `.dagger/config.toml` alongside each module, so they're shared with everyone who uses the workspace.
+
+## Migrate an existing project
+
+If your project already uses a legacy `dagger.json`, convert it to the workspace format:
+
+```shell
+dagger ws migrate
+```
+
+This writes `.dagger/config.toml` from your existing configuration. See [Upgrade to Workspaces](../reference/upgrade-to-workspaces.mdx) for details.
+
+## What's next
+
+- **Add to CI** — `dagger ws autocheck on` enables [Cloud Checks](./triggers/index.mdx) for a GitHub repository, or `dagger check` can run in any existing CI provider
+- **Vary config per environment** — use [Environments](../using-dagger/environments.mdx) when staging and production need different settings
+- **Manage secrets** — if your checks need credentials, see [Secrets](./secrets.mdx)

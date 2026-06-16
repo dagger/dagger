@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -84,6 +85,9 @@ type Container struct {
 
 	// Secrets to expose to the container.
 	Secrets []ContainerSecret
+
+	// Volatile env vars exposed to future execs but not persisted in image config.
+	VolatileEnv []string
 
 	// Sockets to expose to the container.
 	Sockets []ContainerSocket
@@ -177,7 +181,20 @@ type ContainerWithSystemEnvVariableLazy struct {
 	Name   string
 }
 
+type ContainerWithVolatileVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+	Value  string
+}
+
 type ContainerWithoutEnvVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithoutVolatileVariableLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
 	Name   string
@@ -307,13 +324,6 @@ type ContainerWithDirectoryLazy struct {
 	Owner  string
 }
 
-type containerWithDirectoryOp struct {
-	Path   string
-	Source dagql.ObjectResult[*Directory]
-	Filter CopyFilter
-	Owner  string
-}
-
 type ContainerWithFileLazy struct {
 	LazyState
 	Parent      dagql.ObjectResult[*Container]
@@ -339,6 +349,15 @@ type ContainerWithMountedFileLazy struct {
 	Source   dagql.ObjectResult[*File]
 	Owner    string
 	Readonly bool
+}
+
+type ContainerWithMountedPathDockerfileCompatLazy struct {
+	LazyState
+	Parent     dagql.ObjectResult[*Container]
+	Target     string
+	Source     dagql.ObjectResult[*Directory]
+	SourcePath string
+	Readonly   bool
 }
 
 type ContainerWithMountedCacheLazy struct {
@@ -510,6 +529,7 @@ type persistedContainerPayload struct {
 	Services           []persistedServiceBinding           `json:"services,omitempty"`
 	DefaultTerminalCmd DefaultTerminalCmdOpts              `json:"defaultTerminalCmd"`
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
+	VolatileEnv        []string                            `json:"volatileEnv,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
 	LazyJSON           json.RawMessage                     `json:"lazyJSON,omitempty"`
 }
@@ -575,7 +595,18 @@ type persistedContainerWithSystemEnvVariableLazy struct {
 	Name           string `json:"name"`
 }
 
+type persistedContainerWithVolatileVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+	Value          string `json:"value"`
+}
+
 type persistedContainerWithoutEnvVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithoutVolatileVariableLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Name           string `json:"name"`
 }
@@ -659,11 +690,13 @@ type persistedContainerWithDefaultTerminalCmdLazy struct {
 }
 
 type persistedContainerFromLazy struct {
-	ParentResultID uint64                          `json:"parentResultID"`
-	CanonicalRef   string                          `json:"canonicalRef"`
-	Config         dockerspec.DockerOCIImageConfig `json:"config"`
-	ImageRef       string                          `json:"imageRef,omitempty"`
-	Platform       Platform                        `json:"platform"`
+	ParentResultID    uint64                           `json:"parentResultID"`
+	CanonicalRef      string                           `json:"canonicalRef"`
+	Config            dockerspec.DockerOCIImageConfig  `json:"config"`
+	ImageRef          string                           `json:"imageRef,omitempty"`
+	Platform          Platform                         `json:"platform"`
+	RegistryServices  []persistedServiceBinding        `json:"registryServices,omitempty"`
+	RegistryTransport serverresolver.RegistryTransport `json:"registryTransport,omitempty"`
 }
 
 type persistedContainerWithRootFSLazy struct {
@@ -714,6 +747,14 @@ type persistedContainerWithMountedFileLazy struct {
 	Target         string `json:"target"`
 	SourceResultID uint64 `json:"sourceResultID"`
 	Owner          string `json:"owner,omitempty"`
+	Readonly       bool   `json:"readonly,omitempty"`
+}
+
+type persistedContainerWithMountedPathDockerfileCompatLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Target         string `json:"target"`
+	SourceResultID uint64 `json:"sourceResultID"`
+	SourcePath     string `json:"sourcePath,omitempty"`
 	Readonly       bool   `json:"readonly,omitempty"`
 }
 
@@ -986,6 +1027,7 @@ func materializeContainerStateFromParent(ctx context.Context, dst *Container, pa
 	dst.Platform = parent.Self().Platform
 	dst.Annotations = slices.Clone(parent.Self().Annotations)
 	dst.Secrets = slices.Clone(parent.Self().Secrets)
+	dst.VolatileEnv = slices.Clone(parent.Self().VolatileEnv)
 	dst.Sockets = slices.Clone(parent.Self().Sockets)
 	dst.ImageRef = parent.Self().ImageRef
 	dst.Ports = slices.Clone(parent.Self().Ports)
@@ -1224,7 +1266,7 @@ func (container *Container) CacheUsageIdentities() []string {
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (container *Container) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (container *Container) CacheUsageSize(ctx context.Context, sizeProvider dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if container == nil || identity == "" {
 		return 0, false, nil
 	}
@@ -1287,18 +1329,10 @@ func (container *Container) CacheUsageSize(ctx context.Context, identity string)
 		return 0, false, nil
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return 0, false, err
+	if sizeProvider == nil {
+		return 0, false, nil
 	}
-	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, identity, bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return 0, false, err
-	}
-	defer func() {
-		_ = ref.Release(context.WithoutCancel(ctx))
-	}()
-	size, err := ref.Size(ctx)
+	size, err := sizeProvider.SnapshotSize(ctx, identity)
 	if err != nil {
 		return 0, false, err
 	}
@@ -1438,6 +1472,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		Services:           services,
 		DefaultTerminalCmd: container.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
+		VolatileEnv:        slices.Clone(container.VolatileEnv),
 		DefaultArgs:        container.DefaultArgs,
 	}
 	if container.Lazy != nil {
@@ -1676,6 +1711,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		Services:           services,
 		DefaultTerminalCmd: persisted.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
+		VolatileEnv:        slices.Clone(persisted.VolatileEnv),
 		DefaultArgs:        persisted.DefaultArgs,
 	}
 	if persisted.Form != persistedContainerFormLazy {
@@ -1880,7 +1916,7 @@ func targetParentDirectoryForContainerPath(ctx context.Context, parent dagql.Obj
 	}
 }
 
-func expandContainerInput(container *Container, input string, expand bool) (string, error) {
+func ExpandContainerInput(container *Container, input string, expand bool) (string, error) {
 	if !expand {
 		return input, nil
 	}
@@ -1889,11 +1925,19 @@ func expandContainerInput(container *Container, input string, expand bool) (stri
 	for _, secret := range container.Secrets {
 		secretEnvs = append(secretEnvs, secret.EnvName)
 	}
+	volatileEnvs := []string{}
+	WalkEnv(container.VolatileEnv, func(name, _, _ string) {
+		volatileEnvs = append(volatileEnvs, name)
+	})
 
 	var secretEnvFoundError error
 	expanded := os.Expand(input, func(k string) string {
 		if slices.Contains(secretEnvs, k) {
 			secretEnvFoundError = fmt.Errorf("expand cannot be used with secret env variable %q", k)
+			return ""
+		}
+		if slices.Contains(volatileEnvs, k) {
+			secretEnvFoundError = fmt.Errorf("expand cannot be used with volatile env variable %q", k)
 			return ""
 		}
 
@@ -1907,7 +1951,7 @@ func expandContainerInput(container *Container, input string, expand bool) (stri
 }
 
 func resolveContainerInputPath(container *Container, rawPath string, expand bool) (string, error) {
-	path, err := expandContainerInput(container, rawPath, expand)
+	path, err := ExpandContainerInput(container, rawPath, expand)
 	if err != nil {
 		return "", err
 	}
@@ -2236,7 +2280,7 @@ func (lazy *ContainerWithEnvVariableLazy) Evaluate(ctx context.Context, containe
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		value, err := expandContainerInput(container, lazy.Value, lazy.Expand)
+		value, err := ExpandContainerInput(container, lazy.Value, lazy.Expand)
 		if err != nil {
 			return err
 		}
@@ -2364,6 +2408,38 @@ func (lazy *ContainerWithSystemEnvVariableLazy) EncodePersisted(ctx context.Cont
 	})
 }
 
+func (lazy *ContainerWithVolatileVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withVolatileVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.WithVolatileVariable(lazy.Name, lazy.Value)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithVolatileVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+		Value:          lazy.Value,
+	})
+}
+
 func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withoutEnvVariable", func(ctx context.Context) error {
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
@@ -2384,6 +2460,37 @@ func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, conta
 		}
 		container.Lazy = nil
 		return nil
+	})
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutVolatileVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.WithoutVolatileVariable(lazy.Name)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutVolatileVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
 	})
 }
 
@@ -3366,91 +3473,19 @@ func (lazy *ContainerFileLazy) EncodePersisted(ctx context.Context, cache dagql.
 	})
 }
 
-func containerWithDirectoryOpFromLazy(lazy *ContainerWithDirectoryLazy) containerWithDirectoryOp {
-	return containerWithDirectoryOp{
-		Path:   lazy.Path,
-		Source: lazy.Source,
-		Filter: lazy.Filter,
-		Owner:  lazy.Owner,
-	}
-}
-
-func containerWithDirectoryOwnerRequiresParentFS(owner string) bool {
-	if owner == "" {
-		return false
-	}
-
-	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
-	if _, err := parseUID(uidOrName); err != nil {
-		return true
-	}
-	if hasGroup {
-		if _, err := parseUID(gidOrName); err != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func collectContainerWithDirectoryChain(lazy *ContainerWithDirectoryLazy) (dagql.ObjectResult[*Container], []containerWithDirectoryOp) {
-	ops := []containerWithDirectoryOp{containerWithDirectoryOpFromLazy(lazy)}
-	base := lazy.Parent
-
-	for {
-		parent := base.Self()
-		if parent == nil {
-			break
-		}
-		parentLazy, ok := parent.Lazy.(*ContainerWithDirectoryLazy)
-		if !ok || parentLazy.LazyInitComplete || containerWithDirectoryOwnerRequiresParentFS(parentLazy.Owner) {
-			break
-		}
-		ops = append(ops, containerWithDirectoryOpFromLazy(parentLazy))
-		base = parentLazy.Parent
-	}
-
-	slices.Reverse(ops)
-	return base, ops
-}
-
 func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withDirectory", func(ctx context.Context) error {
-		if containerWithDirectoryOwnerRequiresParentFS(lazy.Owner) {
-			cache, err := dagql.EngineCache(ctx)
-			if err != nil {
-				return err
-			}
-			if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-				return err
-			}
-			if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-				return err
-			}
-			_, err = container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
-			if err != nil {
-				return err
-			}
-			container.Lazy = nil
-			return nil
-		}
-
-		base, ops := collectContainerWithDirectoryChain(lazy)
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
 		}
-		evaluate := make([]dagql.AnyResult, 0, 1+len(ops))
-		evaluate = append(evaluate, base)
-		for _, op := range ops {
-			evaluate = append(evaluate, op.Source)
-		}
-		if err := cache.Evaluate(ctx, evaluate...); err != nil {
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
 			return err
 		}
-		if err := materializeContainerStateFromParent(ctx, container, base); err != nil {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		if _, err := container.withDirectoryChainFromCurrentState(ctx, base, ops); err != nil {
+		if _, err := container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner); err != nil {
 			return err
 		}
 		container.Lazy = nil
@@ -3645,6 +3680,59 @@ func (lazy *ContainerWithMountedFileLazy) EncodePersisted(ctx context.Context, c
 		Target:         lazy.Target,
 		SourceResultID: sourceID,
 		Owner:          lazy.Owner,
+		Readonly:       lazy.Readonly,
+	})
+}
+
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withMountedPathDockerfileCompat", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err = container.WithMountedPathDockerfileCompat(ctx, lazy.Target, lazy.Source, lazy.SourcePath, lazy.Readonly)
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withMountedPathDockerfileCompat parent")
+	if err != nil {
+		return nil, err
+	}
+	source, err := attachDirectoryResult(attach, lazy.Source, "attach container withMountedPathDockerfileCompat source")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Source = source
+	return []dagql.AnyResult{parent, source}, nil
+}
+
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedPathDockerfileCompat parent")
+	if err != nil {
+		return nil, err
+	}
+	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withMountedPathDockerfileCompat source")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithMountedPathDockerfileCompatLazy{
+		ParentResultID: parentID,
+		Target:         lazy.Target,
+		SourceResultID: sourceID,
+		SourcePath:     lazy.SourcePath,
 		Readonly:       lazy.Readonly,
 	})
 }
@@ -4193,6 +4281,22 @@ func decodePersistedContainerLazy(
 			Name:      persisted.Name,
 		}
 		return nil
+	case "withVolatileVariable":
+		var persisted persistedContainerWithVolatileVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withVolatileVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withVolatileVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithVolatileVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+			Value:     persisted.Value,
+		}
+		return nil
 	case "withoutEnvVariable":
 		var persisted persistedContainerWithoutEnvVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -4203,6 +4307,21 @@ func decodePersistedContainerLazy(
 			return err
 		}
 		container.Lazy = &ContainerWithoutEnvVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "withoutVolatileVariable":
+		var persisted persistedContainerWithoutVolatileVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutVolatileVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutVolatileVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutVolatileVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
@@ -4443,15 +4562,24 @@ func decodePersistedContainerLazy(
 		if err != nil {
 			return err
 		}
-		container.Lazy = &ContainerFromImageRefLazy{
-			Parent:       parent,
-			LazyState:    NewLazyState(),
-			CanonicalRef: persisted.CanonicalRef,
-			Config:       persisted.Config,
-			ImageRef:     persisted.ImageRef,
-			Platform:     persisted.Platform,
-			ResolveMode:  serverresolver.ResolveModeDefault,
+		lazy := &ContainerFromImageRefLazy{
+			Parent:            parent,
+			LazyState:         NewLazyState(),
+			CanonicalRef:      persisted.CanonicalRef,
+			Config:            persisted.Config,
+			ImageRef:          persisted.ImageRef,
+			Platform:          persisted.Platform,
+			ResolveMode:       serverresolver.ResolveModeDefault,
+			RegistryTransport: persisted.RegistryTransport,
 		}
+		if len(persisted.RegistryServices) > 0 {
+			services, err := decodePersistedServiceBindings(ctx, dag, "container from registry", persisted.RegistryServices)
+			if err != nil {
+				return err
+			}
+			lazy.RegistryServices = services
+		}
+		container.Lazy = lazy
 		return nil
 	case "withRootfs":
 		var persisted persistedContainerWithRootFSLazy
@@ -4558,6 +4686,28 @@ func decodePersistedContainerLazy(
 			Source:    source,
 			Owner:     persisted.Owner,
 			Readonly:  persisted.Readonly,
+		}
+		return nil
+	case "__withMountedPathDockerfileCompat":
+		var persisted persistedContainerWithMountedPathDockerfileCompatLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withMountedPathDockerfileCompat lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedPathDockerfileCompat parent")
+		if err != nil {
+			return err
+		}
+		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withMountedPathDockerfileCompat source")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithMountedPathDockerfileCompatLazy{
+			LazyState:  NewLazyState(),
+			Parent:     parent,
+			Target:     persisted.Target,
+			Source:     source,
+			SourcePath: persisted.SourcePath,
+			Readonly:   persisted.Readonly,
 		}
 		return nil
 	case "withMountedCache":
@@ -4829,9 +4979,16 @@ func (container *Container) FromCanonicalRef(
 	if err != nil {
 		return fmt.Errorf("failed to get registry resolver: %w", err)
 	}
+	network, detach, err := ContainerRegistryNetwork(ctx, container.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
 	pulled, err := rslvr.Pull(ctx, refStr, serverresolver.PullOpts{
 		Platform:    platform.Spec(),
 		ResolveMode: serverresolver.ResolveModeDefault,
+		Network:     network,
 	})
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", refStr, err)
@@ -5142,190 +5299,6 @@ func (container *Container) WithDirectory(
 	}
 	container.ImageRef = ""
 	return container, nil
-}
-
-// mutates container caller must have handled cloning or creating a new child.
-func (container *Container) withDirectoryChainFromCurrentState(
-	ctx context.Context,
-	parentForOwnership dagql.ObjectResult[*Container],
-	ops []containerWithDirectoryOp,
-) (*Container, error) {
-	type batch struct {
-		target *LazyAccessor[*Directory, *Container]
-		path   string
-		ops    []directoryWithDirectoryOp
-	}
-
-	var current batch
-	flush := func() error {
-		if len(current.ops) == 0 {
-			return nil
-		}
-
-		targetParent, err := materializedTargetParentDirectoryForContainerPath(ctx, container, current.path)
-		if err != nil {
-			return err
-		}
-		if targetParentRef, ok := targetParent.Snapshot.Peek(); ok && targetParentRef != nil {
-			defer targetParentRef.Release(context.WithoutCancel(ctx))
-		}
-		dir, err := bareDirectoryForContainerPath(container, current.path)
-		if err != nil {
-			return err
-		}
-		if err := dir.evaluateWithDirectoryChainFromMaterializedBase(ctx, targetParent, current.ops); err != nil {
-			return err
-		}
-
-		current = batch{}
-		container.ImageRef = ""
-		return nil
-	}
-
-	for _, op := range ops {
-		mnt, mntSubpath, err := locatePath(container, op.Path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to locate path %s: %w", op.Path, err)
-		}
-
-		if mnt != nil && mnt.FileSource != nil && (mntSubpath == "/" || mntSubpath == "" || mntSubpath == ".") {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-			if _, err := container.withDirectoryFromCurrentState(ctx, parentForOwnership, op.Path, op.Source, op.Filter, op.Owner); err != nil {
-				return nil, err
-			}
-			continue
-		}
-
-		var target *LazyAccessor[*Directory, *Container]
-		switch {
-		case mnt == nil:
-			if err := container.ensureRootFS(ctx); err != nil {
-				return nil, err
-			}
-			target = container.FS
-		case mnt.DirectorySource != nil:
-			target = mnt.DirectorySource
-		default:
-			if err := flush(); err != nil {
-				return nil, err
-			}
-			if _, err := container.withDirectoryFromCurrentState(ctx, parentForOwnership, op.Path, op.Source, op.Filter, op.Owner); err != nil {
-				return nil, err
-			}
-			continue
-		}
-
-		resolvedOwner := op.Owner
-		if op.Owner != "" {
-			if containerWithDirectoryOwnerRequiresParentFS(op.Owner) {
-				return nil, fmt.Errorf("container withDirectory chain replay requires numeric owner, got %q", op.Owner)
-			}
-			ownership, err := container.ownership(ctx, parentForOwnership, op.Owner)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve ownership for %s: %w", op.Owner, err)
-			}
-			resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
-		}
-
-		if len(current.ops) != 0 && current.target != target {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-		}
-		if len(current.ops) == 0 {
-			current.target = target
-			current.path = op.Path
-		}
-		current.ops = append(current.ops, directoryWithDirectoryOp{
-			DestDir: mntSubpath,
-			Source:  op.Source,
-			Filter:  op.Filter,
-			Owner:   resolvedOwner,
-		})
-	}
-
-	if err := flush(); err != nil {
-		return nil, err
-	}
-	return container, nil
-}
-
-// mutates container caller must have handled cloning or creating a new child.
-func (container *Container) withDirectoryFromCurrentState(
-	ctx context.Context,
-	parentForOwnership dagql.ObjectResult[*Container],
-	subdir string,
-	src dagql.ObjectResult[*Directory],
-	filter CopyFilter,
-	owner string,
-) (*Container, error) {
-	mnt, mntSubpath, err := locatePath(container, subdir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to locate path %s: %w", subdir, err)
-	}
-
-	if mnt != nil && mnt.FileSource != nil && (mntSubpath == "/" || mntSubpath == "" || mntSubpath == ".") {
-		container, err = container.WithoutMount(ctx, mnt.Target)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
-		}
-		return container.withDirectoryFromCurrentState(ctx, parentForOwnership, subdir, src, filter, owner)
-	}
-
-	resolvedOwner := owner
-	if owner != "" {
-		if containerWithDirectoryOwnerRequiresParentFS(owner) {
-			return nil, fmt.Errorf("container withDirectory chain replay requires numeric owner, got %q", owner)
-		}
-		ownership, err := container.ownership(ctx, parentForOwnership, owner)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
-		}
-		resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
-	}
-
-	if mnt == nil {
-		if err := container.ensureRootFS(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	targetParent, err := materializedTargetParentDirectoryForContainerPath(ctx, container, subdir)
-	if err != nil {
-		return nil, err
-	}
-	if targetParentRef, ok := targetParent.Snapshot.Peek(); ok && targetParentRef != nil {
-		defer targetParentRef.Release(context.WithoutCancel(ctx))
-	}
-	dir, err := bareDirectoryForContainerPath(container, subdir)
-	if err != nil {
-		return nil, err
-	}
-	if err := dir.evaluateWithDirectoryChainFromMaterializedBase(ctx, targetParent, []directoryWithDirectoryOp{
-		{
-			DestDir: mntSubpath,
-			Source:  src,
-			Filter:  filter,
-			Owner:   resolvedOwner,
-		},
-	}); err != nil {
-		return nil, err
-	}
-	container.ImageRef = ""
-	return container, nil
-}
-
-func materializedTargetParentDirectoryForContainerPath(ctx context.Context, current *Container, targetPath string) (*Directory, error) {
-	if current == nil {
-		return nil, fmt.Errorf("container lazy current state is nil")
-	}
-	dir, err := bareDirectoryForContainerPath(current, targetPath)
-	if err != nil {
-		return nil, err
-	}
-	return cloneDetachedDirectoryForContainerResult(ctx, dir)
 }
 
 // mutates container caller must have handled cloning or creating a new child.
@@ -5660,6 +5633,175 @@ func (container *Container) WithMountedFile(
 }
 
 // mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithMountedPathDockerfileCompat(
+	ctx context.Context,
+	target string,
+	source dagql.ObjectResult[*Directory],
+	sourcePath string,
+	readonly bool,
+) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+	sourcePath = cleanDockerfileCompatMountSourcePath(sourcePath)
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, source); err != nil {
+		return nil, err
+	}
+
+	if path.Clean(sourcePath) == "/" {
+		sourceDir, err := cloneDetachedDirectoryForContainerResult(ctx, source.Self())
+		if err != nil {
+			return nil, err
+		}
+		mountSource := new(LazyAccessor[*Directory, *Container])
+		mountSource.setValue(sourceDir)
+		container.Mounts = container.Mounts.With(ContainerMount{
+			DirectorySource: mountSource,
+			Target:          target,
+			Readonly:        readonly,
+		})
+		container.ImageRef = ""
+		return container, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stat, err := source.Self().Stat(ctx, source, srv, sourcePath, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if stat.FileType == FileTypeDirectory {
+		sourceDir, err := detachedDirectoryAtSourcePath(ctx, source, sourcePath)
+		if err != nil {
+			return nil, err
+		}
+		mountSource := new(LazyAccessor[*Directory, *Container])
+		mountSource.setValue(sourceDir)
+		container.Mounts = container.Mounts.With(ContainerMount{
+			DirectorySource: mountSource,
+			Target:          target,
+			Readonly:        readonly,
+		})
+		container.ImageRef = ""
+		return container, nil
+	}
+	if dockerfileCompatMountSourcePathHasDirHint(sourcePath) {
+		return nil, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", sourcePath)}
+	}
+
+	sourceFile, err := detachedFileAtSourcePath(ctx, source, sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	mountSource := new(LazyAccessor[*File, *Container])
+	mountSource.setValue(sourceFile)
+	container.Mounts = container.Mounts.With(ContainerMount{
+		FileSource: mountSource,
+		Target:     target,
+		Readonly:   readonly,
+	})
+	container.ImageRef = ""
+	return container, nil
+}
+
+func cleanDockerfileCompatMountSourcePath(sourcePath string) string {
+	if sourcePath == "" {
+		return "/"
+	}
+	trailingSlash := dockerfileCompatMountSourcePathHasDirHint(sourcePath)
+	sourcePath = path.Clean(sourcePath)
+	if !strings.HasPrefix(sourcePath, "/") {
+		sourcePath = "/" + sourcePath
+	}
+	if trailingSlash && !strings.HasSuffix(sourcePath, "/") {
+		sourcePath += "/"
+	}
+	return sourcePath
+}
+
+func dockerfileCompatMountSourcePathHasDirHint(sourcePath string) bool {
+	return strings.HasSuffix(sourcePath, "/") || strings.HasSuffix(sourcePath, "/.")
+}
+
+//nolint:dupl // symmetric with detachedFileAtSourcePath; sharing hides Directory vs File specifics
+func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Directory], sourcePath string) (*Directory, error) {
+	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory path: %w", err)
+	}
+	sourceSnapshot, err := source.Self().Snapshot.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory snapshot: %w", err)
+	}
+	if sourceSnapshot == nil {
+		return nil, fmt.Errorf("source directory snapshot is nil")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, sourceSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+
+	dir := &Directory{
+		Platform: source.Self().Platform,
+		Services: slices.Clone(source.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.Dir.setValue(path.Join(sourceDirPath, sourcePath))
+	dir.Snapshot.setValue(reopened)
+	return dir, nil
+}
+
+//nolint:dupl // symmetric with detachedDirectoryAtSourcePath; sharing hides File vs Directory specifics
+func detachedFileAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Directory], sourcePath string) (*File, error) {
+	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory path: %w", err)
+	}
+	sourceSnapshot, err := source.Self().Snapshot.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory snapshot: %w", err)
+	}
+	if sourceSnapshot == nil {
+		return nil, fmt.Errorf("source directory snapshot is nil")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, sourceSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+
+	file := &File{
+		Platform: source.Self().Platform,
+		Services: slices.Clone(source.Self().Services),
+		File:     new(LazyAccessor[string, *File]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+	}
+	file.File.setValue(path.Join(sourceDirPath, sourcePath))
+	file.Snapshot.setValue(reopened)
+	return file, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithMountedCache(
 	ctx context.Context,
 	target string,
@@ -5868,6 +6010,32 @@ func (container *Container) WithSecretVariable(
 	container.ImageRef = ""
 
 	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithVolatileVariable(name string, value string) *Container {
+	container.VolatileEnv = AddEnv(container.VolatileEnv, name, value)
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithoutVolatileVariable(name string) *Container {
+	newEnv := []string{}
+	WalkEnv(container.VolatileEnv, func(k, _, env string) {
+		if !shell.EqualEnvKeys(k, name) {
+			newEnv = append(newEnv, env)
+		}
+	})
+	container.VolatileEnv = newEnv
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container
 }
 
 // mutates container caller must have handled cloning or creating a new child.
@@ -6204,6 +6372,8 @@ func (container *Container) Publish(
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
+	registryServices ServiceBindings,
+	registryTransport serverresolver.RegistryTransport,
 ) (string, error) {
 	variants := filterEmptyContainers(append([]*Container{container}, platformVariants...))
 	inputByPlatform, err := getVariantRefs(ctx, variants)
@@ -6219,8 +6389,13 @@ func (container *Container) Publish(
 	if err != nil {
 		return "", fmt.Errorf("failed to get engine client: %w", err)
 	}
+	network, detach, err := ContainerRegistryNetwork(ctx, registryServices)
+	if err != nil {
+		return "", err
+	}
+	defer detach()
 
-	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression))
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, ref, useOCIMediaTypes(mediaTypes), string(forcedCompression), network, registryTransport)
 	if err != nil {
 		return "", err
 	}
@@ -6445,6 +6620,82 @@ func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Ob
 	})
 
 	return container, nil
+}
+
+// ContainerRegistryNetwork starts service bindings for a registry operation and
+// returns the Dagger DNS view that should apply while that operation is running.
+func ContainerRegistryNetwork(ctx context.Context, bindings ServiceBindings) (serverresolver.NetworkConfig, func(), error) {
+	if len(bindings) == 0 {
+		return serverresolver.NetworkConfig{}, func() {}, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, bindings)
+	if err != nil {
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+
+	dns, err := DNSConfig(ctx)
+	if err != nil {
+		detach()
+		return serverresolver.NetworkConfig{}, nil, err
+	}
+
+	hostAliases := map[string]string{}
+	for _, binding := range bindings {
+		// Registry refs use the caller's binding aliases, while Dagger DNS knows
+		// the service by its canonical hostname.
+		hostAliases[binding.Hostname] = binding.Hostname
+		aliases := slices.Clone(binding.Aliases)
+		slices.Sort(aliases)
+		for _, alias := range aliases {
+			hostAliases[alias] = binding.Hostname
+		}
+	}
+
+	return serverresolver.NetworkConfig{
+		DNS:         dns,
+		HostAliases: hostAliases,
+	}, detach, nil
+}
+
+func ContainerRegistryServiceBinding(ctx context.Context, ref string, service dagql.ObjectResult[*Service]) (ServiceBindings, error) {
+	if service.Self() == nil {
+		return nil, nil
+	}
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse image address %s: %w", ref, err)
+	}
+	host := reference.Domain(refName)
+	alias := host
+	// The image ref may include a port, like "registry:5000/app:latest".
+	// Dagger DNS only aliases the hostname, so bind "registry" while leaving
+	// the original ref as "registry:5000/app:latest".
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		alias = h
+	}
+
+	svcDig, err := service.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svcHost, err := service.Self().Hostname(ctx, svcDig)
+	if err != nil {
+		return nil, err
+	}
+	return ServiceBindings{{
+		Service:  service,
+		Hostname: svcHost,
+		Aliases:  AliasSet{alias},
+	}}, nil
 }
 
 func (container *Container) ImageRefOrErr(ctx context.Context) (string, error) {

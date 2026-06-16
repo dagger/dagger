@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `SecretID` scalar type represents an identifier for an object of type Secret.
+ * A unique identifier for an object.
  */
-readonly class SecretId extends Client\AbstractId
+readonly class SecretId extends Client\AbstractScalar
 {
 }

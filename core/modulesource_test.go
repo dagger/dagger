@@ -1,10 +1,110 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/dagql"
 )
+
+type moduleSourceAttachTestSDK struct {
+	dep dagql.AnyResult
+}
+
+type moduleSourceSelfCallsTestSDK struct {
+	moduleSourceAttachTestSDK
+}
+
+func (sdk *moduleSourceSelfCallsTestSDK) AlwaysEnablesSelfCalls() bool {
+	return true
+}
+
+func (sdk *moduleSourceAttachTestSDK) AsRuntime() (Runtime, bool) {
+	return nil, false
+}
+
+func (sdk *moduleSourceAttachTestSDK) AsModuleTypes() (ModuleTypes, bool) {
+	return nil, false
+}
+
+func (sdk *moduleSourceAttachTestSDK) AsCodeGenerator() (CodeGenerator, bool) {
+	return nil, false
+}
+
+func (sdk *moduleSourceAttachTestSDK) AsClientGenerator() (ClientGenerator, bool) {
+	return nil, false
+}
+
+func (sdk *moduleSourceAttachTestSDK) CloneForModuleSource(*ModuleSource) SDK {
+	if sdk == nil {
+		return nil
+	}
+	cp := *sdk
+	return &cp
+}
+
+func (sdk *moduleSourceAttachTestSDK) AttachDependencyResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	attached, err := attach(sdk.dep)
+	if err != nil {
+		return nil, err
+	}
+	sdk.dep = attached
+	return []dagql.AnyResult{attached}, nil
+}
+
+func TestModuleSourceAttachDependencyResultsRetainsSDKImpl(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	dep, err := dagql.NewResultForCall(
+		dagql.String("sdk dependency"),
+		moduleSourceTestSyntheticCall("moduleSourceSDKDep", dagql.String("")),
+	)
+	require.NoError(t, err)
+	attachedDep, err := dagql.NewResultForCall(
+		dagql.String("attached sdk dependency"),
+		moduleSourceTestSyntheticCall("moduleSourceAttachedSDKDep", dagql.String("")),
+	)
+	require.NoError(t, err)
+
+	sdk := &moduleSourceAttachTestSDK{dep: dep}
+	src := &ModuleSource{SDKImpl: sdk}
+
+	deps, err := src.AttachDependencyResults(ctx, nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+		require.Equal(t, dep.Unwrap(), res.Unwrap())
+		return attachedDep, nil
+	})
+	require.NoError(t, err)
+	require.Len(t, deps, 1)
+	require.Equal(t, attachedDep.Unwrap(), deps[0].Unwrap())
+	require.Equal(t, attachedDep.Unwrap(), sdk.dep.Unwrap())
+}
+
+func TestModuleSourcePersistenceRetainsSelfCallsCapability(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	src := &ModuleSource{
+		SDK:     &SDKConfig{Source: "dang"},
+		SDKImpl: &moduleSourceSelfCallsTestSDK{},
+	}
+	require.True(t, src.SelfCallsEnabled())
+
+	encoded, err := src.EncodePersistedObject(ctx, nil)
+	require.NoError(t, err)
+
+	decoded, err := (&ModuleSource{}).DecodePersistedObject(ctx, nil, 0, nil, encoded.JSON)
+	require.NoError(t, err)
+	decodedSrc, ok := decoded.(*ModuleSource)
+	require.True(t, ok)
+	require.True(t, decodedSrc.SelfCallsEnabled())
+}
 
 func TestGitModuleSourceSymbolic(t *testing.T) {
 	testCases := []struct {
@@ -45,5 +145,13 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 			result := src.AsString()
 			require.Equal(t, tc.expected, result, "AsString() returned unexpected result")
 		})
+	}
+}
+
+func moduleSourceTestSyntheticCall(op string, typ dagql.Typed) *dagql.ResultCall {
+	return &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: op,
+		Type:        dagql.NewResultCallType(typ.Type()),
 	}
 }

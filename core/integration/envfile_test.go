@@ -1,5 +1,12 @@
 package core
 
+// These tests cover the EnvFile object, which represents dotenv-style key/value
+// files. They verify parsing, mutation, and namespace behavior.
+//
+// See also:
+// - workspace_compat_env_test.go: legacy `.env` module configuration.
+// - workspace_env_management_test.go: named workspace environments.
+
 import (
 	"context"
 	"encoding/base64"
@@ -484,61 +491,11 @@ func (EnvFileSuite) TestCachingWithIndirectVar(ctx context.Context, t *testctx.T
 
 func (EnvFileSuite) TestSecretFile(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
-
-	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-	initOutput, err := initCmd.CombinedOutput()
-	require.NoError(t, err, string(initOutput))
-
-	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-import (
-	"context"
-)
-
-type Test struct {}
-
-func (m *Test) Foo(ctx context.Context) (string, error) {
-	return dag.Dep().Bar(ctx)
-}
-`), 0644)
-	require.NoError(t, err)
-
+	copyTestdataFixture(ctx, t, modDir, "modules", "go", "envfile-secret-file")
 	depDir := filepath.Join(modDir, "dep")
-	require.NoError(t, os.Mkdir(depDir, 0755))
-
-	initDepCmd := hostDaggerCommand(ctx, t, depDir, "init", "--source=.", "--name=dep", "--sdk=go")
-	initDepOutput, err := initDepCmd.CombinedOutput()
-	require.NoError(t, err, string(initDepOutput))
-
-	err = os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
-import (
-	"context"
-	"encoding/base64"
-
-	"dagger/dep/internal/dagger"
-)
-
-type Dep struct {}
-
-func (m *Dep) Bar(
-	ctx context.Context, 
-	// +optional
-	s *dagger.Secret,
-) (string, error) {
-	pt, err := s.Plaintext(ctx)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString([]byte(pt)), nil
-}
-`), 0644)
-	require.NoError(t, err)
-
-	installCmd := hostDaggerCommand(ctx, t, modDir, "install", depDir)
-	installOutput, err := installCmd.CombinedOutput()
-	require.NoError(t, err, string(installOutput))
 
 	secretFile := filepath.Join(depDir, "topsecret.txt")
-	err = os.WriteFile(secretFile, []byte(`doodoo`), 0644)
+	err := os.WriteFile(secretFile, []byte(`doodoo`), 0644)
 	require.NoError(t, err)
 
 	envFile := filepath.Join(depDir, ".env")
@@ -564,6 +521,34 @@ func (m *Dep) Bar(
 	decodeOutput, err := base64.StdEncoding.DecodeString(scalarOutput)
 	require.NoError(t, err, string(callOutput))
 	require.Equal(t, "doodoo", string(decodeOutput), string(callOutput))
+}
+
+// Regression test for https://github.com/dagger/dagger/issues/13291: a `.env`
+// file using the common `export KEY=value` convention must not break env file
+// loading.
+func (EnvFileSuite) TestExportPrefix(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ef := c.File(".env", `export FOO=bar
+export BAZ="qux quux"
+export REF=$FOO-suffix
+PLAIN=plain
+`).AsEnvFile()
+
+	foo, err := ef.Get(ctx, "FOO")
+	require.NoError(t, err)
+	require.Equal(t, "bar", foo)
+
+	baz, err := ef.Get(ctx, "BAZ")
+	require.NoError(t, err)
+	require.Equal(t, "qux quux", baz)
+
+	ref, err := ef.Get(ctx, "REF")
+	require.NoError(t, err)
+	require.Equal(t, "bar-suffix", ref)
+
+	plain, err := ef.Get(ctx, "PLAIN")
+	require.NoError(t, err)
+	require.Equal(t, "plain", plain)
 }
 
 func (EnvFileSuite) TestUpdateVariableWithTheSameValue(ctx context.Context, t *testctx.T) {

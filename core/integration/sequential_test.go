@@ -1,5 +1,9 @@
 package core
 
+// These tests cover cases that cannot safely run in parallel. The current suite
+// verifies that insecure-root network namespace changes do not leak between
+// container execs.
+
 import (
 	"context"
 	"testing"

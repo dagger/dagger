@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+ * A unique identifier for an object.
  */
-readonly class SearchResultId extends Client\AbstractId
+readonly class SearchResultId extends Client\AbstractScalar
 {
 }

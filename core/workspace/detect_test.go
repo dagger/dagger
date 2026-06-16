@@ -2,49 +2,107 @@ package workspace
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestDetectIgnoresWorkspaceConfigAndDoesNotReadFile(t *testing.T) {
+func TestDetectInitializedWorkspace(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	existing := map[string]struct{}{
-		"/repo/app/.dagger":             {},
-		"/repo/app/.dagger/config.toml": {},
-		"/repo/.git":                    {},
+		"/repo/app/dagger.toml": {},
+		"/repo/.git":            {},
 	}
 
-	readCalls := 0
-	ws, err := Detect(ctx, fakePathExists(existing), func(context.Context, string) ([]byte, error) {
-		readCalls++
-		return nil, os.ErrNotExist
-	}, "/repo/app")
+	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app")
 	require.NoError(t, err)
-	require.Zero(t, readCalls, "readFile should not be called in the no-config split")
 	require.Equal(t, "/repo", ws.Root)
-	require.Equal(t, "app", ws.Path)
+	require.Equal(t, "app", ws.Cwd)
+	require.Equal(t, "app/dagger.toml", ws.ConfigFile)
+	require.Equal(t, "app/dagger.lock", ws.LockFile)
 }
 
-func TestDetectFallsBackToCwdWithoutGit(t *testing.T) {
+func TestDetectInitializedWorkspaceFromNestedCwd(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	existing := map[string]struct{}{
+		"/repo/dagger.toml": {},
+		"/repo/.git":        {},
+	}
+
+	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app/sub")
+	require.NoError(t, err)
+	require.Equal(t, "/repo", ws.Root)
+	require.Equal(t, "app/sub", ws.Cwd)
+	require.Equal(t, "dagger.toml", ws.ConfigFile)
+	require.Equal(t, "dagger.lock", ws.LockFile)
+}
+
+func TestDetectMissingConfigDoesNotChangeBoundary(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	existing := map[string]struct{}{
+		"/repo/app/.dagger":      {},
+		"/repo/app/.dagger/lock": {},
+		"/repo/.git":             {},
+	}
+
+	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app/sub")
+	require.NoError(t, err)
+	require.Equal(t, "/repo", ws.Root)
+	require.Equal(t, "app/sub", ws.Cwd)
+	require.Empty(t, ws.ConfigFile)
+	require.Equal(t, "app/dagger.lock", ws.LockFile)
+}
+
+func TestDetectUsesExistingLockFile(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	existing := map[string]struct{}{
+		"/repo/dagger.lock": {},
+		"/repo/.git":        {},
+	}
+
+	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app/sub")
+	require.NoError(t, err)
+	require.Equal(t, "/repo", ws.Root)
+	require.Equal(t, "app/sub", ws.Cwd)
+	require.Empty(t, ws.ConfigFile)
+	require.Equal(t, "dagger.lock", ws.LockFile)
+}
+
+func TestDetectMapsExistingLegacyLockFileToCanonicalLockFile(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	existing := map[string]struct{}{
+		"/repo/app/.dagger/lock": {},
+		"/repo/.git":             {},
+	}
+
+	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app/sub")
+	require.NoError(t, err)
+	require.Equal(t, "/repo", ws.Root)
+	require.Equal(t, "app/sub", ws.Cwd)
+	require.Empty(t, ws.ConfigFile)
+	require.Equal(t, "app/dagger.lock", ws.LockFile)
+}
+
+func TestDetectReturnsNilWithoutGit(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	existing := map[string]struct{}{}
 
-	readCalls := 0
-	ws, err := Detect(ctx, fakePathExists(existing), func(context.Context, string) ([]byte, error) {
-		readCalls++
-		return nil, os.ErrNotExist
-	}, "/repo/app")
+	ws, err := Detect(ctx, fakePathExists(existing), "/repo/app")
 	require.NoError(t, err)
-	require.Zero(t, readCalls, "readFile should not be called in the no-config split")
-	require.Equal(t, "/repo/app", ws.Root)
-	require.Equal(t, ".", ws.Path)
+	require.Nil(t, ws)
 }
 
 func fakePathExists(existing map[string]struct{}) PathExistsFunc {

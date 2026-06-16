@@ -54,4 +54,15 @@ type TestDirectives {
   ): [String!]! {
     source.entries
   }
+
+  """
+  Test @cache with an argument referencing an imported symbol
+  (FunctionCachePolicy). Imports are file-scoped, so the directive argument
+  must resolve against the declaring file's scope. Regression test for
+  dagger#13440.
+  """
+  @cache(policy: FunctionCachePolicy.Never)
+  pub withNeverCache(): String! {
+    "never"
+  }
 }

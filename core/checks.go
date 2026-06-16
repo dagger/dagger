@@ -28,20 +28,22 @@ type CheckGroup struct {
 	Checks []*Check     `json:"checks"`
 }
 
-func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string, noGenerate bool) (*CheckGroup, error) {
+func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string, noGenerate, onlyGenerate bool) (*CheckGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
 	}
 
-	checkNodes, err := rootNode.RollupChecks(ctx, include, nil)
-	if err != nil {
-		return nil, err
-	}
-	checks := make([]*Check, 0, len(checkNodes))
-
-	for _, checkNode := range checkNodes {
-		checks = append(checks, &Check{Node: checkNode})
+	var checks []*Check
+	if !onlyGenerate {
+		checkNodes, err := rootNode.RollupChecks(ctx, include, nil)
+		if err != nil {
+			return nil, err
+		}
+		checks = make([]*Check, 0, len(checkNodes))
+		for _, checkNode := range checkNodes {
+			checks = append(checks, &Check{Node: checkNode})
+		}
 	}
 
 	if !noGenerate {

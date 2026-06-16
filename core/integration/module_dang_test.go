@@ -72,6 +72,16 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		assertEntries(t, out, "keep.log", "keep.txt")
 	})
+
+	t.Run("cache directive with enum argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-directives").
+			With(daggerCall("with-never-cache")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "never", strings.TrimSpace(out))
+	})
 }
 
 func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
@@ -113,6 +123,16 @@ func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "3", strings.TrimSpace(out))
+	})
+
+	t.Run("dependency enum member with digits", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "enum-dependency").
+			With(daggerCall("call-foo")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "P256", strings.TrimSpace(out))
 	})
 }
 
@@ -160,6 +180,17 @@ func (DangSuite) TestCoreTypeShadowing(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (DangSuite) TestWorkspaceArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := moduleEntrypointFixture(t, c, "workspace-arg", "dang/workspace-arg").
+		WithNewFile("marker.txt", "hello from workspace").
+		With(daggerCall("read")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+}
+
 func (DangSuite) TestPrivateArg(_ context.Context, t *testctx.T) {
 	t.Run("default private value", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
@@ -193,6 +224,47 @@ func (DangSuite) TestPrivateArg(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (DangSuite) TestMapFields(_ context.Context, t *testctx.T) {
+	t.Run("map field survives rehydration", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-map-field").
+			With(daggerCall("env-json")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"PATH": "/usr/local/bin:/usr/bin:/bin"}`, out)
+	})
+
+	t.Run("map field mutation across calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-map-field").
+			With(daggerCall("with-env", "--name", "HOME", "--value", "/root", "env-json")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/root"}`, out)
+	})
+
+	t.Run("map nested in anonymous object field", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-map-field").
+			With(daggerCall("nested-json")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"FOO": "bar"}`, out)
+	})
+
+	t.Run("exposing a map via GraphQL errors", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := dangModule(t, c, "test-map-pub").
+			With(daggerCall("env")).
+			Stdout(ctx)
+		requireErrOut(t, err, "cannot be exposed via GraphQL")
+	})
+}
+
 func (DangSuite) TestScalars(_ context.Context, t *testctx.T) {
 	t.Run("timestamp", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
@@ -213,6 +285,98 @@ func (DangSuite) TestScalars(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, out, "example.com")
 	})
+}
+
+func (DangSuite) TestInterfaces(_ context.Context, t *testctx.T) {
+	t.Run("define, implement, and consume within a module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-interface").
+			With(daggerCall("local")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hey, local", strings.TrimSpace(out))
+	})
+
+	t.Run("implement an interface defined by a dependency", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// A type that `implements` a dependency's interface must not be
+		// required to provide the synthesized `id: ID!` field that Dagger
+		// adds to every interface definition.
+		out, err := dangModule(t, c, "test-interface").
+			With(daggerCall("run")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi, world", strings.TrimSpace(out))
+	})
+
+	t.Run("consume structural interface value across dependencies", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-interface/cross-dep").
+			With(daggerCall("run")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ok", strings.TrimSpace(out))
+	})
+}
+
+// TestVersionedSyntax covers the Dang major version routing: modules pinned
+// to an engineVersion before v0.21.5 are evaluated with Dang v1 (`.{ }` is
+// selection), and modules at v0.21.5+ with Dang v2 (`.{ }` is dot-block
+// application, `.{{ }}` is selection). See core/sdk/dang/README.md.
+func (DangSuite) TestVersionedSyntax(_ context.Context, t *testctx.T) {
+	t.Run("v1 selection for modules pinned before v0.21.5", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "legacy-selection").
+			With(daggerCall("contents")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "old syntax", strings.TrimSpace(out))
+
+		out, err = dangModule(t, c, "legacy-selection").
+			With(daggerCall("size")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "10", strings.TrimSpace(out))
+	})
+
+	t.Run("v2 dot-block and selection for modules at v0.21.5+", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "dot-block").
+			With(daggerCall("double", "--n", "21")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "42", strings.TrimSpace(out))
+
+		out, err = dangModule(t, c, "dot-block").
+			With(daggerCall("contents")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new syntax", strings.TrimSpace(out))
+	})
+}
+
+func (DangSuite) TestNullableSDKInputObjectFields(_ context.Context, t *testctx.T) {
+	for _, call := range []string{
+		"all-null",
+		"string-populated",
+		"file-populated",
+		"secret-populated",
+	} {
+		t.Run(call, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := dangModule(t, c, "test-nullable-sdk-input").
+				With(daggerCall(call)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ok", strings.TrimSpace(out))
+		})
+	}
 }
 
 func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {

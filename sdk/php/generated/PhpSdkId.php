@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `PhpSdkID` scalar type represents an identifier for an object of type PhpSdk.
+ * A unique identifier for an object.
  */
-readonly class PhpSdkId extends Client\AbstractId
+readonly class PhpSdkId extends Client\AbstractScalar
 {
 }

@@ -203,7 +203,7 @@ func (env *Env) Checks(ctx context.Context, include []string, noGenerate bool) (
 	if env.MainModule.Self() == nil {
 		return nil, fmt.Errorf("no main module set on environment")
 	}
-	return NewCheckGroup(ctx, env.MainModule, include, noGenerate)
+	return NewCheckGroup(ctx, env.MainModule, include, noGenerate, false)
 }
 
 // Services returns an UpGroup from the main module
@@ -376,6 +376,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 		return fmt.Errorf("failed to lookup ID type for %T", targetType)
 	}
 	typeName := targetType.TypeName()
+	viewFilter := envExtensionViewFilter(targetType)
 	// Install get<TargetType>()
 	envType.Extend(
 		dagql.FieldSpec{
@@ -383,6 +384,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			Description: fmt.Sprintf("Create or update a binding of type %s in the environment", typeName),
 			Type:        envType.Typed(),
 			Directives:  directives,
+			ViewFilter:  viewFilter,
 			Args: dagql.NewInputSpecs(
 				dagql.InputSpec{
 					Name:        "name",
@@ -429,6 +431,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			Description: fmt.Sprintf("Declare a desired %s output to be assigned in the environment", typeName),
 			Type:        envType.Typed(),
 			Directives:  directives,
+			ViewFilter:  viewFilter,
 			Args: dagql.NewInputSpecs(
 				dagql.InputSpec{
 					Name:        "name",
@@ -460,6 +463,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			Args:        dagql.InputSpecs{},
 			DoNotCache:  "Bindings are mutable",
 			Directives:  directives,
+			ViewFilter:  viewFilter,
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			binding := self.(dagql.ObjectResult[*Binding]).Self()
@@ -483,6 +487,17 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 		},
 	)
 	return nil
+}
+
+func (s EnvHook) InstallInterface(_ *dagql.Interface, _ ...*ast.Directive) {
+}
+
+func envExtensionViewFilter(targetType dagql.ObjectType) dagql.ViewFilter {
+	viewFiltered, ok := targetType.(interface{ ViewFilter() dagql.ViewFilter })
+	if !ok {
+		return nil
+	}
+	return viewFiltered.ViewFilter()
 }
 
 func (s EnvHook) InstallObject(targetType dagql.ObjectType, directives ...*ast.Directive) {

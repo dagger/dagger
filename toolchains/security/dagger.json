@@ -1,6 +1,6 @@
 {
   "name": "security",
-  "engineVersion": "v0.21.0",
+  "engineVersion": "v0.21.6",
   "sdk": {
     "source": "dang"
   },

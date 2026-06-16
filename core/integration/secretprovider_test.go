@@ -1,5 +1,12 @@
 package core
 
+// These tests cover external secret providers. They verify provider selection
+// and resolving secrets through provider-specific backends.
+//
+// See also:
+// - secret_test.go: core Secret behavior.
+// - secret_gcp_test.go: GCP-backed secret provider integration.
+
 import (
 	"context"
 	_ "embed"
@@ -7,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,9 +130,126 @@ func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "failed to run secret command")
 }
 
-// TODO: implement - but ideally without being dependent on an external service
-// func (SecretProvider) TestOnePassword(ctx context.Context, t *testctx.T) {
-// }
+func (SecretProvider) TestOnePasswordCache(ctx context.Context, t *testctx.T) {
+	fakeOp := `#!/bin/sh
+set -eu
+if [ "$1" != "read" ] || [ "$2" != "-n" ]; then
+	echo "unexpected op invocation: $*" >&2
+	exit 1
+fi
+if [ "$3" != "$EXPECTED_OP_REF" ]; then
+	echo "unexpected op secret reference: $3 (expected $EXPECTED_OP_REF)" >&2
+	exit 1
+fi
+case "$3" in
+	*ttl=*)
+		echo "ttl query leaked to op ref: $3" >&2
+		exit 1
+		;;
+esac
+count_dir=/tmp/op-counts/$3
+mkdir -p "$count_dir"
+count_file=$count_dir/count
+count=0
+if [ -f "$count_file" ]; then
+	count=$(cat "$count_file")
+fi
+count=$((count + 1))
+printf '%s' "$count" > "$count_file"
+printf 'secret%s' "$count"
+`
+
+	baseContainer := func(c *dagger.Client) *dagger.Container {
+		return c.Container().
+			From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithNewFile("/usr/local/bin/op", fakeOp, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+			WithEnvVariable("OP_SERVICE_ACCOUNT_TOKEN", "")
+	}
+
+	verifySecretFromOnePassword := func(ctx context.Context, base *dagger.Container, secretURL string) (string, error) {
+		return base.
+			WithWorkdir("/work").
+			WithNewFile("dagger.json", `{"name":"foo","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/foo/internal/dagger"
+	"fmt"
+	"time"
+)
+
+type Foo struct{}
+
+func (m *Foo) VerifySecret(ctx context.Context, secret *dagger.Secret) (string, error) {
+	original, err := secret.Plaintext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	time.Sleep(3 * time.Second)
+
+	updated, err := secret.Plaintext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("original: %s\nupdated: %s", original, updated), nil
+}
+`).
+			With(daggerCallAt(".", "-vvv", "verify-secret", fmt.Sprintf("--secret=%s", secretURL))).Stdout(ctx)
+	}
+
+	testcases := []struct {
+		name         string
+		secret       string
+		shouldUpdate bool
+		expectedRef  string
+	}{
+		{
+			name:        "without-ttl",
+			secret:      "op://vault/without-ttl/field",
+			expectedRef: "op://vault/without-ttl/field",
+		},
+		{
+			name:         "with-ttl",
+			secret:       "op://vault/with-ttl/field?ttl=2s",
+			shouldUpdate: true,
+			expectedRef:  "op://vault/with-ttl/field",
+		},
+		{
+			name:        "with-spaces",
+			secret:      "op://vault space/field",
+			expectedRef: "op://vault space/field",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			base := baseContainer(c).
+				WithEnvVariable("CACHE_BUSTER", tc.name).
+				WithEnvVariable("EXPECTED_OP_REF", tc.expectedRef)
+
+			output, err := verifySecretFromOnePassword(ctx, base, tc.secret)
+			require.NoError(t, err)
+
+			lines := strings.Split(strings.TrimSpace(output), "\n")
+			require.Len(t, lines, 2)
+			original := strings.TrimPrefix(lines[0], "original: ")
+			updated := strings.TrimPrefix(lines[1], "updated: ")
+			require.NotEmpty(t, original)
+			require.NotEmpty(t, updated)
+			if tc.shouldUpdate {
+				require.NotEqual(t, original, updated)
+			} else {
+				require.Equal(t, original, updated)
+			}
+		})
+	}
+}
 
 func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
@@ -331,72 +456,17 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 	const vaultImage = "hashicorp/vault:1.18"
 
 	baseContainer := func(c *dagger.Client, vault *dagger.Service) *dagger.Container {
-		return c.Container().
-			From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		return goGitBase(t, c).
 			WithFile("/bin/vault", c.Container().From(vaultImage).File("/bin/vault")).
 			WithEnvVariable("VAULT_ADDR", "http://vault:8200").
 			WithEnvVariable("VAULT_TOKEN", "vault-root-token").
 			WithServiceBinding("vault", vault)
 	}
 
-	verifySecretFromVault := func(ctx context.Context, base *dagger.Container, secretURL string, tcname string) (string, error) {
+	verifySecretFromVault := func(ctx context.Context, c *dagger.Client, base *dagger.Container, secretURL string, tcname string) (string, error) {
 		return base.
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"dagger/foo/internal/dagger"
-	"fmt"
-	"time"
-)
-
-type Foo struct{}
-
-// This function sets the value of secret in vault, gets its plaintext value. Then
-// this function updates the value of secret in vault (to simulate expired or changed secret), and sleeps for 5s to allow for ttl (if any)
-// to expire. It then gets its plaintext value again.
-// After that it returns both the values as string, which our tescase then verifies.
-func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *dagger.Secret, tc string) (string, error) {
-	_, err := dag.Container().From("`+vaultImage+`").
-		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
-		WithEnvVariable("VAULT_TOKEN", "vault-root-token").
-		WithServiceBinding("vault", vault).
-		WithExec([]string{"sh", "-c", fmt.Sprintf("vault kv put secret/%s username=\"admin\" password=\"original-password\"", tc)}).
-		Sync(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	original, err := secret.Plaintext(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	// simulate an update in secret while the pipeline is running
-	_, err = dag.Container().From("`+vaultImage+`").
-		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
-		WithEnvVariable("VAULT_TOKEN", "vault-root-token").
-		WithServiceBinding("vault", vault).
-		WithExec([]string{"sh", "-c", fmt.Sprintf("vault kv put secret/%s username=\"admin\" password=\"updated-password\"", tc)}).Sync(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	// wait for ttl to expire, to simulate a long running process
-	time.Sleep(5 * time.Second)
-
-	// now the pipeline needs secret again.
-	updated, err := secret.Plaintext(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("original: %s\nupdated: %s", original, updated), nil
-}
-`).
+			With(withModuleEntrypointFixture(t, c, ".", "foo", "go/vault-ttl")).
 			With(daggerCall("-vvv", "verify-secret", fmt.Sprintf("--secret=%s", secretURL), "--vault=tcp://vault:8200", fmt.Sprintf("--tc=%s", tcname))).Stdout(ctx)
 	}
 
@@ -443,7 +513,7 @@ func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *d
 			base := baseContainer(c, vault).
 				WithEnvVariable("CACHE_BUSTER", tc.name)
 
-			output, err := verifySecretFromVault(ctx, base, tc.secret, tc.name)
+			output, err := verifySecretFromVault(ctx, c, base, tc.secret, tc.name)
 			require.NoError(t, err)
 			require.Equal(t, fmt.Sprintf("original: original-password\nupdated: %s", tc.expectedUpdatedPassword), output)
 		})

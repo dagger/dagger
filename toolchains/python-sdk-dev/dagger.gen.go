@@ -19,7 +19,7 @@ import (
 
 	"dagger/python-sdk-dev/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -472,6 +475,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pypiRepo", err))
 				}
 			}
+			var pypiUrl string
+			if inputArgs["pypiURL"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["pypiURL"]), &pypiUrl)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pypiURL", err))
+				}
+			}
 			var pypiToken *dagger.Secret
 			if inputArgs["pypiToken"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["pypiToken"]), &pypiToken)
@@ -479,7 +489,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg pypiToken", err))
 				}
 			}
-			return nil, (*PythonSdkDev).Release(&parent, ctx, sourceTag, dryRun, pypiRepo, pypiToken)
+			return nil, (*PythonSdkDev).Release(&parent, ctx, sourceTag, dryRun, pypiRepo, pypiUrl, pypiToken)
 		case "ReleaseDryRun":
 			var parent PythonSdkDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -535,11 +545,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var workspace *dagger.Directory
-			if inputArgs["workspace"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["workspace"]), &workspace)
+			var workspaceDir *dagger.Directory
+			if inputArgs["workspaceDir"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["workspaceDir"]), &workspaceDir)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg workspace", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg workspaceDir", err))
 				}
 			}
 			var sourcePath string
@@ -549,7 +559,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourcePath", err))
 				}
 			}
-			return New(workspace, sourcePath), nil
+			return New(workspaceDir, sourcePath), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
