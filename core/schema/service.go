@@ -359,7 +359,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 			"memoryBytes":     r.MemoryBytes,
 			"memorySoftBytes": r.MemorySoftBytes,
 			"cpus":            r.CPUs,
-			"cpuShares":       r.CPUShares,
+			"cpushares":       r.CPUShares,
 			"pids":            r.Pids,
 		})
 		if err != nil {
