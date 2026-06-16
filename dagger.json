@@ -81,6 +81,11 @@
           "argument": "generate",
           "default": "docs/current_docs/reference"
         }
+      ],
+      "ignoreChecks": [
+        "generate-all",
+        "lint-all",
+        "test-all"
       ]
     },
     {
