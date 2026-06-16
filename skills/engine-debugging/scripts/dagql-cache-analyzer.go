@@ -85,7 +85,7 @@ func main() {
 		persistedRootLimit = flag.Int("persisted-root-limit", 20, "number of persisted roots to print by cumulative size")
 	)
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: go run ./skills/cache-expert/scripts/dagql-cache-analyzer.go [flags] <snapshot.json>\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: go run ./skills/engine-debugging/scripts/dagql-cache-analyzer.go [flags] <snapshot.json>\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

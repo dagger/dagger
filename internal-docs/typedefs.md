@@ -112,6 +112,11 @@ Some important cache-facing properties of that field:
 
 That schema-sensitive cache key is important. Clients call this query frequently, but the result must still invalidate when the served schema changes.
 
+It is also schema-version sensitive. If you add public typedef-visible API
+surface, make sure its field and every exposed type are visible only in the
+intended module views. See `version-gating.md` before changing schema-visible
+types, inputs, enums, interfaces, or legacy ID behavior.
+
 ## `returnAllTypes: true` does more than just recurse
 
 The `returnAllTypes` path is not a dumb tree walk. It does a normalization and deduplication pass that matters a lot for downstream memory and correctness.
