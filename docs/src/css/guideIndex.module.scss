@@ -44,8 +44,8 @@
 
 
   html[data-theme="dark"] & {
-    border-color: rgba(75,75,90, 0.5);
-    background-color: rgba(43, 47, 70, 0.3);
+    border-color: var(--color-whiteAlpha-200);
+    background-color: var(--color-whiteAlpha-50);
   }
 }
 
@@ -102,8 +102,8 @@
   z-index: 99;
 
   html[data-theme="dark"] & {
-    background: var(--color-white);
-    border: 1px solid var(--ifm-menu-color);
+    background: var(--ifm-background-surface-color);
+    border: 1px solid var(--ifm-color-emphasis-300);
   }
 
   ul {
@@ -129,10 +129,10 @@
   }
 
   html[data-theme="dark"] & {
-    background-color: #1a1b30;
-    border-color: rgba(75,75,90, 0.5);
+    background-color: var(--ifm-background-surface-color);
+    border-color: var(--ifm-color-emphasis-300);
     li:hover {
-      background-color: rgba(211, 211, 211, 0.118);
+      background-color: var(--ifm-hover-overlay);
     }
   }
 }
@@ -156,9 +156,9 @@
   }
 
   html[data-theme="dark"] & {
-    box-shadow: 0px 4px 8px 0px rgba(13, 12, 27, 0.50);
-    background-color: rgba(43, 47, 70, 0.3);
-    border-color: rgba(75,75,90, 0.5);
+    box-shadow: 0px 4px 8px 0px var(--color-blackAlpha-700);
+    background-color: var(--color-whiteAlpha-50);
+    border-color: var(--color-whiteAlpha-200);
   }
 }
 

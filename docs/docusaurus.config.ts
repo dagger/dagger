@@ -325,7 +325,7 @@ const config: Config = {
       selector: ".markdown img:not(.not-zoom)",
       background: {
         light: "var(--color-white)",
-        dark: "rgb(50, 50, 50)",
+        dark: "var(--color-backgroundDark)",
       },
       // medium-zoom configuration options
       // Refer to https://github.com/francoischalifour/medium-zoom#options

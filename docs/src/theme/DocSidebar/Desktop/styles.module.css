@@ -53,7 +53,7 @@
   }
 
   :global(html[data-theme="dark"]) .versionSelect {
-    border-color: var(--color-whiteAlpha-700);
+    border-color: var(--color-whiteAlpha-300);
   }
 
   .versionSelect:focus-visible {
