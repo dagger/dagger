@@ -77,6 +77,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	dagql.MustInputSpec(PipelineLabel{}).Install(srv)
 	dagql.MustInputSpec(core.PortForward{}).Install(srv)
 	dagql.MustInputSpec(core.BuildArg{}).Install(srv)
+	dagql.MustInputSpec(core.ContainerExecResources{}).Install(srv)
 
 	dagql.Fields[core.EnvVariable]{}.Install(srv)
 

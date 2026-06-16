@@ -56,6 +56,7 @@ type Service struct {
 	ExperimentalPrivilegedNesting bool
 	InsecureRootCapabilities      bool
 	NoInit                        bool
+	Resources                     *ContainerExecResources
 	ExecMD                        *engineutil.ExecutionMetadata
 	ModuleContext                 dagql.ObjectResult[*Module]
 	ExecMeta                      *executor.Meta
@@ -712,6 +713,7 @@ func (svc *Service) startContainer(
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
 			InsecureRootCapabilities:      svc.InsecureRootCapabilities,
 			NoInit:                        svc.NoInit,
+			Resources:                     svc.Resources,
 		}, false)
 		if err != nil {
 			return err
