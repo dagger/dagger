@@ -690,12 +690,27 @@ func (srv *Server) EngineName() string {
 }
 
 func (srv *Server) Clients() []string {
+	// Snapshot under daggerSessionsMu, then read mainClientCallerID under
+	// stateMu (it is set during initialization). Releasing daggerSessionsMu
+	// before taking stateMu avoids inverting removeDaggerSession's
+	// stateMu->daggerSessionsMu lock order; skip sessions that aren't
+	// initialized yet.
 	srv.daggerSessionsMu.RLock()
-	defer srv.daggerSessionsMu.RUnlock()
+	sessions := make([]*daggerSession, 0, len(srv.daggerSessions))
+	for _, sess := range srv.daggerSessions {
+		sessions = append(sessions, sess)
+	}
+	srv.daggerSessionsMu.RUnlock()
 
 	clients := map[string]struct{}{}
-	for _, sess := range srv.daggerSessions {
+	for _, sess := range sessions {
+		sess.stateMu.RLock()
+		if sess.state != sessionStateInitialized {
+			sess.stateMu.RUnlock()
+			continue
+		}
 		clients[sess.mainClientCallerID] = struct{}{}
+		sess.stateMu.RUnlock()
 	}
 
 	return slices.Collect(maps.Keys(clients))
@@ -906,13 +921,34 @@ func (srv *Server) gcClientDBs() {
 func (srv *Server) activeClientIDs() map[string]bool {
 	keep := map[string]bool{}
 
+	// Snapshot the sessions under daggerSessionsMu, then drop it before taking
+	// per-session locks: clients is written by getOrInitClient under clientMu
+	// (so must be read under clientMu), and removeDaggerSession takes
+	// daggerSessionsMu while holding stateMu, so holding daggerSessionsMu while
+	// acquiring stateMu here would risk a lock-order inversion.
 	srv.daggerSessionsMu.RLock()
+	sessions := make([]*daggerSession, 0, len(srv.daggerSessions))
 	for _, sess := range srv.daggerSessions {
+		sessions = append(sessions, sess)
+	}
+	srv.daggerSessionsMu.RUnlock()
+
+	for _, sess := range sessions {
+		sess.stateMu.RLock()
+		// clients is only populated once a session is initialized, and a
+		// removed session's client DBs are already being torn down, so only
+		// initialized sessions contribute IDs worth keeping.
+		if sess.state != sessionStateInitialized {
+			sess.stateMu.RUnlock()
+			continue
+		}
+		sess.clientMu.RLock()
 		for id := range sess.clients {
 			keep[id] = true
 		}
+		sess.clientMu.RUnlock()
+		sess.stateMu.RUnlock()
 	}
-	srv.daggerSessionsMu.RUnlock()
 
 	return keep
 }

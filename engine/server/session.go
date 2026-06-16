@@ -441,7 +441,17 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		}
 	}
 
+	// clients may be mutated under clientMu alone (e.g. getOrInitClient's
+	// failure cleanup deletes entries without holding stateMu), so snapshot
+	// under clientMu rather than iterating the live map below.
+	sess.clientMu.RLock()
+	clients := make([]*daggerClient, 0, len(sess.clients))
 	for _, client := range sess.clients {
+		clients = append(clients, client)
+	}
+	sess.clientMu.RUnlock()
+
+	for _, client := range clients {
 		releaseGroup.Go(func() error {
 			var errs error
 
@@ -758,8 +768,8 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 		return nil, fmt.Errorf("missing client ID")
 	}
 	srv.daggerSessionsMu.RLock()
-	defer srv.daggerSessionsMu.RUnlock()
 	sess, ok := srv.daggerSessions[sessID]
+	srv.daggerSessionsMu.RUnlock()
 	if !ok {
 		// This error can happen due to per-LLB-vertex deduplication in the buildkit solver,
 		// where for instance the first client cancels and closes its session while others
@@ -767,6 +777,24 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 		// the still connected client metadata.
 		err := flightcontrol.RetryableError{Err: fmt.Errorf("session %q not found", sessID)}
 		return nil, err
+	}
+
+	// The session pointer is published before initializeDaggerSession populates
+	// its fields, so gate on state under stateMu before reading them. stateMu is
+	// taken only after releasing daggerSessionsMu to avoid inverting
+	// removeDaggerSession's stateMu->daggerSessionsMu lock order.
+	sess.stateMu.RLock()
+	defer sess.stateMu.RUnlock()
+	switch sess.state {
+	case sessionStateInitialized:
+		// continue
+	case sessionStateRemoved:
+		err := flightcontrol.RetryableError{Err: fmt.Errorf("session %q not found", sessID)}
+		return nil, err
+	case sessionStateUninitialized:
+		return nil, fmt.Errorf("session %q not initialized", sessID)
+	default:
+		return nil, fmt.Errorf("session %q has unknown state %q", sessID, sess.state)
 	}
 
 	sess.clientMu.RLock()
@@ -821,10 +849,19 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, errServerShuttingDown
 	}
 	sess, sessionExists := srv.daggerSessions[sessionID]
+	stateMuLocked := false
 	if !sessionExists {
 		sess = &daggerSession{
 			state: sessionStateUninitialized,
 		}
+		// Lock stateMu before publishing the session below so a concurrent
+		// clientFromIDs that looks it up blocks until initialization finishes
+		// instead of observing uninitialized fields. The session is still
+		// unreachable by other goroutines here, so this never blocks and can't
+		// invert removeDaggerSession's stateMu->daggerSessionsMu order even
+		// though we currently hold daggerSessionsMu.
+		sess.stateMu.Lock()
+		stateMuLocked = true
 		srv.daggerSessions[sessionID] = sess
 
 		failureCleanups.Add("delete session ID", func() error {
@@ -836,7 +873,9 @@ func (srv *Server) getOrInitClient(
 	}
 	srv.daggerSessionsMu.Unlock()
 
-	sess.stateMu.Lock()
+	if !stateMuLocked {
+		sess.stateMu.Lock()
+	}
 	defer sess.stateMu.Unlock()
 	switch sess.state {
 	case sessionStateUninitialized:
@@ -955,11 +994,37 @@ func (srv *Server) getOrInitClient(
 	client.activeCount++
 
 	return client, func() error {
-		client.stateMu.Lock()
-		defer client.stateMu.Unlock()
-		client.activeCount--
+		if clientID != sess.mainClientCallerID {
+			client.stateMu.Lock()
+			client.activeCount--
+			activeCount := client.activeCount
+			client.stateMu.Unlock()
 
-		if client.activeCount > 0 {
+			if activeCount > 0 {
+				return nil
+			}
+
+			slog := slog.With(
+				"sessionID", sess.sessionID,
+				"clientID", client.clientID,
+			)
+			slog.Info("all client connections closed")
+			return nil
+		}
+
+		sess.stateMu.Lock()
+		defer sess.stateMu.Unlock()
+
+		// Keep the lock order consistent with getOrInitClient (session before
+		// client). If cleanup took client.stateMu first, a new request could
+		// hold stateMu while waiting on client.stateMu, while cleanup waited
+		// on stateMu.
+		client.stateMu.Lock()
+		client.activeCount--
+		activeCount := client.activeCount
+		client.stateMu.Unlock()
+
+		if activeCount > 0 {
 			return nil
 		}
 
@@ -969,13 +1034,6 @@ func (srv *Server) getOrInitClient(
 		)
 		slog.Info("all client connections closed")
 
-		// if the main client caller has no more active calls, cleanup the whole session
-		if clientID != sess.mainClientCallerID {
-			return nil
-		}
-
-		sess.stateMu.Lock()
-		defer sess.stateMu.Unlock()
 		switch sess.state {
 		case sessionStateInitialized:
 			return srv.removeDaggerSession(ctx, sess)
