@@ -103,12 +103,12 @@ type ContainerExecResources struct {
 	MemorySoftBytes int64 `default:"0"`
 
 	// CPU limit in fractional cores, e.g. 1.5 (cgroup cpu.max quota/period).
-	// Translated to quota=int64(Cpus*1e5), period=100000.
-	Cpus float64 `default:"0"`
+	// Translated to quota=int64(CPUs*1e5), period=100000.
+	CPUs float64 `default:"0"`
 
 	// Relative CPU weight under contention (cgroup cpu.weight, range 1-10000).
 	// Does not cap CPU; only affects sharing when the engine is saturated.
-	CpuShares int64 `default:"0"`
+	CPUShares int64 `default:"0"`
 
 	// Maximum number of processes/threads (cgroup pids.max).
 	Pids int64 `default:"0"`
