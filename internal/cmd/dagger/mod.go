@@ -143,4 +143,3 @@ func printModuleSearchResults(out io.Writer, mods []registryModule) error {
 	_, err := fmt.Fprintln(out, "\nRun 'dagger install <REPO>' to install a module.")
 	return err
 }
-
