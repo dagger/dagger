@@ -387,6 +387,16 @@ func (srv *Server) initializeDaggerSession(
 
 var errSessionClosing = errors.New("session is closing")
 
+// cloudTokenRefreshTimeout is how long a cloud OAuth token refresh may take.
+// When a command exits, the client gives the engine 10 seconds to shut down
+// (defaultShutdownTimeout in engine/client), then fails the build. The engine
+// flushes telemetry inside that window, and the flush may need to refresh a
+// token. If the refresh were also allowed 10s, a hung refresh would spend the
+// whole window: the client gives up first and a successful build exits 1. At
+// 5s the hung refresh dies early, the flush finishes, and the build passes —
+// losing one batch of telemetry, not the build.
+const cloudTokenRefreshTimeout = 5 * time.Second
+
 func (sess *daggerSession) beginClosing() {
 	sess.closeClosingOnce.Do(func() {
 		if sess.cancelClosing != nil {
@@ -716,6 +726,8 @@ func (srv *Server) initializeDaggerClient(
 		// needs (the main client's metadata and query) at creation time.
 		refreshCtx := cloudRefreshContext(ctx, client)
 		tokenRefresh := func(context.Context) (*oauth2.Token, error) {
+			refreshCtx, cancel := context.WithTimeout(refreshCtx, cloudTokenRefreshTimeout)
+			defer cancel()
 			return refreshAndPersistCredentials(refreshCtx, srv, md.CredentialsPath, md.ClientID)
 		}
 		sess.cloudSpans, sess.cloudLogs, sess.cloudMetrics, err = enginetel.NewCloudExporters(ctx, md.CloudAuth, tokenRefresh, md.CloudURL)
@@ -1709,9 +1721,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 
-		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host)
-		sess.beginClosing()
-
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
@@ -1733,11 +1742,20 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 
 	// Flush telemetry across the entire session so that any child clients will
-	// save telemetry into their parent's DB, including to this client.
+	// save telemetry into their parent's DB, including to this client. This
+	// must happen before beginClosing below: the cloud exporters may need to
+	// refresh OAuth credentials from the client host, which requires the
+	// client's session attachables, and those are torn down by beginClosing.
 	slog.ExtraDebug("flushing session telemetry")
 	if err := sess.FlushTelemetry(ctx); err != nil {
 		slog.Error("failed to flush telemetry", "error", err)
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush session telemetry: %w", err))
+	}
+
+	if client.clientID == sess.mainClientCallerID {
+		// This must be done after lockfile and telemetry flushing, since both
+		// can use attachables to write data back to the client host.
+		sess.beginClosing()
 	}
 
 	client.closeShutdownOnce.Do(func() {
