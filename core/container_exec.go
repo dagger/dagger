@@ -382,8 +382,9 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
 	}
 
-	if opts.Resources != nil {
-		rm := resourcesIntoMeta(opts.Resources)
+	effective := mergeExecResources(container.DefaultExecResources, opts.Resources)
+	if effective != nil {
+		rm := resourcesIntoMeta(effective)
 		metaSpec.MemoryBytes = rm.MemoryBytes
 		metaSpec.MemorySoftBytes = rm.MemorySoftBytes
 		metaSpec.CPUQuota = rm.CPUQuota
@@ -426,6 +427,38 @@ func resourcesIntoMeta(r *ContainerExecResources) executor.Meta {
 		m.CPUPeriod = period
 	}
 	return m
+}
+
+// mergeExecResources merges per-exec resources on top of container defaults.
+// Per-exec non-zero fields override the corresponding default. Returns nil if
+// both inputs are nil.
+func mergeExecResources(defaults, perExec *ContainerExecResources) *ContainerExecResources {
+	if defaults == nil && perExec == nil {
+		return nil
+	}
+	merged := ContainerExecResources{}
+	if defaults != nil {
+		merged = *defaults
+	}
+	if perExec == nil {
+		return &merged
+	}
+	if perExec.MemoryBytes != 0 {
+		merged.MemoryBytes = perExec.MemoryBytes
+	}
+	if perExec.MemorySoftBytes != 0 {
+		merged.MemorySoftBytes = perExec.MemorySoftBytes
+	}
+	if perExec.CPUs != 0 {
+		merged.CPUs = perExec.CPUs
+	}
+	if perExec.CPUShares != 0 {
+		merged.CPUShares = perExec.CPUShares
+	}
+	if perExec.Pids != 0 {
+		merged.Pids = perExec.Pids
+	}
+	return &merged
 }
 
 type serviceBindingExitError struct {

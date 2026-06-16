@@ -906,6 +906,15 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				absolutely necessary and only with trusted commands.`),
 			),
 
+		dagql.NodeFunc("withDefaultExecResources", s.withDefaultExecResources).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`Set default cgroup resource constraints applied to subsequent execs.`,
+				`Per-exec resources set via withExec override these field-by-field.`).
+			Args(
+				dagql.Arg("resources").Doc(`Default resource constraints for subsequent execs.`),
+			),
+
 		dagql.NodeFunc("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures the provided list of devices to be accessible to this container.`,
@@ -4255,4 +4264,17 @@ func (s *containerSchema) terminalLegacy(
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *core.TerminalLegacy, args struct{}) (string, error) {
 	return "", nil
+}
+
+type containerDefaultExecResourcesArgs struct {
+	Resources core.ContainerExecResources
+}
+
+func (s *containerSchema) withDefaultExecResources(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerDefaultExecResourcesArgs) (*core.Container, error) {
+	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	ctr.DefaultExecResources = &args.Resources
+	return ctr, nil
 }
