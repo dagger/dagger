@@ -72,6 +72,14 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		assertEntries(t, out, "keep.log", "keep.txt")
 	})
+
+	t.Run("cache policy enum in sibling file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		obj := inspectModuleObjects(ctx, t, dangModule(t, c, "test-directives")).Get("#(name=TestDirectivesCacheDirective)")
+		require.True(t, obj.Exists())
+		require.Equal(t, "value", obj.Get("functions.#(name=value).name").String())
+	})
 }
 
 func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {

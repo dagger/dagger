@@ -353,11 +353,11 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.ValueScope)
 		}
 		switch val := binding.Value.(type) {
 		case *dang.ConstructorFunction:
-			objDef, err := createObjectTypeDef(ctx, srv, binding.Key, val, env, localTypes)
+			objDef, err := createObjectTypeDef(ctx, srv, binding.Key, val, val.Closure, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create object %s: %w", binding.Key, err)
 			}
-			fnDef, err := createFunction(ctx, srv, val.ObjectType, binding.Key, val.FnType, env, localTypes)
+			fnDef, err := createFunction(ctx, srv, val.ObjectType, binding.Key, val.FnType, val.Closure, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create constructor for %s: %w", binding.Key, err)
 			}
