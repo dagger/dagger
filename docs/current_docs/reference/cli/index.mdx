@@ -226,12 +226,12 @@ Initialize a generated API client
 
 ### Synopsis
 
-Initialize a generated API client at <path>.
+Initialize a generated API client at &lt;path&gt;.
 
-<sdk> is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
+&lt;sdk&gt; is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
 to add more choices.
 
-The engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
+The engine validates that &lt;sdk&gt; is installed as an SDK in dagger.toml, plans the
 generated files and workspace config change, then returns a Changeset that the
 CLI previews and applies through the standard preview/apply flow.
 
@@ -1714,28 +1714,28 @@ Initialize a new module in the current workspace
 
 Initialize a new module in the workspace.
 
-<sdk> is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
+&lt;sdk&gt; is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
 to add more choices.
 
 For example, after `dagger sdk install go`, run
 `dagger module init go myapp`.
 
 The CLI is a thin wrapper around the engine's Workspace.moduleInit. The
-engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
+engine validates that &lt;sdk&gt; is installed as an SDK in dagger.toml, plans the
 workspace changes, and returns a Changeset that the CLI previews and applies
 through the standard changeset apply flow.
 
 What the engine does (atomically, in one Changeset):
-  1. Uses [modules.<sdk>] as the SDK install and requires its as-sdk marker.
+  1. Uses [modules.&lt;sdk&gt;] as the SDK install and requires its as-sdk marker.
   2. Generates the new module's dagger-module.toml + SDK-emitted source
-     scaffold at <path>.
-  3. Records [[modules.<sdk>.as-sdk.modules]] authoring entry for
-     <path>.
-  4. When --path is the default (.dagger/modules/<name>), also installs
-     the new module as [modules.<name>] so it's callable here.
+     scaffold at &lt;path&gt;.
+  3. Records [[modules.&lt;sdk&gt;.as-sdk.modules]] authoring entry for
+     &lt;path&gt;.
+  4. When --path is the default (.dagger/modules/&lt;name&gt;), also installs
+     the new module as [modules.&lt;name&gt;] so it's callable here.
 
---path defaults to .dagger/modules/<name>. Custom paths skip the
-[modules.<name>] install (the user is managing workspace layout
+--path defaults to .dagger/modules/&lt;name&gt;. Custom paths skip the
+[modules.&lt;name&gt;] install (the user is managing workspace layout
 explicitly).
 
 ```
@@ -1787,7 +1787,7 @@ Run SDK-specific commands against this module's SDK
 Run SDK-specific commands against the current module's SDK.
 
 Reads the SDK from the module's dagger-module.toml and dispatches
-through "dagger call <sdk>". Available subcommands depend entirely on
+through "dagger call &lt;sdk&gt;". Available subcommands depend entirely on
 the SDK in use — the wrapper is a thin forwarder.
 
 Examples:
@@ -1916,7 +1916,7 @@ Install an SDK and mark it
 ### Synopsis
 
 Install an SDK into the current workspace and mark it with the
-[modules.<name>.as-sdk] table.
+[modules.&lt;name&gt;.as-sdk] table.
 
 Alias resolution: `dagger sdk install go` resolves "go" via the
 embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
@@ -1976,11 +1976,11 @@ List installed SDKs
 ### Synopsis
 
 List installs in the current workspace that carry the
-[modules.<name>.as-sdk] marker.
+[modules.&lt;name&gt;.as-sdk] marker.
 
 The M and C columns count workspace-local modules and clients authored
-under each SDK (the entries in [[modules.<name>.as-sdk.modules]] and
-[[modules.<name>.as-sdk.clients]]).
+under each SDK (the entries in [[modules.&lt;name&gt;.as-sdk.modules]] and
+[[modules.&lt;name&gt;.as-sdk.clients]]).
 
 ```
 dagger sdk list [flags]
@@ -2097,7 +2097,7 @@ Remove an SDK install
 Remove an SDK install from the current workspace.
 
 Refuses if anything is authored under the SDK (entries in
-[[modules.<name>.as-sdk.modules]] or [[modules.<name>.as-sdk.clients]]).
+[[modules.&lt;name&gt;.as-sdk.modules]] or [[modules.&lt;name&gt;.as-sdk.clients]]).
 Pass --force to override and remove anyway; the authored module/client
 files are left on disk untouched, only the workspace entries go away.
 
