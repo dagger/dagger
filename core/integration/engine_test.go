@@ -1,7 +1,7 @@
 package core
 
 // These tests cover the Dagger engine process and the client/engine contract.
-// They verify signal handling, engine naming, `dagger run`, version
+// They verify signal handling, engine naming, `dagger api exec`, version
 // compatibility, cancellation, Prometheus metrics, DagQL cache cleanup, and
 // client metadata reuse.
 //
@@ -254,7 +254,7 @@ func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
 	command := fmt.Sprintf(`
 		export NO_COLOR=1
 		jq -n '{query:"{container{from(address: \"%s\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
-		dagger run sh -c 'curl -s \
+		dagger api exec sh -c 'curl -s \
 			-u $DAGGER_SESSION_TOKEN: \
 			--max-time 30 \
 			-H "content-type:application/json" \
@@ -923,7 +923,7 @@ class Dep:
 set -eu
 # Load module + dependency schema a few times to exercise cache lifecycle.
 for i in $(seq 1 4); do
-  dagger functions >/dev/null
+  dagger api functions >/dev/null
 done
 			`}).Sync(ctx)
 		return err
