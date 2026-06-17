@@ -4159,8 +4159,6 @@ type DirectoryAsWorkspaceOpts struct {
 }
 
 // Creates a synthetic workspace from this directory.
-//
-// Experimental: Synthetic workspaces currently support filesystem APIs only.
 func (r *Directory) AsWorkspace(opts ...DirectoryAsWorkspaceOpts) *Workspace {
 	q := r.query.Select("asWorkspace")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -9230,6 +9228,29 @@ func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	}
 }
 
+// GitRefAsWorkspaceOpts contains options for GitRef.AsWorkspace
+type GitRefAsWorkspaceOpts struct {
+	// Current working directory inside the workspace root. Defaults to the workspace root.
+	//
+	// Default: "/"
+	Cwd string
+}
+
+// Creates a synthetic workspace from this git ref.
+func (r *GitRef) AsWorkspace(opts ...GitRefAsWorkspaceOpts) *Workspace {
+	q := r.query.Select("asWorkspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cwd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cwd) {
+			q = q.Arg("cwd", opts[i].Cwd)
+		}
+	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // The resolved commit id at this ref.
 func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
@@ -9373,8 +9394,6 @@ type GitRepositoryAsWorkspaceOpts struct {
 }
 
 // Creates a synthetic workspace from this git repository.
-//
-// Experimental: Synthetic workspaces currently support filesystem APIs only.
 func (r *GitRepository) AsWorkspace(opts ...GitRepositoryAsWorkspaceOpts) *Workspace {
 	q := r.query.Select("asWorkspace")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -15414,7 +15433,6 @@ type Workspace struct {
 	query *querybuilder.Selection
 
 	address     *string
-	clientId    *string
 	configFile  *string
 	configRead  *string
 	configWrite *string
@@ -15426,6 +15444,14 @@ type Workspace struct {
 	init        *string
 	install     *string
 	uninstall   *string
+}
+type WithWorkspaceFunc func(r *Workspace) *Workspace
+
+// With calls the provided function with current Workspace.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Workspace) With(f WithWorkspaceFunc) *Workspace {
+	return f(r)
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -15445,6 +15471,17 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Return the changes from another workspace to this workspace.
+func (r *Workspace) Changes(other *Workspace) *Changeset {
+	assertNotNil("other", other)
+	q := r.query.Select("changes")
+	q = q.Arg("other", other)
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // WorkspaceChecksOpts contains options for Workspace.Checks
@@ -15493,19 +15530,6 @@ func (r *Workspace) ClientGenerate() *Changeset {
 	return &Changeset{
 		query: q,
 	}
-}
-
-// The client ID that owns this workspace's host filesystem.
-func (r *Workspace) ClientID(ctx context.Context) (string, error) {
-	if r.clientId != nil {
-		return *r.clientId, nil
-	}
-	q := r.query.Select("clientId")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // WorkspaceClientInitOpts contains options for Workspace.ClientInit
@@ -16073,6 +16097,54 @@ func (r *Workspace) Update() *Changeset {
 	q := r.query.Select("update")
 
 	return &Changeset{
+		query: q,
+	}
+}
+
+// Return this workspace with a changeset applied, without mutating the source.
+func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChanges")
+	q = q.Arg("changes", changes)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a directory added, without mutating the source.
+func (r *Workspace) WithNewDirectory(path string, source *Directory) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withNewDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithNewFileOpts contains options for Workspace.WithNewFile
+type WorkspaceWithNewFileOpts struct {
+	// Permissions of the new file.
+	//
+	// Default: 420
+	Permissions int
+}
+
+// Return this workspace with a new or replaced file, without mutating the source.
+func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceWithNewFileOpts) *Workspace {
+	q := r.query.Select("withNewFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("contents", contents)
+
+	return &Workspace{
 		query: q,
 	}
 }

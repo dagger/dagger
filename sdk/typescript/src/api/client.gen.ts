@@ -1707,6 +1707,13 @@ export type GeneratorGroupChangesOpts = {
   onConflict?: ChangesetsMergeConflict
 }
 
+export type GitRefAsWorkspaceOpts = {
+  /**
+   * Current working directory inside the workspace root. Defaults to the workspace root.
+   */
+  cwd?: string
+}
+
 export type GitRefTreeOpts = {
   /**
    * Set to true to discard .git directory.
@@ -2874,6 +2881,13 @@ export type WorkspaceUninstallOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+}
+
+export type WorkspaceWithNewFileOpts = {
+  /**
+   * Permissions of the new file.
+   */
+  permissions?: number
 }
 
 export type __DirectiveArgsOpts = {
@@ -5708,7 +5722,6 @@ export class Directory extends BaseClient {
   /**
    * Creates a synthetic workspace from this directory.
    * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
-   * @experimental
    */
   asWorkspace = (opts?: DirectoryAsWorkspaceOpts): Workspace => {
     const ctx = this._ctx.select("asWorkspace", { ...opts })
@@ -9815,6 +9828,15 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * Creates a synthetic workspace from this git ref.
+   * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
+   */
+  asWorkspace = (opts?: GitRefAsWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("asWorkspace", { ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * The resolved commit id at this ref.
    */
   commit = async (): Promise<string> => {
@@ -9909,7 +9931,6 @@ export class GitRepository extends BaseClient {
   /**
    * Creates a synthetic workspace from this git repository.
    * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
-   * @experimental
    */
   asWorkspace = (opts?: GitRepositoryAsWorkspaceOpts): Workspace => {
     const ctx = this._ctx.select("asWorkspace", { ...opts })
@@ -14479,7 +14500,6 @@ export class UpGroup extends BaseClient {
 export class Workspace extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _address?: string = undefined
-  private readonly _clientId?: string = undefined
   private readonly _configFile?: string = undefined
   private readonly _configRead?: string = undefined
   private readonly _configWrite?: string = undefined
@@ -14498,7 +14518,6 @@ export class Workspace extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _address?: string,
-    _clientId?: string,
     _configFile?: string,
     _configRead?: string,
     _configWrite?: string,
@@ -14514,7 +14533,6 @@ export class Workspace extends BaseClient {
 
     this._id = _id
     this._address = _address
-    this._clientId = _clientId
     this._configFile = _configFile
     this._configRead = _configRead
     this._configWrite = _configWrite
@@ -14558,6 +14576,15 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return the changes from another workspace to this workspace.
+   * @param other Workspace to compare from.
+   */
+  changes = (other: Workspace): Changeset => {
+    const ctx = this._ctx.select("changes", { other })
+    return new Changeset(ctx)
+  }
+
+  /**
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
    * @param opts.skip Skip checks matching the specified patterns
@@ -14575,21 +14602,6 @@ export class Workspace extends BaseClient {
   clientGenerate = (): Changeset => {
     const ctx = this._ctx.select("clientGenerate")
     return new Changeset(ctx)
-  }
-
-  /**
-   * The client ID that owns this workspace's host filesystem.
-   */
-  clientId = async (): Promise<string> => {
-    if (this._clientId) {
-      return this._clientId
-    }
-
-    const ctx = this._ctx.select("clientId")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
   }
 
   /**
@@ -14933,6 +14945,49 @@ export class Workspace extends BaseClient {
   update = (): Changeset => {
     const ctx = this._ctx.select("update")
     return new Changeset(ctx)
+  }
+
+  /**
+   * Return this workspace with a changeset applied, without mutating the source.
+   * @param changes Changes to apply.
+   */
+  withChanges = (changes: Changeset): Workspace => {
+    const ctx = this._ctx.select("withChanges", { changes })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a directory added, without mutating the source.
+   * @param path Path of the added directory. Relative paths resolve from the workspace cwd.
+   * @param source Directory to add.
+   */
+  withNewDirectory = (path: string, source: Directory): Workspace => {
+    const ctx = this._ctx.select("withNewDirectory", { path, source })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a new or replaced file, without mutating the source.
+   * @param path Path of the new file. Relative paths resolve from the workspace cwd.
+   * @param contents Contents of the new file.
+   * @param opts.permissions Permissions of the new file.
+   */
+  withNewFile = (
+    path: string,
+    contents: string,
+    opts?: WorkspaceWithNewFileOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Call the provided function with current Workspace.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Workspace) => Workspace) => {
+    return arg(this)
   }
 }
 

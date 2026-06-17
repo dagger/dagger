@@ -4189,10 +4189,6 @@ class Directory(Type):
     def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
         """Creates a synthetic workspace from this directory.
 
-        .. caution::
-            Experimental: Synthetic workspaces currently support filesystem
-            APIs only.
-
         Parameters
         ----------
         cwd:
@@ -9542,6 +9538,21 @@ class GeneratorGroup(Type):
 class GitRef(Type):
     """A git ref (tag, branch, or commit)."""
 
+    def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
+        """Creates a synthetic workspace from this git ref.
+
+        Parameters
+        ----------
+        cwd:
+            Current working directory inside the workspace root. Defaults to
+            the workspace root.
+        """
+        _args = [
+            Arg("cwd", cwd, "/"),
+        ]
+        _ctx = self._select("asWorkspace", _args)
+        return Workspace(_ctx)
+
     async def commit(self) -> str:
         """The resolved commit id at this ref.
 
@@ -9666,10 +9677,6 @@ class GitRepository(Type):
 
     def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
         """Creates a synthetic workspace from this git repository.
-
-        .. caution::
-            Experimental: Synthetic workspaces currently support filesystem
-            APIs only.
 
         Parameters
         ----------
@@ -15179,6 +15186,20 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
+    def changes(self, other: Self) -> Changeset:
+        """Return the changes from another workspace to this workspace.
+
+        Parameters
+        ----------
+        other:
+            Workspace to compare from.
+        """
+        _args = [
+            Arg("other", other),
+        ]
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
     def checks(
         self,
         *,
@@ -15218,27 +15239,6 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("clientGenerate", _args)
         return Changeset(_ctx)
-
-    async def client_id(self) -> str:
-        """The client ID that owns this workspace's host filesystem.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("clientId", _args)
-        return await _ctx.execute(str)
 
     def client_init(
         self,
@@ -15865,6 +15865,75 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("update", _args)
         return Changeset(_ctx)
+
+    def with_changes(self, changes: Changeset) -> Self:
+        """Return this workspace with a changeset applied, without mutating the
+        source.
+
+        Parameters
+        ----------
+        changes:
+            Changes to apply.
+        """
+        _args = [
+            Arg("changes", changes),
+        ]
+        _ctx = self._select("withChanges", _args)
+        return Workspace(_ctx)
+
+    def with_new_directory(self, path: str, source: Directory) -> Self:
+        """Return this workspace with a directory added, without mutating the
+        source.
+
+        Parameters
+        ----------
+        path:
+            Path of the added directory. Relative paths resolve from the
+            workspace cwd.
+        source:
+            Directory to add.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withNewDirectory", _args)
+        return Workspace(_ctx)
+
+    def with_new_file(
+        self,
+        path: str,
+        contents: str,
+        *,
+        permissions: int | None = 420,
+    ) -> Self:
+        """Return this workspace with a new or replaced file, without mutating
+        the source.
+
+        Parameters
+        ----------
+        path:
+            Path of the new file. Relative paths resolve from the workspace
+            cwd.
+        contents:
+            Contents of the new file.
+        permissions:
+            Permissions of the new file.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("contents", contents),
+            Arg("permissions", permissions, 420),
+        ]
+        _ctx = self._select("withNewFile", _args)
+        return Workspace(_ctx)
+
+    def with_(self, cb: Callable[["Workspace"], "Workspace"]) -> "Workspace":
+        """Call the provided callable with current Workspace.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck

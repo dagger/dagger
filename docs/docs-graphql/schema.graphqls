@@ -1873,7 +1873,7 @@ type Directory implements Exportable & Node & Syncer {
     Current working directory inside the workspace root. Defaults to the workspace root.
     """
     cwd: String = "/"
-  ): Workspace! @experimental(reason: "Synthetic workspaces currently support filesystem APIs only.")
+  ): Workspace!
 
   """
   Return the difference between this directory and another directory, typically an older snapshot.
@@ -3944,6 +3944,14 @@ type GeneratorGroup implements Node {
 
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
+  """Creates a synthetic workspace from this git ref."""
+  asWorkspace(
+    """
+    Current working directory inside the workspace root. Defaults to the workspace root.
+    """
+    cwd: String = "/"
+  ): Workspace!
+
   """The resolved commit id at this ref."""
   commit: String!
 
@@ -3980,7 +3988,7 @@ type GitRepository implements Node {
     Current working directory inside the workspace root. Defaults to the workspace root.
     """
     cwd: String = "/"
-  ): Workspace! @experimental(reason: "Synthetic workspaces currently support filesystem APIs only.")
+  ): Workspace!
 
   """Returns details of a branch."""
   branch(
@@ -5873,6 +5881,12 @@ type Workspace implements Node {
   """
   address: String!
 
+  """Return the changes from another workspace to this workspace."""
+  changes(
+    """Workspace to compare from."""
+    other: ID! @expectedType(name: "Workspace")
+  ): Changeset!
+
   """Return all checks from modules loaded in the workspace."""
   checks(
     """Only include checks matching the specified patterns"""
@@ -5896,9 +5910,6 @@ type Workspace implements Node {
   Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
   """
   clientGenerate: Changeset!
-
-  """The client ID that owns this workspace's host filesystem."""
-  clientId: String!
 
   """
   Plan the workspace changes for initializing a generated API client: generated
@@ -6162,6 +6173,41 @@ type Workspace implements Node {
   Currently this refreshes existing lockfile entries only.
   """
   update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
+
+  """
+  Return this workspace with a changeset applied, without mutating the source.
+  """
+  withChanges(
+    """Changes to apply."""
+    changes: ID! @expectedType(name: "Changeset")
+  ): Workspace!
+
+  """
+  Return this workspace with a directory added, without mutating the source.
+  """
+  withNewDirectory(
+    """
+    Path of the added directory. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
+
+    """Directory to add."""
+    source: ID! @expectedType(name: "Directory")
+  ): Workspace!
+
+  """
+  Return this workspace with a new or replaced file, without mutating the source.
+  """
+  withNewFile(
+    """Path of the new file. Relative paths resolve from the workspace cwd."""
+    path: String!
+
+    """Contents of the new file."""
+    contents: String!
+
+    """Permissions of the new file."""
+    permissions: Int = 420
+  ): Workspace!
 }
 
 """Local git state for a workspace."""

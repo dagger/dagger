@@ -27,6 +27,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return the changes from another workspace to this workspace.
+  """
+  @spec changes(t(), Dagger.Workspace.t()) :: Dagger.Changeset.t()
+  def changes(%__MODULE__{} = workspace, other) do
+    query_builder =
+      workspace.query_builder |> QB.select("changes") |> QB.put_arg("other", Dagger.ID.id!(other))
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return all checks from modules loaded in the workspace.
   """
   @spec checks(t(), [
@@ -62,17 +76,6 @@ defmodule Dagger.Workspace do
       query_builder: query_builder,
       client: workspace.client
     }
-  end
-
-  @doc """
-  The client ID that owns this workspace's host filesystem.
-  """
-  @spec client_id(t()) :: {:ok, String.t()} | {:error, term()}
-  def client_id(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("clientId")
-
-    Client.execute(workspace.client, query_builder)
   end
 
   @doc """
@@ -456,6 +459,58 @@ defmodule Dagger.Workspace do
       workspace.query_builder |> QB.select("update")
 
     %Dagger.Changeset{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a changeset applied, without mutating the source.
+  """
+  @spec with_changes(t(), Dagger.Changeset.t()) :: Dagger.Workspace.t()
+  def with_changes(%__MODULE__{} = workspace, changes) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withChanges")
+      |> QB.put_arg("changes", Dagger.ID.id!(changes))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a directory added, without mutating the source.
+  """
+  @spec with_new_directory(t(), String.t(), Dagger.Directory.t()) :: Dagger.Workspace.t()
+  def with_new_directory(%__MODULE__{} = workspace, path, source) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withNewDirectory")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Return this workspace with a new or replaced file, without mutating the source.
+  """
+  @spec with_new_file(t(), String.t(), String.t(), [{:permissions, integer() | nil}]) ::
+          Dagger.Workspace.t()
+  def with_new_file(%__MODULE__{} = workspace, path, contents, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withNewFile")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("contents", contents)
+      |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.Workspace{
       query_builder: query_builder,
       client: workspace.client
     }
