@@ -127,6 +127,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("clientInit", s.clientInit).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Plans workspace changes against live host filesystem").
 			Doc("Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.").
 			Args(
@@ -136,6 +137,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("clientGenerate", s.clientGenerate).
+			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Regenerates workspace client files against live host filesystem").
 			Doc("Regenerate all generated API clients registered in workspace config and return the resulting Changeset."),
 		dagql.Func("configRead", s.configRead).
