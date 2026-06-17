@@ -3,15 +3,14 @@
 // native to the rest of the Dagger docs.
 
 .apiType {
-  --api-border: var(--color-blackAlpha-200);
+  --api-border: var(--color-gray-100);
   --api-muted: var(--color-gray-600);
   --api-accent: var(--color-primary);
   --api-literal: var(--color-yellow-600);
   --api-type-name: var(--color-blue-600);
-  // A subtle palette tint for the docs page background; dark mode uses a
-  // translucent white instead (see below).
-  --api-tint: var(--color-blackAlpha-50);
-  --api-tint-hover: var(--color-blackAlpha-100);
+  // A subtle palette tint for the docs page background.
+  --api-tint: var(--color-gray-50);
+  --api-tint-hover: var(--color-gray-100);
   --api-popover-bg: var(--color-white);
   --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-200);
   --api-return-scalar: var(--color-blue-400);
@@ -26,13 +25,13 @@
 }
 
 :global(html[data-theme="dark"]) .apiType {
-  --api-border: var(--color-whiteAlpha-200);
+  --api-border: var(--color-gray-800);
   --api-muted: var(--color-gray-300);
   --api-accent: var(--color-purple-200);
   --api-literal: var(--color-yellow-400);
   --api-type-name: var(--color-blue-200);
-  --api-tint: var(--color-whiteAlpha-100);
-  --api-tint-hover: var(--color-whiteAlpha-200);
+  --api-tint: var(--color-gray-900);
+  --api-tint-hover: var(--color-gray-800);
   --api-popover-bg: var(--color-raisinBlack-700);
   --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-500);
   --api-return-scalar: var(--color-purple-200);

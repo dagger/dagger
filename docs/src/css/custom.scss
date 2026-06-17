@@ -326,14 +326,14 @@ $desktop-xl-width: 1400px;
     0 2px 4px 0 var(--color-blackAlpha-200);
   --ifm-hover-overlay: var(--color-cyan-50);
   --ifm-table-background: var(--color-transparent);
-  --ifm-table-stripe-background: var(--color-blackAlpha-50);
+  --ifm-table-stripe-background: var(--color-gray-50);
   --ifm-scrollbar-track-background-color: var(--color-gray-50);
   --ifm-scrollbar-thumb-background-color: var(--color-gray-300);
   --ifm-scrollbar-thumb-hover-background-color: var(--color-gray-400);
-  --docusaurus-highlighted-code-line-bg: var(--color-blackAlpha-100);
+  --docusaurus-highlighted-code-line-bg: var(--color-gray-100);
   --ifm-menu-color-active: var(--color-blue-600);
-  --ifm-menu-color-background-active: var(--color-blackAlpha-200);
-  --ifm-menu-color-background-hover: var(--color-blackAlpha-200);
+  --ifm-menu-color-background-active: var(--color-gray-100);
+  --ifm-menu-color-background-hover: var(--color-gray-100);
   --ifm-menu-color: var(--color-gray-600);
   --ifm-navbar-background-color: var(--color-backgroundSecondary);
   --ifm-navbar-height: 4.5rem;
@@ -432,16 +432,16 @@ html[data-theme="dark"] {
   --ifm-global-shadow-md: 0 5px 40px var(--color-blackAlpha-800);
   --ifm-global-shadow-tl: 0 12px 28px 0 var(--color-blackAlpha-800),
     0 2px 4px 0 var(--color-blackAlpha-700);
-  --ifm-hover-overlay: var(--color-whiteAlpha-100);
+  --ifm-hover-overlay: var(--color-gray-800);
   --ifm-table-background: var(--color-transparent);
-  --ifm-table-stripe-background: var(--color-whiteAlpha-50);
+  --ifm-table-stripe-background: var(--color-gray-900);
   --ifm-scrollbar-track-background-color: var(--color-gray-900);
   --ifm-scrollbar-thumb-background-color: var(--color-gray-700);
   --ifm-scrollbar-thumb-hover-background-color: var(--color-gray-600);
-  --docusaurus-highlighted-code-line-bg: var(--color-whiteAlpha-100);
+  --docusaurus-highlighted-code-line-bg: var(--color-gray-800);
   --ifm-menu-color-active: var(--color-cyan-300);
-  --ifm-menu-color-background-active: var(--color-whiteAlpha-100);
-  --ifm-menu-color-background-hover: var(--color-whiteAlpha-100);
+  --ifm-menu-color-background-active: var(--color-gray-800);
+  --ifm-menu-color-background-hover: var(--color-gray-800);
   --ifm-menu-color: var(--color-gray-200);
   --ifm-navbar-background-color: var(--color-backgroundDark);
   --ifm-navbar-link-color: var(--color-gray-200);
@@ -573,7 +573,7 @@ aside[class*="docSidebarContainer"] {
 
     /* Custom scrollbar styling for better UX */
     scrollbar-width: thin !important; /* Firefox - show thin scrollbar */
-    scrollbar-color: var(--color-blackAlpha-500) var(--color-transparent) !important; /* Firefox scrollbar colors */
+    scrollbar-color: var(--scrollbar-thumb) var(--color-transparent) !important; /* Firefox scrollbar colors */
 
     /* WebKit browsers (Chrome, Safari, Edge) - show minimal scrollbar */
     &::-webkit-scrollbar {
@@ -585,12 +585,12 @@ aside[class*="docSidebarContainer"] {
     }
 
     &::-webkit-scrollbar-thumb {
-      background: var(--color-blackAlpha-500) !important;
+      background: var(--scrollbar-thumb) !important;
       border-radius: 3px !important;
     }
 
     &::-webkit-scrollbar-thumb:hover {
-      background: var(--color-blackAlpha-700) !important;
+      background: var(--scrollbar-thumb-hover) !important;
     }
   }
 }
@@ -599,15 +599,15 @@ aside[class*="docSidebarContainer"] {
 html[data-theme="dark"] {
   .menu {
     @include desktop {
-      scrollbar-color: var(--color-whiteAlpha-400)
+      scrollbar-color: var(--scrollbar-thumb-dark)
         var(--color-transparent) !important; /* Firefox dark scrollbar */
 
       &::-webkit-scrollbar-thumb {
-        background: var(--color-whiteAlpha-400) !important;
+        background: var(--scrollbar-thumb-dark) !important;
       }
 
       &::-webkit-scrollbar-thumb:hover {
-        background: var(--color-whiteAlpha-600) !important;
+        background: var(--scrollbar-thumb-hover-dark) !important;
       }
     }
   }
@@ -733,13 +733,13 @@ html[data-theme="light"] {
 
   /* Style for active links in the sidebar - light mode only */
   .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
-    background-color: var(--color-blackAlpha-200) !important;
+    background-color: var(--color-gray-100) !important;
     border-radius: 4px !important;
   }
 
   /* Hover effect for menu links - light mode only */
   .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
-    background-color: var(--color-blackAlpha-200) !important;
+    background-color: var(--color-gray-100) !important;
     border-radius: 4px !important;
   }
 }
@@ -757,13 +757,13 @@ html[data-theme="dark"] {
 
   /* Style for active links in the sidebar - dark mode only */
   .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
-    background-color: var(--color-whiteAlpha-200) !important;
+    background-color: var(--color-gray-800) !important;
     border-radius: 4px !important;
   }
 
   /* Hover effect for menu links - dark mode only */
   .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
-    background-color: var(--color-whiteAlpha-200) !important;
+    background-color: var(--color-gray-800) !important;
     border-radius: 4px !important;
   }
 }
@@ -977,7 +977,7 @@ h4 {
   .footer-discord-link:hover,
   .footer-x-link:hover {
     opacity: 1;
-    background-color: var(--color-whiteAlpha-100);
+    background-color: var(--color-gray-800);
     border-radius: 6px;
   }
 }
@@ -1200,14 +1200,14 @@ ul.tabs {
 
 html[data-theme="light"] {
   .tabs__item:hover {
-    background-color: var(--color-blackAlpha-200) !important;
+    background-color: var(--color-gray-100) !important;
     color: var(--ifm-menu-color-active);
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
   }
 
   .tabs__item--active {
-    background-color: var(--color-blackAlpha-200) !important;
+    background-color: var(--color-gray-100) !important;
     border-bottom: 1px solid var(--color-purple-800) !important;
     color: var(--ifm-menu-color-active);
     font-weight: 600;
@@ -1216,14 +1216,14 @@ html[data-theme="light"] {
 
 html[data-theme="dark"] {
   .tabs__item:hover {
-    background-color: var(--color-whiteAlpha-100) !important;
+    background-color: var(--color-gray-800) !important;
     color: var(--ifm-menu-color-active);
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
   }
 
   .tabs__item--active {
-    background-color: var(--color-whiteAlpha-200) !important;
+    background-color: var(--color-gray-800) !important;
     border-bottom: 1px solid var(--color-cyan-300) !important;
     color: var(--ifm-menu-color-active);
     font-weight: 600;
@@ -1252,7 +1252,7 @@ html[data-theme="light"] .flowchart {
 // Dark mode flowchart styling using brand variables
 html[data-theme="dark"] .flowchart {
   background-color: var(--color-gray-800);
-  border: 1px solid var(--color-whiteAlpha-200);
+  border: 1px solid var(--color-gray-700);
 }
 
 .flowchart svg {
@@ -1271,22 +1271,22 @@ html[data-theme="dark"] .flowchart {
 }
 
 .markdown table thead {
-  background-color: var(--color-blackAlpha-50);
+  background-color: var(--color-gray-50);
 }
 
 html[data-theme="dark"] .markdown table thead {
-  background-color: var(--color-whiteAlpha-50);
+  background-color: var(--color-gray-900);
 }
 
 .markdown table th,
 .markdown table td {
   padding: 0.75rem;
-  border: 1px solid var(--color-blackAlpha-200);
+  border: 1px solid var(--color-gray-100);
 }
 
 html[data-theme="dark"] .markdown table th,
 html[data-theme="dark"] .markdown table td {
-  border-color: var(--color-whiteAlpha-200);
+  border-color: var(--color-gray-800);
 }
 
 // Table of Contents styling to match sidebar
@@ -1320,7 +1320,7 @@ html[data-theme="light"] {
     }
 
     &.table-of-contents__link--active {
-      background-color: var(--color-blackAlpha-200) !important;
+      background-color: var(--color-gray-100) !important;
       color: var(--ifm-menu-color-active);
       border-left: 3px solid var(--color-orange-400) !important;
       padding-left: 0.5rem;
@@ -1332,14 +1332,14 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
   .table-of-contents__link {
     &:hover {
-      background-color: var(--color-whiteAlpha-100) !important;
+      background-color: var(--color-gray-800) !important;
       color: var(--ifm-menu-color);
       border-left: 3px solid var(--color-yellow-300);
       padding-left: 0.5rem;
     }
 
     &.table-of-contents__link--active {
-      background-color: var(--color-whiteAlpha-200) !important;
+      background-color: var(--color-gray-800) !important;
       color: var(--ifm-menu-color);
       border-left: 3px solid var(--color-yellow-400) !important;
       padding-left: 0.5rem;

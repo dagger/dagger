@@ -44,8 +44,8 @@
 
 
   html[data-theme="dark"] & {
-    border-color: var(--color-whiteAlpha-200);
-    background-color: var(--color-whiteAlpha-50);
+    border-color: var(--color-gray-800);
+    background-color: var(--color-gray-900);
   }
 }
 
@@ -140,7 +140,7 @@
 .guideCard {
   height: 100%;
   box-shadow: 0px 4px 8px 0px var(--color-blackAlpha-200);
-  border: 1px solid var(--color-blackAlpha-500);
+  border: 1px solid var(--color-gray-200);
   border-radius: 0.5rem;
   display: flex;
   gap: 0.8rem;
@@ -157,8 +157,8 @@
 
   html[data-theme="dark"] & {
     box-shadow: 0px 4px 8px 0px var(--color-blackAlpha-700);
-    background-color: var(--color-whiteAlpha-50);
-    border-color: var(--color-whiteAlpha-200);
+    background-color: var(--color-gray-900);
+    border-color: var(--color-gray-800);
   }
 }
 
