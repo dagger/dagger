@@ -981,6 +981,9 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 	var inst dagql.ObjectResult[*core.Changeset]
 	ws := parent.Self().Workspace.Self()
 	if changes, ok := ws.OverlayChanges(); ok {
+		if ref, ok := ws.SourceGitRef(); ok {
+			return gitRefWorkspaceChanges(ctx, ws, ref)
+		}
 		return changes, nil
 	}
 	if _, ok := ws.SourceGitRef(); ok {
@@ -1003,6 +1006,52 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 		return inst, err
 	}
 	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "uncommitted"}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func gitRefWorkspaceChanges(
+	ctx context.Context,
+	ws *core.Workspace,
+	ref dagql.Result[*core.GitRef],
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	refID, err := ref.ID()
+	if err != nil {
+		return inst, err
+	}
+	refResult, err := dagql.NewID[*core.GitRef](refID).Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	var base dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, refResult, &base, dagql.Selector{
+		Field: "tree",
+		Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	baseID, err := base.ID()
+	if err != nil {
+		return inst, err
+	}
+	root, err := workspaceRootfs(ws)
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, root, &inst, dagql.Selector{
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*core.Directory](baseID)},
+		},
+	}); err != nil {
 		return inst, err
 	}
 	return inst, nil
