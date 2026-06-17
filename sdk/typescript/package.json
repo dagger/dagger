@@ -17,7 +17,7 @@
   },
   "main": "dist/src/index.js",
   "dependencies": {
-    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/grpc-js": "^1.14.4",
     "@lifeomic/axios-fetch": "^3.1.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/core": "^2.7.1",
@@ -49,6 +49,18 @@
     "fmt": "yarn eslint --max-warnings=0 --fix .",
     "docs:lint": "cd ../../docs/current_docs && eslint -c ../../sdk/typescript/eslint-docs.config.js --max-warnings=0 ./**/*.ts",
     "docs:fmt": "cd ../../docs/current_docs && eslint --fix -c ../../sdk/typescript/eslint-docs.config.js --max-warnings=0 ./**/*.ts"
+  },
+  "resolutions": {
+    "@grpc/grpc-js": "1.14.4",
+    "@trivago/prettier-plugin-sort-imports/lodash-es": "4.18.1",
+    "@trivago/prettier-plugin-sort-imports/minimatch": "9.0.9",
+    "**/@grpc/proto-loader/protobufjs": "7.6.1",
+    "**/@opentelemetry/otlp-transformer/protobufjs": "8.0.2",
+    "**/glob/minimatch": "9.0.9",
+    "form-data": "4.0.6",
+    "mocha/minimatch": "9.0.9",
+    "mocha/serialize-javascript": "7.0.3",
+    "tsx/esbuild": "0.28.1"
   },
   "devDependencies": {
     "@dagger.io/mocha": "^0.1.0",
