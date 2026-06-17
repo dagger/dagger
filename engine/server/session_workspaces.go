@@ -877,7 +877,12 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 
 	var tree dagql.ObjectResult[*core.Directory]
 	err = dag.Select(ctx, gitRef, &tree,
-		dagql.Selector{Field: "tree"},
+		dagql.Selector{
+			Field: "tree",
+			Args: []dagql.NamedInput{
+				{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+			},
+		},
 	)
 	if err != nil {
 		return tree, gitRef, fmt.Errorf("cloning repo: %w", err)
