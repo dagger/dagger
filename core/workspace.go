@@ -11,6 +11,31 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+// workspaceInvalidator drops the cached per-client workspace detection so the
+// next access re-detects from the host. Set by engine/server (which owns the
+// per-client cache); nil in contexts without a server, where invalidation is a
+// no-op.
+var workspaceInvalidator func(context.Context) error
+
+// SetWorkspaceInvalidator registers the hook used to drop the current client's
+// cached workspace detection. Mirrors SetModuleSourceSDKLoader.
+func SetWorkspaceInvalidator(fn func(context.Context) error) {
+	workspaceInvalidator = fn
+}
+
+// InvalidateCurrentWorkspace drops the calling client's cached workspace
+// detection so the next access re-detects it from the host. Used after writing
+// workspace config files to the host (e.g. applying a migration changeset),
+// since the per-client cache would otherwise keep serving the pre-write view
+// for the lifetime of the client — which, under nested execution, spans more
+// than one session.
+func InvalidateCurrentWorkspace(ctx context.Context) error {
+	if workspaceInvalidator == nil {
+		return nil
+	}
+	return workspaceInvalidator(ctx)
+}
+
 // Workspace represents a detected workspace in the dagql schema.
 type Workspace struct {
 	// rootfs is the pre-fetched root filesystem for remote workspaces.
