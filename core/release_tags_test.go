@@ -18,6 +18,14 @@ func TestSelectLatestReleaseTag(t *testing.T) {
 		require.Equal(t, "v1.4.0", tag)
 	})
 
+	t.Run("compares numeric versions instead of lexical order", func(t *testing.T) {
+		t.Parallel()
+
+		tag, ok := SelectLatestReleaseTag([]string{"v1.9.0", "v1.10.0", "v1.2.30"}, false)
+		require.True(t, ok)
+		require.Equal(t, "v1.10.0", tag)
+	})
+
 	t.Run("excludes prereleases by default", func(t *testing.T) {
 		t.Parallel()
 
@@ -32,6 +40,14 @@ func TestSelectLatestReleaseTag(t *testing.T) {
 		tag, ok := SelectLatestReleaseTag([]string{"v1.2.0", "v1.3.0-rc.1"}, true)
 		require.True(t, ok)
 		require.Equal(t, "v1.3.0-rc.1", tag)
+	})
+
+	t.Run("prefers final release over prerelease of same version", func(t *testing.T) {
+		t.Parallel()
+
+		tag, ok := SelectLatestReleaseTag([]string{"v1.3.0-rc.1", "v1.3.0", "v1.2.9"}, true)
+		require.True(t, ok)
+		require.Equal(t, "v1.3.0", tag)
 	})
 
 	t.Run("rejects partial and non-semver tags", func(t *testing.T) {
@@ -75,5 +91,37 @@ func TestSelectLatestGitReleaseRef(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "refs/heads/main", ref.Name)
 		require.Equal(t, headSHA, ref.SHA)
+	})
+
+	t.Run("falls back to head when only prerelease tags are excluded", func(t *testing.T) {
+		t.Parallel()
+
+		ref, err := SelectLatestGitReleaseRef(&gitutil.Remote{
+			Refs: []*gitutil.Ref{
+				{Name: "HEAD", SHA: headSHA},
+				{Name: "refs/heads/main", SHA: headSHA},
+				{Name: "refs/tags/v2.0.0-rc.1", SHA: releaseSHA},
+			},
+			Symrefs: map[string]string{"HEAD": "refs/heads/main"},
+		}, false)
+		require.NoError(t, err)
+		require.Equal(t, "refs/heads/main", ref.Name)
+		require.Equal(t, headSHA, ref.SHA)
+	})
+
+	t.Run("selects prerelease tag when requested", func(t *testing.T) {
+		t.Parallel()
+
+		ref, err := SelectLatestGitReleaseRef(&gitutil.Remote{
+			Refs: []*gitutil.Ref{
+				{Name: "HEAD", SHA: headSHA},
+				{Name: "refs/heads/main", SHA: headSHA},
+				{Name: "refs/tags/v2.0.0-rc.1", SHA: releaseSHA},
+			},
+			Symrefs: map[string]string{"HEAD": "refs/heads/main"},
+		}, true)
+		require.NoError(t, err)
+		require.Equal(t, "refs/tags/v2.0.0-rc.1", ref.Name)
+		require.Equal(t, releaseSHA, ref.SHA)
 	})
 }

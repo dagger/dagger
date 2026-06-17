@@ -213,6 +213,20 @@ func TestValidateLatestReleaseImageLockPin(t *testing.T) {
 		require.NoError(t, validateLatestReleaseImageLockPin("docker.io/library/alpine:latest@"+digestPin, pinned, false))
 	})
 
+	t.Run("rejects full ref pin for different repository", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := imageRefWithLockPin(refName, "docker.io/library/busybox:3.20.0@"+digestPin)
+		require.ErrorContains(t, err, "repository")
+	})
+
+	t.Run("rejects tag-only pin without digest", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := imageRefWithLockPin(refName, "docker.io/library/alpine:3.20.0")
+		require.ErrorContains(t, err, "must include a digest")
+	})
+
 	t.Run("rejects legacy digest only pin", func(t *testing.T) {
 		t.Parallel()
 
@@ -240,6 +254,16 @@ func TestValidateLatestReleaseImageLockPin(t *testing.T) {
 		require.NoError(t, err)
 
 		err = validateLatestReleaseImageLockPin("docker.io/library/alpine:edge@"+digestPin, pinned, false)
+		require.ErrorContains(t, err, "not a release tag")
+	})
+
+	t.Run("rejects partial semver tag", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, "docker.io/library/alpine:3.20@"+digestPin)
+		require.NoError(t, err)
+
+		err = validateLatestReleaseImageLockPin("docker.io/library/alpine:3.20@"+digestPin, pinned, false)
 		require.ErrorContains(t, err, "not a release tag")
 	})
 
