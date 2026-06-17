@@ -1036,6 +1036,22 @@ func imageRefWithLockPin(refName reference.Named, pin string) (reference.Named, 
 	return pinnedRef, nil
 }
 
+func validateLatestReleaseImageLockPin(pin string, pinnedRef reference.Named, includeSubreleases bool) error {
+	if _, err := digest.Parse(pin); err == nil {
+		return fmt.Errorf("image latest-release lock pin %q must include an image reference and tag", pin)
+	}
+	pinnedTag, ok := pinnedRef.(reference.NamedTagged)
+	if !ok {
+		return fmt.Errorf("image latest-release lock pin %q must include a tag", pin)
+	}
+	if tag := pinnedTag.Tag(); tag != "latest" {
+		if _, ok := core.SelectLatestReleaseTag([]string{tag}, includeSubreleases); !ok {
+			return fmt.Errorf("image latest-release lock pin tag %q is not a release tag", tag)
+		}
+	}
+	return nil
+}
+
 func validateImageLockPinRef(refName, pinnedRef reference.Named) error {
 	if reference.Domain(refName) != reference.Domain(pinnedRef) || reference.Path(refName) != reference.Path(pinnedRef) {
 		return fmt.Errorf("image lock pin repository %q must match %q", reference.FamiliarName(pinnedRef), reference.FamiliarName(refName))
@@ -1267,9 +1283,15 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	if lockResolution.Pin != "" {
+		requestedRefName := refName
 		refName, err = imageRefWithLockPin(refName, lockResolution.Pin)
 		if err != nil {
-			return inst, fmt.Errorf("invalid lock pin %q for image %q: %w", lockResolution.Pin, refName.String(), err)
+			return inst, fmt.Errorf("invalid lock pin %q for image %q: %w", lockResolution.Pin, requestedRefName.String(), err)
+		}
+		if useLatestRelease {
+			if err := validateLatestReleaseImageLockPin(lockResolution.Pin, refName, args.LatestIncludeSubreleases); err != nil {
+				return inst, fmt.Errorf("invalid lock pin %q for image %q: %w", lockResolution.Pin, requestedRefName.String(), err)
+			}
 		}
 	} else {
 		// Doesn't have a digest, resolve that now and re-call this field using the canonical

@@ -709,6 +709,11 @@ type Container implements Exportable & Node & Syncer {
     address: String!
 
     """
+    Include prerelease tags when selecting the latest release for an untagged image address.
+    """
+    latestIncludeSubreleases: Boolean = false
+
+    """
     Service to use as the registry endpoint for the image address.
 
     The service will be started only for this pull.
@@ -4007,6 +4012,14 @@ type GitRepository implements Node {
 
   """A unique identifier for this GitRepository."""
   id: ID!
+
+  """
+  Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+  """
+  latest(
+    """Include prerelease tags when selecting the latest release."""
+    includeSubreleases: Boolean = false
+  ): GitRef!
 
   """Returns details for the latest semver tag."""
   latestVersion: GitRef!

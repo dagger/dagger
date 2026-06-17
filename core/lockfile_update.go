@@ -78,14 +78,16 @@ func updateContainerFromLockEntry(ctx context.Context, query *Query, entry works
 	}
 
 	startTransportInput := 2
-	latestRelease := false
 	latestIncludeSubreleases := false
-	if len(entry.Inputs) >= 4 {
-		marker, _ := entry.Inputs[2].(string)
-		latestRelease = marker == ContainerLatestReleaseLockInput
+	var marker string
+	if len(entry.Inputs) > 2 {
+		marker, _ = entry.Inputs[2].(string)
 	}
+	latestRelease := marker == ContainerLatestReleaseLockInput
 	if latestRelease {
-		latestRelease = true
+		if len(entry.Inputs) < 4 {
+			return workspace.LookupResult{}, fmt.Errorf("missing container.from latestIncludeSubreleases input")
+		}
 		include, ok := entry.Inputs[3].(bool)
 		if !ok {
 			return workspace.LookupResult{}, fmt.Errorf("invalid container.from latestIncludeSubreleases %v", entry.Inputs[3])
@@ -343,6 +345,28 @@ func ParseGitRefLockPin(pin string) (*gitutil.Ref, error) {
 		return nil, fmt.Errorf("invalid commit sha %q for %q", sha, name)
 	}
 	return &gitutil.Ref{Name: name, SHA: sha}, nil
+}
+
+// ParseGitLatestLockPin loads a git.latest lock pin and verifies that its ref
+// has a shape produced by latest-release selection.
+func ParseGitLatestLockPin(pin string, includeSubreleases bool) (*gitutil.Ref, error) {
+	ref, err := ParseGitRefLockPin(pin)
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case strings.HasPrefix(ref.Name, "refs/tags/"):
+		tag := strings.TrimPrefix(ref.Name, "refs/tags/")
+		if _, ok := SelectLatestReleaseTag([]string{tag}, includeSubreleases); !ok {
+			return nil, fmt.Errorf("git latest lock pin ref %q is not a release tag", ref.Name)
+		}
+		return ref, nil
+	case ref.Name == "HEAD" || strings.HasPrefix(ref.Name, "refs/heads/"):
+		return ref, nil
+	default:
+		return nil, fmt.Errorf("git latest lock pin ref %q must be a release tag or HEAD branch", ref.Name)
+	}
 }
 
 func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remote, error) {

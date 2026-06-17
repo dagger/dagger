@@ -1100,7 +1100,7 @@ func (s *gitSchema) latest(ctx context.Context, parent dagql.ObjectResult[*core.
 				return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
 			}
 			if lockResolution.Pin != "" {
-				ref, err := core.ParseGitRefLockPin(lockResolution.Pin)
+				ref, err := core.ParseGitLatestLockPin(lockResolution.Pin, args.IncludeSubreleases)
 				if err != nil {
 					return inst, err
 				}

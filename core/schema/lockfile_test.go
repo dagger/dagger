@@ -189,6 +189,73 @@ func TestImageRefWithLockPin(t *testing.T) {
 	})
 }
 
+func TestValidateLatestReleaseImageLockPin(t *testing.T) {
+	t.Parallel()
+
+	refName, err := reference.ParseNormalizedNamed("alpine")
+	require.NoError(t, err)
+
+	digestPin := "sha256:" + strings.Repeat("a", 64)
+
+	t.Run("accepts full ref pin for release tag", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, "docker.io/library/alpine:3.20.0@"+digestPin)
+		require.NoError(t, err)
+		require.NoError(t, validateLatestReleaseImageLockPin("docker.io/library/alpine:3.20.0@"+digestPin, pinned, false))
+	})
+
+	t.Run("accepts latest fallback tag", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, "docker.io/library/alpine:latest@"+digestPin)
+		require.NoError(t, err)
+		require.NoError(t, validateLatestReleaseImageLockPin("docker.io/library/alpine:latest@"+digestPin, pinned, false))
+	})
+
+	t.Run("rejects legacy digest only pin", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, digestPin)
+		require.NoError(t, err)
+
+		err = validateLatestReleaseImageLockPin(digestPin, pinned, false)
+		require.ErrorContains(t, err, "must include an image reference and tag")
+	})
+
+	t.Run("rejects full ref pin without tag", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, "docker.io/library/alpine@"+digestPin)
+		require.NoError(t, err)
+
+		err = validateLatestReleaseImageLockPin("docker.io/library/alpine@"+digestPin, pinned, false)
+		require.ErrorContains(t, err, "must include a tag")
+	})
+
+	t.Run("rejects non-release tag", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, "docker.io/library/alpine:edge@"+digestPin)
+		require.NoError(t, err)
+
+		err = validateLatestReleaseImageLockPin("docker.io/library/alpine:edge@"+digestPin, pinned, false)
+		require.ErrorContains(t, err, "not a release tag")
+	})
+
+	t.Run("honors prerelease option", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, "docker.io/library/alpine:3.21.0-rc.1@"+digestPin)
+		require.NoError(t, err)
+
+		err = validateLatestReleaseImageLockPin("docker.io/library/alpine:3.21.0-rc.1@"+digestPin, pinned, false)
+		require.ErrorContains(t, err, "not a release tag")
+
+		require.NoError(t, validateLatestReleaseImageLockPin("docker.io/library/alpine:3.21.0-rc.1@"+digestPin, pinned, true))
+	})
+}
+
 func TestCurrentLookupLockMode(t *testing.T) {
 	t.Parallel()
 

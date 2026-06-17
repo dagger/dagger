@@ -76,6 +76,18 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+     */
+    public function latest(?bool $includeSubreleases = false): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('latest');
+        if (null !== $includeSubreleases) {
+        $innerQueryBuilder->setArgument('includeSubreleases', $includeSubreleases);
+        }
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns details for the latest semver tag.
      */
     public function latestVersion(): GitRef

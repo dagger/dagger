@@ -4926,6 +4926,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::latest",
+			"p": "Dagger/GitRepository.html#method_latest",
+			"d": "<p>Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRepository::latestVersion",
 			"p": "Dagger/GitRepository.html#method_latestVersion",
 			"d": "<p>Returns details for the latest semver tag.</p>"
