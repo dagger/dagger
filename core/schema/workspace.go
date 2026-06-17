@@ -336,6 +336,86 @@ type workspaceDirectoryArgs struct {
 	Gitignore bool `default:"false"`
 }
 
+func workspaceFilterWithIgnore(ws *core.Workspace, resolvedPath string, filter core.CopyFilter) core.CopyFilter {
+	ignore := workspaceIgnoreForPath(ws.IgnorePatterns(), resolvedPath)
+	if len(ignore) == 0 {
+		return filter
+	}
+	filter.Exclude = append(append([]string(nil), filter.Exclude...), ignore...)
+	return filter
+}
+
+func workspaceIgnoreForPath(ignore []string, resolvedPath string) []string {
+	if len(ignore) == 0 {
+		return nil
+	}
+	resolvedPath = path.Clean(filepath.ToSlash(resolvedPath))
+	if resolvedPath == "" {
+		resolvedPath = "."
+	}
+	if resolvedPath == "." {
+		return append([]string(nil), ignore...)
+	}
+
+	patterns := make([]string, 0, len(ignore))
+	for _, pattern := range ignore {
+		if rel, ok := workspaceIgnorePatternForPath(pattern, resolvedPath); ok {
+			patterns = append(patterns, rel)
+		}
+	}
+	if len(patterns) == 0 {
+		return nil
+	}
+	return patterns
+}
+
+func workspaceIgnorePatternForPath(pattern, resolvedPath string) (string, bool) {
+	pattern, negative := strings.CutPrefix(pattern, "!")
+	if pattern == "" {
+		return "", false
+	}
+
+	clean := path.Clean(filepath.ToSlash(pattern))
+	clean = strings.TrimPrefix(clean, "/")
+	if clean == "." {
+		clean = "*"
+	}
+
+	var rel string
+	switch {
+	case clean == resolvedPath:
+		rel = "*"
+	case strings.HasPrefix(clean, resolvedPath+"/"):
+		rel = strings.TrimPrefix(clean, resolvedPath+"/")
+	case workspaceIgnorePatternCoversPath(clean, resolvedPath):
+		rel = "*"
+	case !strings.Contains(clean, "/") || workspacePatternHasLeadingGlob(clean):
+		rel = clean
+	default:
+		return "", false
+	}
+	if negative {
+		rel = "!" + rel
+	}
+	return rel, true
+}
+
+func workspaceIgnorePatternCoversPath(pattern, resolvedPath string) bool {
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := strings.TrimSuffix(pattern, "/**")
+		return prefix != "" && strings.HasPrefix(resolvedPath+"/", prefix+"/")
+	}
+	if strings.ContainsAny(pattern, "*?[") {
+		return false
+	}
+	return strings.HasPrefix(resolvedPath, pattern+"/")
+}
+
+func workspacePatternHasLeadingGlob(pattern string) bool {
+	first, _, _ := strings.Cut(pattern, "/")
+	return strings.ContainsAny(first, "*?[")
+}
+
 // resolveRootfs returns a lazy directory reference for a resolved workspace path.
 // Local: per-call host.directory(absPath, include, exclude) via workspace client session.
 // Remote: navigates the pre-fetched rootfs.
@@ -498,7 +578,8 @@ func (s *workspaceSchema) directoryAt(
 	if err != nil {
 		return inst, err
 	}
-	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
+	filter := workspaceFilterWithIgnore(ws, resolvedPath, args.CopyFilter)
+	return s.resolveRootfs(ctx, ws, resolvedPath, filter, args.Gitignore)
 }
 
 type workspaceFileArgs struct {
@@ -530,9 +611,10 @@ func (s *workspaceSchema) fileAt(
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 
-	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{
+	filter := workspaceFilterWithIgnore(ws, parentDir, core.CopyFilter{
 		Include: []string{basename},
-	}, false)
+	})
+	dir, err := s.resolveRootfs(ctx, ws, parentDir, filter, false)
 	if err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
 	}

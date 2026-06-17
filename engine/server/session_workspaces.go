@@ -494,6 +494,34 @@ func workspaceConfigPendingModules(
 	return pending
 }
 
+func workspaceConfigIgnorePatterns(ws *workspace.Workspace, cfg *workspace.Config) []string {
+	if ws == nil || cfg == nil || len(cfg.Ignore) == 0 {
+		return nil
+	}
+
+	configDir := filepath.Dir(ws.ConfigFile)
+	if configDir == "" {
+		configDir = "."
+	}
+
+	patterns := make([]string, 0, len(cfg.Ignore))
+	for _, pattern := range cfg.Ignore {
+		cleanPattern, negative := strings.CutPrefix(pattern, "!")
+		if cleanPattern == "" || !filepath.IsLocal(filepath.FromSlash(cleanPattern)) {
+			continue
+		}
+		resolved := filepath.ToSlash(filepath.Clean(filepath.Join(configDir, filepath.FromSlash(cleanPattern))))
+		if negative {
+			resolved = "!" + resolved
+		}
+		patterns = append(patterns, resolved)
+	}
+	if len(patterns) == 0 {
+		return nil
+	}
+	return patterns
+}
+
 func pendingLegacyModule(
 	ws *workspace.Workspace,
 	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
@@ -667,6 +695,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
+	coreWS.SetIgnorePatterns(workspaceConfigIgnorePatterns(ws, wsConfig))
 	coreWS.SetCompatWorkspace(compatWorkspace)
 	client.workspace = coreWS
 

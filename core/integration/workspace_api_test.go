@@ -127,6 +127,30 @@ func (WorkspaceAPISuite) TestWorkspaceFileAndDirectory(ctx context.Context, t *t
 				require.Contains(t, entries, "build")
 			})
 		})
+
+		t.Run("workspace config ignore filters directory and file access", func(ctx context.Context, t *testctx.T) {
+			ctr := workspaceFixture(t, c, "workspace-api").
+				WithNewFile("keep.txt", "keep me").
+				WithNewFile("ignored/drop.txt", "drop me").
+				WithNewFile("ignored/secret.txt", "secret").
+				WithNewFile("sub/keep.txt", "keep sub").
+				WithNewFile("sub/secret.txt", "drop sub")
+
+			out, err := ctr.With(daggerCall("lister", "ls")).Stdout(ctx)
+			require.NoError(t, err)
+			entries := strings.TrimSpace(out)
+			require.Contains(t, entries, "keep.txt")
+			require.NotContains(t, entries, "ignored")
+
+			out, err = ctr.With(daggerCall("subdir", "ls")).Stdout(ctx)
+			require.NoError(t, err)
+			entries = strings.TrimSpace(out)
+			require.Contains(t, entries, "keep.txt")
+			require.NotContains(t, entries, "secret.txt")
+
+			_, err = ctr.With(daggerCall("ignored-reader", "read")).Sync(ctx)
+			requireErrOut(t, err, "no such file or directory")
+		})
 	})
 }
 
