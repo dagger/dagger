@@ -2822,10 +2822,6 @@ export type WorkspaceInstallOpts = {
   asSdk?: boolean
 }
 
-export type WorkspaceMigrateOpts = {
-  force?: boolean
-}
-
 export type WorkspaceModuleInitOpts = {
   /**
    * Workspace install name of the SDK to use.
@@ -14853,8 +14849,8 @@ export class Workspace extends BaseClient {
    *
    * The returned plan has an empty changeset and no steps when no migration is needed.
    */
-  migrate = (opts?: WorkspaceMigrateOpts): WorkspaceMigration => {
-    const ctx = this._ctx.select("migrate", { ...opts })
+  migrate = (): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrate")
     return new WorkspaceMigration(ctx)
   }
 
