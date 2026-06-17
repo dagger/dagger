@@ -56,7 +56,7 @@ func (m *Progress) Fail(ctx context.Context) (string, error) {
 
 		// Warm the module so the run under test is bounded by the failing
 		// exec, not by codegen/load.
-		_, err = hostDaggerExec(ctx, t, modDir, "-m", ".", "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "-m", ".", "api", "functions")
 		require.NoError(t, err)
 
 		console, err := newTUIConsole(t, 60*time.Second)

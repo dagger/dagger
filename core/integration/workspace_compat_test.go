@@ -485,7 +485,7 @@ func (WorkspaceCompatSuite) TestCompatRequiresWorkspaceRoot(ctx context.Context,
 	// With no detected workspace root this cannot become an ambient compat
 	// workspace. Load it explicitly to verify legacy workspace fields are still
 	// rejected as generic module fields.
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "api", "functions", "-m", ".")
 	requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.")
 }
 
@@ -534,7 +534,7 @@ func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Cont
   ]
 }`), 0o644))
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "api", "functions", "-m", ".")
 		require.Error(t, err)
 		requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W .\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces")
 	})
