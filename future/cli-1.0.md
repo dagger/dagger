@@ -746,6 +746,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 ### Shipped — hidden aliases
 
 - ✅ **`dagger call`** — hidden alias to `dagger api call`.
+- ✅ **`dagger run`** — hidden alias to `dagger api exec`.
 - ✅ **`dagger shell`** — hidden, reachable.
 
 ### ⬜ Not yet implemented — handoff to follow-up PRs

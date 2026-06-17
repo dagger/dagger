@@ -27,7 +27,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-var runCmd = &cobra.Command{
+var apiExecCmd = &cobra.Command{
 	Use:     "exec [options] <command>...",
 	Aliases: []string{"run", "r"},
 	Short:   "Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)",
@@ -66,14 +66,33 @@ dagger api exec python main.py
 	},
 }
 
+var runCmd = &cobra.Command{
+	Use:          "run [options] <command>...",
+	Hidden:       true,
+	RunE:         Run,
+	Args:         cobra.MinimumNArgs(1),
+	SilenceUsage: true,
+	Annotations: map[string]string{
+		printTraceLinkKey:    "true",
+		showFinalProgressKey: "true",
+	},
+}
+
 var waitDelay time.Duration
 var runFocus bool
 var runLoadWorkspaceModules bool
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
+	apiExecCmd.Flags().SetInterspersed(false)
 	runCmd.Flags().SetInterspersed(false)
 
+	apiExecCmd.Flags().DurationVar(
+		&waitDelay,
+		"cleanup-timeout",
+		10*time.Second,
+		"max duration to wait between SIGTERM and SIGKILL on interrupt",
+	)
 	runCmd.Flags().DurationVar(
 		&waitDelay,
 		"cleanup-timeout",
@@ -81,8 +100,14 @@ func init() {
 		"max duration to wait between SIGTERM and SIGKILL on interrupt",
 	)
 
+	apiExecCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
 	runCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
+	apiExecCmd.Flags().BoolVar(&runLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
 	runCmd.Flags().BoolVar(&runLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
+	if err := apiExecCmd.Flags().MarkHidden("load-workspace-modules"); err != nil {
+		fmt.Fprintln(stderr, "Error hiding flag: load-workspace-modules", err)
+		os.Exit(1)
+	}
 	if err := runCmd.Flags().MarkHidden("load-workspace-modules"); err != nil {
 		fmt.Fprintln(stderr, "Error hiding flag: load-workspace-modules", err)
 		os.Exit(1)
