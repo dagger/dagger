@@ -26,6 +26,7 @@ import (
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
@@ -199,6 +200,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		locker: locker.New(),
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
+
+	// Let core (e.g. changeset export) drop this server's per-client workspace
+	// cache after workspace config is written to the host. One engine = one
+	// Server, so a process-global hook is sufficient.
+	core.SetWorkspaceInvalidator(srv.invalidateClientWorkspace)
 
 	// start the global namespace worker pool, which is used for running Go funcs
 	// in container namespaces dynamically
