@@ -178,11 +178,12 @@ entrypoint = true
 
 		require.NoError(t, os.MkdirAll(emptyDir, 0o755))
 		initGitRepo(ctx, t, workdir)
+		// `dagger workspace init` was removed in CLI 1.0; seed an empty native
+		// workspace config directly so the failed install has something to
+		// (not) corrupt.
+		writeWorkspaceConfigFile(t, workdir, "[modules]\n")
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
-		require.NoError(t, err)
-
-		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./empty")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./empty")
 		require.Error(t, err)
 		requireErrOut(t, err, `ref "./empty" does not point to an initialized module`)
 
@@ -239,11 +240,11 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 	t.Run("uninstalling an unknown module errors", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
+		// `dagger workspace init` was removed in CLI 1.0; seed an empty native
+		// workspace config directly so uninstall has a workspace to look in.
+		writeWorkspaceConfigFile(t, workdir, "[modules]\n")
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
-		require.NoError(t, err)
-
-		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "uninstall", "ghost")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "uninstall", "ghost")
 		require.Error(t, err)
 		requireErrOut(t, err, `module "ghost" is not installed in the workspace`)
 	})
