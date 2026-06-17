@@ -33,7 +33,6 @@ func TestWorkspaceMigration(t *testing.T) {
 // preview via the workspace `migrate` API (non-mutating) and apply via
 // `dagger setup --auto-apply`.
 func (WorkspaceMigrationSuite) TestWorkspaceMigratePreviewAndApply(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(migrate-via-setup): `dagger migrate` was removed and folded into `dagger setup` (its migrate step), but setup does NOT reproduce migrate's stdout user feedback: the per-module 'requires explicit loading' warnings, the 'prepare migration diff' / 'install module:' / 'move module:' apply summary, and 'No migration needed.' now go to .dagger/migration-report.md (or nowhere) rather than stdout, and some applies exit non-zero through setup. These tests assert that stdout, so they cannot pass via `setup --auto-apply` as-is. To re-enable: either (a) restore that stdout feedback in setup's migrate step, or (b) rewrite each assertion below to read .dagger/migration-report.md + the on-disk dagger.toml instead of setup stdout. Migration behavior itself is still covered by workspace_compat_test.go.")
 	t.Run("preview reports changes without applying them", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -123,7 +122,6 @@ type Myapp {
 // TestWorkspaceMigrateOutcomes should cover the main result classes of a
 // migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateOutcomes(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(migrate-via-setup): `dagger migrate` was removed and folded into `dagger setup` (its migrate step), but setup does NOT reproduce migrate's stdout user feedback: the per-module 'requires explicit loading' warnings, the 'prepare migration diff' / 'install module:' / 'move module:' apply summary, and 'No migration needed.' now go to .dagger/migration-report.md (or nowhere) rather than stdout, and some applies exit non-zero through setup. These tests assert that stdout, so they cannot pass via `setup --auto-apply` as-is. To re-enable: either (a) restore that stdout feedback in setup's migrate step, or (b) rewrite each assertion below to read .dagger/migration-report.md + the on-disk dagger.toml instead of setup stdout. Migration behavior itself is still covered by workspace_compat_test.go.")
 	t.Run("non-local source stays in place behind moved config", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -168,7 +166,8 @@ type Myapp {
 
 		out, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "Warning: Root module requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m . ...`.")
+		// The "requires explicit loading" warning is recorded in the on-disk
+		// migration report (asserted below), not printed to setup stdout.
 
 		_, err = ctr.WithExec([]string{"test", "-f", "main.go"}).Sync(ctx)
 		require.NoError(t, err, "source file should remain at root")
@@ -409,7 +408,6 @@ type Myapp {
 // TestWorkspaceMigrateUserFeedback should cover the user-facing output of
 // explicit migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(migrate-via-setup): `dagger migrate` was removed and folded into `dagger setup` (its migrate step), but setup does NOT reproduce migrate's stdout user feedback: the per-module 'requires explicit loading' warnings, the 'prepare migration diff' / 'install module:' / 'move module:' apply summary, and 'No migration needed.' now go to .dagger/migration-report.md (or nowhere) rather than stdout, and some applies exit non-zero through setup. These tests assert that stdout, so they cannot pass via `setup --auto-apply` as-is. To re-enable: either (a) restore that stdout feedback in setup's migrate step, or (b) rewrite each assertion below to read .dagger/migration-report.md + the on-disk dagger.toml instead of setup stdout. Migration behavior itself is still covered by workspace_compat_test.go.")
 	withFreshMigrationProgress := func(ctr *dagger.Container) *dagger.Container {
 		workdir := "/work-" + identity.NewID()
 		return ctr.
@@ -534,10 +532,17 @@ type Toolchain {
 		require.Contains(t, output, "workspace configuration: dagger.toml")
 		require.Contains(t, output, "install module: ./toolchain")
 		require.Contains(t, output, "migration report: .dagger/migration-report.md")
-		require.Contains(t, output, "Warning: 2 old setting(s) need review; see .dagger/migration-report.md")
 		require.NotContains(t, output, "If you apply this migration, review .dagger/migration-report.md.")
-		require.Equal(t, 1, strings.Count(output, "Warning: 2 old setting(s) need review; see .dagger/migration-report.md"))
 		require.NotContains(t, output, "Migrated to workspace format")
+
+		// The "N old setting(s) need review" summary and per-gap details land in
+		// the on-disk migration report rather than setup stdout.
+		report, err := migrate.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, report, "# Migration Report")
+		require.Contains(t, report, "`toolchain` needs a manual check")
+		require.Contains(t, report, `constructor arg "src" has 'ignore' and 'defaultPath', which workspace settings do not support`)
+		require.Contains(t, report, `function setting "build.tag" is not supported in workspace config`)
 	})
 
 	t.Run("dot dagger source does not warn about skipped cleanup", func(ctx context.Context, t *testctx.T) {
@@ -566,7 +571,6 @@ type Myapp {
 // TestWorkspaceMigrateScope should lock down what the migration actually uses
 // as input.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateScope(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(migrate-via-setup): `dagger migrate` was removed and folded into `dagger setup` (its migrate step), but setup does NOT reproduce migrate's stdout user feedback: the per-module 'requires explicit loading' warnings, the 'prepare migration diff' / 'install module:' / 'move module:' apply summary, and 'No migration needed.' now go to .dagger/migration-report.md (or nowhere) rather than stdout, and some applies exit non-zero through setup. These tests assert that stdout, so they cannot pass via `setup --auto-apply` as-is. To re-enable: either (a) restore that stdout feedback in setup's migrate step, or (b) rewrite each assertion below to read .dagger/migration-report.md + the on-disk dagger.toml instead of setup stdout. Migration behavior itself is still covered by workspace_compat_test.go.")
 	c := connect(ctx, t)
 
 	t.Run("migrates selected nested config without touching outer config", func(ctx context.Context, t *testctx.T) {
@@ -674,8 +678,8 @@ type Videostitch struct{}
 
 		output, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, output)
-		require.Contains(t, output, "Warning: .dagger/modules/videostitch requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m .dagger/modules/videostitch ...`.")
-		require.Contains(t, output, "Warning: .dagger/modules/clipper requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m .dagger/modules/clipper ...`.")
+		// The per-module "requires explicit loading" warnings are recorded in the
+		// on-disk migration report (asserted below), not printed to setup stdout.
 
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
 		require.NoError(t, err, "root parent workspace config should be created")
@@ -715,7 +719,6 @@ type Videostitch struct{}
 }
 
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateSafety(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(migrate-via-setup): `dagger migrate` was removed and folded into `dagger setup` (its migrate step), but setup does NOT reproduce migrate's stdout user feedback: the per-module 'requires explicit loading' warnings, the 'prepare migration diff' / 'install module:' / 'move module:' apply summary, and 'No migration needed.' now go to .dagger/migration-report.md (or nowhere) rather than stdout, and some applies exit non-zero through setup. These tests assert that stdout, so they cannot pass via `setup --auto-apply` as-is. To re-enable: either (a) restore that stdout feedback in setup's migrate step, or (b) rewrite each assertion below to read .dagger/migration-report.md + the on-disk dagger.toml instead of setup stdout. Migration behavior itself is still covered by workspace_compat_test.go.")
 	t.Run("rerunning migrate after apply is a no-op", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
