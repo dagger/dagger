@@ -1,8 +1,14 @@
 package core
 
 // These tests cover named workspace environments and the config values scoped to
-// each environment. They verify how users create, select, read, write, and run
-// with those environment-specific values.
+// each environment. They verify how users select, read, write, and run with
+// those environment-specific values.
+//
+// The standalone `dagger env {create,list,rm}` lifecycle group was removed in
+// the CLI 1.0 redesign: an env is now just a path prefix (env.<name>.*) in
+// workspace config, so it comes into being when a value is written under it and
+// is inspected/edited via `dagger workspace config` (raw) or `dagger settings
+// --env` (typed). There is no longer a discrete create/list/rm command to test.
 //
 // See also:
 // - workspace_settings_test.go: typed module-setting discovery and UX.
@@ -12,11 +18,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
-	workspacecfg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -54,94 +57,15 @@ func hostDaggerEnvExec(ctx context.Context, t *testctx.T, workdir string, args .
 	return stdout.Bytes(), err
 }
 
-func readWorkspaceEnvConfigFile(t *testctx.T, workdir string) string {
-	t.Helper()
-
-	data, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
-	require.NoError(t, err)
-	return string(data)
-}
-
-// TestWorkspaceEnvLifecycleCommands owns the explicit lifecycle commands for
-// named workspace environments. It should not cover runtime application of an
-// env; that belongs with config semantics and runtime consistency below.
-func (WorkspaceSuite) TestWorkspaceEnvLifecycleCommands(ctx context.Context, t *testctx.T) {
-	t.Run("env list prints names in deterministic order", func(ctx context.Context, t *testctx.T) {
-		workdir := newWorkspaceConfigWorkdir(ctx, t, `[env.dev]
-
-[env.ci]
-
-[env.prod]
-`)
-
-		out, err := hostDaggerEnvExec(ctx, t, workdir, "env", "list")
-		require.NoError(t, err)
-		require.Equal(t, "ci\ndev\nprod\n", string(out))
-
-		workdir = newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
-source = "github.com/dagger/aws"
-`)
-		out, err = hostDaggerEnvExec(ctx, t, workdir, "env", "list")
-		require.NoError(t, err)
-		require.Empty(t, string(out))
-	})
-
-	t.Run("env create initializes an empty env and is idempotent", func(ctx context.Context, t *testctx.T) {
-		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
-source = "github.com/dagger/aws"
-`)
-
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "env", "create", "ci")
-		require.NoError(t, err)
-
-		cfg := readInstalledWorkspaceConfig(t, workdir)
-		require.Contains(t, cfg.Env, "ci")
-		require.Empty(t, cfg.Env["ci"].Modules)
-		require.Contains(t, readWorkspaceEnvConfigFile(t, workdir), "[env.ci]")
-
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "config", "env.ci.modules.aws.settings.region", "us-east-1")
-		require.NoError(t, err)
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "env", "create", "ci")
-		require.NoError(t, err)
-
-		cfg = readInstalledWorkspaceConfig(t, workdir)
-		require.Equal(t, "us-east-1", cfg.Env["ci"].Modules["aws"].Settings["region"])
-	})
-
-	t.Run("env rm deletes only the selected env and fails for missing env", func(ctx context.Context, t *testctx.T) {
-		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
-source = "github.com/dagger/aws"
-
-[env.dev.modules.aws.settings]
-region = "us-west-2"
-
-[env.ci.modules.aws.settings]
-region = "us-east-1"
-`)
-
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "env", "rm", "ci")
-		require.NoError(t, err)
-
-		cfg := readInstalledWorkspaceConfig(t, workdir)
-		require.NotContains(t, cfg.Env, "ci")
-		require.Equal(t, "us-west-2", cfg.Env["dev"].Modules["aws"].Settings["region"])
-		require.NotContains(t, readWorkspaceEnvConfigFile(t, workdir), "[env.ci")
-
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "env", "rm", "missing")
-		require.Error(t, err)
-		requireErrOut(t, err, `workspace env "missing" is not defined`)
-	})
-}
-
 // TestWorkspaceEnvConfigReadSemantics defines what users should see from
-// `dagger config` when they select an environment. The command is a config UX,
+// `dagger workspace config` when they select an environment. The command is a config UX,
 // not a raw TOML browser, so env-scoped reads should default to effective
 // merged values.
 func (WorkspaceSuite) TestWorkspaceEnvConfigReadSemantics(ctx context.Context, t *testctx.T) {
 	t.Run("whole-file read with env shows the effective active config", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, workspaceEnvConfigFixture)
 
-		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config")
+		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config")
 		require.NoError(t, err)
 
 		output := string(out)
@@ -161,11 +85,11 @@ func (WorkspaceSuite) TestWorkspaceEnvConfigReadSemantics(ctx context.Context, t
 	t.Run("scalar reads in env scope return effective values with base fallback", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, workspaceEnvConfigFixture)
 
-		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings.region")
+		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings.format")
+		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.format")
 		require.NoError(t, err)
 		require.Equal(t, "json", strings.TrimSpace(string(out)))
 	})
@@ -173,7 +97,7 @@ func (WorkspaceSuite) TestWorkspaceEnvConfigReadSemantics(ctx context.Context, t
 	t.Run("table reads in env scope merge base entry fields with env settings overrides", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceConfigWorkdir(ctx, t, workspaceEnvConfigFixture)
 
-		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws")
+		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws")
 		require.NoError(t, err)
 		output := string(out)
 		require.Contains(t, output, `source = "github.com/dagger/aws"`)
@@ -181,7 +105,7 @@ func (WorkspaceSuite) TestWorkspaceEnvConfigReadSemantics(ctx context.Context, t
 		require.Contains(t, output, `settings.region = "us-east-1"`)
 		require.NotContains(t, output, "us-west-2")
 
-		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings")
+		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings")
 		require.NoError(t, err)
 		output = string(out)
 		require.Contains(t, output, `format = "json"`)
@@ -197,11 +121,11 @@ source = "github.com/dagger/aws"
 region = "us-west-2"
 `)
 
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config")
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config")
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "ci" is not defined`)
 
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings.region")
+		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "ci" is not defined`)
 	})
@@ -221,18 +145,18 @@ region = "us-west-2"
 [env.ci]
 `)
 
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings.region", "us-east-1")
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region", "us-east-1")
 		require.NoError(t, err)
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Equal(t, "us-west-2", cfg.Modules["aws"].Settings["region"])
 		require.Equal(t, "us-east-1", cfg.Env["ci"].Modules["aws"].Settings["region"])
 
-		out, err := hostDaggerEnvExec(ctx, t, workdir, "config", "modules.aws.settings.region")
+		out, err := hostDaggerEnvExec(ctx, t, workdir, "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings.region")
+		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 	})
@@ -244,11 +168,11 @@ source = "github.com/dagger/vitest"
 [env.ci]
 `)
 
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.vitest.settings.failFast", "true")
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.vitest.settings.failFast", "true")
 		require.NoError(t, err)
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.vitest.settings.retries", "3")
+		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.vitest.settings.retries", "3")
 		require.NoError(t, err)
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.vitest.settings.tags", "smoke, nightly")
+		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.vitest.settings.tags", "smoke, nightly")
 		require.NoError(t, err)
 
 		settings := readInstalledWorkspaceConfig(t, workdir).Env["ci"].Modules["vitest"].Settings
@@ -270,7 +194,7 @@ source = "github.com/dagger/aws"
 			{"defaults_from_dotenv", "true"},
 		}
 		for _, args := range tests {
-			_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", args[0], args[1])
+			_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", args[0], args[1])
 			require.Error(t, err)
 			requireErrOut(t, err, `only modules.<name>.settings.* is supported`)
 		}
@@ -283,11 +207,11 @@ source = "github.com/dagger/aws"
 [env.ci]
 `)
 
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=missing", "config", "modules.aws.settings.region", "us-east-1")
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=missing", "workspace", "config", "modules.aws.settings.region", "us-east-1")
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "missing" is not defined`)
 
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.missing.settings.region", "us-east-1")
+		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.missing.settings.region", "us-east-1")
 		require.Error(t, err)
 		requireErrOut(t, err, `workspace env "ci" cannot set settings for unknown module "missing"`)
 	})
@@ -308,11 +232,11 @@ region = "us-west-2"
 region = "us-east-1"
 `)
 
-		out, err := hostDaggerEnvExec(ctx, t, workdir, "config", "env.ci.modules.aws.settings.region")
+		out, err := hostDaggerEnvExec(ctx, t, workdir, "workspace", "config", "env.ci.modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings.region")
+		out, err = hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 	})
@@ -322,7 +246,7 @@ region = "us-east-1"
 source = "github.com/dagger/aws"
 `)
 
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "config", "env.ci.modules.aws.settings.region", "us-east-1")
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "workspace", "config", "env.ci.modules.aws.settings.region", "us-east-1")
 		require.NoError(t, err)
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
@@ -343,14 +267,14 @@ region = "us-east-1"
 region = "eu-central-1"
 `)
 
-		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=prod", "config", "env.ci.modules.aws.settings.region")
+		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=prod", "workspace", "config", "env.ci.modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(out)))
 	})
 }
 
 // TestWorkspaceEnvConfigRuntimeConsistency keeps the user-facing promise that
-// `dagger config` reflects what runtime commands will actually use under the
+// `dagger workspace config` reflects what runtime commands will actually use under the
 // same env selection.
 func (WorkspaceSuite) TestWorkspaceEnvConfigRuntimeConsistency(ctx context.Context, t *testctx.T) {
 	t.Run("effective config reads match the defaults used by runtime commands", func(ctx context.Context, t *testctx.T) {
@@ -365,7 +289,7 @@ region = "us-west-2"
 region = "us-east-1"
 `, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-		configOut, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings.region")
+		configOut, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "us-east-1", strings.TrimSpace(string(configOut)))
 
@@ -392,9 +316,9 @@ region = "base-region"
 [env.dev]
 `, workspaceSettingsAWSModule("modules/aws", "aws"))
 
-		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "config", "modules.aws.settings.region", "us-east-1")
+		_, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "workspace", "config", "modules.aws.settings.region", "us-east-1")
 		require.NoError(t, err)
-		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=dev", "config", "modules.aws.settings.region", "us-west-2")
+		_, err = hostDaggerEnvExec(ctx, t, workdir, "--env=dev", "workspace", "config", "modules.aws.settings.region", "us-west-2")
 		require.NoError(t, err)
 
 		out, err := hostDaggerEnvExec(ctx, t, workdir, "--env=ci", "call", "region")

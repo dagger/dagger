@@ -52,7 +52,7 @@ func cacheTerminalModule(ctx context.Context, t *testctx.T, modDir string, args 
 func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
-		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -109,7 +109,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("bound service crash keeps terminal open", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-bound-service-crash")
-		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
 		console, err := newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
@@ -154,7 +154,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-basic")
-		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -238,7 +238,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("attachable", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-attachable")
-		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -343,7 +343,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("nested client", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-nested-client")
-		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
 		thisRepoPath, err := filepath.Abs("../..")
 		require.NoError(t, err)
@@ -408,7 +408,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("directory", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-directory")
-		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -456,7 +456,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("on failure", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-on-failure")
-		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "api", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)

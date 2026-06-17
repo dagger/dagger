@@ -527,7 +527,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			copyTestdataFixture(ctx, t, modDir, "modules", "go", "cacert-terminal")
 
 			// cache the module load itself so there's less to wait for in the shell invocation below
-			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions", "-m", ".")
+			functionsCmd := hostDaggerCommand(ctx, t, modDir, "api", "functions", "-m", ".")
 			copy(functionsCmd.Env, os.Environ())
 			functionsCmd.Env = append(functionsCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			functionsOutput, err := functionsCmd.CombinedOutput()
