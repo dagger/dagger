@@ -15722,15 +15722,13 @@ class Workspace(Type):
         _ctx = self._select("install", _args)
         return await _ctx.execute(str)
 
-    def migrate(self, *, force: bool | None = False) -> "WorkspaceMigration":
+    def migrate(self) -> "WorkspaceMigration":
         """Plan the explicit migration needed for the current workspace.
 
         The returned plan has an empty changeset and no steps when no
         migration is needed.
         """
-        _args = [
-            Arg("force", force, False),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("migrate", _args)
         return WorkspaceMigration(_ctx)
 

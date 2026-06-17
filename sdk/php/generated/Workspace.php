@@ -299,12 +299,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * The returned plan has an empty changeset and no steps when no migration is needed.
      */
-    public function migrate(?bool $force = false): WorkspaceMigration
+    public function migrate(): WorkspaceMigration
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('migrate');
-        if (null !== $force) {
-        $innerQueryBuilder->setArgument('force', $force);
-        }
         return new \Dagger\WorkspaceMigration($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

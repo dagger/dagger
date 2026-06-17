@@ -6094,7 +6094,7 @@ type Workspace implements Node {
 
   The returned plan has an empty changeset and no steps when no migration is needed.
   """
-  migrate(force: Boolean = false): WorkspaceMigration!
+  migrate: WorkspaceMigration!
 
   """
   Plan the workspace changes for initializing a new module: dagger-module.toml +
