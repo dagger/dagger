@@ -341,12 +341,10 @@ defmodule Dagger.Workspace do
 
   The returned plan has an empty changeset and no steps when no migration is needed.
   """
-  @spec migrate(t(), [{:force, boolean() | nil}]) :: Dagger.WorkspaceMigration.t()
-  def migrate(%__MODULE__{} = workspace, optional_args \\ []) do
+  @spec migrate(t()) :: Dagger.WorkspaceMigration.t()
+  def migrate(%__MODULE__{} = workspace) do
     query_builder =
-      workspace.query_builder
-      |> QB.select("migrate")
-      |> QB.maybe_put_arg("force", optional_args[:force])
+      workspace.query_builder |> QB.select("migrate")
 
     %Dagger.WorkspaceMigration{
       query_builder: query_builder,
