@@ -2117,6 +2117,8 @@ func (r *Container) File(path string, opts ...ContainerFileOpts) *File {
 
 // ContainerFromOpts contains options for Container.From
 type ContainerFromOpts struct {
+	// Include prerelease tags when selecting the latest release for an untagged image address.
+	LatestIncludeSubreleases bool
 	// Service to use as the registry endpoint for the image address.
 	//
 	// The service will be started only for this pull.
@@ -2133,6 +2135,10 @@ type ContainerFromOpts struct {
 func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 	q := r.query.Select("from")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `latestIncludeSubreleases` optional argument
+		if !querybuilder.IsZeroValue(opts[i].LatestIncludeSubreleases) {
+			q = q.Arg("latestIncludeSubreleases", opts[i].LatestIncludeSubreleases)
+		}
 		// `registryService` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
 			q = q.Arg("registryService", opts[i].RegistryService)
@@ -9478,6 +9484,27 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// GitRepositoryLatestOpts contains options for GitRepository.Latest
+type GitRepositoryLatestOpts struct {
+	// Include prerelease tags when selecting the latest release.
+	IncludeSubreleases bool
+}
+
+// Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+func (r *GitRepository) Latest(opts ...GitRepositoryLatestOpts) *GitRef {
+	q := r.query.Select("latest")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includeSubreleases` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeSubreleases) {
+			q = q.Arg("includeSubreleases", opts[i].IncludeSubreleases)
+		}
+	}
+
+	return &GitRef{
+		query: q,
+	}
 }
 
 // Returns details for the latest semver tag.

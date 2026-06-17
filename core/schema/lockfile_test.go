@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
+	"github.com/distribution/reference"
 	"github.com/stretchr/testify/require"
 )
 
@@ -145,6 +146,46 @@ func TestResolveLookupFromLock(t *testing.T) {
 
 		_, err = resolveLookupFromLock(workspace.LockModePinned, lock, operation, inputs, workspace.PolicyFloat)
 		require.ErrorContains(t, err, "invalid lock entry")
+	})
+}
+
+func TestImageRefWithLockPin(t *testing.T) {
+	t.Parallel()
+
+	refName, err := reference.ParseNormalizedNamed("alpine:latest")
+	require.NoError(t, err)
+	refName = reference.TagNameOnly(refName)
+
+	digestPin := "sha256:" + strings.Repeat("a", 64)
+
+	t.Run("accepts legacy digest only pin", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, digestPin)
+		require.NoError(t, err)
+		require.Equal(t, "docker.io/library/alpine:latest@"+digestPin, pinned.String())
+	})
+
+	t.Run("accepts full ref pin for same image", func(t *testing.T) {
+		t.Parallel()
+
+		pinned, err := imageRefWithLockPin(refName, "docker.io/library/alpine:latest@"+digestPin)
+		require.NoError(t, err)
+		require.Equal(t, "docker.io/library/alpine:latest@"+digestPin, pinned.String())
+	})
+
+	t.Run("rejects full ref pin for different repository", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := imageRefWithLockPin(refName, "docker.io/library/busybox:latest@"+digestPin)
+		require.ErrorContains(t, err, "repository")
+	})
+
+	t.Run("rejects full ref pin for different exact tag", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := imageRefWithLockPin(refName, "docker.io/library/alpine:3.20@"+digestPin)
+		require.ErrorContains(t, err, `tag must match "latest"`)
 	})
 }
 

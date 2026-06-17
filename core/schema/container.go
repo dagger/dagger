@@ -1015,21 +1015,38 @@ func registryTransportFromArgs(protocol dagql.Optional[core.RegistryProtocol], i
 const lockContainerFromOperation = "container.from"
 
 func imageRefWithLockPin(refName reference.Named, pin string) (reference.Named, error) {
-	if pinnedRef, err := reference.ParseNormalizedNamed(pin); err == nil {
-		if _, ok := pinnedRef.(reference.Canonical); !ok {
-			return nil, fmt.Errorf("image lock pin %q must include a digest", pin)
+	resolvedDigest, err := digest.Parse(pin)
+	if err == nil {
+		if _, ok := refName.(reference.NamedTagged); !ok {
+			refName = reference.TagNameOnly(refName)
 		}
-		return pinnedRef, nil
+		return reference.WithDigest(refName, resolvedDigest)
 	}
 
-	resolvedDigest, err := digest.Parse(pin)
+	pinnedRef, err := reference.ParseNormalizedNamed(pin)
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := refName.(reference.NamedTagged); !ok {
-		refName = reference.TagNameOnly(refName)
+	if _, ok := pinnedRef.(reference.Canonical); !ok {
+		return nil, fmt.Errorf("image lock pin %q must include a digest", pin)
 	}
-	return reference.WithDigest(refName, resolvedDigest)
+	if err := validateImageLockPinRef(refName, pinnedRef); err != nil {
+		return nil, err
+	}
+	return pinnedRef, nil
+}
+
+func validateImageLockPinRef(refName, pinnedRef reference.Named) error {
+	if reference.Domain(refName) != reference.Domain(pinnedRef) || reference.Path(refName) != reference.Path(pinnedRef) {
+		return fmt.Errorf("image lock pin repository %q must match %q", reference.FamiliarName(pinnedRef), reference.FamiliarName(refName))
+	}
+	if requestedTag, ok := refName.(reference.NamedTagged); ok {
+		pinnedTag, ok := pinnedRef.(reference.NamedTagged)
+		if !ok || pinnedTag.Tag() != requestedTag.Tag() {
+			return fmt.Errorf("image lock pin tag must match %q", requestedTag.Tag())
+		}
+	}
+	return nil
 }
 
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then

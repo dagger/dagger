@@ -40,6 +40,17 @@ const containerFromQuery = `{
 }
 `
 
+const containerFromBareQuery = `{
+  container {
+    from(address: "alpine") {
+      file(path: "/etc/alpine-release") {
+        contents
+      }
+    }
+  }
+}
+`
+
 const (
 	lockTestGitRepoURL      = "https://github.com/dagger/dagger.git"
 	lockTestGitBranchName   = "main"
@@ -51,6 +62,15 @@ const (
 const gitBranchCommitQuery = `{
   git(url: "` + lockTestGitRepoURL + `") {
     branch(name: "main") {
+      commit
+    }
+  }
+}
+`
+
+const gitLatestCommitQuery = `{
+  git(url: "` + lockTestGitRepoURL + `") {
+    latest {
       commit
     }
   }
@@ -273,6 +293,21 @@ func (LockfileSuite) TestLiveDiscoversQueryEntries(ctx context.Context, t *testc
 	assertContainerFromLockEntry(t, lockBytes, workspace.PolicyPin)
 }
 
+func (LockfileSuite) TestLiveDiscoversLatestReleaseContainerEntry(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "query.graphql", containerFromBareQuery)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	assertLatestReleaseContainerFromLockEntry(t, lockBytes, lockTestPlatform(ctx, t), workspace.PolicyPin)
+}
+
 func (LockfileSuite) TestLiveDiscoversGitEntries(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
@@ -287,6 +322,21 @@ func (LockfileSuite) TestLiveDiscoversGitEntries(ctx context.Context, t *testctx
 	require.NoError(t, err)
 	assertGitLockEntry(t, lockBytes, "git.branch", []any{lockTestGitRepoURL, lockTestGitBranchName}, workspace.PolicyFloat)
 	assertGitLockEntry(t, lockBytes, "git.tag", []any{lockTestGitRepoURL, lockTestGitTagName}, workspace.PolicyPin)
+}
+
+func (LockfileSuite) TestLiveDiscoversGitLatestEntry(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", gitLatestCommitQuery)
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	assertGitLatestLockEntry(t, lockBytes, workspace.PolicyPin)
 }
 
 func (LockfileSuite) TestLiveNestedQuery(ctx context.Context, t *testctx.T) {
@@ -522,6 +572,30 @@ func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte, expectedPolicy
 	require.True(t, found, "expected container.from entry in lockfile")
 }
 
+func assertLatestReleaseContainerFromLockEntry(t *testctx.T, lockBytes []byte, expectedPlatform string, expectedPolicy workspace.LockPolicy) {
+	t.Helper()
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+
+	var found bool
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != "container.from" {
+			continue
+		}
+		found = true
+		require.Equal(t, []any{"docker.io/library/alpine", expectedPlatform, "latest-release", false}, entry.Inputs)
+		require.Equal(t, string(expectedPolicy), entry.Policy)
+
+		value, ok := entry.Value.(string)
+		require.True(t, ok)
+		require.Contains(t, value, "docker.io/library/alpine:")
+		require.Contains(t, value, "@sha256:")
+		require.NotContains(t, value, "alpine:latest@")
+	}
+
+	require.True(t, found, "expected latest-release container.from entry in lockfile")
+}
+
 func assertGitLockEntry(t *testctx.T, lockBytes []byte, operation string, expectedInputs []any, expectedPolicy workspace.LockPolicy) {
 	t.Helper()
 	parsed, err := lockfile.Parse(lockBytes)
@@ -545,6 +619,31 @@ func assertGitLockEntry(t *testctx.T, lockBytes []byte, operation string, expect
 	}
 
 	require.True(t, found, "expected %s entry in lockfile", operation)
+}
+
+func assertGitLatestLockEntry(t *testctx.T, lockBytes []byte, expectedPolicy workspace.LockPolicy) {
+	t.Helper()
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+
+	var found bool
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != "git.latest" {
+			continue
+		}
+		found = true
+		require.Equal(t, []any{lockTestGitRepoURL, false}, entry.Inputs)
+		require.Equal(t, string(expectedPolicy), entry.Policy)
+
+		value, ok := entry.Value.(string)
+		require.True(t, ok)
+		ref, commit, ok := strings.Cut(value, "@")
+		require.True(t, ok)
+		require.True(t, strings.HasPrefix(ref, "refs/tags/v") || strings.HasPrefix(ref, "refs/tags/"))
+		require.Len(t, commit, 40)
+	}
+
+	require.True(t, found, "expected git.latest entry in lockfile")
 }
 
 func assertNoModuleResolveLockEntry(t *testctx.T, lockBytes []byte) {

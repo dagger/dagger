@@ -2105,6 +2105,7 @@ class Container(Type):
         self,
         address: str,
         *,
+        latest_include_subreleases: bool | None = False,
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
@@ -2117,6 +2118,9 @@ class Container(Type):
         address:
             Address of the container image to download, in standard OCI ref
             format. Example:"registry.dagger.io/engine:latest"
+        latest_include_subreleases:
+            Include prerelease tags when selecting the latest release for an
+            untagged image address.
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this pull.
@@ -2129,6 +2133,7 @@ class Container(Type):
         """
         _args = [
             Arg("address", address),
+            Arg("latestIncludeSubreleases", latest_include_subreleases, False),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
@@ -9777,6 +9782,25 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
+
+    def latest(
+        self,
+        *,
+        include_subreleases: bool | None = False,
+    ) -> GitRef:
+        """Return the latest release tag. If no release tag exists, fall back to
+        the remote HEAD branch.
+
+        Parameters
+        ----------
+        include_subreleases:
+            Include prerelease tags when selecting the latest release.
+        """
+        _args = [
+            Arg("includeSubreleases", include_subreleases, False),
+        ]
+        _ctx = self._select("latest", _args)
+        return GitRef(_ctx)
 
     def latest_version(self) -> GitRef:
         """Returns details for the latest semver tag."""
