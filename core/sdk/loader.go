@@ -252,3 +252,13 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 
 	return sdk(sdkNameParsed), sdkSuffix, nil
 }
+
+// IsBuiltinSDKName reports whether source names a built-in SDK/runtime bundled
+// in the engine (e.g. "go", "python", "dang"), optionally with an "@version"
+// suffix — as opposed to an external module ref or local path. Such names are
+// resolved in-engine when a module's runtime loads; they are not standalone
+// modules that can be loaded from a path or ref.
+func IsBuiltinSDKName(source string) bool {
+	name, _, _ := strings.Cut(source, "@")
+	return slices.Contains(validInbuiltSDKs, sdk(name))
+}

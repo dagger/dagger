@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/schema"
+	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -464,6 +465,14 @@ func workspaceConfigPendingModules(
 	pending := make([]pendingModule, 0, len(names))
 	for _, name := range names {
 		entry := cfg.Modules[name]
+		// A built-in SDK install entry (e.g. dang/go written by migration) has a
+		// bare runtime name as its source, not a loadable module ref. It exists
+		// only to carry the [modules.<sdk>.as-sdk] authoring metadata; the runtime
+		// itself resolves in-engine when a consuming module loads. Skip it here so
+		// the loader doesn't try to resolve the bare name as a local path.
+		if entry.AsSDK != nil && coresdk.IsBuiltinSDKName(entry.Source) {
+			continue
+		}
 		mod := pendingModule{
 			Kind:               moduleLoadKindAmbient,
 			Ref:                entry.Source,
