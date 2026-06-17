@@ -15,12 +15,13 @@ public class EnumVisitor extends AbstractVisitor {
   TypeSpec generateType(Type type) {
     TypeSpec.Builder classBuilder =
         TypeSpec.enumBuilder(Helpers.formatName(type))
-            .addJavadoc(type.getDescription() != null ? type.getDescription() : "")
+            .addJavadoc(Helpers.escapeJavadoc(type.getDescription()))
             .addModifiers(Modifier.PUBLIC);
 
     for (EnumValue enumValue : type.getEnumValues()) {
       TypeSpec.Builder enumTypeBuilder =
-          TypeSpec.anonymousClassBuilder("").addJavadoc(enumValue.getDescription());
+          TypeSpec.anonymousClassBuilder("")
+              .addJavadoc(Helpers.escapeJavadoc(enumValue.getDescription()));
       if (enumValue.isDeprecated()) {
         enumTypeBuilder.addAnnotation(Deprecated.class);
       }
