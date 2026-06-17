@@ -227,11 +227,11 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 		initGitRepo(ctx, t, workdir)
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "mod", "install", "./dep")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
 		require.Contains(t, readInstalledWorkspaceConfig(t, workdir).Modules, "dep")
 
-		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "mod", "uninstall", "dep")
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "uninstall", "dep")
 		require.NoError(t, err)
 		require.NotContains(t, readInstalledWorkspaceConfig(t, workdir).Modules, "dep")
 	})
