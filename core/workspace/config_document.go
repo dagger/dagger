@@ -60,6 +60,13 @@ func UpdateConfigBytesWithHints(
 	if err != nil {
 		return nil, fmt.Errorf("parse existing config state: %w", err)
 	}
+	if configRequiresQuotedPathSegments(existingCfg) {
+		out := SerializeConfig(cfg)
+		if len(hints) == 0 {
+			return out, nil
+		}
+		return insertWorkspaceSettingHintComments(out, cfg, hints), nil
+	}
 
 	desiredValues := configDocumentMap(cfg)
 	if err := deleteRemovedManagedConfigPaths(doc, configDocumentMap(existingCfg), desiredValues); err != nil {
