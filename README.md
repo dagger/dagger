@@ -37,7 +37,7 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 ## Getting started
 
 - [Documentation](https://docs.dagger.io)
-- [Quickstart](https://docs.dagger.io/quickstart)
+- [Quickstart](https://docs.dagger.io/getting-started)
 
 ## Community
 
