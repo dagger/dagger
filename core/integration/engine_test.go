@@ -244,38 +244,49 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	require.Equal(t, engineName, strings.TrimSpace(stdout))
 }
 
-func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
+func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngine := devEngineContainerAsService(devEngineContainer(c))
+	for _, tc := range []struct {
+		name string
+		cmd  string
+	}{
+		{"exec", "dagger api exec"},
+		{"compat", "dagger run"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.W[*testing.T]) {
+			devEngine := devEngineContainerAsService(devEngineContainer(c))
 
-	clientCtr := engineClientContainer(ctx, t, c, devEngine)
+			clientCtr := engineClientContainer(ctx, t, c, devEngine)
 
-	command := fmt.Sprintf(`
-		export NO_COLOR=1
-		jq -n '{query:"{container{from(address: \"%s\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
-		dagger api exec sh -c 'curl -s \
-			-u $DAGGER_SESSION_TOKEN: \
-			--max-time 30 \
-			-H "content-type:application/json" \
-			-d @- \
-			http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
-		alpineImage,
-	)
+			command := fmt.Sprintf(`
+				export NO_COLOR=1
+				jq -n '{query:"{container{from(address: \"%s\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
+				%s sh -c 'curl -s \
+					-u $DAGGER_SESSION_TOKEN: \
+					--max-time 30 \
+					-H "content-type:application/json" \
+					-d @- \
+					http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
+				alpineImage,
+				tc.cmd,
+			)
 
-	clientCtr = clientCtr.
-		WithExec([]string{"apk", "add", "jq", "curl"}).
-		WithExec([]string{"sh", "-c", command})
+			clientCtr = clientCtr.
+				WithExec([]string{"apk", "add", "jq", "curl"}).
+				WithExec([]string{"sh", "-c", command})
 
-	stdout, err := clientCtr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, stdout, distconsts.AlpineVersion)
-	require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "`+distconsts.AlpineVersion+`\n"}}}}}`, stdout)
+			stdout, err := clientCtr.Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, distconsts.AlpineVersion)
+			require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "`+distconsts.AlpineVersion+`\n"}}}}}`, stdout)
 
-	stderr, err := clientCtr.Stderr(ctx)
-	require.NoError(t, err)
-	// verify we got some progress output
-	require.Contains(t, stderr, "Container.from")
+			stderr, err := clientCtr.Stderr(ctx)
+			require.NoError(t, err)
+			// verify we got some progress output
+			require.Contains(t, stderr, "Container.from")
+		})
+	}
 }
 
 func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
