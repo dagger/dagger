@@ -38,11 +38,11 @@
   --api-return-scalar: var(--color-purple-200);
   --api-return-other: var(--color-purple-300);
   --api-warning-text: var(--color-yellow-200);
-  --api-warning-bg: var(--color-yellow-900);
-  --api-warning-border: var(--color-yellow-700);
+  --api-warning-bg: var(--color-yellowAlpha-10);
+  --api-warning-border: var(--color-yellow-500);
   --api-danger-text: var(--color-red-200);
-  --api-danger-bg: var(--color-red-900);
-  --api-danger-border: var(--color-red-700);
+  --api-danger-bg: var(--color-redAlpha-10);
+  --api-danger-border: var(--color-red-500);
   --api-card-heading-bg: var(--ifm-background-color);
 }
 

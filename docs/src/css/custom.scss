@@ -204,6 +204,32 @@ $desktop-xl-width: 1400px;
   --color-pink-800: #702459;
   --color-pink-900: #521b41;
 
+  --color-redAlpha-10: color-mix(
+    in srgb,
+    var(--color-red-500) 10%,
+    transparent
+  );
+  --color-yellowAlpha-10: color-mix(
+    in srgb,
+    var(--color-yellow-500) 10%,
+    transparent
+  );
+  --color-greenAlpha-10: color-mix(
+    in srgb,
+    var(--color-green-500) 10%,
+    transparent
+  );
+  --color-blueAlpha-10: color-mix(
+    in srgb,
+    var(--color-blue-500) 10%,
+    transparent
+  );
+  --color-cyanAlpha-10: color-mix(
+    in srgb,
+    var(--color-cyan-500) 10%,
+    transparent
+  );
+
   --color-raisinBlack-700: #26243e;
   --color-raisinBlack-800: #1a192b;
 
@@ -351,7 +377,7 @@ html[data-theme="dark"] {
   --ifm-color-primary-dark: var(--color-blue-300);
   --ifm-color-primary-darker: var(--color-blue-400);
   --ifm-color-primary-darkest: var(--color-blue-500);
-  --ifm-color-primary-contrast-background: var(--color-blue-900);
+  --ifm-color-primary-contrast-background: var(--color-blueAlpha-10);
   --ifm-color-primary-contrast-foreground: var(--color-blue-100);
   --ifm-color-success-lightest: var(--color-green-50);
   --ifm-color-success-lighter: var(--color-green-100);
@@ -360,7 +386,7 @@ html[data-theme="dark"] {
   --ifm-color-success-dark: var(--color-green-400);
   --ifm-color-success-darker: var(--color-green-500);
   --ifm-color-success-darkest: var(--color-green-600);
-  --ifm-color-success-contrast-background: var(--color-green-900);
+  --ifm-color-success-contrast-background: var(--color-greenAlpha-10);
   --ifm-color-success-contrast-foreground: var(--color-green-100);
   --ifm-color-info-lightest: var(--color-cyan-50);
   --ifm-color-info-lighter: var(--color-cyan-100);
@@ -369,7 +395,7 @@ html[data-theme="dark"] {
   --ifm-color-info-dark: var(--color-cyan-400);
   --ifm-color-info-darker: var(--color-cyan-500);
   --ifm-color-info-darkest: var(--color-cyan-600);
-  --ifm-color-info-contrast-background: var(--color-cyan-900);
+  --ifm-color-info-contrast-background: var(--color-cyanAlpha-10);
   --ifm-color-info-contrast-foreground: var(--color-cyan-100);
   --ifm-color-warning-lightest: var(--color-yellow-50);
   --ifm-color-warning-lighter: var(--color-yellow-100);
@@ -378,7 +404,7 @@ html[data-theme="dark"] {
   --ifm-color-warning-dark: var(--color-yellow-400);
   --ifm-color-warning-darker: var(--color-yellow-500);
   --ifm-color-warning-darkest: var(--color-yellow-600);
-  --ifm-color-warning-contrast-background: var(--color-yellow-900);
+  --ifm-color-warning-contrast-background: var(--color-yellowAlpha-10);
   --ifm-color-warning-contrast-foreground: var(--color-yellow-100);
   --ifm-color-danger-lightest: var(--color-red-50);
   --ifm-color-danger-lighter: var(--color-red-100);
@@ -387,7 +413,7 @@ html[data-theme="dark"] {
   --ifm-color-danger-dark: var(--color-red-300);
   --ifm-color-danger-darker: var(--color-red-400);
   --ifm-color-danger-darkest: var(--color-red-500);
-  --ifm-color-danger-contrast-background: var(--color-red-900);
+  --ifm-color-danger-contrast-background: var(--color-redAlpha-10);
   --ifm-color-danger-contrast-foreground: var(--color-red-100);
   --ifm-color-emphasis-0: var(--color-blackHole);
   --ifm-color-emphasis-100: var(--color-gray-900);
