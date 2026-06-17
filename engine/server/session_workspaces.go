@@ -27,6 +27,30 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 )
 
+// invalidateClientWorkspace drops the calling client's cached workspace
+// detection so the next ensureWorkspaceLoaded re-detects it from the host.
+//
+// Registered as core.SetWorkspaceInvalidator and triggered after a changeset
+// export writes workspace config files (e.g. a `dagger setup` migration that
+// creates dagger.toml / removes the legacy dagger.json). The per-client cache
+// would otherwise serve the pre-migration view for the client's whole lifetime;
+// under nested execution that lifetime spans multiple sessions in one process
+// (the client ID is pinned by DAGGER_SESSION_CLIENT_ID), so the post-migrate
+// recommended-module install would still see the legacy dagger.json and fail.
+func (srv *Server) invalidateClientWorkspace(ctx context.Context) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	client.workspaceMu.Lock()
+	defer client.workspaceMu.Unlock()
+	client.workspaceLoaded = false
+	client.workspaceErr = nil
+	client.workspace = nil
+	client.pendingModules = nil
+	return nil
+}
+
 // CurrentWorkspace returns the cached workspace for the current client.
 func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error) {
 	client, err := srv.clientFromContext(ctx)
