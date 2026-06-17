@@ -163,21 +163,17 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 
 	controlCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 	defer cancel()
-	directMain, err := c.LoadGitRefFromID(dagger.GitRefID(refID)).
-		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
-		File("app/main.txt").
-		Contents(controlCtx)
-	require.NoError(t, err, "direct GitRef.tree read should work before GitRef.asWorkspace ID round-trip")
-	require.Equal(t, "app main", directMain)
-
-	queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
-	defer cancel()
 
 	var created gitRefWorkspaceIDResult
-	err = c.Do(queryCtx, &dagger.Request{
+	err = c.Do(controlCtx, &dagger.Request{
 		Query: `query GitRefWorkspaceID($ref: GitRefID!) {
 			ref: loadGitRefFromID(id: $ref) {
 				commit
+				directMain: tree(discardGitDir: true) {
+					file(path: "app/main.txt") {
+						contents
+					}
+				}
 				asWorkspace(cwd: "/app") {
 					id
 				}
@@ -187,29 +183,44 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 			"ref": refID,
 		},
 	}, &dagger.Response{Data: &created})
+	require.NoError(t, err, "direct GitRef.tree read should work before GitRef.asWorkspace ID round-trip")
+	require.Equal(t, "app main", created.Ref.DirectMain.File.Contents)
+
+	queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
+	defer cancel()
+
+	var loaded loadedWorkspaceResult
+	err = c.Do(queryCtx, &dagger.Request{
+		Query: `query LoadWorkspaceFromID($workspace: WorkspaceID!) {
+			workspace: loadWorkspaceFromID(id: $workspace) {
+				cwd
+				main: file(path: "main.txt") {
+					contents
+				}
+				root: file(path: "/README.md") {
+					contents
+				}
+				git {
+					head {
+						commit
+					}
+					uncommitted {
+						isEmpty
+					}
+				}
+			}
+		}`,
+		Variables: map[string]any{
+			"workspace": created.Ref.AsWorkspace.ID,
+		},
+	}, &dagger.Response{Data: &loaded})
 	require.NoError(t, err)
 
-	loaded := c.LoadWorkspaceFromID(dagger.WorkspaceID(created.Ref.AsWorkspace.ID))
-
-	cwd, err := loaded.Cwd(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "/app", cwd)
-
-	main, err := loaded.File("main.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "app main", main)
-
-	root, err := loaded.File("/README.md").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "root readme", root)
-
-	head, err := loaded.Git().Head().Commit(ctx)
-	require.NoError(t, err)
-	require.Equal(t, strings.TrimSpace(created.Ref.Commit), strings.TrimSpace(head))
-
-	empty, err := loaded.Git().Uncommitted().IsEmpty(ctx)
-	require.NoError(t, err)
-	require.True(t, empty)
+	require.Equal(t, "/app", loaded.Workspace.Cwd)
+	require.Equal(t, "app main", loaded.Workspace.Main.Contents)
+	require.Equal(t, "root readme", loaded.Workspace.Root.Contents)
+	require.Equal(t, strings.TrimSpace(created.Ref.Commit), strings.TrimSpace(loaded.Workspace.Git.Head.Commit))
+	require.True(t, loaded.Workspace.Git.Uncommitted.IsEmpty)
 }
 
 // TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource asserts the future
@@ -341,11 +352,25 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesRoundTripFromID(ctx co
 			}, &dagger.Response{Data: &created})
 			require.NoError(t, err)
 
-			got, err := c.LoadWorkspaceFromID(dagger.WorkspaceID(created.Workspace.Overlay.ID)).
-				File(tc.path).
-				Contents(ctx)
+			loadCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
+			defer cancel()
+
+			var loaded workspaceFileResult
+			err = c.Do(loadCtx, &dagger.Request{
+				Query: `query LoadOverlayWorkspaceFile($workspace: WorkspaceID!, $path: String!) {
+					workspace: loadWorkspaceFromID(id: $workspace) {
+						file(path: $path) {
+							contents
+						}
+					}
+				}`,
+				Variables: map[string]any{
+					"workspace": created.Workspace.Overlay.ID,
+					"path":      tc.path,
+				},
+			}, &dagger.Response{Data: &loaded})
 			require.NoError(t, err)
-			require.Equal(t, tc.want, got)
+			require.Equal(t, tc.want, loaded.Workspace.File.Contents)
 		})
 	}
 }
@@ -617,11 +642,23 @@ type gitRefWorkspaceResult struct {
 
 type gitRefWorkspaceIDResult struct {
 	Ref struct {
-		Commit      string `json:"commit"`
+		Commit     string `json:"commit"`
+		DirectMain struct {
+			File workspaceFileContents `json:"file"`
+		} `json:"directMain"`
 		AsWorkspace struct {
 			ID string `json:"id"`
 		} `json:"asWorkspace"`
 	} `json:"ref"`
+}
+
+type loadedWorkspaceResult struct {
+	Workspace struct {
+		Cwd  string                `json:"cwd"`
+		Main workspaceFileContents `json:"main"`
+		Root workspaceFileContents `json:"root"`
+		Git  workspaceGit          `json:"git"`
+	} `json:"workspace"`
 }
 
 type overlayWorkspaceIDResult struct {
@@ -629,6 +666,12 @@ type overlayWorkspaceIDResult struct {
 		Overlay struct {
 			ID string `json:"id"`
 		} `json:"overlay"`
+	} `json:"workspace"`
+}
+
+type workspaceFileResult struct {
+	Workspace struct {
+		File workspaceFileContents `json:"file"`
 	} `json:"workspace"`
 }
 
