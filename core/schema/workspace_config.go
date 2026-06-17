@@ -216,6 +216,12 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	}
 
 	if ws.HostPath() != "" {
+		var err error
+		ctx, err = withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+
 		configPath, err := workspaceHostPath(ws, configFile)
 		if err != nil {
 			return nil, err
@@ -284,6 +290,14 @@ func writeWorkspaceConfigWithHints(
 }
 
 func writeConfigBytes(ctx context.Context, ws *core.Workspace, data []byte) error {
+	if ws != nil && ws.HostPath() != "" {
+		var err error
+		ctx, err = withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return err
+		}
+	}
+
 	bk, err := workspaceBuildkit(ctx)
 	if err != nil {
 		return err
