@@ -27,6 +27,9 @@ func (s *workspaceSchema) install(
 	if err := unsupportedSyntheticWorkspaceFeature(parent, "module installation"); err != nil {
 		return "", err
 	}
+	if err := requireLocalWorkspace(parent, "module installation"); err != nil {
+		return "", err
+	}
 	if parent.CompatWorkspace() != nil {
 		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
 	}

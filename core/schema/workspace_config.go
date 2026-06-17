@@ -29,8 +29,8 @@ func (s *workspaceSchema) workspaceInit(
 		Here bool `default:"false"`
 	},
 ) (dagql.String, error) {
-	if parent.HostPath() == "" {
-		return "", fmt.Errorf("workspace init is local-only")
+	if err := requireLocalWorkspace(parent, "workspace init"); err != nil {
+		return "", err
 	}
 	if parent.CompatWorkspace() != nil {
 		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
@@ -88,6 +88,9 @@ func loadWorkspaceConfigForMutation(
 	here bool,
 ) (*workspace.Config, bool, error) {
 	if err := unsupportedSyntheticWorkspaceFeature(ws, "config mutations"); err != nil {
+		return nil, false, err
+	}
+	if err := requireLocalWorkspace(ws, "workspace config mutation"); err != nil {
 		return nil, false, err
 	}
 	if ws.ConfigFile != "" && (!here || workspaceSameConfigDirectory(ws, workspaceConfigDirectoryForWrite(ws, true))) {
@@ -190,8 +193,8 @@ func workspaceHostPath(ws *core.Workspace, rel ...string) (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
 	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace has no host path")
+	if err := requireLocalWorkspace(ws, "workspace host access"); err != nil {
+		return "", err
 	}
 
 	parts := append([]string{ws.HostPath()}, rel...)
