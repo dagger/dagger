@@ -26,10 +26,17 @@ type EnvFile struct {
 	// Variables stored as key-value pairs, preserving order and allowing duplicates
 	Environ []string `json:"variables"`
 	Expand  bool     `json:"expand"`
+	// Context holds variables that are used only for ${...} expansion of the
+	// Environ values. They are not exposed via Variables/Lookup/AsFile. This is
+	// how Namespace preserves non-matching variables (e.g. a shared ROOT_DIR)
+	// that namespaced values still reference but that should not become defaults.
+	Context []string `json:"context,omitempty"`
 }
 
-var _ dagql.PersistedObject = (*EnvFile)(nil)
-var _ dagql.PersistedObjectDecoder = (*EnvFile)(nil)
+var (
+	_ dagql.PersistedObject        = (*EnvFile)(nil)
+	_ dagql.PersistedObjectDecoder = (*EnvFile)(nil)
+)
 
 func (*EnvFile) Type() *ast.Type {
 	return &ast.Type{
@@ -81,7 +88,7 @@ func (ef *EnvFile) WithVariables(variables []EnvVariable) *EnvFile {
 	return ef
 }
 
-// WithVariables adds multiple environment variables to the EnvFile
+// WithEnvFiles adds multiple environment variables to the EnvFile
 func (ef *EnvFile) WithEnvFiles(others ...*EnvFile) *EnvFile {
 	ef = ef.Clone()
 	for _, other := range others {
@@ -91,6 +98,9 @@ func (ef *EnvFile) WithEnvFiles(others ...*EnvFile) *EnvFile {
 		// Last variable assignment wins: other file's variables win over
 		// our own.
 		ef.Environ = append(ef.Environ, other.Environ...)
+		// Carry over hidden expansion context so namespaced values keep
+		// resolving their references after files are merged.
+		ef.Context = append(ef.Context, other.Context...)
 	}
 	return ef
 }
@@ -99,6 +109,7 @@ func (ef *EnvFile) WithEnvFiles(others ...*EnvFile) *EnvFile {
 func (ef *EnvFile) Clone() *EnvFile {
 	cp := *ef
 	cp.Environ = slices.Clone(ef.Environ)
+	cp.Context = slices.Clone(ef.Context)
 	return &cp
 }
 
@@ -139,7 +150,7 @@ func (ef *EnvFile) variables(ctx context.Context, allowUnboundVariables bool) (v
 		// Fallback to using host values for expansion
 		return Host{}.GetEnv(ctx, name)
 	}
-	all, err := dotenv.All(ef.Environ, hostGetEnv, !allowUnboundVariables)
+	all, err := dotenv.AllWithContext(ef.Environ, ef.Context, hostGetEnv, !allowUnboundVariables)
 	if err != nil {
 		return nil, err
 	}
@@ -171,10 +182,17 @@ func (ef *EnvFile) Namespace(ctx context.Context, prefix string) (*EnvFile, erro
 	}
 	result := &EnvFile{
 		Expand: ef.Expand,
+		// Preserve any hidden expansion context already carried by the source.
+		Context: slices.Clone(ef.Context),
 	}
 	for _, variable := range vars {
 		if after, match := cutFlexPrefix(variable.Name, prefix); match {
-			result = result.WithVariable(after, variable.Value)
+			result.add(after, variable.Value)
+		} else {
+			// Keep non-matching variables as hidden expansion context so that
+			// namespaced values referencing them (e.g. SOURCE=${ROOT_DIR}) can
+			// still be expanded later. They are not exposed as defaults.
+			result.Context = append(result.Context, variable.Name+"="+variable.Value)
 		}
 	}
 	return result, nil
@@ -222,7 +240,7 @@ func (ef *EnvFile) Lookup(ctx context.Context, name string, raw bool) (string, b
 		// Fallback to using host values for expansion
 		return Host{}.GetEnv(ctx, name)
 	}
-	return dotenv.Lookup(ef.Environ, name, hostGetEnv)
+	return dotenv.LookupWithContext(ef.Environ, ef.Context, name, hostGetEnv)
 }
 
 func (ef *EnvFile) LookupCaseInsensitive(ctx context.Context, name string) (string, bool, error) {
