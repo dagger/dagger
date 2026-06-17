@@ -2667,6 +2667,7 @@ class Container(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
         permissions: int | None = None,
     ) -> Self:
@@ -2692,6 +2693,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -2705,6 +2708,7 @@ class Container(Type):
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
             Arg("permissions", permissions, None),
         ]
@@ -2965,6 +2969,7 @@ class Container(Type):
         *,
         permissions: int | None = None,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Return a container snapshot with a file added
@@ -2982,6 +2987,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -2992,6 +2999,7 @@ class Container(Type):
             Arg("source", source),
             Arg("permissions", permissions, None),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withFile", _args)
@@ -3004,6 +3012,7 @@ class Container(Type):
         *,
         permissions: int | None = None,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus the contents of the given files copied
@@ -3022,6 +3031,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3032,6 +3043,7 @@ class Container(Type):
             Arg("sources", sources),
             Arg("permissions", permissions, None),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withFiles", _args)
@@ -3063,6 +3075,7 @@ class Container(Type):
         source: "Directory | None" = None,
         sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a cache volume mounted at the given
@@ -3086,6 +3099,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3097,6 +3112,7 @@ class Container(Type):
             Arg("source", source, None),
             Arg("sharing", sharing, CacheSharingMode.SHARED),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedCache", _args)
@@ -3108,6 +3124,7 @@ class Container(Type):
         source: "Directory",
         *,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         read_only: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
@@ -3124,6 +3141,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         read_only:
             Mount the directory read-only.
         expand:
@@ -3135,6 +3154,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("readOnly", read_only, False),
             Arg("expand", expand, False),
         ]
@@ -3147,6 +3167,7 @@ class Container(Type):
         source: "File",
         *,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a file mounted at the given path.
@@ -3162,6 +3183,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3171,6 +3194,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedFile", _args)
@@ -3182,6 +3206,7 @@ class Container(Type):
         source: "Secret",
         *,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         mode: int | None = 256,
         expand: bool | None = False,
     ) -> Self:
@@ -3199,6 +3224,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         mode:
             Permission given to the mounted secret (e.g., 0600).
             This option requires an owner to be set to be active.
@@ -3211,6 +3238,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("mode", mode, 256),
             Arg("expand", expand, False),
         ]
@@ -3254,6 +3282,7 @@ class Container(Type):
         *,
         permissions: int | None = 420,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Return a new container snapshot, with a file added to its filesystem
@@ -3273,6 +3302,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3283,6 +3314,7 @@ class Container(Type):
             Arg("contents", contents),
             Arg("permissions", permissions, 420),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withNewFile", _args)
@@ -3411,6 +3443,7 @@ class Container(Type):
         source: "Socket",
         *,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a socket forwarded to the given Unix
@@ -3427,6 +3460,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3436,6 +3471,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withUnixSocket", _args)

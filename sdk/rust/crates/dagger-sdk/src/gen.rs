@@ -1685,6 +1685,9 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// A user:group to set for the directory and its contents.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1778,6 +1781,9 @@ pub struct ContainerWithFileOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// A user:group to set for the file.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1792,6 +1798,9 @@ pub struct ContainerWithFilesOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// A user:group to set for the files.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1806,6 +1815,9 @@ pub struct ContainerWithMountedCacheOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// A user:group to set for the mounted cache directory.
     /// Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -1824,6 +1836,9 @@ pub struct ContainerWithMountedDirectoryOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// A user:group to set for the mounted directory and its contents.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1838,6 +1853,9 @@ pub struct ContainerWithMountedFileOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// A user or user:group to set for the mounted file.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1849,6 +1867,9 @@ pub struct ContainerWithMountedSecretOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// Permission given to the mounted secret (e.g., 0600).
     /// This option requires an owner to be set to be active.
     #[builder(setter(into, strip_option), default)]
@@ -1873,6 +1894,9 @@ pub struct ContainerWithNewFileOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// A user:group to set for the file.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1893,6 +1917,9 @@ pub struct ContainerWithUnixSocketOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// A user:group to set for the mounted socket.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -2835,6 +2862,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
+        }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
@@ -3209,6 +3239,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
+        }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
@@ -3256,6 +3289,9 @@ impl Container {
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -3336,6 +3372,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
+        }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
@@ -3397,6 +3436,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
+        }
         if let Some(read_only) = opts.read_only {
             query = query.arg("readOnly", read_only);
         }
@@ -3456,6 +3498,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -3517,6 +3562,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(mode) = opts.mode {
             query = query.arg("mode", mode);
@@ -3608,6 +3656,9 @@ impl Container {
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -3815,6 +3866,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);

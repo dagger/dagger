@@ -82,3 +82,33 @@ func testOwnership(
 		})
 	}
 }
+
+func testInheritOwnership(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	addContent func(ctr *dagger.Container, name string) *dagger.Container,
+) {
+	ctr := c.Container().From(alpineImage).
+		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+		WithUser("auser:agroup").
+		WithWorkdir("/data")
+
+	withOwner := addContent(ctr, "inherit-owner")
+	output, err := withOwner.
+		WithUser("root").
+		WithExec([]string{
+			"sh", "-exc",
+			"find * | xargs stat -c '%U %G'",
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	for line := range strings.SplitSeq(output, "\n") {
+		if line == "" {
+			continue
+		}
+
+		require.Equal(t, "auser agroup", line)
+	}
+}

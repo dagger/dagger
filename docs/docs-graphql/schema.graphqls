@@ -1007,6 +1007,9 @@ type Container implements Exportable & Node & Syncer {
     """
     owner: String = ""
 
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
@@ -1216,6 +1219,9 @@ type Container implements Exportable & Node & Syncer {
     """
     owner: String = ""
 
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
@@ -1244,6 +1250,9 @@ type Container implements Exportable & Node & Syncer {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
 
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -1290,6 +1299,9 @@ type Container implements Exportable & Node & Syncer {
     """
     owner: String = ""
 
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
@@ -1313,6 +1325,9 @@ type Container implements Exportable & Node & Syncer {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
 
     """Mount the directory read-only."""
     readOnly: Boolean = false
@@ -1341,6 +1356,9 @@ type Container implements Exportable & Node & Syncer {
     """
     owner: String = ""
 
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
+
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
@@ -1366,6 +1384,9 @@ type Container implements Exportable & Node & Syncer {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
 
     """
     Permission given to the mounted secret (e.g., 0600).
@@ -1425,6 +1446,9 @@ type Container implements Exportable & Node & Syncer {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
 
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
@@ -1523,6 +1547,9 @@ type Container implements Exportable & Node & Syncer {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+
+    """Set the owner to the container's current user."""
+    inheritOwner: Boolean = false
 
     """
     Replace "${VAR}" or "$VAR" in the value of path according to the current
