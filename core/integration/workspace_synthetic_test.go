@@ -3,12 +3,15 @@ package core
 import (
 	"context"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
+
+const workspaceRegressionTimeout = 30 * time.Second
 
 // These tests define the source-backed Workspace contract. A Workspace has a
 // private source backend internally, but callers only see Workspace behavior:
@@ -149,6 +152,66 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	require.True(t, res.Ref.AsWorkspace.Git.Uncommitted.IsEmpty)
 }
 
+// TestGitRefBackedSyntheticWorkspaceRoundTripsFromID asserts the simplest ID
+// contract for GitRef.asWorkspace: a workspace returned from a Git ref can be
+// saved as an ID, loaded again, and still reads files from that Git ref.
+func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ref := syntheticWorkspaceGitRef(ctx, t, c)
+	refID, err := ref.ID(ctx)
+	require.NoError(t, err)
+
+	controlCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
+	defer cancel()
+	directMain, err := c.LoadGitRefFromID(dagger.GitRefID(refID)).
+		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		File("app/main.txt").
+		Contents(controlCtx)
+	require.NoError(t, err, "direct GitRef.tree read should work before GitRef.asWorkspace ID round-trip")
+	require.Equal(t, "app main", directMain)
+
+	queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
+	defer cancel()
+
+	var created gitRefWorkspaceIDResult
+	err = c.Do(queryCtx, &dagger.Request{
+		Query: `query GitRefWorkspaceID($ref: GitRefID!) {
+			ref: loadGitRefFromID(id: $ref) {
+				commit
+				asWorkspace(cwd: "/app") {
+					id
+				}
+			}
+		}`,
+		Variables: map[string]any{
+			"ref": refID,
+		},
+	}, &dagger.Response{Data: &created})
+	require.NoError(t, err)
+
+	loaded := c.LoadWorkspaceFromID(dagger.WorkspaceID(created.Ref.AsWorkspace.ID))
+
+	cwd, err := loaded.Cwd(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/app", cwd)
+
+	main, err := loaded.File("main.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "app main", main)
+
+	root, err := loaded.File("/README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "root readme", root)
+
+	head, err := loaded.Git().Head().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimSpace(created.Ref.Commit), strings.TrimSpace(head))
+
+	empty, err := loaded.Git().Uncommitted().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+}
+
 // TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource asserts the future
 // functional-write contract. Writing to a Workspace returns an overlay
 // Workspace; the base source remains readable and unchanged.
@@ -203,6 +266,90 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource(
 	requireNoEntry(t, ws.AfterBaseEntries.Entries, "new.txt")
 }
 
+// TestOverlayWorkspaceFunctionalWritesRoundTripFromID asserts that each
+// functional write returns a real Workspace ID. Loading the ID should show the
+// file introduced by that one write.
+func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesRoundTripFromID(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	baseDir := c.Directory().WithNewFile("base.txt", "base")
+	baseWorkspaceID, err := baseDir.AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+
+	sourceDirID, err := c.Directory().WithNewFile("nested.txt", "nested").ID(ctx)
+	require.NoError(t, err)
+
+	changedDir := baseDir.WithNewFile("patched.txt", "patched")
+	changesID, err := changedDir.Changes(baseDir).ID(ctx)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name      string
+		query     string
+		variables map[string]any
+		path      string
+		want      string
+	}{
+		{
+			name: "withNewFile",
+			query: `query OverlayWithNewFile($base: WorkspaceID!) {
+				workspace: loadWorkspaceFromID(id: $base) {
+					overlay: withNewFile(path: "file.txt", contents: "file") {
+						id
+					}
+				}
+			}`,
+			variables: map[string]any{"base": baseWorkspaceID},
+			path:      "file.txt",
+			want:      "file",
+		},
+		{
+			name: "withNewDirectory",
+			query: `query OverlayWithNewDirectory($base: WorkspaceID!, $source: ID!) {
+				workspace: loadWorkspaceFromID(id: $base) {
+					overlay: withNewDirectory(path: "dir", source: $source) {
+						id
+					}
+				}
+			}`,
+			variables: map[string]any{"base": baseWorkspaceID, "source": sourceDirID},
+			path:      "dir/nested.txt",
+			want:      "nested",
+		},
+		{
+			name: "withChanges",
+			query: `query OverlayWithChanges($base: WorkspaceID!, $changes: ID!) {
+				workspace: loadWorkspaceFromID(id: $base) {
+					overlay: withChanges(changes: $changes) {
+						id
+					}
+				}
+			}`,
+			variables: map[string]any{"base": baseWorkspaceID, "changes": changesID},
+			path:      "patched.txt",
+			want:      "patched",
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
+			defer cancel()
+
+			var created overlayWorkspaceIDResult
+			err := c.Do(queryCtx, &dagger.Request{
+				Query:     tc.query,
+				Variables: tc.variables,
+			}, &dagger.Response{Data: &created})
+			require.NoError(t, err)
+
+			got, err := c.LoadWorkspaceFromID(dagger.WorkspaceID(created.Workspace.Overlay.ID)).
+				File(tc.path).
+				Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
 // TestOverlayGitRefWorkspaceReportsOverlayAsUncommitted asserts how functional
 // writes compose with git state: the overlay keeps the base ref's commit and
 // reports the overlay as uncommitted workspace state.
@@ -250,6 +397,54 @@ func (WorkspaceSuite) TestOverlayGitRefWorkspaceReportsOverlayAsUncommitted(ctx 
 	require.Equal(t, "overlay", res.Ref.AsWorkspace.Changed.OverlayFile.Contents)
 	require.Equal(t, baseCommit, strings.TrimSpace(res.Ref.AsWorkspace.Changed.Git.Head.Commit))
 	require.False(t, res.Ref.AsWorkspace.Changed.Git.Uncommitted.IsEmpty)
+}
+
+// TestChainedOverlayGitRefWorkspaceReportsAllOverlayChanges asserts that
+// uncommitted state is cumulative over nested overlays. A Git-backed workspace
+// with two functional writes should report both writes as uncommitted, not just
+// the diff from the immediate parent overlay to the latest overlay.
+func (WorkspaceSuite) TestChainedOverlayGitRefWorkspaceReportsAllOverlayChanges(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ref := syntheticWorkspaceGitRef(ctx, t, c)
+	refID, err := ref.ID(ctx)
+	require.NoError(t, err)
+
+	queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
+	defer cancel()
+
+	var res chainedOverlayGitRefWorkspaceResult
+	err = c.Do(queryCtx, &dagger.Request{
+		Query: `query ChainedGitRefOverlayWorkspace($ref: GitRefID!) {
+		ref: loadGitRefFromID(id: $ref) {
+			asWorkspace(cwd: "/app") {
+				withNewFile(path: "a.txt", contents: "a") {
+					withNewFile(path: "b.txt", contents: "b") {
+						a: file(path: "a.txt") {
+							contents
+						}
+						b: file(path: "b.txt") {
+							contents
+						}
+						git {
+							uncommitted {
+								addedPaths
+							}
+						}
+					}
+				}
+			}
+		}
+	}`,
+		Variables: map[string]any{
+			"ref": refID,
+		},
+	}, &dagger.Response{Data: &res})
+	require.NoError(t, err)
+
+	changed := res.Ref.AsWorkspace.WithNewFile.WithNewFile
+	require.Equal(t, "a", changed.A.Contents)
+	require.Equal(t, "b", changed.B.Contents)
+	require.ElementsMatch(t, []string{"app/a.txt", "app/b.txt"}, changed.Git.Uncommitted.AddedPaths)
 }
 
 // TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState asserts that
@@ -420,6 +615,23 @@ type gitRefWorkspaceResult struct {
 	} `json:"ref"`
 }
 
+type gitRefWorkspaceIDResult struct {
+	Ref struct {
+		Commit      string `json:"commit"`
+		AsWorkspace struct {
+			ID string `json:"id"`
+		} `json:"asWorkspace"`
+	} `json:"ref"`
+}
+
+type overlayWorkspaceIDResult struct {
+	Workspace struct {
+		Overlay struct {
+			ID string `json:"id"`
+		} `json:"overlay"`
+	} `json:"workspace"`
+}
+
 type overlayWorkspaceResult struct {
 	Directory struct {
 		WithNewFile struct {
@@ -455,6 +667,22 @@ type overlayGitRefWorkspaceResult struct {
 	} `json:"ref"`
 }
 
+type chainedOverlayGitRefWorkspaceResult struct {
+	Ref struct {
+		AsWorkspace struct {
+			WithNewFile struct {
+				WithNewFile struct {
+					A   workspaceFileContents `json:"a"`
+					B   workspaceFileContents `json:"b"`
+					Git struct {
+						Uncommitted changesetPaths `json:"uncommitted"`
+					} `json:"git"`
+				} `json:"withNewFile"`
+			} `json:"withNewFile"`
+		} `json:"asWorkspace"`
+	} `json:"ref"`
+}
+
 type workspaceGit struct {
 	Head struct {
 		Commit string `json:"commit"`
@@ -466,6 +694,10 @@ type workspaceGit struct {
 
 type workspaceFileContents struct {
 	Contents string `json:"contents"`
+}
+
+type changesetPaths struct {
+	AddedPaths []string `json:"addedPaths"`
 }
 
 type directoryEntries struct {
