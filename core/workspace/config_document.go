@@ -170,22 +170,22 @@ func configRequiresQuotedPathSegments(cfg *Config) bool {
 		return false
 	}
 	for moduleName, module := range cfg.Modules {
-		if !isBareConfigPathSegment(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
+		if pathSegmentUnsafeForDocumentUpdate(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
 			return true
 		}
 	}
 	for envName, env := range cfg.Env {
-		if !isBareConfigPathSegment(envName) {
+		if pathSegmentUnsafeForDocumentUpdate(envName) {
 			return true
 		}
 		for moduleName, module := range env.Modules {
-			if !isBareConfigPathSegment(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
+			if pathSegmentUnsafeForDocumentUpdate(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
 				return true
 			}
 		}
 	}
 	for host := range cfg.Ports {
-		if !isBareConfigPathSegment(host) {
+		if pathSegmentUnsafeForDocumentUpdate(host) {
 			return true
 		}
 	}
@@ -194,11 +194,34 @@ func configRequiresQuotedPathSegments(cfg *Config) bool {
 
 func configMapRequiresQuotedPathSegments(values map[string]any) bool {
 	for key := range values {
-		if !isBareConfigPathSegment(key) {
+		if pathSegmentUnsafeForDocumentUpdate(key) {
 			return true
 		}
 	}
 	return false
+}
+
+// pathSegmentUnsafeForDocumentUpdate reports whether segment cannot be used as a
+// dotted-path segment when updating an existing config document in place (via
+// neontoml's doc.Set/Delete/ApplyMap). Beyond non-bare characters, an all-digit
+// segment — e.g. a port host like "3000" — is unsafe because the dotted-path
+// parser reads it as a number ("invalid float"). Configs containing such a
+// segment fall back to a full re-serialization, which still writes the segment
+// unquoted as a TOML section header (e.g. [ports.3000]).
+func pathSegmentUnsafeForDocumentUpdate(segment string) bool {
+	return !isBareConfigPathSegment(segment) || isAllDigitConfigPathSegment(segment)
+}
+
+func isAllDigitConfigPathSegment(segment string) bool {
+	if segment == "" {
+		return false
+	}
+	for i := 0; i < len(segment); i++ {
+		if segment[i] < '0' || segment[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func deleteRemovedManagedConfigPaths(doc *neontoml.Document, existingValues, desiredValues map[string]any) error {
