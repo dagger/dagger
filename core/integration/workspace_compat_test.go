@@ -37,19 +37,10 @@ func TestWorkspaceCompat(t *testing.T) {
 }
 
 // `dagger migrate` was removed and folded into `dagger setup` (its migrate
-// step). The compat→workspace assertions below now read the on-disk
-// .dagger/migration-report.md + dagger.toml that the migrate changeset writes.
-// The migrate step no longer aborts when a compat module's SDK source can't be
-// loaded to generate settings hints (e.g. `dang`): those hint failures are
-// recorded as migration-report warnings instead, so the dang-source suites now
-// run. One `setup` behavior is still missing and blocks the remaining suites:
-//
-//   - migrateRecommendInstallSkip: setup's step-3 recommended-module install
-//     runs against the just-migrated workspace and fails with "workspace is
-//     using legacy dagger.json config; run dagger setup first".
-//
-// Un-skip each suite once setup guards the recommend-install after migrating.
-const migrateRecommendInstallSkip = "TODO(migrate-via-setup): `dagger setup` step-3 recommended-module install fails against the just-migrated workspace with \"workspace is using legacy dagger.json config; run dagger setup first\"; see migrateRecommendInstallSkip comment"
+// step). The compat→workspace assertions below read the on-disk
+// .dagger/migration-report.md + dagger.toml that the migrate changeset writes,
+// then exercise the migrated workspace through `dagger setup --auto-apply`
+// (migrate + recommended-module install).
 
 func compatDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
@@ -750,7 +741,6 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 // ignoreServices), which translate into [modules.<name>] check.skip /
 // generate.skip / up.skip in the workspace config.
 func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.Context, t *testctx.T) {
-	t.Skip(migrateRecommendInstallSkip)
 	c := connect(ctx, t)
 
 	modGen, err := generatorsTestEnv(t, c)
@@ -803,7 +793,6 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
 // migration of toolchains[].portMappings, which translates into top-level
 // [ports.<host>] entries with backendService/backendPort.
 func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context, t *testctx.T) {
-	t.Skip(migrateRecommendInstallSkip)
 	c := connect(ctx, t)
 
 	modGen, err := upTestEnv(t, c)
