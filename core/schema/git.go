@@ -1205,15 +1205,19 @@ func (s *gitSchema) uncommitted(ctx context.Context, parent dagql.ObjectResult[*
 }
 
 func (s *gitSchema) asWorkspace(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args workspaceArgs) (dagql.ObjectResult[*core.Workspace], error) {
-	ref, err := s.head(ctx, parent, struct{}{})
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	var ref dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, parent, &ref, dagql.Selector{Field: "head"}); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 	return syntheticWorkspaceFromGitRef(ctx, ref, args.Cwd)
 }
 
 func (s *gitSchema) gitRefAsWorkspace(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args workspaceArgs) (dagql.ObjectResult[*core.Workspace], error) {
-	return syntheticWorkspaceFromGitRef(ctx, parent.Result, args.Cwd)
+	return syntheticWorkspaceFromGitRef(ctx, parent, args.Cwd)
 }
 
 type withAuthTokenArgs struct {

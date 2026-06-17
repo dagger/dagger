@@ -313,7 +313,7 @@ func syntheticWorkspaceFromDirectory(
 
 func syntheticWorkspaceFromGitRef(
 	ctx context.Context,
-	ref dagql.Result[*core.GitRef],
+	ref dagql.ObjectResult[*core.GitRef],
 	cwdArg string,
 ) (dagql.ObjectResult[*core.Workspace], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -326,12 +326,13 @@ func syntheticWorkspaceFromGitRef(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	root, err := ref.Self().Tree(ctx, srv, true, 1, false)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	rootResult, err := dagql.NewObjectResultForCurrentCall(ctx, srv, root)
-	if err != nil {
+	var rootResult dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, ref, &rootResult, dagql.Selector{
+		Field: "tree",
+		Args: []dagql.NamedInput{
+			{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+		},
+	}); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
@@ -340,7 +341,7 @@ func syntheticWorkspaceFromGitRef(
 		Address: "git-ref://" + ref.Self().Ref.SHA,
 	}
 	ws.SetRootfs(rootResult)
-	ws.SetSource(core.NewWorkspaceSourceGitRef(ref))
+	ws.SetSource(core.NewWorkspaceSourceGitRef(ref.Result))
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
@@ -780,12 +781,17 @@ func overlayWorkspace(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	changes, err := core.NewChangeset(ctx, before, root)
+	beforeID, err := before.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	changesResult, err := dagql.NewObjectResultForCurrentCall(ctx, srv, changes)
-	if err != nil {
+	var changesResult dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, root, &changesResult, dagql.Selector{
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)},
+		},
+	}); err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
