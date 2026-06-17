@@ -61,24 +61,27 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 
 func (r PhpSdkDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		OriginalWorkspace *dagger.Directory
-		Workspace         *dagger.Directory
-		DoctumConfigPath  string
-		SourcePath        string
+		OriginalWorkspace  *dagger.Directory
+		Workspace          *dagger.Directory
+		DoctumConfigPath   string
+		SourcePath         string
+		ClientDockerConfig *dagger.Secret
 	}
 	concrete.OriginalWorkspace = r.OriginalWorkspace
 	concrete.Workspace = r.Workspace
 	concrete.DoctumConfigPath = r.DoctumConfigPath
 	concrete.SourcePath = r.SourcePath
+	concrete.ClientDockerConfig = r.ClientDockerConfig
 	return json.Marshal(&concrete)
 }
 
 func (r *PhpSdkDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		OriginalWorkspace *dagger.Directory
-		Workspace         *dagger.Directory
-		DoctumConfigPath  string
-		SourcePath        string
+		OriginalWorkspace  *dagger.Directory
+		Workspace          *dagger.Directory
+		DoctumConfigPath   string
+		SourcePath         string
+		ClientDockerConfig *dagger.Secret
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
@@ -88,6 +91,7 @@ func (r *PhpSdkDev) UnmarshalJSON(bs []byte) error {
 	r.Workspace = concrete.Workspace
 	r.DoctumConfigPath = concrete.DoctumConfigPath
 	r.SourcePath = concrete.SourcePath
+	r.ClientDockerConfig = concrete.ClientDockerConfig
 	return nil
 }
 
@@ -412,7 +416,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg doctumConfigPath", err))
 				}
 			}
-			return New(workspaceDir, sourcePath, doctumConfigPath), nil
+			var clientDockerConfig *dagger.Secret
+			if inputArgs["clientDockerConfig"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["clientDockerConfig"]), &clientDockerConfig)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg clientDockerConfig", err))
+				}
+			}
+			return New(workspaceDir, sourcePath, doctumConfigPath, clientDockerConfig), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
