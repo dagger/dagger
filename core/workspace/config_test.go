@@ -576,6 +576,24 @@ region = "us-east-1"
 		require.NotContains(t, out, "[env.ci.modules.greeter.settings]")
 		require.NotContains(t, out, `region = "us-east-1"`)
 	})
+
+	t.Run("removes existing numeric path segments", func(t *testing.T) {
+		t.Parallel()
+
+		existing := []byte(`[ports.3000]
+backendService = "web"
+backendPort = 80
+`)
+
+		cfg, err := ParseConfig(existing)
+		require.NoError(t, err)
+		delete(cfg.Ports, "3000")
+
+		updated, err := UpdateConfigBytes(existing, cfg)
+		require.NoError(t, err)
+		require.NotContains(t, string(updated), "[ports.3000]")
+		require.NotContains(t, string(updated), "backendService")
+	})
 }
 
 func TestApplyEnvOverlay(t *testing.T) {
