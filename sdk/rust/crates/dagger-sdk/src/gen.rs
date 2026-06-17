@@ -15620,11 +15620,6 @@ pub struct WorkspaceInstallOpts<'a> {
     pub name: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceMigrateOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub force: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceModuleInitOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Json>,
@@ -16137,29 +16132,8 @@ impl Workspace {
     }
     /// Plan the explicit migration needed for the current workspace.
     /// The returned plan has an empty changeset and no steps when no migration is needed.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn migrate(&self) -> WorkspaceMigration {
         let query = self.selection.select("migrate");
-        WorkspaceMigration {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Plan the explicit migration needed for the current workspace.
-    /// The returned plan has an empty changeset and no steps when no migration is needed.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn migrate_opts(&self, opts: WorkspaceMigrateOpts) -> WorkspaceMigration {
-        let mut query = self.selection.select("migrate");
-        if let Some(force) = opts.force {
-            query = query.arg("force", force);
-        }
         WorkspaceMigration {
             proc: self.proc.clone(),
             selection: query,

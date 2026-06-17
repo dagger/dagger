@@ -144,3 +144,21 @@ Verification so far:
 - `go test ./core/workspace` passes locally.
 - Linux compile-only checks pass with `GOCACHE=/tmp/go-build-dagger-workspace GOOS=linux GOARCH=amd64 go test -c ./core/schema -o /tmp/schema.test`, plus the same command for `./core/integration` and `./cmd/dagger`.
 - A focused Dagger-run integration attempt reached the new subtest but failed before exercising migration because the nested test CLI rejected `--skip-workspace-modules`; that looks like a local toolchain/version mismatch in the test harness.
+
+## Update (2026-06-17)
+
+The "fail by default / `--force` to override" behavior described above has been
+removed. Rationale (per `future/cli-1.0.md`): `dagger migrate` and its `--force`
+flag are gone — migration now runs only through `dagger setup`, which the CLI-1.0
+design keeps free of migrate-specific knobs. Settings hints are pure enrichment
+(pre-filled `[modules.<m>.settings.*]` defaults) and the runtime/SDK split means
+a module that can't be introspected is still a valid, executable migration.
+
+- `core/schema/workspace_migrate.go` no longer aborts when hint introspection
+  fails. Hint failures are always recorded as migration-report warnings via
+  `appendWorkspaceMigrationNonGapWarnings`; the mechanical `sdk`→`runtime`
+  migration still completes.
+- The `force` argument was dropped from `Workspace.migrate` (and the generated
+  Go/TypeScript/Rust clients).
+- This un-blocks the `dang`-source compat suites that were skipped with
+  `migrateForceSkip` (`TestCompatMigration` / `TestCompatAndMigratedWorkspaceMatch`).
