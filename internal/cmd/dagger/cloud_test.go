@@ -44,7 +44,7 @@ func daggerCloudWithEnv(t *testing.T, env []string, args []string, testCommandFn
 
 func TestCloudEngineUnauth(t *testing.T) {
 	env := []string{}
-	args := []string{"--cloud", "functions"}
+	args := []string{"--cloud", "api", "functions"}
 	daggerCloudWithEnv(t, env, args, func(t *testing.T, err error, stdout *bytes.Buffer, stderr *bytes.Buffer) {
 		require.Error(t, err, fmt.Sprintf(
 			"expected '%s dagger %s' to return an error, but instead: %s",
@@ -64,7 +64,7 @@ func TestCloudEngineWithCloudToken(t *testing.T) {
 	}
 
 	env := []string{"DAGGER_CLOUD_TOKEN=" + daggerCloudToken}
-	args := []string{"--cloud", "--load-module", "github.com/gerhard/daggerverse/sysi@sysi/v0.1.0", "functions"}
+	args := []string{"--cloud", "--load-module", "github.com/gerhard/daggerverse/sysi@sysi/v0.1.0", "api", "functions"}
 
 	daggerCloudWithEnv(t, env, args, func(t *testing.T, err error, stdout *bytes.Buffer, stderr *bytes.Buffer) {
 		require.NoError(t, err, fmt.Sprintf(
@@ -86,7 +86,7 @@ func TestCloudEngineEnvWithCloudToken(t *testing.T) {
 	}
 
 	env := []string{"DAGGER_CLOUD_TOKEN=" + daggerCloudToken, "DAGGER_CLOUD_ENGINE=true"}
-	args := []string{"--load-module", "github.com/gerhard/daggerverse/sysi@sysi/v0.1.0", "functions"}
+	args := []string{"--load-module", "github.com/gerhard/daggerverse/sysi@sysi/v0.1.0", "api", "functions"}
 
 	daggerCloudWithEnv(t, env, args, func(t *testing.T, err error, stdout *bytes.Buffer, stderr *bytes.Buffer) {
 		require.NoError(t, err, fmt.Sprintf(
