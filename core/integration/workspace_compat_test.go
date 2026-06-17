@@ -36,20 +36,27 @@ func TestWorkspaceCompat(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceCompatSuite{})
 }
 
-// migrateViaSetupSkip explains why the migration-driving compat tests below
-// cannot pass yet. `dagger migrate` was removed and folded into `dagger setup`
-// (its migrate step), but setup does not reproduce the removed command's
-// behavior: it calls Workspace.migrate without force, so a module whose
-// settings hints can't be generated (e.g. a `dang`-source compat module that
-// doesn't resolve as a local path) aborts the migrate with "use --force to
-// migrate anyway"; the post-migrate install step still sees the legacy
-// dagger.json ("run dagger setup first"); and the migration warnings/summaries
-// now land in .dagger/migration-report.md rather than stdout. These tests
-// assert on a clean `setup --auto-apply` plus the migrated runtime, so they
-// cannot pass as-is. To re-enable: either restore that behavior in setup's
-// migrate step (force + stdout feedback + fresh install session), or rewrite
-// the assertions to read .dagger/migration-report.md + the on-disk dagger.toml.
-const migrateViaSetupSkip = "TODO(migrate-via-setup): migration now runs through `dagger setup`, which does not yet reproduce the removed `dagger migrate` behavior (no --force for unloadable settings hints, post-migrate install sees legacy dagger.json, warnings moved to .dagger/migration-report.md); see migrateViaSetupSkip comment"
+// `dagger migrate` was removed and folded into `dagger setup` (its migrate
+// step). The compat→workspace assertions below now read the on-disk
+// .dagger/migration-report.md + dagger.toml that the migrate changeset writes,
+// which works for the cases where `setup` completes. Two `setup` behaviors are
+// still missing and block the remaining migration-driving suites:
+//
+//   - migrateForceSkip: setup calls Workspace.migrate without --force, so a
+//     compat module whose SDK source can't be loaded as a local path (e.g.
+//     `dang`) aborts step 2 ("could not load modules to generate settings
+//     hints ... use --force to migrate anyway") before anything is written.
+//   - migrateRecommendInstallSkip: setup's step-3 recommended-module install
+//     runs against the just-migrated workspace and fails with "workspace is
+//     using legacy dagger.json config; run dagger setup first".
+//
+// Un-skip each suite once setup forces through unloadable hints / guards the
+// recommend-install after migrating (or once the migration stops emitting a
+// `dang`-source module entry that can't be introspected).
+const (
+	migrateForceSkip            = "TODO(migrate-via-setup): `dagger setup` migrates without --force, so a `dang`-source compat module aborts step 2 with \"... use --force to migrate anyway\"; see migrateForceSkip comment"
+	migrateRecommendInstallSkip = "TODO(migrate-via-setup): `dagger setup` step-3 recommended-module install fails against the just-migrated workspace with \"workspace is using legacy dagger.json config; run dagger setup first\"; see migrateRecommendInstallSkip comment"
+)
 
 func compatDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
@@ -644,8 +651,8 @@ func (WorkspaceCompatSuite) TestGenericAsModuleIgnoresLegacyWorkspaceFields(ctx 
 // TestCompatMigration should cover the explicit handoff from compat runtime to
 // workspace migration.
 func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.T) {
-	t.Skip(migrateViaSetupSkip)
 	t.Run("migrate converts a compat workspace into workspace config plus modules", func(ctx context.Context, t *testctx.T) {
+		t.Skip(migrateForceSkip)
 		c := connect(ctx, t)
 		ctr := legacyCompatDangSource(t, c, "hello from migrated compat").
 			With(compatDaggerExec("setup", "--auto-apply"))
@@ -682,9 +689,11 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 		ctr := legacySDKOnlyGoSource(t, c, "hello from sdk-only root").
 			With(compatDaggerExec("setup", "--auto-apply"))
 
+		// `dagger setup` runs migration through a changeset and records its
+		// follow-up warnings in .dagger/migration-report.md rather than on
+		// stdout, so assert on the on-disk report below instead of the output.
 		out, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "Warning: Root module requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m . ...`.")
 
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
 		require.NoError(t, err, "sdk-only dagger.json should remain in place")
@@ -729,9 +738,11 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 }`, legacyDangModule("toolchain", "toolchain", "Toolchain", "hello from toolchain")).
 			With(compatDaggerExec("setup", "--auto-apply"))
 
+		// The "N old setting(s) need review" summary now lives in the on-disk
+		// migration report (and as per-gap sections) rather than on stdout, so
+		// assert on .dagger/migration-report.md instead of the command output.
 		output, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, output)
-		require.Contains(t, output, "Warning: 2 old setting(s) need review; see .dagger/migration-report.md")
 
 		report, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -747,7 +758,7 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 // ignoreServices), which translate into [modules.<name>] check.skip /
 // generate.skip / up.skip in the workspace config.
 func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.Context, t *testctx.T) {
-	t.Skip(migrateViaSetupSkip)
+	t.Skip(migrateRecommendInstallSkip)
 	c := connect(ctx, t)
 
 	modGen, err := generatorsTestEnv(t, c)
@@ -800,7 +811,7 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
 // migration of toolchains[].portMappings, which translates into top-level
 // [ports.<host>] entries with backendService/backendPort.
 func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context, t *testctx.T) {
-	t.Skip(migrateViaSetupSkip)
+	t.Skip(migrateRecommendInstallSkip)
 	c := connect(ctx, t)
 
 	modGen, err := upTestEnv(t, c)
@@ -891,7 +902,7 @@ func (WorkspaceCompatSuite) TestCompatUpSkipsAndPortMappingsBeforeMigration(ctx 
 // new design: compat mode and migrated workspace mode expose the same runtime
 // behavior for the same legacy project.
 func (WorkspaceCompatSuite) TestCompatAndMigratedWorkspaceMatch(ctx context.Context, t *testctx.T) {
-	t.Skip(migrateViaSetupSkip)
+	t.Skip(migrateForceSkip)
 	c := connect(ctx, t)
 	base := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
