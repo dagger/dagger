@@ -38,25 +38,18 @@ func TestWorkspaceCompat(t *testing.T) {
 
 // `dagger migrate` was removed and folded into `dagger setup` (its migrate
 // step). The compat→workspace assertions below now read the on-disk
-// .dagger/migration-report.md + dagger.toml that the migrate changeset writes,
-// which works for the cases where `setup` completes. Two `setup` behaviors are
-// still missing and block the remaining migration-driving suites:
+// .dagger/migration-report.md + dagger.toml that the migrate changeset writes.
+// The migrate step no longer aborts when a compat module's SDK source can't be
+// loaded to generate settings hints (e.g. `dang`): those hint failures are
+// recorded as migration-report warnings instead, so the dang-source suites now
+// run. One `setup` behavior is still missing and blocks the remaining suites:
 //
-//   - migrateForceSkip: setup calls Workspace.migrate without --force, so a
-//     compat module whose SDK source can't be loaded as a local path (e.g.
-//     `dang`) aborts step 2 ("could not load modules to generate settings
-//     hints ... use --force to migrate anyway") before anything is written.
 //   - migrateRecommendInstallSkip: setup's step-3 recommended-module install
 //     runs against the just-migrated workspace and fails with "workspace is
 //     using legacy dagger.json config; run dagger setup first".
 //
-// Un-skip each suite once setup forces through unloadable hints / guards the
-// recommend-install after migrating (or once the migration stops emitting a
-// `dang`-source module entry that can't be introspected).
-const (
-	migrateForceSkip            = "TODO(migrate-via-setup): `dagger setup` migrates without --force, so a `dang`-source compat module aborts step 2 with \"... use --force to migrate anyway\"; see migrateForceSkip comment"
-	migrateRecommendInstallSkip = "TODO(migrate-via-setup): `dagger setup` step-3 recommended-module install fails against the just-migrated workspace with \"workspace is using legacy dagger.json config; run dagger setup first\"; see migrateRecommendInstallSkip comment"
-)
+// Un-skip each suite once setup guards the recommend-install after migrating.
+const migrateRecommendInstallSkip = "TODO(migrate-via-setup): `dagger setup` step-3 recommended-module install fails against the just-migrated workspace with \"workspace is using legacy dagger.json config; run dagger setup first\"; see migrateRecommendInstallSkip comment"
 
 func compatDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
@@ -652,7 +645,6 @@ func (WorkspaceCompatSuite) TestGenericAsModuleIgnoresLegacyWorkspaceFields(ctx 
 // workspace migration.
 func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.T) {
 	t.Run("migrate converts a compat workspace into workspace config plus modules", func(ctx context.Context, t *testctx.T) {
-		t.Skip(migrateForceSkip)
 		c := connect(ctx, t)
 		ctr := legacyCompatDangSource(t, c, "hello from migrated compat").
 			With(compatDaggerExec("setup", "--auto-apply"))
@@ -902,7 +894,6 @@ func (WorkspaceCompatSuite) TestCompatUpSkipsAndPortMappingsBeforeMigration(ctx 
 // new design: compat mode and migrated workspace mode expose the same runtime
 // behavior for the same legacy project.
 func (WorkspaceCompatSuite) TestCompatAndMigratedWorkspaceMatch(ctx context.Context, t *testctx.T) {
-	t.Skip(migrateForceSkip)
 	c := connect(ctx, t)
 	base := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
