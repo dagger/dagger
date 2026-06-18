@@ -107,12 +107,11 @@ func callClientInit(
     }
   }
 }`,
-		Variables: map[string]any{
+		Variables: withOptionalSDKInitArgs(map[string]any{
 			"path":   path,
 			"sdk":    sdkName,
 			"module": moduleRef,
-			"args":   sdkArgs,
-		},
+		}, sdkArgs),
 	}, &dagger.Response{Data: &res})
 	if err != nil {
 		return "", fmt.Errorf("plan api client init: %w", err)
