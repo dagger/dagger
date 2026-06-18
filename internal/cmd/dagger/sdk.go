@@ -56,8 +56,8 @@ var sdkInstallCmd = &cobra.Command{
 
 Alias resolution: ` + "`dagger sdk install go`" + ` resolves "go" via the
 embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the alias you typed (` + "`go`" + `), not the basename of
-the canonical ref (` + "`go-sdk`" + `). Direct refs work too:
+install name is the registry's short name (` + "`go`" + `), not the basename
+of the canonical ref (` + "`go-sdk`" + `). Direct refs work too:
 ` + "`dagger sdk install github.com/foo/sdk`" + ` is installed as
 [modules.sdk] by basename.
 
@@ -129,7 +129,7 @@ Requires the SDK to implement the initClient capability.`,
 }
 
 func init() {
-	sdkInstallCmd.Flags().StringVarP(&sdkInstallName, "name", "n", "", "Override the workspace install name (defaults to the alias you typed, or the basename of a direct ref)")
+	sdkInstallCmd.Flags().StringVarP(&sdkInstallName, "name", "n", "", "Override the workspace install name (defaults to the registry short name, or the basename of a direct ref)")
 	sdkInstallCmd.Flags().BoolVar(&sdkInstallHere, "here", false, "Write to the workspace config directory at the workspace cwd")
 
 	sdkUninstallCmd.Flags().BoolVar(&sdkUninstallForce, "force", false, "Remove even if modules or clients are authored under this SDK")
@@ -153,16 +153,14 @@ func init() {
 
 func runSDKInstall(cmd *cobra.Command, args []string) error {
 	input := args[0]
-	canonicalRef, err := sdkResolve(input)
+	canonicalRef, defaultName, err := sdkResolveInstall(input)
 	if err != nil {
 		return err
 	}
-	// Workspace install name: same rule as the generic install verb —
-	// the engine derives it from the canonical ref's basename when --name
-	// isn't passed. Aliases stay a parse-time convenience and do not
-	// propagate into workspace state: `dagger sdk install go` lands as
-	// [modules.go-sdk], not [modules.go].
 	name := sdkInstallName
+	if name == "" {
+		name = defaultName
+	}
 
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,

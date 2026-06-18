@@ -25,7 +25,6 @@ func TestClientGenerator(t *testing.T) {
 }
 
 func (ClientGeneratorTest) TestGenerateAndCallDependencies(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	t.Run("no dependency", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
 			baseImage string
@@ -551,7 +550,7 @@ entrypoint = true
 				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(tc.runSetup).With(daggerNonNestedExec(append([]string{"run", "--load-workspace-modules"}, tc.callCmd...)...)).
+					out, err := moduleSrc.With(tc.runSetup).With(daggerNonNestedExec(append([]string{"api", "exec", "--load-workspace-modules"}, tc.callCmd...)...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -570,7 +569,6 @@ entrypoint = true
 }
 
 func (ClientGeneratorTest) TestOutputDir(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	type testSetup struct {
 		baseImage string
 		generator string
@@ -910,7 +908,8 @@ main()`, "."))
 }
 
 func (ClientGeneratorTest) TestCustomClientGenerator(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
+	t.Skip("TODO(api-client-init): define CLI 1.0 support for installing clients from custom generator modules")
+
 	type testCase struct {
 		generatorSDK    string
 		generatorSource string
@@ -985,7 +984,6 @@ export class GeneratorModule {
 }
 
 func (ClientGeneratorTest) TestMultipleClient(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	t.Run("go", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1136,7 +1134,6 @@ main();
 }
 
 func (ClientGeneratorTest) TestGlobalClient(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	t.Run("go", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1189,7 +1186,6 @@ func main() {
 }
 
 func (ClientGeneratorTest) TestClientCommands(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	c := connect(ctx, t)
 
 	mainGoFile := `package main
@@ -1262,13 +1258,15 @@ func main() {
 	})
 
 	t.Run("list clients", func(ctx context.Context, t *testctx.T) {
-		out, err := moduleSrc.WithExec([]string{"dagger", "client", "list", "--json"}).Stdout(ctx)
+		out, err := moduleSrc.WithExec([]string{"dagger", "api", "client", "list", "--json"}).Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `[{"Generator":"go","Directory":"./dagger"},{"Generator":"go","Directory":"./dagger2"}]`, out)
+		require.JSONEq(t, `[{"sdk":"go","path":"dagger","module":"."},{"sdk":"go","path":"dagger2","module":"."}]`, out)
 	})
 
 	t.Run("uninstall client", func(ctx context.Context, t *testctx.T) {
+		t.Skip("TODO(api-client-init): define CLI 1.0 uninstall semantics for generated clients")
+
 		ctr := moduleSrc.WithExec([]string{"dagger", "client", "uninstall", "dagger"})
 
 		out, err := ctr.Stdout(ctx)
@@ -1276,15 +1274,16 @@ func main() {
 		require.NoError(t, err)
 		require.Contains(t, out, "Client at dagger removed from config.\n")
 
-		out, err = ctr.WithExec([]string{"dagger", "client", "list", "--json"}).Stdout(ctx)
+		out, err = ctr.WithExec([]string{"dagger", "api", "client", "list", "--json"}).Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `[{"Generator":"go","Directory":"./dagger2"}]`, out)
+		require.JSONEq(t, `[{"sdk":"go","path":"dagger2","module":"."}]`, out)
 	})
 }
 
 func (ClientGeneratorTest) TestClientUpdate(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
+	t.Skip("TODO(api-client-init): define CLI 1.0 update semantics for generated clients")
+
 	const (
 		// pins from github.com/dagger/client-generator-test module
 		// to test the update command
@@ -1454,7 +1453,6 @@ func (ClientGeneratorTest) TestClientUpdate(ctx context.Context, t *testctx.T) {
 }
 
 func (ClientGeneratorTest) TestHostCall(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	type testCase struct {
 		baseImage string
 		generator string
@@ -1554,7 +1552,6 @@ main()`, defaultGenDir))
 }
 
 func (ClientGeneratorTest) TestConstructorArgs(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	c := connect(ctx, t)
 
 	// A module whose constructor takes arguments produces a Query.with field
@@ -1633,13 +1630,12 @@ func main() {
 		With(addSDKReplaceToClient(defaultGenDir)).
 		WithExec([]string{"go", "mod", "tidy"})
 
-	out, err := moduleSrc.With(daggerNonNestedExec("run", "--load-workspace-modules", "go", "run", "./cmd/main.go")).Stdout(ctx)
+	out, err := moduleSrc.With(daggerNonNestedExec("api", "exec", "--load-workspace-modules", "go", "run", "./cmd/main.go")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "result: hi, world!")
 }
 
 func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	c := connect(ctx, t)
 
 	// Install a dependency at a pinned tag, generate the client (which bakes
@@ -1695,7 +1691,6 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 }
 
 func (ClientGeneratorTest) TestNoGoProjectSetup(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	t.Run("add main after generating the client on an empty directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1781,7 +1776,6 @@ func main() {
 }
 
 func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	t.Run("released version gets pinned in go.mod", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1968,7 +1962,6 @@ func withTypeScriptSetup(content string, outputDir string) func(*dagger.Containe
 }
 
 func (ClientGeneratorTest) TestSeparateGoMod(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	c := connect(ctx, t)
 
 	modCtr := c.Container().From(golangImage).
@@ -1998,7 +1991,6 @@ func (ClientGeneratorTest) TestSeparateGoMod(ctx context.Context, t *testctx.T) 
 }
 
 func (ClientGeneratorTest) TestClientParity(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO(api-client-init #129): rewrite 'dagger client install/list/uninstall/update' to 'dagger sdk install' + 'dagger api client init <sdk> <path> <module>' (and top-level 'dagger run' -> 'dagger api run'); blocked on SDK initClient impls — see future/cli-1.0.md task #129")
 	c := connect(ctx, t)
 
 	modCtr := c.Container().From(golangImage).
