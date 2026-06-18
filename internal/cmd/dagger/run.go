@@ -28,9 +28,8 @@ import (
 )
 
 var apiExecCmd = &cobra.Command{
-	Use:     "exec [options] <command>...",
-	Aliases: []string{"run", "r"},
-	Short:   "Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)",
+	Use:   "exec [options] <command>...",
+	Short: "Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)",
 	Long: strings.ReplaceAll(
 		`Run an external command with a live Dagger API session attached.
 
@@ -60,9 +59,8 @@ dagger api exec python main.py
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	Annotations: map[string]string{
-		hiddenAliasesAnnotation: "run,r",
-		printTraceLinkKey:       "true",
-		showFinalProgressKey:    "true",
+		printTraceLinkKey:    "true",
+		showFinalProgressKey: "true",
 	},
 }
 
