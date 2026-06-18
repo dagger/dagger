@@ -43,6 +43,32 @@ func TestCanonical(t *testing.T) {
 	}
 }
 
+func TestCommitState(t *testing.T) {
+	tests := []struct {
+		name   string
+		commit string
+		dirty  bool
+		want   string
+	}{
+		{"no commit", "", false, ""},
+		{"clean", "42424242deadbeef", false, "42424242"},
+		{"dirty", "42424242deadbeef", true, "42424242+dirty"},
+		{"short commit", "abc", false, "abc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			swap(t, &Commit, tt.commit)
+			swapBool(t, &Dirty, tt.dirty)
+
+			got := CommitState()
+			if got != tt.want {
+				t.Errorf("CommitState() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func swap[T any](t *testing.T, p *T, v T) {
 	t.Helper()
 	prev := *p

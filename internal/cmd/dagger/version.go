@@ -8,10 +8,11 @@ import (
 	"maps"
 	"os"
 
+	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/distconsts"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
-	"github.com/dagger/dagger/internal/version"
+	buildversion "github.com/dagger/dagger/internal/version"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -41,7 +42,7 @@ func versionCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			out := cmd.OutOrStdout()
 			if versionQuiet {
-				fmt.Fprintln(out, version.Canonical())
+				fmt.Fprintln(out, buildversion.Canonical())
 				return
 			}
 			fmt.Fprintln(out, versionHuman())
@@ -64,19 +65,15 @@ func versionCmd() *cobra.Command {
 }
 
 func versionHuman() string {
-	commit := "unknown"
-	if version.Commit != "" {
-		commit = version.Commit
-		if len(commit) > 8 {
-			commit = commit[:8]
-		}
+	out := fmt.Sprintf("dagger %s (%s) %s",
+		engine.Version,
+		RunnerHost,
+		platforms.DefaultString(),
+	)
+	if commitState := buildversion.CommitState(); commitState != "" {
+		out += " " + commitState
 	}
-	dirty := "no"
-	if version.Dirty {
-		dirty = "yes"
-	}
-	return fmt.Sprintf("version: %s\ncommit:  %s\ndirty:   %s",
-		version.Version, commit, dirty)
+	return out
 }
 
 func updateAvailable(ctx context.Context) (string, error) {

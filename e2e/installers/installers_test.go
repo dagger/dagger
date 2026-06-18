@@ -145,8 +145,8 @@ func checkDaggerVersion(ctx context.Context, ctr *dagger.Container, path string,
 func checkDaggerVersionOutput(out string, platform dagger.Platform, assertVersion func(string) error) error {
 	out = strings.TrimSpace(out)
 	fields := strings.Fields(out)
-	if len(fields) < 3 {
-		return fmt.Errorf("malformed dagger version output %q: expected at least 3 fields", out)
+	if len(fields) < 4 {
+		return fmt.Errorf("malformed dagger version output %q: expected at least 4 fields", out)
 	}
 	if fields[0] != "dagger" {
 		return fmt.Errorf("malformed dagger version output %q: expected first field to be %q", out, "dagger")
@@ -162,17 +162,17 @@ func checkDaggerVersionOutput(out string, platform dagger.Platform, assertVersio
 		}
 	}
 
-	gotPlatform := fields[len(fields)-1]
+	gotPlatform := fields[3]
 	parsedGotPlatform, err := platforms.Parse(gotPlatform)
 	if err != nil {
-		return fmt.Errorf("malformed dagger version output %q: expected final field %q to be a valid platform: %w", out, gotPlatform, err)
+		return fmt.Errorf("malformed dagger version output %q: expected platform field %q to be valid: %w", out, gotPlatform, err)
 	}
 	parsedPlatform, err := platforms.Parse(string(platform))
 	if err != nil {
 		return fmt.Errorf("invalid container platform %q: %w", platform, err)
 	}
 	if !platforms.OnlyStrict(parsedPlatform).Match(parsedGotPlatform) {
-		return fmt.Errorf("malformed dagger version output %q: expected final field to match container platform %q", out, platform)
+		return fmt.Errorf("malformed dagger version output %q: expected platform field to match container platform %q", out, platform)
 	}
 
 	return nil
@@ -191,10 +191,15 @@ func TestCheckDaggerVersionOutputPlatformVariant(t *testing.T) {
 			platform: "linux/arm64",
 		},
 		{
+			name:     "with commit state",
+			out:      "dagger v0.20.6 (image://registry.dagger.io/engine:v0.20.6) linux/amd64 a33388f2+dirty",
+			platform: "linux/amd64",
+		},
+		{
 			name:     "compatible arm is not equal",
 			out:      "dagger v0.20.6 (image://registry.dagger.io/engine:v0.20.6) linux/arm/v8",
 			platform: "linux/arm64",
-			wantErr:  "expected final field to match container platform",
+			wantErr:  "expected platform field to match container platform",
 		},
 	}
 

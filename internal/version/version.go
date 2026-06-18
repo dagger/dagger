@@ -65,13 +65,34 @@ func Canonical() string {
 	if Commit == "" {
 		return Version
 	}
-	short := Commit
-	if len(short) > 8 {
-		short = short[:8]
-	}
-	out := fmt.Sprintf("%s+%s", Version, short)
+	out := fmt.Sprintf("%s+%s", Version, ShortCommit())
 	if Dirty {
 		out += ".dirty"
+	}
+	return out
+}
+
+// ShortCommit returns the short VCS revision used in human-readable version
+// output, or "" if the build's revision is unknown.
+func ShortCommit() string {
+	if Commit == "" {
+		return ""
+	}
+	if len(Commit) > 8 {
+		return Commit[:8]
+	}
+	return Commit
+}
+
+// CommitState returns the short VCS revision, with "+dirty" appended when the
+// source tree had modifications at build time.
+func CommitState() string {
+	if Commit == "" {
+		return ""
+	}
+	out := ShortCommit()
+	if Dirty {
+		out += "+dirty"
 	}
 	return out
 }
