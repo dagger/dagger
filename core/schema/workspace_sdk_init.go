@@ -43,13 +43,32 @@ func (s *workspaceSchema) currentWorkspaceObject(ctx context.Context) (dagql.Obj
 	return workspace, nil
 }
 
-func mergeWorkspaceInitChangeset(ctx context.Context, base *core.Changeset, sdkChanges dagql.ObjectResult[*core.Changeset]) (*core.Changeset, error) {
+func mergeWorkspaceInitChangeset(ctx context.Context, base dagql.ObjectResult[*core.Changeset], sdkChanges dagql.ObjectResult[*core.Changeset]) (dagql.ObjectResult[*core.Changeset], error) {
 	if sdkChanges.Self() == nil {
 		return base, nil
 	}
-	merged, err := base.WithChangeset(ctx, sdkChanges.Self(), core.FailEarlyOnConflict)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("merge sdk init changes: %w", err)
+		return base, fmt.Errorf("dagql server: %w", err)
+	}
+	sdkChangesID, err := sdkChanges.ID()
+	if err != nil {
+		return base, fmt.Errorf("merge sdk init changes: %w", err)
+	}
+	// Merge through the withChangeset field rather than the raw Go method so
+	// the result stays an attached dagql result. Returning a detached
+	// *Changeset here breaks later id/Sync resolution with "result
+	// *core.Changeset is detached" (see commit "keep generated workspace
+	// changesets attached").
+	var merged dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, base, &merged, dagql.Selector{
+		Field: "withChangeset",
+		Args: []dagql.NamedInput{
+			{Name: "changes", Value: dagql.NewID[*core.Changeset](sdkChangesID)},
+			{Name: "onConflict", Value: FailEarlyOnMergeConflict},
+		},
+	}); err != nil {
+		return base, fmt.Errorf("merge sdk init changes: %w", err)
 	}
 	return merged, nil
 }
