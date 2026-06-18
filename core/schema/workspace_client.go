@@ -26,47 +26,47 @@ func (s *workspaceSchema) clientInit(
 	ctx context.Context,
 	parent *core.Workspace,
 	args workspaceClientInitArgs,
-) (*core.Changeset, error) {
+) (res dagql.ObjectResult[*core.Changeset], _ error) {
 	if args.Path == "" {
-		return nil, fmt.Errorf("client path is required")
+		return res, fmt.Errorf("client path is required")
 	}
 	if args.SDK == "" {
-		return nil, fmt.Errorf("SDK name is required")
+		return res, fmt.Errorf("SDK name is required")
 	}
 	if args.Module == "" {
-		return nil, fmt.Errorf("module ref is required")
+		return res, fmt.Errorf("module ref is required")
 	}
 
 	clientPath, err := cleanWorkspaceClientPath(args.Path)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	moduleRef, moduleLoadRef, err := resolveWorkspaceClientModuleRef(parent, args.Module)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigMustExist, args.Here)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
 	sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
-		return nil, fmt.Errorf("workspace client context: %w", err)
+		return res, fmt.Errorf("workspace client context: %w", err)
 	}
 	workspaceCtx = workspaceInstallLookupContext(workspaceCtx)
 
 	targetModule, err := s.resolveClientTargetModule(workspaceCtx, moduleLoadRef, "")
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	modulePin := targetModule.Self().Pin()
 
@@ -81,61 +81,61 @@ func (s *workspaceSchema) clientInit(
 
 	existingConfigBytes, err := readConfigBytes(ctx, parent)
 	if err != nil {
-		return nil, fmt.Errorf("read workspace config: %w", err)
+		return res, fmt.Errorf("read workspace config: %w", err)
 	}
 	newConfigBytes, err := workspace.UpdateConfigBytes(existingConfigBytes, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("update workspace config: %w", err)
+		return res, fmt.Errorf("update workspace config: %w", err)
 	}
 
 	configRelPath, err := workspaceConfigFile(parent)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	baseDir, err := s.resolveRootfs(ctx, parent, ".", core.CopyFilter{}, false)
 	if err != nil {
-		return nil, fmt.Errorf("resolve workspace rootfs: %w", err)
+		return res, fmt.Errorf("resolve workspace rootfs: %w", err)
 	}
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("dagql server: %w", err)
+		return res, fmt.Errorf("dagql server: %w", err)
 	}
 
 	updatedDir := baseDir
 	updatedDir, err = workspaceWithFile(ctx, dag, updatedDir, configRelPath, newConfigBytes, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("stage workspace config update: %w", err)
+		return res, fmt.Errorf("stage workspace config update: %w", err)
 	}
 
 	engineChanges, err := workspaceMigrationChanges(ctx, updatedDir, baseDir)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	sdkArgs, err := coresdk.DecodeInitArgs(args.Args)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	loadedSDK, err := s.loadWorkspaceSDK(ctx, sdkRef)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	clientInitializer, ok := loadedSDK.AsClientInitializer()
 	if !ok {
-		return nil, fmt.Errorf("%q does not support client init", args.SDK)
+		return res, fmt.Errorf("%q does not support client init", args.SDK)
 	}
 	workspaceObj, err := s.currentWorkspaceObject(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	sdkChanges, err := clientInitializer.InitClient(ctx, workspaceObj, clientPath, moduleRef, sdkArgs)
 	if err != nil {
-		return nil, fmt.Errorf("sdk client init: %w", err)
+		return res, fmt.Errorf("sdk client init: %w", err)
 	}
 
-	return mergeWorkspaceInitChangeset(ctx, engineChanges.Self(), sdkChanges)
+	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
 }
 
 func (s *workspaceSchema) clientGenerate(

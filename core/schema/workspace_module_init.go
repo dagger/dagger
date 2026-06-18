@@ -49,12 +49,12 @@ func (s *workspaceSchema) moduleInit(
 	ctx context.Context,
 	parent *core.Workspace,
 	args workspaceModuleInitArgs,
-) (res *core.Changeset, _ error) {
+) (res dagql.ObjectResult[*core.Changeset], _ error) {
 	if args.Name == "" {
-		return nil, fmt.Errorf("module name is required")
+		return res, fmt.Errorf("module name is required")
 	}
 	if args.SDK == "" {
-		return nil, fmt.Errorf("SDK name is required")
+		return res, fmt.Errorf("SDK name is required")
 	}
 
 	// Resolve the workspace-relative path for the new module. Empty = default
@@ -66,29 +66,29 @@ func (s *workspaceSchema) moduleInit(
 	}
 	relPath = filepath.Clean(relPath)
 	if filepath.IsAbs(relPath) {
-		return nil, fmt.Errorf("--path %q must be workspace-relative, not absolute", args.Path)
+		return res, fmt.Errorf("--path %q must be workspace-relative, not absolute", args.Path)
 	}
 	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
-		return nil, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
+		return res, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
 	}
 
 	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigMustExist, args.Here)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
 	sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	// Reject name conflicts in installed modules and reject path conflicts
 	// across any SDK's authored modules. Two SDKs claiming the same path is
 	// a corruption we shouldn't silently extend.
 	if _, exists := cfg.Modules[args.Name]; exists {
-		return nil, fmt.Errorf("module %q is already installed in this workspace", args.Name)
+		return res, fmt.Errorf("module %q is already installed in this workspace", args.Name)
 	}
 	for installedName, installed := range cfg.Modules {
 		if installed.AsSDK == nil {
@@ -96,7 +96,7 @@ func (s *workspaceSchema) moduleInit(
 		}
 		for _, m := range installed.AsSDK.Modules {
 			if m.Path == relPath {
-				return nil, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
+				return res, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
 			}
 		}
 	}
@@ -112,7 +112,7 @@ func (s *workspaceSchema) moduleInit(
 	// (every shipped SDK does codegen + runtime in one module).
 	runtimeRef, err := s.resolveModuleRuntimeRef(ctx, sdkRef)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	if usingDefaultPath {
@@ -122,11 +122,11 @@ func (s *workspaceSchema) moduleInit(
 	// Render new dagger.toml bytes through the format-preserving editor.
 	existingConfigBytes, err := readConfigBytes(ctx, parent)
 	if err != nil {
-		return nil, fmt.Errorf("read workspace config: %w", err)
+		return res, fmt.Errorf("read workspace config: %w", err)
 	}
 	newConfigBytes, err := workspace.UpdateConfigBytes(existingConfigBytes, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("update workspace config: %w", err)
+		return res, fmt.Errorf("update workspace config: %w", err)
 	}
 
 	// Generate the new module's context directory (dagger-module.toml +
@@ -134,12 +134,12 @@ func (s *workspaceSchema) moduleInit(
 	// moduleSource is constructed against the local workspace context.
 	moduleDiff, err := s.workspaceModuleInitGeneratedDiff(ctx, args, relPath, runtimeRef)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	configRelPath, err := workspaceConfigFile(parent)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	// Layer the workspace edits onto the workspace rootfs and compute the
@@ -147,51 +147,51 @@ func (s *workspaceSchema) moduleInit(
 	// diff is computed at the end.
 	baseDir, err := s.resolveRootfs(ctx, parent, ".", core.CopyFilter{}, false)
 	if err != nil {
-		return nil, fmt.Errorf("resolve workspace rootfs: %w", err)
+		return res, fmt.Errorf("resolve workspace rootfs: %w", err)
 	}
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("dagql server: %w", err)
+		return res, fmt.Errorf("dagql server: %w", err)
 	}
 
 	updatedDir := baseDir
 	updatedDir, err = workspaceWithFile(ctx, dag, updatedDir, configRelPath, newConfigBytes, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("stage workspace config update: %w", err)
+		return res, fmt.Errorf("stage workspace config update: %w", err)
 	}
 	updatedDir, err = workspaceWithDirectoryOverlay(ctx, dag, updatedDir, moduleDiff)
 	if err != nil {
-		return nil, fmt.Errorf("stage module generated context: %w", err)
+		return res, fmt.Errorf("stage module generated context: %w", err)
 	}
 
 	engineChanges, err := workspaceMigrationChanges(ctx, updatedDir, baseDir)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	sdkArgs, err := coresdk.DecodeInitArgs(args.Args)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	loadedSDK, err := s.loadWorkspaceSDK(ctx, sdkRef)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	moduleInitializer, ok := loadedSDK.AsModuleInitializer()
 	if !ok {
-		return nil, fmt.Errorf("%q does not support module init", args.SDK)
+		return res, fmt.Errorf("%q does not support module init", args.SDK)
 	}
 	workspaceObj, err := s.currentWorkspaceObject(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	sdkChanges, err := moduleInitializer.InitModule(ctx, workspaceObj, args.Name, relPath, sdkArgs)
 	if err != nil {
-		return nil, fmt.Errorf("sdk module init: %w", err)
+		return res, fmt.Errorf("sdk module init: %w", err)
 	}
 
-	return mergeWorkspaceInitChangeset(ctx, engineChanges.Self(), sdkChanges)
+	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
 }
 
 // workspaceModuleInitGeneratedDiff drives the moduleSource codegen chain
