@@ -19,6 +19,9 @@ source = "modules/greeter"
 entrypoint = true
 legacy-default-path = true
 
+[modules.greeter.as-sdk]
+name = "go"
+
 [modules.greeter.settings]
 greeting = "hello"
 enabled = true
@@ -35,6 +38,7 @@ greeting = "hola"
 		Source:            "modules/greeter",
 		Entrypoint:        true,
 		LegacyDefaultPath: true,
+		AsSDK:             &ModuleAsSDK{Name: "go"},
 		Settings: map[string]any{
 			"enabled":  true,
 			"greeting": "hello",
@@ -67,6 +71,7 @@ func TestSerializeConfig(t *testing.T) {
 				Source:            "modules/greeter",
 				Entrypoint:        true,
 				LegacyDefaultPath: true,
+				AsSDK:             &ModuleAsSDK{Name: "go"},
 				Settings: map[string]any{
 					"tags":     []string{"main", "develop"},
 					"greeting": "hello",
@@ -102,6 +107,9 @@ legacy-default-path = true
 enabled = true
 greeting = "hello"
 tags = ["main", "develop"]
+
+[modules.greeter.as-sdk]
+name = "go"
 
 [modules.wolfi]
 source = "github.com/dagger/dagger/modules/wolfi"
@@ -333,12 +341,15 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.up.skip", "redis, infra:database")
 		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "modules.greeter.as-sdk.name", "go")
+		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
 		require.NoError(t, err)
 		require.Equal(t, []string{"generate-other-files", "other-generators:*"}, cfg.Modules["greeter"].Generate.Skip)
 		require.Equal(t, []string{"flaky-check"}, cfg.Modules["greeter"].Check.Skip)
 		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["greeter"].Up.Skip)
+		require.Equal(t, &ModuleAsSDK{Name: "go"}, cfg.Modules["greeter"].AsSDK)
 	})
 
 	t.Run("writes quoted path segments", func(t *testing.T) {

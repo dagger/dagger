@@ -2817,14 +2817,19 @@ export type WorkspaceInstallOpts = {
   here?: boolean
 
   /**
-   * Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`).
+   * Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
    */
   asSdk?: boolean
+
+  /**
+   * User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+   */
+  asSdkName?: string
 }
 
 export type WorkspaceModuleInitOpts = {
   /**
-   * Workspace install name of the SDK to use.
+   * Workspace SDK name or module entry name to use.
    */
   sdk?: string
 
@@ -14590,7 +14595,7 @@ export class Workspace extends BaseClient {
   /**
    * Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
    * @param path Workspace-relative output directory for the generated client.
-   * @param sdk Workspace install name of the SDK to use.
+   * @param sdk Workspace SDK name or module entry name to use.
    * @param module Workspace-relative path or canonical ref for the module the client binds to.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
@@ -14827,7 +14832,8 @@ export class Workspace extends BaseClient {
    * @param ref Module reference to install.
    * @param opts.name Override name for the installed module entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.asSdk Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`).
+   * @param opts.asSdk Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
+   * @param opts.asSdkName User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
    */
   install = async (
     ref: string,
@@ -14857,7 +14863,7 @@ export class Workspace extends BaseClient {
   /**
    * Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
    * @param name Name of the new module.
-   * @param opts.sdk Workspace install name of the SDK to use.
+   * @param opts.sdk Workspace SDK name or module entry name to use.
    * @param opts.path Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
    * @param opts.source Source subpath within the new module.
    * @param opts.include Additional include patterns for the module.

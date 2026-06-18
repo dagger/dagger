@@ -5910,7 +5910,7 @@ type Workspace implements Node {
     """Workspace-relative output directory for the generated client."""
     path: String!
 
-    """Workspace install name of the SDK to use."""
+    """Workspace SDK name or module entry name to use."""
     sdk: String!
 
     """
@@ -6082,11 +6082,15 @@ type Workspace implements Node {
     here: Boolean = false
 
     """
-    Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]`
-    marker that dispatches `dagger module init <name>` and `dagger api client
-    init <name>`).
+    Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that
+    dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
     """
     asSdk: Boolean = false
+
+    """
+    User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    """
+    asSdkName: String = ""
   ): String!
 
   """
@@ -6107,7 +6111,7 @@ type Workspace implements Node {
     """Name of the new module."""
     name: String!
 
-    """Workspace install name of the SDK to use."""
+    """Workspace SDK name or module entry name to use."""
     sdk: String = ""
 
     """

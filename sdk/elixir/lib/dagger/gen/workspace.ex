@@ -322,7 +322,8 @@ defmodule Dagger.Workspace do
   @spec install(t(), String.t(), [
           {:name, String.t() | nil},
           {:here, boolean() | nil},
-          {:as_sdk, boolean() | nil}
+          {:as_sdk, boolean() | nil},
+          {:as_sdk_name, String.t() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
   def install(%__MODULE__{} = workspace, ref, optional_args \\ []) do
     query_builder =
@@ -332,6 +333,7 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("name", optional_args[:name])
       |> QB.maybe_put_arg("here", optional_args[:here])
       |> QB.maybe_put_arg("asSdk", optional_args[:as_sdk])
+      |> QB.maybe_put_arg("asSdkName", optional_args[:as_sdk_name])
 
     Client.execute(workspace.client, query_builder)
   end

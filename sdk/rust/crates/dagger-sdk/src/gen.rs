@@ -15609,9 +15609,12 @@ pub struct WorkspaceInitOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceInstallOpts<'a> {
-    /// Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`).
+    /// Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
     #[builder(setter(into, strip_option), default)]
     pub as_sdk: Option<bool>,
+    /// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    #[builder(setter(into, strip_option), default)]
+    pub as_sdk_name: Option<&'a str>,
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
@@ -15632,7 +15635,7 @@ pub struct WorkspaceModuleInitOpts<'a> {
     /// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
-    /// Workspace install name of the SDK to use.
+    /// Workspace SDK name or module entry name to use.
     #[builder(setter(into, strip_option), default)]
     pub sdk: Option<&'a str>,
     /// Source subpath within the new module.
@@ -15743,7 +15746,7 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `path` - Workspace-relative output directory for the generated client.
-    /// * `sdk` - Workspace install name of the SDK to use.
+    /// * `sdk` - Workspace SDK name or module entry name to use.
     /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn client_init(
@@ -15767,7 +15770,7 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `path` - Workspace-relative output directory for the generated client.
-    /// * `sdk` - Workspace install name of the SDK to use.
+    /// * `sdk` - Workspace SDK name or module entry name to use.
     /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn client_init_opts(
@@ -16127,6 +16130,9 @@ impl Workspace {
         }
         if let Some(as_sdk) = opts.as_sdk {
             query = query.arg("asSdk", as_sdk);
+        }
+        if let Some(as_sdk_name) = opts.as_sdk_name {
+            query = query.arg("asSdkName", as_sdk_name);
         }
         query.execute(self.graphql_client.clone()).await
     }

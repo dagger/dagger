@@ -35,9 +35,10 @@ var apiClientInitCmd = &cobra.Command{
 <sdk> is an SDK installed in this workspace. Run ` + "`dagger sdk install <sdk>`" + `
 to add more choices.
 
-The engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
-generated files and workspace config change, then returns a Changeset that the
-CLI previews and applies through the standard preview/apply flow.`,
+The engine resolves <sdk> from dagger.toml, validates that it is installed as an
+SDK, plans the generated files and workspace config change, then returns a
+Changeset that the CLI previews and applies through the standard preview/apply
+flow.`,
 	Example: "dagger api client init typescript ./lib/cli .dagger/modules/api",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -189,9 +190,10 @@ func apiClientEntries(cfg *workspace.Config) []apiClientListEntry {
 		if module.AsSDK == nil {
 			continue
 		}
+		commandName := sdkCommandName(sdkName, module)
 		for _, client := range module.AsSDK.Clients {
 			entries = append(entries, apiClientListEntry{
-				SDK:     sdkName,
+				SDK:     commandName,
 				Path:    client.Path,
 				Module:  client.Module,
 				Pin:     client.Pin,

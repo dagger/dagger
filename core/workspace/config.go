@@ -55,6 +55,10 @@ type ModuleEntry struct {
 // and clients this SDK manages in the workspace. Serialized under
 // [modules.<name>.as-sdk] with array-of-tables sub-blocks.
 type ModuleAsSDK struct {
+	// Name is the user-facing SDK name used by `dagger module init <sdk>` and
+	// `dagger api client init <sdk>`. When empty, the module entry name is used.
+	Name string `json:"name,omitempty" toml:"name,omitempty"`
+
 	// Modules lists the workspace-local modules this SDK authors and
 	// manages. Each entry becomes a [[modules.<name>.as-sdk.modules]] block.
 	Modules []SDKManagedModule `json:"modules,omitempty" toml:"modules,omitempty"`
@@ -356,6 +360,7 @@ func cloneModuleAsSDK(in *ModuleAsSDK) *ModuleAsSDK {
 		return nil
 	}
 	return &ModuleAsSDK{
+		Name:    in.Name,
 		Modules: append([]SDKManagedModule(nil), in.Modules...),
 		Clients: cloneSDKManagedClients(in.Clients),
 	}
@@ -441,13 +446,14 @@ func writeModuleAsSDK(b *strings.Builder, modulePath string, asSDK *ModuleAsSDK)
 	if asSDK == nil {
 		return
 	}
-	// An empty AsSDK is the "this install IS an SDK" marker. Emit the empty
-	// section header so the marker survives round-trip; the [[modules.X
-	// .as-sdk.modules]] / .clients arrays follow only when populated.
-	if len(asSDK.Modules) == 0 && len(asSDK.Clients) == 0 {
+	// Emit the parent section when it carries scalar metadata or when the
+	// otherwise-empty section is the "this install IS an SDK" marker.
+	if asSDK.Name != "" || len(asSDK.Modules) == 0 && len(asSDK.Clients) == 0 {
 		b.WriteString("\n")
 		fmt.Fprintf(b, "[%s.as-sdk]\n", modulePath)
-		return
+		if asSDK.Name != "" {
+			fmt.Fprintf(b, "name = %q\n", asSDK.Name)
+		}
 	}
 	for _, mod := range asSDK.Modules {
 		b.WriteString("\n")
@@ -965,6 +971,14 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 			case "check":
 				entry.Check.Skip = skip
 			}
+		case "as-sdk":
+			if len(parts) != 4 || parts[3] != "name" {
+				return fmt.Errorf("invalid key %q; expected modules.%s.as-sdk.name", strings.Join(parts, "."), moduleName)
+			}
+			if entry.AsSDK == nil {
+				entry.AsSDK = &ModuleAsSDK{}
+			}
+			entry.AsSDK.Name = fmt.Sprint(value)
 		default:
 			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
 		}
@@ -1032,6 +1046,9 @@ func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) erro
 
 	rest := parts[1:]
 	fieldType := field.Type
+	for fieldType.Kind() == reflect.Ptr {
+		fieldType = fieldType.Elem()
+	}
 
 	switch fieldType.Kind() {
 	case reflect.Map:

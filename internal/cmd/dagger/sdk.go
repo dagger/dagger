@@ -20,9 +20,9 @@ import (
 // `dagger sdk` is the SDK-management group: install (alias-aware), uninstall
 // (refuse-if-authored), list, search the registry, and inspect a given SDK's
 // init flags. An install becomes an SDK when added through this group — the
-// engine writes an empty `[modules.<name>.as-sdk]` marker that
-// `dagger module init <sdk>` / `dagger api client init <sdk>` use to
-// dispatch.
+// engine writes a `[modules.<name>.as-sdk]` marker, optionally with a
+// user-facing alias name that `dagger module init <sdk>` /
+// `dagger api client init <sdk>` use to dispatch.
 //
 // The boundary with `dagger module` is: SDK is the tool, module is the thing
 // the SDK creates. `dagger sdk install` adds the SDK; `dagger module init
@@ -35,9 +35,10 @@ var sdkCmd = &cobra.Command{
 SDKs are workspace modules whose role is to scaffold/codegen other things:
 new Dagger modules (` + "`dagger module init`" + `) or typed clients against the
 Dagger API (` + "`dagger api client init`" + `). An install becomes an SDK when
-added through this group — ` + "`dagger sdk install go`" + ` marks the install
-with the [modules.go.as-sdk] table that ` + "`dagger module init`" + ` /
-` + "`dagger api client init`" + ` use to dispatch.`,
+added through this group — ` + "`dagger sdk install go`" + ` installs
+[modules.go-sdk] with [modules.go-sdk.as-sdk] name = "go" so
+` + "`dagger module init go`" + ` / ` + "`dagger api client init go`" + `
+dispatch through that SDK.`,
 }
 
 var (
@@ -56,8 +57,9 @@ var sdkInstallCmd = &cobra.Command{
 
 Alias resolution: ` + "`dagger sdk install go`" + ` resolves "go" via the
 embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the registry's short name (` + "`go`" + `), not the basename
-of the canonical ref (` + "`go-sdk`" + `). Direct refs work too:
+install name is the canonical ref basename (` + "`go-sdk`" + `), and the
+user-facing name is persisted as [modules.go-sdk.as-sdk] name = "go".
+Direct refs work too:
 ` + "`dagger sdk install github.com/foo/sdk`" + ` is installed as
 [modules.sdk] by basename.
 
@@ -129,7 +131,7 @@ Requires the SDK to implement the initClient capability.`,
 }
 
 func init() {
-	sdkInstallCmd.Flags().StringVarP(&sdkInstallName, "name", "n", "", "Override the workspace install name (defaults to the registry short name, or the basename of a direct ref)")
+	sdkInstallCmd.Flags().StringVarP(&sdkInstallName, "name", "n", "", "Override the workspace install name (defaults to the registry repo basename, or the basename of a direct ref)")
 	sdkInstallCmd.Flags().BoolVar(&sdkInstallHere, "here", false, "Write to the workspace config directory at the workspace cwd")
 
 	sdkUninstallCmd.Flags().BoolVar(&sdkUninstallForce, "force", false, "Remove even if modules or clients are authored under this SDK")
@@ -153,7 +155,7 @@ func init() {
 
 func runSDKInstall(cmd *cobra.Command, args []string) error {
 	input := args[0]
-	canonicalRef, defaultName, err := sdkResolveInstall(input)
+	canonicalRef, defaultName, asSDKName, err := sdkResolveInstall(input)
 	if err != nil {
 		return err
 	}
@@ -166,31 +168,32 @@ func runSDKInstall(cmd *cobra.Command, args []string) error {
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		return callSDKInstall(ctx, ec.Dagger(), cmd.OutOrStdout(), canonicalRef, name, sdkInstallHere)
+		return callSDKInstall(ctx, ec.Dagger(), cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere)
 	})
 }
 
 // callSDKInstall invokes Workspace.install with asSdk=true via raw GraphQL.
 // Will collapse to `dag.CurrentWorkspace().Install(ctx, ref,
-// WorkspaceInstallOpts{Name, Here, AsSdk: true})` once the Go SDK binding
-// regenerates against the new schema.
-func callSDKInstall(ctx context.Context, dag *dagger.Client, out io.Writer, ref, name string, here bool) error {
+// WorkspaceInstallOpts{Name, Here, AsSdk: true, AsSdkName: ...})` once the Go
+// SDK binding regenerates against the new schema.
+func callSDKInstall(ctx context.Context, dag *dagger.Client, out io.Writer, ref, name, asSDKName string, here bool) error {
 	var res struct {
 		CurrentWorkspace struct {
 			Install string `json:"install"`
 		} `json:"currentWorkspace"`
 	}
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `query SDKInstall($ref: String!, $name: String, $here: Boolean, $asSdk: Boolean) {
+		Query: `query SDKInstall($ref: String!, $name: String, $here: Boolean, $asSdk: Boolean, $asSdkName: String) {
   currentWorkspace {
-    install(ref: $ref, name: $name, here: $here, asSdk: $asSdk)
+    install(ref: $ref, name: $name, here: $here, asSdk: $asSdk, asSdkName: $asSdkName)
   }
 }`,
 		Variables: map[string]any{
-			"ref":   ref,
-			"name":  name,
-			"here":  here,
-			"asSdk": true,
+			"ref":       ref,
+			"name":      name,
+			"here":      here,
+			"asSdk":     true,
+			"asSdkName": asSDKName,
 		},
 	}, &dagger.Response{Data: &res})
 	if err != nil {
@@ -201,7 +204,7 @@ func callSDKInstall(ctx context.Context, dag *dagger.Client, out io.Writer, ref,
 }
 
 func runSDKUninstall(cmd *cobra.Command, args []string) error {
-	name := args[0]
+	input := args[0]
 
 	// Refuse-if-authored is a CLI-side check. It runs against the on-disk
 	// workspace config, not the engine — there's no need to bootstrap a
@@ -211,13 +214,15 @@ func runSDKUninstall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	entry, ok := cfg.Modules[name]
-	if !ok {
-		return fmt.Errorf("no module %q installed in %s", name, cfgPath)
+	sdk, err := resolveConfiguredSDK(cfg, input)
+	if err != nil {
+		if entry, ok := cfg.Modules[input]; ok && entry.AsSDK == nil {
+			return fmt.Errorf("%q is installed in %s but is not marked as an SDK; use `dagger uninstall %s` instead", input, cfgPath, input)
+		}
+		return err
 	}
-	if entry.AsSDK == nil {
-		return fmt.Errorf("%q is installed in %s but is not marked as an SDK; use `dagger uninstall %s` instead", name, cfgPath, name)
-	}
+	name := sdk.moduleName
+	entry := sdk.entry
 	if !sdkUninstallForce {
 		nMods := len(entry.AsSDK.Modules)
 		nClients := len(entry.AsSDK.Clients)
@@ -240,8 +245,8 @@ func runSDKList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	type row struct {
-		name, source     string
-		modules, clients int
+		name, alias, source string
+		modules, clients    int
 	}
 	var rows []row
 	for name, entry := range cfg.Modules {
@@ -250,6 +255,7 @@ func runSDKList(cmd *cobra.Command, _ []string) error {
 		}
 		rows = append(rows, row{
 			name:    name,
+			alias:   sdkCommandName(name, entry),
 			source:  entry.Source,
 			modules: len(entry.AsSDK.Modules),
 			clients: len(entry.AsSDK.Clients),
@@ -265,11 +271,15 @@ func runSDKList(cmd *cobra.Command, _ []string) error {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	// M = authored modules, C = generated clients. Cheap capability
 	// affordance until full per-SDK introspection lands with task #129.
-	if _, err := fmt.Fprintln(w, "NAME\tSOURCE\tM\tC"); err != nil {
+	if _, err := fmt.Fprintln(w, "NAME\tALIAS\tSOURCE\tM\tC"); err != nil {
 		return err
 	}
 	for _, r := range rows {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%d\t%d\n", r.name, r.source, r.modules, r.clients); err != nil {
+		alias := "-"
+		if r.alias != r.name {
+			alias = r.alias
+		}
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n", r.name, alias, r.source, r.modules, r.clients); err != nil {
 			return err
 		}
 	}
@@ -353,11 +363,11 @@ func runSDKInitOptions(cmd *cobra.Command, sdkName string, kind sdkInitKind) err
 	if err != nil {
 		return err
 	}
-	entry, ok := cfg.Modules[sdkName]
-	if !ok || entry.AsSDK == nil {
-		return fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
+	sdk, err := resolveConfiguredSDK(cfg, sdkName)
+	if err != nil {
+		return err
 	}
-	sdkRef, err := sdkInitModuleEntrySource(entry, filepath.Dir(cfgPath))
+	sdkRef, err := sdkInitModuleEntrySource(sdk.entry, filepath.Dir(cfgPath))
 	if err != nil {
 		return err
 	}
@@ -368,7 +378,7 @@ func runSDKInitOptions(cmd *cobra.Command, sdkName string, kind sdkInitKind) err
 	}, func(ctx context.Context, ec *client.Client) error {
 		fn, err := inspectSDKInitFunction(ctx, ec.Dagger(), sdkRef, kind)
 		if errors.Is(err, errSDKInitFunctionNotFound) {
-			return fmt.Errorf("%q does not support %s", sdkName, sdkInitCapabilityName(kind))
+			return fmt.Errorf("%q does not support %s", sdk.commandName, sdkInitCapabilityName(kind))
 		}
 		if err != nil {
 			return err
@@ -377,7 +387,7 @@ func runSDKInitOptions(cmd *cobra.Command, sdkName string, kind sdkInitKind) err
 		if err != nil {
 			return err
 		}
-		return printSDKInitOptions(cmd.OutOrStdout(), sdkName, kind, args)
+		return printSDKInitOptions(cmd.OutOrStdout(), sdk.commandName, kind, args)
 	})
 }
 

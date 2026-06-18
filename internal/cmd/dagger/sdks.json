@@ -24,6 +24,12 @@
     "aliases": []
   },
   {
+    "name": "dang",
+    "description": "Official Dagger SDK for Dang",
+    "repo": "github.com/dagger/dang-sdk",
+    "aliases": []
+  },
+  {
     "name": "java",
     "description": "Official Dagger SDK for Java",
     "repo": "github.com/dagger/java-sdk",

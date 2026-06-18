@@ -18,8 +18,8 @@ import (
 // than applying immediately; callers preview and apply via the standard
 // changeset path. The SelfCalls arg is gone (the feature graduated to a
 // runtime-capability check), and Path is new (workspace-relative, defaults
-// to .dagger/modules/<name>). SDK is the workspace install name created by
-// `dagger sdk install`, not a module source ref.
+// to .dagger/modules/<name>). SDK is the user-facing SDK name from
+// [modules.<name>.as-sdk] or the module entry name, not a module source ref.
 type workspaceModuleInitArgs struct {
 	Name    string
 	SDK     string    `default:""`
@@ -33,7 +33,7 @@ type workspaceModuleInitArgs struct {
 // moduleInit builds the workspace edits required to create a new module
 // owned by this workspace: codegen output (dagger-module.toml plus
 // SDK-generated source) at `path`, the authoring entry under
-// `[[modules.<sdk>.as-sdk.modules]]`, and — when the default path is used —
+// `[[modules.<sdk>.as-sdk.modules]]`, and - when the default path is used -
 // an `[modules.<name>]` install for the new module so it's callable in this
 // workspace. The SDK must already be installed as an SDK; init is dispatch,
 // not install.
@@ -79,7 +79,7 @@ func (s *workspaceSchema) moduleInit(
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
-	sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
+	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
 		return res, err
 	}
@@ -102,7 +102,7 @@ func (s *workspaceSchema) moduleInit(
 	}
 
 	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: relPath})
-	cfg.Modules[args.SDK] = sdkEntry
+	cfg.Modules[sdkName] = sdkEntry
 
 	// Resolve which engine runtime ref the new module should declare. The
 	// runtime/SDK split allows an SDK to *delegate* execution to a separate
