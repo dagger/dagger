@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -89,6 +90,53 @@ func TestSDKInitArgsJSON(t *testing.T) {
 	args, err := sdkInitArgsJSON(cmd)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"goVersion":"1.22"}`, args)
+}
+
+func TestConfiguredSDKsUsesAsSDKName(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"go-sdk": {
+				Source: "github.com/dagger/go-sdk",
+				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+			},
+			"custom-sdk": {
+				Source: "github.com/acme/custom-sdk",
+				AsSDK:  &workspace.ModuleAsSDK{},
+			},
+		},
+	}
+
+	sdks, err := configuredSDKs(cfg)
+	require.NoError(t, err)
+	require.Equal(t, []string{"custom-sdk", "go"}, []string{sdks[0].commandName, sdks[1].commandName})
+
+	resolved, err := resolveConfiguredSDK(cfg, "go")
+	require.NoError(t, err)
+	require.Equal(t, "go-sdk", resolved.moduleName)
+	require.Equal(t, "go", resolved.commandName)
+
+	resolved, err = resolveConfiguredSDK(cfg, "go-sdk")
+	require.NoError(t, err)
+	require.Equal(t, "go-sdk", resolved.moduleName)
+	require.Equal(t, "go", resolved.commandName)
+}
+
+func TestConfiguredSDKsRejectsDuplicateCommandName(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"go-sdk": {
+				Source: "github.com/dagger/go-sdk",
+				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+			},
+			"custom-go-sdk": {
+				Source: "github.com/acme/go-sdk",
+				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+			},
+		},
+	}
+
+	_, err := configuredSDKs(cfg)
+	require.ErrorContains(t, err, `SDK command name "go" is ambiguous`)
 }
 
 func TestSDKInitFunctionFlagArgsSkipsUnsupportedOptionalArgs(t *testing.T) {

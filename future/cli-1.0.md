@@ -126,7 +126,7 @@ What we considered, debated, changed, and decided for each command. Not a descri
 | `module deps` / `module engine` | Restored from PR #13226's pre-rollback state. The original work was rolled back because there was no clean home for it under the old `dagger mod` — adding it created the consumer/author conflation problem. The redesign's whole architecture (separate `dagger module` group, `--load-module` rename, no module-targeting flag on authoring commands) is what makes restoring them honest. The rebalance principle (CLI owns shared operations, SDK owns specialized ones — see [SDK module interface](#sdk-module-interface)) puts `deps` and `engine` clearly on the CLI side: editing dagger-module.toml's deps list or engineVersion is 100% identical across SDKs, so duplicating it inside each SDK would be the kind of duplication the new architecture is meant to avoid. |
 | `module sdk` | Thin wrapper that dispatches to the current module's SDK. Form: `dagger module sdk <subcommand> <args>`. Locates the cwd's `dagger-module.toml` (walking up, stopping at the workspace root), computes the module's workspace-relative path, then scans the workspace's `[[modules.*.as-sdk.modules]]` for an entry whose `path` matches. The parent `modules.<NAME>` is the SDK; the wrapper runs `dagger call <NAME> <subcommand> <args>`. The SDK association lives in workspace config, not in `dagger-module.toml` (per the runtime/SDK split — see [SDK module interface](#sdk-module-interface)). Available subcommands depend entirely on what the SDK exposes — no CLI-side contract beyond "you're an installed module with functions." Examples: `dagger module sdk python-version 3.13`, `dagger module sdk setup-template legacy`, `dagger module sdk go-mod-tidy`. This is the per-module escape hatch for SDK-specific operations; the CLI provides discovery and orchestration, the SDK provides everything else. |
 | `sdk` (group) | First-class top-level group for SDK management. Workshopped against the alternatives `dagger install <ref> --as-sdk` and folding everything under `dagger module` — `sdk` won on four points: (1) it's a namespace with room to grow (`install`, `list`, `search`, `module-options`, `client-options`); (2) built-in disambiguation — `dagger sdk install go` is unambiguous where `dagger install go` would force a `-sdk` suffix or sdks.json hijacking of the install verb; (3) shorter to type than `--as-sdk`; (4) surfaces SDKs as a first-class concept in `--help`. The semantic split with the `module` group: SDK is the tool, module is the thing the SDK creates. `dagger sdk install` adds the SDK to the workspace and marks it; `dagger module init <sdk> <name>` uses an installed SDK to create a module. |
-| `sdk install` | Alias-aware install via the embedded `sdks.json` registry. `dagger sdk install go` → resolves `go` to `github.com/dagger/go-sdk`, installs as a module entry, and adds the empty `[modules.go-sdk.as-sdk]` table as the "this install is an SDK" marker. Workspace install name is the basename of the canonical ref (`go-sdk`), same rule as the generic install verb — aliases stay a parse-time convenience and do not propagate into workspace state. Direct refs work too (`dagger sdk install github.com/foo/sdk` → installed as `[modules.sdk]` by basename, marker added). Generic `dagger install <ref>` does NOT mark anything as an SDK; the marker is opt-in via the `sdk install` verb. |
+| `sdk install` | Alias-aware install via the embedded `sdks.json` registry. `dagger sdk install go` → resolves `go` to `github.com/dagger/go-sdk`, installs as `[modules.go-sdk]`, and writes `[modules.go-sdk.as-sdk] name = "go"` as the "this install is an SDK" marker plus user-facing dispatch name. Workspace install name is the basename of the canonical ref (`go-sdk`), same rule as the generic install verb; the alias is persisted under `as-sdk.name` so `dagger module init go` and `dagger api client init go` stay short. Direct refs work too (`dagger sdk install github.com/foo/sdk` → installed as `[modules.sdk]` by basename, marker added with no alias). Generic `dagger install <ref>` does NOT mark anything as an SDK. The marker is opt-in via the `sdk install` verb. |
 | `sdk uninstall` | Remove an SDK install. Refuses by default if any modules or clients are authored under it (`[[modules.<sdk>.as-sdk.modules]]` / `.clients` non-empty) — orphaning them would leave the workspace pointing at an uninstalled SDK. `--force` overrides; orphaned entries become inert and must be cleaned up by hand. |
 | `sdk list` / `sdk search` | `list` enumerates installed SDKs (entries in `[modules.*]` with the `as-sdk` marker). `search [query]` queries a discoverability registry for SDKs specifically — separate from `dagger search`, which searches the general module registry. The two registries have overlapping but distinct shapes (`sdks.json` has descriptions and aliases; the general registry doesn't have aliases). |
 | `sdk module-options` / `sdk client-options` | Discovery verbs that surface the SDK-specific flags for `dagger module init <sdk> ...` and `dagger api client init <sdk> ...`. Same content as `dagger module init <sdk> --help`, but named explicitly because surfacing "which flags can I pass when I init a Go module" as a focused query is genuinely useful — and the `dagger sdk` group is the discoverable home for it. Implementation: introspect the named SDK's `initModule` / `initClient` schema, print arg list. |
@@ -206,9 +206,9 @@ Install and manage SDKs (the modules that author other modules).
 SDKs are workspace modules whose role is to scaffold/codegen other things:
 new Dagger modules (`dagger module init`) or typed clients against the
 Dagger API (`dagger api client init`). An install becomes an SDK when added
-through this group — `dagger sdk install go` marks the install with the
-[modules.go.as-sdk] table that `dagger module init` / `dagger api client
-init` use to dispatch.
+through this group — `dagger sdk install go` installs [modules.go-sdk] with
+[modules.go-sdk.as-sdk] name = "go" so `dagger module init go` /
+`dagger api client init go` dispatch through that SDK.
 
 AVAILABLE COMMANDS
   install <name-or-ref>          Install an SDK and mark it. Alias-resolving:
@@ -350,6 +350,9 @@ source = "github.com/dagger/dagger-cloud@v0.5"
 [modules.go-sdk]
 source = "github.com/dagger/go-sdk@v1.2.3"
 
+[modules.go-sdk.as-sdk]
+name = "go"
+
 [modules.go-sdk.settings]
 strict-build = true
 
@@ -378,7 +381,7 @@ Section semantics:
 |---|---|
 | `[modules.X]` | Module X is **installed** in this workspace (available to call as a dependency). Engine state. |
 | `[modules.X.settings]` | Workspace-scoped settings for module X. Same location regardless of whether X is a regular module or an SDK. |
-| `[modules.X.as-sdk]` | Module X is installed *as an SDK*. The presence of this sub-table marks the role; its contents list what X authors here. |
+| `[modules.X.as-sdk]` | Module X is installed *as an SDK*. The presence of this sub-table marks the role; optional `name` is the user-facing SDK name accepted by init commands. |
 | `[[modules.X.as-sdk.modules]]` | This workspace **authors** the module at `path` using SDK X. |
 | `[[modules.X.as-sdk.clients]]` | This workspace **generates** the client at `path` using SDK X, bound to the named module. |
 
@@ -428,7 +431,7 @@ Resolution rules for `dagger sdk install <value>`:
 - Otherwise → look up name (then aliases, then repo basename as a compatibility fallback) in `sdks.json`, swap in the canonical ref.
 - 0 / 1 / >1 matches: error / resolve / ambiguous-error.
 
-Workspace install name is always the basename of the canonical ref (`go-sdk`, `python-sdk`, etc.) — same rule the generic `dagger install` verb uses. Aliases are a **CLI-side, parse-time** mechanism for `dagger sdk install` only: `dagger.toml`, `dagger-module.toml`, the engine, and SDK modules themselves never see the alias — neither as the install name nor anywhere else. The basename is what becomes the dispatch key for `dagger module init <sdk> ...`. Adding a new SDK alias is a registry data change, not a CLI release.
+Workspace install name is always the basename of the canonical ref (`go-sdk`, `python-sdk`, etc.) — same rule the generic `dagger install` verb uses. Registry names and aliases are CLI-side resolution inputs for `dagger sdk install`; for registry installs, the canonical user-facing SDK name is persisted in `dagger.toml` as `[modules.<basename>.as-sdk] name = "<sdk>"`. Init commands dispatch on that persisted `as-sdk.name`, falling back to the module entry name when empty. `dagger-module.toml` and SDK modules themselves do not see the registry alias. Adding a new SDK alias is a registry data change, not a CLI release.
 
 `dagger install` (the generic install verb) does NOT consult `sdks.json` — SDKs come in via `dagger sdk install`. This keeps `dagger install <name>` unambiguous and reserves the alias namespace for explicit SDK installs.
 
@@ -692,7 +695,7 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 
 ### Shipped — `dagger module`
 
-- ✅ **`dagger module init`** — scaffolds a new module. **Current shape: `dagger module init <sdk> <name> [--path=<dir>] [SDK-SPECIFIC FLAGS]`.** `<sdk>` is the workspace install name created by `dagger sdk install`; installed SDKs are registered as `init` child commands only when the SDK exposes `initModule`. The CLI introspects extra `initModule` args, exposes them as typed flags, sends changed values through `Workspace.moduleInit(args: JSON)`, and the engine merges the SDK-returned `Changeset` with its own workspace bookkeeping.
+- ✅ **`dagger module init`** — scaffolds a new module. **Current shape: `dagger module init <sdk> <name> [--path=<dir>] [SDK-SPECIFIC FLAGS]`.** `<sdk>` is the user-facing SDK name from `[modules.<name>.as-sdk] name = ...`, falling back to the module entry name; installed SDKs are registered as `init` child commands only when the SDK exposes `initModule`. The CLI introspects extra `initModule` args, exposes them as typed flags, sends changed values through `Workspace.moduleInit(args: JSON)`, and the engine merges the SDK-returned `Changeset` with its own workspace bookkeeping.
 - ✅ **`dagger module deps {add, rm, list}`** — restored from PR #13226's pre-rollback state.
 - ✅ **`dagger module engine {require, require-current, require-latest, required}`** — restored from the same commit.
 - ✅ **`dagger module sdk`** — wrapper that dispatches `dagger call <current-module's-sdk> <subcommand>`. Looks up the SDK from `[[modules.*.as-sdk.modules]]` workspace entries.
@@ -703,13 +706,13 @@ Status legend: ✅ shipped on this branch | 🟡 partially shipped | ⬜ designe
 - ✅ **`dagger api functions`** — moved + renamed from `dagger function list`.
 - ✅ **`dagger api query`** — unchanged.
 - ✅ **`dagger api exec`** — moved from top-level `dagger exec`. Short description sharpened to "Run a command with a connected Dagger API session". Top-level `dagger exec` is gone.
-- ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <sdk> <path> <module> [SDK-SPECIFIC FLAGS]`.** `<sdk>` is the workspace install name created by `dagger sdk install`; installed SDKs are registered as `init` child commands only when the SDK exposes `initClient`. The CLI introspects extra `initClient` args as typed flags; `--sdk`, `--module`, and `--option` are gone.
+- ✅ **`dagger api client init` / `dagger api client list`** — replaces the old hidden `dagger client` group. Client entries live in `[[modules.<sdk>.as-sdk.clients]]`; `dagger generate` regenerates them. **Current shape: `dagger api client init <sdk> <path> <module> [SDK-SPECIFIC FLAGS]`.** `<sdk>` is the user-facing SDK name from `[modules.<name>.as-sdk] name = ...`, falling back to the module entry name; installed SDKs are registered as `init` child commands only when the SDK exposes `initClient`. The CLI introspects extra `initClient` args as typed flags; `--sdk`, `--module`, and `--option` are gone.
 
 ### Shipped — `dagger sdk`
 
-- ✅ **`dagger sdk install <name-or-ref>`** — alias-resolving install via `sdks.json`. Workspace install name is the basename of the canonical ref (`go-sdk`), same rule as the generic install verb — aliases stay parse-time-only. Writes the empty `[modules.<name>.as-sdk]` marker that `dagger module init <sdk>` / `dagger api client init <sdk>` dispatch on. Engine method: `Workspace.install(asSdk: true)` — same call as the generic install with the marker arg.
+- ✅ **`dagger sdk install <name-or-ref>`** — alias-resolving install via `sdks.json`. Workspace install name is the basename of the canonical ref (`go-sdk`), same rule as the generic install verb; registry names are persisted as `[modules.<name>.as-sdk] name = "<sdk>"`, so `dagger sdk install go` writes `[modules.go-sdk.as-sdk] name = "go"`. Engine method: `Workspace.install(asSdk: true, asSdkName: ...)`.
 - ✅ **`dagger sdk uninstall <name>`** — CLI-side refuse-if-authored against the on-disk config (no session bootstrap to read TOML), `--force` overrides; files on disk are left untouched.
-- ✅ **`dagger sdk list`** — reads `dagger.toml`, prints installs where the as-sdk marker is set. Columns: NAME / SOURCE / M / C (M = authored modules, C = generated clients).
+- ✅ **`dagger sdk list`** — reads `dagger.toml`, prints installs where the as-sdk marker is set. Columns: NAME / ALIAS / SOURCE / M / C (M = authored modules, C = generated clients).
 - ✅ **`dagger sdk search [query]`** — lists embedded `sdks.json` entries; substring match on name / description / alias / repo.
 - ✅ **`dagger sdk module-options <sdk>` / `dagger sdk client-options <sdk>`** — validates that the named install carries the as-sdk marker, introspects the SDK's `initModule` / `initClient` function, and prints the SDK-specific flags accepted by the corresponding init command.
 

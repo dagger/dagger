@@ -15871,8 +15871,10 @@ type WorkspaceInstallOpts struct {
 	Name string
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
-	// Mark the install as an SDK (writes the empty `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <name>` and `dagger api client init <name>`).
+	// Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
 	AsSDK bool
+	// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+	AsSDKName string
 }
 
 // Install a module into the workspace, writing dagger.toml to the host.
@@ -15893,6 +15895,10 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 		// `asSdk` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AsSDK) {
 			q = q.Arg("asSdk", opts[i].AsSDK)
+		}
+		// `asSdkName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AsSDKName) {
+			q = q.Arg("asSdkName", opts[i].AsSDKName)
 		}
 	}
 	q = q.Arg("ref", ref)
@@ -15916,7 +15922,7 @@ func (r *Workspace) Migrate() *WorkspaceMigration {
 
 // WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
 type WorkspaceModuleInitOpts struct {
-	// Workspace install name of the SDK to use.
+	// Workspace SDK name or module entry name to use.
 	SDK string
 	// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
 	Path string

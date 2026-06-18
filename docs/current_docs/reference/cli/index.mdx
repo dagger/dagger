@@ -231,9 +231,10 @@ Initialize a generated API client at &lt;path&gt;.
 &lt;sdk&gt; is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
 to add more choices.
 
-The engine validates that &lt;sdk&gt; is installed as an SDK in dagger.toml, plans the
-generated files and workspace config change, then returns a Changeset that the
-CLI previews and applies through the standard preview/apply flow.
+The engine resolves &lt;sdk&gt; from dagger.toml, validates that it is installed as an
+SDK, plans the generated files and workspace config change, then returns a
+Changeset that the CLI previews and applies through the standard preview/apply
+flow.
 
 ```
 dagger api client init <sdk> <path> <module>
@@ -1726,10 +1727,10 @@ workspace changes, and returns a Changeset that the CLI previews and applies
 through the standard changeset apply flow.
 
 What the engine does (atomically, in one Changeset):
-  1. Uses [modules.&lt;sdk&gt;] as the SDK install and requires its as-sdk marker.
+  1. Resolves &lt;sdk&gt; to an installed SDK entry and requires its as-sdk marker.
   2. Generates the new module's dagger-module.toml + SDK-emitted source
      scaffold at &lt;path&gt;.
-  3. Records [[modules.&lt;sdk&gt;.as-sdk.modules]] authoring entry for
+  3. Records [[modules.&lt;sdk-module&gt;.as-sdk.modules]] authoring entry for
      &lt;path&gt;.
   4. When --path is the default (.dagger/modules/&lt;name&gt;), also installs
      the new module as [modules.&lt;name&gt;] so it's callable here.
@@ -1836,9 +1837,10 @@ Install and manage SDKs.
 SDKs are workspace modules whose role is to scaffold/codegen other things:
 new Dagger modules (`dagger module init`) or typed clients against the
 Dagger API (`dagger api client init`). An install becomes an SDK when
-added through this group — `dagger sdk install go` marks the install
-with the [modules.go.as-sdk] table that `dagger module init` /
-`dagger api client init` use to dispatch.
+added through this group — `dagger sdk install go` installs
+[modules.go-sdk] with [modules.go-sdk.as-sdk] name = "go" so
+`dagger module init go` / `dagger api client init go`
+dispatch through that SDK.
 
 ### Options inherited from parent commands
 
@@ -1920,8 +1922,9 @@ Install an SDK into the current workspace and mark it with the
 
 Alias resolution: `dagger sdk install go` resolves "go" via the
 embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the registry's short name (`go`), not the basename
-of the canonical ref (`go-sdk`). Direct refs work too:
+install name is the canonical ref basename (`go-sdk`), and the
+user-facing name is persisted as [modules.go-sdk.as-sdk] name = "go".
+Direct refs work too:
 `dagger sdk install github.com/foo/sdk` is installed as
 [modules.sdk] by basename.
 
@@ -1942,7 +1945,7 @@ dagger sdk install go
 
 ```
       --here          Write to the workspace config directory at the workspace cwd
-  -n, --name string   Override the workspace install name (defaults to the registry short name, or the basename of a direct ref)
+  -n, --name string   Override the workspace install name (defaults to the registry repo basename, or the basename of a direct ref)
 ```
 
 ### Options inherited from parent commands

@@ -23,7 +23,7 @@ import (
 var embeddedSDKRegistry []byte
 
 type sdkEntry struct {
-	Name        string   `json:"name"`        // canonical short install/search name (e.g., "go")
+	Name        string   `json:"name"`        // canonical user-facing SDK name (e.g., "go")
 	Description string   `json:"description"` // user-facing search description
 	Repo        string   `json:"repo"`        // canonical full ref (e.g., "github.com/dagger/go-sdk")
 	Aliases     []string `json:"aliases"`     // user-facing shorthands (e.g., ["golang"])
@@ -52,27 +52,30 @@ func parseSDKRegistry(data []byte) ([]sdkEntry, error) {
 //   - 1 match  → return entry.Repo.
 //   - N > 1   → error ("ambiguous"), with candidate names.
 //
-// Registry names and aliases only affect the CLI-side default install name.
-// Only canonical full refs flow past this function.
+// Registry names and aliases affect the CLI-side default install name and the
+// SDK alias persisted under [modules.<name>.as-sdk]. Only canonical full refs
+// flow past this function.
 func sdkResolve(input string) (string, error) {
-	ref, _, err := sdkResolveInstall(input)
+	ref, _, _, err := sdkResolveInstall(input)
 	return ref, err
 }
 
-// sdkResolveInstall maps an SDK install value to both:
+// sdkResolveInstall maps an SDK install value to:
 //   - the canonical full ref that should flow downstream to the engine; and
-//   - the registry's canonical short name to use as the workspace install name
-//     when the user did not pass --name.
+//   - the registry repo basename to use as the workspace install name when the
+//     user did not pass --name; and
+//   - the registry's canonical user-facing name to persist as as-sdk.name.
 //
 // Full refs return an empty install name so Workspace.install keeps its normal
-// basename-derived behavior for third-party SDK refs.
-func sdkResolveInstall(input string) (ref string, installName string, _ error) {
+// basename-derived behavior for third-party SDK refs. They also return an
+// empty SDK name so third-party refs can rely on the module entry name.
+func sdkResolveInstall(input string) (ref string, installName string, asSDKName string, _ error) {
 	if strings.ContainsAny(input, "/@") {
-		return input, "", nil
+		return input, "", "", nil
 	}
 	entries, err := loadSDKRegistry()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	var matches []sdkEntry
 	for _, e := range entries {
@@ -94,16 +97,16 @@ func sdkResolveInstall(input string) (ref string, installName string, _ error) {
 	}
 	switch len(matches) {
 	case 0:
-		return "", "", fmt.Errorf("SDK %q not found in registry; try `dagger sdk search %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
+		return "", "", "", fmt.Errorf("SDK %q not found in registry; try `dagger sdk search %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
 	case 1:
-		return matches[0].Repo, matches[0].Name, nil
+		return matches[0].Repo, sdkRegistryRepoBase(matches[0].Repo), matches[0].Name, nil
 	default:
 		names := make([]string, 0, len(matches))
 		for _, m := range matches {
 			names = append(names, m.Name)
 		}
 		sort.Strings(names)
-		return "", "", fmt.Errorf("SDK %q is ambiguous: matches %s; pick one", input, strings.Join(names, ", "))
+		return "", "", "", fmt.Errorf("SDK %q is ambiguous: matches %s; pick one", input, strings.Join(names, ", "))
 	}
 }
 
@@ -135,10 +138,10 @@ workspace changes, and returns a Changeset that the CLI previews and applies
 through the standard changeset apply flow.
 
 What the engine does (atomically, in one Changeset):
-  1. Uses [modules.<sdk>] as the SDK install and requires its as-sdk marker.
+  1. Resolves <sdk> to an installed SDK entry and requires its as-sdk marker.
   2. Generates the new module's dagger-module.toml + SDK-emitted source
      scaffold at <path>.
-  3. Records [[modules.<sdk>.as-sdk.modules]] authoring entry for
+  3. Records [[modules.<sdk-module>.as-sdk.modules]] authoring entry for
      <path>.
   4. When --path is the default (.dagger/modules/<name>), also installs
      the new module as [modules.<name>] so it's callable here.
@@ -186,9 +189,9 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 
 // callModuleInit invokes the engine's Workspace.moduleInit via a raw GraphQL
 // query so this code can ship ahead of an SDK regeneration. sdkName is the
-// workspace install name created by `dagger sdk install`. When the Go SDK is
-// regenerated against the new schema, the body collapses to a single typed
-// call:
+// user-facing SDK name from [modules.<name>.as-sdk] or the module entry name.
+// When the Go SDK is regenerated against the new schema, the body collapses
+// to a single typed call:
 //
 //	dag.CurrentWorkspace().ModuleInit(ctx, name, dagger.WorkspaceModuleInitOpts{
 //	    SDK: sdkName, Path: path,

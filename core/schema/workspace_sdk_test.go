@@ -12,15 +12,15 @@ func TestInstalledSDKSource(t *testing.T) {
 
 	cfg := &workspace.Config{
 		Modules: map[string]workspace.ModuleEntry{
-			"go": {
+			"go-sdk": {
 				Source: "github.com/dagger/go-sdk",
 				Pin:    "sha256:abc",
-				AsSDK:  &workspace.ModuleAsSDK{},
+				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
 			},
-			"typescript": {
+			"typescript-sdk": {
 				Source: "github.com/dagger/typescript-sdk@v1.2.3",
 				Pin:    "sha256:ignored",
-				AsSDK:  &workspace.ModuleAsSDK{},
+				AsSDK:  &workspace.ModuleAsSDK{Name: "typescript"},
 			},
 			"plain": {
 				Source: "github.com/dagger/plain",
@@ -28,20 +28,52 @@ func TestInstalledSDKSource(t *testing.T) {
 		},
 	}
 
-	entry, source, err := installedSDKSource(cfg, "go")
+	name, entry, source, err := installedSDKSource(cfg, "go")
 	require.NoError(t, err)
+	require.Equal(t, "go-sdk", name)
 	require.Equal(t, "github.com/dagger/go-sdk", entry.Source)
 	require.Equal(t, "github.com/dagger/go-sdk@sha256:abc", source)
 
-	_, source, err = installedSDKSource(cfg, "typescript")
+	name, _, source, err = installedSDKSource(cfg, "typescript")
 	require.NoError(t, err)
+	require.Equal(t, "typescript-sdk", name)
 	require.Equal(t, "github.com/dagger/typescript-sdk@v1.2.3", source)
 
-	_, _, err = installedSDKSource(cfg, "plain")
-	require.EqualError(t, err, "\"plain\" is not installed as an SDK in this workspace; run `dagger sdk install plain` first")
+	name, _, source, err = installedSDKSource(cfg, "go-sdk")
+	require.NoError(t, err)
+	require.Equal(t, "go-sdk", name)
+	require.Equal(t, "github.com/dagger/go-sdk@sha256:abc", source)
 
-	_, _, err = installedSDKSource(cfg, "missing")
+	_, _, source, err = installedSDKSource(cfg, "plain")
+	require.EqualError(t, err, "\"plain\" is not installed as an SDK in this workspace; run `dagger sdk install plain` first")
+	require.Empty(t, source)
+
+	_, _, source, err = installedSDKSource(cfg, "missing")
 	require.EqualError(t, err, "\"missing\" is not installed as an SDK in this workspace; run `dagger sdk install missing` first")
+	require.Empty(t, source)
+}
+
+func TestInstalledSDKSourceAmbiguousAlias(t *testing.T) {
+	t.Parallel()
+
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"go-sdk": {
+				Source: "github.com/dagger/go-sdk",
+				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+			},
+			"custom-go-sdk": {
+				Source: "github.com/acme/go-sdk",
+				AsSDK:  &workspace.ModuleAsSDK{Name: "go"},
+			},
+		},
+	}
+
+	_, _, source, err := installedSDKSource(cfg, "go")
+	require.ErrorContains(t, err, `SDK name "go" is ambiguous`)
+	require.ErrorContains(t, err, "modules.custom-go-sdk.as-sdk")
+	require.ErrorContains(t, err, "modules.go-sdk.as-sdk")
+	require.Empty(t, source)
 }
 
 func TestRemoveClientEntryAtPathPreservesSDKMarker(t *testing.T) {

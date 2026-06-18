@@ -73,17 +73,13 @@ func registerSDKInitCommandsFromConfigForKind(
 		return nil
 	}
 
-	sdkNames := make([]string, 0, len(cfg.Modules))
-	for name, entry := range cfg.Modules {
-		if entry.AsSDK != nil {
-			sdkNames = append(sdkNames, name)
-		}
+	sdks, err := configuredSDKs(cfg)
+	if err != nil {
+		return err
 	}
-	sort.Strings(sdkNames)
 
-	for _, sdkName := range sdkNames {
-		entry := cfg.Modules[sdkName]
-		sdkRef, err := sdkInitModuleEntrySource(entry, cfgDir)
+	for _, sdk := range sdks {
+		sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
 		if err != nil {
 			return err
 		}
@@ -97,13 +93,13 @@ func registerSDKInitCommandsFromConfigForKind(
 
 		switch kind {
 		case sdkInitKindModule:
-			cmd := newModuleInitSDKCommand(sdkName)
+			cmd := newModuleInitSDKCommand(sdk.commandName)
 			if err := addSDKInitFunctionFlags(cmd, fn, kind); err != nil {
 				return err
 			}
 			moduleParent.AddCommand(cmd)
 		case sdkInitKindClient:
-			cmd := newAPIClientInitSDKCommand(sdkName)
+			cmd := newAPIClientInitSDKCommand(sdk.commandName)
 			if err := addSDKInitFunctionFlags(cmd, fn, kind); err != nil {
 				return err
 			}
@@ -111,6 +107,87 @@ func registerSDKInitCommandsFromConfigForKind(
 		}
 	}
 	return nil
+}
+
+type configuredSDK struct {
+	moduleName  string
+	commandName string
+	entry       workspace.ModuleEntry
+}
+
+func sdkCommandName(moduleName string, entry workspace.ModuleEntry) string {
+	if entry.AsSDK != nil && entry.AsSDK.Name != "" {
+		return entry.AsSDK.Name
+	}
+	return moduleName
+}
+
+func configuredSDKs(cfg *workspace.Config) ([]configuredSDK, error) {
+	if cfg == nil || cfg.Modules == nil {
+		return nil, nil
+	}
+	sdks := make([]configuredSDK, 0, len(cfg.Modules))
+	seen := map[string]string{}
+	for moduleName, entry := range cfg.Modules {
+		if entry.AsSDK == nil {
+			continue
+		}
+		commandName := sdkCommandName(moduleName, entry)
+		if existing, ok := seen[commandName]; ok {
+			return nil, fmt.Errorf("SDK command name %q is ambiguous: modules.%s.as-sdk and modules.%s.as-sdk both use it", commandName, existing, moduleName)
+		}
+		seen[commandName] = moduleName
+		sdks = append(sdks, configuredSDK{
+			moduleName:  moduleName,
+			commandName: commandName,
+			entry:       entry,
+		})
+	}
+	sort.Slice(sdks, func(i, j int) bool {
+		if sdks[i].commandName != sdks[j].commandName {
+			return sdks[i].commandName < sdks[j].commandName
+		}
+		return sdks[i].moduleName < sdks[j].moduleName
+	})
+	return sdks, nil
+}
+
+func resolveConfiguredSDK(cfg *workspace.Config, sdkName string) (configuredSDK, error) {
+	if cfg == nil || cfg.Modules == nil {
+		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
+	}
+	if entry, ok := cfg.Modules[sdkName]; ok && entry.AsSDK != nil {
+		return configuredSDK{
+			moduleName:  sdkName,
+			commandName: sdkCommandName(sdkName, entry),
+			entry:       entry,
+		}, nil
+	}
+
+	var matches []configuredSDK
+	for moduleName, entry := range cfg.Modules {
+		if entry.AsSDK == nil || entry.AsSDK.Name != sdkName {
+			continue
+		}
+		matches = append(matches, configuredSDK{
+			moduleName:  moduleName,
+			commandName: sdkCommandName(moduleName, entry),
+			entry:       entry,
+		})
+	}
+	sort.Slice(matches, func(i, j int) bool { return matches[i].moduleName < matches[j].moduleName })
+	switch len(matches) {
+	case 0:
+		return configuredSDK{}, fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
+	case 1:
+		return matches[0], nil
+	default:
+		names := make([]string, len(matches))
+		for i, match := range matches {
+			names[i] = match.moduleName
+		}
+		return configuredSDK{}, fmt.Errorf("SDK name %q is ambiguous: matches modules.%s.as-sdk; choose a unique as-sdk.name", sdkName, strings.Join(names, ".as-sdk, modules."))
+	}
 }
 
 func clearDynamicSDKInitCommands(parent *cobra.Command) {

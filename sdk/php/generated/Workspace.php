@@ -278,8 +278,13 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Install a module into the workspace, writing dagger.toml to the host.
      */
-    public function install(string $ref, ?string $name = '', ?bool $here = false, ?bool $asSdk = false): string
-    {
+    public function install(
+        string $ref,
+        ?string $name = '',
+        ?bool $here = false,
+        ?bool $asSdk = false,
+        ?string $asSdkName = '',
+    ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('install');
         $leafQueryBuilder->setArgument('ref', $ref);
         if (null !== $name) {
@@ -290,6 +295,9 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $asSdk) {
         $leafQueryBuilder->setArgument('asSdk', $asSdk);
+        }
+        if (null !== $asSdkName) {
+        $leafQueryBuilder->setArgument('asSdkName', $asSdkName);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'install');
     }

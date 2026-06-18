@@ -28,6 +28,7 @@ func TestAPIClientEntries(t *testing.T) {
 			"go-sdk": {
 				Source: "github.com/dagger/go-sdk",
 				AsSDK: &workspace.ModuleAsSDK{
+					Name: "go",
 					Clients: []workspace.SDKManagedClient{
 						{
 							Path:   "lib/go",
@@ -43,6 +44,7 @@ func TestAPIClientEntries(t *testing.T) {
 			"typescript-sdk": {
 				Source: "github.com/dagger/typescript-sdk",
 				AsSDK: &workspace.ModuleAsSDK{
+					Name: "typescript",
 					Clients: []workspace.SDKManagedClient{
 						{Path: "lib/ts", Module: "github.com/dagger/postgres@v1.2.3"},
 					},
@@ -53,7 +55,7 @@ func TestAPIClientEntries(t *testing.T) {
 
 	require.Equal(t, []apiClientListEntry{
 		{
-			SDK:    "go-sdk",
+			SDK:    "go",
 			Path:   "lib/go",
 			Module: ".dagger/modules/api",
 			Pin:    "abc123",
@@ -62,7 +64,7 @@ func TestAPIClientEntries(t *testing.T) {
 			},
 		},
 		{
-			SDK:    "typescript-sdk",
+			SDK:    "typescript",
 			Path:   "lib/ts",
 			Module: "github.com/dagger/postgres@v1.2.3",
 		},

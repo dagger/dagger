@@ -15259,7 +15259,7 @@ class Workspace(Type):
         path:
             Workspace-relative output directory for the generated client.
         sdk:
-            Workspace install name of the SDK to use.
+            Workspace SDK name or module entry name to use.
         module:
             Workspace-relative path or canonical ref for the module the client
             binds to.
@@ -15683,6 +15683,7 @@ class Workspace(Type):
         name: str | None = "",
         here: bool | None = False,
         as_sdk: bool | None = False,
+        as_sdk_name: str | None = "",
     ) -> str:
         """Install a module into the workspace, writing dagger.toml to the host.
 
@@ -15695,9 +15696,12 @@ class Workspace(Type):
         here:
             Write to the workspace config directory at the workspace cwd.
         as_sdk:
-            Mark the install as an SDK (writes the empty `[modules.<name>.as-
-            sdk]` marker that dispatches `dagger module init <name>` and
-            `dagger api client init <name>`).
+            Mark the install as an SDK (writes the `[modules.<name>.as-sdk]`
+            marker that dispatches `dagger module init <sdk>` and `dagger api
+            client init <sdk>`).
+        as_sdk_name:
+            User-facing SDK name to persist under `[modules.<name>.as-sdk]
+            name = ...`.
 
         Returns
         -------
@@ -15718,6 +15722,7 @@ class Workspace(Type):
             Arg("name", name, ""),
             Arg("here", here, False),
             Arg("asSdk", as_sdk, False),
+            Arg("asSdkName", as_sdk_name, ""),
         ]
         _ctx = self._select("install", _args)
         return await _ctx.execute(str)
@@ -15754,7 +15759,7 @@ class Workspace(Type):
         name:
             Name of the new module.
         sdk:
-            Workspace install name of the SDK to use.
+            Workspace SDK name or module entry name to use.
         path:
             Workspace-relative path for the new module. Defaults to
             ".dagger/modules/<name>"; using the default also installs the

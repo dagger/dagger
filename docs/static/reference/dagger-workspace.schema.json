@@ -62,6 +62,10 @@
     },
     "ModuleAsSDK": {
       "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name is the user-facing SDK name used by `dagger module init \u003csdk\u003e` and `dagger api client init \u003csdk\u003e`. When empty, the module entry name is used."
+        },
         "modules": {
           "items": {
             "$ref": "#/$defs/SDKManagedModule"

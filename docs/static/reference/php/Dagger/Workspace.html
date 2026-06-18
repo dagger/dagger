@@ -336,7 +336,7 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_install">install</a>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false, bool|null $asSdk = false)
+                    <a href="#method_install">install</a>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false, bool|null $asSdk = false, string|null $asSdkName = &#039;&#039;)
         
                                             <p><p>Install a module into the workspace, writing dagger.toml to the host.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -1298,7 +1298,7 @@
                     <h3 id="method_install">
         <div class="location">at line 281</div>
         <code>                    string
-    <strong>install</strong>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false, bool|null $asSdk = false)
+    <strong>install</strong>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false, bool|null $asSdk = false, string|null $asSdkName = &#039;&#039;)
         </code>
     </h3>
     <div class="details">    
@@ -1332,6 +1332,11 @@
                 <td>$asSdk</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$asSdkName</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -1353,7 +1358,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_migrate">
-        <div class="location">at line 302</div>
+        <div class="location">at line 310</div>
         <code>                    <a href="../Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a>
     <strong>migrate</strong>()
         </code>
@@ -1385,7 +1390,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleInit">
-        <div class="location">at line 311</div>
+        <div class="location">at line 319</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>moduleInit</strong>(string $name, string|null $sdk = &#039;&#039;, string|null $path = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = [], bool|null $here = false, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $args = null)
         </code>
@@ -1457,7 +1462,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleList">
-        <div class="location">at line 346</div>
+        <div class="location">at line 354</div>
         <code>                    array
     <strong>moduleList</strong>(string|null $module = &#039;&#039;)
         </code>
@@ -1499,7 +1504,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_services">
-        <div class="location">at line 358</div>
+        <div class="location">at line 366</div>
         <code>                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
     <strong>services</strong>(array|null $include = null)
         </code>
@@ -1541,7 +1546,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_uninstall">
-        <div class="location">at line 370</div>
+        <div class="location">at line 378</div>
         <code>                    string
     <strong>uninstall</strong>(string $name, bool|null $here = false)
         </code>
@@ -1588,7 +1593,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_update">
-        <div class="location">at line 385</div>
+        <div class="location">at line 393</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>update</strong>()
         </code>

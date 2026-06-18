@@ -54,7 +54,7 @@ func (s *workspaceSchema) clientInit(
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
-	sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
+	sdkName, sdkEntry, sdkRef, err := installedSDKSource(cfg, args.SDK)
 	if err != nil {
 		return res, err
 	}
@@ -72,13 +72,13 @@ func (s *workspaceSchema) clientInit(
 	modulePin := targetModule.Self().Pin()
 
 	removeClientEntryAtPath(cfg, clientPath)
-	sdkEntry = cfg.Modules[args.SDK]
+	sdkEntry = cfg.Modules[sdkName]
 	sdkEntry.AsSDK.Clients = append(sdkEntry.AsSDK.Clients, workspace.SDKManagedClient{
 		Path:   clientPath,
 		Module: moduleRef,
 		Pin:    modulePin,
 	})
-	cfg.Modules[args.SDK] = sdkEntry
+	cfg.Modules[sdkName] = sdkEntry
 
 	existingConfigBytes, err := readConfigBytes(ctx, parent)
 	if err != nil {

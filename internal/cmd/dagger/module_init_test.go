@@ -55,6 +55,11 @@ func TestSDKResolve(t *testing.T) {
 			want:  "github.com/dagger/typescript-sdk",
 		},
 		{
+			name:  "dang bundled sdk",
+			input: "dang",
+			want:  "github.com/dagger/dang-sdk",
+		},
+		{
 			name:    "unknown name errors",
 			input:   "nonexistent-sdk",
 			wantErr: "not found in registry",
@@ -79,25 +84,36 @@ func TestSDKResolveInstall(t *testing.T) {
 		input           string
 		wantRef         string
 		wantInstallName string
+		wantAsSDKName   string
 		wantErr         string
 	}{
 		{
-			name:            "registry name resolves repo and short install name",
+			name:            "registry name resolves repo, install name, and sdk alias",
 			input:           "go",
 			wantRef:         "github.com/dagger/go-sdk",
-			wantInstallName: "go",
+			wantInstallName: "go-sdk",
+			wantAsSDKName:   "go",
 		},
 		{
-			name:            "registry alias resolves repo and canonical short install name",
+			name:            "registry alias resolves repo, install name, and canonical sdk alias",
 			input:           "golang",
 			wantRef:         "github.com/dagger/go-sdk",
-			wantInstallName: "go",
+			wantInstallName: "go-sdk",
+			wantAsSDKName:   "go",
 		},
 		{
-			name:            "repo basename compatibility fallback resolves repo and short install name",
+			name:            "repo basename compatibility fallback resolves repo, install name, and sdk alias",
 			input:           "go-sdk",
 			wantRef:         "github.com/dagger/go-sdk",
-			wantInstallName: "go",
+			wantInstallName: "go-sdk",
+			wantAsSDKName:   "go",
+		},
+		{
+			name:            "dang resolves repo, install name, and sdk alias",
+			input:           "dang",
+			wantRef:         "github.com/dagger/dang-sdk",
+			wantInstallName: "dang-sdk",
+			wantAsSDKName:   "dang",
 		},
 		{
 			name:    "full ref keeps generic install naming",
@@ -116,7 +132,7 @@ func TestSDKResolveInstall(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			gotRef, gotInstallName, err := sdkResolveInstall(tt.input)
+			gotRef, gotInstallName, gotAsSDKName, err := sdkResolveInstall(tt.input)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.wantErr)
@@ -125,6 +141,7 @@ func TestSDKResolveInstall(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.wantRef, gotRef)
 			require.Equal(t, tt.wantInstallName, gotInstallName)
+			require.Equal(t, tt.wantAsSDKName, gotAsSDKName)
 		})
 	}
 }
@@ -135,7 +152,7 @@ func TestLoadSDKRegistry(t *testing.T) {
 	require.NotEmpty(t, entries)
 	for _, e := range entries {
 		require.NotEmpty(t, e.Name, "entry missing name")
-		require.NotContains(t, e.Name, "-sdk", "entry %q should use the user-facing install name", e.Name)
+		require.NotContains(t, e.Name, "-sdk", "entry %q should use the user-facing SDK name", e.Name)
 		require.NotEmpty(t, e.Description, "entry %q missing description", e.Name)
 		require.NotEmpty(t, e.Repo, "entry %q missing repo", e.Name)
 	}
