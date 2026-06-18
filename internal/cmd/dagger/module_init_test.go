@@ -73,6 +73,62 @@ func TestSDKResolve(t *testing.T) {
 	}
 }
 
+func TestSDKResolveInstall(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		input           string
+		wantRef         string
+		wantInstallName string
+		wantErr         string
+	}{
+		{
+			name:            "registry name resolves repo and short install name",
+			input:           "go",
+			wantRef:         "github.com/dagger/go-sdk",
+			wantInstallName: "go",
+		},
+		{
+			name:            "registry alias resolves repo and canonical short install name",
+			input:           "golang",
+			wantRef:         "github.com/dagger/go-sdk",
+			wantInstallName: "go",
+		},
+		{
+			name:            "repo basename compatibility fallback resolves repo and short install name",
+			input:           "go-sdk",
+			wantRef:         "github.com/dagger/go-sdk",
+			wantInstallName: "go",
+		},
+		{
+			name:    "full ref keeps generic install naming",
+			input:   "github.com/acme/custom-go-sdk",
+			wantRef: "github.com/acme/custom-go-sdk",
+		},
+		{
+			name:    "full ref with version keeps generic install naming",
+			input:   "github.com/dagger/go-sdk@v1.2.3",
+			wantRef: "github.com/dagger/go-sdk@v1.2.3",
+		},
+		{
+			name:    "unknown name errors",
+			input:   "nonexistent-sdk",
+			wantErr: "not found in registry",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRef, gotInstallName, err := sdkResolveInstall(tt.input)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantRef, gotRef)
+			require.Equal(t, tt.wantInstallName, gotInstallName)
+		})
+	}
+}
+
 func TestLoadSDKRegistry(t *testing.T) {
 	entries, err := loadSDKRegistry()
 	require.NoError(t, err)
