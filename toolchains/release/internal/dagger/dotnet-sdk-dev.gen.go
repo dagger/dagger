@@ -41,16 +41,6 @@ func (r *DotnetSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *DotnetSDKDev
 	}
 }
 
-// Bump dagger engine version for the Dotnet SDK
-// NOTE: this is currently a no-op
-func (r *DotnetSDKDev) Bump() *Changeset { // dotnet-sdk-dev (../../../../:0:0)
-	q := r.query.Select("bump")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Return the changeset between the local workspace and the moduele's
 // current workspace.
 //
