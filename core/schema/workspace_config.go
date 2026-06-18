@@ -216,6 +216,10 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	}
 
 	if ws.HostPath() != "" {
+		ctx, err = withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
 		configPath, err := workspaceHostPath(ws, configFile)
 		if err != nil {
 			return nil, err
