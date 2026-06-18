@@ -312,7 +312,12 @@ func inspectSDKInitFunction(
 	}
 
 	modSrc := dag.ModuleSource(sdkRef)
-	mod, err := initializeModule(ctx, dag, sdkRef, modSrc)
+	// Inspect the SDK's own init contract only. Serving its dependencies would
+	// pull them into the session's shared module namespace, so two installed
+	// SDKs that share a transitive dependency at different sources/pins (e.g.
+	// each SDK pinning sdk-sdk/polyfill to a different commit) would collide
+	// during registration.
+	mod, err := initializeModule(ctx, dag, sdkRef, modSrc, initModuleOpts{skipDependencies: true})
 	if err != nil {
 		return nil, fmt.Errorf("inspect sdk %q: %w", sdkRef, err)
 	}

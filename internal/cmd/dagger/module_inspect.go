@@ -50,6 +50,21 @@ func initializeWorkspace(ctx context.Context, dag *dagger.Client, opts ...loadTy
 	return def, nil
 }
 
+// initModuleOpts configures how initializeModule serves the module before
+// inspecting it.
+type initModuleOpts struct {
+	// entrypoint promotes the module's main-object methods onto the Query root.
+	entrypoint bool
+	// skipDependencies serves only the module itself, without also serving its
+	// dependencies onto the Query root. This matters when several independent
+	// modules are inspected within a single session (e.g. registering init
+	// commands for every installed SDK): serving their dependencies pulls
+	// transitively-shared modules into one shared namespace, where the same
+	// dependency name resolved to different sources/pins collides. Inspecting a
+	// module's own contract never needs its dependency constructors.
+	skipDependencies bool
+}
+
 // initializeModule loads the module at the given source ref
 //
 // Returns an error if the module is not found or invalid.
@@ -58,7 +73,7 @@ func initializeModule(
 	dag *dagger.Client,
 	modRef string,
 	modSrc *dagger.ModuleSource,
-	opts ...dagger.ModuleServeOpts,
+	opts ...initModuleOpts,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module: "+modRef)
 	defer telemetry.EndWithCause(span, &rerr)
@@ -77,8 +92,11 @@ func initializeModule(
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
 	serveOpts := dagger.ModuleServeOpts{IncludeDependencies: true}
 	for _, o := range opts {
-		if o.Entrypoint {
+		if o.entrypoint {
 			serveOpts.Entrypoint = true
+		}
+		if o.skipDependencies {
+			serveOpts.IncludeDependencies = false
 		}
 	}
 	err = modSrc.AsModule().Serve(serveCtx, serveOpts)
