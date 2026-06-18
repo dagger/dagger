@@ -211,12 +211,11 @@ func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkName, path
     }
   }
 }`,
-		Variables: map[string]any{
+		Variables: withOptionalSDKInitArgs(map[string]any{
 			"name": name,
 			"sdk":  sdkName,
 			"path": path,
-			"args": sdkArgs,
-		},
+		}, sdkArgs),
 	}, &dagger.Response{Data: &res})
 	if err != nil {
 		return "", fmt.Errorf("plan module init: %w", err)
@@ -225,4 +224,17 @@ func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkName, path
 		return "", fmt.Errorf("module init returned an empty changeset id")
 	}
 	return res.CurrentWorkspace.ModuleInit.ID, nil
+}
+
+// withOptionalSDKInitArgs adds the SDK-specific init args JSON to vars only
+// when the user actually supplied SDK flags. sdkInitArgsJSON returns "" for
+// no flags; sending args: "" makes the engine decode an empty-string JSON to
+// (nil, nil), which nil-panics the optional arg path while resolving the init
+// field (DynamicOptional{Valid: true, Value: nil} -> assign(nil)). Omitting
+// the variable entirely yields a clean absent/null optional instead.
+func withOptionalSDKInitArgs(vars map[string]any, sdkArgs string) map[string]any {
+	if sdkArgs != "" {
+		vars["args"] = sdkArgs
+	}
+	return vars
 }
