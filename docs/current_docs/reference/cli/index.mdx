@@ -1920,8 +1920,8 @@ Install an SDK into the current workspace and mark it with the
 
 Alias resolution: `dagger sdk install go` resolves "go" via the
 embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the alias you typed (`go`), not the basename of
-the canonical ref (`go-sdk`). Direct refs work too:
+install name is the registry's short name (`go`), not the basename
+of the canonical ref (`go-sdk`). Direct refs work too:
 `dagger sdk install github.com/foo/sdk` is installed as
 [modules.sdk] by basename.
 
@@ -1942,7 +1942,7 @@ dagger sdk install go
 
 ```
       --here          Write to the workspace config directory at the workspace cwd
-  -n, --name string   Override the workspace install name (defaults to the alias you typed, or the basename of a direct ref)
+  -n, --name string   Override the workspace install name (defaults to the registry short name, or the basename of a direct ref)
 ```
 
 ### Options inherited from parent commands
