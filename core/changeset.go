@@ -787,6 +787,14 @@ func (ch *ChangesetPaths) CheckConflicts(other *ChangesetPaths) Conflicts {
 func (ch *ChangesetPaths) checkConflictsWithSets(otherSets changesetPathSets) Conflicts {
 	var conflicts Conflicts
 	for _, addedPath := range ch.Added {
+		// A directory present in both changesets is not a conflict: git's
+		// 3-way merge unions directories, so disjoint files under a common
+		// new directory merge cleanly. Only a file added in both sides is a
+		// real conflict. Directories carry a trailing slash (see
+		// listSubdirectories); skip them here.
+		if strings.HasSuffix(addedPath, "/") {
+			continue
+		}
 		if _, exists := otherSets.added[addedPath]; exists {
 			conflicts = append(conflicts, Conflict{
 				Path:  addedPath,
