@@ -169,4 +169,3 @@ func sortSchema(schema *introspection.Schema) {
 		})
 	}
 }
-
