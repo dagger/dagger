@@ -45,7 +45,13 @@ func registerInstalledSDKInitCommands(ctx context.Context, args []string) error 
 	}
 
 	cfgDir := filepath.Dir(cfgPath)
-	return withEngine(ctx, client.Params{
+	// Build the dynamic subcommands under a throwaway discard frontend rather
+	// than the main one. This SDK introspection runs before the real command
+	// executes; the pretty TUI frontend is single-shot (it spawns its run
+	// function only once, guarded by fe.spawned, which is never reset), so
+	// driving Frontend.Run here would consume that one run and leave the
+	// actual command's Frontend.Run hanging without ever spawning its work.
+	return withEngineSilent(ctx, client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
