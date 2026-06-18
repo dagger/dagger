@@ -507,7 +507,7 @@ func (ws *Workspace) AttachDependencyResults(
 	_ = ctx
 	if ws == nil || ws.rootfs.Self() == nil {
 		if ws != nil && ws.source != nil {
-			return attachWorkspaceSource(ctx, attach, ws.source)
+			return attachWorkspaceSource(attach, ws.source)
 		}
 		return nil, nil
 	}
@@ -523,7 +523,7 @@ func (ws *Workspace) AttachDependencyResults(
 	ws.rootfs = typed
 	deps := []dagql.AnyResult{typed}
 	if ws.source != nil {
-		sourceDeps, err := attachWorkspaceSource(ctx, attach, ws.source)
+		sourceDeps, err := attachWorkspaceSource(attach, ws.source)
 		if err != nil {
 			return nil, err
 		}
@@ -533,11 +533,9 @@ func (ws *Workspace) AttachDependencyResults(
 }
 
 func attachWorkspaceSource(
-	ctx context.Context,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 	src WorkspaceSource,
 ) ([]dagql.AnyResult, error) {
-	_ = ctx
 	switch src := src.(type) {
 	case nil, *WorkspaceSourceClientLocal:
 		return nil, nil
@@ -575,7 +573,7 @@ func attachWorkspaceSource(
 		}
 	case *WorkspaceSourceOverlay:
 		var deps []dagql.AnyResult
-		baseDeps, err := attachWorkspaceSource(ctx, attach, src.Base)
+		baseDeps, err := attachWorkspaceSource(attach, src.Base)
 		if err != nil {
 			return nil, err
 		}

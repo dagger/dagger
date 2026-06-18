@@ -1140,7 +1140,11 @@ func (s *workspaceSchema) findUp(
 ) (dagql.Nullable[dagql.String], error) {
 	none := dagql.Null[dagql.String]()
 	ws := parent.Self()
-	if !isWorkspaceBasename(args.Name) {
+	if args.Name == "." {
+		// Existing SDK code uses "." to ask for the resolved start directory.
+		// It is safe here because resolveWorkspacePath still enforces the
+		// workspace boundary for args.From below.
+	} else if !isWorkspaceBasename(args.Name) {
 		return none, fmt.Errorf("workspace findUp name must be a basename")
 	}
 

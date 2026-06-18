@@ -101,8 +101,8 @@ func (WorkspaceSuite) TestDirectoryBackedSyntheticWorkspaceUsesSourceContent(ctx
 
 // TestGitRefBackedSyntheticWorkspaceUsesSelectedRef asserts the git-source
 // contract: GitRef.asWorkspace keeps the selected ref as the source of truth.
-// Filesystem reads come from that ref, gitignore filtering applies to that
-// tree, and workspace.git reports clean git state without depending on a
+// Filesystem reads come from that ref, ignored files that were never committed
+// are absent, and workspace.git reports clean git state without depending on a
 // materialized .git directory.
 func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
@@ -135,7 +135,7 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 
 	unfiltered, err := ws.Directory(".").Entries(ctx)
 	require.NoError(t, err)
-	requireEntry(t, unfiltered, "debug.log")
+	requireNoEntry(t, unfiltered, "debug.log")
 
 	head, err := ws.Git().Head().Commit(ctx)
 	require.NoError(t, err)
@@ -390,17 +390,21 @@ func (WorkspaceSuite) TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState
 	require.Error(t, err)
 }
 
-// TestSyntheticWorkspaceFindUpRejectsInvalidNames asserts that Workspace.findUp
-// searches for one path element while walking parents. Accepting slash or dot
-// segments would turn a name lookup into path traversal and make source-backed
-// and host-backed workspaces disagree.
-func (WorkspaceSuite) TestSyntheticWorkspaceFindUpRejectsInvalidNames(ctx context.Context, t *testctx.T) {
+// TestSyntheticWorkspaceFindUpValidatesNames asserts that Workspace.findUp
+// searches for one path element while walking parents. Slash and parent
+// segments would turn a name lookup into path traversal, but "." is kept as the
+// current-directory sentinel used by existing SDK code.
+func (WorkspaceSuite) TestSyntheticWorkspaceFindUpValidatesNames(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ws := syntheticWorkspaceSource(c).AsWorkspace(dagger.DirectoryAsWorkspaceOpts{
 		Cwd: "/app/nested",
 	})
 
-	for _, name := range []string{"", ".", "..", "../workspace.marker", "nested/leaf.txt"} {
+	currentDir, err := ws.FindUp(ctx, ".")
+	require.NoError(t, err)
+	require.Equal(t, "/app/nested", currentDir)
+
+	for _, name := range []string{"", "..", "../workspace.marker", "nested/leaf.txt", `nested\leaf.txt`} {
 		t.Run(name, func(ctx context.Context, t *testctx.T) {
 			_, err := ws.FindUp(ctx, name)
 			require.Error(t, err)
