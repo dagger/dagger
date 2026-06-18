@@ -229,7 +229,8 @@ func (v Version) tagsAtCommit(ctx context.Context, commit string) ([]string, err
 		From("alpine/git:latest").
 		WithWorkdir("/src").
 		WithMountedDirectory(".git", v.GitDir).
-		WithExec([]string{"git", "config", "url.https://github.com/.insteadOf", "git@github.com:"}).
+		WithExec([]string{"git", "config", "--add", "url.https://github.com/.insteadOf", "git@github.com:"}).
+		WithExec([]string{"git", "config", "--add", "url.https://github.com/.insteadOf", "ssh://git@github.com/"}).
 		// Remote tags are mutable, so avoid reusing a stale pre-tag fetch layer.
 		WithEnvVariable("DAGGER_VERSION_CACHE_BUSTER", time.Now().UTC().Format(time.RFC3339Nano)).
 		WithExec([]string{"git", "fetch", "--tags"}).
