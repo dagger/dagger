@@ -233,6 +233,74 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 	}
 }
 
+func (GeneratorsSuite) TestGeneratorGroupChangesSyncWithNestedSDKCodegen(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c)).
+		WithNewFile("dagger.toml", `[modules.consumer]
+source = ".dagger/modules/consumer"
+entrypoint = true
+
+[modules.go-sdk]
+source = "github.com/dagger/go-sdk"
+`).
+		WithNewFile(".dagger/modules/consumer/dagger.json", `{
+  "name": "consumer",
+  "engineVersion": "latest",
+  "sdk": { "source": "go" },
+  "source": "."
+}`).
+		WithNewFile(".dagger/modules/consumer/main.go", `package main
+
+import (
+	"context"
+
+	"dagger/consumer/internal/dagger"
+)
+
+type Consumer struct{}
+
+func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+	generatorChanges, err := workspace.
+		Generators().
+		Run().
+		Changes(dagger.GeneratorGroupChangesOpts{
+			OnConflict: dagger.ChangesetsMergeConflictFailEarly,
+		}).
+		Sync(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = dag.Changeset().
+		WithChangesets([]*dagger.Changeset{
+			generatorChanges,
+			workspace.ClientGenerate(),
+		}, dagger.ChangesetWithChangesetsOpts{
+			OnConflict: dagger.ChangesetsMergeConflictFailEarly,
+		}).
+		Sync(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return "ok", nil
+}
+`)
+
+	// This mirrors the generated Go SDK contract used by `dagger generate`:
+	// generator changes from nested SDK/codegen are merged with client-generation
+	// changes, then the merged changeset is synced.
+	out, err := modGen.
+		With(daggerNonNestedExec("call", "sync-generators")).
+		CombinedOutput(ctx)
+	require.NoError(t, err, string(out))
+	require.Contains(t, out, "ok")
+	require.NotContains(t, out, "result *core.Changeset is detached")
+}
+
 func (GeneratorsSuite) TestWorkspaceGenerateSkip(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
