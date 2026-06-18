@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,6 +34,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -55,6 +57,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/wcprof"
+	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/util/cleanups"
 )
 
@@ -91,6 +94,14 @@ type daggerSession struct {
 	// informed when a client goes away to prevent hanging on drain
 	telemetryPubSub *PubSub
 	seenKeys        sync.Map
+
+	// Dagger Cloud exporters, created once from the main client's auth and
+	// shared by every client in the session; owned (and shut down) by the
+	// session, not by any one client's providers. Guarded by stateMu, which
+	// is held for all client initialization.
+	cloudSpans   sdktrace.SpanExporter
+	cloudLogs    sdklog.Exporter
+	cloudMetrics sdkmetric.Exporter
 
 	services *core.Services
 	resolver *serverresolver.Resolver
@@ -376,6 +387,25 @@ func (srv *Server) initializeDaggerSession(
 
 var errSessionClosing = errors.New("session is closing")
 
+// sessionTelemetryFlushTimeout is how long the shutdown-time telemetry flush
+// may take. When a command exits, the client gives the engine 10 seconds to
+// shut down (defaultShutdownTimeout in engine/client), then fails the build.
+// The engine flushes telemetry to Dagger Cloud inside that window, and a
+// single export to a hanging Cloud endpoint eats 10s on its own — unbounded,
+// a Cloud outage would spend the whole window: the client gives up first and
+// a successful build exits 1. At 5s the flush gives up early, the engine
+// answers the client in time, and the build passes. A Cloud outage costs
+// telemetry, never the build.
+const sessionTelemetryFlushTimeout = 5 * time.Second
+
+// cloudTokenRefreshTimeout is how long a cloud OAuth token refresh may take.
+// A refresh runs on a deliberately uncancellable context (exports happen on
+// background goroutines long after the request that created the session is
+// gone), so this is the only thing that can stop one that hangs: the flush
+// timeout above cancels the *wait* for a hung refresh, but the refresh itself
+// would keep a goroutine stuck forever. Keep it at most the flush timeout.
+const cloudTokenRefreshTimeout = 5 * time.Second
+
 func (sess *daggerSession) beginClosing() {
 	sess.closeClosingOnce.Do(func() {
 		if sess.cancelClosing != nil {
@@ -473,6 +503,18 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		})
 	}
 	errs = errors.Join(errs, releaseGroup.Wait())
+
+	// the per-client providers above only flush into the session-owned cloud
+	// exporters; the session shuts them down, once, here
+	if sess.cloudSpans != nil {
+		errs = errors.Join(errs, sess.cloudSpans.Shutdown(ctx))
+	}
+	if sess.cloudLogs != nil {
+		errs = errors.Join(errs, sess.cloudLogs.Shutdown(ctx))
+	}
+	if sess.cloudMetrics != nil {
+		errs = errors.Join(errs, sess.cloudMetrics.Shutdown(ctx))
+	}
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
@@ -679,6 +721,30 @@ func (srv *Server) initializeDaggerClient(
 		}
 	}
 
+	// Export telemetry to Dagger Cloud if the session's main client has cloud
+	// auth. The exporters are created once, from the main client's identity,
+	// and shared by every client in the session so that telemetry from nested
+	// clients (module runtimes, privileged execs, services) reaches Cloud too.
+	// Nested clients always initialize after the main client (every init runs
+	// under sess.stateMu in getOrInitClient), so the exporters exist by the
+	// time they attach below.
+	sess := client.daggerSession
+	if md := client.clientMetadata; client.clientID == sess.mainClientCallerID && md.CloudAuth != nil {
+		// OTel invokes exporters from background goroutines whose contexts
+		// carry no Dagger session state, so capture everything token refresh
+		// needs (the main client's metadata and query) at creation time.
+		refreshCtx := cloudRefreshContext(ctx, client)
+		tokenRefresh := func(context.Context) (*oauth2.Token, error) {
+			refreshCtx, cancel := context.WithTimeout(refreshCtx, cloudTokenRefreshTimeout)
+			defer cancel()
+			return refreshAndPersistCredentials(refreshCtx, srv, md.CredentialsPath, md.ClientID)
+		}
+		sess.cloudSpans, sess.cloudLogs, sess.cloudMetrics, err = enginetel.NewCloudExporters(ctx, md.CloudAuth, tokenRefresh, md.CloudURL)
+		if err != nil {
+			slog.Warn("failed to configure cloud exporters for session", "error", err)
+		}
+	}
+
 	// configure OTel providers that export to SQLite
 	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	tracerOpts := []sdktrace.TracerProviderOption{
@@ -688,11 +754,26 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
+	if sess.cloudSpans != nil {
+		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
+			enginetel.SharedSpanExporter{SpanExporter: sess.cloudSpans},
+		)))
+	}
+
 	logs := srv.telemetryPubSub.Logs(client)
 	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
 		sdklog.WithProcessor(logs),
+	}
+
+	if sess.cloudLogs != nil {
+		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
+			sdklog.NewBatchProcessor(
+				enginetel.SharedLogExporter{Exporter: sess.cloudLogs},
+				sdklog.WithExportInterval(telemetry.NearlyImmediate),
+			),
+		))
 	}
 
 	const metricReaderInterval = 5 * time.Second
@@ -704,6 +785,15 @@ func (srv *Server) initializeDaggerClient(
 			client.metricExporter,
 			sdkmetric.WithInterval(metricReaderInterval),
 		)),
+	}
+
+	if sess.cloudMetrics != nil {
+		meterOpts = append(meterOpts, sdkmetric.WithReader(
+			sdkmetric.NewPeriodicReader(
+				enginetel.SharedMetricExporter{Exporter: sess.cloudMetrics},
+				sdkmetric.WithInterval(metricReaderInterval),
+			)),
+		)
 	}
 
 	// export to parent client DBs too
@@ -720,8 +810,8 @@ func (srv *Server) initializeDaggerClient(
 			sdkmetric.NewPeriodicReader(
 				srv.telemetryPubSub.Metrics(parent),
 				sdkmetric.WithInterval(metricReaderInterval),
-			),
-		))
+			)),
+		)
 	}
 	client.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
@@ -754,6 +844,62 @@ func (client *daggerClient) resolveHostServiceCaller(
 	}
 
 	return client.getClientCaller(ctx, id)
+}
+
+// cloudRefreshContext returns the context the cloud exporters' token refresh
+// runs on: the client's query and metadata captured at exporter creation,
+// decoupled from the request's cancellation.
+func cloudRefreshContext(ctx context.Context, client *daggerClient) context.Context {
+	return core.ContextWithQuery(
+		engine.ContextWithClientMetadata(context.WithoutCancel(ctx), client.clientMetadata),
+		client.dagqlRoot,
+	)
+}
+
+// refreshAndPersistCredentials refreshes an expired OAuth token by reading the
+// credentials file from the client's host, and writes the refreshed token back
+// (refreshing invalidates the old one). It is called from OTel exporter
+// goroutines, so ctx must be the context captured when the exporters were
+// created, not the export context.
+func refreshAndPersistCredentials(ctx context.Context, srv *Server, credentialsPath, sourceClientID string) (*oauth2.Token, error) {
+	if credentialsPath == "" || sourceClientID == "" {
+		return nil, fmt.Errorf("no credentials path or client id available")
+	}
+
+	tokenData, err := (&core.Secret{
+		URIVal:         "file://" + credentialsPath,
+		SourceClientID: sourceClientID,
+	}).Plaintext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get secret: %w", err)
+	}
+	var token oauth2.Token
+	if err := json.Unmarshal(tokenData, &token); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	ts, err := cloudauth.TokenSource(ctx, &token)
+	if err != nil {
+		return nil, fmt.Errorf("get token source: %w", err)
+	}
+	newToken, err := ts.Token()
+	if err != nil {
+		return nil, fmt.Errorf("get new token: %w", err)
+	}
+	bt, err := json.Marshal(newToken)
+	if err != nil {
+		return nil, fmt.Errorf("marshal token: %w", err)
+	}
+
+	engine, err := srv.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get buildkit client: %w", err)
+	}
+	if err := engine.IOReaderExport(ctx, bytes.NewReader(bt), credentialsPath, 0o600); err != nil {
+		return nil, fmt.Errorf("write config: %w", err)
+	}
+	slog.Info("refreshed cloud credentials", "credentialsPath", credentialsPath)
+	return newToken, nil
 }
 
 func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error) {
@@ -996,6 +1142,10 @@ func (srv *Server) getOrInitClient(
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
 		}
+
+		if client.clientMetadata.CredentialsPath == "" && opts.ClientMetadata.CredentialsPath != "" {
+			client.clientMetadata.CredentialsPath = opts.ClientMetadata.CredentialsPath
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -1154,6 +1304,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var suppressCompatWorkspaceWarning bool
 	var workspaceRef *string
 	var workspaceEnv *string
+	credentialsPath := clientMetadata.CredentialsPath
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
 		clientMetadata.ClientVersion = md.ClientVersion
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
@@ -1162,6 +1313,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 		singleQuery = md.SingleQuery
 		eagerRuntime = md.EagerRuntime
 		suppressCompatWorkspaceWarning = md.SuppressCompatWorkspaceWarning
+		credentialsPath = md.CredentialsPath
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
 			ref := declaredWorkspace
 			workspaceRef = &ref
@@ -1182,6 +1334,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	clientMetadata.SuppressCompatWorkspaceWarning = suppressCompatWorkspaceWarning
 	clientMetadata.Workspace = workspaceRef
 	clientMetadata.WorkspaceEnv = workspaceEnv
+	clientMetadata.CredentialsPath = credentialsPath
 	return &clientMetadata
 }
 
@@ -1577,9 +1730,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 
-		// this must be done after lockfile flushing (since lockfiles make use of attachables to write data to host)
-		sess.beginClosing()
-
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
@@ -1601,11 +1751,23 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 
 	// Flush telemetry across the entire session so that any child clients will
-	// save telemetry into their parent's DB, including to this client.
+	// save telemetry into their parent's DB, including to this client. This
+	// must happen before beginClosing below: the cloud exporters may need to
+	// refresh OAuth credentials from the client host, which requires the
+	// client's session attachables, and those are torn down by beginClosing.
 	slog.ExtraDebug("flushing session telemetry")
-	if err := sess.FlushTelemetry(ctx); err != nil {
+	flushCtx, flushCancel := context.WithTimeout(ctx, sessionTelemetryFlushTimeout)
+	if err := sess.FlushTelemetry(flushCtx); err != nil {
+		// Telemetry is best-effort: losing a shutdown batch is better than
+		// failing an otherwise successful command because Cloud is slow or down.
 		slog.Error("failed to flush telemetry", "error", err)
-		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush session telemetry: %w", err))
+	}
+	flushCancel()
+
+	if client.clientID == sess.mainClientCallerID {
+		// This must be done after lockfile and telemetry flushing, since both
+		// can use attachables to write data back to the client host.
+		sess.beginClosing()
 	}
 
 	client.closeShutdownOnce.Do(func() {
@@ -1708,6 +1870,7 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 	}
 	return a.Pin() == b.Pin()
 }
+
 func (srv *Server) CurrentWorkspaceLock(ctx context.Context) (*workspace.Lock, bool, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
@@ -1870,7 +2033,8 @@ func workspaceLockPath(ws *core.Workspace) (string, error) {
 
 func readWorkspaceLockState(ctx context.Context, bk interface {
 	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
-}, ws *core.Workspace) (*workspace.Lock, error) {
+}, ws *core.Workspace,
+) (*workspace.Lock, error) {
 	lockPath, err := workspaceLockPath(ws)
 	if err != nil {
 		return nil, err
