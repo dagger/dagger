@@ -9,6 +9,8 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -326,6 +328,86 @@ func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Cont
 		require.NoError(t, err)
 		require.Equal(t, "hello from configured workspace", strings.TrimSpace(out))
 	})
+}
+
+// TestWorkspaceMultiSDKSharedDependency verifies that two SDKs installed in the
+// same workspace can each depend on a different source for a module of the same
+// name.
+//
+// `dagger module init` registers init commands for every installed SDK by
+// inspecting each one. Inspecting an SDK only needs that SDK's own init
+// contract, so it must not serve the SDK's dependencies into the session's
+// shared module namespace. Otherwise two SDKs that share a transitive
+// dependency name at different sources/pins (e.g. each pinning
+// sdk-sdk/polyfill to a different commit) collide during registration with
+// "module polyfill ... already exists with different source".
+func (WorkspaceModulesSuite) TestWorkspaceMultiSDKSharedDependency(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+
+	// Two distinct dependency modules that share the module name "polyfill".
+	// Their on-disk sources differ, so the engine registers them as different
+	// modules under the same name.
+	writeGoModuleSource(t, filepath.Join(workdir, "poly-a"), "polyfill", "Polyfill")
+	writeGoModuleSource(t, filepath.Join(workdir, "poly-b"), "polyfill", "Polyfill")
+
+	// Two SDKs, each depending on a different "polyfill".
+	writeGoModuleSource(t, filepath.Join(workdir, "alpha"), "alpha", "Alpha",
+		goModuleDep{name: "polyfill", source: "../poly-a"})
+	writeGoModuleSource(t, filepath.Join(workdir, "beta"), "beta", "Beta",
+		goModuleDep{name: "polyfill", source: "../poly-b"})
+
+	writeWorkspaceConfigFile(t, workdir, `[modules.alpha]
+source = "alpha"
+[modules.alpha.as-sdk]
+
+[modules.beta]
+source = "beta"
+[modules.beta.as-sdk]
+`)
+
+	// `dagger module init` with no subcommand prints help, but only after
+	// registering init commands for every installed SDK — the step that used to
+	// fail with the cross-SDK dependency conflict.
+	out, err := hostDaggerExecRaw(ctx, t, workdir, "module", "init")
+	require.NoError(t, err, string(out))
+	require.NotContains(t, string(out), "already exists with different source")
+	require.Contains(t, string(out), "Initialize a new module")
+}
+
+// goModuleDep is a dependency entry for writeGoModuleSource's dagger.json.
+type goModuleDep struct {
+	name   string
+	source string
+}
+
+// writeGoModuleSource writes a minimal Go-SDK module (dagger.json + main.go) at
+// dir, named module with main object obj, declaring the given dependencies.
+func writeGoModuleSource(t *testctx.T, dir, module, obj string, deps ...goModuleDep) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+
+	cfg := map[string]any{
+		"name":          module,
+		"engineVersion": "latest",
+		"sdk":           map[string]any{"source": "go"},
+	}
+	if len(deps) > 0 {
+		entries := make([]map[string]string, 0, len(deps))
+		for _, d := range deps {
+			entries = append(entries, map[string]string{"name": d.name, "source": d.source})
+		}
+		cfg["dependencies"] = entries
+	}
+	cfgBytes, err := json.MarshalIndent(cfg, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dagger.json"), cfgBytes, 0o644))
+
+	main := fmt.Sprintf(
+		"package main\n\ntype %s struct{}\n\nfunc (m *%s) Hello() string {\n\treturn \"hello\"\n}\n",
+		obj, obj,
+	)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(main), 0o644))
 }
 
 func readInstalledWorkspaceConfig(t *testctx.T, workdir string) *workspacecfg.Config {
