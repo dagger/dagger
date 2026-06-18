@@ -115,7 +115,8 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 			modGen := goGitBase(t, c).
 				With(withModuleFixture(t, c, ".", "go/source-map-root")).
 				With(withModuleFixture(t, c, "dep", tc.fixture)).
-				With(daggerClientInstallAt("go", "client"))
+				With(daggerExec("setup", "--auto-apply")).
+				With(daggerExec("generate", "-y", "--progress=plain"))
 
 			codegenContents, err := modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
 			require.NoError(t, err)
@@ -133,7 +134,8 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 			modGen := goGitBase(t, c).
 				With(withModuleFixture(t, c, ".", "typescript/source-map-root")).
 				With(withModuleFixture(t, c, "dep", tc.fixture)).
-				With(daggerClientInstallAt("typescript", "sdk"))
+				With(daggerExec("setup", "--auto-apply")).
+				With(daggerExec("generate", "-y", "--progress=plain"))
 
 			codegenContents, err := modGen.File(sdkCodegenFile(t, "typescript")).Contents(ctx)
 			require.NoError(t, err)
