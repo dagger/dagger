@@ -191,7 +191,7 @@ func (s *workspaceSchema) moduleInit(
 		return nil, fmt.Errorf("sdk module init: %w", err)
 	}
 
-	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
+	return mergeWorkspaceInitChangeset(ctx, engineChanges.Self(), sdkChanges)
 }
 
 // workspaceModuleInitGeneratedDiff drives the moduleSource codegen chain

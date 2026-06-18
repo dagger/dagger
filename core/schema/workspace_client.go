@@ -135,38 +135,45 @@ func (s *workspaceSchema) clientInit(
 		return nil, fmt.Errorf("sdk client init: %w", err)
 	}
 
-	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
+	return mergeWorkspaceInitChangeset(ctx, engineChanges.Self(), sdkChanges)
 }
 
 func (s *workspaceSchema) clientGenerate(
 	ctx context.Context,
 	parent *core.Workspace,
 	args struct{},
-) (*core.Changeset, error) {
+) (res dagql.ObjectResult[*core.Changeset], _ error) {
 	if isSyntheticWorkspace(parent) {
-		return core.NewEmptyChangeset(ctx)
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return res, err
+		}
+		if err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{Field: "changeset"}); err != nil {
+			return res, err
+		}
+		return res, nil
 	}
 
 	cfg, err := workspaceConfigWithCompatFallback(ctx, parent)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	baseDir, err := s.resolveRootfs(ctx, parent, ".", core.CopyFilter{}, false)
 	if err != nil {
-		return nil, fmt.Errorf("resolve workspace rootfs: %w", err)
+		return res, fmt.Errorf("resolve workspace rootfs: %w", err)
 	}
 	updatedDir := baseDir
 
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
-		return nil, fmt.Errorf("workspace client context: %w", err)
+		return res, fmt.Errorf("workspace client context: %w", err)
 	}
 	workspaceCtx = workspaceInstallLookupContext(workspaceCtx)
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("dagql server: %w", err)
+		return res, fmt.Errorf("dagql server: %w", err)
 	}
 
 	for sdkName, entry := range cfg.Modules {
@@ -175,24 +182,24 @@ func (s *workspaceSchema) clientGenerate(
 		}
 		sdkRef := moduleEntrySourceWithPin(entry)
 		if sdkRef == "" {
-			return nil, fmt.Errorf("SDK module %q has no source", sdkName)
+			return res, fmt.Errorf("SDK module %q has no source", sdkName)
 		}
 		for _, client := range entry.AsSDK.Clients {
 			moduleRef, moduleLoadRef, err := resolveWorkspaceClientModuleRef(parent, client.Module)
 			if err != nil {
-				return nil, err
+				return res, err
 			}
 			targetModule, err := s.resolveClientTargetModule(workspaceCtx, moduleLoadRef, client.Pin)
 			if err != nil {
-				return nil, fmt.Errorf("generate client %q for module %q: %w", client.Path, moduleRef, err)
+				return res, fmt.Errorf("generate client %q for module %q: %w", client.Path, moduleRef, err)
 			}
 			generatedClient, err := s.workspaceClientInitGeneratedDiff(workspaceCtx, targetModule, sdkRef, client.Path)
 			if err != nil {
-				return nil, fmt.Errorf("generate client %q: %w", client.Path, err)
+				return res, fmt.Errorf("generate client %q: %w", client.Path, err)
 			}
 			updatedDir, err = workspaceWithDirectoryOverlay(ctx, dag, updatedDir, generatedClient)
 			if err != nil {
-				return nil, fmt.Errorf("stage generated client %q: %w", client.Path, err)
+				return res, fmt.Errorf("stage generated client %q: %w", client.Path, err)
 			}
 		}
 	}
