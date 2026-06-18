@@ -75,7 +75,7 @@
         },
         {
           "argument": "lint",
-          "default": "!**"
+          "default": "[\"**\",\"!docs\",\"!core/integration/testdata/checks\",\"!core/integration/testdata/generators\",\"!core/integration/testdata/services\",\"!core/integration/testdata/modules/go/broken\",\"!dagql/idtui/viztest/broken-dep\",\"!dagql/idtui/viztest/broken-dep-sdk\",\"!toolchains/release/testdata\"]"
         },
         {
           "argument": "generate",
