@@ -836,7 +836,7 @@ func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 	})
 	_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
 	if err != nil {
-		// Some Git hosts (Azure Repos and custom portals) return a 200 HTML login page for unauthenticated refs: go-git reports ErrInvalidPktLen
+		// Some Git hosts return a 200 HTML login page for unauthenticated refs: go-git reports ErrInvalidPktLen
 		// treat as auth-required/private
 		if errors.Is(err, pktline.ErrInvalidPktLen) {
 			return false, nil
@@ -844,6 +844,11 @@ func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 		if errors.Is(err, transport.ErrAuthenticationRequired) {
 			return false, nil
 		}
+		// AzureDevops handling
+		if strings.Contains(err.Error(), `target "/_signin" does not end`) {
+			return false, nil
+		}
+
 		return false, err
 	}
 	return true, nil
