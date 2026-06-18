@@ -456,7 +456,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, err
 	}
 
-	var changes *core.Changeset
+	var changes dagql.ObjectResult[*core.Changeset]
 	if err := func() (rerr error) {
 		diffCtx, span := core.Tracer(ctx).Start(ctx, "compute migration changeset", telemetry.Internal())
 		defer telemetry.EndWithCause(span, &rerr)
@@ -466,7 +466,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	}(); err != nil {
 		return nil, fmt.Errorf("migration changeset: %w", err)
 	}
-	return changes, nil
+	return changes.Self(), nil
 }
 
 func applyWorkspaceMigrationLegacyLockMoves(
@@ -984,16 +984,15 @@ func workspaceMigrationChanges(
 	ctx context.Context,
 	after dagql.ObjectResult[*core.Directory],
 	before dagql.ObjectResult[*core.Directory],
-) (*core.Changeset, error) {
+) (changes dagql.ObjectResult[*core.Changeset], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 
-	var changes dagql.ObjectResult[*core.Changeset]
 	beforeID, err := before.ID()
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 	if err := srv.Select(ctx, after, &changes, dagql.Selector{
 		Field: "changes",
@@ -1001,9 +1000,9 @@ func workspaceMigrationChanges(
 			{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)},
 		},
 	}); err != nil {
-		return nil, err
+		return changes, err
 	}
-	return changes.Self(), nil
+	return changes, nil
 }
 
 func workspaceMigrationProjectRootPath(ws *core.Workspace, plan *workspace.MigrationPlan) (string, error) {
