@@ -110,46 +110,40 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceUsesSelectedRef(ctx cont
 	refID, err := ref.ID(ctx)
 	require.NoError(t, err)
 
-	res, err := testutil.QueryWithClient[gitRefWorkspaceResult](c, t, `query GitRefWorkspace($ref: GitRefID!) {
-		ref: loadGitRefFromID(id: $ref) {
-			commit
-			asWorkspace(cwd: "/app") {
-				cwd
-				main: file(path: "main.txt") {
-					contents
-				}
-				root: file(path: "/README.md") {
-					contents
-				}
-				filtered: directory(path: ".", gitignore: true) {
-					entries
-				}
-				unfiltered: directory(path: ".") {
-					entries
-				}
-				git {
-					head {
-						commit
-					}
-					uncommitted {
-						isEmpty
-					}
-				}
-			}
-		}
-	}`, &testutil.QueryOptions{Variables: map[string]any{
-		"ref": refID,
-	}})
+	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
+	commit, err := loadedRef.Commit(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, "/app", res.Ref.AsWorkspace.Cwd)
-	require.Equal(t, "app main", res.Ref.AsWorkspace.Main.Contents)
-	require.Equal(t, "root readme", res.Ref.AsWorkspace.Root.Contents)
-	requireEntry(t, res.Ref.AsWorkspace.Filtered.Entries, "main.txt")
-	requireNoEntry(t, res.Ref.AsWorkspace.Filtered.Entries, "debug.log")
-	requireEntry(t, res.Ref.AsWorkspace.Unfiltered.Entries, "debug.log")
-	require.Equal(t, strings.TrimSpace(res.Ref.Commit), strings.TrimSpace(res.Ref.AsWorkspace.Git.Head.Commit))
-	require.True(t, res.Ref.AsWorkspace.Git.Uncommitted.IsEmpty)
+	ws := loadedRef.AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"})
+
+	cwd, err := ws.Cwd(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/app", cwd)
+
+	main, err := ws.File("main.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "app main", main)
+
+	root, err := ws.File("/README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "root readme", root)
+
+	filtered, err := ws.Directory(".", dagger.WorkspaceDirectoryOpts{Gitignore: true}).Entries(ctx)
+	require.NoError(t, err)
+	requireEntry(t, filtered, "main.txt")
+	requireNoEntry(t, filtered, "debug.log")
+
+	unfiltered, err := ws.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	requireEntry(t, unfiltered, "debug.log")
+
+	head, err := ws.Git().Head().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimSpace(commit), strings.TrimSpace(head))
+
+	empty, err := ws.Git().Uncommitted().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
 }
 
 // TestGitRefBackedSyntheticWorkspaceRoundTripsFromID asserts the simplest ID
@@ -164,63 +158,47 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 	controlCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 	defer cancel()
 
-	var created gitRefWorkspaceIDResult
-	err = c.Do(controlCtx, &dagger.Request{
-		Query: `query GitRefWorkspaceID($ref: GitRefID!) {
-			ref: loadGitRefFromID(id: $ref) {
-				commit
-				directMain: tree(discardGitDir: true) {
-					file(path: "app/main.txt") {
-						contents
-					}
-				}
-				asWorkspace(cwd: "/app") {
-					id
-				}
-			}
-		}`,
-		Variables: map[string]any{
-			"ref": refID,
-		},
-	}, &dagger.Response{Data: &created})
+	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
+
+	commit, err := loadedRef.Commit(controlCtx)
+	require.NoError(t, err)
+
+	directMain, err := loadedRef.
+		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		File("app/main.txt").
+		Contents(controlCtx)
 	require.NoError(t, err, "direct GitRef.tree read should work before GitRef.asWorkspace ID round-trip")
-	require.Equal(t, "app main", created.Ref.DirectMain.File.Contents)
+	require.Equal(t, "app main", directMain)
 
 	queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 	defer cancel()
 
-	var loaded loadedWorkspaceResult
-	err = c.Do(queryCtx, &dagger.Request{
-		Query: `query LoadWorkspaceFromID($workspace: WorkspaceID!) {
-			workspace: loadWorkspaceFromID(id: $workspace) {
-				cwd
-				main: file(path: "main.txt") {
-					contents
-				}
-				root: file(path: "/README.md") {
-					contents
-				}
-				git {
-					head {
-						commit
-					}
-					uncommitted {
-						isEmpty
-					}
-				}
-			}
-		}`,
-		Variables: map[string]any{
-			"workspace": created.Ref.AsWorkspace.ID,
-		},
-	}, &dagger.Response{Data: &loaded})
+	workspaceID, err := loadedRef.
+		AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"}).
+		ID(queryCtx)
 	require.NoError(t, err)
 
-	require.Equal(t, "/app", loaded.Workspace.Cwd)
-	require.Equal(t, "app main", loaded.Workspace.Main.Contents)
-	require.Equal(t, "root readme", loaded.Workspace.Root.Contents)
-	require.Equal(t, strings.TrimSpace(created.Ref.Commit), strings.TrimSpace(loaded.Workspace.Git.Head.Commit))
-	require.True(t, loaded.Workspace.Git.Uncommitted.IsEmpty)
+	loaded := dagger.Ref[*dagger.Workspace](c, workspaceID)
+
+	cwd, err := loaded.Cwd(queryCtx)
+	require.NoError(t, err)
+	require.Equal(t, "/app", cwd)
+
+	main, err := loaded.File("main.txt").Contents(queryCtx)
+	require.NoError(t, err)
+	require.Equal(t, "app main", main)
+
+	root, err := loaded.File("/README.md").Contents(queryCtx)
+	require.NoError(t, err)
+	require.Equal(t, "root readme", root)
+
+	head, err := loaded.Git().Head().Commit(queryCtx)
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimSpace(commit), strings.TrimSpace(head))
+
+	empty, err := loaded.Git().Uncommitted().IsEmpty(queryCtx)
+	require.NoError(t, err)
+	require.True(t, empty)
 }
 
 // TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource asserts the future
@@ -229,52 +207,42 @@ func (WorkspaceSuite) TestGitRefBackedSyntheticWorkspaceRoundTripsFromID(ctx con
 func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesDoNotMutateBaseSource(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	res, err := testutil.QueryWithClient[overlayWorkspaceResult](c, t, `{
-		directory {
-			withNewFile(path: "app/base.txt", contents: "base") {
-				asWorkspace(cwd: "/app") {
-					before: file(path: "base.txt") {
-						contents
-					}
-					beforeEntries: directory(path: ".") {
-						entries
-					}
-					changed: withNewFile(path: "base.txt", contents: "changed") {
-						after: file(path: "base.txt") {
-							contents
-						}
-						added: withNewFile(path: "new.txt", contents: "new") {
-							newFile: file(path: "new.txt") {
-								contents
-							}
-							afterEntries: directory(path: ".") {
-								entries
-							}
-						}
-					}
-					afterBase: file(path: "base.txt") {
-						contents
-					}
-					afterBaseEntries: directory(path: ".") {
-						entries
-					}
-				}
-			}
-		}
-	}`, nil)
-	require.NoError(t, err)
+	ws := c.Directory().
+		WithNewFile("app/base.txt", "base").
+		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app"})
 
-	ws := res.Directory.WithNewFile.AsWorkspace
-	require.Equal(t, "base", ws.Before.Contents)
-	require.Equal(t, "base", ws.AfterBase.Contents)
-	require.Equal(t, "changed", ws.Changed.After.Contents)
-	require.Equal(t, "new", ws.Changed.Added.NewFile.Contents)
-	requireEntry(t, ws.BeforeEntries.Entries, "base.txt")
-	requireNoEntry(t, ws.BeforeEntries.Entries, "new.txt")
-	requireEntry(t, ws.Changed.Added.AfterEntries.Entries, "base.txt")
-	requireEntry(t, ws.Changed.Added.AfterEntries.Entries, "new.txt")
-	requireEntry(t, ws.AfterBaseEntries.Entries, "base.txt")
-	requireNoEntry(t, ws.AfterBaseEntries.Entries, "new.txt")
+	before, err := ws.File("base.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "base", before)
+
+	beforeEntries, err := ws.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	requireEntry(t, beforeEntries, "base.txt")
+	requireNoEntry(t, beforeEntries, "new.txt")
+
+	changed := ws.WithNewFile("base.txt", "changed")
+	after, err := changed.File("base.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "changed", after)
+
+	added := changed.WithNewFile("new.txt", "new")
+	newFile, err := added.File("new.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new", newFile)
+
+	afterEntries, err := added.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	requireEntry(t, afterEntries, "base.txt")
+	requireEntry(t, afterEntries, "new.txt")
+
+	afterBase, err := ws.File("base.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "base", afterBase)
+
+	afterBaseEntries, err := ws.Directory(".").Entries(ctx)
+	require.NoError(t, err)
+	requireEntry(t, afterBaseEntries, "base.txt")
+	requireNoEntry(t, afterBaseEntries, "new.txt")
 }
 
 // TestOverlayWorkspaceFunctionalWritesRoundTripFromID asserts that each
@@ -284,93 +252,57 @@ func (WorkspaceSuite) TestOverlayWorkspaceFunctionalWritesRoundTripFromID(ctx co
 	c := connect(ctx, t)
 
 	baseDir := c.Directory().WithNewFile("base.txt", "base")
-	baseWorkspaceID, err := baseDir.AsWorkspace().ID(ctx)
-	require.NoError(t, err)
-
-	sourceDirID, err := c.Directory().WithNewFile("nested.txt", "nested").ID(ctx)
-	require.NoError(t, err)
-
+	baseWorkspace := baseDir.AsWorkspace()
+	sourceDir := c.Directory().WithNewFile("nested.txt", "nested")
 	changedDir := baseDir.WithNewFile("patched.txt", "patched")
-	changesID, err := changedDir.Changes(baseDir).ID(ctx)
-	require.NoError(t, err)
+	changes := changedDir.Changes(baseDir)
 
 	for _, tc := range []struct {
-		name      string
-		query     string
-		variables map[string]any
-		path      string
-		want      string
+		name  string
+		apply func(*dagger.Workspace) *dagger.Workspace
+		path  string
+		want  string
 	}{
 		{
 			name: "withNewFile",
-			query: `query OverlayWithNewFile($base: WorkspaceID!) {
-				workspace: loadWorkspaceFromID(id: $base) {
-					overlay: withNewFile(path: "file.txt", contents: "file") {
-						id
-					}
-				}
-			}`,
-			variables: map[string]any{"base": baseWorkspaceID},
-			path:      "file.txt",
-			want:      "file",
+			apply: func(ws *dagger.Workspace) *dagger.Workspace {
+				return ws.WithNewFile("file.txt", "file")
+			},
+			path: "file.txt",
+			want: "file",
 		},
 		{
 			name: "withNewDirectory",
-			query: `query OverlayWithNewDirectory($base: WorkspaceID!, $source: ID!) {
-				workspace: loadWorkspaceFromID(id: $base) {
-					overlay: withNewDirectory(path: "dir", source: $source) {
-						id
-					}
-				}
-			}`,
-			variables: map[string]any{"base": baseWorkspaceID, "source": sourceDirID},
-			path:      "dir/nested.txt",
-			want:      "nested",
+			apply: func(ws *dagger.Workspace) *dagger.Workspace {
+				return ws.WithNewDirectory("dir", sourceDir)
+			},
+			path: "dir/nested.txt",
+			want: "nested",
 		},
 		{
 			name: "withChanges",
-			query: `query OverlayWithChanges($base: WorkspaceID!, $changes: ID!) {
-				workspace: loadWorkspaceFromID(id: $base) {
-					overlay: withChanges(changes: $changes) {
-						id
-					}
-				}
-			}`,
-			variables: map[string]any{"base": baseWorkspaceID, "changes": changesID},
-			path:      "patched.txt",
-			want:      "patched",
+			apply: func(ws *dagger.Workspace) *dagger.Workspace {
+				return ws.WithChanges(changes)
+			},
+			path: "patched.txt",
+			want: "patched",
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 			defer cancel()
 
-			var created overlayWorkspaceIDResult
-			err := c.Do(queryCtx, &dagger.Request{
-				Query:     tc.query,
-				Variables: tc.variables,
-			}, &dagger.Response{Data: &created})
+			workspaceID, err := tc.apply(baseWorkspace).ID(queryCtx)
 			require.NoError(t, err)
 
 			loadCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 			defer cancel()
 
-			var loaded workspaceFileResult
-			err = c.Do(loadCtx, &dagger.Request{
-				Query: `query LoadOverlayWorkspaceFile($workspace: WorkspaceID!, $path: String!) {
-					workspace: loadWorkspaceFromID(id: $workspace) {
-						file(path: $path) {
-							contents
-						}
-					}
-				}`,
-				Variables: map[string]any{
-					"workspace": created.Workspace.Overlay.ID,
-					"path":      tc.path,
-				},
-			}, &dagger.Response{Data: &loaded})
+			got, err := dagger.Ref[*dagger.Workspace](c, workspaceID).
+				File(tc.path).
+				Contents(loadCtx)
 			require.NoError(t, err)
-			require.Equal(t, tc.want, loaded.Workspace.File.Contents)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -384,44 +316,33 @@ func (WorkspaceSuite) TestOverlayGitRefWorkspaceReportsOverlayAsUncommitted(ctx 
 	refID, err := ref.ID(ctx)
 	require.NoError(t, err)
 
-	res, err := testutil.QueryWithClient[overlayGitRefWorkspaceResult](c, t, `query GitRefOverlayWorkspace($ref: GitRefID!) {
-		ref: loadGitRefFromID(id: $ref) {
-			commit
-			asWorkspace(cwd: "/app") {
-				clean: git {
-					head {
-						commit
-					}
-					uncommitted {
-						isEmpty
-					}
-				}
-				changed: withNewFile(path: "overlay.txt", contents: "overlay") {
-					overlayFile: file(path: "overlay.txt") {
-						contents
-					}
-					git {
-						head {
-							commit
-						}
-						uncommitted {
-							isEmpty
-						}
-					}
-				}
-			}
-		}
-	}`, &testutil.QueryOptions{Variables: map[string]any{
-		"ref": refID,
-	}})
+	loadedRef := dagger.Ref[*dagger.GitRef](c, refID)
+	commit, err := loadedRef.Commit(ctx)
 	require.NoError(t, err)
+	baseCommit := strings.TrimSpace(commit)
 
-	baseCommit := strings.TrimSpace(res.Ref.Commit)
-	require.Equal(t, baseCommit, strings.TrimSpace(res.Ref.AsWorkspace.Clean.Head.Commit))
-	require.True(t, res.Ref.AsWorkspace.Clean.Uncommitted.IsEmpty)
-	require.Equal(t, "overlay", res.Ref.AsWorkspace.Changed.OverlayFile.Contents)
-	require.Equal(t, baseCommit, strings.TrimSpace(res.Ref.AsWorkspace.Changed.Git.Head.Commit))
-	require.False(t, res.Ref.AsWorkspace.Changed.Git.Uncommitted.IsEmpty)
+	ws := loadedRef.AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"})
+
+	cleanHead, err := ws.Git().Head().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseCommit, strings.TrimSpace(cleanHead))
+
+	cleanEmpty, err := ws.Git().Uncommitted().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, cleanEmpty)
+
+	changed := ws.WithNewFile("overlay.txt", "overlay")
+	overlayFile, err := changed.File("overlay.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "overlay", overlayFile)
+
+	changedHead, err := changed.Git().Head().Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, baseCommit, strings.TrimSpace(changedHead))
+
+	changedEmpty, err := changed.Git().Uncommitted().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, changedEmpty)
 }
 
 // TestChainedOverlayGitRefWorkspaceReportsAllOverlayChanges asserts that
@@ -437,39 +358,22 @@ func (WorkspaceSuite) TestChainedOverlayGitRefWorkspaceReportsAllOverlayChanges(
 	queryCtx, cancel := context.WithTimeout(ctx, workspaceRegressionTimeout)
 	defer cancel()
 
-	var res chainedOverlayGitRefWorkspaceResult
-	err = c.Do(queryCtx, &dagger.Request{
-		Query: `query ChainedGitRefOverlayWorkspace($ref: GitRefID!) {
-		ref: loadGitRefFromID(id: $ref) {
-			asWorkspace(cwd: "/app") {
-				withNewFile(path: "a.txt", contents: "a") {
-					withNewFile(path: "b.txt", contents: "b") {
-						a: file(path: "a.txt") {
-							contents
-						}
-						b: file(path: "b.txt") {
-							contents
-						}
-						git {
-							uncommitted {
-								addedPaths
-							}
-						}
-					}
-				}
-			}
-		}
-	}`,
-		Variables: map[string]any{
-			"ref": refID,
-		},
-	}, &dagger.Response{Data: &res})
-	require.NoError(t, err)
+	changed := dagger.Ref[*dagger.GitRef](c, refID).
+		AsWorkspace(dagger.GitRefAsWorkspaceOpts{Cwd: "/app"}).
+		WithNewFile("a.txt", "a").
+		WithNewFile("b.txt", "b")
 
-	changed := res.Ref.AsWorkspace.WithNewFile.WithNewFile
-	require.Equal(t, "a", changed.A.Contents)
-	require.Equal(t, "b", changed.B.Contents)
-	require.ElementsMatch(t, []string{"app/a.txt", "app/b.txt"}, changed.Git.Uncommitted.AddedPaths)
+	a, err := changed.File("a.txt").Contents(queryCtx)
+	require.NoError(t, err)
+	require.Equal(t, "a", a)
+
+	b, err := changed.File("b.txt").Contents(queryCtx)
+	require.NoError(t, err)
+	require.Equal(t, "b", b)
+
+	addedPaths, err := changed.Git().Uncommitted().AddedPaths(queryCtx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"app/a.txt", "app/b.txt"}, addedPaths)
 }
 
 // TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState asserts that
@@ -624,123 +528,6 @@ type graphqlType struct {
 
 type graphqlField struct {
 	Name string `json:"name"`
-}
-
-type gitRefWorkspaceResult struct {
-	Ref struct {
-		Commit      string `json:"commit"`
-		AsWorkspace struct {
-			Cwd        string                `json:"cwd"`
-			Main       workspaceFileContents `json:"main"`
-			Root       workspaceFileContents `json:"root"`
-			Filtered   directoryEntries      `json:"filtered"`
-			Unfiltered directoryEntries      `json:"unfiltered"`
-			Git        workspaceGit          `json:"git"`
-		} `json:"asWorkspace"`
-	} `json:"ref"`
-}
-
-type gitRefWorkspaceIDResult struct {
-	Ref struct {
-		Commit     string `json:"commit"`
-		DirectMain struct {
-			File workspaceFileContents `json:"file"`
-		} `json:"directMain"`
-		AsWorkspace struct {
-			ID string `json:"id"`
-		} `json:"asWorkspace"`
-	} `json:"ref"`
-}
-
-type loadedWorkspaceResult struct {
-	Workspace struct {
-		Cwd  string                `json:"cwd"`
-		Main workspaceFileContents `json:"main"`
-		Root workspaceFileContents `json:"root"`
-		Git  workspaceGit          `json:"git"`
-	} `json:"workspace"`
-}
-
-type overlayWorkspaceIDResult struct {
-	Workspace struct {
-		Overlay struct {
-			ID string `json:"id"`
-		} `json:"overlay"`
-	} `json:"workspace"`
-}
-
-type workspaceFileResult struct {
-	Workspace struct {
-		File workspaceFileContents `json:"file"`
-	} `json:"workspace"`
-}
-
-type overlayWorkspaceResult struct {
-	Directory struct {
-		WithNewFile struct {
-			AsWorkspace struct {
-				Before           workspaceFileContents `json:"before"`
-				BeforeEntries    directoryEntries      `json:"beforeEntries"`
-				Changed          overlayWorkspace      `json:"changed"`
-				AfterBase        workspaceFileContents `json:"afterBase"`
-				AfterBaseEntries directoryEntries      `json:"afterBaseEntries"`
-			} `json:"asWorkspace"`
-		} `json:"withNewFile"`
-	} `json:"directory"`
-}
-
-type overlayWorkspace struct {
-	After workspaceFileContents `json:"after"`
-	Added struct {
-		NewFile      workspaceFileContents `json:"newFile"`
-		AfterEntries directoryEntries      `json:"afterEntries"`
-	} `json:"added"`
-}
-
-type overlayGitRefWorkspaceResult struct {
-	Ref struct {
-		Commit      string `json:"commit"`
-		AsWorkspace struct {
-			Clean   workspaceGit `json:"clean"`
-			Changed struct {
-				OverlayFile workspaceFileContents `json:"overlayFile"`
-				Git         workspaceGit          `json:"git"`
-			} `json:"changed"`
-		} `json:"asWorkspace"`
-	} `json:"ref"`
-}
-
-type chainedOverlayGitRefWorkspaceResult struct {
-	Ref struct {
-		AsWorkspace struct {
-			WithNewFile struct {
-				WithNewFile struct {
-					A   workspaceFileContents `json:"a"`
-					B   workspaceFileContents `json:"b"`
-					Git struct {
-						Uncommitted changesetPaths `json:"uncommitted"`
-					} `json:"git"`
-				} `json:"withNewFile"`
-			} `json:"withNewFile"`
-		} `json:"asWorkspace"`
-	} `json:"ref"`
-}
-
-type workspaceGit struct {
-	Head struct {
-		Commit string `json:"commit"`
-	} `json:"head"`
-	Uncommitted struct {
-		IsEmpty bool `json:"isEmpty"`
-	} `json:"uncommitted"`
-}
-
-type workspaceFileContents struct {
-	Contents string `json:"contents"`
-}
-
-type changesetPaths struct {
-	AddedPaths []string `json:"addedPaths"`
 }
 
 type directoryEntries struct {
