@@ -296,7 +296,7 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 	out, err := modGen.
 		With(daggerNonNestedExec("call", "sync-generators")).
 		CombinedOutput(ctx)
-	require.NoError(t, err, string(out))
+	require.NoError(t, err, out)
 	require.Contains(t, out, "ok")
 	require.NotContains(t, out, "result *core.Changeset is detached")
 }
