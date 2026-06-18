@@ -302,7 +302,7 @@ func workspaceWithDirectoryOverlay(
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(".")},
-				{Name: "directory", Value: dagql.NewID[*core.Directory](srcID)},
+				{Name: "source", Value: dagql.NewID[*core.Directory](srcID)},
 			},
 		},
 	)
