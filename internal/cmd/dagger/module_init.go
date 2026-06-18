@@ -52,15 +52,27 @@ func parseSDKRegistry(data []byte) ([]sdkEntry, error) {
 //   - 1 match  → return entry.Repo.
 //   - N > 1   → error ("ambiguous"), with candidate names.
 //
-// Aliases never propagate downstream. Only canonical full refs flow past
-// this function.
+// Registry names and aliases only affect the CLI-side default install name.
+// Only canonical full refs flow past this function.
 func sdkResolve(input string) (string, error) {
+	ref, _, err := sdkResolveInstall(input)
+	return ref, err
+}
+
+// sdkResolveInstall maps an SDK install value to both:
+//   - the canonical full ref that should flow downstream to the engine; and
+//   - the registry's canonical short name to use as the workspace install name
+//     when the user did not pass --name.
+//
+// Full refs return an empty install name so Workspace.install keeps its normal
+// basename-derived behavior for third-party SDK refs.
+func sdkResolveInstall(input string) (ref string, installName string, _ error) {
 	if strings.ContainsAny(input, "/@") {
-		return input, nil
+		return input, "", nil
 	}
 	entries, err := loadSDKRegistry()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var matches []sdkEntry
 	for _, e := range entries {
@@ -82,16 +94,16 @@ func sdkResolve(input string) (string, error) {
 	}
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("SDK %q not found in registry; try `dagger sdk search %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
+		return "", "", fmt.Errorf("SDK %q not found in registry; try `dagger sdk search %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
 	case 1:
-		return matches[0].Repo, nil
+		return matches[0].Repo, matches[0].Name, nil
 	default:
 		names := make([]string, 0, len(matches))
 		for _, m := range matches {
 			names = append(names, m.Name)
 		}
 		sort.Strings(names)
-		return "", fmt.Errorf("SDK %q is ambiguous: matches %s; pick one", input, strings.Join(names, ", "))
+		return "", "", fmt.Errorf("SDK %q is ambiguous: matches %s; pick one", input, strings.Join(names, ", "))
 	}
 }
 
