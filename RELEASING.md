@@ -333,7 +333,7 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 
 - [ ] Ask @marcosnils @matipan @sipsma on the release thread to review and merge the newly opened dagger.io PR (this is created by the publish workflow). This PR updates both the Daggerverse and Dagger Cloud. If anything fails, cc @kpenfound @matipan.
 
-- [ ] Validate that the newly published version of the engine engine is available in Dagger Cloud by running `dagger --cloud core version` with the `$ENGINE_VERSION` binary. This upgrade occurs automatically once the OCI image is published.
+- [ ] Validate that the newly published version of the engine is available in Dagger Cloud by running `dagger --cloud core version` with the `$ENGINE_VERSION` binary. This upgrade occurs automatically once the OCI image is published.
 
 ## Post release steps
 
