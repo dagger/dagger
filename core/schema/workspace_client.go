@@ -12,6 +12,7 @@ import (
 	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
 type workspaceClientInitArgs struct {
@@ -193,7 +194,11 @@ func (s *workspaceSchema) clientGenerate(
 			if err != nil {
 				return res, fmt.Errorf("generate client %q for module %q: %w", client.Path, moduleRef, err)
 			}
-			generatedClient, err := s.workspaceClientInitGeneratedDiff(workspaceCtx, targetModule, sdkRef, client.Path)
+			sdkOutputPath, err := workspaceClientSDKOutputPath(client.Path, moduleRef)
+			if err != nil {
+				return res, fmt.Errorf("resolve client output path %q for module %q: %w", client.Path, moduleRef, err)
+			}
+			generatedClient, err := s.workspaceClientInitGeneratedDiff(workspaceCtx, targetModule, sdkRef, sdkOutputPath)
 			if err != nil {
 				return res, fmt.Errorf("generate client %q: %w", client.Path, err)
 			}
@@ -317,4 +322,28 @@ func removeClientEntryAtPath(cfg *workspace.Config, clientPath string) {
 		})
 		cfg.Modules[moduleName] = entry
 	}
+}
+
+func workspaceClientSDKOutputPath(clientPath, moduleRef string) (string, error) {
+	cleanClientPath := filepath.Clean(clientPath)
+	if !workspace.IsLocalRef(moduleRef, "") {
+		return cleanClientPath, nil
+	}
+
+	moduleRoot := filepath.Clean(moduleRef)
+	if moduleRoot == "" {
+		moduleRoot = "."
+	}
+
+	rel, err := pathutil.LexicalRelativePath(
+		filepath.Join("/", moduleRoot),
+		filepath.Join("/", cleanClientPath),
+	)
+	if err != nil {
+		return "", err
+	}
+	if rel == "" {
+		rel = "."
+	}
+	return filepath.ToSlash(rel), nil
 }
