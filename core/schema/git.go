@@ -841,6 +841,12 @@ func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 		if errors.Is(err, pktline.ErrInvalidPktLen) {
 			return false, nil
 		}
+		// Azure Repos may also redirect unauthenticated private repository
+		// probes to a sign-in endpoint instead of returning a Git transport
+		// auth error.
+		if strings.Contains(err.Error(), "http redirect:") && strings.Contains(err.Error(), "does not end with /info/refs") {
+			return false, nil
+		}
 		if errors.Is(err, transport.ErrAuthenticationRequired) {
 			return false, nil
 		}

@@ -255,8 +255,8 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 
 	_, err = withCode.
 		WithMountedCache("/events", eventsVol).
-		WithExec([]string{"sh", "-c", "grep dagger.io/git.title $0", fmt.Sprintf("/events/%s/**/*.json", eventsID)}).
-		WithExec([]string{"sh", "-c", "grep 'init test repo' $0", fmt.Sprintf("/events/%s/**/*.json", eventsID)}).
+		WithExec([]string{"grep", "-R", "dagger.io/git.title", fmt.Sprintf("/events/%s", eventsID)}).
+		WithExec([]string{"grep", "-R", "init test repo", fmt.Sprintf("/events/%s", eventsID)}).
 		Sync(ctx)
 	require.NoError(t, err)
 }
