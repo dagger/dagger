@@ -2,6 +2,7 @@
 //
 //go:test:include dagger.json
 //go:test:include k3s-entrypoint.sh
+//go:test:include ../../.git
 //go:test:include ../../helm/dagger
 //go:test:include ../../.changes/.next
 //go:test:include ../../analytics
