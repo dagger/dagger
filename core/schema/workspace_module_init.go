@@ -31,12 +31,18 @@ type workspaceModuleInitArgs struct {
 }
 
 // moduleInit builds the workspace edits required to create a new module
-// owned by this workspace: codegen output (dagger-module.toml plus
-// SDK-generated source) at `path`, the authoring entry under
-// `[[modules.<sdk>.as-sdk.modules]]`, and - when the default path is used -
-// an `[modules.<name>]` install for the new module so it's callable in this
-// workspace. The SDK must already be installed as an SDK; init is dispatch,
-// not install.
+// owned by this workspace: the module config file (dagger-module.toml) at
+// `path`, the authoring entry under `[[modules.<sdk>.as-sdk.modules]]`, and —
+// when the default path is used — an `[modules.<name>]` install for the new
+// module so it's callable in this workspace. The SDK must already be
+// installed as an SDK; init is dispatch, not install.
+//
+// The engine's changeset is deliberately limited to engine-owned config
+// (the workspace dagger.toml and the module's dagger-module.toml). All other
+// files in the new module directory — starter source, the generated client,
+// language scaffolding — come from the SDK's `initModule` Changeset, which is
+// merged in at the end. The two are disjoint by construction, so the merge
+// never conflicts on a shared path.
 //
 // Every change is staged into one Changeset and returned. No filesystem
 // write happens inside this function; the caller previews via
@@ -129,10 +135,15 @@ func (s *workspaceSchema) moduleInit(
 		return res, fmt.Errorf("update workspace config: %w", err)
 	}
 
-	// Generate the new module's context directory (dagger-module.toml +
-	// SDK-emitted source). The diff is workspace-root-relative because the
-	// moduleSource is constructed against the local workspace context.
-	moduleDiff, err := s.workspaceModuleInitGeneratedDiff(ctx, args, relPath, runtimeRef)
+	// Generate the new module's config file (dagger-module.toml) ONLY. The
+	// engine owns the module config; the SDK's initModule (merged in below)
+	// owns every other file in the module directory — starter source, the
+	// generated client, language scaffolding, etc. Emitting just the config
+	// here keeps the engine and SDK changesets disjoint by construction, so
+	// they can never collide on a shared path ("added in both changesets").
+	// The diff is workspace-root-relative because the moduleSource is
+	// constructed against the local workspace context.
+	moduleDiff, err := s.workspaceModuleInitConfigDiff(ctx, args, relPath, runtimeRef)
 	if err != nil {
 		return res, err
 	}
@@ -194,13 +205,18 @@ func (s *workspaceSchema) moduleInit(
 	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
 }
 
-// workspaceModuleInitGeneratedDiff drives the moduleSource codegen chain
-// for the new module and returns the resulting context-directory diff,
-// suitable for overlaying onto the workspace rootfs. runtimeRef is what
-// gets recorded as the module's `runtime` field on disk; it may differ
-// from args.SDK when the SDK delegates execution to a separate runtime
-// module (see resolveModuleRuntimeRef).
-func (s *workspaceSchema) workspaceModuleInitGeneratedDiff(
+// workspaceModuleInitConfigDiff builds the new module's config file
+// (dagger-module.toml) and returns it as a context-directory diff suitable
+// for overlaying onto the workspace rootfs. It deliberately does NOT run
+// codegen: per the CLI-1.0 contract the engine owns only the config file
+// (dagger.toml + dagger-module.toml), while the SDK's initModule owns the
+// rest of the module directory. It therefore selects updatedConfigDirectory
+// (config-only) rather than generatedContextDirectory (full codegen pass),
+// so the engine's changeset stays a single file and never overlaps the
+// SDK's. runtimeRef is what gets recorded as the module's `runtime` field on
+// disk; it may differ from args.SDK when the SDK delegates execution to a
+// separate runtime module (see resolveModuleRuntimeRef).
+func (s *workspaceSchema) workspaceModuleInitConfigDiff(
 	ctx context.Context,
 	args workspaceModuleInitArgs,
 	relPath string,
@@ -251,11 +267,17 @@ func (s *workspaceSchema) workspaceModuleInitGeneratedDiff(
 			Field: "withEngineVersion",
 			Args:  []dagql.NamedInput{{Name: "version", Value: dagql.String(modules.EngineVersionLatest)}},
 		},
-		dagql.Selector{Field: "generatedContextDirectory"},
+		// updatedConfigDirectory writes only the module config file and diffs
+		// it against the (empty) source context, so the result is exactly
+		// {<relPath>/dagger-module.toml}. Using generatedContextDirectory here
+		// would instead run a full SDK codegen pass and emit the starter
+		// source + generated client too, which then collides with the SDK's
+		// own initModule output during the merge below.
+		dagql.Selector{Field: "updatedConfigDirectory"},
 	)
 
 	if err := srv.Select(ctx, srv.Root(), &res, selectors...); err != nil {
-		return res, fmt.Errorf("generate module context: %w", err)
+		return res, fmt.Errorf("generate module config: %w", err)
 	}
 	return res, nil
 }
