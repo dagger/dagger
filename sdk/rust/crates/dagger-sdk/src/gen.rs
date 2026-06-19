@@ -562,6 +562,33 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type CurrentModuleAsSDK
+    pub fn as_current_module_as_sdk(&self) -> CurrentModuleAsSdk {
+        let query = self.selection.select("asCurrentModuleAsSDK");
+        CurrentModuleAsSdk {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type CurrentModuleAsSDKClient
+    pub fn as_current_module_as_sdk_client(&self) -> CurrentModuleAsSdkClient {
+        let query = self.selection.select("asCurrentModuleAsSDKClient");
+        CurrentModuleAsSdkClient {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type CurrentModuleAsSDKModule
+    pub fn as_current_module_as_sdk_module(&self) -> CurrentModuleAsSdkModule {
+        let query = self.selection.select("asCurrentModuleAsSDKModule");
+        CurrentModuleAsSdkModule {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type DiffStat
     pub fn as_diff_stat(&self) -> DiffStat {
         let query = self.selection.select("asDiffStat");
@@ -4421,6 +4448,16 @@ impl Loadable for CurrentModule {
     }
 }
 impl CurrentModule {
+    /// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+    /// Errors if the current module is not installed as an SDK in this workspace.
+    pub fn as_sdk(&self) -> CurrentModuleAsSdk {
+        let query = self.selection.select("asSDK");
+        CurrentModuleAsSdk {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The dependencies of the module.
     pub async fn dependencies(&self) -> Result<Vec<Module>, DaggerError> {
         let query = self.selection.select("dependencies");
@@ -4554,6 +4591,194 @@ impl CurrentModule {
     }
 }
 impl Node for CurrentModule {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct CurrentModuleAsSdk {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for CurrentModuleAsSdk {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for CurrentModuleAsSdk {
+    fn graphql_type() -> &'static str {
+        "CurrentModuleAsSDK"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl CurrentModuleAsSdk {
+    /// The generated clients this SDK produces in the workspace.
+    pub async fn clients(&self) -> Result<Vec<CurrentModuleAsSdkClient>, DaggerError> {
+        let query = self.selection.select("clients");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| CurrentModuleAsSdkClient {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("CurrentModuleAsSDKClient"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// A unique identifier for this CurrentModuleAsSDK.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The workspace-local modules this SDK authors and manages.
+    pub async fn modules(&self) -> Result<Vec<CurrentModuleAsSdkModule>, DaggerError> {
+        let query = self.selection.select("modules");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| CurrentModuleAsSdkModule {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("CurrentModuleAsSDKModule"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// The user-facing name of this SDK in the workspace.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for CurrentModuleAsSdk {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct CurrentModuleAsSdkClient {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for CurrentModuleAsSdkClient {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for CurrentModuleAsSdkClient {
+    fn graphql_type() -> &'static str {
+        "CurrentModuleAsSDKClient"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl CurrentModuleAsSdkClient {
+    /// A unique identifier for this CurrentModuleAsSDKClient.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module the client is bound to (workspace-relative path or canonical ref).
+    pub async fn module(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("module");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Workspace-root-relative path of the generated client.
+    pub async fn path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The pinned version of the bound module, if any.
+    pub async fn pin(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("pin");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for CurrentModuleAsSdkClient {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct CurrentModuleAsSdkModule {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for CurrentModuleAsSdkModule {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for CurrentModuleAsSdkModule {
+    fn graphql_type() -> &'static str {
+        "CurrentModuleAsSDKModule"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl CurrentModuleAsSdkModule {
+    /// A unique identifier for this CurrentModuleAsSDKModule.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Workspace-root-relative path to the managed module.
+    pub async fn path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for CurrentModuleAsSdkModule {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -6902,6 +7127,153 @@ impl Env {
     /// Contextual path arguments will be populated using the environment's workspace.
     pub fn with_current_module(&self) -> Env {
         let query = self.selection.select("withCurrentModule");
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type CurrentModuleAsSDKClient in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The CurrentModuleAsSDKClient value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_current_module_as_sdk_client_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCurrentModuleAsSDKClientInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_current_module_as_sdk_client_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCurrentModuleAsSDKClientOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type CurrentModuleAsSDK in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The CurrentModuleAsSDK value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_current_module_as_sdk_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCurrentModuleAsSDKInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type CurrentModuleAsSDKModule in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The CurrentModuleAsSDKModule value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_current_module_as_sdk_module_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCurrentModuleAsSDKModuleInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_current_module_as_sdk_module_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCurrentModuleAsSDKModuleOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired CurrentModuleAsSDK output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_current_module_as_sdk_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCurrentModuleAsSDKOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
         Env {
             proc: self.proc.clone(),
             selection: query,

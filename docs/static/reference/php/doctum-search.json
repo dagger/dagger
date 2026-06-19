@@ -388,6 +388,36 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\CurrentModuleAsSDK",
+			"p": "Dagger/CurrentModuleAsSDK.html",
+			"d": "<p>The SDK-role data for the currently executing module, as installed in the active workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CurrentModuleAsSDKClient",
+			"p": "Dagger/CurrentModuleAsSDKClient.html",
+			"d": "<p>A generated client the current SDK produces in the workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CurrentModuleAsSDKModule",
+			"p": "Dagger/CurrentModuleAsSDKModule.html",
+			"d": "<p>A workspace-local module managed by the current SDK.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\CurrentModuleId",
 			"p": "Dagger/CurrentModuleId.html",
 			"d": "<p>A unique identifier for an object.</p>",
@@ -1926,6 +1956,24 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asCurrentModuleAsSDK",
+			"p": "Dagger/Binding.html#method_asCurrentModuleAsSDK",
+			"d": "<p>Retrieve the binding value, as type CurrentModuleAsSDK</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asCurrentModuleAsSDKClient",
+			"p": "Dagger/Binding.html#method_asCurrentModuleAsSDKClient",
+			"d": "<p>Retrieve the binding value, as type CurrentModuleAsSDKClient</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asCurrentModuleAsSDKModule",
+			"p": "Dagger/Binding.html#method_asCurrentModuleAsSDKModule",
+			"d": "<p>Retrieve the binding value, as type CurrentModuleAsSDKModule</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asDiffStat",
 			"p": "Dagger/Binding.html#method_asDiffStat",
 			"d": "<p>Retrieve the binding value, as type DiffStat</p>"
@@ -3198,6 +3246,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\CurrentModule::asSDK",
+			"p": "Dagger/CurrentModule.html#method_asSDK",
+			"d": "<p>Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CurrentModule::dependencies",
 			"p": "Dagger/CurrentModule.html#method_dependencies",
 			"d": "<p>The dependencies of the module.</p>"
@@ -3243,6 +3297,66 @@
 			"n": "Dagger\\CurrentModule::workdirFile",
 			"p": "Dagger/CurrentModule.html#method_workdirFile",
 			"d": "<p>Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDK::clients",
+			"p": "Dagger/CurrentModuleAsSDK.html#method_clients",
+			"d": "<p>The generated clients this SDK produces in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDK::id",
+			"p": "Dagger/CurrentModuleAsSDK.html#method_id",
+			"d": "<p>A unique identifier for this CurrentModuleAsSDK.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDK::modules",
+			"p": "Dagger/CurrentModuleAsSDK.html#method_modules",
+			"d": "<p>The workspace-local modules this SDK authors and manages.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDK::name",
+			"p": "Dagger/CurrentModuleAsSDK.html#method_name",
+			"d": "<p>The user-facing name of this SDK in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::id",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_id",
+			"d": "<p>A unique identifier for this CurrentModuleAsSDKClient.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::module",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_module",
+			"d": "<p>The module the client is bound to (workspace-relative path or canonical ref).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::path",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_path",
+			"d": "<p>Workspace-root-relative path of the generated client.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::pin",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_pin",
+			"d": "<p>The pinned version of the bound module, if any.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKModule::id",
+			"p": "Dagger/CurrentModuleAsSDKModule.html#method_id",
+			"d": "<p>A unique identifier for this CurrentModuleAsSDKModule.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKModule::path",
+			"p": "Dagger/CurrentModuleAsSDKModule.html#method_path",
+			"d": "<p>Workspace-root-relative path to the managed module.</p>"
 		},
 		{
 			"t": "M",
@@ -3873,6 +3987,42 @@
 			"n": "Dagger\\Env::withCurrentModule",
 			"p": "Dagger/Env.html#method_withCurrentModule",
 			"d": "<p>Installs the current module into the environment, exposing its functions to the model</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKClientInput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKClientInput",
+			"d": "<p>Create or update a binding of type CurrentModuleAsSDKClient in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKClientOutput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKClientOutput",
+			"d": "<p>Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKInput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKInput",
+			"d": "<p>Create or update a binding of type CurrentModuleAsSDK in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKModuleInput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKModuleInput",
+			"d": "<p>Create or update a binding of type CurrentModuleAsSDKModule in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKModuleOutput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKModuleOutput",
+			"d": "<p>Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKOutput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKOutput",
+			"d": "<p>Declare a desired CurrentModuleAsSDK output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",

@@ -16,6 +16,22 @@ defmodule Dagger.CurrentModule do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+
+  Errors if the current module is not installed as an SDK in this workspace.
+  """
+  @spec as_sdk(t()) :: Dagger.CurrentModuleAsSDK.t()
+  def as_sdk(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("asSDK")
+
+    %Dagger.CurrentModuleAsSDK{
+      query_builder: query_builder,
+      client: current_module.client
+    }
+  end
+
+  @doc """
   The dependencies of the module.
   """
   @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}

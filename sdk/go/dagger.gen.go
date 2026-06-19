@@ -465,6 +465,33 @@ func (r *Binding) AsContainer() *Container {
 	}
 }
 
+// Retrieve the binding value, as type CurrentModuleAsSDK
+func (r *Binding) AsCurrentModuleAsSDK() *CurrentModuleAsSDK {
+	q := r.query.Select("asCurrentModuleAsSDK")
+
+	return &CurrentModuleAsSDK{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CurrentModuleAsSDKClient
+func (r *Binding) AsCurrentModuleAsSDKClient() *CurrentModuleAsSDKClient {
+	q := r.query.Select("asCurrentModuleAsSDKClient")
+
+	return &CurrentModuleAsSDKClient{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CurrentModuleAsSDKModule
+func (r *Binding) AsCurrentModuleAsSDKModule() *CurrentModuleAsSDKModule {
+	q := r.query.Select("asCurrentModuleAsSDKModule")
+
+	return &CurrentModuleAsSDKModule{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type DiffStat
 func (r *Binding) AsDiffStat() *DiffStat {
 	q := r.query.Select("asDiffStat")
@@ -3755,6 +3782,17 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
+// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+//
+// Errors if the current module is not installed as an SDK in this workspace.
+func (r *CurrentModule) AsSDK() *CurrentModuleAsSDK {
+	q := r.query.Select("asSDK")
+
+	return &CurrentModuleAsSDK{
+		query: q,
+	}
+}
+
 // The dependencies of the module.
 func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
 	q := r.query.Select("dependencies")
@@ -3929,6 +3967,325 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 // AsNode returns this CurrentModule as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *CurrentModule) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// The SDK-role data for the currently executing module, as installed in the active workspace.
+type CurrentModuleAsSDK struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+}
+
+func (r *CurrentModuleAsSDK) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDK {
+	return &CurrentModuleAsSDK{
+		query: q,
+	}
+}
+
+// The generated clients this SDK produces in the workspace.
+func (r *CurrentModuleAsSDK) Clients(ctx context.Context) ([]CurrentModuleAsSDKClient, error) {
+	q := r.query.Select("clients")
+
+	q = q.Select("id")
+
+	type clients struct {
+		Id ID
+	}
+
+	convert := func(fields []clients) []CurrentModuleAsSDKClient {
+		out := []CurrentModuleAsSDKClient{}
+
+		for i := range fields {
+			val := CurrentModuleAsSDKClient{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "CurrentModuleAsSDKClient")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []clients
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this CurrentModuleAsSDK.
+func (r *CurrentModuleAsSDK) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CurrentModuleAsSDK) XXX_GraphQLType() string {
+	return "CurrentModuleAsSDK"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CurrentModuleAsSDK) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CurrentModuleAsSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CurrentModuleAsSDK) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The workspace-local modules this SDK authors and manages.
+func (r *CurrentModuleAsSDK) Modules(ctx context.Context) ([]CurrentModuleAsSDKModule, error) {
+	q := r.query.Select("modules")
+
+	q = q.Select("id")
+
+	type modules struct {
+		Id ID
+	}
+
+	convert := func(fields []modules) []CurrentModuleAsSDKModule {
+		out := []CurrentModuleAsSDKModule{}
+
+		for i := range fields {
+			val := CurrentModuleAsSDKModule{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "CurrentModuleAsSDKModule")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []modules
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The user-facing name of this SDK in the workspace.
+func (r *CurrentModuleAsSDK) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this CurrentModuleAsSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CurrentModuleAsSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A generated client the current SDK produces in the workspace.
+type CurrentModuleAsSDKClient struct {
+	query *querybuilder.Selection
+
+	id     *ID
+	module *string
+	path   *string
+	pin    *string
+}
+
+func (r *CurrentModuleAsSDKClient) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDKClient {
+	return &CurrentModuleAsSDKClient{
+		query: q,
+	}
+}
+
+// A unique identifier for this CurrentModuleAsSDKClient.
+func (r *CurrentModuleAsSDKClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CurrentModuleAsSDKClient) XXX_GraphQLType() string {
+	return "CurrentModuleAsSDKClient"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CurrentModuleAsSDKClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CurrentModuleAsSDKClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CurrentModuleAsSDKClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The module the client is bound to (workspace-relative path or canonical ref).
+func (r *CurrentModuleAsSDKClient) Module(ctx context.Context) (string, error) {
+	if r.module != nil {
+		return *r.module, nil
+	}
+	q := r.query.Select("module")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Workspace-root-relative path of the generated client.
+func (r *CurrentModuleAsSDKClient) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The pinned version of the bound module, if any.
+func (r *CurrentModuleAsSDKClient) Pin(ctx context.Context) (string, error) {
+	if r.pin != nil {
+		return *r.pin, nil
+	}
+	q := r.query.Select("pin")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this CurrentModuleAsSDKClient as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CurrentModuleAsSDKClient) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A workspace-local module managed by the current SDK.
+type CurrentModuleAsSDKModule struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	path *string
+}
+
+func (r *CurrentModuleAsSDKModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDKModule {
+	return &CurrentModuleAsSDKModule{
+		query: q,
+	}
+}
+
+// A unique identifier for this CurrentModuleAsSDKModule.
+func (r *CurrentModuleAsSDKModule) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CurrentModuleAsSDKModule) XXX_GraphQLType() string {
+	return "CurrentModuleAsSDKModule"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CurrentModuleAsSDKModule) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CurrentModuleAsSDKModule) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CurrentModuleAsSDKModule) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Workspace-root-relative path to the managed module.
+func (r *CurrentModuleAsSDKModule) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this CurrentModuleAsSDKModule as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CurrentModuleAsSDKModule) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -6215,6 +6572,78 @@ func (r *Env) WithContainerOutput(name string, description string) *Env {
 // Contextual path arguments will be populated using the environment's workspace.
 func (r *Env) WithCurrentModule() *Env {
 	q := r.query.Select("withCurrentModule")
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type CurrentModuleAsSDKClient in the environment
+func (r *Env) WithCurrentModuleAsSDKClientInput(name string, value *CurrentModuleAsSDKClient, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModuleAsSDKClientInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment
+func (r *Env) WithCurrentModuleAsSDKClientOutput(name string, description string) *Env {
+	q := r.query.Select("withCurrentModuleAsSDKClientOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type CurrentModuleAsSDK in the environment
+func (r *Env) WithCurrentModuleAsSDKInput(name string, value *CurrentModuleAsSDK, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModuleAsSDKInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type CurrentModuleAsSDKModule in the environment
+func (r *Env) WithCurrentModuleAsSDKModuleInput(name string, value *CurrentModuleAsSDKModule, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModuleAsSDKModuleInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment
+func (r *Env) WithCurrentModuleAsSDKModuleOutput(name string, description string) *Env {
+	q := r.query.Select("withCurrentModuleAsSDKModuleOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CurrentModuleAsSDK output to be assigned in the environment
+func (r *Env) WithCurrentModuleAsSDKOutput(name string, description string) *Env {
+	q := r.query.Select("withCurrentModuleAsSDKOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
