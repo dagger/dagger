@@ -53,8 +53,18 @@ var (
 )
 
 func init() {
-	Version = "v" + iversion.Version
-	Tag = Version
+	Version = iversion.Version
+
+	// hack: dynamically populate version env vars
+	// we use these during tests, but not really for anything else - this is
+	// why it's okay to skip the previous validation
+	if v, ok := os.LookupEnv(DaggerVersionEnv); ok {
+		Version = cleanVersion(v)
+	}
+	Tag = defaultTag(Version, iversion.Commit)
+	if v, ok := os.LookupEnv(DaggerTagEnv); ok {
+		Tag = v
+	}
 
 	// The minimum version is greater than our current version this is weird,
 	// and shouldn't generally be intentional - but can happen if we set it to
@@ -73,20 +83,18 @@ func init() {
 		MinimumModuleVersion = Version
 	}
 
-	// hack: dynamically populate version env vars
-	// we use these during tests, but not really for anything else - this is
-	// why it's okay to skip the previous validation
-	if v, ok := os.LookupEnv(DaggerVersionEnv); ok {
-		Version = cleanVersion(v)
-	}
-	if v, ok := os.LookupEnv(DaggerTagEnv); ok {
-		Tag = v
-	}
 	if v, ok := os.LookupEnv(DaggerMinimumVersionEnv); ok {
 		MinimumClientVersion = cleanVersion(v)
 		MinimumEngineVersion = cleanVersion(v)
 		MinimumModuleVersion = cleanVersion(v)
 	}
+}
+
+func defaultTag(version, commit string) string {
+	if IsDevVersion(version) {
+		return commit
+	}
+	return version
 }
 
 func cleanVersion(v string) string {
@@ -142,8 +150,8 @@ func IsDevVersion(version string) bool {
 	if version == "" {
 		return true
 	}
-	// dev versions have -dev- in their prerelease (e.g. v0.19.9-241210-dev-abc123)
-	if strings.Contains(semver.Prerelease(version), "-dev-") {
+	prerelease := semver.Prerelease(version)
+	if prerelease == "-dev" || strings.Contains(prerelease, "-dev.") || strings.Contains(prerelease, "-dev-") {
 		return true
 	}
 	return false
