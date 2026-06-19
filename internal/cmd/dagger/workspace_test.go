@@ -83,10 +83,6 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, apiExecCmd, cmd)
 
-	cmd, _, err = rootCmd.Find([]string{"api", "run"})
-	require.NoError(t, err)
-	require.Same(t, apiExecCmd, cmd)
-
 	cmd, _, err = rootCmd.Find([]string{"run"})
 	require.NoError(t, err)
 	require.Same(t, runCmd, cmd)

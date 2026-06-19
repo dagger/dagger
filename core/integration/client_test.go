@@ -249,7 +249,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		WithExec([]string{"git", "init"}). // init a git repo to test git labels
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "init test repo"}).
-		WithExec([]string{"dagger", "api", "run", "go", "run", "./core/integration/testdata/basic-container/"}).
+		WithExec([]string{"dagger", "run", "go", "run", "./core/integration/testdata/basic-container/"}).
 		Stderr(ctx)
 	require.NoError(t, err)
 

@@ -118,7 +118,7 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 				With(clientGeneratorWorkspaceClients(clientGeneratorSDKClientFor("go", "client"))).
 				With(daggerExec("generate", "-y"))
 
-			codegenContents, err := modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
+			codegenContents, err := modGen.File("client/dep.gen.go").Contents(ctx)
 			require.NoError(t, err)
 
 			for _, match := range tc.matches.golang {
