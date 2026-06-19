@@ -994,6 +994,8 @@ func (ClientGeneratorTest) TestMultipleClient(ctx context.Context, t *testctx.T)
 			With(nonNestedDevEngine(c)).
 			With(clientGeneratorModule("client-test")).
 			WithExec([]string{"go", "mod", "init", "test.com/test"}).
+			WithExec([]string{"go", "mod", "edit", "-replace=test.com/test/client1=./client1"}).
+			WithExec([]string{"go", "mod", "edit", "-replace=test.com/test/client2=./client2"}).
 			// Install both client
 			With(daggerClientInstallAt("go", "client1")).
 			With(daggerClientInstallAt("go", "client2")).
@@ -1233,6 +1235,8 @@ func main() {
 		With(clientGeneratorModule("client-test")).
 		With(clientGeneratorHelloDepModule()).
 		WithExec([]string{"go", "mod", "init", "test.com/test"}).
+		WithExec([]string{"go", "mod", "edit", "-replace=test.com/test/dagger=./dagger"}).
+		WithExec([]string{"go", "mod", "edit", "-replace=test.com/test/dagger2=./dagger2"}).
 		// We cannot directly import both clients because path will not be
 		// recognized during post client operation like go mod tidy.
 		WithNewFile("main.go", `package main`).
