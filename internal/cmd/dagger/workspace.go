@@ -672,11 +672,18 @@ func normalizeWorkspaceGitOrigin(origin string) string {
 func withEngineSilent(ctx context.Context, params client.Params, fn runClientCallback) error {
 	oldFrontend := Frontend
 	oldOpts := opts
+	oldSkip := skipSharedTelemetryExporters
 	Frontend = idtui.NewPlain(io.Discard)
 	opts.Silent = true
+	// This is an internal plumbing session (e.g. the pre-command dynamic SDK-init
+	// registration). Keep it out of the process-wide OTLP exporter singletons so
+	// it doesn't shut them down for the real command that follows in the same
+	// process. See engineTelemetryConfig.
+	skipSharedTelemetryExporters = true
 	defer func() {
 		Frontend = oldFrontend
 		opts = oldOpts
+		skipSharedTelemetryExporters = oldSkip
 	}()
 	return withEngine(ctx, params, fn)
 }
