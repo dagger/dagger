@@ -59,6 +59,10 @@ var apiCallCmd = &FuncCommand{
 
 var apiFunctionsCmd = newFunctionListCmd("functions [options] [function]...", false)
 
+// functionsAliasCmd is a hidden root-level alias for `dagger api functions`,
+// mirroring how callModCmd aliases `dagger api call`.
+var functionsAliasCmd = newFunctionListCmd("functions [options] [function]...", true)
+
 func newFunctionListCmd(use string, hidden bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   use,

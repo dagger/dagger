@@ -204,6 +204,7 @@ func init() {
 		sdkCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
+		functionsAliasCmd,
 		sessionAliasCmd,
 		shellCmd,
 		mcpCmd,
