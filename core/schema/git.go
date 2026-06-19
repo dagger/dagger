@@ -175,6 +175,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("other").Doc(`The other ref to compare against.`),
 			),
 		dagql.NodeFunc("asWorkspace", s.gitRefAsWorkspace).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Creates a synthetic workspace from this git ref.").
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),

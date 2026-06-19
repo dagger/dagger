@@ -90,6 +90,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			WithInput(dagql.PerClientInput).
 			Doc("Git state for this workspace. Errors if the workspace is not in a git repository."),
 		dagql.NodeFunc("withNewFile", s.withNewFile).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a new or replaced file, without mutating the source.").
 			Args(
 				dagql.Arg("path").Doc("Path of the new file. Relative paths resolve from the workspace cwd."),
@@ -97,17 +98,20 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("permissions").Doc("Permissions of the new file."),
 			),
 		dagql.NodeFunc("withNewDirectory", s.withNewDirectory).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a directory added, without mutating the source.").
 			Args(
 				dagql.Arg("path").Doc("Path of the added directory. Relative paths resolve from the workspace cwd."),
 				dagql.Arg("source").Doc("Directory to add."),
 			),
 		dagql.NodeFunc("withChanges", s.withChanges).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a changeset applied, without mutating the source.").
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
 			),
 		dagql.NodeFunc("changes", s.changes).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the changes from another workspace to this workspace.").
 			Args(
 				dagql.Arg("other").Doc("Workspace to compare from."),
