@@ -1597,7 +1597,7 @@ source = "."
 entrypoint = true
 `).
 		// Ensure the module compiles
-		With(daggerNonNestedExec("functions")).
+		With(daggerNonNestedExec("api", "functions")).
 		// Generate the Go client. withGoSetup is not used because the
 		// module SDK already created a go.mod.
 		WithNewFile("cmd/main.go", `package main
