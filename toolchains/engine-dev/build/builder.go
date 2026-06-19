@@ -19,6 +19,8 @@ import (
 
 var dag = dagger.Connect()
 
+var versionAnnotation = distconsts.OCIVersionAnnotation
+
 type Builder struct {
 	source *dagger.Directory
 
@@ -115,7 +117,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		})
 
 	if build.version != "" {
-		base = base.WithAnnotation(distconsts.OCIVersionAnnotation, build.version)
+		base = base.WithAnnotation(versionAnnotation, build.version)
 	}
 
 	type binAndPath struct {

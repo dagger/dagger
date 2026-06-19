@@ -998,6 +998,7 @@ printf 'layered\n' > /work/layered.txt
 		c := connect(ctx, t)
 		stateKey := "phase7-engine-dev-build-state-" + identity.NewID()
 		repoDir := c.Host().Directory("/app")
+		engineDevVersion := "v0.0.0-test"
 		writeRandomScript := "set -eu\nhead -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /tmp/random\n"
 		writeSummaryScript := "set -eu\ntest -x /usr/local/bin/dagger-engine\nprintf '%s|layered\\n' \"$(cat /tmp/random)\" > /tmp/summary\n"
 
@@ -1039,7 +1040,7 @@ printf 'layered\n' > /work/layered.txt
 			}
 		}
 
-		runCLI := func(ctx context.Context, t *testctx.T, engine *startedDevEngine, sourceMutation string, args ...string) (string, error) {
+		runCLI := func(ctx context.Context, t *testctx.T, engine *startedDevEngine, mutateVersionAnnotation bool, args ...string) (string, error) {
 			t.Helper()
 
 			daggerCli := daggerCliFile(t, c)
@@ -1053,11 +1054,13 @@ printf 'layered\n' > /work/layered.txt
 				WithWorkdir("/app").
 				WithEnvVariable("CACHE_BUST", rand.Text())
 
-			if sourceMutation != "" {
-				ctr = ctr.WithEnvVariable("SOURCE_MUTATION", sourceMutation).WithExec([]string{
+			if mutateVersionAnnotation {
+				ctr = ctr.WithExec([]string{
 					"sh",
 					"-ec",
-					"printf '%s' \"$SOURCE_MUTATION\" >> /app/dagql/cache.go",
+					`test -f /app/toolchains/engine-dev/build/builder.go
+sed -i 's/var versionAnnotation = distconsts.OCIVersionAnnotation/var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"/' /app/toolchains/engine-dev/build/builder.go
+grep -q 'var versionAnnotation = distconsts.OCIVersionAnnotation + "-test"' /app/toolchains/engine-dev/build/builder.go`,
 				})
 			}
 
@@ -1067,14 +1070,15 @@ printf 'layered\n' > /work/layered.txt
 			return strings.TrimSpace(stdout), err
 		}
 
-		runEngineDevRandom := func(ctx context.Context, t *testctx.T, engine *startedDevEngine, sourceMutation string) (string, error) {
+		runEngineDevRandom := func(ctx context.Context, t *testctx.T, engine *startedDevEngine, mutateVersionAnnotation bool) (string, error) {
 			t.Helper()
 			return runCLI(
 				ctx,
 				t,
 				engine,
-				sourceMutation,
+				mutateVersionAnnotation,
 				"call", "engine-dev", "container",
+				"--version", engineDevVersion,
 				"with-exec", "--args", "true",
 				"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
 				"with-exec", "--args", "sh,/tmp/write-random.sh",
@@ -1090,11 +1094,11 @@ printf 'layered\n' > /work/layered.txt
 		engineA := startDevEngine(ctx, t, engineABootID)
 		t.Cleanup(func() { stopDevEngine(ctx, t, engineA) })
 
-		randomA, err := runEngineDevRandom(ctx, t, engineA, "")
+		randomA, err := runEngineDevRandom(ctx, t, engineA, false)
 		require.NoError(t, err)
 		require.NotEmpty(t, randomA)
 
-		randomASecondSession, err := runEngineDevRandom(ctx, t, engineA, "")
+		randomASecondSession, err := runEngineDevRandom(ctx, t, engineA, false)
 		require.NoError(t, err)
 		require.Equal(t, randomA, randomASecondSession, "engine-dev container build result should survive a new session on the same engine before restart")
 
@@ -1104,7 +1108,7 @@ printf 'layered\n' > /work/layered.txt
 		engineB := startDevEngine(ctx, t, engineBBootID)
 		t.Cleanup(func() { stopDevEngine(ctx, t, engineB) })
 
-		randomB, err := runEngineDevRandom(ctx, t, engineB, "")
+		randomB, err := runEngineDevRandom(ctx, t, engineB, false)
 		require.NoError(t, err)
 		require.Equal(t, randomA, randomB, "engine-dev container build result should survive engine restart")
 
@@ -1112,8 +1116,9 @@ printf 'layered\n' > /work/layered.txt
 			ctx,
 			t,
 			engineB,
-			"",
+			false,
 			"call", "engine-dev", "container",
+			"--version", engineDevVersion,
 			"with-exec", "--args", "true",
 			"with-new-file", "--path", "/tmp/write-random.sh", "--contents", writeRandomScript,
 			"with-exec", "--args", "sh,/tmp/write-random.sh",
@@ -1125,8 +1130,7 @@ printf 'layered\n' > /work/layered.txt
 		require.NoError(t, err)
 		require.Equal(t, randomB+"|layered", layered, "new withExec should still apply on top of the cached engine-dev container build")
 
-		cacheGoMutation := "\n// TestDiskPersistenceAcrossRestart mutation\n"
-		randomBChanged, err := runEngineDevRandom(ctx, t, engineB, cacheGoMutation)
+		randomBChanged, err := runEngineDevRandom(ctx, t, engineB, true)
 		require.NoError(t, err)
 		require.NotEqual(t, randomB, randomBChanged, "engine-dev container build result should miss after the repo source changes")
 
@@ -1136,11 +1140,11 @@ printf 'layered\n' > /work/layered.txt
 		engineC := startDevEngine(ctx, t, engineCBootID)
 		t.Cleanup(func() { stopDevEngine(ctx, t, engineC) })
 
-		randomCChanged, err := runEngineDevRandom(ctx, t, engineC, cacheGoMutation)
+		randomCChanged, err := runEngineDevRandom(ctx, t, engineC, true)
 		require.NoError(t, err)
 		require.Equal(t, randomBChanged, randomCChanged, "engine-dev container build result should survive engine restart with the repo source change in place")
 
-		randomCRestored, err := runEngineDevRandom(ctx, t, engineC, "")
+		randomCRestored, err := runEngineDevRandom(ctx, t, engineC, false)
 		require.NoError(t, err)
 		require.Equal(t, randomB, randomCRestored, "engine-dev container build result should survive engine restart without the repo source change")
 	})
