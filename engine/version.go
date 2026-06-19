@@ -14,7 +14,7 @@ var (
 	// (which embeds VERSION at build time) with a "v" prefix.
 	//
 	// DAGGER_VERSION overrides at init for tests.
-	Version string
+	Version string = iversion.Version
 
 	// Tag is the OCI image tag this engine binary was published under.
 	// It defaults to Version and can be overridden by build or test env.
@@ -53,8 +53,6 @@ var (
 )
 
 func init() {
-	Version = iversion.Version
-
 	// hack: dynamically populate version env vars
 	// we use these during tests, but not really for anything else - this is
 	// why it's okay to skip the previous validation

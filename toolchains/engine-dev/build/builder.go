@@ -209,8 +209,13 @@ func (build *Builder) Go(race bool) *dagger.Go {
 }
 
 func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
+	var values []string
+	if build.version != "" {
+		values = append(values, "github.com/dagger/dagger/engine.Version="+build.version)
+	}
 	return dag.Go(dagger.GoOpts{
 		Source: source,
+		Values: values,
 		Race:   race,
 		Tags: []string{
 			// The engine uses the dockerfile2llb code from buildkit, which makes use of tags
