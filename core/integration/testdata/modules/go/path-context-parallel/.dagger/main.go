@@ -61,11 +61,8 @@ func (z *Test) Fn(
 	// +defaultPath="/"
 	// +ignore=["**", "!util"]
 	q *dagger.Directory,
-	// +defaultPath="/"
-	// +ignore=["**", "!version"]
-	r *dagger.Directory,
 ) (string, error) {
-	for _, dir := range []*dagger.Directory{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r} {
+	for _, dir := range []*dagger.Directory{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q} {
 		if _, err := dir.Entries(ctx); err != nil {
 			return "", err
 		}

@@ -26,7 +26,6 @@ func New(
 	// "!**/dagger.json",
 	// "!**/go.*",
 	// "!**/*.dang",
-	// "!version",
 	// "!core",
 	// "!engine",
 	// "!util",
