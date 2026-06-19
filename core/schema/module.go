@@ -389,7 +389,21 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
+
+		dagql.Func("asSDK", s.currentModuleAsSDK).
+			DoNotCache("Reads live workspace config to resolve the current module's SDK-role data.").
+			Doc(`Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.`,
+				`Errors if the current module is not installed as an SDK in this workspace.`),
 	}.Install(dag)
+
+	dagql.Fields[*core.CurrentModuleAsSDK]{
+		dagql.Func("modules", s.currentModuleAsSDKModules).
+			Doc(`The workspace-local modules this SDK authors and manages.`),
+		dagql.Func("clients", s.currentModuleAsSDKClients).
+			Doc(`The generated clients this SDK produces in the workspace.`),
+	}.Install(dag)
+	dagql.Fields[*core.CurrentModuleAsSDKModule]{}.Install(dag)
+	dagql.Fields[*core.CurrentModuleAsSDKClient]{}.Install(dag)
 
 	dagql.Fields[*core.Function]{
 		dagql.Func("withDescription", s.functionWithDescription).
