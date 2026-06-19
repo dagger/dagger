@@ -751,6 +751,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type ServiceDirectoryMount
+    pub fn as_service_directory_mount(&self) -> ServiceDirectoryMount {
+        let query = self.selection.select("asServiceDirectoryMount");
+        ServiceDirectoryMount {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type Socket
     pub fn as_socket(&self) -> Socket {
         let query = self.selection.select("asSocket");
@@ -8139,6 +8148,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type ServiceDirectoryMount in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ServiceDirectoryMount value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_service_directory_mount_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withServiceDirectoryMountInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired ServiceDirectoryMount output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_service_directory_mount_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withServiceDirectoryMountOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Service in the environment
     ///
     /// # Arguments
@@ -14731,6 +14789,12 @@ pub struct ServiceEndpointOpts<'a> {
     pub scheme: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ServiceMountDirectoryOpts {
+    /// Replace "${VAR}" or "$VAR" in the path according to the current environment variables defined in the service container.
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ServiceStopOpts {
     /// Immediately kill the service without waiting for a graceful exit
     #[builder(setter(into, strip_option), default)]
@@ -14815,6 +14879,66 @@ impl Service {
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.
+    /// The service is started if it is not already running. The mount is exclusive by path: another mount at the same path fails until this mount is snapshotted with keepMounted=false or unmounted.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path where the directory is mounted in the service container.
+    /// * `source` - Directory snapshot to mount.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn mount_directory(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<Id>,
+    ) -> ServiceDirectoryMount {
+        let mut query = self.selection.select("mountDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        ServiceDirectoryMount {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.
+    /// The service is started if it is not already running. The mount is exclusive by path: another mount at the same path fails until this mount is snapshotted with keepMounted=false or unmounted.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path where the directory is mounted in the service container.
+    /// * `source` - Directory snapshot to mount.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn mount_directory_opts(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<Id>,
+        opts: ServiceMountDirectoryOpts,
+    ) -> ServiceDirectoryMount {
+        let mut query = self.selection.select("mountDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
+        ServiceDirectoryMount {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Retrieves the list of ports provided by the service.
     pub async fn ports(&self) -> Result<Vec<Port>, DaggerError> {
@@ -14975,6 +15099,170 @@ impl Node for Service {
     }
 }
 impl Syncer for Service {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+    fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("sync");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct ServiceDirectoryMount {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ServiceDirectoryMountChangesOpts {
+    /// Base directory snapshot to compare against. If unset, the mount's original source is used.
+    #[builder(setter(into, strip_option), default)]
+    pub from: Option<Id>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ServiceDirectoryMountDirectoryOpts {
+    /// Keep the path mounted after snapshotting by remounting a fresh mutable copy of the snapshot.
+    #[builder(setter(into, strip_option), default)]
+    pub keep_mounted: Option<bool>,
+}
+impl IntoID<Id> for ServiceDirectoryMount {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ServiceDirectoryMount {
+    fn graphql_type() -> &'static str {
+        "ServiceDirectoryMount"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ServiceDirectoryMount {
+    /// Return changes from the original source, or from an explicit base Directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn changes(&self) -> Changeset {
+        let query = self.selection.select("changes");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return changes from the original source, or from an explicit base Directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn changes_opts(&self, opts: ServiceDirectoryMountChangesOpts) -> Changeset {
+        let mut query = self.selection.select("changes");
+        if let Some(from) = opts.from {
+            query = query.arg("from", from);
+        }
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Snapshot the current mount contents as an immutable Directory.
+    /// By default, Dagger detaches the old mutable mount and remounts a fresh mutable copy of the snapshot so the service can keep using the same path.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory(&self) -> Directory {
+        let query = self.selection.select("directory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Snapshot the current mount contents as an immutable Directory.
+    /// By default, Dagger detaches the old mutable mount and remounts a fresh mutable copy of the snapshot so the service can keep using the same path.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory_opts(&self, opts: ServiceDirectoryMountDirectoryOpts) -> Directory {
+        let mut query = self.selection.select("directory");
+        if let Some(keep_mounted) = opts.keep_mounted {
+            query = query.arg("keepMounted", keep_mounted);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this ServiceDirectoryMount.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Path where this directory is mounted in the service container.
+    pub async fn path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The service this mount belongs to.
+    pub fn service(&self) -> Service {
+        let query = self.selection.select("service");
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Force the runtime mount side effect.
+    pub async fn sync(&self) -> Result<ServiceDirectoryMount, DaggerError> {
+        let query = self.selection.select("sync");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(ServiceDirectoryMount {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("ServiceDirectoryMount"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Detach the mount from the service and release its mutable backing ref.
+    pub fn unmount(&self) -> Service {
+        let query = self.selection.select("unmount");
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for ServiceDirectoryMount {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+impl Syncer for ServiceDirectoryMount {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();

@@ -28,6 +28,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1213,6 +1214,125 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ServiceSuite) TestServiceDirectoryMount(ctx context.Context, t *testctx.T) {
+	t.Run("stable service reuse with different inputs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		srv := serviceDirectoryMountDaemon(c)
+
+		sourceA := c.Directory().WithNewFile("input-a.txt", "a")
+		mountA := serviceDirectoryMount(ctx, t, c, srv, sourceA, "/work")
+		bootA := serviceDirectoryMountBootID(t, serviceDirectoryMountState(t, c, srv))
+		serviceDirectoryMountWrite(t, c, srv, "from-a.txt", "a")
+		snapA, err := serviceDirectoryMountDirectory(ctx, t, c, mountA.ID, false)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"from-a.txt", "input-a.txt"}, snapA.Entries)
+
+		sourceB := c.Directory().WithNewFile("input-b.txt", "b")
+		mountB := serviceDirectoryMount(ctx, t, c, srv, sourceB, "/work")
+		bootB := serviceDirectoryMountBootID(t, serviceDirectoryMountState(t, c, srv))
+		require.Equal(t, bootA, bootB)
+		serviceDirectoryMountWrite(t, c, srv, "from-b.txt", "b")
+		snapB, err := serviceDirectoryMountDirectory(ctx, t, c, mountB.ID, false)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"from-b.txt", "input-b.txt"}, snapB.Entries)
+		require.NotContains(t, snapB.Entries, "from-a.txt")
+	})
+
+	t.Run("repeated snapshots are immutable and keep mounted", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		srv := serviceDirectoryMountDaemon(c)
+
+		source := c.Directory().WithNewFile("base.txt", "base")
+		mount := serviceDirectoryMount(ctx, t, c, srv, source, "/work")
+		serviceDirectoryMountWrite(t, c, srv, "one.txt", "one")
+
+		first, err := serviceDirectoryMountDirectory(ctx, t, c, mount.ID, true)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"base.txt", "one.txt"}, first.Entries)
+
+		serviceDirectoryMountWrite(t, c, srv, "two.txt", "two")
+		second, err := serviceDirectoryMountDirectory(ctx, t, c, mount.ID, true)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"base.txt", "one.txt", "two.txt"}, second.Entries)
+
+		firstEntries, err := serviceDirectoryMountDirectoryEntries(ctx, t, c, first.ID)
+		require.NoError(t, err)
+		require.ElementsMatch(t, first.Entries, firstEntries)
+		require.NotContains(t, firstEntries, "two.txt")
+
+		serviceDirectoryMountWrite(t, c, srv, "after-second.txt", "after")
+		changes, err := serviceDirectoryMountChanges(ctx, t, c, mount.ID)
+		require.NoError(t, err)
+		require.Contains(t, changes.AddedPaths, "after-second.txt")
+		require.Contains(t, changes.AddedPaths, "one.txt")
+		require.Contains(t, changes.AddedPaths, "two.txt")
+	})
+
+	t.Run("closed snapshot is reusable by downstream selectors", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		srv := serviceDirectoryMountDaemon(c)
+
+		source := c.Directory().
+			WithNewFile(".taskhero-agent/run.json", "run").
+			WithNewFile("base.txt", "base")
+		mount := serviceDirectoryMount(ctx, t, c, srv, source, "/work")
+		serviceDirectoryMountWrite(t, c, srv, "from-service.txt", "service")
+
+		first, err := serviceDirectoryMountDirectory(ctx, t, c, mount.ID, false)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{".taskhero-agent/", "base.txt", "from-service.txt"}, first.Entries)
+
+		exists, err := serviceDirectoryMountDirectoryExists(ctx, t, c, mount.ID, false, ".taskhero-agent/run.json")
+		require.NoError(t, err)
+		require.True(t, exists)
+
+		again, err := serviceDirectoryMountDirectory(ctx, t, c, mount.ID, false)
+		require.NoError(t, err)
+		require.Equal(t, first.ID, again.ID)
+		require.ElementsMatch(t, first.Entries, again.Entries)
+
+		_, err = serviceDirectoryMountDirectoryRaw(ctx, t, c, mount.ID, true)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "closed")
+	})
+
+	t.Run("same path conflict", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		srv := serviceDirectoryMountDaemon(c)
+
+		sourceA := c.Directory().WithNewFile("a.txt", "a")
+		_ = serviceDirectoryMount(ctx, t, c, srv, sourceA, "/work")
+
+		sourceB := c.Directory().WithNewFile("b.txt", "b")
+		_, err := serviceDirectoryMountRaw(ctx, t, c, srv, sourceB, "/work")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "already mounted")
+	})
+
+	t.Run("unmount closes handle and releases path", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		srv := serviceDirectoryMountDaemon(c)
+
+		sourceA := c.Directory().WithNewFile("input-a.txt", "a")
+		mountA := serviceDirectoryMount(ctx, t, c, srv, sourceA, "/work")
+		require.Contains(t, serviceDirectoryMountHTTPEntries(t, c, srv), "input-a.txt")
+
+		err := serviceDirectoryMountUnmount(ctx, t, c, mountA.ID)
+		require.NoError(t, err)
+
+		_, err = serviceDirectoryMountDirectoryRaw(ctx, t, c, mountA.ID, true)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "closed")
+
+		sourceB := c.Directory().WithNewFile("input-b.txt", "b")
+		mountB := serviceDirectoryMount(ctx, t, c, srv, sourceB, "/work")
+		serviceDirectoryMountWrite(t, c, srv, "from-b.txt", "b")
+		snapB, err := serviceDirectoryMountDirectory(ctx, t, c, mountB.ID, false)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"from-b.txt", "input-b.txt"}, snapB.Entries)
+	})
+}
+
 func (ServiceSuite) TestDirectoryTimestamp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1231,6 +1351,368 @@ func (ServiceSuite) TestDirectoryTimestamp(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stdout, "1991-06-03")
+}
+
+type serviceDirectoryMountHandle struct {
+	ID   dagger.ID
+	Path string
+}
+
+type serviceDirectoryMountSnapshot struct {
+	ID      dagger.ID
+	Entries []string
+}
+
+type serviceDirectoryMountChangesResult struct {
+	AddedPaths []string
+}
+
+const serviceDirectoryMountServer = `
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+import os
+import uuid
+
+ROOT = "/work"
+BOOT_ID = str(uuid.uuid4())
+REQUESTS = 0
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+    def respond(self, body, status=200):
+        data = body.encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def safe_path(self, name):
+        name = name.lstrip("/")
+        full = os.path.normpath(os.path.join(ROOT, name))
+        if full != ROOT and not full.startswith(ROOT + os.sep):
+            raise ValueError("path escapes work dir")
+        return full
+
+    def entries(self):
+        if not os.path.isdir(ROOT):
+            return ["<missing>"]
+        out = []
+        for dirpath, dirnames, filenames in os.walk(ROOT):
+            rel = os.path.relpath(dirpath, ROOT)
+            prefix = "" if rel == "." else rel + "/"
+            for dirname in dirnames:
+                out.append(prefix + dirname + "/")
+            for filename in filenames:
+                out.append(prefix + filename)
+        return sorted(out)
+
+    def do_GET(self):
+        global REQUESTS
+        REQUESTS += 1
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        try:
+            if parsed.path == "/state":
+                self.respond(f"boot={BOOT_ID}\nrequests={REQUESTS}\n")
+                return
+            if parsed.path == "/entries":
+                entries = self.entries()
+                self.respond("\n".join(entries) + ("\n" if entries else ""))
+                return
+            if parsed.path == "/write":
+                full = self.safe_path(params.get("name", ["out.txt"])[0])
+                os.makedirs(os.path.dirname(full), exist_ok=True)
+                with open(full, "w") as f:
+                    f.write(params.get("content", [""])[0])
+                self.respond("ok\n")
+                return
+            self.respond("not found\n", 404)
+        except Exception as exc:
+            self.respond(str(exc) + "\n", 500)
+
+ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+`
+
+func serviceDirectoryMountDaemon(c *dagger.Client) *dagger.Service {
+	return c.Container().
+		From("python:3-alpine").
+		WithNewFile("/server.py", serviceDirectoryMountServer).
+		WithExposedPort(8080).
+		WithDefaultArgs([]string{"python3", "/server.py"}).
+		AsService()
+}
+
+func serviceDirectoryMount(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	srv *dagger.Service,
+	source *dagger.Directory,
+	path string,
+) serviceDirectoryMountHandle {
+	t.Helper()
+	mount, err := serviceDirectoryMountRaw(ctx, t, c, srv, source, path)
+	require.NoError(t, err)
+	require.Equal(t, path, mount.Path)
+	return mount
+}
+
+func serviceDirectoryMountRaw(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	srv *dagger.Service,
+	source *dagger.Directory,
+	path string,
+) (serviceDirectoryMountHandle, error) {
+	t.Helper()
+	serviceID, err := srv.ID(ctx)
+	if err != nil {
+		return serviceDirectoryMountHandle{}, err
+	}
+	sourceID, err := source.ID(ctx)
+	if err != nil {
+		return serviceDirectoryMountHandle{}, err
+	}
+	res, err := testutil.QueryWithClient[struct {
+		Service struct {
+			MountDirectory serviceDirectoryMountHandle `json:"mountDirectory"`
+		} `json:"service"`
+	}](c, t, `query MountServiceDirectory($service: ID!, $source: ID!, $path: String!) {
+		service: node(id: $service) {
+			... on Service {
+				mountDirectory(path: $path, source: $source) {
+					id
+					path
+					sync
+				}
+			}
+		}
+	}`, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"service": serviceID,
+			"source":  sourceID,
+			"path":    path,
+		},
+	})
+	if err != nil {
+		return serviceDirectoryMountHandle{}, err
+	}
+	return res.Service.MountDirectory, nil
+}
+
+func serviceDirectoryMountDirectory(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	mountID dagger.ID,
+	keepMounted bool,
+) (serviceDirectoryMountSnapshot, error) {
+	t.Helper()
+	snapshot, err := serviceDirectoryMountDirectoryRaw(ctx, t, c, mountID, keepMounted)
+	if err != nil {
+		return serviceDirectoryMountSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func serviceDirectoryMountDirectoryRaw(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	mountID dagger.ID,
+	keepMounted bool,
+) (serviceDirectoryMountSnapshot, error) {
+	t.Helper()
+	_ = ctx
+	res, err := testutil.QueryWithClient[struct {
+		Mount struct {
+			Directory serviceDirectoryMountSnapshot
+		} `json:"mount"`
+	}](c, t, `query ServiceMountDirectory($mount: ID!, $keepMounted: Boolean!) {
+		mount: node(id: $mount) {
+			... on ServiceDirectoryMount {
+				directory(keepMounted: $keepMounted) {
+					id
+					entries
+				}
+			}
+		}
+	}`, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"mount":       mountID,
+			"keepMounted": keepMounted,
+		},
+	})
+	if err != nil {
+		return serviceDirectoryMountSnapshot{}, err
+	}
+	return res.Mount.Directory, nil
+}
+
+func serviceDirectoryMountDirectoryEntries(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	directoryID dagger.ID,
+) ([]string, error) {
+	t.Helper()
+	_ = ctx
+	res, err := testutil.QueryWithClient[struct {
+		Directory struct {
+			Entries []string
+		} `json:"directory"`
+	}](c, t, `query ServiceMountDirectoryEntries($directory: ID!) {
+		directory: node(id: $directory) {
+			... on Directory {
+				entries
+			}
+		}
+	}`, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"directory": directoryID,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.Directory.Entries, nil
+}
+
+func serviceDirectoryMountDirectoryExists(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	mountID dagger.ID,
+	keepMounted bool,
+	path string,
+) (bool, error) {
+	t.Helper()
+	_ = ctx
+	res, err := testutil.QueryWithClient[struct {
+		Mount struct {
+			Directory struct {
+				Exists bool
+			}
+		} `json:"mount"`
+	}](c, t, `query ServiceMountDirectoryExists($mount: ID!, $keepMounted: Boolean!, $path: String!) {
+		mount: node(id: $mount) {
+			... on ServiceDirectoryMount {
+				directory(keepMounted: $keepMounted) {
+					exists(path: $path)
+				}
+			}
+		}
+	}`, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"mount":       mountID,
+			"keepMounted": keepMounted,
+			"path":        path,
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+	return res.Mount.Directory.Exists, nil
+}
+
+func serviceDirectoryMountChanges(
+	ctx context.Context,
+	t *testctx.T,
+	c *dagger.Client,
+	mountID dagger.ID,
+) (serviceDirectoryMountChangesResult, error) {
+	t.Helper()
+	_ = ctx
+	res, err := testutil.QueryWithClient[struct {
+		Mount struct {
+			Changes serviceDirectoryMountChangesResult
+		} `json:"mount"`
+	}](c, t, `query ServiceMountChanges($mount: ID!) {
+		mount: node(id: $mount) {
+			... on ServiceDirectoryMount {
+				changes {
+					addedPaths
+				}
+			}
+		}
+	}`, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"mount": mountID,
+		},
+	})
+	if err != nil {
+		return serviceDirectoryMountChangesResult{}, err
+	}
+	return res.Mount.Changes, nil
+}
+
+func serviceDirectoryMountUnmount(ctx context.Context, t *testctx.T, c *dagger.Client, mountID dagger.ID) error {
+	t.Helper()
+	_ = ctx
+	_, err := testutil.QueryWithClient[struct {
+		Mount struct {
+			Unmount struct {
+				ID dagger.ID
+			}
+		} `json:"mount"`
+	}](c, t, `query ServiceMountUnmount($mount: ID!) {
+		mount: node(id: $mount) {
+			... on ServiceDirectoryMount {
+				unmount {
+					id
+				}
+			}
+		}
+	}`, &testutil.QueryOptions{
+		Variables: map[string]any{
+			"mount": mountID,
+		},
+	})
+	return err
+}
+
+func serviceDirectoryMountState(t *testctx.T, c *dagger.Client, srv *dagger.Service) string {
+	t.Helper()
+	return httpQuery(t, c, srv, serviceDirectoryMountHTTPURL("http://www:8080/state"))
+}
+
+func serviceDirectoryMountBootID(t *testctx.T, state string) string {
+	t.Helper()
+	for _, line := range strings.Split(state, "\n") {
+		boot, ok := strings.CutPrefix(line, "boot=")
+		if ok {
+			return boot
+		}
+	}
+	require.FailNow(t, "state response did not include boot ID", state)
+	return ""
+}
+
+func serviceDirectoryMountWrite(t *testctx.T, c *dagger.Client, srv *dagger.Service, name, content string) {
+	t.Helper()
+	require.Equal(t, "ok\n", httpQuery(t, c, srv,
+		serviceDirectoryMountHTTPURL("http://www:8080/write?name="+url.QueryEscape(name)+"&content="+url.QueryEscape(content))))
+}
+
+func serviceDirectoryMountHTTPEntries(t *testctx.T, c *dagger.Client, srv *dagger.Service) []string {
+	t.Helper()
+	out := strings.TrimSpace(httpQuery(t, c, srv, serviceDirectoryMountHTTPURL("http://www:8080/entries")))
+	if out == "" {
+		return nil
+	}
+	return strings.Split(out, "\n")
+}
+
+func serviceDirectoryMountHTTPURL(rawURL string) string {
+	separator := "?"
+	if strings.Contains(rawURL, "?") {
+		separator = "&"
+	}
+	return rawURL + separator + "_cache_buster=" + url.QueryEscape(identity.NewID())
 }
 
 func (ServiceSuite) TestWithDirectoryFileServices(ctx context.Context, t *testctx.T) {

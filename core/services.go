@@ -100,6 +100,10 @@ type RunningService struct {
 
 	workspaceMu sync.Mutex
 
+	mountsMu       sync.Mutex
+	mountsByID     map[string]*runningServiceDirectoryMount
+	mountIDsByPath map[string]string
+
 	dependencyExitPropagationMu         sync.Mutex
 	dependencyExitPropagationSuppressed int
 	dependencyExitPropagationChanged    chan struct{}
@@ -827,7 +831,8 @@ func (svc *RunningService) ReleaseTrackedRefs(ctx context.Context) error {
 func (svc *RunningService) releaseTrackedRefsOnce(ctx context.Context) error {
 	var rerr error
 	svc.releaseOnce.Do(func() {
-		rerr = svc.ReleaseTrackedRefs(context.WithoutCancel(ctx))
+		rerr = stderrors.Join(rerr, svc.releaseDirectoryMounts(context.WithoutCancel(ctx)))
+		rerr = stderrors.Join(rerr, svc.ReleaseTrackedRefs(context.WithoutCancel(ctx)))
 	})
 	return rerr
 }

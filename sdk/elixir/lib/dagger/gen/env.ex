@@ -1186,6 +1186,46 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type ServiceDirectoryMount in the environment
+  """
+  @spec with_service_directory_mount_input(
+          t(),
+          String.t(),
+          Dagger.ServiceDirectoryMount.t(),
+          String.t()
+        ) :: Dagger.Env.t()
+  def with_service_directory_mount_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withServiceDirectoryMountInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired ServiceDirectoryMount output to be assigned in the environment
+  """
+  @spec with_service_directory_mount_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_service_directory_mount_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withServiceDirectoryMountOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type Service in the environment
   """
   @spec with_service_input(t(), String.t(), Dagger.Service.t(), String.t()) :: Dagger.Env.t()

@@ -173,6 +173,9 @@ type Binding implements Node {
   """Retrieve the binding value, as type Service"""
   asService: Service!
 
+  """Retrieve the binding value, as type ServiceDirectoryMount"""
+  asServiceDirectoryMount: ServiceDirectoryMount!
+
   """Retrieve the binding value, as type Socket"""
   asSocket: Socket!
 
@@ -3177,6 +3180,31 @@ type Env implements Node {
     description: String!
   ): Env!
 
+  """
+  Create or update a binding of type ServiceDirectoryMount in the environment
+  """
+  withServiceDirectoryMountInput(
+    """The name of the binding"""
+    name: String!
+
+    """The ServiceDirectoryMount value to assign to the binding"""
+    value: ID! @expectedType(name: "ServiceDirectoryMount")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired ServiceDirectoryMount output to be assigned in the environment
+  """
+  withServiceDirectoryMountOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Service in the environment"""
   withServiceInput(
     """The name of the binding"""
@@ -5581,6 +5609,27 @@ type Service implements Node & Syncer {
   """A unique identifier for this Service."""
   id: ID!
 
+  """
+  Mount a Directory snapshot into this running service and return a handle that
+  can snapshot changes made through that mount.
+
+  The service is started if it is not already running. The mount is exclusive by
+  path: another mount at the same path fails until this mount is snapshotted
+  with keepMounted=false or unmounted.
+  """
+  mountDirectory(
+    """Path where the directory is mounted in the service container."""
+    path: String!
+
+    """Directory snapshot to mount."""
+    source: ID! @expectedType(name: "Directory")
+
+    """
+    Replace "${VAR}" or "$VAR" in the path according to the current environment variables defined in the service container.
+    """
+    expand: Boolean = false
+  ): ServiceDirectoryMount!
+
   """Retrieves the list of ports provided by the service."""
   ports: [Port!]!
 
@@ -5624,6 +5673,47 @@ type Service implements Node & Syncer {
     """The hostname to use."""
     hostname: String!
   ): Service!
+}
+
+"""A directory mounted into a running service."""
+type ServiceDirectoryMount implements Node & Syncer {
+  """
+  Return changes from the original source, or from an explicit base Directory.
+  """
+  changes(
+    """
+    Base directory snapshot to compare against. If unset, the mount's original source is used.
+    """
+    from: ID @expectedType(name: "Directory")
+  ): Changeset!
+
+  """
+  Snapshot the current mount contents as an immutable Directory.
+
+  By default, Dagger detaches the old mutable mount and remounts a fresh mutable
+  copy of the snapshot so the service can keep using the same path.
+  """
+  directory(
+    """
+    Keep the path mounted after snapshotting by remounting a fresh mutable copy of the snapshot.
+    """
+    keepMounted: Boolean = true
+  ): Directory!
+
+  """A unique identifier for this ServiceDirectoryMount."""
+  id: ID!
+
+  """Path where this directory is mounted in the service container."""
+  path: String!
+
+  """The service this mount belongs to."""
+  service: Service!
+
+  """Force the runtime mount side effect."""
+  sync: ID! @expectedType(name: "ServiceDirectoryMount")
+
+  """Detach the mount from the service and release its mutable backing ref."""
+  unmount: Service!
 }
 
 """A Unix or TCP/IP socket that can be mounted into a container."""

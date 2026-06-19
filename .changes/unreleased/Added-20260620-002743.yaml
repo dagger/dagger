@@ -1,0 +1,6 @@
+kind: Added
+body: |
+  Add `Service.mountDirectory` and `ServiceDirectoryMount` so a stable running service can mutate a mounted `Directory` and snapshot the result back without changing the service identity.
+time: 2026-06-20T00:27:43Z
+custom:
+  Author: dagger-codex[bot]

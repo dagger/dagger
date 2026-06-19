@@ -2401,6 +2401,13 @@ export type ServiceEndpointOpts = {
   scheme?: string
 }
 
+export type ServiceMountDirectoryOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" in the path according to the current environment variables defined in the service container.
+   */
+  expand?: boolean
+}
+
 export type ServiceStopOpts = {
   /**
    * Immediately kill the service without waiting for a graceful exit
@@ -2424,6 +2431,20 @@ export type ServiceUpOpts = {
    * Bind each tunnel port to a random port on the host.
    */
   random?: boolean
+}
+
+export type ServiceDirectoryMountChangesOpts = {
+  /**
+   * Base directory snapshot to compare against. If unset, the mount's original source is used.
+   */
+  from?: Directory
+}
+
+export type ServiceDirectoryMountDirectoryOpts = {
+  /**
+   * Keep the path mounted after snapshotting by remounting a fresh mutable copy of the snapshot.
+   */
+  keepMounted?: boolean
 }
 
 export type TypeDefWithEnumOpts = {
@@ -3289,6 +3310,14 @@ export class Binding extends BaseClient {
   asService = (): Service => {
     const ctx = this._ctx.select("asService")
     return new Service(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type ServiceDirectoryMount
+   */
+  asServiceDirectoryMount = (): ServiceDirectoryMount => {
+    const ctx = this._ctx.select("asServiceDirectoryMount")
+    return new ServiceDirectoryMount(ctx)
   }
 
   /**
@@ -8061,6 +8090,41 @@ export class Env extends BaseClient {
    */
   withSecretOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withSecretOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type ServiceDirectoryMount in the environment
+   * @param name The name of the binding
+   * @param value The ServiceDirectoryMount value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withServiceDirectoryMountInput = (
+    name: string,
+    value: ServiceDirectoryMount,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withServiceDirectoryMountInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired ServiceDirectoryMount output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withServiceDirectoryMountOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withServiceDirectoryMountOutput", {
+      name,
+      description,
+    })
     return new Env(ctx)
   }
 
@@ -13978,6 +14042,23 @@ export class Service extends BaseClient {
   }
 
   /**
+   * Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.
+   *
+   * The service is started if it is not already running. The mount is exclusive by path: another mount at the same path fails until this mount is snapshotted with keepMounted=false or unmounted.
+   * @param path Path where the directory is mounted in the service container.
+   * @param source Directory snapshot to mount.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the path according to the current environment variables defined in the service container.
+   */
+  mountDirectory = (
+    path: string,
+    source: Directory,
+    opts?: ServiceMountDirectoryOpts,
+  ): ServiceDirectoryMount => {
+    const ctx = this._ctx.select("mountDirectory", { path, source, ...opts })
+    return new ServiceDirectoryMount(ctx)
+  }
+
+  /**
    * Retrieves the list of ports provided by the service.
    */
   ports = async (): Promise<Port[]> => {
@@ -14065,6 +14146,105 @@ export class Service extends BaseClient {
    */
   with = (arg: (param: Service) => Service) => {
     return arg(this)
+  }
+}
+
+/**
+ * A directory mounted into a running service.
+ */
+export class ServiceDirectoryMount extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _path?: string = undefined
+  private readonly _sync?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _path?: string, _sync?: ID) {
+    super(ctx)
+
+    this._id = _id
+    this._path = _path
+    this._sync = _sync
+  }
+
+  /**
+   * A unique identifier for this ServiceDirectoryMount.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return changes from the original source, or from an explicit base Directory.
+   * @param opts.from Base directory snapshot to compare against. If unset, the mount's original source is used.
+   */
+  changes = (opts?: ServiceDirectoryMountChangesOpts): Changeset => {
+    const ctx = this._ctx.select("changes", { ...opts })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Snapshot the current mount contents as an immutable Directory.
+   *
+   * By default, Dagger detaches the old mutable mount and remounts a fresh mutable copy of the snapshot so the service can keep using the same path.
+   * @param opts.keepMounted Keep the path mounted after snapshotting by remounting a fresh mutable copy of the snapshot.
+   */
+  directory = (opts?: ServiceDirectoryMountDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Path where this directory is mounted in the service container.
+   */
+  path = async (): Promise<string> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The service this mount belongs to.
+   */
+  service = (): Service => {
+    const ctx = this._ctx.select("service")
+    return new Service(ctx)
+  }
+
+  /**
+   * Force the runtime mount side effect.
+   */
+  sync = async (): Promise<ServiceDirectoryMount> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return new ServiceDirectoryMount(
+      ctx.copy().selectNode(response, "ServiceDirectoryMount"),
+    )
+  }
+
+  /**
+   * Detach the mount from the service and release its mutable backing ref.
+   */
+  unmount = (): Service => {
+    const ctx = this._ctx.select("unmount")
+    return new Service(ctx)
   }
 }
 
