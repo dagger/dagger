@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type Version
-func (r *Binding) AsVersion() *Version { // version (../../../../version/main.go:58:6)
+func (r *Binding) AsVersion() *Version { // version (../../../../version/main.go:57:6)
 	q := r.query.Select("asVersion")
 
 	return &Version{
@@ -19,7 +19,7 @@ func (r *Binding) AsVersion() *Version { // version (../../../../version/main.go
 }
 
 // Create or update a binding of type Version in the environment
-func (r *Env) WithVersionInput(name string, value *Version, description string) *Env { // version (../../../../version/main.go:58:6)
+func (r *Env) WithVersionInput(name string, value *Version, description string) *Env { // version (../../../../version/main.go:57:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withVersionInput")
 	q = q.Arg("name", name)
@@ -32,7 +32,7 @@ func (r *Env) WithVersionInput(name string, value *Version, description string) 
 }
 
 // Declare a desired Version output to be assigned in the environment
-func (r *Env) WithVersionOutput(name string, description string) *Env { // version (../../../../version/main.go:58:6)
+func (r *Env) WithVersionOutput(name string, description string) *Env { // version (../../../../version/main.go:57:6)
 	q := r.query.Select("withVersionOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -47,7 +47,7 @@ type VersionOpts struct {
 	//
 	// A git repository containing the source code of the artifact to be versioned.
 	//
-	GitParent *Directory // version (../../../../version/main.go:25:2)
+	GitParent *Directory // version (../../../../version/main.go:24:2)
 	//
 	// A directory containing all the inputs of the artifact to be versioned.
 	// An input is any file that changes the artifact if it changes.
@@ -55,18 +55,18 @@ type VersionOpts struct {
 	// - To avoid false positives, only include actual inputs
 	// - To avoid false negatives, include *all* inputs
 	//
-	Inputs *Directory // version (../../../../version/main.go:35:2)
+	Inputs *Directory // version (../../../../version/main.go:34:2)
 	//
 	// File containing the next release version (e.g. .changes/.next)
 	//
-	NextVersionFile *File // version (../../../../version/main.go:40:2)
+	NextVersionFile *File // version (../../../../version/main.go:39:2)
 }
 
 // Shared logic for managing Dagger versions
 //
-// In general, it attempts to follow go's psedudoversioning:
-// https://go.dev/doc/modules/version-numbers
-func (r *Query) Version(opts ...VersionOpts) *Version { // version (../../../../version/main.go:18:1)
+// Dev builds use semver-compatible prereleases:
+// v<major>.<minor>.<patch>-dev-<commit-or-digest>
+func (r *Query) Version(opts ...VersionOpts) *Version { // version (../../../../version/main.go:17:1)
 	q := r.query.Select("version")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gitParent` optional argument
@@ -88,7 +88,7 @@ func (r *Query) Version(opts ...VersionOpts) *Version { // version (../../../../
 	}
 }
 
-type Version struct { // version (../../../../version/main.go:58:6)
+type Version struct { // version (../../../../version/main.go:57:6)
 	query *querybuilder.Selection
 
 	currentTag         *string
@@ -105,7 +105,7 @@ func (r *Version) WithGraphQLQuery(q *querybuilder.Selection) *Version {
 	}
 }
 
-func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (../../../../version/main.go:204:1)
+func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (../../../../version/main.go:201:1)
 	if r.currentTag != nil {
 		return *r.currentTag, nil
 	}
@@ -117,7 +117,7 @@ func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (
 	return response, q.Execute(ctx)
 }
 
-func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../../../version/main.go:182:1)
+func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../../../version/main.go:177:1)
 	if r.dirty != nil {
 		return *r.dirty, nil
 	}
@@ -129,7 +129,7 @@ func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../.
 	return response, q.Execute(ctx)
 }
 
-func (r *Version) GitDir() *Directory { // version (../../../../version/main.go:61:2)
+func (r *Version) GitDir() *Directory { // version (../../../../version/main.go:60:2)
 	q := r.query.Select("gitDir")
 
 	return &Directory{
@@ -187,7 +187,7 @@ func (r *Version) UnmarshalJSON(bs []byte) error {
 }
 
 // Return the tag to use when auto-downloading the engine image from the CLI
-func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (../../../../version/main.go:156:1)
+func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (../../../../version/main.go:151:1)
 	if r.imageTag != nil {
 		return *r.imageTag, nil
 	}
@@ -200,7 +200,7 @@ func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (..
 }
 
 // NextReleaseVersion returns the next release version from .changes/.next
-func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../../../version/main.go:275:1)
+func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../../../version/main.go:240:1)
 	if r.nextReleaseVersion != nil {
 		return *r.nextReleaseVersion, nil
 	}
@@ -213,7 +213,7 @@ func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // v
 }
 
 // Generate a version string from the current context
-func (r *Version) Version(ctx context.Context) (string, error) { // version (../../../../version/main.go:72:1)
+func (r *Version) Version(ctx context.Context) (string, error) { // version (../../../../version/main.go:71:1)
 	if r.version != nil {
 		return *r.version, nil
 	}

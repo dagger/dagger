@@ -1,14 +1,13 @@
 // Shared logic for managing Dagger versions
 //
-// In general, it attempts to follow go's psedudoversioning:
-// https://go.dev/doc/modules/version-numbers
+// Dev builds use semver-compatible prereleases:
+// v<major>.<minor>.<patch>-dev-<commit-or-digest>
 package main
 
 import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/dagger/dagger/version/internal/dagger"
 	"golang.org/x/mod/semver"
@@ -81,7 +80,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 
 	if dirty {
 		// this is a dirty version - git state is dirty
-		// (v<major>.<minor>.<patch>-<timestamp>-dev-<inputdigest>)
+		// (v<major>.<minor>.<patch>-dev-<inputdigest>)
 		next, err := v.NextReleaseVersion(ctx)
 		if err != nil {
 			return "", err
@@ -94,7 +93,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("invalid digest: %s", rawDigest)
 		}
-		return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Now()), digest[:12]), nil
+		return fmt.Sprintf("%s-dev-%s", next, digest[:12]), nil
 	}
 
 	if tag, err := v.CurrentTag(ctx); err != nil {
@@ -106,7 +105,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	}
 
 	// this is a clean, untagged version - git state is clean, but no tag
-	// (v<major>.<minor>.<patch>-<timestamp>-dev-<commit>)
+	// (v<major>.<minor>.<patch>-dev-<commit>)
 	next, err := v.NextReleaseVersion(ctx)
 	if err != nil {
 		return "", err
@@ -116,11 +115,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	commitDate, err := refTimestamp(ctx, head)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(commitDate), commit[:12]), nil
+	return fmt.Sprintf("%s-dev-%s", next, commit[:12]), nil
 }
 
 func (v Version) fallbackVersion(ctx context.Context) (string, error) {
@@ -148,7 +143,7 @@ func (v Version) fallbackVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("invalid digest: %s", rawDigest)
 	}
 
-	return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Now()), digest[:12]), nil
+	return fmt.Sprintf("%s-dev-%s", next, digest[:12]), nil
 }
 
 // Return the tag to use when auto-downloading the engine image from the CLI
@@ -184,7 +179,9 @@ func (v Version) Dirty(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	committed := v.Git.Head().Tree()
+	committed := v.Git.Head().Tree(dagger.GitRefTreeOpts{
+		IncludeTags: true,
+	})
 
 	// Overlay local inputs onto committed tree, then diff.
 	// This detects additions and modifications but not deletions.
@@ -210,65 +207,33 @@ func (v Version) CurrentTag(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	tags, err := v.tagsAtCommit(ctx, commit)
+	return v.semverTagAtCommit(ctx, commit)
+}
+
+func (v Version) semverTagAtCommit(ctx context.Context, commit string) (string, error) {
+	repo := v.Git.Head().Tree(dagger.GitRefTreeOpts{
+		IncludeTags: true,
+	}).AsGit()
+	tags, err := repo.Tags(ctx, dagger.GitRepositoryTagsOpts{
+		Patterns: []string{"v*"},
+	})
 	if err != nil {
 		return "", err
 	}
+
 	for _, tag := range tags {
-		if semver.IsValid(tag) {
+		if !semver.IsValid(tag) {
+			continue
+		}
+		tagCommit, err := repo.Tag(tag).Commit(ctx)
+		if err != nil {
+			return "", fmt.Errorf("resolve tag %q: %w", tag, err)
+		}
+		if tagCommit == commit {
 			return tag, nil
 		}
 	}
 	return "", nil
-}
-
-func (v Version) tagsAtCommit(ctx context.Context, commit string) ([]string, error) {
-	// NOTE: this uses the git dir directly rather than the git repo
-	// since there's no dagger API to do this operation
-	out, err := dag.Container().
-		From("alpine/git:latest").
-		WithWorkdir("/src").
-		WithMountedDirectory(".git", v.GitDir).
-		WithExec([]string{"git", "config", "--add", "url.https://github.com/.insteadOf", "git@github.com:"}).
-		WithExec([]string{"git", "config", "--add", "url.https://github.com/.insteadOf", "ssh://git@github.com/"}).
-		// Remote tags are mutable, so avoid reusing a stale pre-tag fetch layer.
-		WithEnvVariable("DAGGER_VERSION_CACHE_BUSTER", time.Now().UTC().Format(time.RFC3339Nano)).
-		WithExec([]string{"git", "fetch", "--tags"}).
-		WithExec([]string{"git", "tag", "-l", "--points-at=" + commit}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out = strings.TrimSpace(out)
-	if out == "" {
-		return nil, nil
-	}
-	return strings.Split(out, "\n"), nil
-}
-
-func refTimestamp(ctx context.Context, head *dagger.GitRef) (time.Time, error) {
-	checkout := head.Tree()
-	status, err := dag.Container().
-		From("alpine/git:latest").
-		WithWorkdir("/src").
-		WithMountedDirectory(".", checkout).
-		WithExec([]string{"git", "log", "-1", "--format=%cI"}).
-		Stdout(ctx)
-	if err != nil {
-		return time.Time{}, err
-	}
-	status = strings.TrimSpace(status)
-	t, err := time.Parse(time.RFC3339, status)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return t, nil
-}
-
-func pseudoversionTimestamp(t time.Time) string {
-	// go time formatting is bizarre - this translates to "yyyymmddhhmmss"
-	// inspired from: https://cs.opensource.google/go/x/mod/+/refs/tags/v0.22.0:module/pseudo.go
-	return t.UTC().Format("20060102150405")
 }
 
 // NextReleaseVersion returns the next release version from .changes/.next
