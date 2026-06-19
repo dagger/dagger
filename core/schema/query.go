@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/containerd/platforms"
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -14,7 +13,6 @@ import (
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	buildversion "github.com/dagger/dagger/internal/version"
 )
 
 type querySchema struct {
@@ -123,11 +121,7 @@ func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pip
 }
 
 func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (string, error) {
-	out := fmt.Sprintf("%s %s", engine.Version, platforms.DefaultString())
-	if commitState := buildversion.CommitState(); commitState != "" {
-		out += " " + commitState
-	}
-	return out, nil
+	return engine.Version, nil
 }
 
 func (s *querySchema) remoteGitMirror(ctx context.Context, parent dagql.ObjectResult[*core.Query], args remoteGitMirrorArgs) (dagql.Result[*core.RemoteGitMirror], error) {

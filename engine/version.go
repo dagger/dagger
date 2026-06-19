@@ -17,11 +17,7 @@ var (
 	Version string
 
 	// Tag is the OCI image tag this engine binary was published under.
-	//
-	// If VCS info is available (native go build, or P2 sandbox injection),
-	// Tag is the commit hash — matching how the Dagger release pipeline
-	// tags engine images for dev/main builds. Otherwise Tag == Version,
-	// which matches the image tag of an official release.
+	// It defaults to Version and can be overridden by build or test env.
 	//
 	// DAGGER_TAG overrides at init for tests.
 	Tag string
@@ -58,11 +54,7 @@ var (
 
 func init() {
 	Version = "v" + iversion.Version
-	if iversion.Commit != "" {
-		Tag = iversion.Commit
-	} else {
-		Tag = Version
-	}
+	Tag = Version
 
 	// The minimum version is greater than our current version this is weird,
 	// and shouldn't generally be intentional - but can happen if we set it to
