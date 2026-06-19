@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -202,7 +203,59 @@ func (s *workspaceSchema) moduleInit(
 		return res, fmt.Errorf("sdk module init: %w", err)
 	}
 
+	// Enforce the ownership split: the SDK's initModule must not touch the
+	// engine-owned config files. Catching it here yields a clear, actionable
+	// error instead of a cryptic "added in both changesets" from the merge
+	// below (or, worse, an SDK silently clobbering config the engine wrote).
+	if err := validateSDKInitChangesetOwnership(ctx, args.SDK, sdkChanges, configRelPath, relPath); err != nil {
+		return res, err
+	}
+
 	return mergeWorkspaceInitChangeset(ctx, engineChanges, sdkChanges)
+}
+
+// validateSDKInitChangesetOwnership enforces the CLI-1.0 ownership split: the
+// engine owns the workspace config (dagger.toml) and the module config
+// (dagger-module.toml); the SDK's initModule owns every other file in the
+// module directory. An SDK that writes an engine-owned config would otherwise
+// collide in the merge as a cryptic "added in both changesets" — or silently
+// overwrite the config the engine just generated — so reject it up front.
+func validateSDKInitChangesetOwnership(
+	ctx context.Context,
+	sdkName string,
+	sdkChanges dagql.ObjectResult[*core.Changeset],
+	workspaceConfigPath string,
+	modulePath string,
+) error {
+	if sdkChanges.Self() == nil {
+		return nil
+	}
+	paths, err := sdkChanges.Self().ComputePaths(ctx)
+	if err != nil {
+		return fmt.Errorf("inspect sdk init changeset: %w", err)
+	}
+
+	engineOwned := map[string]string{
+		filepath.Clean(workspaceConfigPath):                             "workspace config",
+		filepath.Join(modulePath, workspace.ModuleConfigFileName):       "module config",
+		filepath.Join(modulePath, workspace.LegacyModuleConfigFileName): "module config",
+	}
+
+	var touched []string
+	for _, p := range slices.Concat(paths.Added, paths.Modified) {
+		if label, ok := engineOwned[filepath.Clean(p)]; ok {
+			touched = append(touched, fmt.Sprintf("%s (%s)", filepath.Clean(p), label))
+		}
+	}
+	slices.Sort(touched)
+	touched = slices.Compact(touched)
+	if len(touched) > 0 {
+		return fmt.Errorf(
+			"sdk %q initModule must not modify engine-owned file(s): %s",
+			sdkName, strings.Join(touched, ", "),
+		)
+	}
+	return nil
 }
 
 // workspaceModuleInitConfigDiff builds the new module's config file
