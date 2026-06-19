@@ -292,22 +292,44 @@ func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
 	return string(mode), nil
 }
 
-func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
-	// Setup telemetry config
-	telemetryCfg := telemetry.Config{
-		Detect:   true,
+// skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
+// the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_* "Detect"
+// exporters). It is toggled by withEngineSilent for internal plumbing sessions;
+// see engineTelemetryConfig for why.
+var skipSharedTelemetryExporters bool
+
+// engineTelemetryConfig builds the telemetry pipeline for one engine session.
+//
+// Internal plumbing sessions (see skipSharedTelemetryExporters) opt out of the
+// process-wide OTLP exporter singletons — the Dagger Cloud exporters and the
+// OTEL_* "Detect" exporters. Those singletons are sync.Once-cached and get shut
+// down by telemetry.Close(); a pre-command session that wired them up and then
+// tore them down would leave them dead for the real command that runs next in
+// the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
+// telemetry warnings (e.g. the second session opened by `dagger module init`).
+// Such sessions render to a discard frontend and have no reason to export to
+// Cloud, so they simply skip the shared exporters.
+func engineTelemetryConfig(ctx context.Context) telemetry.Config {
+	cfg := telemetry.Config{
+		Detect:   !skipSharedTelemetryExporters,
 		Resource: Resource(ctx),
 
 		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
 		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
 		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
 	}
-	if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
-		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
-		telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
-		telemetryCfg.LiveMetricExporters = append(telemetryCfg.LiveMetricExporters, metrics)
+	if !skipSharedTelemetryExporters {
+		if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
+			cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, spans)
+			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
+			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
+		}
 	}
-	ctx = telemetry.Init(ctx, telemetryCfg)
+	return cfg
+}
+
+func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
+	ctx = telemetry.Init(ctx, engineTelemetryConfig(ctx))
 	// telemetry.Init extracts inherited OTel baggage from the environment.
 	// Re-apply explicit local process settings afterward so a nested Dagger
 	// command's own NO_COLOR/debug request wins over parent baggage.
