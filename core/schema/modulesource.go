@@ -2435,7 +2435,9 @@ func (s *moduleSourceSchema) runCodegen(
 	}
 
 	// load the deps as actual Modules
-	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
+	// Codegen output must not depend on workspace settings, so no global
+	// settings are threaded here.
+	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst, "")
 	if err != nil {
 		return res, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -2643,7 +2645,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to add module source required files: %w", err)
 	}
 
-	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
+	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst, "")
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
@@ -3003,7 +3005,7 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	src dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.File], rerr error) {
-	deps, err := s.loadDependencyModules(ctx, src, src)
+	deps, err := s.loadDependencyModules(ctx, src, src, "")
 	if err != nil {
 		return inst, err
 	}
@@ -3089,6 +3091,14 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 		// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
 		DefaultPathContextSourcePin string `internal:"true" default:""`
+
+		// GlobalSettingsJSON is a JSON-encoded map[string]map[string]any keyed
+		// by canonical module source ref, carrying the workspace's
+		// configuration-only settings. A module whose resolved source matches
+		// a key receives the settings as constructor defaults, and the map is
+		// threaded down into dependency and toolchain loads so it reaches any
+		// depth of the tree.
+		GlobalSettingsJSON string `internal:"true" default:""`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -3168,7 +3178,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.SDKConfig = &core.SDKConfig{}
 	}
 
-	mod.Deps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
+	mod.Deps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc, args.GlobalSettingsJSON)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -3195,6 +3205,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		args.LegacyWorkspaceConfigJSON,
 		fmt.Sprintf("%t", args.LegacyDefaultsFromDotEnv),
 		args.LegacyArgCustomizationsJSON,
+		args.GlobalSettingsJSON,
 	).String()
 
 	// Apply legacy settings that must be set before Install runs.
@@ -3204,13 +3215,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if args.LegacyDefaultPath {
 		mod.LegacyDefaultPath = true
 	}
-	if args.LegacyWorkspaceConfigJSON != "" {
-		var wsConfig map[string]any
-		if err := json.Unmarshal([]byte(args.LegacyWorkspaceConfigJSON), &wsConfig); err != nil {
-			return inst, fmt.Errorf("decoding legacy workspace config: %w", err)
-		}
-		mod.WorkspaceConfig = wsConfig
-		mod.DefaultsFromDotEnv = args.LegacyDefaultsFromDotEnv
+	if err := applyModuleWorkspaceSettings(mod, originalSrc.Self(), args.LegacyWorkspaceConfigJSON, args.LegacyDefaultsFromDotEnv, args.GlobalSettingsJSON); err != nil {
+		return inst, err
 	}
 
 	// Initialize module based on SDK presence
@@ -3229,7 +3235,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Apply legacy arg customizations and workspace defaults after type defs
 	// are populated (SDK codegen has run) but before the result is cached.
-	if args.LegacyWorkspaceConfigJSON != "" {
+	if mod.WorkspaceConfig != nil {
 		if err := mod.ApplyWorkspaceDefaultsToTypeDefs(ctx, dag); err != nil {
 			return inst, err
 		}
@@ -3252,6 +3258,28 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	return inst, nil
 }
 
+// applyModuleWorkspaceSettings sets the module's workspace settings from its
+// instance config and any matched configuration-only settings, merged so that
+// explicit args and installed-entry settings win over global ones.
+func applyModuleWorkspaceSettings(mod *core.Module, src *core.ModuleSource, legacyWorkspaceConfigJSON string, legacyDefaultsFromDotEnv bool, globalSettingsJSON string) error {
+	if legacyWorkspaceConfigJSON != "" {
+		var wsConfig map[string]any
+		if err := json.Unmarshal([]byte(legacyWorkspaceConfigJSON), &wsConfig); err != nil {
+			return fmt.Errorf("decoding legacy workspace config: %w", err)
+		}
+		mod.WorkspaceConfig = wsConfig
+		mod.DefaultsFromDotEnv = legacyDefaultsFromDotEnv
+	}
+	globalSettings, err := core.DecodeGlobalSettings(globalSettingsJSON)
+	if err != nil {
+		return err
+	}
+	if matched := core.GlobalSettingsForSource(src, globalSettings); matched != nil {
+		mod.WorkspaceConfig = core.MergeModuleSettings(matched, mod.WorkspaceConfig)
+	}
+	return nil
+}
+
 // load the given module source's dependencies as modules
 // BuildLegacyAsModuleArgs is the single builder for the asModule args salted
 // into AsModuleVariantDigest, so every load path yields one module identity.
@@ -3263,6 +3291,7 @@ func BuildLegacyAsModuleArgs(
 	configDefaults map[string]any,
 	defaultsFromDotEnv bool,
 	argCustomizations []*modules.ModuleConfigArgument,
+	globalSettingsJSON string,
 ) ([]dagql.NamedInput, error) {
 	args := []dagql.NamedInput{}
 	if nameOverride != "" {
@@ -3308,6 +3337,11 @@ func BuildLegacyAsModuleArgs(
 			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
 		})
 	}
+	if globalSettingsJSON != "" {
+		args = append(args, dagql.NamedInput{
+			Name: "globalSettingsJson", Value: dagql.String(globalSettingsJSON),
+		})
+	}
 	return args, nil
 }
 
@@ -3315,6 +3349,7 @@ func (s *moduleSourceSchema) loadDependencyModules(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
 	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
+	globalSettingsJSON string,
 ) (_ *core.SchemaBuilder, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -3328,12 +3363,19 @@ func (s *moduleSourceSchema) loadDependencyModules(
 		return nil, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
+	var depAsModuleArgs []dagql.NamedInput
+	if globalSettingsJSON != "" {
+		depAsModuleArgs = append(depAsModuleArgs, dagql.NamedInput{
+			Name: "globalSettingsJson", Value: dagql.String(globalSettingsJSON),
+		})
+	}
+
 	var eg errgroup.Group
 	depMods := make([]dagql.ObjectResult[*core.Module], len(src.Self().Dependencies))
 	for i, depSrc := range src.Self().Dependencies {
 		eg.Go(func() error {
 			return dag.Select(ctx, depSrc, &depMods[i],
-				dagql.Selector{Field: "asModule"},
+				dagql.Selector{Field: "asModule", Args: depAsModuleArgs},
 			)
 		})
 	}
@@ -3368,6 +3410,7 @@ func (s *moduleSourceSchema) loadDependencyModules(
 				configDefaults,
 				false, // DefaultsFromDotEnv is not set for related modules
 				argCustomizations,
+				globalSettingsJSON,
 			)
 			if err != nil {
 				return fmt.Errorf("build toolchain asModule args: %w", err)

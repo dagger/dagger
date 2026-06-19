@@ -1,0 +1,6 @@
+kind: Added
+body: Configure modules without installing them with configuration-only entries in dagger.toml — a `modules` entry keyed by a module source ref with no `source` field applies its settings to any load of that source, including transitive dependencies and toolchains
+time: 2026-06-11T16:00:00.000000000+02:00
+custom:
+    Author: eunomie
+    PR: "13422"

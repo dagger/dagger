@@ -1244,6 +1244,9 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 			{Ref: "github.com/acme/extra1", Name: "extra1", Entrypoint: true},
 			{Ref: "github.com/acme/extra2", Name: "extra2"},
 		},
+		map[string]map[string]any{
+			"github.com/acme/lib": {"greeting": "hello"},
+		},
 	)
 
 	require.Len(t, loads, 4)
@@ -1257,6 +1260,11 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 	require.Equal(t, "github.com/acme/extra1", loads[2].mod.Ref)
 	require.Equal(t, "github.com/acme/extra2", loads[3].mod.Ref)
 	require.True(t, loads[2].mod.Entrypoint)
+	for _, load := range loads {
+		require.Equal(t, map[string]map[string]any{
+			"github.com/acme/lib": {"greeting": "hello"},
+		}, load.mod.GlobalSettings)
+	}
 }
 
 func TestModuleLoadParallelism(t *testing.T) {
@@ -1465,4 +1473,93 @@ func sessionTestModuleResult(t *testing.T, name string) dagql.ObjectResult[*core
 	)
 	require.NoError(t, err)
 	return res
+}
+
+func TestWorkspaceConfigPendingModulesSkipsConfigOnlyEntries(t *testing.T) {
+	t.Parallel()
+
+	ws := &workspace.Workspace{
+		Root:       "/repo",
+		Cwd:        ".",
+		ConfigFile: workspace.ConfigFileName,
+	}
+	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
+		return filepath.Join("/resolved", relPath)
+	}
+
+	pending := workspaceConfigPendingModules(ws, &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"my-app": {
+				Source:     "./my-app",
+				Entrypoint: true,
+			},
+			"github.com/dagger/dagger/modules/go": {
+				Settings: map[string]any{"version": "1.25"},
+			},
+		},
+	}, resolveLocalRef)
+
+	require.Len(t, pending, 1)
+	require.Equal(t, "my-app", pending[0].Name)
+}
+
+func TestWorkspaceGlobalModuleSettings(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	ws := &workspace.Workspace{
+		Root:       "/repo",
+		Cwd:        ".",
+		ConfigFile: workspace.ConfigFileName,
+	}
+	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
+		return filepath.Join("/repo", relPath)
+	}
+
+	t.Run("canonicalizes keys and resolves local refs", func(t *testing.T) {
+		t.Parallel()
+
+		settings, err := workspaceGlobalModuleSettings(ctx, ws, &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"my-app": {
+					Source:   "./my-app",
+					Settings: map[string]any{"greeting": "hello"},
+				},
+				"https://github.com/dagger/dagger/modules/go@v0.19": {
+					Settings: map[string]any{"version": "1.25"},
+				},
+				"./vendored/go-toolchain": {
+					Settings: map[string]any{"extraPackages": []any{"git"}},
+				},
+			},
+		}, resolveLocalRef)
+		require.NoError(t, err)
+		require.Equal(t, map[string]map[string]any{
+			"github.com/dagger/dagger/modules/go@v0.19": {"version": "1.25"},
+			"/repo/vendored/go-toolchain":               {"extraPackages": []any{"git"}},
+		}, settings)
+	})
+
+	t.Run("returns nothing without configuration-only entries", func(t *testing.T) {
+		t.Parallel()
+
+		settings, err := workspaceGlobalModuleSettings(ctx, ws, &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"my-app": {Source: "./my-app"},
+			},
+		}, resolveLocalRef)
+		require.NoError(t, err)
+		require.Empty(t, settings)
+	})
+
+	t.Run("rejects a bare name without source", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := workspaceGlobalModuleSettings(ctx, ws, &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"go": {Settings: map[string]any{"version": "1.25"}},
+			},
+		}, resolveLocalRef)
+		require.ErrorContains(t, err, `workspace module "go" has no source`)
+	})
 }

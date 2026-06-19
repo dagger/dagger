@@ -124,6 +124,48 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 	return applied, nil
 }
 
+// GlobalModuleSettings validates and collects the configuration-only entries
+// in cfg: entries with no source, keyed by a module source ref, carrying only
+// settings. Such an entry loads nothing; its settings apply to any load of the
+// matching source in the session. Keys are returned as written in dagger.toml;
+// callers canonicalize them before matching.
+func GlobalModuleSettings(cfg *Config) (map[string]map[string]any, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+	var settings map[string]map[string]any
+	for name, entry := range cfg.Modules {
+		if entry.Source != "" {
+			continue
+		}
+		if !isModuleSourceRefKey(name) {
+			return nil, fmt.Errorf("workspace module %q has no source; configuration-only entries must be keyed by a module source ref (git ref or local path)", name)
+		}
+		if entry.Entrypoint || entry.LegacyDefaultPath ||
+			len(entry.Up.Skip) > 0 || len(entry.Generate.Skip) > 0 || len(entry.Check.Skip) > 0 {
+			return nil, fmt.Errorf("configuration-only module entry %q must only carry settings", name)
+		}
+		if len(entry.Settings) == 0 {
+			continue
+		}
+		if settings == nil {
+			settings = map[string]map[string]any{}
+		}
+		settings[name] = entry.Settings
+	}
+	return settings, nil
+}
+
+// isModuleSourceRefKey reports whether a configuration-only entry key looks
+// like a module source ref rather than a bare module name: an explicit local
+// path or a git-style ref with a path component.
+func isModuleSourceRefKey(key string) bool {
+	if len(key) > 0 && (key[0] == '/' || key[0] == '.') {
+		return true
+	}
+	return strings.Contains(key, "/")
+}
+
 // EnvNames returns the configured environment names in deterministic order.
 func EnvNames(cfg *Config) []string {
 	if cfg == nil || len(cfg.Env) == 0 {
@@ -274,7 +316,10 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		entry := modules[name]
 		modulePath := "modules." + formatConfigPathSegment(name)
 		fmt.Fprintf(b, "[%s]\n", modulePath)
-		fmt.Fprintf(b, "source = %q\n", entry.Source)
+		// Configuration-only entries have no source.
+		if entry.Source != "" {
+			fmt.Fprintf(b, "source = %q\n", entry.Source)
+		}
 		if entry.Entrypoint {
 			b.WriteString("entrypoint = true\n")
 		}
