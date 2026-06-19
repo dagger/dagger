@@ -36,18 +36,6 @@ func daggerExecRaw(args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func daggerClientInstall(generator string) dagger.WithContainerFunc {
-	return daggerClientInstallAt(generator, defaultGenDir)
-}
-
-func daggerClientInstallAt(generator string, outputDirPath string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.
-			With(daggerExecRaw("sdk", "install", "-y", generator)).
-			With(daggerExecRaw("api", "client", "init", "-y", generator, outputDirPath, "."))
-	}
-}
-
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
 	return daggerQueryAt("", query, args...)
 }
