@@ -64,6 +64,10 @@ type Service struct {
 	TunnelUpstream dagql.ObjectResult[*Service]
 	// TunnelPorts configures the port forwarding rules for the tunnel.
 	TunnelPorts []PortForward
+	// TunnelUpstreamClientID is the client that owns the upstream service.
+	TunnelUpstreamClientID string
+	// TunnelListenClientID is the client whose host should bind the tunnel ports.
+	TunnelListenClientID string
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
@@ -96,6 +100,8 @@ type persistedServicePayload struct {
 	ExecMeta                      *executor.Meta                `json:"execMeta,omitempty"`
 	TunnelUpstreamResultID        uint64                        `json:"tunnelUpstreamResultID,omitempty"`
 	TunnelPorts                   []PortForward                 `json:"tunnelPorts,omitempty"`
+	TunnelUpstreamClientID        string                        `json:"tunnelUpstreamClientID,omitempty"`
+	TunnelListenClientID          string                        `json:"tunnelListenClientID,omitempty"`
 	HostSockets                   []persistedServiceHostSocket  `json:"hostSockets,omitempty"`
 }
 
@@ -127,6 +133,8 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 		ExecMD:                        svc.ExecMD,
 		ExecMeta:                      svc.ExecMeta,
 		TunnelPorts:                   slices.Clone(svc.TunnelPorts),
+		TunnelUpstreamClientID:        svc.TunnelUpstreamClientID,
+		TunnelListenClientID:          svc.TunnelListenClientID,
 		HostSockets:                   make([]persistedServiceHostSocket, 0, len(svc.HostSockets)),
 	}
 	var err error
@@ -206,6 +214,8 @@ func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ 
 		ExecMeta:                      persisted.ExecMeta,
 		TunnelUpstream:                tunnelUpstream,
 		TunnelPorts:                   slices.Clone(persisted.TunnelPorts),
+		TunnelUpstreamClientID:        persisted.TunnelUpstreamClientID,
+		TunnelListenClientID:          persisted.TunnelListenClientID,
 		HostSockets:                   hostSockets,
 	}, nil
 }
@@ -299,6 +309,34 @@ func (svc *Service) Clone() *Service {
 	return &cp
 }
 
+func contextWithServiceClientID(ctx context.Context, clientID string) (context.Context, error) {
+	if clientID == "" {
+		return ctx, nil
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clientMetadata, err := query.SpecificClientMetadata(ctx, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("service client %q: %w", clientID, err)
+	}
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+}
+
+// RuntimeContext returns the client context that owns this service's running
+// key. Tunnel services published to the host are keyed by their listener owner.
+func (svc *Service) RuntimeContext(ctx context.Context) (context.Context, error) {
+	if svc.TunnelUpstream.Self() != nil && svc.TunnelListenClientID != "" {
+		return contextWithServiceClientID(ctx, svc.TunnelListenClientID)
+	}
+	return ctx, nil
+}
+
+func (svc *Service) tunnelUpstreamContext(ctx context.Context) (context.Context, error) {
+	return contextWithServiceClientID(ctx, svc.TunnelUpstreamClientID)
+}
+
 func (svc *Service) Evaluate(ctx context.Context) error {
 	return nil
 }
@@ -329,7 +367,11 @@ func (svc *Service) Hostname(ctx context.Context, dig digest.Digest) (string, er
 		if err != nil {
 			return "", err
 		}
-		upstream, err := svcs.Get(ctx, dig, true)
+		runtimeCtx, err := svc.RuntimeContext(ctx)
+		if err != nil {
+			return "", err
+		}
+		upstream, err := svcs.Get(runtimeCtx, dig, true)
 		if err != nil {
 			return "", err
 		}
@@ -358,7 +400,11 @@ func (svc *Service) Ports(ctx context.Context, dig digest.Digest) ([]Port, error
 		if err != nil {
 			return nil, err
 		}
-		running, err := svcs.Get(ctx, dig, svc.TunnelUpstream.Self() != nil)
+		runtimeCtx, err := svc.RuntimeContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		running, err := svcs.Get(runtimeCtx, dig, svc.TunnelUpstream.Self() != nil)
 		if err != nil {
 			return nil, err
 		}
@@ -398,7 +444,11 @@ func (svc *Service) Endpoint(ctx context.Context, dig digest.Digest, port int, s
 		if err != nil {
 			return "", err
 		}
-		tunnel, err := svcs.Get(ctx, dig, true)
+		runtimeCtx, err := svc.RuntimeContext(ctx)
+		if err != nil {
+			return "", err
+		}
+		tunnel, err := svcs.Get(runtimeCtx, dig, true)
 		if err != nil {
 			return "", err
 		}
@@ -446,7 +496,11 @@ func (svc *Service) Stop(ctx context.Context, dig digest.Digest, kill bool) erro
 	if err != nil {
 		return err
 	}
-	return svcs.Stop(ctx, dig, kill, svc.TunnelUpstream.Self() != nil)
+	runtimeCtx, err := svc.RuntimeContext(ctx)
+	if err != nil {
+		return err
+	}
+	return svcs.Stop(runtimeCtx, dig, kill, svc.TunnelUpstream.Self() != nil)
 }
 
 type ServiceIO struct {
@@ -811,11 +865,12 @@ func (svc *Service) startContainer(
 	var nestedClientMetadata *engine.ClientMetadata
 	if svc.ExperimentalPrivilegedNesting {
 		nestedClientMetadata = &engine.ClientMetadata{
-			ClientID:          identity.NewID(),
-			ClientVersion:     engine.Version,
-			SessionID:         clientMetadata.SessionID,
-			AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
-			LockMode:          clientMetadata.LockMode,
+			ClientID:               identity.NewID(),
+			ClientVersion:          engine.Version,
+			SessionID:              clientMetadata.SessionID,
+			AllowedLLMModules:      slices.Clone(clientMetadata.AllowedLLMModules),
+			AllowedHostPortModules: slices.Clone(clientMetadata.AllowedHostPortModules),
+			LockMode:               clientMetadata.LockMode,
 		}
 	}
 
@@ -1169,7 +1224,15 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 	if err != nil {
 		return err
 	}
-	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
+	defaultCtx := engine.ContextWithClientMetadata(svcCtx, clientMetadata)
+	upstreamCtx, err := svc.tunnelUpstreamContext(defaultCtx)
+	if err != nil {
+		return err
+	}
+	listenCtx, err := svc.RuntimeContext(defaultCtx)
+	if err != nil {
+		return err
+	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -1179,12 +1242,12 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Engine(ctx)
+	bk, err := query.Engine(listenCtx)
 	if err != nil {
 		return fmt.Errorf("failed to get engine client: %w", err)
 	}
 
-	upstream, err := svcs.StartResult(svcCtx, svc.TunnelUpstream, svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
+	upstream, err := svcs.StartResult(upstreamCtx, svc.TunnelUpstream, svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
 	if err != nil {
 		return fmt.Errorf("start upstream: %w", err)
 	}
@@ -1204,7 +1267,7 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 			frontend = 0 // allow OS to choose
 		}
 		res, closeListener, err := bk.ListenHostToContainer(
-			svcCtx,
+			listenCtx,
 			fmt.Sprintf("%s:%d", bindHost, frontend),
 			forward.Protocol.Network(),
 			fmt.Sprintf("%s:%d", upstream.Host, forward.Backend),
@@ -1239,7 +1302,7 @@ func (svc *Service) startTunnel(ctx context.Context, running *RunningService, _ 
 	shutdown := func(cause error) error {
 		shutdownOnce.Do(func() {
 			stop(cause)
-			svcs.Detach(svcCtx, upstream)
+			svcs.Detach(upstreamCtx, upstream)
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())

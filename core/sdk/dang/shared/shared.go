@@ -103,13 +103,14 @@ func NewNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, *engi
 	}
 
 	nestedClientMetadata := &engine.ClientMetadata{
-		ClientID:          identity.NewID(),
-		ClientSecretToken: identity.NewID(),
-		SessionID:         clientMetadata.SessionID,
-		ClientStableID:    identity.NewID(),
-		ClientVersion:     engine.Version,
-		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
-		LockMode:          clientMetadata.LockMode,
+		ClientID:               identity.NewID(),
+		ClientSecretToken:      identity.NewID(),
+		SessionID:              clientMetadata.SessionID,
+		ClientStableID:         identity.NewID(),
+		ClientVersion:          engine.Version,
+		AllowedLLMModules:      slices.Clone(clientMetadata.AllowedLLMModules),
+		AllowedHostPortModules: slices.Clone(clientMetadata.AllowedHostPortModules),
+		LockMode:               clientMetadata.LockMode,
 	}
 
 	return clientMetadata, nestedClientMetadata, nil

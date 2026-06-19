@@ -63,6 +63,16 @@ func WithLoadWorkspaceModules() ClientOpt {
 	})
 }
 
+// WithAllowedHostPorts allows trusted modules to publish ports on the host.
+//
+// Use "local" to allow local modules, "all" to allow any module, or an exact
+// Git module ref such as "github.com/acme/mod/subdir".
+func WithAllowedHostPorts(modules ...string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.AllowedHostPortModules = append(cfg.AllowedHostPortModules, modules...)
+	})
+}
+
 // WithConn sets the engine connection explicitly
 func WithConn(conn engineconn.EngineConn) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {

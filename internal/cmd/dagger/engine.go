@@ -159,6 +159,9 @@ func finalizeEngineParams(ctx context.Context, params client.Params) (client.Par
 	}
 
 	params.AllowedLLMModules = allowedLLMModules
+	if len(params.AllowedHostPortModules) == 0 {
+		params.AllowedHostPortModules = allowedHostPortModules
+	}
 
 	params.Profile = profileFlag
 
