@@ -58,6 +58,7 @@ func init() {
 	moduleAddFlags(callModCmd.Command(), callModCmd.Command().PersistentFlags(), true)
 
 	moduleAddFlags(apiFunctionsCmd, apiFunctionsCmd.PersistentFlags(), false)
+	moduleAddFlags(functionsAliasCmd, functionsAliasCmd.PersistentFlags(), false)
 	moduleAddFlags(apiListenCmd, apiListenCmd.PersistentFlags(), true)
 	moduleAddFlags(listenCmd, listenCmd.PersistentFlags(), true)
 	moduleAddFlags(apiQueryCmd, apiQueryCmd.PersistentFlags(), true)
