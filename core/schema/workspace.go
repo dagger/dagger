@@ -104,6 +104,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("ref").Doc("Module reference to install."),
 				dagql.Arg("name").Doc("Override name for the installed module entry."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+				dagql.Arg("asSdk").Doc("Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`)."),
+				dagql.Arg("asSdkName").Doc("User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`."),
 			),
 		dagql.Func("uninstall", s.uninstall).
 			View(AfterVersion("v1.0.0-0")).
@@ -115,16 +117,30 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("moduleInit", s.moduleInit).
 			View(AfterVersion("v1.0.0-0")).
-			DoNotCache("Mutates workspace config and host filesystem").
-			Doc("Create a new module owned by the workspace and auto-install it in dagger.toml.").
+			DoNotCache("Plans workspace changes against live host filesystem").
+			Doc("Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.").
 			Args(
 				dagql.Arg("name").Doc("Name of the new module."),
-				dagql.Arg("sdk").Doc("SDK to use for the new module."),
+				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use."),
+				dagql.Arg("path").Doc(`Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].`),
 				dagql.Arg("source").Doc("Source subpath within the new module."),
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
-				dagql.Arg("selfCalls").Doc("Enable the self-calls experimental feature for the new module."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
+		dagql.Func("clientInit", s.clientInit).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Plans workspace changes against live host filesystem").
+			Doc("Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.").
+			Args(
+				dagql.Arg("path").Doc("Workspace-relative output directory for the generated client."),
+				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use."),
+				dagql.Arg("module").Doc("Workspace-relative path or canonical ref for the module the client binds to."),
+				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+			),
+		dagql.Func("clientGenerate", s.clientGenerate).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Regenerates workspace client files against live host filesystem").
+			Doc("Regenerate all generated API clients registered in workspace config and return the resulting Changeset."),
 		dagql.Func("configRead", s.configRead).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Reads live config from host").

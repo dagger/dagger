@@ -60,6 +60,13 @@ func UpdateConfigBytesWithHints(
 	if err != nil {
 		return nil, fmt.Errorf("parse existing config state: %w", err)
 	}
+	if configRequiresQuotedPathSegments(existingCfg) {
+		out := SerializeConfig(cfg)
+		if len(hints) == 0 {
+			return out, nil
+		}
+		return insertWorkspaceSettingHintComments(out, cfg, hints), nil
+	}
 
 	desiredValues := configDocumentMap(cfg)
 	if err := deleteRemovedManagedConfigPaths(doc, configDocumentMap(existingCfg), desiredValues); err != nil {
@@ -76,6 +83,10 @@ func UpdateConfigBytesWithHints(
 	}
 
 	out, err := pruneUnwantedEmptySections(doc.Bytes(), keepEmptyConfigSectionHeaders(cfg))
+	if err != nil {
+		return nil, err
+	}
+	out, err = rewriteModuleAsSDKSections(out, cfg.Modules)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +162,12 @@ func configDocumentMap(cfg *Config) map[string]any {
 		}
 		values["ports"] = ports
 	}
+	// Per-module as-sdk sub-blocks are intentionally NOT included here.
+	// The neontoml ApplyMap path can't express array-of-tables (it would
+	// emit inline arrays of inline tables and leave any pre-existing
+	// [[modules.X.as-sdk.modules]] blocks orphaned). Those sub-blocks are
+	// managed surgically by rewriteModuleAsSDKSections after the rest of
+	// the document is format-preserved.
 
 	return values
 }
@@ -160,22 +177,22 @@ func configRequiresQuotedPathSegments(cfg *Config) bool {
 		return false
 	}
 	for moduleName, module := range cfg.Modules {
-		if !isBareConfigPathSegment(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
+		if pathSegmentUnsafeForDocumentUpdate(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
 			return true
 		}
 	}
 	for envName, env := range cfg.Env {
-		if !isBareConfigPathSegment(envName) {
+		if pathSegmentUnsafeForDocumentUpdate(envName) {
 			return true
 		}
 		for moduleName, module := range env.Modules {
-			if !isBareConfigPathSegment(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
+			if pathSegmentUnsafeForDocumentUpdate(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
 				return true
 			}
 		}
 	}
 	for host := range cfg.Ports {
-		if !isBareConfigPathSegment(host) {
+		if pathSegmentUnsafeForDocumentUpdate(host) {
 			return true
 		}
 	}
@@ -184,11 +201,34 @@ func configRequiresQuotedPathSegments(cfg *Config) bool {
 
 func configMapRequiresQuotedPathSegments(values map[string]any) bool {
 	for key := range values {
-		if !isBareConfigPathSegment(key) {
+		if pathSegmentUnsafeForDocumentUpdate(key) {
 			return true
 		}
 	}
 	return false
+}
+
+// pathSegmentUnsafeForDocumentUpdate reports whether segment cannot be used as a
+// dotted-path segment when updating an existing config document in place (via
+// neontoml's doc.Set/Delete/ApplyMap). Beyond non-bare characters, an all-digit
+// segment — e.g. a port host like "3000" — is unsafe because the dotted-path
+// parser reads it as a number ("invalid float"). Configs containing such a
+// segment fall back to a full re-serialization, which still writes the segment
+// unquoted as a TOML section header (e.g. [ports.3000]).
+func pathSegmentUnsafeForDocumentUpdate(segment string) bool {
+	return !isBareConfigPathSegment(segment) || isAllDigitConfigPathSegment(segment)
+}
+
+func isAllDigitConfigPathSegment(segment string) bool {
+	if segment == "" {
+		return false
+	}
+	for i := 0; i < len(segment); i++ {
+		if segment[i] < '0' || segment[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func deleteRemovedManagedConfigPaths(doc *neontoml.Document, existingValues, desiredValues map[string]any) error {
@@ -288,6 +328,73 @@ func keepEmptyConfigSectionHeaders(cfg *Config) map[string]bool {
 		keep["[env."+formatConfigPathSegment(envName)+"]"] = true
 	}
 	return keep
+}
+
+// rewriteModuleAsSDKSections drops every existing [[modules.*.as-sdk.*]]
+// array-of-tables block from data and appends a canonical rendering of
+// each module's AsSDK entries. Format preservation inside an as-sdk
+// sub-block is intentionally given up: the block is treated as
+// CLI-managed state, not human-curated configuration. Everything outside
+// the as-sdk sub-blocks (other module fields, settings tables, comments)
+// passes through unchanged.
+func rewriteModuleAsSDKSections(data []byte, modules map[string]ModuleEntry) ([]byte, error) {
+	doc, err := tomledit.Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse config for as-sdk rewrite: %w", err)
+	}
+
+	kept := doc.Sections[:0]
+	for _, section := range doc.Sections {
+		if section.Heading != nil && isModuleAsSDKHeading(section.Heading.Name) {
+			continue
+		}
+		kept = append(kept, section)
+	}
+	doc.Sections = kept
+
+	names := make([]string, 0, len(modules))
+	for name, entry := range modules {
+		// Preserve the marker even when empty: presence of AsSDK = "this
+		// install is an SDK," whether or not anything is authored yet.
+		if entry.AsSDK != nil {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		var rendered strings.Builder
+		writeModuleAsSDK(&rendered, "modules."+formatConfigPathSegment(name), modules[name].AsSDK)
+		if rendered.Len() == 0 {
+			continue
+		}
+		asSDKDoc, parseErr := tomledit.Parse(strings.NewReader(rendered.String()))
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse rendered as-sdk for %q: %w", name, parseErr)
+		}
+		doc.Sections = append(doc.Sections, asSDKDoc.Sections...)
+	}
+
+	var buf bytes.Buffer
+	var formatter tomledit.Formatter
+	if err := formatter.Format(&buf, doc); err != nil {
+		return nil, fmt.Errorf("format config after as-sdk rewrite: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// isModuleAsSDKHeading reports whether a section heading targets a module's
+// as-sdk sub-block (e.g. [modules.go-sdk.as-sdk], [[modules.go-sdk.as-sdk.modules]]).
+func isModuleAsSDKHeading(key []string) bool {
+	if len(key) < 3 || key[0] != "modules" {
+		return false
+	}
+	for i := 2; i < len(key); i++ {
+		if key[i] == "as-sdk" {
+			return true
+		}
+	}
+	return false
 }
 
 func pruneUnwantedEmptySections(data []byte, keepEmptySections map[string]bool) ([]byte, error) {

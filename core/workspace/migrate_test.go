@@ -174,6 +174,47 @@ func TestPlanMigrationWritesMainModuleFirst(t *testing.T) {
 	require.Less(t, mainIdx, toolchainIdx)
 }
 
+// TestPlanMigrationWritesAsSDK verifies that the legacy `sdk` field on
+// dagger.json is surfaced as a workspace module installed as an SDK, with
+// the migrated module recorded under [[modules.<name>.as-sdk.modules]].
+func TestPlanMigrationWritesAsSDK(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": "src",
+  "toolchains": [
+    {"name": "tools", "source": "./tools"}
+  ]
+}`)
+
+	configData := string(plan.WorkspaceConfigData)
+	require.Contains(t, configData, "[modules.go]")
+	require.Contains(t, configData, `source = "go"`)
+	require.Contains(t, configData, "[[modules.go.as-sdk.modules]]")
+	require.Contains(t, configData, `path = ".dagger/modules/myapp"`)
+}
+
+// TestPlanMigrationExternalSDKShortName verifies the SDK short name is
+// derived from the canonical ref (basename, @version stripped).
+func TestPlanMigrationExternalSDKShortName(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "github.com/dagger/go-sdk@v1.2.3"},
+  "source": "src",
+  "toolchains": [
+    {"name": "tools", "source": "./tools"}
+  ]
+}`)
+
+	configData := string(plan.WorkspaceConfigData)
+	require.Contains(t, configData, "[modules.go-sdk]")
+	require.Contains(t, configData, `source = "github.com/dagger/go-sdk@v1.2.3"`)
+}
+
 func TestPlanMigrationAllowsDifferentPinnedWorkspaceRefs(t *testing.T) {
 	t.Parallel()
 
