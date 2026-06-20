@@ -38,20 +38,21 @@ git checkout -b add-dagger-checks
 
 ## Find modules to install
 
+Search the module registry for the tools you use:
+
 ```shell
-dagger mod recommend
+dagger search eslint
+dagger search vitest
 ```
 
-Dagger scans the project and recommends modules that match the tools it finds.
+## Install modules
 
-## Install recommended modules
-
-Install the modules you want from the recommendations:
+Install the modules you want:
 
 ```shell
-dagger mod install github.com/dagger/eslint
-dagger mod install github.com/dagger/vitest
-dagger mod install github.com/dagger/prettier
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
 ```
 
 This creates a `dagger.toml` configuration file and adds three modules: a linter, a test runner, and a code formatter.
@@ -99,7 +100,7 @@ dagger ws remote
 Enable automatic checks for that repository:
 
 ```shell
-dagger ws autocheck on
+dagger cloud check on
 ```
 
 If you are not signed in to Dagger Cloud yet, the command guides you through signup or login. If the GitHub integration is not installed yet, the command guides you through authorizing GitHub and selecting the forked repository.
@@ -125,7 +126,7 @@ If you use the GitHub web UI instead, open a pull request from `add-dagger-check
 Your pull request should show Dagger check statuses. You can also inspect recent Dagger Cloud activity from the CLI:
 
 ```shell
-dagger ws activity
+dagger activity
 ```
 
 ## Next steps
