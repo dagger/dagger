@@ -76,7 +76,7 @@ func initMCPTestModule(ctx context.Context, t testing.TB) string {
 	copyTestdataFixture(ctx, t, modDir, "workspaces", "mcp-greeting")
 	initGitRepo(ctx, t, modDir)
 
-	functionsOut, err := hostDaggerExec(ctx, t, modDir, "functions")
+	functionsOut, err := hostDaggerExec(ctx, t, modDir, "api", "functions")
 	require.NoError(t, err)
 	require.Contains(t, string(functionsOut), "greeting")
 

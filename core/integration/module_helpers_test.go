@@ -36,14 +36,6 @@ func daggerExecRaw(args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func daggerClientInstall(generator string) dagger.WithContainerFunc {
-	return daggerExecRaw("client", "install", generator)
-}
-
-func daggerClientInstallAt(generator string, outputDirPath string) dagger.WithContainerFunc {
-	return daggerExecRaw("client", "install", generator, outputDirPath)
-}
-
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
 	return daggerQueryAt("", query, args...)
 }
@@ -81,7 +73,7 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 
 func daggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "functions"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}

@@ -38,15 +38,6 @@ func workspaceSelectionDaggerExec(args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func workspaceSelectionDaggerExecFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
-		})
-	}
-}
-
 func workspaceSelectionDaggerCall(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
@@ -323,21 +314,20 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 // TestWorkspaceSelectionCommandPolicy should pin down which commands accept
 // --workspace and where local-only restrictions are enforced.
 func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.Context, t *testctx.T) {
-	t.Run("migrate rejects -W in integration", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		ctr := workspaceBase(t, c)
-
-		out, err := ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "migrate")).CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, `--workspace is not supported for "dagger migrate"`)
-	})
+	// The `dagger migrate` command was removed in the CLI 1.0 redesign;
+	// migration is now part of `dagger setup`. The -W rejection test it
+	// used to anchor no longer applies.
 
 	t.Run("local-only workspace mutations accept a local selected workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
+		// `dagger workspace init` was removed in CLI 1.0; a raw `workspace
+		// config` write (which creates dagger.toml when missing) is the modern
+		// local-only mutation that materializes a workspace config at the
+		// selected workspace's cwd.
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			WithWorkdir("/work/caller").
-			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "init", "--here"))
+			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "config", "modules.example.source", "github.com/acme/example", "--here"))
 
 		_, err := ctr.WithExec([]string{"test", "-f", "/work/selected/dagger.toml"}).Sync(ctx)
 		require.NoError(t, err)
@@ -816,7 +806,6 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx conte
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
-			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
 source = ".dagger/modules/nester"
@@ -843,7 +832,6 @@ greeting = "selected-ci"
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
-			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
 source = ".dagger/modules/nester"
