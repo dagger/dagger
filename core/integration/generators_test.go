@@ -245,6 +245,9 @@ entrypoint = true
 
 [modules.go-sdk]
 source = "github.com/dagger/go-sdk"
+
+[modules.go-sdk.as-sdk]
+name = "go"
 `).
 		WithNewFile(".dagger/modules/consumer/dagger.json", `{
   "name": "consumer",
