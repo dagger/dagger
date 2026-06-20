@@ -17,10 +17,6 @@ defmodule Dagger.GitRepository do
 
   @doc """
   Creates a synthetic workspace from this git repository.
-
-  > #### Experimental {: .warning}
-  >
-  > "Synthetic workspaces currently support filesystem APIs only."
   """
   @spec as_workspace(t(), [{:cwd, String.t() | nil}]) :: Dagger.Workspace.t()
   def as_workspace(%__MODULE__{} = git_repository, optional_args \\ []) do

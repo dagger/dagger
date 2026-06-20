@@ -9160,6 +9160,23 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRef-asWorkspace" href="#GitRef-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
+                        <td> Creates a synthetic workspace from this git ref. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>cwd</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Current working directory inside the workspace root. Defaults to the workspace root.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRef-commit" href="#GitRef-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The resolved commit id at this ref. </td>
@@ -13502,6 +13519,23 @@
                         <td> Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-changes" href="#Workspace-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Return the changes from another workspace to this workspace. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>other</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>Workspace to compare from.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-checks" href="#Workspace-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
                         <td> Return all checks from modules loaded in the workspace. </td>
                       </tr>
@@ -13533,10 +13567,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-clientGenerate" href="#Workspace-clientGenerate"><code>clientGenerate</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
                         <td> Regenerate all generated API clients registered in workspace config and return the resulting Changeset. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-clientId" href="#Workspace-clientId"><code>clientId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The client ID that owns this workspace's host filesystem. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-clientInit" href="#Workspace-clientInit"><code>clientInit</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
@@ -13946,6 +13976,69 @@
                         <td>
                           <p>Refresh workspace-managed state and return the resulting changeset.</p>
                           <p>Currently this refreshes existing lockfile entries only.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-withChanges" href="#Workspace-withChanges"><code>withChanges</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
+                        <td> Return this workspace with a changeset applied, without mutating the source. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>Changes to apply.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-withNewDirectory" href="#Workspace-withNewDirectory"><code>withNewDirectory</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
+                        <td> Return this workspace with a directory added, without mutating the source. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path of the added directory. Relative paths resolve from the workspace cwd.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>Directory to add.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-withNewFile" href="#Workspace-withNewFile"><code>withNewFile</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
+                        <td> Return this workspace with a new or replaced file, without mutating the source. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path of the new file. Relative paths resolve from the workspace cwd.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Contents of the new file.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                                <p>Permissions of the new file.</p>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     </tbody>

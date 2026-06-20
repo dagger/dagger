@@ -14,6 +14,18 @@ namespace Dagger;
 class GitRef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * Creates a synthetic workspace from this git ref.
+     */
+    public function asWorkspace(?string $cwd = '/'): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        if (null !== $cwd) {
+        $innerQueryBuilder->setArgument('cwd', $cwd);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The resolved commit id at this ref.
      */
     public function commit(): string
