@@ -276,6 +276,48 @@ func (sdk *module) AsClientGenerator() (core.ClientGenerator, bool) {
 	return &clientGeneratorModule{mod: sdk, funcs: sdk.funcs}, true
 }
 
+func (sdk *module) AsModuleInitializer() (core.ModuleInitializer, bool) {
+	if _, ok := sdk.funcs["initModule"]; !ok {
+		return nil, false
+	}
+
+	return &moduleInitializerModule{mod: sdk, funcs: sdk.funcs}, true
+}
+
+func (sdk *module) AsClientInitializer() (core.ClientInitializer, bool) {
+	if _, ok := sdk.funcs["initClient"]; !ok {
+		return nil, false
+	}
+
+	return &clientInitializerModule{mod: sdk, funcs: sdk.funcs}, true
+}
+
+func (sdk *module) AsRuntimeTarget() (core.RuntimeTarget, bool) {
+	if _, ok := sdk.funcs["targetRuntime"]; !ok {
+		return nil, false
+	}
+	return sdk, true
+}
+
+// TargetRuntime invokes the SDK module's `targetRuntime` field. The field
+// takes no arguments — it advertises which engine runtime the SDK's emitted
+// code targets. Called once at `dagger module init` time; the returned
+// value is written into the new module's dagger-module.toml `[runtime]
+// source`.
+func (sdk *module) TargetRuntime(ctx context.Context) (string, error) {
+	sdkInst, err := sdk.instantiate(ctx)
+	if err != nil {
+		return "", fmt.Errorf("initialize sdk module %s targetRuntime: %w", sdk.mod.Self().Name(), err)
+	}
+	var out dagql.String
+	if err := sdkInst.dag.Select(ctx, sdkInst.sdk, &out, dagql.Selector{
+		Field: "targetRuntime",
+	}); err != nil {
+		return "", fmt.Errorf("call sdk %s targetRuntime: %w", sdk.mod.Self().Name(), err)
+	}
+	return out.String(), nil
+}
+
 func gqlFieldName(name string) string {
 	// gql field name is uncapitalized camel case
 	return strcase.ToLowerCamel(name)

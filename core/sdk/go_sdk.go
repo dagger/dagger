@@ -80,6 +80,18 @@ func (sdk *goSDK) AsClientGenerator() (core.ClientGenerator, bool) {
 	return sdk, true
 }
 
+func (sdk *goSDK) AsModuleInitializer() (core.ModuleInitializer, bool) {
+	return nil, false
+}
+
+func (sdk *goSDK) AsClientInitializer() (core.ClientInitializer, bool) {
+	return nil, false
+}
+
+func (sdk *goSDK) AsRuntimeTarget() (core.RuntimeTarget, bool) {
+	return nil, false
+}
+
 func (sdk *goSDK) AttachDependencyResults(
 	context.Context,
 	func(dagql.AnyResult) (dagql.AnyResult, error),
