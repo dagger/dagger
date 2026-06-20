@@ -11,6 +11,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -274,6 +275,17 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", remoteRef)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":"/","configFile":"dagger.toml"}}`, out)
+
+		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{directory(path:"/"){entries}}}`, "-W", remoteRef)).Stdout(ctx)
+		require.NoError(t, err)
+		var got struct {
+			CurrentWorkspace struct {
+				Directory directoryEntries `json:"directory"`
+			} `json:"currentWorkspace"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &got))
+		requireEntry(t, got.CurrentWorkspace.Directory.Entries, "dagger.toml")
+		requireNoEntry(t, got.CurrentWorkspace.Directory.Entries, ".git")
 	})
 
 	t.Run("relative -W is resolved after --workdir changes cwd", func(ctx context.Context, t *testctx.T) {
@@ -339,14 +351,42 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 		c := connect(ctx, t)
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceSelectionSimpleWorkspaceDir(c, "remote", "Remote", "remote workspace"))
 
-		out, err := c.Container().From(alpineImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/empty").
-			With(workspaceSelectionDaggerQueryFail(`{currentWorkspace{init}}`, "-W", remoteRef)).
-			CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "workspace init is local-only")
-		require.NotContains(t, out, "--workspace must be a local path")
+		for _, tc := range []struct {
+			name  string
+			query string
+		}{
+			{
+				name:  "init",
+				query: `{currentWorkspace{init}}`,
+			},
+			{
+				name:  "configWrite",
+				query: `{currentWorkspace{configWrite(key:"modules.demo.source", value:"demo")}}`,
+			},
+			{
+				name:  "moduleInit",
+				query: `{currentWorkspace{moduleInit(name:"demo")}}`,
+			},
+			{
+				name:  "update",
+				query: `{currentWorkspace{update{isEmpty}}}`,
+			},
+			{
+				name:  "migrate",
+				query: `{currentWorkspace{migrate{steps{id}}}}`,
+			},
+		} {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				out, err := c.Container().From(alpineImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/empty").
+					With(workspaceSelectionDaggerQueryFail(tc.query, "-W", remoteRef)).
+					CombinedOutput(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "local-only")
+				require.NotContains(t, out, "--workspace must be a local path")
+			})
+		}
 	})
 }
 
