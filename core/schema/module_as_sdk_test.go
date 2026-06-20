@@ -23,18 +23,19 @@ func TestResolveCurrentModuleSDKEntry(t *testing.T) {
 		},
 	}
 	plainModule := workspace.ModuleEntry{Source: ".dagger/modules/my-module"}
+	const notInstalledAsSDK = "current module is not installed as an SDK in this workspace"
 
 	t.Run("not installed as an SDK", func(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"my-module": plainModule,
 		}}
 		_, _, err := resolveCurrentModuleSDKEntry("my-module", cfg)
-		require.ErrorContains(t, err, "not installed as an SDK")
+		require.EqualError(t, err, notInstalledAsSDK)
 	})
 
 	t.Run("empty config", func(t *testing.T) {
 		_, _, err := resolveCurrentModuleSDKEntry("go-sdk", &workspace.Config{})
-		require.ErrorContains(t, err, "not installed as an SDK")
+		require.EqualError(t, err, notInstalledAsSDK)
 	})
 
 	t.Run("single SDK matched by name", func(t *testing.T) {
@@ -49,15 +50,15 @@ func TestResolveCurrentModuleSDKEntry(t *testing.T) {
 		require.Len(t, entry.AsSDK.Modules, 1)
 	})
 
-	t.Run("single SDK falls back when name does not match", func(t *testing.T) {
-		// The running module name need not equal its install entry name (e.g.
-		// installed under a custom --name); a lone SDK install is unambiguous.
+	t.Run("plain workspace module does not resolve to sole SDK install", func(t *testing.T) {
+		// Regression: a non-SDK current module in a workspace with exactly one
+		// SDK install must not inherit that SDK's as-sdk role data.
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
-			"go-sdk": goSDK,
+			"go-sdk":    goSDK,
+			"my-module": plainModule,
 		}}
-		name, _, err := resolveCurrentModuleSDKEntry("some-other-name", cfg)
-		require.NoError(t, err)
-		require.Equal(t, "go-sdk", name)
+		_, _, err := resolveCurrentModuleSDKEntry("my-module", cfg)
+		require.EqualError(t, err, notInstalledAsSDK)
 	})
 
 	t.Run("multiple SDKs matched by name", func(t *testing.T) {
@@ -71,13 +72,13 @@ func TestResolveCurrentModuleSDKEntry(t *testing.T) {
 		require.Equal(t, "python", entry.AsSDK.Name)
 	})
 
-	t.Run("multiple SDKs without a name match is ambiguous", func(t *testing.T) {
+	t.Run("unrelated current module is not installed as an SDK", func(t *testing.T) {
 		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{
 			"go-sdk":     goSDK,
 			"python-sdk": pySDK,
 		}}
 		_, _, err := resolveCurrentModuleSDKEntry("unrelated", cfg)
-		require.ErrorContains(t, err, "cannot determine")
+		require.EqualError(t, err, notInstalledAsSDK)
 	})
 
 	t.Run("populated and empty module lists are preserved", func(t *testing.T) {

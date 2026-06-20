@@ -63,45 +63,19 @@ func (s *moduleSchema) currentModuleAsSDK(
 	return result, nil
 }
 
-// resolveCurrentModuleSDKEntry matches the currently executing module to its
-// workspace install entry's as-sdk role data.
-//
-// The workspace install identity is not threaded through generator execution,
-// so we match by install name (the same name<->module convention the workspace
-// uses for per-module skip patterns). When the running module's name does not
-// match an install entry, we fall back to the sole installed SDK entry — which
-// the design permits only when exactly one installed SDK could match. Multiple
-// candidate SDK installs without a name match are ambiguous and error rather
-// than guess.
+// resolveCurrentModuleSDKEntry matches the current module to a workspace entry
+// installed as an SDK. A non-matching module must not inherit a lone SDK install.
 func resolveCurrentModuleSDKEntry(
 	curName string,
 	cfg *workspace.Config,
 ) (string, workspace.ModuleEntry, error) {
-	type sdkInstall struct {
-		name  string
-		entry workspace.ModuleEntry
-	}
-	var sdkInstalls []sdkInstall
-	for name, entry := range cfg.Modules {
-		if entry.AsSDK != nil {
-			sdkInstalls = append(sdkInstalls, sdkInstall{name: name, entry: entry})
-		}
-	}
-	if len(sdkInstalls) == 0 {
+	if cfg == nil {
 		return "", workspace.ModuleEntry{}, fmt.Errorf("current module is not installed as an SDK in this workspace")
 	}
-
-	for _, install := range sdkInstalls {
-		if install.name == curName {
-			return install.name, install.entry, nil
-		}
+	if entry, ok := cfg.Modules[curName]; ok && entry.AsSDK != nil {
+		return curName, entry, nil
 	}
-
-	if len(sdkInstalls) == 1 {
-		return sdkInstalls[0].name, sdkInstalls[0].entry, nil
-	}
-	return "", workspace.ModuleEntry{}, fmt.Errorf(
-		"multiple installed SDK entries could match the current module %q; cannot determine its SDK identity", curName)
+	return "", workspace.ModuleEntry{}, fmt.Errorf("current module is not installed as an SDK in this workspace")
 }
 
 func (s *moduleSchema) currentModuleAsSDKModules(
