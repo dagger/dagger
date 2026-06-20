@@ -221,13 +221,13 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	var cfg *configuredModule
 
 	if !h.noModule {
-		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL, dagger.ModuleServeOpts{Entrypoint: true})
+		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL, initModuleOpts{entrypoint: true})
 		if err != nil {
 			return err
 		}
 	}
 
-	// Could be `--no-mod` or module not found from current dir
+	// Could be `--no-load-module` or module not found from current dir
 	if def == nil {
 		def, err = initializeCore(ctx, h.dag)
 		if err != nil {

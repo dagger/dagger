@@ -1,0 +1,38 @@
+[
+  {
+    "name": "go",
+    "description": "Official Dagger SDK for Go",
+    "repo": "github.com/dagger/go-sdk",
+    "aliases": ["golang"]
+  },
+  {
+    "name": "python",
+    "description": "Official Dagger SDK for Python",
+    "repo": "github.com/dagger/python-sdk",
+    "aliases": ["py"]
+  },
+  {
+    "name": "typescript",
+    "description": "Official Dagger SDK for TypeScript",
+    "repo": "github.com/dagger/typescript-sdk",
+    "aliases": ["ts"]
+  },
+  {
+    "name": "php",
+    "description": "Official Dagger SDK for PHP",
+    "repo": "github.com/dagger/php-sdk",
+    "aliases": []
+  },
+  {
+    "name": "dang",
+    "description": "Official Dagger SDK for Dang",
+    "repo": "github.com/dagger/dang-sdk",
+    "aliases": []
+  },
+  {
+    "name": "java",
+    "description": "Official Dagger SDK for Java",
+    "repo": "github.com/dagger/java-sdk",
+    "aliases": []
+  }
+]
