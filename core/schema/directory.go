@@ -286,8 +286,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc("Creates a synthetic workspace from this directory.").
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
-			).
-			Experimental("Synthetic workspaces currently support filesystem APIs only."),
+			),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").

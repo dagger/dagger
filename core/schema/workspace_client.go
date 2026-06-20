@@ -28,6 +28,9 @@ func (s *workspaceSchema) clientInit(
 	parent *core.Workspace,
 	args workspaceClientInitArgs,
 ) (res dagql.ObjectResult[*core.Changeset], _ error) {
+	if err := requireLocalWorkspace(parent, "client init"); err != nil {
+		return res, err
+	}
 	if args.Path == "" {
 		return res, fmt.Errorf("client path is required")
 	}
