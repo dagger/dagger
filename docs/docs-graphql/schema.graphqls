@@ -110,6 +110,15 @@ type Binding implements Node {
   """Retrieve the binding value, as type Container"""
   asContainer: Container!
 
+  """Retrieve the binding value, as type CurrentModuleAsSDK"""
+  asCurrentModuleAsSDK: CurrentModuleAsSDK!
+
+  """Retrieve the binding value, as type CurrentModuleAsSDKClient"""
+  asCurrentModuleAsSDKClient: CurrentModuleAsSDKClient!
+
+  """Retrieve the binding value, as type CurrentModuleAsSDKModule"""
+  asCurrentModuleAsSDKModule: CurrentModuleAsSDKModule!
+
   """Retrieve the binding value, as type DiffStat"""
   asDiffStat: DiffStat!
 
@@ -1747,6 +1756,14 @@ type Container implements Exportable & Node & Syncer {
 
 """Reflective module API provided to functions at runtime."""
 type CurrentModule implements Node {
+  """
+  Treat the currently executing module as an SDK installed in the active
+  workspace, exposing the modules and clients it manages.
+
+  Errors if the current module is not installed as an SDK in this workspace.
+  """
+  asSDK: CurrentModuleAsSDK!
+
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -1805,6 +1822,49 @@ type CurrentModule implements Node {
     """Location of the file to retrieve (e.g., "README.md")."""
     path: String!
   ): File!
+}
+
+"""
+The SDK-role data for the currently executing module, as installed in the active workspace.
+"""
+type CurrentModuleAsSDK implements Node {
+  """The generated clients this SDK produces in the workspace."""
+  clients: [CurrentModuleAsSDKClient!]!
+
+  """A unique identifier for this CurrentModuleAsSDK."""
+  id: ID!
+
+  """The workspace-local modules this SDK authors and manages."""
+  modules: [CurrentModuleAsSDKModule!]!
+
+  """The user-facing name of this SDK in the workspace."""
+  name: String!
+}
+
+"""A generated client the current SDK produces in the workspace."""
+type CurrentModuleAsSDKClient implements Node {
+  """A unique identifier for this CurrentModuleAsSDKClient."""
+  id: ID!
+
+  """
+  The module the client is bound to (workspace-relative path or canonical ref).
+  """
+  module: String!
+
+  """Workspace-root-relative path of the generated client."""
+  path: String!
+
+  """The pinned version of the bound module, if any."""
+  pin: String!
+}
+
+"""A workspace-local module managed by the current SDK."""
+type CurrentModuleAsSDKModule implements Node {
+  """A unique identifier for this CurrentModuleAsSDKModule."""
+  id: ID!
+
+  """Workspace-root-relative path to the managed module."""
+  path: String!
 }
 
 type DiffStat implements Node {
@@ -2656,6 +2716,81 @@ type Env implements Node {
   Contextual path arguments will be populated using the environment's workspace.
   """
   withCurrentModule: Env!
+
+  """
+  Create or update a binding of type CurrentModuleAsSDKClient in the environment
+  """
+  withCurrentModuleAsSDKClientInput(
+    """The name of the binding"""
+    name: String!
+
+    """The CurrentModuleAsSDKClient value to assign to the binding"""
+    value: ID! @expectedType(name: "CurrentModuleAsSDKClient")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment
+  """
+  withCurrentModuleAsSDKClientOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """
+  Create or update a binding of type CurrentModuleAsSDK in the environment
+  """
+  withCurrentModuleAsSDKInput(
+    """The name of the binding"""
+    name: String!
+
+    """The CurrentModuleAsSDK value to assign to the binding"""
+    value: ID! @expectedType(name: "CurrentModuleAsSDK")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Create or update a binding of type CurrentModuleAsSDKModule in the environment
+  """
+  withCurrentModuleAsSDKModuleInput(
+    """The name of the binding"""
+    name: String!
+
+    """The CurrentModuleAsSDKModule value to assign to the binding"""
+    value: ID! @expectedType(name: "CurrentModuleAsSDKModule")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment
+  """
+  withCurrentModuleAsSDKModuleOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired CurrentModuleAsSDK output to be assigned in the environment
+  """
+  withCurrentModuleAsSDKOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
 
   """Create or update a binding of type DiffStat in the environment"""
   withDiffStatInput(
@@ -4746,6 +4881,17 @@ type ModuleSource implements Node & Syncer {
   """The toolchains referenced by the module source."""
   toolchains: [ModuleSource!]! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.")
 
+  """
+  The module's dagger.json with any in-memory edits from with* APIs applied, as
+  a diff relative to the source's context directory.
+
+  Unlike generatedContextDirectory, this does not run codegen and does not
+  validate the engine version against the running engine, so it can be used to
+  declare an engine requirement newer than the running engine. Loading or
+  serving such a module still fails at moduleSource.asModule.
+  """
+  updatedConfigDirectory: Directory!
+
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
 
@@ -5881,8 +6027,37 @@ type Workspace implements Node {
     onlyGenerate: Boolean
   ): CheckGroup!
 
+  """
+  Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+  """
+  clientGenerate: Changeset!
+
   """The client ID that owns this workspace's host filesystem."""
   clientId: String!
+
+  """
+  Plan the workspace changes for initializing a generated API client: generated
+  client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in
+  dagger.toml. Returns the resulting Changeset for the caller to preview and
+  apply.
+  """
+  clientInit(
+    """Workspace-relative output directory for the generated client."""
+    path: String!
+
+    """Workspace SDK name or module entry name to use."""
+    sdk: String!
+
+    """
+    Workspace-relative path or canonical ref for the module the client binds to.
+    """
+    module: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+
+    args: JSON
+  ): Changeset!
 
   """
   Selected native workspace config file relative to the workspace root, if any.
@@ -6040,6 +6215,17 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+
+    """
+    Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that
+    dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
+    """
+    asSdk: Boolean = false
+
+    """
+    User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    """
+    asSdkName: String = ""
   ): String!
 
   """
@@ -6047,17 +6233,28 @@ type Workspace implements Node {
 
   The returned plan has an empty changeset and no steps when no migration is needed.
   """
-  migrate(force: Boolean = false): WorkspaceMigration!
+  migrate: WorkspaceMigration!
 
   """
-  Create a new module owned by the workspace and auto-install it in dagger.toml.
+  Plan the workspace changes for initializing a new module: dagger-module.toml +
+  SDK codegen output at `path`, the authoring entry under
+  [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>].
+  The SDK must already be installed as an SDK. Returns the resulting Changeset
+  for the caller to preview and apply.
   """
   moduleInit(
     """Name of the new module."""
     name: String!
 
-    """SDK to use for the new module."""
+    """Workspace SDK name or module entry name to use."""
     sdk: String = ""
+
+    """
+    Workspace-relative path for the new module. Defaults to
+    ".dagger/modules/<name>"; using the default also installs the module in
+    [modules.<name>].
+    """
+    path: String = ""
 
     """Source subpath within the new module."""
     source: String = ""
@@ -6065,12 +6262,11 @@ type Workspace implements Node {
     """Additional include patterns for the module."""
     include: [String!] = []
 
-    """Enable the self-calls experimental feature for the new module."""
-    selfCalls: Boolean = false
-
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
-  ): String!
+
+    args: JSON
+  ): Changeset!
 
   """List modules defined in the workspace configuration."""
   moduleList(

@@ -682,14 +682,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var testdata *dagger.Directory
-			if inputArgs["testdata"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["testdata"]), &testdata)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg testdata", err))
-				}
-			}
-			return nil, (*ReleaseTest).NewModule(&parent, ctx, testdata)
+			return nil, (*ReleaseTest).NewModule(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

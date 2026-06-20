@@ -670,6 +670,24 @@ class Binding(Type):
         _ctx = self._select("asContainer", _args)
         return Container(_ctx)
 
+    def as_current_module_as_sdk(self) -> "CurrentModuleAsSDK":
+        """Retrieve the binding value, as type CurrentModuleAsSDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCurrentModuleAsSDK", _args)
+        return CurrentModuleAsSDK(_ctx)
+
+    def as_current_module_as_sdk_client(self) -> "CurrentModuleAsSDKClient":
+        """Retrieve the binding value, as type CurrentModuleAsSDKClient"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCurrentModuleAsSDKClient", _args)
+        return CurrentModuleAsSDKClient(_ctx)
+
+    def as_current_module_as_sdk_module(self) -> "CurrentModuleAsSDKModule":
+        """Retrieve the binding value, as type CurrentModuleAsSDKModule"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCurrentModuleAsSDKModule", _args)
+        return CurrentModuleAsSDKModule(_ctx)
+
     def as_diff_stat(self) -> "DiffStat":
         """Retrieve the binding value, as type DiffStat"""
         _args: list[Arg] = []
@@ -3854,6 +3872,17 @@ class Container(Type):
 class CurrentModule(Type):
     """Reflective module API provided to functions at runtime."""
 
+    def as_sdk(self) -> "CurrentModuleAsSDK":
+        """Treat the currently executing module as an SDK installed in the active
+        workspace, exposing the modules and clients it manages.
+
+        Errors if the current module is not installed as an SDK in this
+        workspace.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asSDK", _args)
+        return CurrentModuleAsSDK(_ctx)
+
     async def dependencies(self) -> list["Module"]:
         """The dependencies of the module."""
         _args: list[Arg] = []
@@ -3998,6 +4027,224 @@ class CurrentModule(Type):
         ]
         _ctx = self._select("workdirFile", _args)
         return File(_ctx)
+
+
+@typecheck
+class CurrentModuleAsSDK(Type):
+    """The SDK-role data for the currently executing module, as installed
+    in the active workspace."""
+
+    async def clients(self) -> list["CurrentModuleAsSDKClient"]:
+        """The generated clients this SDK produces in the workspace."""
+        _args: list[Arg] = []
+        _ctx = self._select("clients", _args)
+        return await _ctx.execute_object_list(CurrentModuleAsSDKClient)
+
+    async def id(self) -> str:
+        """A unique identifier for this CurrentModuleAsSDK.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def modules(self) -> list["CurrentModuleAsSDKModule"]:
+        """The workspace-local modules this SDK authors and manages."""
+        _args: list[Arg] = []
+        _ctx = self._select("modules", _args)
+        return await _ctx.execute_object_list(CurrentModuleAsSDKModule)
+
+    async def name(self) -> str:
+        """The user-facing name of this SDK in the workspace.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class CurrentModuleAsSDKClient(Type):
+    """A generated client the current SDK produces in the workspace."""
+
+    async def id(self) -> str:
+        """A unique identifier for this CurrentModuleAsSDKClient.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def module(self) -> str:
+        """The module the client is bound to (workspace-relative path or
+        canonical ref).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("module", _args)
+        return await _ctx.execute(str)
+
+    async def path(self) -> str:
+        """Workspace-root-relative path of the generated client.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
+
+    async def pin(self) -> str:
+        """The pinned version of the bound module, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("pin", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class CurrentModuleAsSDKModule(Type):
+    """A workspace-local module managed by the current SDK."""
+
+    async def id(self) -> str:
+        """A unique identifier for this CurrentModuleAsSDKModule.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def path(self) -> str:
+        """Workspace-root-relative path to the managed module.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -6274,6 +6521,142 @@ class Env(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("withCurrentModule", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_client_input(
+        self,
+        name: str,
+        value: CurrentModuleAsSDKClient,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type CurrentModuleAsSDKClient in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The CurrentModuleAsSDKClient value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKClientInput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_client_output(
+        self, name: str, description: str
+    ) -> Self:
+        """Declare a desired CurrentModuleAsSDKClient output to be assigned in
+        the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKClientOutput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_input(
+        self,
+        name: str,
+        value: CurrentModuleAsSDK,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type CurrentModuleAsSDK in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The CurrentModuleAsSDK value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKInput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_module_input(
+        self,
+        name: str,
+        value: CurrentModuleAsSDKModule,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type CurrentModuleAsSDKModule in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The CurrentModuleAsSDKModule value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKModuleInput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_module_output(
+        self, name: str, description: str
+    ) -> Self:
+        """Declare a desired CurrentModuleAsSDKModule output to be assigned in
+        the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKModuleOutput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_output(self, name: str, description: str) -> Self:
+        """Declare a desired CurrentModuleAsSDK output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKOutput", _args)
         return Env(_ctx)
 
     def with_diff_stat_input(
@@ -12294,6 +12677,20 @@ class ModuleSource(Type):
         _ctx = self._select("toolchains", _args)
         return await _ctx.execute_object_list(ModuleSource)
 
+    def updated_config_directory(self) -> Directory:
+        """The module's dagger.json with any in-memory edits from with* APIs
+        applied, as a diff relative to the source's context directory.
+
+        Unlike generatedContextDirectory, this does not run codegen and does
+        not validate the engine version against the running engine, so it can
+        be used to declare an engine requirement newer than the running
+        engine. Loading or serving such a module still fails at
+        moduleSource.asModule.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("updatedConfigDirectory", _args)
+        return Directory(_ctx)
+
     def user_defaults(self) -> EnvFile:
         """User-defined defaults read from local .env files"""
         _args: list[Arg] = []
@@ -15197,6 +15594,14 @@ class Workspace(Type):
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
+    def client_generate(self) -> Changeset:
+        """Regenerate all generated API clients registered in workspace config
+        and return the resulting Changeset.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("clientGenerate", _args)
+        return Changeset(_ctx)
+
     async def client_id(self) -> str:
         """The client ID that owns this workspace's host filesystem.
 
@@ -15217,6 +15622,43 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("clientId", _args)
         return await _ctx.execute(str)
+
+    def client_init(
+        self,
+        path: str,
+        sdk: str,
+        module: str,
+        *,
+        here: bool | None = False,
+        args: JSON | None = None,
+    ) -> Changeset:
+        """Plan the workspace changes for initializing a generated API client:
+        generated client files at `path` plus a [[modules.<sdk-name>.as-
+        sdk.clients]] entry in dagger.toml. Returns the resulting Changeset
+        for the caller to preview and apply.
+
+        Parameters
+        ----------
+        path:
+            Workspace-relative output directory for the generated client.
+        sdk:
+            Workspace SDK name or module entry name to use.
+        module:
+            Workspace-relative path or canonical ref for the module the client
+            binds to.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        args:
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sdk", sdk),
+            Arg("module", module),
+            Arg("here", here, False),
+            Arg("args", args, None),
+        ]
+        _ctx = self._select("clientInit", _args)
+        return Changeset(_ctx)
 
     async def config_file(self) -> str:
         """Selected native workspace config file relative to the workspace root,
@@ -15623,6 +16065,8 @@ class Workspace(Type):
         *,
         name: str | None = "",
         here: bool | None = False,
+        as_sdk: bool | None = False,
+        as_sdk_name: str | None = "",
     ) -> str:
         """Install a module into the workspace, writing dagger.toml to the host.
 
@@ -15634,6 +16078,13 @@ class Workspace(Type):
             Override name for the installed module entry.
         here:
             Write to the workspace config directory at the workspace cwd.
+        as_sdk:
+            Mark the install as an SDK (writes the `[modules.<name>.as-sdk]`
+            marker that dispatches `dagger module init <sdk>` and `dagger api
+            client init <sdk>`).
+        as_sdk_name:
+            User-facing SDK name to persist under `[modules.<name>.as-sdk]
+            name = ...`.
 
         Returns
         -------
@@ -15653,74 +16104,68 @@ class Workspace(Type):
             Arg("ref", ref),
             Arg("name", name, ""),
             Arg("here", here, False),
+            Arg("asSdk", as_sdk, False),
+            Arg("asSdkName", as_sdk_name, ""),
         ]
         _ctx = self._select("install", _args)
         return await _ctx.execute(str)
 
-    def migrate(self, *, force: bool | None = False) -> "WorkspaceMigration":
+    def migrate(self) -> "WorkspaceMigration":
         """Plan the explicit migration needed for the current workspace.
 
         The returned plan has an empty changeset and no steps when no
         migration is needed.
         """
-        _args = [
-            Arg("force", force, False),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("migrate", _args)
         return WorkspaceMigration(_ctx)
 
-    async def module_init(
+    def module_init(
         self,
         name: str,
         *,
         sdk: str | None = "",
+        path: str | None = "",
         source: str | None = "",
         include: list[str] | None = None,
-        self_calls: bool | None = False,
         here: bool | None = False,
-    ) -> str:
-        """Create a new module owned by the workspace and auto-install it in
-        dagger.toml.
+        args: JSON | None = None,
+    ) -> Changeset:
+        """Plan the workspace changes for initializing a new module: dagger-
+        module.toml + SDK codegen output at `path`, the authoring entry under
+        [[modules.<sdk>.as-sdk.modules]], and (when path defaults)
+        [modules.<name>]. The SDK must already be installed as an SDK. Returns
+        the resulting Changeset for the caller to preview and apply.
 
         Parameters
         ----------
         name:
             Name of the new module.
         sdk:
-            SDK to use for the new module.
+            Workspace SDK name or module entry name to use.
+        path:
+            Workspace-relative path for the new module. Defaults to
+            ".dagger/modules/<name>"; using the default also installs the
+            module in [modules.<name>].
         source:
             Source subpath within the new module.
         include:
             Additional include patterns for the module.
-        self_calls:
-            Enable the self-calls experimental feature for the new module.
         here:
             Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        args:
         """
         _args = [
             Arg("name", name),
             Arg("sdk", sdk, ""),
+            Arg("path", path, ""),
             Arg("source", source, ""),
             Arg("include", [] if include is None else include, []),
-            Arg("selfCalls", self_calls, False),
             Arg("here", here, False),
+            Arg("args", args, None),
         ]
         _ctx = self._select("moduleInit", _args)
-        return await _ctx.execute(str)
+        return Changeset(_ctx)
 
     async def module_list(self, *, module: str | None = "") -> list["WorkspaceModule"]:
         """List modules defined in the workspace configuration.
@@ -16225,6 +16670,9 @@ __all__ = [
     "Cloud",
     "Container",
     "CurrentModule",
+    "CurrentModuleAsSDK",
+    "CurrentModuleAsSDKClient",
+    "CurrentModuleAsSDKModule",
     "DiffStat",
     "DiffStatKind",
     "Directory",

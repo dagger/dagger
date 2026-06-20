@@ -10966,6 +10966,13 @@
                         </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-updatedConfigDirectory" href="#ModuleSource-updatedConfigDirectory"><code>updatedConfigDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td>
+                          <p>The module&#39;s dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source&#39;s context directory.</p>
+                          <p>Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.</p>
+                        </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-userDefaults" href="#ModuleSource-userDefaults"><code>userDefaults</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
                         <td> User-defined defaults read from local .env files </td>
                       </tr>
@@ -13524,8 +13531,45 @@
                         </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-clientGenerate" href="#Workspace-clientGenerate"><code>clientGenerate</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Regenerate all generated API clients registered in workspace config and return the resulting Changeset. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-clientId" href="#Workspace-clientId"><code>clientId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The client ID that owns this workspace's host filesystem. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-clientInit" href="#Workspace-clientInit"><code>clientInit</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Plan the workspace changes for initializing a generated API client: generated client files at <code>path</code> plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.</sdk-name>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Workspace-relative output directory for the generated client.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sdk</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Workspace install name of the SDK to use.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>module</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Workspace-relative path or canonical ref for the module the client binds to.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Write to the workspace config directory at the workspace cwd.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-configFile" href="#Workspace-configFile"><code>configFile</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -13773,6 +13817,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Write to the workspace config directory at the workspace cwd.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>asSdk</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Mark the install as an SDK (writes the empty <code>[modules.&lt;name&gt;.as-sdk]</code> marker that dispatches <code>dagger module init &lt;name&gt;</code> and <code>dagger api client init &lt;name&gt;</code>).</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -13797,8 +13845,10 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Workspace-moduleInit" href="#Workspace-moduleInit"><code>moduleInit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Create a new module owned by the workspace and auto-install it in dagger.toml. </td>
+                        <td data-property-name=""><a class="property-name" id="Workspace-moduleInit" href="#Workspace-moduleInit"><code>moduleInit</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at <code>path</code>, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.</name>
+                          </sdk>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -13811,7 +13861,11 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sdk</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>SDK to use for the new module.</p>
+                                <p>Workspace install name of the SDK to use.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Workspace-relative path for the new module. Defaults to &quot;.dagger/modules/<name>&quot;; using the default also installs the module in [modules.<name>].</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
@@ -13822,12 +13876,11 @@
                                 <p>Additional include patterns for the module.</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>selfCalls</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Enable the self-calls experimental feature for the new module.</p>
-                              </div>
-                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Write to the workspace config directory at the workspace cwd.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON</code></a></span></h6>
                               </div>
                             </div>
                           </div>

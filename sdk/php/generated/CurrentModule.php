@@ -14,6 +14,17 @@ namespace Dagger;
 class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+     *
+     * Errors if the current module is not installed as an SDK in this workspace.
+     */
+    public function asSDK(): CurrentModuleAsSDK
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSDK');
+        return new \Dagger\CurrentModuleAsSDK($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The dependencies of the module.
      */
     public function dependencies(): array
