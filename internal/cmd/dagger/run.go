@@ -27,21 +27,20 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-var runCmd = &cobra.Command{
-	Use:     "exec [options] <command>...",
-	Aliases: []string{"run", "r"},
-	Short:   "Execute a command in a Dagger session",
+var apiExecCmd = &cobra.Command{
+	Use:   "exec [options] <command>...",
+	Short: "Run a command with a connected Dagger API session (DAGGER_SESSION_PORT/TOKEN injected)",
 	Long: strings.ReplaceAll(
-		`Executes the specified command in a Dagger Session and displays
-live progress in a TUI.
+		`Run an external command with a live Dagger API session attached.
 
-´DAGGER_SESSION_PORT´ and ´DAGGER_SESSION_TOKEN´ will be conveniently
-injected automatically.
+´DAGGER_SESSION_PORT´ and ´DAGGER_SESSION_TOKEN´ are injected into the
+command's environment so the command can talk to the engine directly.
+Progress is rendered live in the TUI.
 
 For example:
 ´´´shell
 jq -n '{query:"{container{id}}"}' | \
-  dagger exec sh -c 'curl -s \
+  dagger api exec sh -c 'curl -s \
     -u $DAGGER_SESSION_TOKEN: \
     -H "content-type:application/json" \
     -d @- \
@@ -51,18 +50,29 @@ jq -n '{query:"{container{id}}"}' | \
 		"`",
 	),
 	Example: strings.TrimSpace(`
-dagger exec go run main.go
-dagger exec node index.mjs
-dagger exec python main.py
+dagger api exec go run main.go
+dagger api exec node index.mjs
+dagger api exec python main.py
 `,
 	),
 	RunE:         Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	Annotations: map[string]string{
-		hiddenAliasesAnnotation: "run,r",
-		printTraceLinkKey:       "true",
-		showFinalProgressKey:    "true",
+		printTraceLinkKey:    "true",
+		showFinalProgressKey: "true",
+	},
+}
+
+var runCmd = &cobra.Command{
+	Use:          "run [options] <command>...",
+	Hidden:       true,
+	RunE:         Run,
+	Args:         cobra.MinimumNArgs(1),
+	SilenceUsage: true,
+	Annotations: map[string]string{
+		printTraceLinkKey:    "true",
+		showFinalProgressKey: "true",
 	},
 }
 
@@ -72,8 +82,15 @@ var runLoadWorkspaceModules bool
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
+	apiExecCmd.Flags().SetInterspersed(false)
 	runCmd.Flags().SetInterspersed(false)
 
+	apiExecCmd.Flags().DurationVar(
+		&waitDelay,
+		"cleanup-timeout",
+		10*time.Second,
+		"max duration to wait between SIGTERM and SIGKILL on interrupt",
+	)
 	runCmd.Flags().DurationVar(
 		&waitDelay,
 		"cleanup-timeout",
@@ -81,8 +98,14 @@ func init() {
 		"max duration to wait between SIGTERM and SIGKILL on interrupt",
 	)
 
+	apiExecCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
 	runCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
+	apiExecCmd.Flags().BoolVar(&runLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
 	runCmd.Flags().BoolVar(&runLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
+	if err := apiExecCmd.Flags().MarkHidden("load-workspace-modules"); err != nil {
+		fmt.Fprintln(stderr, "Error hiding flag: load-workspace-modules", err)
+		os.Exit(1)
+	}
 	if err := runCmd.Flags().MarkHidden("load-workspace-modules"); err != nil {
 		fmt.Fprintln(stderr, "Error hiding flag: load-workspace-modules", err)
 		os.Exit(1)

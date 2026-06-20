@@ -101,7 +101,7 @@ type cloudCheckRow struct {
 }
 
 func (cli *CloudCLI) TryReplayCloudChecksForWorkspace(cmd *cobra.Command, address string, checks []string) (bool, error) {
-	res, selectors, err := cli.loadCloudCheckRowsForWorkspaceAcrossUserOrgs(cmd.Context(), address, checks, false)
+	res, selectors, err := cli.loadCloudCheckRowsForWorkspace(cmd.Context(), address, checks, false)
 	if err != nil {
 		return false, err
 	}
@@ -250,7 +250,7 @@ func cloudRepoOwner(repo string) string {
 	return ""
 }
 
-func (cli *CloudCLI) loadCloudCheckRowsForWorkspaceAcrossUserOrgs(ctx context.Context, address string, checks []string, login bool) (*cloudCheckQueryResult, cloudCheckSelectorFlags, error) {
+func (cli *CloudCLI) loadCloudCheckRowsForWorkspace(ctx context.Context, address string, checks []string, login bool) (*cloudCheckQueryResult, cloudCheckSelectorFlags, error) {
 	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
 	if err != nil {
 		return nil, cloudCheckSelectorFlags{}, err
@@ -269,93 +269,38 @@ func (cli *CloudCLI) loadCloudCheckRowsForWorkspaceAcrossUserOrgs(ctx context.Co
 	if err != nil {
 		return nil, cloudCheckSelectorFlags{}, err
 	}
-	user, err := client.User(ctx)
+
+	commits, err := client.UserChecks(ctx, []string{remote.CloneRef}, cloudCheckFetchLimit)
 	if err != nil {
-		return nil, cloudCheckSelectorFlags{}, err
+		return nil, cloudCheckSelectorFlags{}, fmt.Errorf("fetch Cloud checks for %s: %w", remote.CloneRef, err)
 	}
 
-	loadOrg := func(org cloudauth.Org) (*cloudCheckQueryResult, cloudCheckSelectorFlags, error) {
-		rows, err := loadCloudCheckRowsForOrg(ctx, client, org.Name, cloudCheckSelectorFlags{
-			GitHubRepo: []string{remote.CloneRef},
-		})
-		if err != nil {
-			return nil, cloudCheckSelectorFlags{}, err
+	commitsByOrg := map[string][]cloudapi.CheckCommit{}
+	orgs := make([]cloudauth.Org, 0)
+	for _, commit := range commits {
+		org := commit.Org
+		if _, ok := commitsByOrg[org.ID]; !ok {
+			orgs = append(orgs, cloudauth.Org{ID: org.ID, Name: org.Name})
 		}
-		rows, selectors, err := cloudRowsForWorkspaceAddress(ctx, rows, address, checks)
+		commitsByOrg[org.ID] = append(commitsByOrg[org.ID], commit)
+	}
+
+	ordered, _ := orderCloudOrgsForRepos(orgs, []string{remote.CloneRef})
+	for _, org := range ordered {
+		rows, selectors, err := cloudRowsForWorkspaceAddress(ctx, cloudCheckRows(org.Name, commitsByOrg[org.ID]), address, checks)
 		if err != nil {
 			return nil, cloudCheckSelectorFlags{}, err
 		}
 		if !selectors.hasCloudSelector() {
 			selectors = baseSelectors
 		}
-		return &cloudCheckQueryResult{
-			OrgName: org.Name,
-			OrgID:   org.ID,
-			Client:  client,
-			Rows:    rows,
-		}, selectors, nil
-	}
-
-	orgs, preferred := orderCloudOrgsForRepos(user.Orgs, []string{remote.CloneRef})
-	for _, org := range orgs[:preferred] {
-		res, selectors, err := loadOrg(org)
-		if err != nil {
-			return nil, cloudCheckSelectorFlags{}, err
-		}
-		if len(res.Rows) > 0 {
-			return res, selectors, nil
-		}
-	}
-
-	type orgWorkspaceRows struct {
-		index     int
-		res       *cloudCheckQueryResult
-		selectors cloudCheckSelectorFlags
-	}
-	results := make([]orgWorkspaceRows, 0, len(orgs)-preferred)
-	var mu sync.Mutex
-	eg, egctx := errgroup.WithContext(ctx)
-	eg.SetLimit(8)
-	for i, org := range orgs[preferred:] {
-		i, org := i, org
-		eg.Go(func() error {
-			rows, err := loadCloudCheckRowsForOrg(egctx, client, org.Name, cloudCheckSelectorFlags{
-				GitHubRepo: []string{remote.CloneRef},
-			})
-			if err != nil {
-				return err
-			}
-			rows, selectors, err := cloudRowsForWorkspaceAddress(egctx, rows, address, checks)
-			if err != nil {
-				return err
-			}
-			if !selectors.hasCloudSelector() {
-				selectors = baseSelectors
-			}
-			mu.Lock()
-			results = append(results, orgWorkspaceRows{
-				index:     i,
-				selectors: selectors,
-				res: &cloudCheckQueryResult{
-					OrgName: org.Name,
-					OrgID:   org.ID,
-					Client:  client,
-					Rows:    rows,
-				},
-			})
-			mu.Unlock()
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, cloudCheckSelectorFlags{}, err
-	}
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].index < results[j].index
-	})
-	for _, result := range results {
-		if len(result.res.Rows) > 0 {
-			return result.res, result.selectors, nil
+		if len(rows) > 0 {
+			return &cloudCheckQueryResult{
+				OrgName: org.Name,
+				OrgID:   org.ID,
+				Client:  client,
+				Rows:    rows,
+			}, selectors, nil
 		}
 	}
 	return &cloudCheckQueryResult{

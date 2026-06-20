@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/schema"
+	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -25,6 +26,30 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 )
+
+// invalidateClientWorkspace drops the calling client's cached workspace
+// detection so the next ensureWorkspaceLoaded re-detects it from the host.
+//
+// Registered as core.SetWorkspaceInvalidator and triggered after a changeset
+// export writes workspace config files (e.g. a `dagger setup` migration that
+// creates dagger.toml / removes the legacy dagger.json). The per-client cache
+// would otherwise serve the pre-migration view for the client's whole lifetime;
+// under nested execution that lifetime spans multiple sessions in one process
+// (the client ID is pinned by DAGGER_SESSION_CLIENT_ID), so the post-migrate
+// recommended-module install would still see the legacy dagger.json and fail.
+func (srv *Server) invalidateClientWorkspace(ctx context.Context) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	client.workspaceMu.Lock()
+	defer client.workspaceMu.Unlock()
+	client.workspaceLoaded = false
+	client.workspaceErr = nil
+	client.workspace = nil
+	client.pendingModules = nil
+	return nil
+}
 
 // CurrentWorkspace returns the cached workspace for the current client.
 func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error) {
@@ -464,6 +489,14 @@ func workspaceConfigPendingModules(
 	pending := make([]pendingModule, 0, len(names))
 	for _, name := range names {
 		entry := cfg.Modules[name]
+		// A built-in SDK install entry (e.g. dang/go written by migration) has a
+		// bare runtime name as its source, not a loadable module ref. It exists
+		// only to carry the [modules.<sdk>.as-sdk] authoring metadata; the runtime
+		// itself resolves in-engine when a consuming module loads. Skip it here so
+		// the loader doesn't try to resolve the bare name as a local path.
+		if entry.AsSDK != nil && coresdk.IsBuiltinSDKName(entry.Source) {
+			continue
+		}
 		mod := pendingModule{
 			Kind:               moduleLoadKindAmbient,
 			Ref:                entry.Source,
@@ -754,7 +787,7 @@ func legacyWorkspaceCompatMessage(cwd, cfgPath string) string {
 	if rel, err := filepath.Rel(cwd, cfgPath); err == nil {
 		relPath = rel
 	}
-	return fmt.Sprintf("No workspace config found, inferring from %s.\nRun 'dagger migrate' when ready. More info: https://docs.dagger.io/reference/upgrade-to-workspaces", relPath)
+	return fmt.Sprintf("No workspace config found, inferring from %s.\nRun 'dagger setup' when ready. More info: https://docs.dagger.io/reference/upgrade-to-workspaces", relPath)
 }
 
 // buildCoreWorkspace converts the internal workspace detection result into

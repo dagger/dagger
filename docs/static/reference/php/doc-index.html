@@ -123,7 +123,13 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asCloud</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type Cloud</p></dd><dt><a href="Dagger/Binding.html#method_asContainer">
 <abbr title="Dagger\Binding">Binding</abbr>::asContainer</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type Container</p></dd><dt><a href="Dagger/Binding.html#method_asDiffStat">
+                    <dd><p>Retrieve the binding value, as type Container</p></dd><dt><a href="Dagger/Binding.html#method_asCurrentModuleAsSDK">
+<abbr title="Dagger\Binding">Binding</abbr>::asCurrentModuleAsSDK</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type CurrentModuleAsSDK</p></dd><dt><a href="Dagger/Binding.html#method_asCurrentModuleAsSDKClient">
+<abbr title="Dagger\Binding">Binding</abbr>::asCurrentModuleAsSDKClient</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type CurrentModuleAsSDKClient</p></dd><dt><a href="Dagger/Binding.html#method_asCurrentModuleAsSDKModule">
+<abbr title="Dagger\Binding">Binding</abbr>::asCurrentModuleAsSDKModule</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type CurrentModuleAsSDKModule</p></dd><dt><a href="Dagger/Binding.html#method_asDiffStat">
 <abbr title="Dagger\Binding">Binding</abbr>::asDiffStat</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type DiffStat</p></dd><dt><a href="Dagger/Binding.html#method_asDirectory">
 <abbr title="Dagger\Binding">Binding</abbr>::asDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -202,7 +208,9 @@
 <abbr title="Dagger\Container">Container</abbr>::asService</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Turn the container into a Service.</p></dd><dt><a href="Dagger/Container.html#method_asTarball">
 <abbr title="Dagger\Container">Container</abbr>::asTarball</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Package the container state as an OCI image, and return it as a tar archive</p></dd><dt><a href="Dagger/DiffStat.html#method_addedLines">
+                    <dd><p>Package the container state as an OCI image, and return it as a tar archive</p></dd><dt><a href="Dagger/CurrentModule.html#method_asSDK">
+<abbr title="Dagger\CurrentModule">CurrentModule</abbr>::asSDK</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
+                    <dd><p>Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.</p></dd><dt><a href="Dagger/DiffStat.html#method_addedLines">
 <abbr title="Dagger\DiffStat">DiffStat</abbr>::addedLines</a>() &mdash; <em>Method in class <a href="Dagger/DiffStat.html"><abbr title="Dagger\DiffStat">DiffStat</abbr></a></em></dt>
                     <dd><p>Number of added lines for this path.</p></dd><dt><a href="Dagger/Directory.html#method_asGit">
 <abbr title="Dagger\Directory">Directory</abbr>::asGit</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
@@ -330,7 +338,12 @@
 <abbr title="Dagger\Container">Container</abbr>::combinedOutput</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>The combined buffered standard output and standard error stream of the last executed command</p></dd><dt><a href="Dagger/ContainerId.html"><abbr title="Dagger\ContainerId">ContainerId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>Reflective module API provided to functions at runtime.</p></dd><dt><a href="Dagger/CurrentModuleId.html"><abbr title="Dagger\CurrentModuleId">CurrentModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Reflective module API provided to functions at runtime.</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html"><abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The SDK-role data for the currently executing module, as installed in the active workspace.</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html#method_clients">
+<abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr>::clients</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDK.html"><abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr></a></em></dt>
+                    <dd><p>The generated clients this SDK produces in the workspace.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A generated client the current SDK produces in the workspace.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKModule.html"><abbr title="Dagger\CurrentModuleAsSDKModule">CurrentModuleAsSDKModule</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A workspace-local module managed by the current SDK.</p></dd><dt><a href="Dagger/CurrentModuleId.html"><abbr title="Dagger\CurrentModuleId">CurrentModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Dagger.html#method_connect">
 <abbr title="Dagger\Dagger">Dagger</abbr>::connect</a>() &mdash; <em>Method in class <a href="Dagger/Dagger.html"><abbr title="Dagger\Dagger">Dagger</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Directory.html#method_changes">
@@ -395,9 +408,13 @@
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::column</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
                     <dd><p>The column number within the line.</p></dd><dt><a href="Dagger/Workspace.html#method_checks">
 <abbr title="Dagger\Workspace">Workspace</abbr>::checks</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_clientId">
+                    <dd><p>Return all checks from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_clientGenerate">
+<abbr title="Dagger\Workspace">Workspace</abbr>::clientGenerate</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Regenerate all generated API clients registered in workspace config and return the resulting Changeset.</p></dd><dt><a href="Dagger/Workspace.html#method_clientId">
 <abbr title="Dagger\Workspace">Workspace</abbr>::clientId</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>The client ID that owns this workspace's host filesystem.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
+                    <dd><p>The client ID that owns this workspace's host filesystem.</p></dd><dt><a href="Dagger/Workspace.html#method_clientInit">
+<abbr title="Dagger\Workspace">Workspace</abbr>::clientInit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Plan the workspace changes for initializing a generated API client: generated client files at <code>path</code> plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.</p></dd><dt><a href="Dagger/Workspace.html#method_configFile">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Selected native workspace config file relative to the workspace root, if any.</p></dd><dt><a href="Dagger/Workspace.html#method_configRead">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configRead</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
@@ -794,7 +811,13 @@
 <abbr title="Dagger\Container">Container</abbr>::import</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Reads the container from an OCI tarball.</p></dd><dt><a href="Dagger/CurrentModule.html#method_id">
 <abbr title="Dagger\CurrentModule">CurrentModule</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this CurrentModule.</p></dd><dt><a href="Dagger/DiffStat.html#method_id">
+                    <dd><p>A unique identifier for this CurrentModule.</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html#method_id">
+<abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDK.html"><abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this CurrentModuleAsSDK.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_id">
+<abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this CurrentModuleAsSDKClient.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKModule.html#method_id">
+<abbr title="Dagger\CurrentModuleAsSDKModule">CurrentModuleAsSDKModule</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKModule.html"><abbr title="Dagger\CurrentModuleAsSDKModule">CurrentModuleAsSDKModule</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this CurrentModuleAsSDKModule.</p></dd><dt><a href="Dagger/DiffStat.html#method_id">
 <abbr title="Dagger\DiffStat">DiffStat</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/DiffStat.html"><abbr title="Dagger\DiffStat">DiffStat</abbr></a></em></dt>
                     <dd><p>A unique identifier for this DiffStat.</p></dd><dt><a href="Dagger/Directory.html#method_id">
 <abbr title="Dagger\Directory">Directory</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
@@ -1027,7 +1050,11 @@
 <abbr title="Dagger\Client">Client</abbr>::moduleSource</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Create a new module source instance from a source ref string</p></dd><dt><a href="Dagger/Container.html#method_mounts">
 <abbr title="Dagger\Container">Container</abbr>::mounts</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves the list of paths where a directory is mounted.</p></dd><dt><a href="Dagger/EngineCache.html#method_maxUsedSpace">
+                    <dd><p>Retrieves the list of paths where a directory is mounted.</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html#method_modules">
+<abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr>::modules</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDK.html"><abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr></a></em></dt>
+                    <dd><p>The workspace-local modules this SDK authors and manages.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_module">
+<abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a></em></dt>
+                    <dd><p>The module the client is bound to (workspace-relative path or canonical ref).</p></dd><dt><a href="Dagger/EngineCache.html#method_maxUsedSpace">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::maxUsedSpace</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
                     <dd><p>The maximum bytes to keep in the cache without pruning.</p></dd><dt><a href="Dagger/EngineCache.html#method_minFreeSpace">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::minFreeSpace</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
@@ -1059,7 +1086,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::migrate</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Plan the explicit migration needed for the current workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleInit">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleInit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleList">
+                    <dd><p>Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at <code>path</code>, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleList">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleList</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>List modules defined in the workspace configuration.</p></dd>        </dl><h2 id="letterN">N</h2>
         <dl id="indexN"><dt><a href="Dagger/Binding.html#method_name">
@@ -1074,7 +1101,9 @@
 <abbr title="Dagger\Connection">Connection</abbr>::newProcessSession</a>() &mdash; <em>Method in class <a href="Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/CurrentModule.html#method_name">
 <abbr title="Dagger\CurrentModule">CurrentModule</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
-                    <dd><p>The name of the module being executed in</p></dd><dt><a href="Dagger/Directory.html#method_name">
+                    <dd><p>The name of the module being executed in</p></dd><dt><a href="Dagger/CurrentModuleAsSDK.html#method_name">
+<abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDK.html"><abbr title="Dagger\CurrentModuleAsSDK">CurrentModuleAsSDK</abbr></a></em></dt>
+                    <dd><p>The user-facing name of this SDK in the workspace.</p></dd><dt><a href="Dagger/Directory.html#method_name">
 <abbr title="Dagger\Directory">Directory</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Returns the name of the directory.</p></dd><dt><a href="Dagger/Engine.html#method_name">
 <abbr title="Dagger\Engine">Engine</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Engine.html"><abbr title="Dagger\Engine">Engine</abbr></a></em></dt>
@@ -1166,7 +1195,13 @@
 <abbr title="Dagger\Container">Container</abbr>::platform</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>The platform this container executes and publishes as.</p></dd><dt><a href="Dagger/Container.html#method_publish">
 <abbr title="Dagger\Container">Container</abbr>::publish</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Package the container state as an OCI image, and publish it to a registry</p></dd><dt><a href="Dagger/DiffStat.html#method_path">
+                    <dd><p>Package the container state as an OCI image, and publish it to a registry</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_path">
+<abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a></em></dt>
+                    <dd><p>Workspace-root-relative path of the generated client.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKClient.html#method_pin">
+<abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr>::pin</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKClient.html"><abbr title="Dagger\CurrentModuleAsSDKClient">CurrentModuleAsSDKClient</abbr></a></em></dt>
+                    <dd><p>The pinned version of the bound module, if any.</p></dd><dt><a href="Dagger/CurrentModuleAsSDKModule.html#method_path">
+<abbr title="Dagger\CurrentModuleAsSDKModule">CurrentModuleAsSDKModule</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModuleAsSDKModule.html"><abbr title="Dagger\CurrentModuleAsSDKModule">CurrentModuleAsSDKModule</abbr></a></em></dt>
+                    <dd><p>Workspace-root-relative path to the managed module.</p></dd><dt><a href="Dagger/DiffStat.html#method_path">
 <abbr title="Dagger\DiffStat">DiffStat</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/DiffStat.html"><abbr title="Dagger\DiffStat">DiffStat</abbr></a></em></dt>
                     <dd><p>Path of the changed file or directory.</p></dd><dt><a href="Dagger/EngineCache.html#method_prune">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::prune</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
@@ -1464,7 +1499,9 @@
 <abbr title="Dagger\Host">Host</abbr>::unixSocket</a>() &mdash; <em>Method in class <a href="Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></em></dt>
                     <dd><p>Accesses a Unix socket on the host.</p></dd><dt><a href="Dagger/Module.html#method_userDefaults">
 <abbr title="Dagger\Module">Module</abbr>::userDefaults</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>User-defined default values, loaded from local .env files.</p></dd><dt><a href="Dagger/ModuleSource.html#method_userDefaults">
+                    <dd><p>User-defined default values, loaded from local .env files.</p></dd><dt><a href="Dagger/ModuleSource.html#method_updatedConfigDirectory">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::updatedConfigDirectory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.</p></dd><dt><a href="Dagger/ModuleSource.html#method_userDefaults">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::userDefaults</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>User-defined defaults read from local .env files</p></dd><dt><a href="Dagger/Secret.html#method_uri">
 <abbr title="Dagger\Secret">Secret</abbr>::uri</a>() &mdash; <em>Method in class <a href="Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></em></dt>
@@ -1674,7 +1711,19 @@
 <abbr title="Dagger\Env">Env</abbr>::withContainerOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Declare a desired Container output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCurrentModule">
 <abbr title="Dagger\Env">Env</abbr>::withCurrentModule</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Installs the current module into the environment, exposing its functions to the model</p></dd><dt><a href="Dagger/Env.html#method_withDiffStatInput">
+                    <dd><p>Installs the current module into the environment, exposing its functions to the model</p></dd><dt><a href="Dagger/Env.html#method_withCurrentModuleAsSDKClientInput">
+<abbr title="Dagger\Env">Env</abbr>::withCurrentModuleAsSDKClientInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type CurrentModuleAsSDKClient in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCurrentModuleAsSDKClientOutput">
+<abbr title="Dagger\Env">Env</abbr>::withCurrentModuleAsSDKClientOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCurrentModuleAsSDKInput">
+<abbr title="Dagger\Env">Env</abbr>::withCurrentModuleAsSDKInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type CurrentModuleAsSDK in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCurrentModuleAsSDKModuleInput">
+<abbr title="Dagger\Env">Env</abbr>::withCurrentModuleAsSDKModuleInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type CurrentModuleAsSDKModule in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCurrentModuleAsSDKModuleOutput">
+<abbr title="Dagger\Env">Env</abbr>::withCurrentModuleAsSDKModuleOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCurrentModuleAsSDKOutput">
+<abbr title="Dagger\Env">Env</abbr>::withCurrentModuleAsSDKOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired CurrentModuleAsSDK output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withDiffStatInput">
 <abbr title="Dagger\Env">Env</abbr>::withDiffStatInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type DiffStat in the environment</p></dd><dt><a href="Dagger/Env.html#method_withDiffStatOutput">
 <abbr title="Dagger\Env">Env</abbr>::withDiffStatOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>

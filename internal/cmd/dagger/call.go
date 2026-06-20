@@ -29,7 +29,7 @@ var callCoreCmd = &FuncCommand{
 	Name:              "core [options]",
 	Short:             "Call a core function",
 	Hidden:            true,
-	Deprecated:        "use 'dagger -m core function call' instead",
+	Deprecated:        "use 'dagger -m core api call' instead",
 	DisableModuleLoad: true,
 	Annotations: map[string]string{
 		"experimental":       "true",
@@ -48,7 +48,7 @@ var callModCmd = &FuncCommand{
 	},
 }
 
-var functionCallCmd = &FuncCommand{
+var apiCallCmd = &FuncCommand{
 	Name:  "call [options] [function]...",
 	Short: "Call one or more functions, interconnected into a pipeline",
 	Annotations: map[string]string{
@@ -57,21 +57,11 @@ var functionCallCmd = &FuncCommand{
 	},
 }
 
-var functionCmd = &cobra.Command{
-	Use:     "function",
-	Aliases: []string{"fn"},
-	Short:   "Work with module functions",
-	Annotations: map[string]string{
-		visibleAliasesAnnotation: "fn",
-	},
-}
+var apiFunctionsCmd = newFunctionListCmd("functions [options] [function]...", false)
 
-var functionListCmd = newFunctionListCmd("list [options] [function]...", false)
-var funcListCmd = newFunctionListCmd("functions [options] [function]...", true)
-
-func init() {
-	functionCmd.AddCommand(functionListCmd, functionCallCmd.Command())
-}
+// functionsAliasCmd is a hidden root-level alias for `dagger api functions`,
+// mirroring how callModCmd aliases `dagger api call`.
+var functionsAliasCmd = newFunctionListCmd("functions [options] [function]...", true)
 
 func newFunctionListCmd(use string, hidden bool) *cobra.Command {
 	return &cobra.Command{
@@ -79,15 +69,15 @@ func newFunctionListCmd(use string, hidden bool) *cobra.Command {
 		Short: `List available functions`,
 		Long: strings.ReplaceAll(`List available functions in a module.
 
-This is similar to ´dagger function call --help´, but only focused on showing the
+This is similar to ´dagger api call --help´, but only focused on showing the
 available functions.
 
 Examples:
-  dagger function list                           # List top-level functions in current workspace
-  dagger function list container                 # List functions on container
-  dagger -m core function list                   # List core functions
-  dagger -W github.com/acme/ws function list     # List top-level functions in explicit workspace
-  dagger -W github.com/acme/ws function list container from
+  dagger api functions                           # List top-level functions in current workspace
+  dagger api functions container                 # List functions on container
+  dagger -m core api functions                   # List core functions
+  dagger -W github.com/acme/ws api functions     # List top-level functions in explicit workspace
+  dagger -W github.com/acme/ws api functions container from
 `,
 			"´",
 			"`",

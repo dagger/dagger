@@ -29,10 +29,91 @@ import (
 var workspaceCmd = &cobra.Command{
 	Use:     "workspace",
 	Aliases: []string{"ws"},
-	Short:   "Manage the current workspace",
+	Short:   "Inspect or configure your workspace (cwd, remotes, config, etc.)",
+	Long: `Inspect or configure your workspace.
+
+A workspace is a project configured to use Dagger — a directory holding
+a dagger.toml that records installed modules, environment overlays, and
+settings. Most commands (install, check, generate, up, settings, ...)
+operate on the workspace reachable from the current directory. The -W
+flag selects a different workspace (local path or git ref); --env
+applies a named overlay; dagger.toml is the source of truth.
+
+Run with no subcommand to print a digest of workspace state (cwd, root,
+current remote, installed modules summary).`,
 	Annotations: map[string]string{
 		visibleAliasesAnnotation: "ws",
 	},
+	Args: cobra.NoArgs,
+	RunE: runWorkspaceDigest,
+}
+
+// runWorkspaceDigest prints a one-shot summary of the current workspace:
+// cwd, root, selected remote, all selectable remotes, and a brief list of
+// installed modules. Bound to bare `dagger workspace` invocation; replaces
+// the briefly-considered `dagger status` verb.
+func runWorkspaceDigest(cmd *cobra.Command, _ []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		dag := engineClient.Dagger()
+		ws := dag.CurrentWorkspace()
+		out := cmd.OutOrStdout()
+
+		cwd, err := ws.Cwd(ctx)
+		if err != nil {
+			return fmt.Errorf("load workspace cwd: %w", err)
+		}
+		address, err := ws.Address(ctx)
+		if err != nil {
+			return fmt.Errorf("load workspace address: %w", err)
+		}
+		root, err := workspaceRootFromAddress(address, cwd)
+		if err != nil {
+			return err
+		}
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return fmt.Errorf("load workspace config file: %w", err)
+		}
+		if configFile == "" {
+			configFile = "none"
+		}
+
+		fmt.Fprintf(out, "cwd:     %s\n", cwd)
+		fmt.Fprintf(out, "root:    %s\n", root)
+		fmt.Fprintf(out, "config:  %s\n", configFile)
+
+		// Remote info — best-effort; an unconfigured remote is normal.
+		if _, remote, err := selectedRemoteWorkspaceAddress(ctx, "workspace"); err == nil && remote != "" {
+			fmt.Fprintf(out, "remote:  %s\n", remote)
+		}
+
+		// Modules summary.
+		var res struct {
+			CurrentWorkspace struct {
+				ModuleList []struct {
+					Name   string
+					Source string
+				}
+			}
+		}
+		if err := dag.Do(ctx, &dagger.Request{
+			Query: `query { currentWorkspace { moduleList { name source } } }`,
+		}, &dagger.Response{Data: &res}); err != nil {
+			return fmt.Errorf("list installed modules: %w", err)
+		}
+		mods := res.CurrentWorkspace.ModuleList
+		if len(mods) == 0 {
+			fmt.Fprintln(out, "modules: (none installed)")
+			return nil
+		}
+		fmt.Fprintln(out, "modules:")
+		for _, m := range mods {
+			fmt.Fprintf(out, "  %s (%s)\n", m.Name, m.Source)
+		}
+		return nil
+	})
 }
 
 var workspaceRootCmd = &cobra.Command{
@@ -101,14 +182,6 @@ var workspaceConfigFileCmd = &cobra.Command{
 	},
 }
 
-var workspaceInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Create workspace config",
-	Long:  "Create dagger.toml for the current workspace.",
-	Args:  cobra.NoArgs,
-	RunE:  runWorkspaceInit,
-}
-
 var workspaceConfigCmd = &cobra.Command{
 	Use:   "config [key] [value]",
 	Short: "Get or set workspace configuration",
@@ -140,16 +213,11 @@ var workspaceRemoteCmd = &cobra.Command{
 	RunE:  WorkspaceRemote,
 }
 
-var workspaceAutocheckCmd = &cobra.Command{
-	Use:   "autocheck [on|off]",
-	Short: "Get or set autocheck for the selected workspace remote",
-	Args:  validateWorkspaceAutocheckArgs,
-	RunE:  WorkspaceAutocheck,
-}
-
-var workspaceActivityCmd = &cobra.Command{
+// activityCmd is the top-level activity command (hoisted from what was
+// `dagger workspace activity`).
+var activityCmd = &cobra.Command{
 	Use:   "activity",
-	Short: "List recent Cloud activity for the selected workspace",
+	Short: "Show recent activity (runs, traces, etc.) for this workspace",
 	Args:  cobra.NoArgs,
 	RunE:  WorkspaceActivity,
 }
@@ -160,37 +228,16 @@ func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
-	workspaceCmd.AddCommand(workspaceInitCmd)
-	workspaceCmd.AddCommand(workspaceAutocheckCmd)
 	workspaceCmd.AddCommand(workspaceRemoteCmd)
 	workspaceCmd.AddCommand(workspaceRemotesCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
-	workspaceCmd.AddCommand(workspaceActivityCmd)
 
-	addWorkspaceHereFlag(configCmd)
 	addWorkspaceHereFlag(workspaceConfigCmd)
-	addWorkspaceHereFlag(workspaceInitCmd)
-	workspaceActivityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
-
-	setWorkspaceFlagPolicy(workspaceInitCmd, workspaceFlagPolicyLocalOnly)
+	activityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
 }
 
 func addWorkspaceHereFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&workspaceHere, "here", false, "Write workspace config at the selected workspace cwd")
-}
-
-func runWorkspaceInit(cmd *cobra.Command, _ []string) error {
-	return withEngine(cmd.Context(), client.Params{
-		SkipWorkspaceModules: true,
-	}, func(ctx context.Context, engineClient *client.Client) error {
-		configDir, err := initWorkspace(ctx, engineClient.Dagger())
-		if err != nil {
-			return err
-		}
-
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Created workspace config in %s\n", configDir)
-		return err
-	})
 }
 
 func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
@@ -211,10 +258,6 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
 		}
 	})
-}
-
-func initWorkspace(ctx context.Context, dag *dagger.Client) (string, error) {
-	return dag.CurrentWorkspace().Init(ctx, dagger.WorkspaceInitOpts{Here: workspaceHere})
 }
 
 func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key string) error {
@@ -353,52 +396,6 @@ func WorkspaceRemote(cmd *cobra.Command, _ []string) error {
 	return err
 }
 
-func validateWorkspaceAutocheckArgs(_ *cobra.Command, args []string) error {
-	if len(args) > 1 {
-		return fmt.Errorf("expected 0 or 1 arguments, got %d", len(args))
-	}
-	if len(args) == 1 {
-		switch args[0] {
-		case "on", "off":
-		default:
-			return fmt.Errorf("expected autocheck state to be on or off, got %q", args[0])
-		}
-	}
-	return nil
-}
-
-func WorkspaceAutocheck(cmd *cobra.Command, args []string) error {
-	remote, _, err := selectedRemoteWorkspaceAddress(cmd.Context(), "workspace autocheck")
-	if err != nil {
-		return err
-	}
-	if len(args) == 1 {
-		enabled := args[0] == "on"
-		state, err := setWorkspaceAutocheckState(cmd.Context(), remote, enabled)
-		if errors.Is(err, errCloudNotAuthenticated) {
-			return fmt.Errorf("not authenticated; run 'dagger login' to update workspace autocheck")
-		}
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), workspaceAutocheckStateString(state))
-		return err
-	}
-
-	state, ok, err := loadWorkspaceAutocheckState(cmd.Context(), remote)
-	if errors.Is(err, errCloudNotAuthenticated) {
-		return fmt.Errorf("not authenticated; run 'dagger login' to view workspace autocheck")
-	}
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("workspace autocheck state not found for %s", remote.CloneRef)
-	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), workspaceAutocheckStateString(state))
-	return err
-}
-
 func WorkspaceRemotes(cmd *cobra.Command, _ []string) error {
 	remote, _, err := selectedRemoteWorkspaceAddress(cmd.Context(), "workspace remotes")
 	if err != nil {
@@ -428,7 +425,7 @@ func WorkspaceActivity(cmd *cobra.Command, _ []string) error {
 	if workspaceActivityAll {
 		address = remote.BaseAddress
 	}
-	res, _, err := cloudCLI.loadCloudCheckRowsForWorkspaceAcrossUserOrgs(cmd.Context(), address, nil, true)
+	res, _, err := cloudCLI.loadCloudCheckRowsForWorkspace(cmd.Context(), address, nil, true)
 	if errors.Is(err, errCloudNotAuthenticated) {
 		return fmt.Errorf("not authenticated; run 'dagger login' to view workspace activity")
 	}
@@ -675,11 +672,18 @@ func normalizeWorkspaceGitOrigin(origin string) string {
 func withEngineSilent(ctx context.Context, params client.Params, fn runClientCallback) error {
 	oldFrontend := Frontend
 	oldOpts := opts
+	oldSkip := skipSharedTelemetryExporters
 	Frontend = idtui.NewPlain(io.Discard)
 	opts.Silent = true
+	// This is an internal plumbing session (e.g. the pre-command dynamic SDK-init
+	// registration). Keep it out of the process-wide OTLP exporter singletons so
+	// it doesn't shut them down for the real command that follows in the same
+	// process. See engineTelemetryConfig.
+	skipSharedTelemetryExporters = true
 	defer func() {
 		Frontend = oldFrontend
 		opts = oldOpts
+		skipSharedTelemetryExporters = oldSkip
 	}()
 	return withEngine(ctx, params, fn)
 }
@@ -877,8 +881,6 @@ func renderWorkspaceRemoteRows(cmd *cobra.Command, rows []*workspaceRemoteRow) {
 }
 
 type workspaceAutocheckState struct {
-	OrgName        string
-	OrgID          string
 	Repo           string
 	Enabled        bool
 	IsPublic       bool
@@ -904,97 +906,54 @@ func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddre
 	if err != nil {
 		return workspaceAutocheckState{}, err
 	}
-	if !ok {
-		current = workspaceAutocheckState{
-			Repo:     remote.CloneRef,
-			IsPublic: true,
+	if !ok || current.InstallationID == "" {
+		// the repo isn't tracked yet, fall back to locating its installation by owner
+		// among the user's sources
+		current, err = workspaceAutocheckStateFromSource(ctx, client, remote.CloneRef)
+		if err != nil {
+			return workspaceAutocheckState{}, err
 		}
 	}
 	if current.Enabled == enabled {
 		return current, nil
 	}
-	if current.OrgID == "" || current.InstallationID == "" {
-		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", current.Repo)
-	}
 	selected := setWorkspaceAutocheckRepoSelected(current.SelectedRepos, current.Repo, enabled)
-	if !enabled && len(selected) == 0 {
-		return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck off: Cloud requires at least one selected repository for source %s", current.InstallationID)
-	}
-	if _, err := client.ConfigureOrgSource(ctx, current.OrgID, current.InstallationID, "SELECTED", selected); err != nil {
+	if _, err := client.ConfigureSource(ctx, current.InstallationID, "SELECTED", selected); err != nil {
 		return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
 	}
-	if enabled {
-		if _, err := client.UpdateOrgRepoSetting(ctx, current.OrgID, current.Repo, current.IsPublic); err != nil {
-			return workspaceAutocheckState{}, fmt.Errorf("update Cloud repo setting for %s: %w", current.Repo, err)
-		}
-	}
 	current.Enabled = enabled
-	current.SourceMode = "SELECTED"
 	current.SelectedRepos = selected
 	return current, nil
 }
 
-func workspaceAutocheckClient(ctx context.Context, login bool) (*cloudapi.Client, error) {
-	client, _, err := cloudCLI.cloudClientWithLogin(ctx, login)
-	if err != nil {
-		return nil, err
-	}
-	return client, nil
-}
-
-func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, repo string) (workspaceAutocheckState, bool, error) {
+// workspaceAutocheckStateFromSource locates the installation backing repo by
+// matching its owner against the user's Cloud sources.
+func workspaceAutocheckStateFromSource(ctx context.Context, client *cloudapi.Client, repo string) (workspaceAutocheckState, error) {
 	repo = "github.com/" + normalizeGitHubRepo(repo)
 	sources, err := client.Sources(ctx)
 	if err != nil {
-		return workspaceAutocheckState{}, false, fmt.Errorf("lookup Cloud sources: %w", err)
+		return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud sources: %w", err)
 	}
 	source, ok := workspaceSourceForRepo(sources, repo)
 	if !ok || source.OrgName == nil {
-		if ok, err := workspaceRemoteRepoExists(ctx, client, repo); err != nil {
-			return workspaceAutocheckState{}, false, err
-		} else if ok {
-			return workspaceAutocheckState{
-				Repo:     repo,
-				Enabled:  false,
-				IsPublic: true,
-			}, true, nil
-		}
-		return workspaceAutocheckState{}, false, nil
+		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", repo)
 	}
-	org, err := client.OrgByName(ctx, *source.OrgName)
+	mappedSources, err := client.OrgMappedSources(ctx, *source.OrgName)
 	if err != nil {
-		return workspaceAutocheckState{}, false, fmt.Errorf("lookup Cloud org %q: %w", *source.OrgName, err)
+		return workspaceAutocheckState{}, fmt.Errorf("lookup Cloud mapped sources for org %q: %w", *source.OrgName, err)
 	}
-	mapped, err := workspaceMappedSourceForInstallation(ctx, client, org.Name, source.ID)
-	if err != nil {
-		return workspaceAutocheckState{}, false, err
+	mapped, ok := workspaceMappedSourceByInstallation(mappedSources, source.ID)
+	if !ok {
+		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", repo)
 	}
-	sourceRepos, err := client.SourceRepositories(ctx, source.ID, org.ID)
-	if err != nil {
-		return workspaceAutocheckState{}, false, fmt.Errorf("lookup Cloud source repositories for %s: %w", repo, err)
-	}
-	selected, enabled := workspaceSelectedSourceRepos(sourceRepos, repo)
-	setting, err := client.OrgRepoSetting(ctx, org.Name, repo)
-	if err != nil {
-		return workspaceAutocheckState{}, false, fmt.Errorf("fetch cloud repo setting for org %q: %w", org.Name, err)
-	}
-	isPublic := true
-	if setting != nil {
-		isPublic = setting.IsPublic
-	}
-	if len(selected) > 0 || setting != nil {
-		return workspaceAutocheckState{
-			OrgName:        org.Name,
-			OrgID:          org.ID,
-			Repo:           repo,
-			Enabled:        enabled,
-			IsPublic:       isPublic,
-			InstallationID: source.ID,
-			SourceMode:     mapped.Mode,
-			SelectedRepos:  selected,
-		}, true, nil
-	}
-	return workspaceAutocheckState{}, false, nil
+	selected, enabled := workspaceSelectedRepos(mapped.Repositories, repo)
+	return workspaceAutocheckState{
+		Repo:           repo,
+		Enabled:        enabled,
+		InstallationID: source.ID,
+		SourceMode:     "SELECTED",
+		SelectedRepos:  selected,
+	}, nil
 }
 
 func workspaceSourceForRepo(sources []cloudapi.Source, repo string) (cloudapi.Source, bool) {
@@ -1010,34 +969,73 @@ func workspaceSourceForRepo(sources []cloudapi.Source, repo string) (cloudapi.So
 	return cloudapi.Source{}, false
 }
 
-func workspaceMappedSourceForInstallation(ctx context.Context, client *cloudapi.Client, orgName, installationID string) (cloudapi.MappedSource, error) {
-	sources, err := client.OrgMappedSources(ctx, orgName)
-	if err != nil {
-		return cloudapi.MappedSource{}, fmt.Errorf("lookup Cloud mapped sources for org %q: %w", orgName, err)
-	}
+func workspaceMappedSourceByInstallation(sources []cloudapi.MappedSource, installationID string) (cloudapi.MappedSource, bool) {
 	for _, source := range sources {
 		if source.InstallationID == installationID {
-			return source, nil
+			return source, true
 		}
 	}
-	return cloudapi.MappedSource{}, fmt.Errorf("cloud source %s is not mapped to org %q", installationID, orgName)
+	return cloudapi.MappedSource{}, false
 }
 
-func workspaceSelectedSourceRepos(repos []cloudapi.SourceRepository, repo string) ([]string, bool) {
+func workspaceAutocheckClient(ctx context.Context, login bool) (*cloudapi.Client, error) {
+	client, _, err := cloudCLI.cloudClientWithLogin(ctx, login)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, repo string) (workspaceAutocheckState, bool, error) {
+	repo = "github.com/" + normalizeGitHubRepo(repo)
+	repositories, err := client.UserRepositories(ctx, repo)
+	if err != nil {
+		return workspaceAutocheckState{}, false, fmt.Errorf("lookup Cloud repository %s: %w", repo, err)
+	}
+	repository, ok := workspaceRepositoryForRef(repositories, repo)
+	if !ok {
+		return workspaceAutocheckState{}, false, nil
+	}
+	state := workspaceAutocheckState{
+		Repo:     repo,
+		IsPublic: workspaceRepoIsPublic(repository.Settings),
+	}
+	if mapped := repository.MappedSource; mapped != nil {
+		state.InstallationID = mapped.InstallationID
+		state.SourceMode = mapped.Mode
+		state.SelectedRepos, state.Enabled = workspaceSelectedRepos(mapped.Repositories, repo)
+	}
+	return state, true, nil
+}
+
+func workspaceRepositoryForRef(repositories []cloudapi.Repository, repo string) (cloudapi.Repository, bool) {
+	repo = normalizeGitHubRepo(repo)
+	for _, repository := range repositories {
+		if normalizeGitHubRepo(repository.Ref) == repo {
+			return repository, true
+		}
+	}
+	return cloudapi.Repository{}, false
+}
+
+func workspaceSelectedRepos(repos []string, repo string) ([]string, bool) {
 	repo = normalizeGitHubRepo(repo)
 	selected := make([]string, 0, len(repos))
 	enabled := false
 	for _, candidate := range repos {
-		if !candidate.Selected {
-			continue
-		}
-		candidateRepo := "github.com/" + normalizeGitHubRepo(candidate.Repository)
-		selected = append(selected, candidateRepo)
-		if normalizeGitHubRepo(candidate.Repository) == repo {
+		selected = append(selected, "github.com/"+normalizeGitHubRepo(candidate))
+		if normalizeGitHubRepo(candidate) == repo {
 			enabled = true
 		}
 	}
 	return selected, enabled
+}
+
+func workspaceRepoIsPublic(setting *cloudapi.RepoSetting) bool {
+	if setting != nil {
+		return setting.IsPublic
+	}
+	return false
 }
 
 func setWorkspaceAutocheckRepoSelected(selected []string, repo string, enabled bool) []string {
@@ -1059,20 +1057,6 @@ func setWorkspaceAutocheckRepoSelected(selected []string, repo string, enabled b
 	}
 	sort.Strings(out)
 	return out
-}
-
-func workspaceRemoteRepoExists(ctx context.Context, client *cloudapi.Client, repo string) (bool, error) {
-	repos, err := client.Repos(ctx)
-	if err != nil {
-		return false, fmt.Errorf("lookup cloud repos: %w", err)
-	}
-	repo = normalizeGitHubRepo(repo)
-	for _, candidate := range repos {
-		if normalizeGitHubRepo(candidate.FullName) == repo {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func workspaceAutocheckStateString(state workspaceAutocheckState) string {

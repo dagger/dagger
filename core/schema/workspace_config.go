@@ -33,7 +33,7 @@ func (s *workspaceSchema) workspaceInit(
 		return "", fmt.Errorf("workspace init is local-only")
 	}
 	if parent.CompatWorkspace() != nil {
-		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
 	}
 
 	configDirRel := workspaceConfigDirectoryForWrite(parent, args.Here)
@@ -96,7 +96,7 @@ func loadWorkspaceConfigForMutation(
 	}
 
 	if ws.CompatWorkspace() != nil {
-		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
 	}
 	if policy == workspaceConfigMustExist {
 		return nil, false, fmt.Errorf("no dagger.toml found in workspace")
@@ -216,6 +216,10 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	}
 
 	if ws.HostPath() != "" {
+		ctx, err = withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
 		configPath, err := workspaceHostPath(ws, configFile)
 		if err != nil {
 			return nil, err

@@ -22,9 +22,19 @@ type SourceRepository struct {
 }
 
 type MappedSource struct {
-	SourceName     string `json:"sourceName"`
-	InstallationID string `json:"installationId"`
-	Mode           string `json:"mode"`
+	SourceName     string   `json:"sourceName"`
+	InstallationID string   `json:"installationId"`
+	Mode           string   `json:"mode"`
+	Repositories   []string `json:"repositories"`
+}
+
+// Repository is a repo-scoped view of Cloud configuration, reachable through
+// the user-scoped User.repositories(refs:) field. It only surfaces repos that
+// are currently auto-checked (selected under a mapped source).
+type Repository struct {
+	Ref          string        `json:"ref"`
+	Settings     *RepoSetting  `json:"settings"`
+	MappedSource *MappedSource `json:"mappedSource"`
 }
 
 type SubscriptionInfo struct {
@@ -97,6 +107,43 @@ func (c *Client) Sources(ctx context.Context) ([]Source, error) {
 	return data.Sources, nil
 }
 
+const getUserRepositoriesOperation = `
+query GetUserRepositories($refs: [String!]) {
+	user {
+		repositories(refs: $refs) {
+			ref
+			settings {
+				repo
+				isPublic
+			}
+			mappedSource {
+				sourceName
+				installationId
+				mode
+				repositories
+			}
+		}
+	}
+}
+`
+
+// UserRepositories returns the repo-scoped Cloud configuration for the given
+// refs, scoped to the authenticated user. Only repos that are currently
+// auto-checked (selected) are returned.
+func (c *Client) UserRepositories(ctx context.Context, refs ...string) ([]Repository, error) {
+	var data struct {
+		User struct {
+			Repositories []Repository `json:"repositories"`
+		} `json:"user"`
+	}
+	if err := c.doGraphQL(ctx, "GetUserRepositories", getUserRepositoriesOperation, map[string]any{
+		"refs": refs,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return data.User.Repositories, nil
+}
+
 const getOrgMappedSourcesOperation = `
 query GetOrgMappedSources($org: String!) {
 	org(name: $org) {
@@ -104,6 +151,7 @@ query GetOrgMappedSources($org: String!) {
 			sourceName
 			installationId
 			mode
+			repositories
 		}
 	}
 }
@@ -145,9 +193,9 @@ func (c *Client) SourceRepositories(ctx context.Context, installationID, orgID s
 	return data.SourceRepositories, nil
 }
 
-const configureOrgSourceOperation = `
-mutation ConfigureOrgSource($org: ID!, $installationId: ID!, $mode: SourceMode!, $repositories: [String!]!) {
-	configureOrgSource(org: $org, source: { installationId: $installationId, mode: $mode, repositories: $repositories }) {
+const configureSourceOperation = `
+mutation ConfigureSource($installationId: ID!, $mode: SourceMode!, $repositories: [String!]!) {
+	configureSource(source: { installationId: $installationId, mode: $mode, repositories: $repositories }) {
 		sourceName
 		installationId
 		mode
@@ -155,19 +203,18 @@ mutation ConfigureOrgSource($org: ID!, $installationId: ID!, $mode: SourceMode!,
 }
 `
 
-func (c *Client) ConfigureOrgSource(ctx context.Context, orgID, installationID, mode string, repositories []string) (*MappedSource, error) {
+func (c *Client) ConfigureSource(ctx context.Context, installationID, mode string, repositories []string) (*MappedSource, error) {
 	var data struct {
-		ConfigureOrgSource MappedSource `json:"configureOrgSource"`
+		ConfigureSource MappedSource `json:"configureSource"`
 	}
-	if err := c.doGraphQL(ctx, "ConfigureOrgSource", configureOrgSourceOperation, map[string]any{
-		"org":            orgID,
+	if err := c.doGraphQL(ctx, "ConfigureSource", configureSourceOperation, map[string]any{
 		"installationId": installationID,
 		"mode":           mode,
 		"repositories":   repositories,
 	}, &data); err != nil {
 		return nil, err
 	}
-	return &data.ConfigureOrgSource, nil
+	return &data.ConfigureSource, nil
 }
 
 const getGithubOAuthURLOperation = `

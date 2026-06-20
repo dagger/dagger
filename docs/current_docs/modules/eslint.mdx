@@ -13,7 +13,7 @@ Official module: [dagger/eslint](https://github.com/dagger/eslint)
 ## Add it to your workspace
 
 ```bash
-dagger mod install github.com/dagger/eslint
+dagger install github.com/dagger/eslint
 ```
 
 ## Run the check
@@ -27,7 +27,7 @@ dagger check eslint:lint # run ESLint against the workspace source
 
 ## Fix issues
 
-ESLint also exposes a `fix` function that runs `eslint . --fix` and returns the repaired source as a changeset (excluding `node_modules`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger function call` (run `dagger function list` to see available functions).
+ESLint also exposes a `fix` function that runs `eslint . --fix` and returns the repaired source as a changeset (excluding `node_modules`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger api call` (run `dagger api functions` to see available functions).
 
 ## Configure it
 

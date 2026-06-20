@@ -2731,6 +2731,14 @@ export type WorkspaceChecksOpts = {
   onlyGenerate?: boolean
 }
 
+export type WorkspaceClientInitOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+  args?: JSON
+}
+
 export type WorkspaceConfigReadOpts = {
   /**
    * Dotted key path (e.g. modules.greeter.source). Empty for full config.
@@ -2807,17 +2815,28 @@ export type WorkspaceInstallOpts = {
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
-}
 
-export type WorkspaceMigrateOpts = {
-  force?: boolean
+  /**
+   * Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
+   */
+  asSdk?: boolean
+
+  /**
+   * User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+   */
+  asSdkName?: string
 }
 
 export type WorkspaceModuleInitOpts = {
   /**
-   * SDK to use for the new module.
+   * Workspace SDK name or module entry name to use.
    */
   sdk?: string
+
+  /**
+   * Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+   */
+  path?: string
 
   /**
    * Source subpath within the new module.
@@ -2830,14 +2849,10 @@ export type WorkspaceModuleInitOpts = {
   include?: string[]
 
   /**
-   * Enable the self-calls experimental feature for the new module.
-   */
-  selfCalls?: boolean
-
-  /**
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
+  args?: JSON
 }
 
 export type WorkspaceModuleListOpts = {
@@ -3092,6 +3107,30 @@ export class Binding extends BaseClient {
   asContainer = (): Container => {
     const ctx = this._ctx.select("asContainer")
     return new Container(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type CurrentModuleAsSDK
+   */
+  asCurrentModuleAsSDK = (): CurrentModuleAsSDK => {
+    const ctx = this._ctx.select("asCurrentModuleAsSDK")
+    return new CurrentModuleAsSDK(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type CurrentModuleAsSDKClient
+   */
+  asCurrentModuleAsSDKClient = (): CurrentModuleAsSDKClient => {
+    const ctx = this._ctx.select("asCurrentModuleAsSDKClient")
+    return new CurrentModuleAsSDKClient(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type CurrentModuleAsSDKModule
+   */
+  asCurrentModuleAsSDKModule = (): CurrentModuleAsSDKModule => {
+    const ctx = this._ctx.select("asCurrentModuleAsSDKModule")
+    return new CurrentModuleAsSDKModule(ctx)
   }
 
   /**
@@ -5409,6 +5448,16 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
+   * Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+   *
+   * Errors if the current module is not installed as an SDK in this workspace.
+   */
+  asSDK = (): CurrentModuleAsSDK => {
+    const ctx = this._ctx.select("asSDK")
+    return new CurrentModuleAsSDK(ctx)
+  }
+
+  /**
    * The dependencies of the module.
    */
   dependencies = async (): Promise<Module_[]> => {
@@ -5485,6 +5534,230 @@ export class CurrentModule extends BaseClient {
   workdirFile = (path: string): File => {
     const ctx = this._ctx.select("workdirFile", { path })
     return new File(ctx)
+  }
+}
+
+/**
+ * The SDK-role data for the currently executing module, as installed in the active workspace.
+ */
+export class CurrentModuleAsSDK extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this CurrentModuleAsSDK.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The generated clients this SDK produces in the workspace.
+   */
+  clients = async (): Promise<CurrentModuleAsSDKClient[]> => {
+    type clients = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("clients").select("id")
+
+    const response: Awaited<clients[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new CurrentModuleAsSDKClient(
+          ctx.copy().selectNode(r.id, "CurrentModuleAsSDKClient"),
+        ),
+    )
+  }
+
+  /**
+   * The workspace-local modules this SDK authors and manages.
+   */
+  modules = async (): Promise<CurrentModuleAsSDKModule[]> => {
+    type modules = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("modules").select("id")
+
+    const response: Awaited<modules[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new CurrentModuleAsSDKModule(
+          ctx.copy().selectNode(r.id, "CurrentModuleAsSDKModule"),
+        ),
+    )
+  }
+
+  /**
+   * The user-facing name of this SDK in the workspace.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A generated client the current SDK produces in the workspace.
+ */
+export class CurrentModuleAsSDKClient extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _module?: string = undefined
+  private readonly _path?: string = undefined
+  private readonly _pin?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _module?: string,
+    _path?: string,
+    _pin?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._module = _module
+    this._path = _path
+    this._pin = _pin
+  }
+
+  /**
+   * A unique identifier for this CurrentModuleAsSDKClient.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module the client is bound to (workspace-relative path or canonical ref).
+   */
+  module_ = async (): Promise<string> => {
+    if (this._module) {
+      return this._module
+    }
+
+    const ctx = this._ctx.select("module")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Workspace-root-relative path of the generated client.
+   */
+  path = async (): Promise<string> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The pinned version of the bound module, if any.
+   */
+  pin = async (): Promise<string> => {
+    if (this._pin) {
+      return this._pin
+    }
+
+    const ctx = this._ctx.select("pin")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A workspace-local module managed by the current SDK.
+ */
+export class CurrentModuleAsSDKModule extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _path?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _path?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._path = _path
+  }
+
+  /**
+   * A unique identifier for this CurrentModuleAsSDKModule.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Workspace-root-relative path to the managed module.
+   */
+  path = async (): Promise<string> => {
+    if (this._path) {
+      return this._path
+    }
+
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -7161,6 +7434,108 @@ export class Env extends BaseClient {
    */
   withCurrentModule = (): Env => {
     const ctx = this._ctx.select("withCurrentModule")
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type CurrentModuleAsSDKClient in the environment
+   * @param name The name of the binding
+   * @param value The CurrentModuleAsSDKClient value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCurrentModuleAsSDKClientInput = (
+    name: string,
+    value: CurrentModuleAsSDKClient,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCurrentModuleAsSDKClientInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCurrentModuleAsSDKClientOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCurrentModuleAsSDKClientOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type CurrentModuleAsSDK in the environment
+   * @param name The name of the binding
+   * @param value The CurrentModuleAsSDK value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCurrentModuleAsSDKInput = (
+    name: string,
+    value: CurrentModuleAsSDK,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCurrentModuleAsSDKInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type CurrentModuleAsSDKModule in the environment
+   * @param name The name of the binding
+   * @param value The CurrentModuleAsSDKModule value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCurrentModuleAsSDKModuleInput = (
+    name: string,
+    value: CurrentModuleAsSDKModule,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCurrentModuleAsSDKModuleInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCurrentModuleAsSDKModuleOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCurrentModuleAsSDKModuleOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired CurrentModuleAsSDK output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCurrentModuleAsSDKOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCurrentModuleAsSDKOutput", {
+      name,
+      description,
+    })
     return new Env(ctx)
   }
 
@@ -12092,6 +12467,16 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
+   *
+   * Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
+   */
+  updatedConfigDirectory = (): Directory => {
+    const ctx = this._ctx.select("updatedConfigDirectory")
+    return new Directory(ctx)
+  }
+
+  /**
    * User-defined defaults read from local .env files
    */
   userDefaults = (): EnvFile => {
@@ -14464,7 +14849,6 @@ export class Workspace extends BaseClient {
   private readonly _findUp?: string = undefined
   private readonly _init?: string = undefined
   private readonly _install?: string = undefined
-  private readonly _moduleInit?: string = undefined
   private readonly _uninstall?: string = undefined
 
   /**
@@ -14484,7 +14868,6 @@ export class Workspace extends BaseClient {
     _findUp?: string,
     _init?: string,
     _install?: string,
-    _moduleInit?: string,
     _uninstall?: string,
   ) {
     super(ctx)
@@ -14501,7 +14884,6 @@ export class Workspace extends BaseClient {
     this._findUp = _findUp
     this._init = _init
     this._install = _install
-    this._moduleInit = _moduleInit
     this._uninstall = _uninstall
   }
 
@@ -14548,6 +14930,14 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+   */
+  clientGenerate = (): Changeset => {
+    const ctx = this._ctx.select("clientGenerate")
+    return new Changeset(ctx)
+  }
+
+  /**
    * The client ID that owns this workspace's host filesystem.
    */
   clientId = async (): Promise<string> => {
@@ -14560,6 +14950,28 @@ export class Workspace extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+   * @param path Workspace-relative output directory for the generated client.
+   * @param sdk Workspace SDK name or module entry name to use.
+   * @param module Workspace-relative path or canonical ref for the module the client binds to.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  clientInit = (
+    path: string,
+    sdk: string,
+    module_: string,
+    opts?: WorkspaceClientInitOpts,
+  ): Changeset => {
+    const ctx = this._ctx.select("clientInit", {
+      path,
+      sdk,
+      module: module_,
+      ...opts,
+    })
+    return new Changeset(ctx)
   }
 
   /**
@@ -14780,6 +15192,8 @@ export class Workspace extends BaseClient {
    * @param ref Module reference to install.
    * @param opts.name Override name for the installed module entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.asSdk Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
+   * @param opts.asSdkName User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
    */
   install = async (
     ref: string,
@@ -14801,33 +15215,23 @@ export class Workspace extends BaseClient {
    *
    * The returned plan has an empty changeset and no steps when no migration is needed.
    */
-  migrate = (opts?: WorkspaceMigrateOpts): WorkspaceMigration => {
-    const ctx = this._ctx.select("migrate", { ...opts })
+  migrate = (): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrate")
     return new WorkspaceMigration(ctx)
   }
 
   /**
-   * Create a new module owned by the workspace and auto-install it in dagger.toml.
+   * Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
    * @param name Name of the new module.
-   * @param opts.sdk SDK to use for the new module.
+   * @param opts.sdk Workspace SDK name or module entry name to use.
+   * @param opts.path Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
    * @param opts.source Source subpath within the new module.
    * @param opts.include Additional include patterns for the module.
-   * @param opts.selfCalls Enable the self-calls experimental feature for the new module.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
-  moduleInit = async (
-    name: string,
-    opts?: WorkspaceModuleInitOpts,
-  ): Promise<string> => {
-    if (this._moduleInit) {
-      return this._moduleInit
-    }
-
+  moduleInit = (name: string, opts?: WorkspaceModuleInitOpts): Changeset => {
     const ctx = this._ctx.select("moduleInit", { name, ...opts })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+    return new Changeset(ctx)
   }
 
   /**

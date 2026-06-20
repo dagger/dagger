@@ -35,12 +35,12 @@ func addWorkspaceInstallFlags(cmd *cobra.Command) {
 }
 
 // moduleAddFlags adds common module-loading flags to a command.
-// If optional is true, it also adds the --no-mod flag and marks --mod and --no-mod as mutually exclusive.
+// If optional is true, it also adds the --no-load-module flag and marks --load-module and --no-load-module as mutually exclusive.
 func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
-	flags.StringVarP(&moduleURL, "mod", "m", "", "Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)")
+	flags.StringVarP(&moduleURL, "load-module", "m", "", "Use a one-off module (local path or git ref)")
 	if optional {
-		flags.BoolVarP(&moduleNoURL, "no-mod", "M", false, "Don't automatically load a module (mutually exclusive with --mod)")
-		cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
+		flags.BoolVarP(&moduleNoURL, "no-load-module", "M", false, "Don't load any module for this command")
+		cmd.MarkFlagsMutuallyExclusive("load-module", "no-load-module")
 	}
 
 	var defaultAllowLLM []string
@@ -54,13 +54,11 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 }
 
 func init() {
-	workspaceCmd.AddCommand(workspaceInstallCmd, workspaceUninstallCmd, workspaceUpdateCmd)
-
-	moduleAddFlags(functionCallCmd.Command(), functionCallCmd.Command().PersistentFlags(), true)
+	moduleAddFlags(apiCallCmd.Command(), apiCallCmd.Command().PersistentFlags(), true)
 	moduleAddFlags(callModCmd.Command(), callModCmd.Command().PersistentFlags(), true)
 
-	moduleAddFlags(functionListCmd, functionListCmd.PersistentFlags(), false)
-	moduleAddFlags(funcListCmd, funcListCmd.PersistentFlags(), false)
+	moduleAddFlags(apiFunctionsCmd, apiFunctionsCmd.PersistentFlags(), false)
+	moduleAddFlags(functionsAliasCmd, functionsAliasCmd.PersistentFlags(), false)
 	moduleAddFlags(apiListenCmd, apiListenCmd.PersistentFlags(), true)
 	moduleAddFlags(listenCmd, listenCmd.PersistentFlags(), true)
 	moduleAddFlags(apiQueryCmd, apiQueryCmd.PersistentFlags(), true)
@@ -74,64 +72,57 @@ func init() {
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
 
-	addWorkspaceInstallFlags(workspaceInstallCmd)
 	addWorkspaceInstallFlags(moduleDepInstallCmd)
-	addWorkspaceHereFlag(workspaceUninstallCmd)
 	addWorkspaceHereFlag(moduleDepUninstallCmd)
 
-	setWorkspaceFlagPolicy(workspaceUpdateCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleUpdateCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(workspaceInstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(workspaceUninstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepUninstallCmd, workspaceFlagPolicyLocalOnly)
 }
 
-var workspaceUpdateCmd = newWorkspaceUpdateCmd(false)
-var moduleUpdateCmd = newWorkspaceUpdateCmd(true)
+var moduleUpdateCmd = newWorkspaceUpdateCmd(false)
 
 func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   "update",
-		Short: "Refresh workspace-managed state",
-		Long: `Refresh workspace-managed state.
+		Short: "Refresh installed-module state",
+		Long: `Refresh installed-module state.
 
 Refreshes entries already recorded in dagger.lock.`,
-		Example: `"dagger workspace update"`,
+		Example: `"dagger update"`,
 		Args:    cobra.NoArgs,
 		Hidden:  hidden,
 		RunE:    runWorkspaceUpdate,
 	}
 }
 
-var workspaceInstallCmd = newWorkspaceInstallCmd(false, nil)
-var moduleDepInstallCmd = newWorkspaceInstallCmd(true, []string{"i"})
+var moduleDepInstallCmd = newWorkspaceInstallCmd(false, []string{"i"})
 
 func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
 		Use:     "install [options] <module>",
 		Aliases: aliases,
-		Short:   "Install a module",
+		Short:   "Install a module into your workspace",
 		Long: `Install a module into the current workspace.
 
 If no workspace config is selected, this creates one at the workspace root first.
 Use --here to create the workspace config at the workspace cwd instead.`,
-		Example: "dagger workspace install github.com/shykes/daggerverse/hello@v0.3.0",
+		Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runWorkspaceInstall,
 	}
 }
 
-var workspaceUninstallCmd = newWorkspaceUninstallCmd(false)
-var moduleDepUninstallCmd = newWorkspaceUninstallCmd(true)
+var moduleDepUninstallCmd = newWorkspaceUninstallCmd(false, []string{"un"})
 
-func newWorkspaceUninstallCmd(hidden bool) *cobra.Command {
+func newWorkspaceUninstallCmd(hidden bool, aliases []string) *cobra.Command {
 	return &cobra.Command{
 		Use:     "uninstall [options] <module>",
-		Short:   "Uninstall a module",
+		Aliases: aliases,
+		Short:   "Uninstall a module from your workspace",
 		Long:    `Uninstall a module from the current workspace, removing it from dagger.toml.`,
-		Example: "dagger workspace uninstall hello",
+		Example: "dagger uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),
 		RunE:    runWorkspaceUninstall,
@@ -184,7 +175,7 @@ func getModuleSourceRefWithDefault() (string, error) {
 		return v, nil
 	}
 	if moduleNoURL {
-		return "", fmt.Errorf("cannot use default module source with --no-mod")
+		return "", fmt.Errorf("cannot use default module source with --no-load-module")
 	}
 	return moduleURLDefault, nil
 }

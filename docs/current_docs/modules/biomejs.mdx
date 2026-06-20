@@ -13,7 +13,7 @@ Official module: [dagger/biomejs](https://github.com/dagger/biomejs)
 ## Add it to your workspace
 
 ```bash
-dagger mod install github.com/dagger/biomejs
+dagger install github.com/dagger/biomejs
 ```
 
 ## Run the check
@@ -27,7 +27,7 @@ dagger check biomejs:lint # run Biome against the workspace source
 
 ## Fix issues
 
-Biome also exposes a `fix` function that runs `biome check --write` and returns the repaired source as a changeset (covering `.js`, `.ts`, `.jsx`, `.tsx`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger function call` (run `dagger function list` to see available functions).
+Biome also exposes a `fix` function that runs `biome check --write` and returns the repaired source as a changeset (covering `.js`, `.ts`, `.jsx`, `.tsx`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger api call` (run `dagger api functions` to see available functions).
 
 ## Configure it
 

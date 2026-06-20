@@ -13,7 +13,7 @@ Official module: [dagger/jest](https://github.com/dagger/jest)
 ## Add it to your workspace
 
 ```bash
-dagger mod install github.com/dagger/jest
+dagger install github.com/dagger/jest
 ```
 
 ## Run the tests
@@ -27,7 +27,7 @@ dagger check jest:test # run the Jest suite
 
 ## Test options
 
-The `jest:test` check runs with default options. Call the `test` function directly with `dagger function call` to override them:
+The `jest:test` check runs with default options. Call the `test` function directly with `dagger api call` to override them:
 
 - **`files`**: limit the run to specific test files.
 - **`build`**: run the project's build script before testing.
