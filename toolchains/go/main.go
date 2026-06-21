@@ -83,19 +83,13 @@ func New(
 	// +default=10
 	limit int,
 
-	// Git repository for VCS info injection. When non-nil, the HEAD commit
-	// and uncommitted state are stamped into the binary via -ldflags
-	// against github.com/dagger/go/buildinfo's Injected* package vars so it
-	// self-reports VCS info at runtime via runtime/debug.ReadBuildInfo —
-	// without needing .git inside the build container.
-	//
-	// TODO: switch to Workspace.git (PR dagger/dagger#13074) once we depend
-	// on Dagger >= 1.0.0-beta.2. Workspace.git is lazier (no full repo
-	// upload), supports nested workspaces, and will expose commit time.
-	//
-	// +optional
-	// +defaultPath="/"
-	repo *dagger.GitRepository,
+	// Workspace for VCS info injection. The HEAD commit and uncommitted
+	// state are read via Workspace.git and stamped into the binary via
+	// -ldflags against github.com/dagger/go/buildinfo's Injected* package
+	// vars so it self-reports VCS info at runtime via
+	// runtime/debug.ReadBuildInfo — without needing .git inside the build
+	// container.
+	workspace *dagger.Workspace,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
@@ -139,7 +133,7 @@ func New(
 			WithMountedCache("/root/.cache/go-build", buildCache).
 			WithWorkdir("/app")
 	}
-	values = appendVCSValues(ctx, values, repo)
+	values = appendVCSValues(ctx, values, workspace)
 	return &Go{
 		Version:     version,
 		Source:      source,
@@ -157,15 +151,16 @@ func New(
 }
 
 // appendVCSValues appends -X ldflag values that populate
-// github.com/dagger/go/buildinfo's Injected* package vars from the supplied
-// GitRepository, so binaries built by this module self-report VCS info via
+// github.com/dagger/go/buildinfo's Injected* package vars from the workspace's
+// git state, so binaries built by this module self-report VCS info via
 // runtime/debug.ReadBuildInfo. Inspection errors are swallowed silently —
 // builds proceed with whatever VCS info we managed to collect (possibly none).
-func appendVCSValues(ctx context.Context, values []string, repo *dagger.GitRepository) []string {
-	if repo == nil {
+func appendVCSValues(ctx context.Context, values []string, workspace *dagger.Workspace) []string {
+	if workspace == nil {
 		return values
 	}
-	commit, err := repo.Head().Commit(ctx)
+	git := workspace.Git()
+	commit, err := git.Head().Commit(ctx)
 	if err != nil {
 		return values
 	}
@@ -173,7 +168,7 @@ func appendVCSValues(ctx context.Context, values []string, repo *dagger.GitRepos
 		"github.com/dagger/go/buildinfo.InjectedVCS=git",
 		"github.com/dagger/go/buildinfo.InjectedVCSRevision="+commit,
 	)
-	clean, err := repo.Uncommitted().IsEmpty(ctx)
+	clean, err := git.Uncommitted().IsEmpty(ctx)
 	if err != nil {
 		return values
 	}
