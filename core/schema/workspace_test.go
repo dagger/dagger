@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -12,6 +13,15 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
+
+func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
+	typ := reflect.TypeOf(core.Workspace{})
+	for _, name := range []string{"source", "rootfs", "hostPath", "ClientID"} {
+		field, ok := typ.FieldByName(name)
+		require.True(t, ok, "missing Workspace field %s", name)
+		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
+	}
+}
 
 func TestMatchWorkspaceInclude(t *testing.T) {
 	ctx := context.Background()
@@ -611,7 +621,7 @@ func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {
 	args := workspaceFilterWithDirectoryArgs(nil, core.CopyFilter{
 		Include: []string{"app/**"},
 		Exclude: []string{".git"},
-	})
+	}, false)
 
 	require.Len(t, args, 4)
 	require.Equal(t, "path", args[0].Name)

@@ -126,8 +126,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc("Creates a synthetic workspace from this git repository.").
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
-			).
-			Experimental("Synthetic workspaces currently support filesystem APIs only."),
+			),
 
 		dagql.Func("withAuthToken", s.withAuthToken).
 			Doc(`Token to authenticate the remote with.`).
@@ -174,6 +173,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`Find the best common ancestor between this ref and another ref.`).
 			Args(
 				dagql.Arg("other").Doc(`The other ref to compare against.`),
+			),
+		dagql.NodeFunc("asWorkspace", s.gitRefAsWorkspace).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Creates a synthetic workspace from this git ref.").
+			Args(
+				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
 			),
 	}.Install(srv)
 }
@@ -1201,36 +1206,19 @@ func (s *gitSchema) uncommitted(ctx context.Context, parent dagql.ObjectResult[*
 }
 
 func (s *gitSchema) asWorkspace(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args workspaceArgs) (dagql.ObjectResult[*core.Workspace], error) {
-	repo := parent.Self()
-
-	root, err := repo.Backend.Dirty(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	if root.Self() == nil {
-		srv, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-		ref, err := repo.Remote.Lookup("HEAD")
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-		refBackend, err := repo.Backend.Get(ctx, ref)
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-		dir, err := refBackend.Tree(ctx, srv, false, 1, false)
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
-		root, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, err
-		}
+	var ref dagql.ObjectResult[*core.GitRef]
+	if err := srv.Select(ctx, parent, &ref, dagql.Selector{Field: "head"}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	return syntheticWorkspaceFromGitRef(ctx, ref, args.Cwd)
+}
 
-	return syntheticWorkspaceFromRootfs(ctx, root, args.Cwd, "git+directory://")
+func (s *gitSchema) gitRefAsWorkspace(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args workspaceArgs) (dagql.ObjectResult[*core.Workspace], error) {
+	return syntheticWorkspaceFromGitRef(ctx, parent, args.Cwd)
 }
 
 type withAuthTokenArgs struct {

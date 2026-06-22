@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -214,4 +216,86 @@ func (WorkspaceAPISuite) TestWorkspaceFindUp(ctx context.Context, t *testctx.T) 
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
+}
+
+// TestHostWorkspaceFunctionalOverlayAPIsRejectClearly documents the current
+// boundary for the value-workspace overlay APIs. Host-local workspaces do not
+// have a rootfs to overlay, so they should fail before generic rootfs plumbing
+// leaks through to users.
+func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsRejectClearly(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	sourceID, err := c.Directory().WithNewFile("nested.txt", "nested").ID(ctx)
+	require.NoError(t, err)
+
+	baseDir := c.Directory().WithNewFile("base.txt", "base")
+	changedDir := baseDir.WithNewFile("changed.txt", "changed")
+	changesID, err := changedDir.Changes(baseDir).ID(ctx)
+	require.NoError(t, err)
+	otherWorkspaceID, err := c.Directory().AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+
+	// These Workspace overlay fields are not in the generated Go SDK yet.
+	// Selecting id through GraphQL is intentional: it exercises the public
+	// object-returning resolver path where dependency attachment currently
+	// leaks the generic rootfs error.
+	for _, tc := range []struct {
+		name      string
+		query     string
+		variables map[string]any
+	}{
+		{
+			name: "withNewFile",
+			query: `{
+				currentWorkspace {
+					withNewFile(path: "new.txt", contents: "new") {
+						id
+					}
+				}
+			}`,
+		},
+		{
+			name: "withNewDirectory",
+			query: `query HostWorkspaceWithNewDirectory($source: ID!) {
+				currentWorkspace {
+					withNewDirectory(path: "dir", source: $source) {
+						id
+					}
+				}
+			}`,
+			variables: map[string]any{"source": sourceID},
+		},
+		{
+			name: "withChanges",
+			query: `query HostWorkspaceWithChanges($changes: ID!) {
+				currentWorkspace {
+					withChanges(changes: $changes) {
+						id
+					}
+				}
+			}`,
+			variables: map[string]any{"changes": changesID},
+		},
+		{
+			name: "changes",
+			query: `query HostWorkspaceChanges($other: ID!) {
+				currentWorkspace {
+					changes(other: $other) {
+						id
+					}
+				}
+			}`,
+			variables: map[string]any{"other": otherWorkspaceID},
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			_, err := testutil.QueryWithClient[struct{}](c, t, tc.query, &testutil.QueryOptions{
+				Variables: tc.variables,
+			})
+			requireErrOut(t, err, "only supported for value workspaces")
+		})
+	}
 }

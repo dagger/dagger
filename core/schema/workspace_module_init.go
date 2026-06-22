@@ -57,6 +57,9 @@ func (s *workspaceSchema) moduleInit(
 	parent *core.Workspace,
 	args workspaceModuleInitArgs,
 ) (res dagql.ObjectResult[*core.Changeset], _ error) {
+	if err := requireLocalWorkspace(parent, "module init"); err != nil {
+		return res, err
+	}
 	if args.Name == "" {
 		return res, fmt.Errorf("module name is required")
 	}

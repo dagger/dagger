@@ -688,6 +688,7 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 		},
 		false,
 		dagql.ObjectResult[*core.Directory]{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "subdir", client.workspace.Cwd)
@@ -746,6 +747,7 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 		},
 		false,
 		dagql.ObjectResult[*core.Directory]{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join("subdir", "child"), client.workspace.Cwd)
@@ -1011,7 +1013,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 			Cwd:        filepath.Join("services", "payment", "src"),
 			ConfigFile: filepath.Join("services", "payment", workspace.ConfigFileName),
 			LockFile:   filepath.Join("services", "payment", workspace.LockDirName, workspace.LockFileName),
-		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		}, true, dagql.ObjectResult[*core.Directory]{}, nil, "")
 		require.NoError(t, err)
 		require.Equal(t, "file:///repo/services/payment/src", ws.Address)
 		require.Equal(t, filepath.Join("services", "payment", "src"), ws.Cwd)
@@ -1027,7 +1029,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 			Root:     "/repo",
 			Cwd:      ".",
 			LockFile: filepath.Join(workspace.LockDirName, workspace.LockFileName),
-		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		}, true, dagql.ObjectResult[*core.Directory]{}, nil, "")
 		require.NoError(t, err)
 		require.Empty(t, ws.ConfigFile)
 		require.Equal(t, filepath.Join(workspace.LockDirName, workspace.LockFileName), ws.LockFile)

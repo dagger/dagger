@@ -10570,6 +10570,12 @@ pub struct GitRef {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRefAsWorkspaceOpts<'a> {
+    /// Current working directory inside the workspace root. Defaults to the workspace root.
+    #[builder(setter(into, strip_option), default)]
+    pub cwd: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts {
     /// The depth of the tree to fetch.
     #[builder(setter(into, strip_option), default)]
@@ -10605,6 +10611,35 @@ impl Loadable for GitRef {
     }
 }
 impl GitRef {
+    /// Creates a synthetic workspace from this git ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_workspace(&self) -> Workspace {
+        let query = self.selection.select("asWorkspace");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a synthetic workspace from this git ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_workspace_opts<'a>(&self, opts: GitRefAsWorkspaceOpts<'a>) -> Workspace {
+        let mut query = self.selection.select("asWorkspace");
+        if let Some(cwd) = opts.cwd {
+            query = query.arg("cwd", cwd);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The resolved commit id at this ref.
     pub async fn commit(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("commit");
@@ -16032,6 +16067,12 @@ pub struct WorkspaceUninstallOpts {
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithNewFileOpts {
+    /// Permissions of the new file.
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
+}
 impl IntoID<Id> for Workspace {
     fn into_id(
         self,
@@ -16060,6 +16101,26 @@ impl Workspace {
     pub async fn address(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("address");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Return the changes from another workspace to this workspace.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - Workspace to compare from.
+    pub fn changes(&self, other: impl IntoID<Id>) -> Changeset {
+        let mut query = self.selection.select("changes");
+        query = query.arg_lazy(
+            "other",
+            Box::new(move || {
+                let other = other.clone();
+                Box::pin(async move { other.into_id().await.unwrap().quote() })
+            }),
+        );
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Return all checks from modules loaded in the workspace.
     ///
@@ -16107,11 +16168,6 @@ impl Workspace {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
-    }
-    /// The client ID that owns this workspace's host filesystem.
-    pub async fn client_id(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("clientId");
-        query.execute(self.graphql_client.clone()).await
     }
     /// Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
     ///
@@ -16681,6 +16737,94 @@ impl Workspace {
     pub fn update(&self) -> Changeset {
         let query = self.selection.select("update");
         Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a changeset applied, without mutating the source.
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Changes to apply.
+    pub fn with_changes(&self, changes: impl IntoID<Id>) -> Workspace {
+        let mut query = self.selection.select("withChanges");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a directory added, without mutating the source.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path of the added directory. Relative paths resolve from the workspace cwd.
+    /// * `source` - Directory to add.
+    pub fn with_new_directory(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<Id>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withNewDirectory");
+        query = query.arg("path", path.into());
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a new or replaced file, without mutating the source.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path of the new file. Relative paths resolve from the workspace cwd.
+    /// * `contents` - Contents of the new file.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_new_file(&self, path: impl Into<String>, contents: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withNewFile");
+        query = query.arg("path", path.into());
+        query = query.arg("contents", contents.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a new or replaced file, without mutating the source.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path of the new file. Relative paths resolve from the workspace cwd.
+    /// * `contents` - Contents of the new file.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_new_file_opts(
+        &self,
+        path: impl Into<String>,
+        contents: impl Into<String>,
+        opts: WorkspaceWithNewFileOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withNewFile");
+        query = query.arg("path", path.into());
+        query = query.arg("contents", contents.into());
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
+        Workspace {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
