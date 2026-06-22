@@ -1256,17 +1256,24 @@ func (s *workspaceSchema) checks(
 
 	noGenerate := args.NoGenerate.GetOr(false).Bool()
 	onlyGenerate := args.OnlyGenerate.GetOr(false).Bool()
+
+	cfg, err := workspaceConfigWithCompatFallback(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	// Apply the workspace default only when no generate flag was passed.
+	if !args.NoGenerate.Valid && !args.OnlyGenerate.Valid && cfg.CheckGenerated != nil && !*cfg.CheckGenerated {
+		noGenerate = true
+	}
+
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	ignoreChecks, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
+	ignoreChecks := workspaceConfigSkipPatternsFromConfig(cfg, func(e workspace.ModuleEntry) []string {
 		return e.Check.Skip
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	var allChecks []*core.Check
 	for _, mod := range mods {
@@ -1702,14 +1709,22 @@ func workspaceConfigSkipPatterns(
 	if err != nil {
 		return nil, err
 	}
+	return workspaceConfigSkipPatternsFromConfig(cfg, getter), nil
+}
 
+// workspaceConfigSkipPatternsFromConfig derives per-module skip patterns from an
+// already-loaded workspace config.
+func workspaceConfigSkipPatternsFromConfig(
+	cfg *workspace.Config,
+	getter func(workspace.ModuleEntry) []string,
+) map[string][]string {
 	result := make(map[string][]string)
 	for name, entry := range cfg.Modules {
 		if patterns := getter(entry); len(patterns) > 0 {
 			result[name] = patterns
 		}
 	}
-	return result, nil
+	return result
 }
 
 // filterNodesByExclude removes items whose nodes match any of the exclude

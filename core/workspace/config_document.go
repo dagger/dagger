@@ -105,6 +105,9 @@ func configDocumentMap(cfg *Config) map[string]any {
 	if cfg.DefaultsFromDotEnv {
 		values["defaults_from_dotenv"] = true
 	}
+	if cfg.CheckGenerated != nil {
+		values["check-generated"] = *cfg.CheckGenerated
+	}
 	if len(cfg.Modules) > 0 {
 		modules := make(map[string]any, len(cfg.Modules))
 		for name, entry := range cfg.Modules {

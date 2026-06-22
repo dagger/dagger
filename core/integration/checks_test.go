@@ -338,6 +338,49 @@ check.skip = ["failing-check", "failing-container"]
 	require.NotContains(t, out, "hello-with-checks:failing-container")
 }
 
+func (ChecksSuite) TestWorkspaceCheckGeneratedSetting(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := checksTestEnv(t, c)
+	require.NoError(t, err)
+
+	// check-generated = false skips generate-as-checks by default.
+	base := modGen.WithNewFile("dagger.toml", `check-generated = false
+
+[modules.hello-with-generate-checks]
+source = "hello-with-generate-checks"
+`)
+
+	t.Run("list excludes generators by default", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.NotContains(t, out, "empty-generate")
+		require.NotContains(t, out, "non-empty-generate")
+	})
+
+	t.Run("run passes by default despite stale generator", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("--progress=report", "check")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.NotContains(t, out, "non-empty-generate")
+	})
+
+	t.Run("--generate flag overrides the config", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "--generate")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Regexp(t, `empty-generate\s+generate\s+`, out)
+		require.Regexp(t, `non-empty-generate\s+generate\s+`, out)
+		require.NotContains(t, out, "passing-check")
+	})
+
+	t.Run("--no-generate flag matches the config default", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerExec("check", "-l", "--no-generate")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.NotContains(t, out, "empty-generate")
+	})
+}
+
 func (ChecksSuite) TestWorkspaceCheckSkipRemote(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
