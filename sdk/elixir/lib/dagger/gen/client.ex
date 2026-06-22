@@ -158,7 +158,8 @@ defmodule Dagger.Client do
   """
   @spec current_type_defs(t(), [
           {:return_all_types, boolean() | nil},
-          {:hide_core, boolean() | nil}
+          {:hide_core, boolean() | nil},
+          {:include, [String.t()]}
         ]) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
   def current_type_defs(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
@@ -166,6 +167,7 @@ defmodule Dagger.Client do
       |> QB.select("currentTypeDefs")
       |> QB.maybe_put_arg("returnAllTypes", optional_args[:return_all_types])
       |> QB.maybe_put_arg("hideCore", optional_args[:hide_core])
+      |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.select("id")
 
     with {:ok, items} <- Client.execute(client.client, query_builder) do
