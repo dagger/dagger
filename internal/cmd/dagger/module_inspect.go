@@ -32,6 +32,17 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 	return def, nil
 }
 
+// workspaceModuleScope returns the leading positional token as a currentTypeDefs
+// include hint — only the first token can name a workspace module. A token that
+// isn't a module (entrypoint function, typo) or no token at all loads every
+// module, as before.
+func workspaceModuleScope(args []string) []string {
+	if name := functionName(args); name != "" {
+		return []string{name}
+	}
+	return nil
+}
+
 // initializeWorkspace loads type definitions from the workspace.
 // Modules are already served by the engine at connect time.
 //
@@ -154,7 +165,24 @@ func (m *moduleDef) Short() string {
 var loadModConfQuery string
 
 //go:embed typedefs.graphql
-var loadTypeDefsQuery string
+var typeDefsFragments string
+
+// typeDefsOp is the TypeDefs operation, with %s holes for the optional include
+// argument (its variable declaration and the field argument). It rides on the
+// fragments embedded above.
+const typeDefsOp = `query TypeDefs($hideCore: Boolean%s) {
+	typeDefs: currentTypeDefs(returnAllTypes: true, hideCore: $hideCore%s) {
+		...TypeDefParts
+	}
+}`
+
+var (
+	loadTypeDefsQuery = typeDefsFragments + fmt.Sprintf(typeDefsOp, "", "")
+	// The include-scoped variant is sent only when a scope hint exists: engines
+	// predating the argument reject any document that names it, even with a
+	// null variable.
+	loadTypeDefsScopedQuery = typeDefsFragments + fmt.Sprintf(typeDefsOp, ", $include: [String!]", ", include: $include")
+)
 
 func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "inspecting module metadata", telemetry.Encapsulate())
@@ -260,6 +288,20 @@ type loadTypeDefsOpts struct {
 	// HideCore strips core API functions from the Query type, leaving
 	// only module-sourced functions (constructors, entrypoint proxies).
 	HideCore bool
+
+	// Include narrows on-demand workspace module loading before introspecting,
+	// so an unrelated broken or stale module can't block building the command
+	// tree.
+	Include []string
+}
+
+// errIsUnknownIncludeArgument reports whether the engine rejected the scoped
+// query because it predates the include argument. The validation message
+// arrives parsed or as raw JSON, so match the quoted name loosely.
+func errIsUnknownIncludeArgument(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "Unknown argument") &&
+		(strings.Contains(msg, `"include"`) || strings.Contains(msg, `\"include\"`))
 }
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
@@ -276,12 +318,28 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		TypeDefs []*modTypeDef
 	}
 
+	query := loadTypeDefsQuery
+	vars := map[string]any{"hideCore": o.HideCore}
+	if len(o.Include) > 0 {
+		query = loadTypeDefsScopedQuery
+		vars["include"] = o.Include
+	}
 	err := dag.Do(ctx, &dagger.Request{
-		Query:     loadTypeDefsQuery,
-		Variables: map[string]any{"hideCore": o.HideCore},
+		Query:     query,
+		Variables: vars,
 	}, &dagger.Response{
 		Data: &res,
 	})
+	if err != nil && query != loadTypeDefsQuery && errIsUnknownIncludeArgument(err) {
+		// Engine predates the argument; retry unscoped (loads every module, as before).
+		delete(vars, "include")
+		err = dag.Do(ctx, &dagger.Request{
+			Query:     loadTypeDefsQuery,
+			Variables: vars,
+		}, &dagger.Response{
+			Data: &res,
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("query module objects: %w", err)
 	}
