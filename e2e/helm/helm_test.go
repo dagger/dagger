@@ -162,7 +162,7 @@ func TestInstallK3S(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+		ok := t.Run(test.name, func(t *testing.T) {
 			args := []string{
 				"helm", "install", "--wait", "--create-namespace", "--namespace=dagger",
 				"--set=engine.image.ref=" + testEngineImage,
@@ -180,6 +180,13 @@ func TestInstallK3S(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+		if !ok {
+			// All cases deploy the same engine image; if the first one never
+			// becomes reachable the rest will hang the same way. Stop early so we
+			// fail fast with diagnostics instead of burning the whole package
+			// timeout (which previously produced a 10m hang with no output).
+			break
+		}
 	}
 }
 
@@ -238,7 +245,7 @@ func runInstallAssertions(ctx context.Context, engineName string, engineKind str
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", fmt.Sprintf("kube-pod://%s?namespace=dagger", podName)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.16.0-000000000000")
 	if err := testDaggerQuery(ctx, "dagger query", byKubePod); err != nil {
-		return err
+		return fmt.Errorf("kube-pod query to engine %q failed: %w\n%s", engineName, err, dumpEngineDiagnostics(ctx, kubectl, engineName))
 	}
 
 	if port != 0 {
@@ -246,14 +253,24 @@ func runInstallAssertions(ctx context.Context, engineName string, engineKind str
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://localhost:4000").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.16.0-000000000000")
 		if err := testDaggerQuery(ctx, fmt.Sprintf("kubectl port-forward --namespace=dagger pods/%s 4000:%d & dagger query", podName, port), byTCP); err != nil {
-			return err
+			return fmt.Errorf("tcp port-forward query to engine %q failed: %w\n%s", engineName, err, dumpEngineDiagnostics(ctx, kubectl, engineName))
 		}
 	}
 
 	return nil
 }
 
+// daggerQueryTimeout bounds how long we wait for the freshly-installed engine to
+// answer a query. The dagger client's "connecting to engine" phase retries
+// silently with no output, so without this bound a non-serving engine hangs
+// until the Go test package timeout (10m) with zero diagnostics. Keep it well
+// under that budget so we still have time to collect engine logs on failure.
+const daggerQueryTimeout = 4 * time.Minute
+
 func testDaggerQuery(ctx context.Context, command string, kubectl *dagger.Container) error {
+	ctx, cancel := context.WithTimeout(ctx, daggerQueryTimeout)
+	defer cancel()
+
 	stdout, err := kubectl.WithExec([]string{"sh", "-c", command}, dagger.ContainerWithExecOpts{
 		Stdin: `{
 				container {
@@ -264,10 +281,40 @@ func testDaggerQuery(ctx context.Context, command string, kubectl *dagger.Contai
 			}`,
 	}).Stdout(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("engine did not answer a query within %s (connection never became ready): %w", daggerQueryTimeout, err)
 	}
 	if !strings.Contains(stdout, "Linux") {
 		return fmt.Errorf("expected to be a Linux container, got: %s", stdout)
 	}
 	return nil
+}
+
+// dumpEngineDiagnostics best-effort collects Kubernetes state for the engine pod
+// so a failed connection produces actionable output (pod status, engine logs,
+// events) instead of an opaque timeout. It never fails the test itself.
+func dumpEngineDiagnostics(ctx context.Context, kubectl *dagger.Container, engineName string) string {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	selector := "name=" + engineName
+	script := strings.Join([]string{
+		"set +e",
+		`echo "=== pods (all namespaces) ==="`,
+		"kubectl get pods -A -o wide 2>&1",
+		`echo "=== describe engine pod ==="`,
+		"kubectl describe pod -l " + selector + " -n dagger 2>&1",
+		`echo "=== engine logs (current) ==="`,
+		"kubectl logs -l " + selector + " -n dagger --all-containers --tail=200 2>&1",
+		`echo "=== engine logs (previous, if any) ==="`,
+		"kubectl logs -l " + selector + " -n dagger --all-containers --previous --tail=200 2>&1",
+		`echo "=== recent events ==="`,
+		"kubectl get events -n dagger --sort-by=.lastTimestamp 2>&1",
+		"exit 0",
+	}, "\n")
+
+	out, err := kubectl.WithExec([]string{"sh", "-c", script}).Stdout(ctx)
+	if err != nil {
+		return fmt.Sprintf("engine diagnostics for %q (collection error: %v):\n%s", engineName, err, out)
+	}
+	return fmt.Sprintf("engine diagnostics for %q:\n%s", engineName, out)
 }
