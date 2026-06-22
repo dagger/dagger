@@ -87,6 +87,15 @@ type Server interface {
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
 
+	// Load pending workspace modules on demand; include narrows to the modules
+	// its patterns name ("module" or "module:item"), empty or unrecognized
+	// loads all.
+	EnsureWorkspaceModules(ctx context.Context, include []string) error
+
+	// Load the modules a targeted typedefs introspection demands (the named
+	// modules plus the configured entrypoint); empty include loads all.
+	EnsureWorkspaceModulesForTypeDefs(ctx context.Context, include []string) error
+
 	// A snapshot of the current workspace lockfile for ambient live locking.
 	// Returns ok=false when lock-backed workspace access is unavailable.
 	CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error)
