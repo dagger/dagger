@@ -114,11 +114,9 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 		if i > 0 {
 			fmt.Fprintln(&rootCause)
 		}
-		label := "cause"
-		if i == 0 {
-			label = "root cause"
-		}
-		fmt.Fprintf(&rootCause, "%s %s\n", bold(o, "["+label+"]"), emptyDash(fc.Command))
+		// The ROOT CAUSE heading already says what this is; just show the status
+		// marker before the command, consistent with checks and tests.
+		fmt.Fprintf(&rootCause, "%s %s\n", marker(o, "failed"), emptyDash(fc.Command))
 		if fc.Error != "" {
 			fmt.Fprintf(&rootCause, "  %s %s\n", bold(o, "error:"), oneLine(fc.Error))
 		}
