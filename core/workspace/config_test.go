@@ -122,6 +122,87 @@ greeting = "hola"
 `, string(out))
 }
 
+func TestWorkspaceCheckGeneratedSetting(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unset leaves CheckGenerated nil", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseConfig([]byte(`[modules.greeter]
+source = "modules/greeter"
+`))
+		require.NoError(t, err)
+		require.Nil(t, cfg.CheckGenerated)
+	})
+
+	t.Run("parses explicit booleans", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseConfig([]byte("check-generated = false\n"))
+		require.NoError(t, err)
+		require.NotNil(t, cfg.CheckGenerated)
+		require.False(t, *cfg.CheckGenerated)
+
+		cfg, err = ParseConfig([]byte("check-generated = true\n"))
+		require.NoError(t, err)
+		require.NotNil(t, cfg.CheckGenerated)
+		require.True(t, *cfg.CheckGenerated)
+	})
+
+	t.Run("serializes when set", func(t *testing.T) {
+		t.Parallel()
+
+		falsy := false
+		out := SerializeConfig(&Config{CheckGenerated: &falsy})
+		require.Equal(t, "check-generated = false\n\n", string(out))
+
+		truthy := true
+		out = SerializeConfig(&Config{CheckGenerated: &truthy})
+		require.Equal(t, "check-generated = true\n\n", string(out))
+
+		out = SerializeConfig(&Config{})
+		require.NotContains(t, string(out), "check-generated")
+	})
+
+	t.Run("read default is true when unset", func(t *testing.T) {
+		t.Parallel()
+
+		value, err := ReadConfigValue([]byte(""), "check-generated")
+		require.NoError(t, err)
+		require.Equal(t, "true", value)
+	})
+
+	t.Run("write and read round-trip", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValue(nil, "check-generated", "false")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.CheckGenerated)
+		require.False(t, *cfg.CheckGenerated)
+
+		value, err := ReadConfigValue(data, "check-generated")
+		require.NoError(t, err)
+		require.Equal(t, "false", value)
+
+		data, err = WriteConfigValue(data, "check-generated", "true")
+		require.NoError(t, err)
+		cfg, err = ParseConfig(data)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.CheckGenerated)
+		require.True(t, *cfg.CheckGenerated)
+	})
+
+	t.Run("rejects sub-keys", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := WriteConfigValue(nil, "check-generated.skip", "foo")
+		require.Error(t, err)
+	})
+}
+
 func TestSerializeConfigQuotesDynamicPathSegments(t *testing.T) {
 	t.Parallel()
 

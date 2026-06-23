@@ -554,6 +554,7 @@ func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t
 		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
 		require.NoError(t, err)
 		require.Contains(t, string(configContents), "[modules]")
+		require.Contains(t, string(configContents), "check-generated = true")
 	})
 
 	t.Run("workspace config detects the nearest config", func(ctx context.Context, t *testctx.T) {

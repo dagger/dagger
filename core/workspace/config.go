@@ -17,8 +17,12 @@ type Config struct {
 	Modules            map[string]ModuleEntry `json:"modules,omitempty" toml:"modules"`
 	Ignore             []string               `json:"ignore,omitempty" toml:"ignore"`
 	DefaultsFromDotEnv bool                   `json:"defaults_from_dotenv,omitempty" toml:"defaults_from_dotenv,omitempty"`
-	Env                map[string]EnvOverlay  `json:"env,omitempty" toml:"env"`
-	Ports              map[string]PortMapping `json:"ports,omitempty" toml:"ports,omitempty"`
+	// CheckGenerated controls whether `dagger check` runs generate-as-checks,
+	// which fail when generated files are stale. Defaults to true; set false to
+	// skip them (like --no-generate). CLI flags override it.
+	CheckGenerated *bool                  `json:"check-generated,omitempty" toml:"check-generated,omitempty"`
+	Env            map[string]EnvOverlay  `json:"env,omitempty" toml:"env"`
+	Ports          map[string]PortMapping `json:"ports,omitempty" toml:"ports,omitempty"`
 }
 
 // PortMapping declares a host port that forwards to a workspace service.
@@ -289,6 +293,10 @@ func SerializeConfig(cfg *Config) []byte {
 		b.WriteString("defaults_from_dotenv = true\n\n")
 	}
 
+	if cfg.CheckGenerated != nil {
+		fmt.Fprintf(&b, "check-generated = %t\n\n", *cfg.CheckGenerated)
+	}
+
 	wroteModules := writeModuleEntries(&b, cfg.Modules)
 	if wroteModules && (len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
 		b.WriteString("\n")
@@ -309,6 +317,10 @@ func cloneConfig(cfg *Config) *Config {
 	cloned := &Config{
 		Ignore:             append([]string(nil), cfg.Ignore...),
 		DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
+	}
+	if cfg.CheckGenerated != nil {
+		checkGenerated := *cfg.CheckGenerated
+		cloned.CheckGenerated = &checkGenerated
 	}
 	if len(cfg.Modules) > 0 {
 		cloned.Modules = make(map[string]ModuleEntry, len(cfg.Modules))
@@ -604,6 +616,9 @@ func ReadConfigValue(data []byte, key string) (string, error) {
 func readMissingConfigDefault(tree *toml.Tree, parts []string) (string, bool) {
 	if len(parts) == 1 && parts[0] == "defaults_from_dotenv" {
 		return "false", true
+	}
+	if len(parts) == 1 && parts[0] == "check-generated" {
+		return "true", true
 	}
 	if len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path") {
 		if tree.GetPath(parts[:2]) != nil {
@@ -923,6 +938,16 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 		}
 		cfg.DefaultsFromDotEnv = boolValue
 		return nil
+	case "check-generated":
+		if len(parts) != 1 {
+			return fmt.Errorf("invalid key %q; check-generated does not have sub-keys", strings.Join(parts, "."))
+		}
+		boolValue, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("check-generated must be a boolean")
+		}
+		cfg.CheckGenerated = &boolValue
+		return nil
 	case "modules":
 		if len(parts) < 3 {
 			return fmt.Errorf("cannot set %q directly; specify a field like %s.settings", strings.Join(parts, "."), strings.Join(parts, "."))
@@ -1127,7 +1152,8 @@ func preferredExampleFieldName(t reflect.Type) string {
 func parseValueString(parts []string, rawValue string) any {
 	leaf := parts[len(parts)-1]
 
-	if leaf == "entrypoint" || leaf == "legacy-default-path" || (len(parts) == 1 && parts[0] == "defaults_from_dotenv") {
+	if leaf == "entrypoint" || leaf == "legacy-default-path" ||
+		(len(parts) == 1 && (parts[0] == "defaults_from_dotenv" || parts[0] == "check-generated")) {
 		return rawValue == "true"
 	}
 

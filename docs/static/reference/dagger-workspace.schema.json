@@ -20,6 +20,10 @@
         "defaults_from_dotenv": {
           "type": "boolean"
         },
+        "check-generated": {
+          "type": "boolean",
+          "description": "CheckGenerated controls whether `dagger check` runs generate-as-checks, which fail when generated files are stale. Defaults to true; set false to skip them (like --no-generate). CLI flags override it."
+        },
         "env": {
           "additionalProperties": {
             "$ref": "#/$defs/EnvOverlay"
