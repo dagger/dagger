@@ -1266,6 +1266,9 @@ func (s *workspaceSchema) checks(
 		noGenerate = true
 	}
 
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -1375,6 +1378,9 @@ func (s *workspaceSchema) generators(
 		return nil, err
 	}
 
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -1493,6 +1499,9 @@ func (s *workspaceSchema) services(
 		return nil, err
 	}
 
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -1645,6 +1654,17 @@ func matchWorkspaceIncludePath(
 		}
 	}
 	return false, nil
+}
+
+// ensureWorkspaceIncludeModulesLoaded loads the workspace modules the include
+// patterns demand (all when they don't narrow). Selector fields validate
+// against the core schema, so loading can wait until resolution.
+func ensureWorkspaceIncludeModulesLoaded(ctx context.Context, include []string) error {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	return query.Server.EnsureWorkspaceModules(ctx, include)
 }
 
 func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {
