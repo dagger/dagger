@@ -5,7 +5,7 @@ import { TypeDefKind } from "../../../api/client.gen.js"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import {
   AST,
-  CLIENT_GEN_FILE,
+  GENERATED_CLIENT_SUFFIX,
   ResolvedNodeWithSymbol,
 } from "../typescript_module/index.js"
 import { ENUM_DECORATOR, OBJECT_DECORATOR } from "./decorator.js"
@@ -144,7 +144,7 @@ export class DaggerModule {
         ts.SyntaxKind.ClassDeclaration,
       )
       if (classRef) {
-        if (classRef.file.fileName.endsWith(CLIENT_GEN_FILE)) {
+        if (classRef.file.fileName.endsWith(GENERATED_CLIENT_SUFFIX)) {
           this.references[reference] = {
             kind: TypeDefKind.ObjectKind,
             name: reference,
@@ -187,7 +187,7 @@ export class DaggerModule {
         ts.SyntaxKind.EnumDeclaration,
       )
       if (enumRef) {
-        if (enumRef.file.fileName.endsWith(CLIENT_GEN_FILE)) {
+        if (enumRef.file.fileName.endsWith(GENERATED_CLIENT_SUFFIX)) {
           this.references[reference] = {
             kind: TypeDefKind.EnumKind,
             name: reference,
@@ -314,7 +314,7 @@ export class DaggerModule {
     }
 
     if (type.flags & ts.TypeFlags.Object) {
-      if (typeAlias.file.fileName.endsWith(CLIENT_GEN_FILE)) {
+      if (typeAlias.file.fileName.endsWith(GENERATED_CLIENT_SUFFIX)) {
         this.references[reference] = {
           kind: TypeDefKind.ObjectKind,
           name: reference,

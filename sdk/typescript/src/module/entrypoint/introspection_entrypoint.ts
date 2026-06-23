@@ -34,6 +34,22 @@ function getTsSourceCodeFiles(dir: string): string[] {
     .reduce((p, c) => [...c, ...p], [])
 }
 
+// generatedClientFiles returns every `*.gen.ts` file sitting next to the given
+// client file (client.gen.ts and each per-dependency <dep>.gen.ts). Falls back
+// to just the client file if the directory can't be listed.
+function generatedClientFiles(clientFile: string): string[] {
+  const dir = path.dirname(clientFile)
+  try {
+    const files = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith(".gen.ts"))
+      .map((f) => path.join(dir, f))
+    return files.length > 0 ? files : [clientFile]
+  } catch {
+    return [clientFile]
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2)
   if (args.length < 3) {
@@ -49,8 +65,14 @@ async function main() {
 
   const userSourceCodeFiles = getTsSourceCodeFiles(userSourceCodeDir)
 
+  // The generated client is split across `client.gen.ts` and one
+  // `<dep>.gen.ts` per dependency. Pass every `*.gen.ts` sibling so the
+  // introspector can resolve types contributed by dependencies (e.g. an enum
+  // re-exported from a dep file), not just those declared in client.gen.ts.
+  const clientGenFiles = generatedClientFiles(typescriptClientFile)
+
   const result = await introspection(
-    [...userSourceCodeFiles, typescriptClientFile],
+    [...userSourceCodeFiles, ...clientGenFiles],
     moduleName,
   )
 

@@ -12,6 +12,12 @@ import { Location } from "./location.js"
 
 export const CLIENT_GEN_FILE = "client.gen.ts"
 
+// Generated client files share the `.gen.ts` suffix: `client.gen.ts` plus one
+// `<dep>.gen.ts` per dependency (dependency types are split into their own
+// files). All of them are part of the SDK surface the introspector must search
+// when resolving type references like a dependency-contributed enum.
+export const GENERATED_CLIENT_SUFFIX = ".gen.ts"
+
 export type ResolvedNodeWithSymbol<T extends keyof DeclarationsMap> = {
   type: T
   node: DeclarationsMap[T]
@@ -60,9 +66,11 @@ export class AST {
       ts.forEachChild(sourceFile, (node) => {
         if (result !== undefined) return
 
-        // Skip if it's not from the client gen nor the user module
+        // Skip if it's not from a generated client file nor the user module.
+        // Generated files include client.gen.ts and every per-dependency
+        // <dep>.gen.ts (split out from the core client).
         if (
-          !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
+          !sourceFile.fileName.endsWith(GENERATED_CLIENT_SUFFIX) &&
           !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return
@@ -105,9 +113,11 @@ export class AST {
 
     for (const sourceFile of this.sourceFiles) {
       ts.forEachChild(sourceFile, (node) => {
-        // Skip if it's not from the client gen nor the user module
+        // Skip if it's not from a generated client file nor the user module.
+        // Generated files include client.gen.ts and every per-dependency
+        // <dep>.gen.ts (split out from the core client).
         if (
-          !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
+          !sourceFile.fileName.endsWith(GENERATED_CLIENT_SUFFIX) &&
           !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return

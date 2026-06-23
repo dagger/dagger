@@ -144,12 +144,13 @@ func (t *TypescriptSdk) Codegen(
 	// Generate the static dispatch entrypoint from the (now-present) source
 	// and include it in the codegen overlay so `dagger develop` writes it to
 	// the user's project tree, mirroring how Go's `dagger.gen.go` lands at the
-	// module root. The client bindings (`sdk/client.gen.ts`) were already
-	// emitted into the codegen overlay above; reuse them here.
+	// module root. The client bindings (`sdk/`, containing client.gen.ts and
+	// any per-dep <dep>.gen.ts files) were already emitted into the codegen
+	// overlay above; reuse the whole directory here so dep types resolve.
 	entrypoint := NewIntrospector(t.SDKSourceDir).EmitEntrypoint(
 		cfg.name,
 		codegen.Directory(SrcDir),
-		codegen.Directory(GenDir).File("client.gen.ts"),
+		codegen.Directory(GenDir),
 		t.SDKSourceDir,
 	)
 	codegen = codegen.WithFile(EntrypointExecutableFile, entrypoint)
@@ -214,12 +215,17 @@ func (t *TypescriptSdk) GenerateClient(
 	} else {
 		genDir := libGenerator.GenerateBundleLibrary(introspectionJSON, outputDir)
 
+		// The generated bindings (client.gen.ts plus the per-dependency
+		// <dep>.gen.ts files) live next to each other in outputDir: client.gen.ts
+		// imports the dep files via relative "./<dep>.gen.js" paths. The static
+		// bundle (core.js, index.ts, ...) goes in sdk/, which never references
+		// the dep files, so it excludes every generated binding.
 		result = result.
 			WithDirectory("sdk", genDir, dagger.DirectoryWithDirectoryOpts{
-				Exclude: []string{"client.gen.ts"},
+				Exclude: []string{"*.gen.ts"},
 			}).
 			WithDirectory(outputDir, genDir, dagger.DirectoryWithDirectoryOpts{
-				Include: []string{"client.gen.ts"},
+				Include: []string{"*.gen.ts"},
 			})
 	}
 
