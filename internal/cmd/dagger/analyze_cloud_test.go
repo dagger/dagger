@@ -41,16 +41,16 @@ func TestAnalyzeRender(t *testing.T) {
 	t.Logf("\n%s", buf.String())
 
 	for _, want := range []string{
-		"Status:  FAILED",
+		"Status:  ✘ FAILED",
 		"== ROOT CAUSE ==",
 		"[root cause] otelgotest",
 		"== CHECKS (1 passed, 1 failed, 2 total) ==",
-		"✗ lint",
-		"✓ fmt",
+		"✘ lint",
+		"✔ fmt",
 		"== FAILED TESTS (2) ==",
 		"caused by: go test -c -o ./test ./core/integration",
 		"== MORE CONTEXT ==",
-		"Full call tree, arguments, and timing:  dagger trace a0d14706",
+		"Full call tree, arguments, and timing:  dagger trace --full a0d14706",
 		"dagger cloud logs a0d14706 <span-id> -o span.log",
 	} {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {

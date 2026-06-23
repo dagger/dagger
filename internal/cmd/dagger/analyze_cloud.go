@@ -24,39 +24,10 @@ var (
 	logsTimeout     time.Duration
 )
 
-var cloudAnalyzeCmd = newAnalyzeCmd(false)
-var analyzeCmd = newAnalyzeCmd(true)
-
 var cloudLogsCmd = newCloudLogsCmd()
 
 func init() {
-	cloudCmd.AddCommand(cloudAnalyzeCmd, cloudLogsCmd)
-	rootCmd.AddCommand(analyzeCmd)
-}
-
-func newAnalyzeCmd(hidden bool) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "analyze <trace-id>",
-		Short: "Summarize why a Dagger Cloud trace failed (LLM-friendly)",
-		Long: `Summarize a Dagger Cloud trace: overall status, the command(s) that caused
-the failure, check results, and failed tests -- computed server-side without
-loading the whole trace.
-
-For each failed span it also shows the tail of that span's logs and prints the
-exact command to fetch the full logs, which can be redirected to a file and
-grepped:
-
-    dagger cloud logs <trace-id> <span-id> -o span.log`,
-		Args:    cobra.ExactArgs(1),
-		Hidden:  hidden,
-		Aliases: []string{"diagnose"},
-		RunE:    cloudCLI.Analyze,
-	}
-	cmd.Flags().BoolVar(&cloudJSON, "json", false, "Print the analysis as JSON (no logs)")
-	cmd.Flags().IntVar(&analyzeLogLines, "log-lines", 20, "Lines of log tail to show per failed span (0 to disable)")
-	cmd.Flags().BoolVar(&analyzeNoLogs, "no-logs", false, "Don't fetch logs, just the summary")
-	cmd.Flags().DurationVar(&analyzeLogTimeout, "log-timeout", 30*time.Second, "Max time to spend fetching each span's log tail")
-	return cmd
+	cloudCmd.AddCommand(cloudLogsCmd)
 }
 
 func newCloudLogsCmd() *cobra.Command {
@@ -118,7 +89,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 
 	fmt.Fprintf(out, "TRACE %s\n", traceID)
 	if s := tq.OverallStatus; s != nil {
-		fmt.Fprintf(out, "Status:  %s\n", strings.ToUpper(emptyDash(s.Outcome)))
+		fmt.Fprintf(out, "Status:  %s %s\n", checkMark(s.Outcome), strings.ToUpper(emptyDash(s.Outcome)))
 		if s.Command != "" {
 			fmt.Fprintf(out, "Command: %s\n", s.Command)
 		}
@@ -183,7 +154,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 		if t.Suite != "" && t.Suite != t.Name {
 			name = t.Suite + " › " + t.Name
 		}
-		fmt.Fprintf(out, "\n✗ %s", emptyDash(name))
+		fmt.Fprintf(out, "\n✘ %s", emptyDash(name))
 		if t.FailureStatus != "" {
 			fmt.Fprintf(out, "  (%s)", t.FailureStatus)
 		}
@@ -206,7 +177,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 	// led to each failure (which function calls, with which arguments, and how
 	// long they took). When that context matters, the full trace renders it.
 	fmt.Fprintf(out, "\n== MORE CONTEXT ==\n")
-	fmt.Fprintf(out, "Full call tree, arguments, and timing:  dagger trace %s\n", traceID)
+	fmt.Fprintf(out, "Full call tree, arguments, and timing:  dagger trace --full %s\n", traceID)
 	fmt.Fprintf(out, "Full logs for any span:                 dagger cloud logs %s <span-id> -o span.log\n", traceID)
 }
 
@@ -393,9 +364,9 @@ func (cli *CloudCLI) tailSpanLogs(ctx context.Context, client *cloudapi.Client, 
 func checkMark(status string) string {
 	switch status {
 	case "passed":
-		return "✓"
+		return "✔"
 	case "failed":
-		return "✗"
+		return "✘"
 	case "running":
 		return "…"
 	default:
