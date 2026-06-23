@@ -49,6 +49,8 @@ func TestAnalyzeRender(t *testing.T) {
 		"✓ fmt",
 		"== FAILED TESTS (2) ==",
 		"caused by: go test -c -o ./test ./core/integration",
+		"== MORE CONTEXT ==",
+		"Full call tree, arguments, and timing:  dagger trace a0d14706",
 		"dagger cloud logs a0d14706 <span-id> -o span.log",
 	} {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {

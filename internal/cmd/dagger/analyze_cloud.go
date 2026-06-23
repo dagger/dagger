@@ -147,59 +147,67 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 		cli.renderSpanLogs(out, traceID, fc.SpanID, logs[fc.SpanID])
 	}
 
-	// Checks.
-	if len(tq.Checks) > 0 {
-		var passed, failed int
-		for _, c := range tq.Checks {
-			switch c.Status {
-			case "passed":
-				passed++
-			case "failed":
-				failed++
-			}
+	// Checks. Always show the header so "no checks ran" is explicit rather than
+	// an ambiguous omission.
+	var passed, failed int
+	for _, c := range tq.Checks {
+		switch c.Status {
+		case "passed":
+			passed++
+		case "failed":
+			failed++
 		}
-		fmt.Fprintf(out, "\n== CHECKS (%d passed, %d failed, %d total) ==\n", passed, failed, len(tq.Checks))
-		for _, c := range tq.Checks {
-			fmt.Fprintf(out, "\n%s %s\n", checkMark(c.Status), emptyDash(c.Name))
-			if c.Error != "" {
-				fmt.Fprintf(out, "  error: %s\n", oneLine(c.Error))
-			}
-			if c.Status == "failed" {
-				fmt.Fprintf(out, "  span:  %s\n", c.SpanID)
-				cli.renderSpanLogs(out, traceID, c.SpanID, logs[c.SpanID])
-			}
+	}
+	fmt.Fprintf(out, "\n== CHECKS (%d passed, %d failed, %d total) ==\n", passed, failed, len(tq.Checks))
+	if len(tq.Checks) == 0 {
+		fmt.Fprintln(out, "(no checks ran)")
+	}
+	for _, c := range tq.Checks {
+		fmt.Fprintf(out, "\n%s %s\n", checkMark(c.Status), emptyDash(c.Name))
+		if c.Error != "" {
+			fmt.Fprintf(out, "  error: %s\n", oneLine(c.Error))
+		}
+		if c.Status == "failed" {
+			fmt.Fprintf(out, "  span:  %s\n", c.SpanID)
+			cli.renderSpanLogs(out, traceID, c.SpanID, logs[c.SpanID])
 		}
 	}
 
-	// Failed tests.
-	if len(tq.FailedTests) > 0 {
-		fmt.Fprintf(out, "\n== FAILED TESTS (%d) ==\n", len(tq.FailedTests))
-		for _, t := range tq.FailedTests {
-			name := t.Name
-			if t.Suite != "" && t.Suite != t.Name {
-				name = t.Suite + " › " + t.Name
-			}
-			fmt.Fprintf(out, "\n✗ %s", emptyDash(name))
-			if t.FailureStatus != "" {
-				fmt.Fprintf(out, "  (%s)", t.FailureStatus)
-			}
-			fmt.Fprintln(out)
-			if t.OriginCommand != "" {
-				fmt.Fprintf(out, "  caused by: %s\n", t.OriginCommand)
-			}
-			if msg := firstNonEmptyStr(t.OriginError, t.Error); msg != "" {
-				fmt.Fprintf(out, "  error:     %s\n", oneLine(msg))
-			}
-			fmt.Fprintf(out, "  span:      %s\n", t.SpanID)
-			// Only the leaf failures (those with a distinct origin command) have
-			// useful per-test logs; aggregate parent tests just roll up children.
-			if t.OriginCommand != "" {
-				cli.renderSpanLogs(out, traceID, t.SpanID, logs[t.SpanID])
-			}
+	// Failed tests. Always show the header for the same reason.
+	fmt.Fprintf(out, "\n== FAILED TESTS (%d) ==\n", len(tq.FailedTests))
+	if len(tq.FailedTests) == 0 {
+		fmt.Fprintln(out, "(no failed tests)")
+	}
+	for _, t := range tq.FailedTests {
+		name := t.Name
+		if t.Suite != "" && t.Suite != t.Name {
+			name = t.Suite + " › " + t.Name
+		}
+		fmt.Fprintf(out, "\n✗ %s", emptyDash(name))
+		if t.FailureStatus != "" {
+			fmt.Fprintf(out, "  (%s)", t.FailureStatus)
+		}
+		fmt.Fprintln(out)
+		if t.OriginCommand != "" {
+			fmt.Fprintf(out, "  caused by: %s\n", t.OriginCommand)
+		}
+		if msg := firstNonEmptyStr(t.OriginError, t.Error); msg != "" {
+			fmt.Fprintf(out, "  error:     %s\n", oneLine(msg))
+		}
+		fmt.Fprintf(out, "  span:      %s\n", t.SpanID)
+		// Only the leaf failures (those with a distinct origin command) have
+		// useful per-test logs; aggregate parent tests just roll up children.
+		if t.OriginCommand != "" {
+			cli.renderSpanLogs(out, traceID, t.SpanID, logs[t.SpanID])
 		}
 	}
 
-	fmt.Fprintf(out, "\nFull logs for any span: dagger cloud logs %s <span-id> -o span.log\n", traceID)
+	// This summary is intentionally a flat triage: it drops the call tree that
+	// led to each failure (which function calls, with which arguments, and how
+	// long they took). When that context matters, the full trace renders it.
+	fmt.Fprintf(out, "\n== MORE CONTEXT ==\n")
+	fmt.Fprintf(out, "Full call tree, arguments, and timing:  dagger trace %s\n", traceID)
+	fmt.Fprintf(out, "Full logs for any span:                 dagger cloud logs %s <span-id> -o span.log\n", traceID)
 }
 
 // logTarget is a span whose logs we want to fetch for the analysis.
