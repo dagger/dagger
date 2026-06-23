@@ -160,6 +160,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 	if len(tq.FailedTests) == 0 {
 		fmt.Fprintln(&tests, "(no failed tests)")
 	}
+	leaves := leafFailedTests(tq.FailedTests)
 	for i, t := range tq.FailedTests {
 		if i > 0 {
 			fmt.Fprintln(&tests)
@@ -182,9 +183,11 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			fmt.Fprintf(&tests, "  %s     %s\n", bold(o, "error:"), oneLine(msg))
 		}
 		fmt.Fprintf(&tests, "  %s      %s\n", bold(o, "span:"), t.SpanID)
-		// Only the leaf failures (those with a distinct origin command) have
-		// useful per-test logs; aggregate parent tests just roll up children.
-		if t.OriginCommand != "" {
+		// Roll up the descendant logs for leaf tests: the real failure usually
+		// lives in a sub-operation the test ran (a withExec, a nested dagger
+		// call), not on the test span itself. Aggregate parent tests are skipped
+		// -- they'd just repeat their children's logs.
+		if leaves[t.SpanID] {
 			cli.renderSpanLogs(&tests, o, traceID, t.SpanID, logs[t.SpanID])
 		}
 	}
@@ -245,7 +248,8 @@ type logResult struct {
 // logTargets returns the spans whose logs the analysis displays, in no
 // particular order. Failing commands want their own output (descendants=false:
 // a withExec's stdout/stderr is on the span itself); checks and leaf failed
-// tests want their subtree.
+// tests want their subtree, so the failure that happened in a sub-operation
+// rolls up.
 func logTargets(tq *cloudapi.TraceQuestions) []logTarget {
 	var targets []logTarget
 	for _, fc := range tq.FailingCommands {
@@ -256,12 +260,37 @@ func logTargets(tq *cloudapi.TraceQuestions) []logTarget {
 			targets = append(targets, logTarget{c.SpanID, true})
 		}
 	}
+	leaves := leafFailedTests(tq.FailedTests)
 	for _, t := range tq.FailedTests {
-		if t.OriginCommand != "" {
+		if leaves[t.SpanID] {
 			targets = append(targets, logTarget{t.SpanID, true})
 		}
 	}
 	return targets
+}
+
+// leafFailedTests returns the span IDs of the failed tests that are leaves: no
+// other failed test is nested beneath them, by "/"-delimited name within the
+// same suite (Go subtests). Only leaves get a descendant log roll-up; an
+// ancestor's subtree would just repeat its children's logs.
+func leafFailedTests(tests []cloudapi.FailedTest) map[string]bool {
+	leaves := make(map[string]bool, len(tests))
+	for _, t := range tests {
+		leaf := true
+		for _, other := range tests {
+			if other.SpanID == t.SpanID {
+				continue
+			}
+			if other.Suite == t.Suite && strings.HasPrefix(other.Name, t.Name+"/") {
+				leaf = false
+				break
+			}
+		}
+		if leaf {
+			leaves[t.SpanID] = true
+		}
+	}
+	return leaves
 }
 
 // prefetchLogTails fetches every target span's log tail concurrently. The log
