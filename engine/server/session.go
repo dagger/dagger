@@ -214,10 +214,20 @@ type daggerClient struct {
 	pendingModules      []pendingModule      // gathered in detectAndLoadWorkspaceWithRootfs
 	pendingExtraModules []engine.ExtraModule // populated from clientMD, can arrive late
 	modulesMu           sync.Mutex
-	modulesLoaded       bool
-	modulesErr          error
-	singleQueryMu       sync.Mutex
-	singleQueryServed   bool
+	extraModulesLoaded  bool
+	extraModulesErr     error
+	// load failures by moduleProgressName; failed modules stay pending to keep
+	// reporting their error
+	failedModules map[string]error
+	// whether an entrypoint module has been served (extras outrank ambient)
+	entrypointServed bool
+	// resolved identities already served, for cross-batch deduplication
+	servedModuleKeys map[string]struct{}
+	// served workspace module names, so demand filters recognize them without
+	// reloading
+	servedWorkspaceModuleNames map[string]struct{}
+	singleQueryMu              sync.Mutex
+	singleQueryServed          bool
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -992,7 +1002,7 @@ func (srv *Server) getOrInitClient(
 		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
 		// session attachable request already created the client without them.
-		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
+		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.extraModulesLoaded {
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
 		}
@@ -1466,26 +1476,18 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		return gqlErr(err, http.StatusBadRequest)
 	}
 
-	peekRootFieldsOK, peekRootFields, err := peekSingleQueryRootFields(r, client.clientMetadata)
-	if err != nil {
-		return gqlErr(fmt.Errorf("peeking single-query root fields: %w", err), http.StatusBadRequest)
-	}
-
 	// Load workspace modules and extra modules (e.g. from -m flag). These are
 	// deferred from initializeDaggerClient because they need the client's
 	// session attachables, which only become available after the session
 	// attachables handshake completes (after init locks are released).
 	wsCtx, wsOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.workspaceLoad", wcprof.OpOpts{ClientID: client.clientID})
-	err = srv.ensureWorkspaceLoaded(wsCtx, client)
+	err := srv.ensureWorkspaceLoaded(wsCtx, client)
 	wsOp.EndErr(err)
 	if err != nil {
 		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
 	}
-	if peekRootFieldsOK {
-		client.narrowPendingWorkspaceModulesForSingleQuery(peekRootFields)
-	}
 	modCtx, modOp := wcprof.BeginOp(ctx, wcprof.OpKindSessionPhase, "session.modulesLoad", wcprof.OpOpts{ClientID: client.clientID})
-	err = srv.ensureModulesLoaded(modCtx, client)
+	err = srv.ensureRequestModulesLoaded(modCtx, client, r)
 	modOp.EndErr(err)
 	if err != nil {
 		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
@@ -1532,11 +1534,26 @@ func (client *daggerClient) claimSingleQueryRequest() error {
 	return nil
 }
 
-func peekSingleQueryRootFields(r *http.Request, clientMD *engine.ClientMetadata) (bool, []string, error) {
-	if clientMD == nil || !clientMD.SingleQuery || !clientMD.LoadWorkspaceModules || clientMD.SkipWorkspaceModules {
-		return false, nil, nil
+// ensureRequestModulesLoaded loads the modules this request demands, read from
+// the request's root fields: fields naming pending modules demand those, and
+// full-schema or unrecognized fields demand everything. The rest stay pending.
+func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *daggerClient, r *http.Request) error {
+	var filter func([]pendingModule) []pendingModule
+	if client.hasPendingWorkspaceModules() {
+		if ok, rootFields, err := dagql.PeekRootFields(r); err == nil && ok {
+			filter = func(mods []pendingModule) []pendingModule {
+				// runs under client.modulesMu, which also guards servedWorkspaceModuleNames
+				return filterPendingWorkspaceModulesForRootFields(mods, client.servedWorkspaceModuleNames, rootFields)
+			}
+		}
 	}
-	return dagql.PeekRootFields(r)
+	return srv.ensureModulesLoaded(ctx, client, filter)
+}
+
+func (client *daggerClient) hasPendingWorkspaceModules() bool {
+	client.modulesMu.Lock()
+	defer client.modulesMu.Unlock()
+	return len(client.pendingModules) > 0
 }
 
 func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *daggerClient) (rerr error) {
