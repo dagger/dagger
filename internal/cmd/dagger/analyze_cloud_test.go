@@ -14,10 +14,9 @@ func TestAnalyzeRender(t *testing.T) {
 	analyzeLogLines = 0
 	t.Cleanup(func() { analyzeNoLogs = false; analyzeLogLines = 20 })
 
-	// Force plain output so assertions don't depend on the ambient color/agent
-	// environment (CI has neither NO_COLOR nor an agent var set, so styling
-	// would otherwise emit ANSI codes into the buffer).
-	t.Setenv("NO_COLOR", "1")
+	// Pin agent mode so the test is deterministic regardless of the ambient
+	// environment: agents get plain output (no color) and ASCII status tokens.
+	t.Setenv("AI_AGENT", "test")
 
 	tq := &cloudapi.TraceQuestions{
 		OverallStatus: &cloudapi.TraceOverallStatus{
@@ -46,13 +45,14 @@ func TestAnalyzeRender(t *testing.T) {
 	t.Logf("\n%s", buf.String())
 
 	for _, want := range []string{
-		"Status:  ✘ FAILED",
+		"Status:  [FAILED]",
 		"== ROOT CAUSE ==",
 		"[root cause] otelgotest",
 		"== CHECKS (1 passed, 1 failed, 2 total) ==",
-		"✘ lint",
-		"✔ fmt",
+		"[FAILED] lint",
+		"[PASSED] fmt",
 		"== FAILED TESTS (2) ==",
+		"[FAILED] core/integration > TestContainer",
 		"caused by: go test -c -o ./test ./core/integration",
 		"== MORE CONTEXT ==",
 		"Full call tree, arguments, and timing:  dagger trace --full a0d14706",
