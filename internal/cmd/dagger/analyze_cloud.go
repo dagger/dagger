@@ -11,6 +11,7 @@ import (
 
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -109,6 +110,12 @@ func (cli *CloudCLI) Analyze(cmd *cobra.Command, args []string) error {
 func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, orgID, traceID string, tq *cloudapi.TraceQuestions) {
 	out := cmd.OutOrStdout()
 
+	// Fetch all the failed spans' log tails up front, concurrently: the log
+	// endpoints are slow, and rendering is sequential, so doing them inline would
+	// serialize the wait. Results are keyed by span id and looked up while
+	// rendering. nil when logs are disabled.
+	logs := cli.prefetchLogTails(cmd.Context(), client, orgID, traceID, tq)
+
 	fmt.Fprintf(out, "TRACE %s\n", traceID)
 	if s := tq.OverallStatus; s != nil {
 		fmt.Fprintf(out, "Status:  %s\n", strings.ToUpper(emptyDash(s.Outcome)))
@@ -137,7 +144,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			fmt.Fprintf(out, "  error: %s\n", oneLine(fc.Error))
 		}
 		fmt.Fprintf(out, "  span:  %s\n", fc.SpanID)
-		cli.printSpanLogs(cmd, client, orgID, traceID, fc.SpanID, false)
+		cli.renderSpanLogs(out, traceID, fc.SpanID, logs[fc.SpanID])
 	}
 
 	// Checks.
@@ -159,7 +166,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			}
 			if c.Status == "failed" {
 				fmt.Fprintf(out, "  span:  %s\n", c.SpanID)
-				cli.printSpanLogs(cmd, client, orgID, traceID, c.SpanID, true)
+				cli.renderSpanLogs(out, traceID, c.SpanID, logs[c.SpanID])
 			}
 		}
 	}
@@ -187,7 +194,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			// Only the leaf failures (those with a distinct origin command) have
 			// useful per-test logs; aggregate parent tests just roll up children.
 			if t.OriginCommand != "" {
-				cli.printSpanLogs(cmd, client, orgID, traceID, t.SpanID, true)
+				cli.renderSpanLogs(out, traceID, t.SpanID, logs[t.SpanID])
 			}
 		}
 	}
@@ -195,33 +202,98 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 	fmt.Fprintf(out, "\nFull logs for any span: dagger cloud logs %s <span-id> -o span.log\n", traceID)
 }
 
-// printSpanLogs prints the tail of a span's logs and the command to get the full
-// logs. Bounded by --log-lines and --log-timeout so it never hangs or floods.
-func (cli *CloudCLI) printSpanLogs(cmd *cobra.Command, client *cloudapi.Client, orgID, traceID, spanID string, descendants bool) {
-	out := cmd.OutOrStdout()
-	full := fmt.Sprintf("dagger cloud logs %s %s", traceID, spanID)
+// logTarget is a span whose logs we want to fetch for the analysis.
+type logTarget struct {
+	spanID      string
+	descendants bool
+}
+
+// logResult is the outcome of fetching one span's log tail.
+type logResult struct {
+	tail     *lineTail
+	timedOut bool
+	err      error
+}
+
+// logTargets returns the spans whose logs the analysis displays, in no
+// particular order. Failing commands want their own output (descendants=false:
+// a withExec's stdout/stderr is on the span itself); checks and leaf failed
+// tests want their subtree.
+func logTargets(tq *cloudapi.TraceQuestions) []logTarget {
+	var targets []logTarget
+	for _, fc := range tq.FailingCommands {
+		targets = append(targets, logTarget{fc.SpanID, false})
+	}
+	for _, c := range tq.Checks {
+		if c.Status == "failed" {
+			targets = append(targets, logTarget{c.SpanID, true})
+		}
+	}
+	for _, t := range tq.FailedTests {
+		if t.OriginCommand != "" {
+			targets = append(targets, logTarget{t.SpanID, true})
+		}
+	}
+	return targets
+}
+
+// prefetchLogTails fetches every target span's log tail concurrently. The log
+// endpoints are slow and rendering is sequential, so fetching inline would add
+// up the waits; fetching in parallel makes the total roughly the slowest single
+// span. Returns nil when logs are disabled. Per-span errors are kept in the
+// result so one failure doesn't sink the rest.
+func (cli *CloudCLI) prefetchLogTails(ctx context.Context, client *cloudapi.Client, orgID, traceID string, tq *cloudapi.TraceQuestions) map[string]*logResult {
 	if analyzeNoLogs || analyzeLogLines <= 0 {
+		return nil
+	}
+	targets := logTargets(tq)
+	if len(targets) == 0 {
+		return nil
+	}
+
+	results := make([]*logResult, len(targets))
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(8)
+	for i, tgt := range targets {
+		i, tgt := i, tgt
+		eg.Go(func() error {
+			tail, timedOut, err := cli.tailSpanLogs(ctx, client, orgID, traceID, tgt.spanID, tgt.descendants)
+			results[i] = &logResult{tail: tail, timedOut: timedOut, err: err}
+			return nil
+		})
+	}
+	_ = eg.Wait()
+
+	out := make(map[string]*logResult, len(targets))
+	for i, tgt := range targets {
+		out[tgt.spanID] = results[i]
+	}
+	return out
+}
+
+// renderSpanLogs prints a span's prefetched log tail and the command to get the
+// full logs. A nil result means logs were disabled, so just print the command.
+func (cli *CloudCLI) renderSpanLogs(out io.Writer, traceID, spanID string, res *logResult) {
+	full := fmt.Sprintf("dagger cloud logs %s %s", traceID, spanID)
+	if res == nil {
 		fmt.Fprintf(out, "  logs:  %s\n", full)
 		return
 	}
-
-	tail, timedOut, err := cli.tailSpanLogs(cmd.Context(), client, orgID, traceID, spanID, descendants)
-	if err != nil {
-		fmt.Fprintf(out, "  logs:  (error fetching: %v) %s\n", err, full)
+	if res.err != nil {
+		fmt.Fprintf(out, "  logs:  (error fetching: %v) %s\n", res.err, full)
 		return
 	}
-	if tail.total == 0 {
+	if res.tail == nil || res.tail.total == 0 {
 		fmt.Fprintf(out, "  logs:  (none) — %s\n", full)
 		return
 	}
 
 	suffix := ""
-	if timedOut {
+	if res.timedOut {
 		suffix = ", timed out — partial"
 	}
-	shown := len(tail.lines)
-	fmt.Fprintf(out, "  logs (last %d of %d lines%s; full: %s):\n", shown, tail.total, suffix, full)
-	for _, ln := range tail.lines {
+	fmt.Fprintf(out, "  logs (last %d of %d lines%s; full: %s):\n", len(res.tail.lines), res.tail.total, suffix, full)
+	for _, ln := range res.tail.lines {
 		fmt.Fprintf(out, "    | %s\n", ln)
 	}
 }
