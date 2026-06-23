@@ -14,6 +14,11 @@ func TestAnalyzeRender(t *testing.T) {
 	analyzeLogLines = 0
 	t.Cleanup(func() { analyzeNoLogs = false; analyzeLogLines = 20 })
 
+	// Force plain output so assertions don't depend on the ambient color/agent
+	// environment (CI has neither NO_COLOR nor an agent var set, so styling
+	// would otherwise emit ANSI codes into the buffer).
+	t.Setenv("NO_COLOR", "1")
+
 	tq := &cloudapi.TraceQuestions{
 		OverallStatus: &cloudapi.TraceOverallStatus{
 			TraceID: "a0d14706", SpanID: "32370f63",
