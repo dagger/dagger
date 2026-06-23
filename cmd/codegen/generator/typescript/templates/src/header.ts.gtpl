@@ -8,11 +8,11 @@ inherited by futures objects and common types.
  * Do not make direct changes to the file.
  */
  {{- if IsBundle }}
-import { Context } from "./core.js"
+import { Context, BaseClient } from "./core.js"
 {{- else if (not IsClientOnly)}}
-import { Context } from "../common/context.js"
+import { Context, BaseClient } from "../common/context.js"
 {{- else }}
-import { Context, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "@dagger.io/dagger"
+import { Context, BaseClient, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "@dagger.io/dagger"
 {{- end }}
 
 {{ if IsClientOnly }}
@@ -86,11 +86,37 @@ export async function connect(
  */
 export type float = number
 
-class BaseClient {
-  /**
-   * @hidden
-   */
+// BaseClient is re-exported so consumers that previously did
+// `import { BaseClient } from "./client.gen.js"` keep working. The class
+// itself lives in the common SDK runtime (see ../common/context.ts) so that
+// per-dependency generated files can extend it without the ESM cycle that
+// arises once client.gen.ts `export *`s those dep files.
+export { BaseClient }
 
-  constructor(protected _ctx: Context = new Context()) {}
-}
+{{- /* For each dependency: import its types (so inline references like
+`new Hello(ctx)` resolve) plus its augmentation function, and re-export
+everything so downstream consumers see the dep types via this module. */ -}}
+{{- range $dep := DependencyExports }}
+import {
+  {{ $dep.AugmentFnName }}{{ range $i, $n := $dep.Names }},
+  {{ $n }}{{ end }}
+} from "./{{ $dep.File }}.gen.js"
+export * from "./{{ $dep.File }}.gen.js"
+{{- end }}
+{{- end }}
+
+{{- /* `footer` runs after all class definitions in client.gen.ts. It calls
+each dependency's augmentation function with the now-defined Client / Binding /
+Env classes so the dep-contributed prototype methods are attached at module
+load time. This is why dep files only ever TYPE-import the extendable classes
+from client.gen.ts — avoiding the ESM cycle. */ -}}
+{{ define "footer" }}
+{{- $deps := DependencyExports }}
+{{- if $deps }}
+
+// Attach dependency-contributed prototype methods to the extendable classes.
+{{- range $dep := $deps }}
+{{ $dep.AugmentFnName }}({ Client, Binding, Env })
+{{- end }}
+{{- end }}
 {{- end }}

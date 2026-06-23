@@ -42,3 +42,21 @@ export class Context {
     return computeQuery(this._queryTree, this._connection.getGQLClient())
   }
 }
+
+/**
+ * Common base class for every generated API class (Client, Container, and
+ * dependency-contributed types).
+ *
+ * It lives here in the SDK runtime rather than in the generated client.gen.ts
+ * so that per-dependency generated files (e.g. hello.gen.ts) can `extends
+ * BaseClient` without importing a value from client.gen.ts — client.gen.ts
+ * `export *`s those dep files, so a value import would create an ESM cycle.
+ * client.gen.ts re-exports BaseClient to keep `import { BaseClient } from
+ * "./client.gen.js"` working for existing consumers.
+ */
+export class BaseClient {
+  /**
+   * @hidden
+   */
+  constructor(protected _ctx: Context = new Context()) {}
+}

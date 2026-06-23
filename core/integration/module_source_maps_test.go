@@ -137,7 +137,9 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 				With(clientGeneratorWorkspaceClients(clientGeneratorSDKClientFor("typescript", "sdk"))).
 				With(daggerExec("generate", "-y"))
 
-			codegenContents, err := modGen.File(sdkCodegenFile(t, "typescript")).Contents(ctx)
+			// Dependency types are split into their own <dep>.gen.ts file, so the
+			// dep's source-map comments land in dep.gen.ts, not client.gen.ts.
+			codegenContents, err := modGen.File("sdk/dep.gen.ts").Contents(ctx)
 			require.NoError(t, err)
 
 			for _, match := range tc.matches.typescript {

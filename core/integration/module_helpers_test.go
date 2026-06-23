@@ -296,22 +296,6 @@ func sdkSourceFile(sdk string) string {
 	}
 }
 
-func sdkCodegenFile(t *testctx.T, sdk string) string {
-	t.Helper()
-	switch sdk {
-	case "go":
-		// FIXME: go codegen is split up into dagger/dagger.gen.go and
-		// dagger/internal/dagger/dagger.gen.go
-		return "internal/dagger/dagger.gen.go"
-	case "python":
-		return "sdk/src/dagger/client/gen.py"
-	case "typescript":
-		return "sdk/client.gen.ts"
-	default:
-		panic(fmt.Errorf("unknown sdk %q", sdk))
-	}
-}
-
 func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *introspection.Schema {
 	t.Helper()
 	out, err := ctr.With(daggerQueryAt(".", introspection.Query)).Stdout(ctx)
