@@ -323,7 +323,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
 		// -m modules are loaded at engine connect time as extra modules.
-		mod, err = initializeWorkspace(ctx, fc.c.Dagger(), loadTypeDefsOpts{HideCore: true})
+		mod, err = initializeWorkspace(ctx, fc.c.Dagger(), loadTypeDefsOpts{HideCore: true, Scope: workspaceModuleScope(a)})
 	}
 	if err != nil {
 		return err

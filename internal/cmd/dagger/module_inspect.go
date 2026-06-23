@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
@@ -156,6 +157,17 @@ var loadModConfQuery string
 //go:embed typedefs.graphql
 var loadTypeDefsQuery string
 
+// typeDefsOperationName is the operation name in typedefs.graphql; a targeted
+// introspection renames it to carry a module scope the engine peeks.
+const typeDefsOperationName = "TypeDefs"
+
+// workspaceModuleScope returns the leading positional token -- the only token
+// that can name a workspace module. The engine peeks it to scope the typedefs
+// introspection; an empty result (uncertain or no token) loads every module.
+func workspaceModuleScope(args []string) string {
+	return functionName(args)
+}
+
 func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "inspecting module metadata", telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -260,6 +272,11 @@ type loadTypeDefsOpts struct {
 	// HideCore strips core API functions from the Query type, leaving
 	// only module-sourced functions (constructors, entrypoint proxies).
 	HideCore bool
+
+	// Scope, when set, names the workspace module the introspection targets. It
+	// rides in the operation name; the engine peeks it to load only that module
+	// (and the entrypoint), so a broken sibling can't block building the tree.
+	Scope string
 }
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
@@ -276,9 +293,23 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		TypeDefs []*modTypeDef
 	}
 
+	query := loadTypeDefsQuery
+	var opName string
+	if o.Scope != "" {
+		// Name the operation after the target so the engine peeks it; an engine
+		// that doesn't ignores it and loads everything, as before. If the header
+		// drifted and the rename didn't apply, fall through to the plain query.
+		scopedOp := dagql.ModuleScopeOperationName(o.Scope)
+		if scoped := strings.Replace(query, "query "+typeDefsOperationName+"(", "query "+scopedOp+"(", 1); scoped != query {
+			query = scoped
+			opName = scopedOp
+		}
+	}
+
 	err := dag.Do(ctx, &dagger.Request{
-		Query:     loadTypeDefsQuery,
+		Query:     query,
 		Variables: map[string]any{"hideCore": o.HideCore},
+		OpName:    opName,
 	}, &dagger.Response{
 		Data: &res,
 	})
