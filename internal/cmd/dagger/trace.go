@@ -100,7 +100,7 @@ func Trace(cmd *cobra.Command, args []string) error {
 						rootSpanHex := span.SpanContext().SpanID().String()
 						logStreamOnce.Do(func() {
 							eg.Go(func() error {
-								return client.StreamLogs(ctx, orgID, traceID, rootSpanHex, func(logs []cloud.LogMessage) {
+								return client.StreamLogs(ctx, orgID, traceID, rootSpanHex, true, func(logs []cloud.LogMessage) {
 									slog.Debug("received logs from cloud", "count", len(logs))
 									records := cloud.LogMessagesToRecords(traceID, logs)
 									if len(records) == 0 {
