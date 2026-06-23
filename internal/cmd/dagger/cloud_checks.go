@@ -862,7 +862,7 @@ func replayCloudChecks(cmd *cobra.Command, client *cloudapi.Client, orgID string
 			for _, logs := range logBatches {
 				logs := logs
 				eg.Go(func() error {
-					return client.StreamLogs(ctx, orgID, logs.OriginalTraceID, logs.RootSpanID, func(messages []cloudapi.LogMessage) {
+					return client.StreamLogs(ctx, orgID, logs.OriginalTraceID, logs.RootSpanID, true, func(messages []cloudapi.LogMessage) {
 						records := cloudapi.LogMessagesToRecords(traceID, messages)
 						if len(records) == 0 {
 							return
