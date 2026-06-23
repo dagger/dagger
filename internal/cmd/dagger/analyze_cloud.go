@@ -94,7 +94,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 
 	fmt.Fprintf(o, "%s %s\n", bold(o, "TRACE"), traceID)
 	if s := tq.OverallStatus; s != nil {
-		fmt.Fprintf(o, "%s  %s %s\n", bold(o, "Status:"), statusMark(o, s.Outcome), statusText(o, s.Outcome, strings.ToUpper(emptyDash(s.Outcome))))
+		fmt.Fprintf(o, "%s  %s\n", bold(o, "Status:"), statusHeadline(o, s.Outcome))
 		if s.Command != "" {
 			fmt.Fprintf(o, "%s %s\n", bold(o, "Command:"), s.Command)
 		}
@@ -139,7 +139,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 		fmt.Fprintln(o, "(no checks ran)")
 	}
 	for _, c := range tq.Checks {
-		fmt.Fprintf(o, "\n%s %s\n", statusMark(o, c.Status), bold(o, emptyDash(c.Name)))
+		fmt.Fprintf(o, "\n%s %s\n", marker(o, c.Status), bold(o, emptyDash(c.Name)))
 		if c.Error != "" {
 			fmt.Fprintf(o, "  %s %s\n", bold(o, "error:"), oneLine(c.Error))
 		}
@@ -157,9 +157,15 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 	for _, t := range tq.FailedTests {
 		name := t.Name
 		if t.Suite != "" && t.Suite != t.Name {
-			name = t.Suite + " › " + t.Name
+			// Use an ASCII separator for agents; the test name is a prime grep
+			// target and › is awkward to match.
+			sep := " › "
+			if idtui.RunningInAgent() {
+				sep = " > "
+			}
+			name = t.Suite + sep + t.Name
 		}
-		fmt.Fprintf(o, "\n%s %s\n", statusMark(o, "failed"), bold(o, emptyDash(name)))
+		fmt.Fprintf(o, "\n%s %s\n", marker(o, "failed"), bold(o, emptyDash(name)))
 		if t.OriginCommand != "" {
 			fmt.Fprintf(o, "  %s %s\n", bold(o, "caused by:"), t.OriginCommand)
 		}
@@ -363,10 +369,14 @@ func (cli *CloudCLI) tailSpanLogs(ctx context.Context, client *cloudapi.Client, 
 	return tail, false, err
 }
 
-// statusMark returns the colored glyph for a span/check/test status, matching
-// the vocabulary the report frontend uses (green ✔ / red ✘). The color is
-// stripped automatically when output isn't styled (NO_COLOR, agents, pipes).
-func statusMark(o *termenv.Output, status string) string {
+// marker is the leading status indicator for a check or test line. For humans
+// it's a colored glyph matching the report frontend's vocabulary (green ✔ /
+// red ✘); for agents it's a greppable ASCII token like "[FAILED]", so a single
+// `grep '\[FAILED\]'` surfaces every failure across the summary.
+func marker(o *termenv.Output, status string) string {
+	if idtui.RunningInAgent() {
+		return statusToken(status)
+	}
 	switch status {
 	case "passed":
 		return o.String("✔").Foreground(termenv.ANSIGreen).String()
@@ -379,15 +389,30 @@ func statusMark(o *termenv.Output, status string) string {
 	}
 }
 
-// statusText colors a status word (e.g. FAILED/PASSED) to match its glyph.
-func statusText(o *termenv.Output, status, text string) string {
+// statusToken is the ASCII status tag shown to agents, e.g. "[FAILED]".
+func statusToken(status string) string {
+	w := strings.ToUpper(status)
+	if w == "" {
+		w = "UNKNOWN"
+	}
+	return "[" + w + "]"
+}
+
+// statusHeadline renders the overall outcome on the Status line: a colored
+// glyph plus the uppercased word for humans, or just the ASCII token for agents
+// (which already spells out the outcome, so no separate word is needed).
+func statusHeadline(o *termenv.Output, status string) string {
+	if idtui.RunningInAgent() {
+		return statusToken(status)
+	}
+	word := strings.ToUpper(emptyDash(status))
 	switch status {
 	case "passed":
-		return o.String(text).Foreground(termenv.ANSIGreen).String()
+		return o.String("✔ " + word).Foreground(termenv.ANSIGreen).String()
 	case "failed":
-		return o.String(text).Foreground(termenv.ANSIRed).String()
+		return o.String("✘ " + word).Foreground(termenv.ANSIRed).String()
 	default:
-		return text
+		return marker(o, status) + " " + word
 	}
 }
 
