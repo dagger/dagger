@@ -20,26 +20,71 @@ type peekGraphQLRequest struct {
 // PeekRootFields returns the top-level field names selected by a GraphQL-over-HTTP
 // request while preserving the request body for the real server.
 func PeekRootFields(r *http.Request) (bool, []string, error) {
+	ok, _, fields, err := PeekRootFieldsAndOperation(r)
+	return ok, fields, err
+}
+
+// PeekRootFieldsAndOperation is PeekRootFields plus the request's operation
+// name (recovered from the document when the envelope omits it).
+func PeekRootFieldsAndOperation(r *http.Request) (bool, string, []string, error) {
 	query, operationName, ok, err := peekGraphQLRequestBody(r)
 	if err != nil || !ok {
-		return ok, nil, err
+		return ok, operationName, nil, err
 	}
 
 	doc, err := parser.ParseQuery(&ast.Source{Input: query})
 	if err != nil {
-		return false, nil, err
+		return false, operationName, nil, err
 	}
 
 	op, ok := peekOperation(doc, operationName)
 	if !ok || op.Operation != ast.Query {
-		return false, nil, nil
+		return false, operationName, nil, nil
+	}
+	if operationName == "" {
+		operationName = op.Name
 	}
 
 	fields, ok := collectRootFields(op.SelectionSet, doc.Fragments)
 	if !ok {
-		return false, nil, nil
+		return false, operationName, nil, nil
 	}
-	return true, fields, nil
+	return true, operationName, fields, nil
+}
+
+// moduleScopeOperationPrefix marks an operation name that carries a single
+// workspace-module load scope for the server to peek (see the design doc). The
+// prefix is otherwise ignored, so the same query works against engines that
+// don't peek it.
+const moduleScopeOperationPrefix = "DaggerModuleScope_"
+
+// ModuleScopeOperationName encodes a module load scope into a GraphQL operation
+// name. Non-identifier characters (e.g. the '-' in a kebab-case command name)
+// become '_'; the server kebab-normalizes the decoded token, so "good-mod" and
+// "goodMod" still match.
+func ModuleScopeOperationName(scope string) string {
+	return moduleScopeOperationPrefix + sanitizeGraphQLName(scope)
+}
+
+// ModuleScopeFromOperationName returns the module load scope encoded into an
+// operation name, if any.
+func ModuleScopeFromOperationName(operationName string) (string, bool) {
+	scope, ok := strings.CutPrefix(operationName, moduleScopeOperationPrefix)
+	if !ok || scope == "" {
+		return "", false
+	}
+	return scope, true
+}
+
+func sanitizeGraphQLName(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, s)
 }
 
 func peekGraphQLRequestBody(r *http.Request) (string, string, bool, error) {
