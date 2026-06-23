@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
@@ -15,7 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var traceOrgFlag string
+var traceFull bool
 
 var traceCmd = &cobra.Command{
 	Use:    "trace [trace ID]",
@@ -25,17 +26,39 @@ var traceCmd = &cobra.Command{
 		"experimental":       "true",
 		showFinalProgressKey: "true",
 	},
-	Aliases: []string{"t"},
-	Short:   "View a Dagger trace from Dagger Cloud.",
+	Aliases: []string{"t", "analyze", "diagnose"},
+	Short:   "Diagnose or view a Dagger Cloud trace.",
+	Long: `Summarize why a trace failed: overall status, the command(s) that caused the
+failure, check results, and failed tests, each with the tail of its logs. This
+summary is computed server-side without loading the whole trace, and is the
+default.
+
+Pass --full to instead stream and render the entire trace -- the full call
+tree, arguments, and timing.`,
 	Example: `dagger trace 2f123ba77bf7bd2d4db2f70ed20613e8`,
-	RunE:    Trace,
+	RunE:    traceRun,
 }
 
 func init() {
-	traceCmd.Flags().StringVar(&traceOrgFlag, "org", "", "Dagger Cloud org name (defaults to current org)")
+	traceCmd.Flags().BoolVar(&traceFull, "full", false, "Render the full trace (call tree, arguments, timing) instead of the failure summary")
+	traceCmd.Flags().BoolVar(&cloudJSON, "json", false, "Print the summary as JSON (no logs; ignored with --full)")
+	traceCmd.Flags().IntVar(&analyzeLogLines, "log-lines", 20, "Lines of log tail to show per failed span in the summary (0 to disable)")
+	traceCmd.Flags().BoolVar(&analyzeNoLogs, "no-logs", false, "Skip fetching logs in the summary, just the triage")
+	traceCmd.Flags().DurationVar(&analyzeLogTimeout, "log-timeout", 30*time.Second, "Max time to spend fetching each span's log tail in the summary")
 }
 
-func Trace(cmd *cobra.Command, args []string) error {
+// traceRun shows the server-computed failure summary by default, and the full
+// streamed trace when --full is given. The summary path is the same one the
+// 'cloud analyze' work produced; --full keeps the original render-everything
+// behavior.
+func traceRun(cmd *cobra.Command, args []string) error {
+	if traceFull {
+		return traceFullRender(cmd, args)
+	}
+	return cloudCLI.Analyze(cmd, args)
+}
+
+func traceFullRender(cmd *cobra.Command, args []string) error {
 	traceID := args[0]
 
 	return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
@@ -127,10 +150,7 @@ func Trace(cmd *cobra.Command, args []string) error {
 }
 
 func resolveOrgID(ctx context.Context, client *cloud.Client, cloudAuth *auth.Cloud) (string, error) {
-	orgName := traceOrgFlag
-	if orgName == "" {
-		orgName = cloudOrgFlag
-	}
+	orgName := cloudOrgFlag
 	if orgName != "" {
 		// Resolve org name to ID via GraphQL
 		org, err := client.OrgByName(ctx, orgName)
