@@ -106,24 +106,28 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 	}
 
 	// What command caused the failure.
-	fmt.Fprintf(o, "\n%s\n", bold(o, "== ROOT CAUSE =="))
+	var rootCause strings.Builder
 	if len(tq.FailingCommands) == 0 {
-		fmt.Fprintln(o, "(nothing failed)")
+		fmt.Fprintln(&rootCause, "(nothing failed)")
 	}
 	for i, fc := range tq.FailingCommands {
+		if i > 0 {
+			fmt.Fprintln(&rootCause)
+		}
 		label := "cause"
 		if i == 0 {
 			label = "root cause"
 		}
-		fmt.Fprintf(o, "\n%s %s\n", bold(o, "["+label+"]"), emptyDash(fc.Command))
+		fmt.Fprintf(&rootCause, "%s %s\n", bold(o, "["+label+"]"), emptyDash(fc.Command))
 		if fc.Error != "" {
-			fmt.Fprintf(o, "  %s %s\n", bold(o, "error:"), oneLine(fc.Error))
+			fmt.Fprintf(&rootCause, "  %s %s\n", bold(o, "error:"), oneLine(fc.Error))
 		}
-		fmt.Fprintf(o, "  %s  %s\n", bold(o, "span:"), fc.SpanID)
-		cli.renderSpanLogs(o, traceID, fc.SpanID, logs[fc.SpanID])
+		fmt.Fprintf(&rootCause, "  %s  %s\n", bold(o, "span:"), fc.SpanID)
+		cli.renderSpanLogs(&rootCause, o, traceID, fc.SpanID, logs[fc.SpanID])
 	}
+	section(o, "ROOT CAUSE", rootCause.String())
 
-	// Checks. Always show the header so "no checks ran" is explicit rather than
+	// Checks. Always show the section so "no checks ran" is explicit rather than
 	// an ambiguous omission.
 	var passed, failed int
 	for _, c := range tq.Checks {
@@ -134,27 +138,34 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			failed++
 		}
 	}
-	fmt.Fprintf(o, "\n%s\n", bold(o, fmt.Sprintf("== CHECKS (%d passed, %d failed, %d total) ==", passed, failed, len(tq.Checks))))
+	var checks strings.Builder
 	if len(tq.Checks) == 0 {
-		fmt.Fprintln(o, "(no checks ran)")
+		fmt.Fprintln(&checks, "(no checks ran)")
 	}
-	for _, c := range tq.Checks {
-		fmt.Fprintf(o, "\n%s %s\n", marker(o, c.Status), bold(o, emptyDash(c.Name)))
+	for i, c := range tq.Checks {
+		if i > 0 {
+			fmt.Fprintln(&checks)
+		}
+		fmt.Fprintf(&checks, "%s %s\n", marker(o, c.Status), bold(o, emptyDash(c.Name)))
 		if c.Error != "" {
-			fmt.Fprintf(o, "  %s %s\n", bold(o, "error:"), oneLine(c.Error))
+			fmt.Fprintf(&checks, "  %s %s\n", bold(o, "error:"), oneLine(c.Error))
 		}
 		if c.Status == "failed" {
-			fmt.Fprintf(o, "  %s  %s\n", bold(o, "span:"), c.SpanID)
-			cli.renderSpanLogs(o, traceID, c.SpanID, logs[c.SpanID])
+			fmt.Fprintf(&checks, "  %s  %s\n", bold(o, "span:"), c.SpanID)
+			cli.renderSpanLogs(&checks, o, traceID, c.SpanID, logs[c.SpanID])
 		}
 	}
+	section(o, fmt.Sprintf("CHECKS (%d passed, %d failed, %d total)", passed, failed, len(tq.Checks)), checks.String())
 
-	// Failed tests. Always show the header for the same reason.
-	fmt.Fprintf(o, "\n%s\n", bold(o, fmt.Sprintf("== FAILED TESTS (%d) ==", len(tq.FailedTests))))
+	// Failed tests. Always show the section for the same reason.
+	var tests strings.Builder
 	if len(tq.FailedTests) == 0 {
-		fmt.Fprintln(o, "(no failed tests)")
+		fmt.Fprintln(&tests, "(no failed tests)")
 	}
-	for _, t := range tq.FailedTests {
+	for i, t := range tq.FailedTests {
+		if i > 0 {
+			fmt.Fprintln(&tests)
+		}
 		name := t.Name
 		if t.Suite != "" && t.Suite != t.Name {
 			// Use an ASCII separator for agents; the test name is a prime grep
@@ -165,27 +176,59 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			}
 			name = t.Suite + sep + t.Name
 		}
-		fmt.Fprintf(o, "\n%s %s\n", marker(o, "failed"), bold(o, emptyDash(name)))
+		fmt.Fprintf(&tests, "%s %s\n", marker(o, "failed"), bold(o, emptyDash(name)))
 		if t.OriginCommand != "" {
-			fmt.Fprintf(o, "  %s %s\n", bold(o, "caused by:"), t.OriginCommand)
+			fmt.Fprintf(&tests, "  %s %s\n", bold(o, "caused by:"), t.OriginCommand)
 		}
 		if msg := firstNonEmptyStr(t.OriginError, t.Error); msg != "" {
-			fmt.Fprintf(o, "  %s     %s\n", bold(o, "error:"), oneLine(msg))
+			fmt.Fprintf(&tests, "  %s     %s\n", bold(o, "error:"), oneLine(msg))
 		}
-		fmt.Fprintf(o, "  %s      %s\n", bold(o, "span:"), t.SpanID)
+		fmt.Fprintf(&tests, "  %s      %s\n", bold(o, "span:"), t.SpanID)
 		// Only the leaf failures (those with a distinct origin command) have
 		// useful per-test logs; aggregate parent tests just roll up children.
 		if t.OriginCommand != "" {
-			cli.renderSpanLogs(o, traceID, t.SpanID, logs[t.SpanID])
+			cli.renderSpanLogs(&tests, o, traceID, t.SpanID, logs[t.SpanID])
 		}
 	}
+	section(o, fmt.Sprintf("FAILED TESTS (%d)", len(tq.FailedTests)), tests.String())
 
 	// This summary is intentionally a flat triage: it drops the call tree that
 	// led to each failure (which function calls, with which arguments, and how
 	// long they took). When that context matters, the full trace renders it.
-	fmt.Fprintf(o, "\n%s\n", bold(o, "== MORE CONTEXT =="))
-	fmt.Fprintf(o, "Full call tree, arguments, and timing:  dagger trace --full %s\n", traceID)
-	fmt.Fprintf(o, "Full logs for any span:                 dagger cloud logs %s <span-id> -o span.log\n", traceID)
+	var more strings.Builder
+	fmt.Fprintf(&more, "Full call tree, arguments, and timing:  dagger trace --full %s\n", traceID)
+	fmt.Fprintf(&more, "Full logs for any span:                 dagger cloud logs %s <span-id> -o span.log\n", traceID)
+	section(o, "MORE CONTEXT", more.String())
+}
+
+// section renders a titled block. For humans the title is a bold, all-caps
+// heading with the body indented two spaces -- the style used elsewhere in the
+// CLI. For agents it's a flat, greppable "== TITLE ==" marker with the body
+// left at the margin. body is pre-rendered and may already contain styling.
+func section(o *termenv.Output, title, body string) {
+	body = strings.TrimRight(body, "\n")
+	if idtui.RunningInAgent() {
+		fmt.Fprintf(o, "\n== %s ==\n", title)
+		if body != "" {
+			fmt.Fprintln(o, body)
+		}
+		return
+	}
+	fmt.Fprintf(o, "\n%s\n", bold(o, title))
+	if body != "" {
+		fmt.Fprintln(o, indentLines(body, "  "))
+	}
+}
+
+// indentLines prefixes every non-empty line of s with prefix.
+func indentLines(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		if ln != "" {
+			lines[i] = prefix + ln
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // logTarget is a span whose logs we want to fetch for the analysis.
@@ -257,19 +300,20 @@ func (cli *CloudCLI) prefetchLogTails(ctx context.Context, client *cloudapi.Clie
 	return out
 }
 
-// renderSpanLogs prints a span's prefetched log tail and the command to get the
-// full logs. A nil result means logs were disabled, so just print the command.
-func (cli *CloudCLI) renderSpanLogs(o *termenv.Output, traceID, spanID string, res *logResult) {
+// renderSpanLogs writes a span's prefetched log tail and the command to get the
+// full logs to w, styling with o. A nil result means logs were disabled, so
+// just print the command.
+func (cli *CloudCLI) renderSpanLogs(w io.Writer, o *termenv.Output, traceID, spanID string, res *logResult) {
 	full := fmt.Sprintf("dagger cloud logs %s %s", traceID, spanID)
 	switch {
 	case res == nil:
-		fmt.Fprintf(o, "  %s  %s\n", bold(o, "logs:"), full)
+		fmt.Fprintf(w, "  %s  %s\n", bold(o, "logs:"), full)
 		return
 	case res.err != nil:
-		fmt.Fprintf(o, "  %s  (error fetching: %v) %s\n", bold(o, "logs:"), res.err, full)
+		fmt.Fprintf(w, "  %s  (error fetching: %v) %s\n", bold(o, "logs:"), res.err, full)
 		return
 	case res.tail == nil || res.tail.total == 0:
-		fmt.Fprintf(o, "  %s  (none) — %s\n", bold(o, "logs:"), full)
+		fmt.Fprintf(w, "  %s  (none) — %s\n", bold(o, "logs:"), full)
 		return
 	}
 
@@ -278,10 +322,10 @@ func (cli *CloudCLI) renderSpanLogs(o *termenv.Output, traceID, spanID string, r
 		suffix = ", timed out — partial"
 	}
 	header := fmt.Sprintf("logs (last %d of %d lines%s; full: %s):", len(res.tail.lines), res.tail.total, suffix, full)
-	fmt.Fprintf(o, "  %s\n", bold(o, header))
+	fmt.Fprintf(w, "  %s\n", bold(o, header))
 	pipe := dim(o, "|")
 	for _, ln := range res.tail.lines {
-		fmt.Fprintf(o, "    %s %s\n", pipe, ln)
+		fmt.Fprintf(w, "    %s %s\n", pipe, ln)
 	}
 }
 
