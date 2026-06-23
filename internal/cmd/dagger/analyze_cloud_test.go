@@ -47,7 +47,7 @@ func TestAnalyzeRender(t *testing.T) {
 	for _, want := range []string{
 		"Status:  [FAILED]",
 		"== ROOT CAUSE ==",
-		"[root cause] otelgotest",
+		"[FAILED] otelgotest",
 		"== CHECKS (1 passed, 1 failed, 2 total) ==",
 		"[FAILED] lint",
 		"[PASSED] fmt",
