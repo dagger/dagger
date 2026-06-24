@@ -117,6 +117,13 @@ type frontendPretty struct {
 	logProvider   func(dagui.SpanID, bool)
 	requestedLogs map[dagui.SpanID]bool
 
+	// spanProvider lazily fetches a span's children on demand when the user
+	// expands it (or it's surfaced/zoomed). Set by 'dagger trace' to fetch
+	// deeper spans incrementally instead of loading the whole trace up front;
+	// nil for live runs. requestedSpans dedups so each span is fetched once.
+	spanProvider   func(dagui.SpanID)
+	requestedSpans map[dagui.SpanID]bool
+
 	// updated as events are written
 	db           *dagui.DB
 	logs         *prettyLogs
@@ -1024,9 +1031,97 @@ func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
 	fe.logProvider(id, span.RollUpLogs)
 }
 
+// SetSpanProvider registers a callback that lazily supplies a span's children.
+// The frontend calls it when a span's subtree becomes relevant: the user
+// expands the span, or it's surfaced/zoomed. The provider should fetch
+// asynchronously and feed results back through ImportSnapshots. Used by 'dagger
+// trace' to fetch deeper spans on demand instead of streaming the whole trace.
+func (fe *frontendPretty) SetSpanProvider(provider func(dagui.SpanID)) {
+	fe.dispatch(func() {
+		fe.spanProvider = provider
+	})
+}
+
+// requestSpans asks the span provider for a span's children, once. The provider
+// only needs to be asked when the server reported children we haven't loaded
+// yet (ChildCount exceeds the children we actually have); otherwise the subtree
+// is already present and expanding it is purely local.
+func (fe *frontendPretty) requestSpans(id dagui.SpanID) {
+	if fe.spanProvider == nil || !id.IsValid() {
+		return
+	}
+	if fe.requestedSpans[id] {
+		return
+	}
+	span, ok := fe.db.Spans.Map[id]
+	if !ok {
+		// Span not loaded yet; it'll be requested once it's surfaced.
+		return
+	}
+	if span.ChildCount == 0 {
+		// Leaf span: nothing deeper to fetch.
+		return
+	}
+	if fe.requestedSpans == nil {
+		fe.requestedSpans = make(map[dagui.SpanID]bool)
+	}
+	fe.requestedSpans[id] = true
+	fe.spanProvider(id)
+}
+
+// ImportSnapshots folds a batch of span snapshots into the DB and refreshes the
+// view. It's the snapshot-based counterpart to the OTLP ExportSpans path, used
+// by 'dagger trace' which receives spans as snapshots from Cloud (carrying
+// ChildCount and Partial, which the OTLP form drops). Mirrors the post-import
+// bookkeeping ExportSpans does so logs and test views stay in sync.
+func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
+	if len(snapshots) == 0 {
+		return
+	}
+	ids := make([]dagui.SpanID, len(snapshots))
+	for i, s := range snapshots {
+		ids[i] = s.ID
+	}
+	fe.dispatch(func() {
+		fe.db.ImportSnapshots(snapshots)
+		for _, id := range ids {
+			if fe.logs.flushResolvedLogsForSpan(id) {
+				fe.updateSpanTreesForLogs(id)
+				fe.updateLogPagerForLogs(id)
+			}
+			if sr, ok := fe.spanTrees[id]; ok {
+				sr.Update()
+			}
+		}
+		fe.updateTestViews()
+		// Don't recalculate here — set dirty flag so Render coalesces
+		// multiple batches into one recalculate per frame.
+		fe.viewDirty = true
+		fe.Update()
+	})
+}
+
 func (fe *frontendPretty) RevealAllSpans() {
 	fe.dispatch(func() {
 		fe.ZoomedSpan = dagui.SpanID{}
+		fe.Update()
+	})
+}
+
+// ZoomToSpan scopes the view to a span and treats it as expanded, mirroring the
+// web UI's ?span= deep link. It pulls the span's logs and children on demand
+// (via the registered providers) so 'dagger trace --span' can focus a subtree
+// without loading the whole trace.
+func (fe *frontendPretty) ZoomToSpan(id dagui.SpanID) {
+	fe.dispatch(func() {
+		if !id.IsValid() {
+			return
+		}
+		fe.ZoomedSpan = id
+		fe.FocusedSpan = id
+		fe.autoFocus = false
+		fe.setExpanded(id, true)
+		fe.recalculateViewLocked()
 		fe.Update()
 	})
 }
@@ -3173,8 +3268,9 @@ func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
 	}
 	fe.SpanExpanded[id] = expanded
 	if expanded {
-		// Lazily pull this span's logs the first time it's opened.
+		// Lazily pull this span's logs and children the first time it's opened.
 		fe.requestLogs(id)
+		fe.requestSpans(id)
 	}
 }
 
@@ -4121,7 +4217,7 @@ func (fe *frontendPretty) statusIcon(ctx tuist.Context, host statusIconHost, spa
 
 func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
 	var icon termenv.Style
-	if row.HasChildren || row.Span.HasLogs {
+	if row.HasChildren || row.Span.ChildCount > 0 || row.Span.HasLogs {
 		if row.Expanded {
 			icon = out.String(CaretDownFilled).Foreground(termenv.ANSIBrightBlack)
 		} else {
