@@ -286,6 +286,42 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 	})
 }
 
+// TestWorkspaceModuleGenerate covers generation for modules registered in a
+// workspace.
+func (WorkspaceModulesSuite) TestWorkspaceModuleGenerate(ctx context.Context, t *testctx.T) {
+	setupSDKManagedGoModule := func(ctx context.Context, t *testctx.T) (string, string) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "sdk", "install", "go")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "go", "myapp")
+		require.NoError(t, err)
+
+		moduleDir := filepath.Join(workdir, ".dagger", "modules", "myapp")
+		require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "main.go"), []byte(`package main
+
+type Myapp struct{}
+`), 0o644))
+
+		return workdir, moduleDir
+	}
+
+	workdir, moduleDir := setupSDKManagedGoModule(ctx, t)
+	cwd := filepath.Join(workdir, ".dagger")
+
+	out, err := hostDaggerExecRaw(ctx, t, cwd, "--silent", "generate", "-y")
+	require.NoError(t, err, "%s: %s", ".dagger", string(out))
+
+	_, err = os.Stat(filepath.Join(moduleDir, "internal", "dagger", "dagger.gen.go"))
+	require.NoError(t, err)
+
+	nestedGeneratedClient := filepath.Join(cwd, ".dagger", "modules", "myapp", "internal", "dagger", "dagger.gen.go")
+	_, err = os.Stat(nestedGeneratedClient)
+	require.True(t, os.IsNotExist(err), "expected generate from .dagger to write at workspace root, not %s", nestedGeneratedClient)
+}
+
 // TestWorkspaceModuleMutation should cover updates and config-level conflicts
 // around configured modules.
 func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t *testctx.T) {
