@@ -260,6 +260,92 @@ type loadTypeDefsOpts struct {
 	// HideCore strips core API functions from the Query type, leaving
 	// only module-sourced functions (constructors, entrypoint proxies).
 	HideCore bool
+	// Module is the leading CLI token (e.g. "good" in `dagger call good fn`).
+	// When it names an installed workspace module, typedefs are scoped to that
+	// module so only it loads; otherwise the full schema loads.
+	Module string
+}
+
+// queryTypeDefs fetches the typedefs the command tree is built from. When the
+// leading token names an installed workspace module, it scopes the introspection
+// to that module (loading only it) via currentWorkspace.moduleList.typeDefs;
+// otherwise it falls back to the load-all currentTypeDefs.
+func (m *moduleDef) queryTypeDefs(ctx context.Context, dag *dagger.Client, o loadTypeDefsOpts) ([]*modTypeDef, error) {
+	if o.Module != "" {
+		name, ok, err := resolveInstalledWorkspaceModule(ctx, dag, o.Module)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			var res struct {
+				CurrentWorkspace struct {
+					ModuleList []struct {
+						TypeDefs []*modTypeDef
+					}
+				}
+			}
+			if err := dag.Do(ctx, &dagger.Request{
+				Query:     loadTypeDefsQuery,
+				OpName:    "ModuleTypeDefs",
+				Variables: map[string]any{"module": name, "hideCore": o.HideCore},
+			}, &dagger.Response{Data: &res}); err != nil {
+				return nil, fmt.Errorf("query module typedefs: %w", err)
+			}
+			if len(res.CurrentWorkspace.ModuleList) == 0 {
+				return nil, fmt.Errorf("workspace module %q returned no type definitions", name)
+			}
+			return res.CurrentWorkspace.ModuleList[0].TypeDefs, nil
+		}
+	}
+
+	var res struct {
+		TypeDefs []*modTypeDef
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query:     loadTypeDefsQuery,
+		OpName:    "TypeDefs",
+		Variables: map[string]any{"hideCore": o.HideCore},
+	}, &dagger.Response{Data: &res}); err != nil {
+		return nil, fmt.Errorf("query module objects: %w", err)
+	}
+	return res.TypeDefs, nil
+}
+
+// resolveInstalledWorkspaceModule maps a CLI token to the raw config name of the
+// workspace module to scope typedefs introspection to: the module the token
+// names (kebab-insensitive), or the workspace entrypoint when the token is one
+// of its root-proxied functions. Returns ok=false only when nothing matches and
+// there is no entrypoint, so the caller loads the full schema.
+func resolveInstalledWorkspaceModule(ctx context.Context, dag *dagger.Client, token string) (string, bool, error) {
+	var res struct {
+		CurrentWorkspace struct {
+			ModuleList []struct {
+				Name       string
+				Entrypoint bool
+			}
+		}
+	}
+	if err := dag.Do(ctx, &dagger.Request{
+		Query: `query { currentWorkspace { moduleList { name entrypoint } } }`,
+	}, &dagger.Response{Data: &res}); err != nil {
+		return "", false, fmt.Errorf("list workspace modules: %w", err)
+	}
+	want := strcase.ToKebab(token)
+	entrypoint := ""
+	for _, mod := range res.CurrentWorkspace.ModuleList {
+		if strcase.ToKebab(mod.Name) == want {
+			return mod.Name, true, nil
+		}
+		if mod.Entrypoint {
+			entrypoint = mod.Name
+		}
+	}
+	// The token may be one of the entrypoint's root-proxied functions; loading
+	// the entrypoint module resolves it without loading the siblings.
+	if entrypoint != "" {
+		return entrypoint, true, nil
+	}
+	return "", false, nil
 }
 
 // loadTypeDefs loads the objects defined by the given module in an easier to use data structure.
@@ -272,18 +358,9 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 		o = opts[0]
 	}
 
-	var res struct {
-		TypeDefs []*modTypeDef
-	}
-
-	err := dag.Do(ctx, &dagger.Request{
-		Query:     loadTypeDefsQuery,
-		Variables: map[string]any{"hideCore": o.HideCore},
-	}, &dagger.Response{
-		Data: &res,
-	})
+	typeDefs, err := m.queryTypeDefs(ctx, dag, o)
 	if err != nil {
-		return fmt.Errorf("query module objects: %w", err)
+		return err
 	}
 
 	m.MainObject = nil
@@ -291,9 +368,9 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client, opts .
 	m.Interfaces = nil
 	m.Enums = nil
 	m.Inputs = nil
-	m.typeDefsByName = make(map[string]*modTypeDef, len(res.TypeDefs))
+	m.typeDefsByName = make(map[string]*modTypeDef, len(typeDefs))
 
-	for _, typeDef := range res.TypeDefs {
+	for _, typeDef := range typeDefs {
 		if typeDef == nil {
 			return fmt.Errorf("currentTypeDefs returned nil TypeDef")
 		}
