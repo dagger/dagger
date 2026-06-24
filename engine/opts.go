@@ -135,8 +135,7 @@ type ClientMetadata struct {
 	SuppressCompatWorkspaceWarning bool `json:"suppress_compat_workspace_warning,omitempty"`
 
 	// LockMode controls lockfile behavior for lookup resolution.
-	// Valid values: "live", "pinned", "frozen", "update".
-	// Legacy aliases "disabled", "auto", and "strict" are also accepted.
+	// Valid values: "disabled", "live", "pinned", "frozen".
 	LockMode string `json:"lock_mode,omitempty"`
 
 	// Workspace explicitly declares the workspace binding for this client.
