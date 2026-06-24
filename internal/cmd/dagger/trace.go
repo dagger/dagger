@@ -13,10 +13,17 @@ import (
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"golang.org/x/sync/errgroup"
 )
 
-var traceFull bool
+var (
+	traceFull bool
+	traceSpan string
+)
 
 var traceCmd = &cobra.Command{
 	Use:    "trace [trace ID]",
@@ -41,6 +48,7 @@ tree, arguments, and timing.`,
 
 func init() {
 	traceCmd.Flags().BoolVar(&traceFull, "full", false, "Render the full trace (call tree, arguments, timing) instead of the failure summary")
+	traceCmd.Flags().StringVar(&traceSpan, "span", "", "With --full, scope and zoom the view to a span ID (fetches its subtree and logs)")
 	traceCmd.Flags().BoolVar(&cloudJSON, "json", false, "Print the summary as JSON (no logs; ignored with --full)")
 	traceCmd.Flags().IntVar(&analyzeLogLines, "log-lines", 20, "Lines of log tail to show per failed span in the summary (0 to disable)")
 	traceCmd.Flags().BoolVar(&analyzeNoLogs, "no-logs", false, "Skip fetching logs in the summary, just the triage")
@@ -81,8 +89,6 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 			return nil, err
 		}
 
-		spanExp := Frontend.SpanExporter()
-		defer spanExp.Shutdown(ctx)
 		logExp := Frontend.LogExporter()
 		defer logExp.Shutdown(ctx)
 
@@ -138,55 +144,281 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 			})
 		}
 
-		eg, spanCtx := errgroup.WithContext(ctx)
-		eg.Go(func() error {
-			return client.StreamSpans(spanCtx, orgID, traceID, func(spanDatas []cloud.SpanData) {
-				slog.Debug("received spans from cloud", "count", len(spanDatas))
+		// Fetch spans incrementally, mirroring the Cloud web UI
+		// (cloud/app_server.go): stream the priority (root) spans first, then
+		// fetch a span's children on demand when the user expands it. The loader
+		// uses the outer ctx so lazy expands keep working while the TUI is
+		// interactive (-E).
+		loader := newTraceLoader(ctx, client, orgID, traceID)
+		if sp, ok := Frontend.(interface {
+			SetSpanProvider(func(dagui.SpanID))
+		}); ok {
+			sp.SetSpanProvider(loader.listen)
+		}
 
-				// Convert to OTLP proto, then to OTel SDK ReadOnlySpans, and feed
-				// through the frontend's exporter pipeline so rendering triggers.
-				resourceSpans := cloud.SpansToPB(spanDatas)
-				spans := telemetry.SpansFromPB(resourceSpans)
-				if len(spans) == 0 {
-					return
-				}
-
-				if err := spanExp.ExportSpans(spanCtx, spans); err != nil {
-					slog.Warn("error exporting spans", "err", err)
-					return
-				}
-
-				// Set the root span (no parent) as the primary span so the TUI
-				// roots the tree there.
-				for _, span := range spans {
-					if !span.Parent().SpanID().IsValid() {
-						spanID := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
-						slog.Debug("setting primary span", "spanID", spanID)
-						Frontend.SetPrimary(spanID)
-						break
-					}
-				}
-			})
-		})
-
-		if err := eg.Wait(); err != nil {
+		// Initial load: the trace's priority spans. For a small enough trace the
+		// server returns the whole thing here; for a large one it returns just the
+		// priority set and marks it Partial, leaving deeper spans to be fetched
+		// lazily on expand (or by --span below).
+		if err := loader.loadInitial(ctx); err != nil {
 			return noop, fmt.Errorf("stream trace: %w", err)
 		}
-		// Now that all spans are loaded, ask the frontend to surface its failures
-		// and request their logs. This matters most for non-interactive 'report'
-		// mode, which renders only once: we trigger the requests here, then drain
-		// them below, so the single final render includes the failure detail.
+
+		// --span: fetch the span's subtree and zoom the view to it, mirroring the
+		// web UI's ?span= deep link.
+		if traceSpan != "" {
+			sid, err := trace.SpanIDFromHex(traceSpan)
+			if err != nil {
+				return noop, fmt.Errorf("invalid --span %q: %w", traceSpan, err)
+			}
+			spanID := dagui.SpanID{SpanID: sid}
+			loader.listen(spanID)
+			if z, ok := Frontend.(interface {
+				ZoomToSpan(dagui.SpanID)
+			}); ok {
+				z.ZoomToSpan(spanID)
+			}
+		}
+
+		// Now that the priority spans are loaded, ask the frontend to surface its
+		// failures and request their logs. This matters most for non-interactive
+		// 'report' mode, which renders only once: we trigger the requests here,
+		// then drain them below, so the single final render includes the failure
+		// detail.
 		if r, ok := Frontend.(interface{ RequestSurfacedLogs() }); ok {
 			r.RequestSurfacedLogs()
 		}
-		// Drain the eager failure-log fetches so the final report isn't missing
-		// the detail it surfaced. Lazy expand fetches, if any, keep running.
+
+		// Drain the lazy span fetches triggered by --span / surfaced failures, then
+		// the eager log fetches, so the final report isn't missing detail it
+		// surfaced. In interactive (-E) mode further expands keep fetching on the
+		// outer ctx after this returns.
+		if err := loader.wait(); err != nil {
+			return noop, err
+		}
 		if err := logEg.Wait(); err != nil {
 			return noop, err
 		}
 
 		return noop, nil
 	})
+}
+
+// traceLoader fetches a trace's spans incrementally from Dagger Cloud, mirroring
+// the Cloud web UI's wsHandler (cloud/app_server.go). It streams the priority
+// (root) spans first, then backfills a span's children on demand when the user
+// expands it. Spans reach the frontend as snapshots (which carry ChildCount and
+// Partial -- the data the lazy-expand affordance needs -- unlike the OTLP form),
+// falling back to the OTLP span exporter for frontends that can't import
+// snapshots.
+type traceLoader struct {
+	ctx            context.Context
+	client         *cloud.Client
+	orgID, traceID string
+
+	// importer is the snapshot sink when the frontend supports it (the pretty
+	// TUI); otherwise spanExp receives spans as OTLP, preserving the prior
+	// behavior for the plain/dots/logs frontends (which don't lazily expand).
+	importer interface {
+		ImportSnapshots([]dagui.SpanSnapshot)
+	}
+	spanExp sdktrace.SpanExporter
+
+	mu             sync.Mutex
+	filter         map[dagui.SpanID]bool
+	spanUpdateTime *time.Time
+	partial        bool
+	primarySet     bool
+
+	// background backfills (lazy child loads) run on the command's ctx so they
+	// keep working while the TUI is interactive (-E).
+	sem chan struct{}
+	eg  errgroup.Group
+}
+
+func newTraceLoader(ctx context.Context, client *cloud.Client, orgID, traceID string) *traceLoader {
+	l := &traceLoader{
+		ctx:     ctx,
+		client:  client,
+		orgID:   orgID,
+		traceID: traceID,
+		filter:  map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
+		sem:     make(chan struct{}, 8),
+	}
+	if imp, ok := Frontend.(interface {
+		ImportSnapshots([]dagui.SpanSnapshot)
+	}); ok {
+		l.importer = imp
+	} else {
+		l.spanExp = Frontend.SpanExporter()
+	}
+	return l
+}
+
+// loadInitial streams the trace's priority (root) spans and blocks until the
+// stream completes. For a completed trace this returns once everything the
+// server sends for the priority set is in; deeper spans (if the trace is marked
+// Partial) are fetched lazily afterward.
+func (l *traceLoader) loadInitial(ctx context.Context) error {
+	l.mu.Lock()
+	listen := l.listenIDsLocked()
+	l.mu.Unlock()
+	return l.client.StreamSpansWith(ctx, l.orgID, l.traceID, cloud.SpanStreamOpts{
+		Root:        true,
+		Listen:      listen,
+		Incremental: true,
+	}, l.ingest)
+}
+
+// listen fetches a span's children on demand, mirroring the web UI's "listen"
+// message. It's registered as the frontend's span provider and fired when a span
+// is expanded (or zoomed via --span). When the tree is partial it backfills the
+// span's historical children (root:false, before the last update we saw); when
+// the whole trace is already loaded, expanding is purely local and this is a
+// no-op.
+func (l *traceLoader) listen(id dagui.SpanID) {
+	if !id.IsValid() {
+		return
+	}
+	l.mu.Lock()
+	if l.filter[id] {
+		l.mu.Unlock()
+		return
+	}
+	l.filter[id] = true
+	partial := l.partial
+	before := l.spanUpdateTime
+	l.mu.Unlock()
+
+	if !partial {
+		return
+	}
+
+	l.eg.Go(func() error {
+		l.sem <- struct{}{}
+		defer func() { <-l.sem }()
+		if err := l.client.StreamSpansWith(l.ctx, l.orgID, l.traceID, cloud.SpanStreamOpts{
+			Root:        false,
+			Before:      before,
+			Listen:      []string{id.String()},
+			Incremental: true,
+		}, l.ingest); err != nil {
+			slog.Warn("error backfilling span children", "span", id.String(), "err", err)
+		}
+		return nil
+	})
+}
+
+// wait blocks for the in-flight backfills to finish. Used by report mode to
+// ensure --span / surfaced-failure fetches land before the single final render.
+func (l *traceLoader) wait() error {
+	return l.eg.Wait()
+}
+
+// ingest folds a batch of spans into the frontend and updates the loader's
+// incremental-fetch bookkeeping (Partial flag, latest update time, primary
+// span), mirroring wsHandler.listenForSpanUpdates.
+func (l *traceLoader) ingest(spans []cloud.SpanData) {
+	if len(spans) == 0 {
+		return
+	}
+
+	l.mu.Lock()
+	var primary dagui.SpanID
+	for i := range spans {
+		s := &spans[i]
+		if s.Partial {
+			l.partial = true
+		}
+		if l.spanUpdateTime == nil || s.UpdateTime.After(*l.spanUpdateTime) {
+			t := s.UpdateTime
+			l.spanUpdateTime = &t
+		}
+		if s.ParentID == nil && !l.primarySet {
+			if sid, err := trace.SpanIDFromHex(s.ID); err == nil {
+				primary = dagui.SpanID{SpanID: sid}
+				l.primarySet = true
+				l.filter[primary] = true
+			}
+		}
+	}
+	l.mu.Unlock()
+
+	if primary.IsValid() {
+		Frontend.SetPrimary(primary)
+	}
+
+	if l.importer != nil {
+		snaps := make([]dagui.SpanSnapshot, 0, len(spans))
+		for i := range spans {
+			snaps = append(snaps, spanDataToSnapshot(spans[i]))
+		}
+		l.importer.ImportSnapshots(snaps)
+		return
+	}
+
+	// Fallback for frontends that can't import snapshots: feed OTLP. ChildCount
+	// is lost (so lazy expand can't surface unloaded children), but these
+	// frontends don't expand interactively anyway.
+	if l.spanExp != nil {
+		otel := telemetry.SpansFromPB(cloud.SpansToPB(spans))
+		if len(otel) > 0 {
+			if err := l.spanExp.ExportSpans(l.ctx, otel); err != nil {
+				slog.Warn("error exporting spans", "err", err)
+			}
+		}
+	}
+}
+
+func (l *traceLoader) listenIDsLocked() []string {
+	ids := make([]string, 0, len(l.filter))
+	for id := range l.filter {
+		if id.IsValid() {
+			ids = append(ids, id.String())
+		}
+	}
+	return ids
+}
+
+// spanDataToSnapshot converts a Cloud API span into a dagui snapshot. It mirrors
+// snapshotAPISpan in cloud/app_server.go: the snapshot carries ChildCount and
+// (via ProcessAttribute) the call payload, so the call tree and lazy-expand
+// affordance render without a separate calls sync.
+func spanDataToSnapshot(s cloud.SpanData) dagui.SpanSnapshot {
+	var snapshot dagui.SpanSnapshot
+	snapshot.ID.SpanID, _ = trace.SpanIDFromHex(s.ID)
+	snapshot.TraceID.TraceID, _ = trace.TraceIDFromHex(s.TraceID)
+	snapshot.Name = s.Name
+	if s.ParentID != nil {
+		snapshot.ParentID.SpanID, _ = trace.SpanIDFromHex(*s.ParentID)
+	}
+	snapshot.StartTime = s.Timestamp
+	if s.EndTime != nil {
+		snapshot.EndTime = *s.EndTime
+	}
+	switch tracepb.Status_StatusCode(tracepb.Status_StatusCode_value[s.Status.Code]) {
+	case tracepb.Status_STATUS_CODE_OK:
+		snapshot.Status.Code = codes.Ok
+	case tracepb.Status_STATUS_CODE_ERROR:
+		snapshot.Status.Code = codes.Error
+	default:
+		snapshot.Status.Code = codes.Unset
+	}
+	snapshot.Status.Description = s.Status.Message
+	snapshot.Links = make([]dagui.SpanLink, len(s.Links))
+	for i, link := range s.Links {
+		snapshot.Links[i].SpanContext.TraceID.TraceID, _ = trace.TraceIDFromHex(link.TraceID)
+		snapshot.Links[i].SpanContext.SpanID.SpanID, _ = trace.SpanIDFromHex(link.SpanID)
+		if purpose, ok := link.Attributes[telemetry.LinkPurposeAttr].(string); ok {
+			snapshot.Links[i].Purpose = purpose
+		}
+	}
+	snapshot.HasLogs = s.HasLogs
+	for k, v := range s.Attributes {
+		snapshot.ProcessAttribute(k, v)
+	}
+	snapshot.ChildCount = s.ChildCount
+	return snapshot
 }
 
 func resolveOrgID(ctx context.Context, client *cloud.Client, cloudAuth *auth.Cloud) (string, error) {
