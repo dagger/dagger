@@ -93,8 +93,8 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 	logs := cli.prefetchLogTails(cmd.Context(), client, orgID, traceID, tq)
 
 	fmt.Fprintf(o, "%s %s\n", bold(o, "TRACE"), traceID)
-	if s := tq.OverallStatus; s != nil {
-		fmt.Fprintf(o, "%s  %s\n", bold(o, "Status:"), statusHeadline(o, s.Outcome))
+	if s := tq.Outcome; s != nil {
+		fmt.Fprintf(o, "%s  %s\n", bold(o, "Status:"), statusHeadline(o, s.Status))
 		if s.Command != "" {
 			fmt.Fprintf(o, "%s %s\n", bold(o, "Command:"), s.Command)
 		}
@@ -123,27 +123,18 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 		if fc.Error != "" {
 			fmt.Fprintf(&rootCause, "  %s %s\n", bold(o, "error:"), errText(fc.Error, 9))
 		}
-		fmt.Fprintf(&rootCause, "  %s  %s\n", bold(o, "span:"), fc.SpanID)
-		cli.renderSpanLogs(&rootCause, o, traceID, fc.SpanID, logs[fc.SpanID])
+		fmt.Fprintf(&rootCause, "  %s  %s\n", bold(o, "span:"), fc.Span.ID)
+		cli.renderSpanLogs(&rootCause, o, traceID, fc.Span.ID, logs[fc.Span.ID])
 	}
 	section(o, "ROOT CAUSE", rootCause.String())
 
 	// Checks. Always show the section so "no checks ran" is explicit rather than
-	// an ambiguous omission.
-	var passed, failed int
-	for _, c := range tq.Checks {
-		switch c.Status {
-		case "passed":
-			passed++
-		case "failed":
-			failed++
-		}
-	}
+	// an ambiguous omission. The pass/fail tally is computed server-side.
 	var checks strings.Builder
-	if len(tq.Checks) == 0 {
+	if tq.Checks.Total == 0 {
 		fmt.Fprintln(&checks, "(no checks ran)")
 	}
-	for i, c := range tq.Checks {
+	for i, c := range tq.Checks.Items {
 		if i > 0 {
 			fmt.Fprintln(&checks)
 		}
@@ -152,11 +143,11 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			fmt.Fprintf(&checks, "  %s %s\n", bold(o, "error:"), errText(c.Error, 9))
 		}
 		if c.Status == "failed" {
-			fmt.Fprintf(&checks, "  %s  %s\n", bold(o, "span:"), c.SpanID)
-			cli.renderSpanLogs(&checks, o, traceID, c.SpanID, logs[c.SpanID])
+			fmt.Fprintf(&checks, "  %s  %s\n", bold(o, "span:"), c.Span.ID)
+			cli.renderSpanLogs(&checks, o, traceID, c.Span.ID, logs[c.Span.ID])
 		}
 	}
-	section(o, fmt.Sprintf("CHECKS (%d passed, %d failed, %d total)", passed, failed, len(tq.Checks)), checks.String())
+	section(o, fmt.Sprintf("CHECKS (%d passed, %d failed, %d total)", tq.Checks.Passed, tq.Checks.Failed, tq.Checks.Total), checks.String())
 
 	// Failed tests. Always show the section for the same reason.
 	var tests strings.Builder
@@ -179,20 +170,25 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			name = t.Suite + sep + t.Name
 		}
 		fmt.Fprintf(&tests, "%s %s\n", marker(o, "failed"), bold(o, emptyDash(name)))
-		if t.OriginCommand != "" {
-			fmt.Fprintf(&tests, "  %s %s\n", bold(o, "caused by:"), t.OriginCommand)
+		var causeCommand, causeError string
+		if t.Cause != nil {
+			causeCommand = t.Cause.Command
+			causeError = t.Cause.Error
 		}
-		if msg := firstNonEmptyStr(t.OriginError, t.Error); msg != "" {
+		if causeCommand != "" {
+			fmt.Fprintf(&tests, "  %s %s\n", bold(o, "caused by:"), causeCommand)
+		}
+		if msg := firstNonEmptyStr(causeError, t.Error); msg != "" {
 			// Values in this block align at column 13 ("caused by:" + 1).
 			fmt.Fprintf(&tests, "  %s     %s\n", bold(o, "error:"), errText(msg, 13))
 		}
-		fmt.Fprintf(&tests, "  %s      %s\n", bold(o, "span:"), t.SpanID)
+		fmt.Fprintf(&tests, "  %s      %s\n", bold(o, "span:"), t.Span.ID)
 		// Roll up the descendant logs for leaf tests: the real failure usually
 		// lives in a sub-operation the test ran (a withExec, a nested dagger
 		// call), not on the test span itself. Aggregate parent tests are skipped
 		// -- they'd just repeat their children's logs.
-		if leaves[t.SpanID] {
-			cli.renderSpanLogs(&tests, o, traceID, t.SpanID, logs[t.SpanID])
+		if leaves[t.Span.ID] {
+			cli.renderSpanLogs(&tests, o, traceID, t.Span.ID, logs[t.Span.ID])
 		}
 	}
 	section(o, fmt.Sprintf("FAILED TESTS (%d)", len(tq.FailedTests)), tests.String())
@@ -257,17 +253,17 @@ type logResult struct {
 func logTargets(tq *cloudapi.TraceQuestions) []logTarget {
 	var targets []logTarget
 	for _, fc := range tq.FailingCommands {
-		targets = append(targets, logTarget{fc.SpanID, false})
+		targets = append(targets, logTarget{fc.Span.ID, false})
 	}
-	for _, c := range tq.Checks {
+	for _, c := range tq.Checks.Items {
 		if c.Status == "failed" {
-			targets = append(targets, logTarget{c.SpanID, true})
+			targets = append(targets, logTarget{c.Span.ID, true})
 		}
 	}
 	leaves := leafFailedTests(tq.FailedTests)
 	for _, t := range tq.FailedTests {
-		if leaves[t.SpanID] {
-			targets = append(targets, logTarget{t.SpanID, true})
+		if leaves[t.Span.ID] {
+			targets = append(targets, logTarget{t.Span.ID, true})
 		}
 	}
 	return targets
@@ -282,7 +278,7 @@ func leafFailedTests(tests []cloudapi.FailedTest) map[string]bool {
 	for _, t := range tests {
 		leaf := true
 		for _, other := range tests {
-			if other.SpanID == t.SpanID {
+			if other.Span.ID == t.Span.ID {
 				continue
 			}
 			if other.Suite == t.Suite && strings.HasPrefix(other.Name, t.Name+"/") {
@@ -291,7 +287,7 @@ func leafFailedTests(tests []cloudapi.FailedTest) map[string]bool {
 			}
 		}
 		if leaf {
-			leaves[t.SpanID] = true
+			leaves[t.Span.ID] = true
 		}
 	}
 	return leaves

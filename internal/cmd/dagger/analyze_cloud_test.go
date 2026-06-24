@@ -19,24 +19,27 @@ func TestAnalyzeRender(t *testing.T) {
 	t.Setenv("AI_AGENT", "test")
 
 	tq := &cloudapi.TraceQuestions{
-		OverallStatus: &cloudapi.TraceOverallStatus{
-			TraceID: "a0d14706", SpanID: "32370f63",
-			Command: "test-split:test-container", Outcome: "failed",
+		Outcome: &cloudapi.TraceOutcome{
+			Span:    cloudapi.SpanRef{ID: "32370f63"},
+			Command: "test-split:test-container", Status: "failed",
 			// Multi-line: the first line is a generic wrapper and the real cause
 			// is below it. The summary must show the whole thing, not truncate.
 			Error: "exit code 1\n\nconvert arg ws: node field not found in environment",
 		},
-		FailingCommands: []cloudapi.FailingCommand{
-			{SpanID: "52311111", Command: "otelgotest -p 8 -timeout=15m ./...", Error: "exit code: 1"},
+		FailingCommands: []cloudapi.Command{
+			{Span: cloudapi.SpanRef{ID: "52311111"}, Command: "otelgotest -p 8 -timeout=15m ./...", Error: "exit code: 1"},
 		},
-		Checks: []cloudapi.TraceCheckStatus{
-			{Name: "lint", SpanID: "aaaa", Status: "failed", Error: "lint failed"},
-			{Name: "fmt", SpanID: "bbbb", Status: "passed"},
+		Checks: cloudapi.CheckSummary{
+			Passed: 1, Failed: 1, Total: 2,
+			Items: []cloudapi.TraceCheck{
+				{Name: "lint", Span: cloudapi.SpanRef{ID: "aaaa"}, Status: "failed", Error: "lint failed"},
+				{Name: "fmt", Span: cloudapi.SpanRef{ID: "bbbb"}, Status: "passed"},
+			},
 		},
 		FailedTests: []cloudapi.FailedTest{
-			{Name: "TestContainer", Suite: "core/integration", SpanID: "e4985ed2", FailureStatus: "fail (continuation)"},
-			{Name: "TestContainer/TestSystemGoProxy", Suite: "core/integration", SpanID: "3ce9fe84",
-				FailureStatus: "fail (continuation)", OriginCommand: "go test -c -o ./test ./core/integration", OriginError: "exit code: 1"},
+			{Name: "TestContainer", Suite: "core/integration", Span: cloudapi.SpanRef{ID: "e4985ed2"}, FailureStatus: "fail (continuation)"},
+			{Name: "TestContainer/TestSystemGoProxy", Suite: "core/integration", Span: cloudapi.SpanRef{ID: "3ce9fe84"},
+				FailureStatus: "fail (continuation)", Cause: &cloudapi.Command{Command: "go test -c -o ./test ./core/integration", Error: "exit code: 1"}},
 		},
 	}
 
