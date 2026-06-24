@@ -88,53 +88,81 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 
 		noop := func() error { return nil }
 
-		// We need the root span ID to stream logs with descendants.
-		// Use a sync.Once to start log streaming as soon as we find it.
-		var logStreamOnce sync.Once
-		eg, ctx := errgroup.WithContext(ctx)
+		// Fetch logs lazily, one span at a time, rather than a single
+		// descendants=true stream of the whole trace (wasteful). The frontend
+		// decides which spans need logs: lazily when the user expands a span, and
+		// eagerly for the failed spans it surfaces. descendants mirrors the span's
+		// RollUpLogs -- a check or test whose real output lives in a sub-operation
+		// rolls that up; everything else shows just its own logs. fetchSpanLogs
+		// dedups and bounds concurrency, and uses the outer ctx -- which stays
+		// alive while the TUI is interactive -- so lazy expands keep working after
+		// span streaming finishes (the span errgroup's ctx does not).
+		var (
+			logReqMu sync.Mutex
+			logReq   = map[string]bool{}
+			logSem   = make(chan struct{}, 8)
+			logEg    errgroup.Group
+		)
+		fetchSpanLogs := func(spanHex string, descendants bool) {
+			logReqMu.Lock()
+			if spanHex == "" || logReq[spanHex] {
+				logReqMu.Unlock()
+				return
+			}
+			logReq[spanHex] = true
+			logReqMu.Unlock()
+			logEg.Go(func() error {
+				logSem <- struct{}{}
+				defer func() { <-logSem }()
+				if err := client.StreamLogs(ctx, orgID, traceID, spanHex, descendants, func(logs []cloud.LogMessage) {
+					records := cloud.LogMessagesToRecords(traceID, logs)
+					if len(records) == 0 {
+						return
+					}
+					if err := logExp.Export(ctx, records); err != nil {
+						slog.Warn("error exporting logs", "err", err)
+					}
+				}); err != nil {
+					slog.Warn("error streaming span logs", "span", spanHex, "err", err)
+				}
+				return nil
+			})
+		}
 
+		// Let the TUI request a span's logs on demand (expand / surfaced failure).
+		if lp, ok := Frontend.(interface {
+			SetLogProvider(func(dagui.SpanID, bool))
+		}); ok {
+			lp.SetLogProvider(func(id dagui.SpanID, descendants bool) {
+				fetchSpanLogs(id.String(), descendants)
+			})
+		}
+
+		eg, spanCtx := errgroup.WithContext(ctx)
 		eg.Go(func() error {
-			return client.StreamSpans(ctx, orgID, traceID, func(spanDatas []cloud.SpanData) {
+			return client.StreamSpans(spanCtx, orgID, traceID, func(spanDatas []cloud.SpanData) {
 				slog.Debug("received spans from cloud", "count", len(spanDatas))
 
-				// Convert to OTLP proto, then to OTel SDK ReadOnlySpans,
-				// and feed through the frontend's exporter pipeline so
-				// rendering is triggered correctly.
+				// Convert to OTLP proto, then to OTel SDK ReadOnlySpans, and feed
+				// through the frontend's exporter pipeline so rendering triggers.
 				resourceSpans := cloud.SpansToPB(spanDatas)
 				spans := telemetry.SpansFromPB(resourceSpans)
 				if len(spans) == 0 {
 					return
 				}
 
-				if err := spanExp.ExportSpans(ctx, spans); err != nil {
+				if err := spanExp.ExportSpans(spanCtx, spans); err != nil {
 					slog.Warn("error exporting spans", "err", err)
 					return
 				}
 
-				// Find the root span (no parent) and set it as the primary span
-				// so the TUI shows the trace tree rooted there.
+				// Set the root span (no parent) as the primary span so the TUI
+				// roots the tree there.
 				for _, span := range spans {
 					if !span.Parent().SpanID().IsValid() {
 						spanID := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
 						slog.Debug("setting primary span", "spanID", spanID)
 						Frontend.SetPrimary(spanID)
-
-						// Start streaming logs for the root span and all descendants.
-						rootSpanHex := span.SpanContext().SpanID().String()
-						logStreamOnce.Do(func() {
-							eg.Go(func() error {
-								return client.StreamLogs(ctx, orgID, traceID, rootSpanHex, true, func(logs []cloud.LogMessage) {
-									slog.Debug("received logs from cloud", "count", len(logs))
-									records := cloud.LogMessagesToRecords(traceID, logs)
-									if len(records) == 0 {
-										return
-									}
-									if err := logExp.Export(ctx, records); err != nil {
-										slog.Warn("error exporting logs", "err", err)
-									}
-								})
-							})
-						})
 						break
 					}
 				}
@@ -143,6 +171,18 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 
 		if err := eg.Wait(); err != nil {
 			return noop, fmt.Errorf("stream trace: %w", err)
+		}
+		// Now that all spans are loaded, ask the frontend to surface its failures
+		// and request their logs. This matters most for non-interactive 'report'
+		// mode, which renders only once: we trigger the requests here, then drain
+		// them below, so the single final render includes the failure detail.
+		if r, ok := Frontend.(interface{ RequestSurfacedLogs() }); ok {
+			r.RequestSurfacedLogs()
+		}
+		// Drain the eager failure-log fetches so the final report isn't missing
+		// the detail it surfaced. Lazy expand fetches, if any, keep running.
+		if err := logEg.Wait(); err != nil {
+			return noop, err
 		}
 
 		return noop, nil

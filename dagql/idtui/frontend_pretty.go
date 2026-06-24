@@ -110,6 +110,13 @@ type frontendPretty struct {
 	shellRunning    bool
 	shellLock       sync.Mutex
 
+	// logProvider lazily fetches a span's logs on demand (e.g. on expand, or
+	// when a failure is surfaced). The bool is whether to roll up descendant
+	// logs (span.RollUpLogs). Set by 'dagger trace' to pull recorded logs per
+	// span; nil for live runs. requestedLogs dedups so each span is fetched once.
+	logProvider   func(dagui.SpanID, bool)
+	requestedLogs map[dagui.SpanID]bool
+
 	// updated as events are written
 	db           *dagui.DB
 	logs         *prettyLogs
@@ -970,6 +977,53 @@ func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 	})
 }
 
+// SetLogProvider registers a callback that lazily supplies a span's logs. The
+// frontend calls it when a span's logs become relevant: the user expands the
+// span, or a failed span is surfaced in the view. The bool argument is whether
+// to roll up descendant logs (the span's RollUpLogs). The provider should fetch
+// asynchronously and feed results back through LogExporter. Used by 'dagger
+// trace' to fetch recorded logs per span on demand instead of streaming the
+// whole trace.
+func (fe *frontendPretty) SetLogProvider(provider func(dagui.SpanID, bool)) {
+	fe.dispatch(func() {
+		fe.logProvider = provider
+	})
+}
+
+// RequestSurfacedLogs asks the log provider for the logs of every failed span
+// currently visible in the view. It's used by non-interactive ('report') mode,
+// which renders only once: the caller invokes this after the spans are loaded,
+// waits for the fetches it triggers, then the final render includes the
+// surfaced failures' detail. Interactive mode surfaces these during its normal
+// recalc loop, but calling this is harmless (requestLogs dedups).
+func (fe *frontendPretty) RequestSurfacedLogs() {
+	fe.dispatch(func() {
+		fe.recalculateViewLocked()
+	})
+}
+
+// requestLogs asks the log provider for a span's logs, once. It rolls up
+// descendant logs when the span is marked RollUpLogs (e.g. a check or test
+// whose real output lives in a sub-operation), mirroring the web UI.
+func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
+	if fe.logProvider == nil || !id.IsValid() {
+		return
+	}
+	if fe.requestedLogs[id] {
+		return
+	}
+	span, ok := fe.db.Spans.Map[id]
+	if !ok {
+		// Span not loaded yet; it'll be requested once it's surfaced.
+		return
+	}
+	if fe.requestedLogs == nil {
+		fe.requestedLogs = make(map[dagui.SpanID]bool)
+	}
+	fe.requestedLogs[id] = true
+	fe.logProvider(id, span.RollUpLogs)
+}
+
 func (fe *frontendPretty) RevealAllSpans() {
 	fe.dispatch(func() {
 		fe.ZoomedSpan = dagui.SpanID{}
@@ -1757,8 +1811,31 @@ func (fe *frontendPretty) formHeight() int {
 
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
+	fe.promoteChecksLocked()
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
+
+	// Eager: fetch logs for the failures we've surfaced, so their detail is ready
+	// without the user expanding anything (and so the non-interactive report
+	// includes it). Two surfaces: failed rows in the trace tree, and failed test
+	// cases in the tests view (which aren't tree rows). Both are bounded to what
+	// we actually render -- a handful -- not every failed span in the trace.
+	// No-op for live runs (no provider).
+	if fe.logProvider != nil {
+		for _, row := range fe.rows.Order {
+			if row.Span != nil && row.Span.IsFailed() {
+				fe.requestLogs(row.Span.ID)
+			}
+		}
+		if tv := fe.db.TestView(); tv != nil {
+			for _, node := range tv.BySpan {
+				if node != nil && node.Kind == dagui.TestNodeCase &&
+					node.SelfCategory == dagui.TestCategoryFailing && node.Span != nil {
+					fe.requestLogs(node.Span.ID)
+				}
+			}
+		}
+	}
 
 	if len(fe.rows.Order) == 0 {
 		fe.focus(nil)
@@ -1796,6 +1873,31 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// appearance). Now that syncSpanTreeState has created all
 	// SpanTreeViews, ensure the correct one has tuist keyboard focus.
 	fe.applyTuistFocus()
+}
+
+// promoteChecksLocked mirrors the web UI (cloud/components/trace.go): when a
+// trace has checks, mark the root span passthrough so RowsView surfaces the
+// revealed check spans -- all of them -- at the top level instead of the
+// root's setup children (the session and per-module loads). Checks bubble up
+// to the root via the reveal mechanism, so this reuses the existing tree/row
+// rendering and navigation without constructing a synthetic tree. The
+// passthrough branch in RowsView only fires when the root is the zoomed span,
+// so default the zoom to the primary (root) span when nothing else has zoomed.
+func (fe *frontendPretty) promoteChecksLocked() {
+	if fe.db == nil || fe.db.RootSpan == nil || !fe.db.HasChecks() {
+		return
+	}
+	if fe.db.RootSpan.CheckName != "" {
+		// The root span is itself a check: there's no setup noise above it to
+		// hide, and passing it through would reparent its children (the tests) to
+		// the top level, breaking the inline tests-under-check view. Nothing to
+		// promote.
+		return
+	}
+	fe.db.RootSpan.Passthrough = true
+	if !fe.ZoomedSpan.IsValid() {
+		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
 }
 
 // applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
@@ -3070,6 +3172,10 @@ func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
 		fe.SpanExpanded = make(map[dagui.SpanID]bool)
 	}
 	fe.SpanExpanded[id] = expanded
+	if expanded {
+		// Lazily pull this span's logs the first time it's opened.
+		fe.requestLogs(id)
+	}
 }
 
 // syncAfterExpandToggle rebuilds the flat row list from the existing
