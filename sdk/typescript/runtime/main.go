@@ -206,11 +206,13 @@ func (t *TypescriptSdk) GenerateClient(
 	})
 
 	if cfg.sdkLibOrigin == Remote {
+		// Include every generated binding: client.gen.ts plus the per-dependency
+		// <dep>.gen.ts files it imports via relative "./<dep>.gen.js" paths.
 		result = result.WithDirectory(
 			outputDir,
 			libGenerator.GenerateRemoteLibrary(introspectionJSON, outputDir),
 			dagger.DirectoryWithDirectoryOpts{
-				Include: []string{"client.gen.ts"},
+				Include: []string{"*.gen.ts"},
 			})
 	} else {
 		genDir := libGenerator.GenerateBundleLibrary(introspectionJSON, outputDir)

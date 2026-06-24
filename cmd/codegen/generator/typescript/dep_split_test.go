@@ -226,7 +226,9 @@ func TestGenerate_SplitsDependencyFiles(t *testing.T) {
 	// Core file does not re-declare the dep's class but does wire up the
 	// augmentation in its footer.
 	require.NotContains(t, core, "export class Hello extends BaseClient")
-	require.Contains(t, core, "__applyHelloAugmentations({ Client, Binding, Env })")
+	// Only Query (-> Client) is present in this schema, so the augmentation call
+	// passes just the extendable classes that exist.
+	require.Contains(t, core, "__applyHelloAugmentations({ Client })")
 	require.Contains(t, core, `export * from "./hello.gen.js"`)
 
 	// Dep file carries the dep's own class.
@@ -275,6 +277,84 @@ func TestGenerate_KeepsOwnTypesInClient(t *testing.T) {
 	require.Contains(t, depFile, "export class Dep extends BaseClient")
 	_, err = state.Overlay.Open("app.gen.ts")
 	require.Error(t, err, "the module's own types must not be split into app.gen.ts")
+}
+
+// TestDepTemplate_CoreValuesAreValueImported guards the systemic gap where a
+// dep method returning/accepting a core type emitted `new Container(ctx)` and
+// `NetworkProtocolNameToValue(...)` against a type-only import (TS1361 + runtime
+// ReferenceError). Core classes the bodies construct and the enum converters
+// they call must be *value*-imported; pure signature types stay type-only.
+func TestDepTemplate_CoreValuesAreValueImported(t *testing.T) {
+	helloModule := newSourceMapDirective("hello")
+	obj := func(ref string) *introspection.TypeRef {
+		return &introspection.TypeRef{
+			Kind:   introspection.TypeKindNonNull,
+			OfType: &introspection.TypeRef{Kind: introspection.TypeKindObject, Name: ref},
+		}
+	}
+	enumRef := func(name string) *introspection.TypeRef {
+		return &introspection.TypeRef{
+			Kind:   introspection.TypeKindNonNull,
+			OfType: &introspection.TypeRef{Kind: introspection.TypeKindEnum, Name: name},
+		}
+	}
+
+	full := &introspection.Schema{
+		QueryType: struct {
+			Name string `json:"name,omitempty"`
+		}{Name: "Query"},
+		Types: introspection.Types{
+			{
+				Kind:       introspection.TypeKindObject,
+				Name:       "Hello",
+				Directives: introspection.Directives{helloModule},
+				Fields: []*introspection.Field{
+					// Returns a core object -> `new Container(ctx)`.
+					{Name: "ctr", TypeRef: obj("Container")},
+					// Takes a core object as an arg (signature type only) and
+					// returns a core enum -> `NetworkProtocolNameToValue(...)`.
+					{
+						Name:    "proto",
+						TypeRef: enumRef("NetworkProtocol"),
+						Args: []introspection.InputValue{
+							{Name: "dir", TypeRef: obj("Directory")},
+						},
+					},
+				},
+			},
+			// Core types referenced above.
+			{Kind: introspection.TypeKindObject, Name: "Container", Fields: []*introspection.Field{{Name: "id", TypeRef: &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "ContainerID"}}}},
+			{Kind: introspection.TypeKindObject, Name: "Directory", Fields: []*introspection.Field{{Name: "id", TypeRef: &introspection.TypeRef{Kind: introspection.TypeKindScalar, Name: "DirectoryID"}}}},
+			{Kind: introspection.TypeKindEnum, Name: "NetworkProtocol", EnumValues: []introspection.EnumValue{{Name: "TCP"}, {Name: "UDP"}}},
+		},
+	}
+	generator.SetSchemaParents(full)
+	depSchema := full.Include("hello")
+	generator.SetSchemaParents(depSchema)
+
+	tmpl := templates.New("v0.21.0", full, "", generator.Config{
+		Lang:         generator.SDKLangTypeScript,
+		ModuleConfig: &generator.ModuleGeneratorConfig{ModuleName: "host", ModuleSourcePath: "."},
+	})
+
+	out := renderDepTemplate(t, tmpl, depSchema, "hello")
+
+	// Core classes the bodies construct are value-imported (not `import type`),
+	// and both arg-only (Directory) and constructed (Container) objects appear.
+	require.Regexp(t, `import \{[^}]*\bContainer\b[^}]*\} from "\./client\.gen\.js"`, out,
+		"constructed core class must be value-imported")
+	require.Regexp(t, `import \{[^}]*\bDirectory\b[^}]*\} from "\./client\.gen\.js"`, out,
+		"core class used as a signature type must still be importable")
+	// The enum converter called in the body is value-imported and the body uses it.
+	require.Regexp(t, `import \{[^}]*\bNetworkProtocolNameToValue\b[^}]*\} from "\./client\.gen\.js"`, out,
+		"enum converter must be value-imported")
+	require.Contains(t, out, "NetworkProtocolNameToValue(", "body must call the imported converter")
+	require.Contains(t, out, "return new Container(ctx)", "body must construct the core class")
+
+	// The constructed class must not be pulled in as a type-only import (that
+	// would be erased at runtime).
+	require.NotRegexp(t, `import type \{[^}]*\bContainer\b`, out,
+		"a constructed class must not be type-only imported")
 }
 
 func readOverlay(t *testing.T, state *generator.GeneratedState, name string) string {

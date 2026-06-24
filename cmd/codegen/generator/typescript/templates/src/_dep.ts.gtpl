@@ -26,15 +26,28 @@ import { Context, BaseClient } from "../common/context.js"
 import { Context, BaseClient } from "@dagger.io/dagger"
 {{- end }}
 
-{{- /* Other core types (Container, Directory, ...) are imported from
-client.gen.ts as types only. They're safe under the cycle because they're
-referenced only as types (in signatures), not as runtime values, on the
-load-time path. Class `extends` targets ARE load-time and must stay on
-BaseClient (imported above). */}}
-{{- $coreNames := CoreTypeNames .Types }}
-{{- if $coreNames }}
+{{- /* Core classes the bodies construct (`new Container(ctx)`) and the enum
+converters they call are runtime values, so they are value-imported. This is
+safe under the client.gen.ts <-> dep-file ESM cycle because every reference is
+inside a method body or the deferred augmentation function, never at module-eval
+time. The `extends` targets stay on BaseClient (imported above), which is the
+one load-time reference and lives outside client.gen.ts. */}}
+{{- $coreValues := CoreValueNames .Types }}
+{{- if $coreValues }}
+import {
+{{- range $i, $n := $coreValues }}{{ if $i }},{{ end }}
+  {{ $n }}
+{{- end }}
+} from "./client.gen.js"
+{{- end }}
+
+{{- /* Remaining core types (scalars, input objects, enum types, the `float`
+alias, legacy <Name>ID aliases) appear only in signatures, so they are
+type-only imports — erased at runtime, no ESM cycle. */}}
+{{- $coreTypes := CoreTypeNames .Types }}
+{{- if $coreTypes }}
 import type {
-{{- range $i, $n := $coreNames }}{{ if $i }},{{ end }}
+{{- range $i, $n := $coreTypes }}{{ if $i }},{{ end }}
   {{ $n }}
 {{- end }}
 } from "./client.gen.js"

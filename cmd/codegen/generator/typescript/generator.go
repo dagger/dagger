@@ -73,7 +73,7 @@ func generate(config generator.Config, target string, schema *introspection.Sche
 	// Only split *dependencies* into their own files; the module being
 	// generated for keeps its own types in client.gen.ts.
 	selfModule := selfModuleName(config)
-	depNames := dependencyModules(schema, selfModule)
+	depNames := templates.DependencyModules(schema, selfModule)
 	coreSchema := schema
 	if len(depNames) > 0 {
 		coreSchema = schema.Exclude(depNames...)
@@ -125,22 +125,6 @@ func selfModuleName(config generator.Config) string {
 		return config.ClientConfig.ModuleName
 	}
 	return ""
-}
-
-// dependencyModules returns the schema's module names with the module being
-// generated for (self) removed: only dependencies are split into their own
-// files. Names are compared kebab-cased to tolerate casing differences between
-// sourceMap module names and the configured name.
-func dependencyModules(schema *introspection.Schema, self string) []string {
-	all := schema.DependencyNames()
-	out := make([]string, 0, len(all))
-	for _, name := range all {
-		if self != "" && strcase.ToKebab(name) == strcase.ToKebab(self) {
-			continue
-		}
-		out = append(out, name)
-	}
-	return out
 }
 
 // depFileData is the template "dot" for both the core "api" template and the

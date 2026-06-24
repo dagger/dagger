@@ -17,8 +17,8 @@ the access works at runtime, so each body casts `this` to `any` via the
 
 {{ define "augmentations" -}}
 
-{{- /* Step 1: type-level merge — one `interface X { ... }` per extendable type
-that has any dep-contributed fields. */ -}}
+{{- /* Type-level merge: one `interface X { ... }` per extendable type that has
+any dep-contributed fields, so tsc and IDEs see the added methods. */ -}}
 {{- $hasAny := false }}
 {{- range .Types }}
   {{- if and (IsExtendableType .) .Fields }}
@@ -39,23 +39,30 @@ declare module "./client.gen.js" {
 {{- end }}
 }
 {{ "" }}
-{{- /* Step 2: runtime prototype assignments, wrapped in a deferred function so
-client.gen.ts can call it after defining the extendable type classes. */}}
-import type { Client as __Client, Binding as __Binding, Env as __Env } from "./client.gen.js"
+{{- /* Runtime prototype assignments, wrapped in a deferred function so
+client.gen.ts can call it after defining the extendable type classes. Only the
+extendable classes the schema actually declares are imported/bound, so the
+output stays valid against pre-Binding/Env engine schemas. */}}
+{{- $extendables := ExtendableClassNames }}
+import type {
+{{- range $i, $c := $extendables }}{{ if $i }},{{ end }}
+  {{ $c }} as __{{ $c }}
+{{- end }}
+} from "./client.gen.js"
 
 export function {{ AugmentFnName .DepName }}(scope: {
-  Client: typeof __Client
-  Binding: typeof __Binding
-  Env: typeof __Env
+{{- range $extendables }}
+  {{ . }}: typeof __{{ . }}
+{{- end }}
 }) {
   {{- /* Bind the extendable classes as local values so prototype assignment
   and `new Client/Binding/Env(...)` work — they can't be value-imported from
   client.gen.ts (ESM cycle). The matching type aliases let the signatures keep
   referring to them by their bare names. */}}
-  const { Client, Binding, Env } = scope
-  type Client = __Client
-  type Binding = __Binding
-  type Env = __Env
+  const { {{ range $i, $c := $extendables }}{{ if $i }}, {{ end }}{{ $c }}{{ end }} } = scope
+{{- range $extendables }}
+  type {{ . }} = __{{ . }}
+{{- end }}
 {{- range .Types }}
   {{- if and (IsExtendableType .) .Fields }}
     {{- $parent := .Name | QueryToClient | FormatName }}
@@ -69,9 +76,10 @@ export function {{ AugmentFnName .DepName }}(scope: {
 {{- else }}
 
 {{- /* No extendable-type fields contributed; emit an empty function so
-client.gen.ts can call it unconditionally. */ -}}
+client.gen.ts can call it unconditionally. The scope is still accepted (and
+ignored) so the unconditional footer call type-checks. */ -}}
 
-export function {{ AugmentFnName .DepName }}() {}
+export function {{ AugmentFnName .DepName }}(_scope?: unknown) {}
 {{- end }}
 {{- end }}
 

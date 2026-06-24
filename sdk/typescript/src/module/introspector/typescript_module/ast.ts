@@ -35,11 +35,20 @@ export class AST {
 
   private readonly sourceFiles: ts.SourceFile[]
 
+  // Resolved paths of the SDK-generated binding files (client.gen.ts and each
+  // <dep>.gen.ts). Empty when the caller didn't supply them, in which case
+  // isGeneratedClientFile falls back to the `.gen.ts` suffix.
+  private readonly generatedClientFiles: Set<string>
+
   constructor(
     public readonly files: string[],
     private readonly userModule: Module[],
+    generatedClientFiles: string[] = [],
   ) {
     this.files = files.map((f) => path.resolve(f))
+    this.generatedClientFiles = new Set(
+      generatedClientFiles.map((f) => path.resolve(f)),
+    )
     const program = ts.createProgram(files, {
       experimentalDecorators: true,
       moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -49,6 +58,16 @@ export class AST {
     this.sourceFiles = program
       .getSourceFiles()
       .filter((file) => !file.isDeclarationFile)
+  }
+
+  // isGeneratedClientFile reports whether a file is one of the SDK-generated
+  // bindings (client.gen.ts or a <dep>.gen.ts). It checks the explicit set when
+  // available, falling back to the `.gen.ts` suffix otherwise.
+  public isGeneratedClientFile(fileName: string): boolean {
+    if (this.generatedClientFiles.size > 0) {
+      return this.generatedClientFiles.has(path.resolve(fileName))
+    }
+    return fileName.endsWith(GENERATED_CLIENT_SUFFIX)
   }
 
   public findResolvedNodeByName<T extends keyof DeclarationsMap>(
@@ -70,7 +89,7 @@ export class AST {
         // Generated files include client.gen.ts and every per-dependency
         // <dep>.gen.ts (split out from the core client).
         if (
-          !sourceFile.fileName.endsWith(GENERATED_CLIENT_SUFFIX) &&
+          !this.isGeneratedClientFile(sourceFile.fileName) &&
           !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return
@@ -117,7 +136,7 @@ export class AST {
         // Generated files include client.gen.ts and every per-dependency
         // <dep>.gen.ts (split out from the core client).
         if (
-          !sourceFile.fileName.endsWith(GENERATED_CLIENT_SUFFIX) &&
+          !this.isGeneratedClientFile(sourceFile.fileName) &&
           !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return

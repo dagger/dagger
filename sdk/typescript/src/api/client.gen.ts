@@ -66,7 +66,7 @@ export enum CacheSharingMode {
  * Utility function to convert a CacheSharingMode value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function CacheSharingModeValueToName(value: CacheSharingMode): string {
+export function CacheSharingModeValueToName(value: CacheSharingMode): string {
   switch (value) {
     case CacheSharingMode.Locked:
       return "LOCKED"
@@ -83,7 +83,7 @@ function CacheSharingModeValueToName(value: CacheSharingMode): string {
  * Utility function to convert a CacheSharingMode name to its value so
  * it can be properly used inside the module runtime.
  */
-function CacheSharingModeNameToValue(name: string): CacheSharingMode {
+export function CacheSharingModeNameToValue(name: string): CacheSharingMode {
   switch (name) {
     case "LOCKED":
       return CacheSharingMode.Locked
@@ -143,7 +143,7 @@ export enum ChangesetMergeConflict {
  * Utility function to convert a ChangesetMergeConflict value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ChangesetMergeConflictValueToName(
+export function ChangesetMergeConflictValueToName(
   value: ChangesetMergeConflict,
 ): string {
   switch (value) {
@@ -166,7 +166,7 @@ function ChangesetMergeConflictValueToName(
  * Utility function to convert a ChangesetMergeConflict name to its value so
  * it can be properly used inside the module runtime.
  */
-function ChangesetMergeConflictNameToValue(
+export function ChangesetMergeConflictNameToValue(
   name: string,
 ): ChangesetMergeConflict {
   switch (name) {
@@ -203,7 +203,7 @@ export enum ChangesetsMergeConflict {
  * Utility function to convert a ChangesetsMergeConflict value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ChangesetsMergeConflictValueToName(
+export function ChangesetsMergeConflictValueToName(
   value: ChangesetsMergeConflict,
 ): string {
   switch (value) {
@@ -220,7 +220,7 @@ function ChangesetsMergeConflictValueToName(
  * Utility function to convert a ChangesetsMergeConflict name to its value so
  * it can be properly used inside the module runtime.
  */
-function ChangesetsMergeConflictNameToValue(
+export function ChangesetsMergeConflictNameToValue(
   name: string,
 ): ChangesetsMergeConflict {
   switch (name) {
@@ -1025,7 +1025,7 @@ export enum DiffStatKind {
  * Utility function to convert a DiffStatKind value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function DiffStatKindValueToName(value: DiffStatKind): string {
+export function DiffStatKindValueToName(value: DiffStatKind): string {
   switch (value) {
     case DiffStatKind.Added:
       return "ADDED"
@@ -1044,7 +1044,7 @@ function DiffStatKindValueToName(value: DiffStatKind): string {
  * Utility function to convert a DiffStatKind name to its value so
  * it can be properly used inside the module runtime.
  */
-function DiffStatKindNameToValue(name: string): DiffStatKind {
+export function DiffStatKindNameToValue(name: string): DiffStatKind {
   switch (name) {
     case "ADDED":
       return DiffStatKind.Added
@@ -1413,7 +1413,7 @@ export enum ExistsType {
  * Utility function to convert a ExistsType value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ExistsTypeValueToName(value: ExistsType): string {
+export function ExistsTypeValueToName(value: ExistsType): string {
   switch (value) {
     case ExistsType.DirectoryType:
       return "DIRECTORY_TYPE"
@@ -1430,7 +1430,7 @@ function ExistsTypeValueToName(value: ExistsType): string {
  * Utility function to convert a ExistsType name to its value so
  * it can be properly used inside the module runtime.
  */
-function ExistsTypeNameToValue(name: string): ExistsType {
+export function ExistsTypeNameToValue(name: string): ExistsType {
   switch (name) {
     case "DIRECTORY_TYPE":
       return ExistsType.DirectoryType
@@ -1577,7 +1577,7 @@ export enum FileType {
  * Utility function to convert a FileType value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function FileTypeValueToName(value: FileType): string {
+export function FileTypeValueToName(value: FileType): string {
   switch (value) {
     case FileType.Directory:
       return "DIRECTORY"
@@ -1596,7 +1596,7 @@ function FileTypeValueToName(value: FileType): string {
  * Utility function to convert a FileType name to its value so
  * it can be properly used inside the module runtime.
  */
-function FileTypeNameToValue(name: string): FileType {
+export function FileTypeNameToValue(name: string): FileType {
   switch (name) {
     case "DIRECTORY":
       return FileType.Directory
@@ -1670,7 +1670,9 @@ export enum FunctionCachePolicy {
  * Utility function to convert a FunctionCachePolicy value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function FunctionCachePolicyValueToName(value: FunctionCachePolicy): string {
+export function FunctionCachePolicyValueToName(
+  value: FunctionCachePolicy,
+): string {
   switch (value) {
     case FunctionCachePolicy.Default:
       return "Default"
@@ -1687,7 +1689,9 @@ function FunctionCachePolicyValueToName(value: FunctionCachePolicy): string {
  * Utility function to convert a FunctionCachePolicy name to its value so
  * it can be properly used inside the module runtime.
  */
-function FunctionCachePolicyNameToValue(name: string): FunctionCachePolicy {
+export function FunctionCachePolicyNameToValue(
+  name: string,
+): FunctionCachePolicy {
   switch (name) {
     case "Default":
       return FunctionCachePolicy.Default
@@ -1831,7 +1835,7 @@ export enum ImageLayerCompression {
  * Utility function to convert a ImageLayerCompression value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ImageLayerCompressionValueToName(
+export function ImageLayerCompressionValueToName(
   value: ImageLayerCompression,
 ): string {
   switch (value) {
@@ -1852,7 +1856,9 @@ function ImageLayerCompressionValueToName(
  * Utility function to convert a ImageLayerCompression name to its value so
  * it can be properly used inside the module runtime.
  */
-function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
+export function ImageLayerCompressionNameToValue(
+  name: string,
+): ImageLayerCompression {
   switch (name) {
     case "EStarGZ":
       return ImageLayerCompression.EstarGz
@@ -1880,7 +1886,7 @@ export enum ImageMediaTypes {
  * Utility function to convert a ImageMediaTypes value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ImageMediaTypesValueToName(value: ImageMediaTypes): string {
+export function ImageMediaTypesValueToName(value: ImageMediaTypes): string {
   switch (value) {
     case ImageMediaTypes.Docker:
       return "DOCKER"
@@ -1895,7 +1901,7 @@ function ImageMediaTypesValueToName(value: ImageMediaTypes): string {
  * Utility function to convert a ImageMediaTypes name to its value so
  * it can be properly used inside the module runtime.
  */
-function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
+export function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
   switch (name) {
     case "DOCKER":
       return ImageMediaTypes.Docker
@@ -1974,7 +1980,7 @@ export enum ModuleSourceExperimentalFeature {
  * Utility function to convert a ModuleSourceExperimentalFeature value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ModuleSourceExperimentalFeatureValueToName(
+export function ModuleSourceExperimentalFeatureValueToName(
   value: ModuleSourceExperimentalFeature,
 ): string {
   switch (value) {
@@ -1989,7 +1995,7 @@ function ModuleSourceExperimentalFeatureValueToName(
  * Utility function to convert a ModuleSourceExperimentalFeature name to its value so
  * it can be properly used inside the module runtime.
  */
-function ModuleSourceExperimentalFeatureNameToValue(
+export function ModuleSourceExperimentalFeatureNameToValue(
   name: string,
 ): ModuleSourceExperimentalFeature {
   switch (name) {
@@ -2015,7 +2021,7 @@ export enum ModuleSourceKind {
  * Utility function to convert a ModuleSourceKind value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
+export function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
   switch (value) {
     case ModuleSourceKind.Dir:
       return "DIR"
@@ -2032,7 +2038,7 @@ function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
  * Utility function to convert a ModuleSourceKind name to its value so
  * it can be properly used inside the module runtime.
  */
-function ModuleSourceKindNameToValue(name: string): ModuleSourceKind {
+export function ModuleSourceKindNameToValue(name: string): ModuleSourceKind {
   switch (name) {
     case "DIR":
       return ModuleSourceKind.Dir
@@ -2056,7 +2062,7 @@ export enum NetworkProtocol {
  * Utility function to convert a NetworkProtocol value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function NetworkProtocolValueToName(value: NetworkProtocol): string {
+export function NetworkProtocolValueToName(value: NetworkProtocol): string {
   switch (value) {
     case NetworkProtocol.Tcp:
       return "TCP"
@@ -2071,7 +2077,7 @@ function NetworkProtocolValueToName(value: NetworkProtocol): string {
  * Utility function to convert a NetworkProtocol name to its value so
  * it can be properly used inside the module runtime.
  */
-function NetworkProtocolNameToValue(name: string): NetworkProtocol {
+export function NetworkProtocolNameToValue(name: string): NetworkProtocol {
   switch (name) {
     case "TCP":
       return NetworkProtocol.Tcp
@@ -2310,7 +2316,7 @@ export enum RegistryProtocol {
  * Utility function to convert a RegistryProtocol value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function RegistryProtocolValueToName(value: RegistryProtocol): string {
+export function RegistryProtocolValueToName(value: RegistryProtocol): string {
   switch (value) {
     case RegistryProtocol.Http:
       return "HTTP"
@@ -2325,7 +2331,7 @@ function RegistryProtocolValueToName(value: RegistryProtocol): string {
  * Utility function to convert a RegistryProtocol name to its value so
  * it can be properly used inside the module runtime.
  */
-function RegistryProtocolNameToValue(name: string): RegistryProtocol {
+export function RegistryProtocolNameToValue(name: string): RegistryProtocol {
   switch (name) {
     case "HTTP":
       return RegistryProtocol.Http
@@ -2359,7 +2365,7 @@ export enum ReturnType {
  * Utility function to convert a ReturnType value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ReturnTypeValueToName(value: ReturnType): string {
+export function ReturnTypeValueToName(value: ReturnType): string {
   switch (value) {
     case ReturnType.Any:
       return "ANY"
@@ -2376,7 +2382,7 @@ function ReturnTypeValueToName(value: ReturnType): string {
  * Utility function to convert a ReturnType name to its value so
  * it can be properly used inside the module runtime.
  */
-function ReturnTypeNameToValue(name: string): ReturnType {
+export function ReturnTypeNameToValue(name: string): ReturnType {
   switch (name) {
     case "ANY":
       return ReturnType.Any
@@ -2647,7 +2653,7 @@ export enum TypeDefKind {
  * Utility function to convert a TypeDefKind value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function TypeDefKindValueToName(value: TypeDefKind): string {
+export function TypeDefKindValueToName(value: TypeDefKind): string {
   switch (value) {
     case TypeDefKind.Boolean:
       return "BOOLEAN"
@@ -2680,7 +2686,7 @@ function TypeDefKindValueToName(value: TypeDefKind): string {
  * Utility function to convert a TypeDefKind name to its value so
  * it can be properly used inside the module runtime.
  */
-function TypeDefKindNameToValue(name: string): TypeDefKind {
+export function TypeDefKindNameToValue(name: string): TypeDefKind {
   switch (name) {
     case "BOOLEAN":
       return TypeDefKind.Boolean

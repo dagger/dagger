@@ -6,8 +6,12 @@ import { scan } from "../introspector/index.js"
 import { serializeModule } from "../introspector/typedef_json.js"
 import { Register } from "./register.js"
 
-async function introspection(files: string[], moduleName: string) {
-  return await scan(files, moduleName, false)
+async function introspection(
+  files: string[],
+  moduleName: string,
+  generatedClientFiles: string[],
+) {
+  return await scan(files, moduleName, false, generatedClientFiles)
 }
 
 const allowedExtensions = [".ts", ".mts"]
@@ -74,6 +78,7 @@ async function main() {
   const result = await introspection(
     [...userSourceCodeFiles, ...clientGenFiles],
     moduleName,
+    clientGenFiles,
   )
 
   if (process.env.DRY_RUN) {

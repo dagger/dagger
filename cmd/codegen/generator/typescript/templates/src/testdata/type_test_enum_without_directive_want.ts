@@ -11,7 +11,7 @@ export enum NetworkProtocol {
  * Utility function to convert a NetworkProtocol value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function NetworkProtocolValueToName(value: NetworkProtocol): string {
+export function NetworkProtocolValueToName(value: NetworkProtocol): string {
   switch (value) {
     case NetworkProtocol.Tcp:
       return "TCP"
@@ -26,7 +26,7 @@ function NetworkProtocolValueToName(value: NetworkProtocol): string {
  * Utility function to convert a NetworkProtocol name to its value so
  * it can be properly used inside the module runtime.
  */
-function NetworkProtocolNameToValue(name: string): NetworkProtocol {
+export function NetworkProtocolNameToValue(name: string): NetworkProtocol {
   switch (name) {
     case "TCP":
       return NetworkProtocol.Tcp

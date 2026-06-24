@@ -113,10 +113,11 @@ from client.gen.ts — avoiding the ESM cycle. */ -}}
 {{ define "footer" }}
 {{- $deps := DependencyExports }}
 {{- if $deps }}
+{{- $extendables := ExtendableClassNames }}
 
 // Attach dependency-contributed prototype methods to the extendable classes.
 {{- range $dep := $deps }}
-{{ $dep.AugmentFnName }}({ Client, Binding, Env })
+{{ $dep.AugmentFnName }}({{ if $extendables }}{ {{ range $i, $c := $extendables }}{{ if $i }}, {{ end }}{{ $c }}{{ end }} }{{ end }})
 {{- end }}
 {{- end }}
 {{- end }}
