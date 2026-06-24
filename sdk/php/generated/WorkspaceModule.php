@@ -57,4 +57,19 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble, No
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('source');
         return (string)$this->queryLeaf($leafQueryBuilder, 'source');
     }
+
+    /**
+     * Type definitions for this module, loading only this module on demand.
+     */
+    public function typeDefs(?bool $returnAllTypes = false, ?bool $hideCore = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('typeDefs');
+        if (null !== $returnAllTypes) {
+        $leafQueryBuilder->setArgument('returnAllTypes', $returnAllTypes);
+        }
+        if (null !== $hideCore) {
+        $leafQueryBuilder->setArgument('hideCore', $hideCore);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'typeDefs');
+    }
 }

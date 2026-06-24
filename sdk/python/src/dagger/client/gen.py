@@ -16613,6 +16613,30 @@ class WorkspaceModule(Type):
         _ctx = self._select("source", _args)
         return await _ctx.execute(str)
 
+    async def type_defs(
+        self,
+        *,
+        return_all_types: bool | None = False,
+        hide_core: bool | None = None,
+    ) -> list[TypeDef]:
+        """Type definitions for this module, loading only this module on demand.
+
+        Parameters
+        ----------
+        return_all_types:
+            Return the full referenced typedef closure instead of only top-
+            level served typedefs.
+        hide_core:
+            Strip core API functions from the Query type, leaving only module-
+            sourced functions (constructors, entrypoint proxies, etc.).
+        """
+        _args = [
+            Arg("returnAllTypes", return_all_types, False),
+            Arg("hideCore", hide_core, None),
+        ]
+        _ctx = self._select("typeDefs", _args)
+        return await _ctx.execute_object_list(TypeDef)
+
 
 @typecheck
 class WorkspaceModuleSetting(Type):

@@ -81,6 +81,34 @@ defmodule Dagger.WorkspaceModule do
 
     Client.execute(workspace_module.client, query_builder)
   end
+
+  @doc """
+  Type definitions for this module, loading only this module on demand.
+  """
+  @spec type_defs(t(), [{:return_all_types, boolean() | nil}, {:hide_core, boolean() | nil}]) ::
+          {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
+  def type_defs(%__MODULE__{} = workspace_module, optional_args \\ []) do
+    query_builder =
+      workspace_module.query_builder
+      |> QB.select("typeDefs")
+      |> QB.maybe_put_arg("returnAllTypes", optional_args[:return_all_types])
+      |> QB.maybe_put_arg("hideCore", optional_args[:hide_core])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace_module.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.TypeDef{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("TypeDef"),
+           client: workspace_module.client
+         }
+       end}
+    end
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.WorkspaceModule do

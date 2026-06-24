@@ -17041,6 +17041,15 @@ pub struct WorkspaceModule {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceModuleTypeDefsOpts {
+    /// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+    #[builder(setter(into, strip_option), default)]
+    pub hide_core: Option<bool>,
+    /// Return the full referenced typedef closure instead of only top-level served typedefs.
+    #[builder(setter(into, strip_option), default)]
+    pub return_all_types: Option<bool>,
+}
 impl IntoID<Id> for WorkspaceModule {
     fn into_id(
         self,
@@ -17101,6 +17110,57 @@ impl WorkspaceModule {
     pub async fn source(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("source");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Type definitions for this module, loading only this module on demand.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn type_defs(&self) -> Result<Vec<TypeDef>, DaggerError> {
+        let query = self.selection.select("typeDefs");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| TypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Type definitions for this module, loading only this module on demand.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn type_defs_opts(
+        &self,
+        opts: WorkspaceModuleTypeDefsOpts,
+    ) -> Result<Vec<TypeDef>, DaggerError> {
+        let mut query = self.selection.select("typeDefs");
+        if let Some(return_all_types) = opts.return_all_types {
+            query = query.arg("returnAllTypes", return_all_types);
+        }
+        if let Some(hide_core) = opts.hide_core {
+            query = query.arg("hideCore", hide_core);
+        }
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| TypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
 }
 impl Node for WorkspaceModule {

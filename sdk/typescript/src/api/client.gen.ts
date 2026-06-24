@@ -2890,6 +2890,18 @@ export type WorkspaceWithNewFileOpts = {
   permissions?: number
 }
 
+export type WorkspaceModuleTypeDefsOpts = {
+  /**
+   * Return the full referenced typedef closure instead of only top-level served typedefs.
+   */
+  returnAllTypes?: boolean
+
+  /**
+   * Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   */
+  hideCore?: boolean
+}
+
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
 }
@@ -15646,6 +15658,25 @@ export class WorkspaceModule extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Type definitions for this module, loading only this module on demand.
+   * @param opts.returnAllTypes Return the full referenced typedef closure instead of only top-level served typedefs.
+   * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+   */
+  typeDefs = async (opts?: WorkspaceModuleTypeDefsOpts): Promise<TypeDef[]> => {
+    type typeDefs = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("typeDefs", { ...opts }).select("id")
+
+    const response: Awaited<typeDefs[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new TypeDef(ctx.copy().selectNode(r.id, "TypeDef")),
+    )
   }
 }
 

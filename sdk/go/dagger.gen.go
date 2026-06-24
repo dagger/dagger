@@ -17004,6 +17004,57 @@ func (r *WorkspaceModule) Source(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceModuleTypeDefsOpts contains options for WorkspaceModule.TypeDefs
+type WorkspaceModuleTypeDefsOpts struct {
+	// Return the full referenced typedef closure instead of only top-level served typedefs.
+	ReturnAllTypes bool
+	// Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
+	HideCore bool
+}
+
+// Type definitions for this module, loading only this module on demand.
+func (r *WorkspaceModule) TypeDefs(ctx context.Context, opts ...WorkspaceModuleTypeDefsOpts) ([]TypeDef, error) {
+	q := r.query.Select("typeDefs")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `returnAllTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReturnAllTypes) {
+			q = q.Arg("returnAllTypes", opts[i].ReturnAllTypes)
+		}
+		// `hideCore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HideCore) {
+			q = q.Arg("hideCore", opts[i].HideCore)
+		}
+	}
+
+	q = q.Select("id")
+
+	type typeDefs struct {
+		Id ID
+	}
+
+	convert := func(fields []typeDefs) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "TypeDef")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []typeDefs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // AsNode returns this WorkspaceModule as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *WorkspaceModule) AsNode() Node {

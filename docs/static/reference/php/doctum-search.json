@@ -6942,6 +6942,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\WorkspaceModule::typeDefs",
+			"p": "Dagger/WorkspaceModule.html#method_typeDefs",
+			"d": "<p>Type definitions for this module, loading only this module on demand.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\WorkspaceModuleSetting::description",
 			"p": "Dagger/WorkspaceModuleSetting.html#method_description",
 			"d": "<p>The constructor argument description.</p>"
