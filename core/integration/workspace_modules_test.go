@@ -239,6 +239,40 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 		require.NotContains(t, readInstalledWorkspaceConfig(t, workdir).Modules, "dep")
 	})
 
+	t.Run("uninstall removes an SDK-managed default-path module", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "sdk", "install", "go")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "--auto-apply", "module", "init", "go", "myapp")
+		require.NoError(t, err)
+
+		moduleDir := filepath.Join(workdir, ".dagger", "modules", "myapp")
+		info, err := os.Stat(moduleDir)
+		require.NoError(t, err)
+		require.True(t, info.IsDir())
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Contains(t, cfg.Modules, "myapp")
+		goSDK := cfg.Modules["go-sdk"]
+		require.NotNil(t, goSDK.AsSDK)
+		require.Equal(t, []workspacecfg.SDKManagedModule{{Path: ".dagger/modules/myapp"}}, goSDK.AsSDK.Modules)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "uninstall", "myapp")
+		require.NoError(t, err)
+
+		cfg = readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Modules, "myapp")
+		goSDK = cfg.Modules["go-sdk"]
+		require.NotNil(t, goSDK.AsSDK)
+		require.Empty(t, goSDK.AsSDK.Modules)
+
+		_, err = os.Stat(moduleDir)
+		require.True(t, os.IsNotExist(err), "expected %s to be removed, got %v", moduleDir, err)
+	})
+
 	t.Run("uninstalling an unknown module errors", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
