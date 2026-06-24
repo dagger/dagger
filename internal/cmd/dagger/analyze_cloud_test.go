@@ -22,7 +22,9 @@ func TestAnalyzeRender(t *testing.T) {
 		OverallStatus: &cloudapi.TraceOverallStatus{
 			TraceID: "a0d14706", SpanID: "32370f63",
 			Command: "test-split:test-container", Outcome: "failed",
-			Error: "check failed due to an internal error: exit code: 1",
+			// Multi-line: the first line is a generic wrapper and the real cause
+			// is below it. The summary must show the whole thing, not truncate.
+			Error: "exit code 1\n\nconvert arg ws: node field not found in environment",
 		},
 		FailingCommands: []cloudapi.FailingCommand{
 			{SpanID: "52311111", Command: "otelgotest -p 8 -timeout=15m ./...", Error: "exit code: 1"},
@@ -43,6 +45,17 @@ func TestAnalyzeRender(t *testing.T) {
 	cmd.SetOut(&buf)
 	cloudCLI.printAnalysis(cmd, nil, "0c8f0f6c", "a0d14706", tq)
 	t.Logf("\n%s", buf.String())
+
+	// The real cause lives on a later line of a multi-line error; it must
+	// survive into the output rather than being collapsed to the first line.
+	if !bytes.Contains(buf.Bytes(), []byte("convert arg ws: node field not found in environment")) {
+		t.Errorf("output dropped the multi-line error cause")
+	}
+	// The old behavior truncated to the first line with an ellipsis; make sure
+	// we no longer do that.
+	if bytes.Contains(buf.Bytes(), []byte("exit code 1 …")) {
+		t.Errorf("output truncated the error with an ellipsis")
+	}
 
 	for _, want := range []string{
 		"Status:  [FAILED]",

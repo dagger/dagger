@@ -99,7 +99,10 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			fmt.Fprintf(o, "%s %s\n", bold(o, "Command:"), s.Command)
 		}
 		if s.Error != "" {
-			fmt.Fprintf(o, "%s   %s\n", bold(o, "Error:"), oneLine(s.Error))
+			// Values align at column 9 ("Error:" + 3). The real cause is often on
+			// a later line (the first is a generic "exit code N" wrapper), so show
+			// the whole message rather than truncating to the first line.
+			fmt.Fprintf(o, "%s   %s\n", bold(o, "Error:"), errText(s.Error, 9))
 		}
 	} else {
 		fmt.Fprintf(o, "%s  UNKNOWN (no root span found)\n", bold(o, "Status:"))
@@ -118,7 +121,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 		// marker before the command, consistent with checks and tests.
 		fmt.Fprintf(&rootCause, "%s %s\n", marker(o, "failed"), emptyDash(fc.Command))
 		if fc.Error != "" {
-			fmt.Fprintf(&rootCause, "  %s %s\n", bold(o, "error:"), oneLine(fc.Error))
+			fmt.Fprintf(&rootCause, "  %s %s\n", bold(o, "error:"), errText(fc.Error, 9))
 		}
 		fmt.Fprintf(&rootCause, "  %s  %s\n", bold(o, "span:"), fc.SpanID)
 		cli.renderSpanLogs(&rootCause, o, traceID, fc.SpanID, logs[fc.SpanID])
@@ -146,7 +149,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 		}
 		fmt.Fprintf(&checks, "%s %s\n", marker(o, c.Status), bold(o, emptyDash(c.Name)))
 		if c.Error != "" {
-			fmt.Fprintf(&checks, "  %s %s\n", bold(o, "error:"), oneLine(c.Error))
+			fmt.Fprintf(&checks, "  %s %s\n", bold(o, "error:"), errText(c.Error, 9))
 		}
 		if c.Status == "failed" {
 			fmt.Fprintf(&checks, "  %s  %s\n", bold(o, "span:"), c.SpanID)
@@ -180,7 +183,8 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 			fmt.Fprintf(&tests, "  %s %s\n", bold(o, "caused by:"), t.OriginCommand)
 		}
 		if msg := firstNonEmptyStr(t.OriginError, t.Error); msg != "" {
-			fmt.Fprintf(&tests, "  %s     %s\n", bold(o, "error:"), oneLine(msg))
+			// Values in this block align at column 13 ("caused by:" + 1).
+			fmt.Fprintf(&tests, "  %s     %s\n", bold(o, "error:"), errText(msg, 13))
 		}
 		fmt.Fprintf(&tests, "  %s      %s\n", bold(o, "span:"), t.SpanID)
 		// Roll up the descendant logs for leaf tests: the real failure usually
@@ -504,12 +508,25 @@ func emptyDash(s string) string {
 	return s
 }
 
-func oneLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return strings.TrimSpace(s[:i]) + " …"
+// errText formats a possibly multi-line error message for display after a
+// label. The first line follows the label; subsequent non-empty lines are
+// indented to align beneath it (indent columns). Blank lines are dropped so
+// wrapped errors stay compact. We deliberately keep every non-empty line: the
+// real cause is frequently below a generic "exit code N" first line, so
+// collapsing to one line would hide it. Returns "-" for an empty message.
+func errText(msg string, indent int) string {
+	var lines []string
+	for _, ln := range strings.Split(msg, "\n") {
+		ln = strings.TrimRight(ln, " \t")
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		lines = append(lines, ln)
 	}
-	return s
+	if len(lines) == 0 {
+		return "-"
+	}
+	return strings.Join(lines, "\n"+strings.Repeat(" ", indent))
 }
 
 func firstNonEmptyStr(vals ...string) string {
