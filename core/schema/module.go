@@ -2117,6 +2117,13 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
+	return typeDefsFromServedDeps(ctx, deps, args.ReturnAllTypes, args.HideCore.GetOr(dagql.NewBoolean(false)).Bool())
+}
+
+// typeDefsFromServedDeps builds the typedef list for a served dependency set,
+// swapping in the live Query typedef and applying the hideCore / returnAllTypes
+// shaping. Shared by Query.currentTypeDefs and WorkspaceModule.typeDefs.
+func typeDefsFromServedDeps(ctx context.Context, deps *core.SchemaBuilder, returnAllTypes, hideCore bool) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	dag, err := deps.Schema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current schema: %w", err)
@@ -2149,13 +2156,13 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 		typeDefs = append(typeDefs, queryTypeDef)
 	}
 
-	if args.HideCore.GetOr(dagql.NewBoolean(false)).Bool() {
+	if hideCore {
 		typeDefs, err = stripCoreQueryFunctions(ctx, dag, typeDefs)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if !args.ReturnAllTypes {
+	if !returnAllTypes {
 		return typeDefs, nil
 	}
 	return expandTypeDefClosure(ctx, dag, typeDefs)

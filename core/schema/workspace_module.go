@@ -176,6 +176,57 @@ func (s *workspaceSchema) moduleSettings(
 	return settings, nil
 }
 
+type workspaceModuleTypeDefsArgs struct {
+	ReturnAllTypes bool `default:"false"`
+	HideCore       dagql.Optional[dagql.Boolean]
+}
+
+func (s *workspaceSchema) moduleTypeDefs(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceModule],
+	args workspaceModuleTypeDefsArgs,
+) (dagql.ObjectResultArray[*core.TypeDef], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// moduleList creates WorkspaceModule results from Workspace.__workspaceModule,
+	// so the DagQL receiver is the workspace that owns this module entry.
+	receiver, err := parent.Receiver(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	ws, ok := receiver.(dagql.ObjectResult[*core.Workspace])
+	if !ok {
+		return nil, fmt.Errorf("workspace module %q has unexpected receiver %T", parent.Self().Name, receiver)
+	}
+	if err := unsupportedSyntheticWorkspaceFeature(ws.Self(), "module typedefs"); err != nil {
+		return nil, err
+	}
+
+	ctx, err = s.withWorkspaceClientContext(ctx, ws.Self())
+	if err != nil {
+		return nil, err
+	}
+
+	// Load only this module on demand; siblings stay pending, so a broken sibling
+	// can't fail introspecting this one.
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, []string{parent.Self().Name}); err != nil {
+		return nil, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := query.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current served deps: %w", err)
+	}
+	return typeDefsFromServedDeps(ctx, deps, args.ReturnAllTypes, args.HideCore.GetOr(dagql.NewBoolean(false)).Bool())
+}
+
 func workspaceSettingsModuleRef(
 	ws *core.Workspace,
 	configDir string,
