@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
@@ -68,8 +69,16 @@ type daggerSession struct {
 	// off.
 	wcprofEnabled bool
 
-	state   daggerSessionState
-	stateMu sync.RWMutex
+	// state is read lock-free by observer paths and written only under
+	// lifecycleMu. The zero value is sessionStateUninitialized.
+	state atomicSessionState
+
+	// lifecycleMu serializes this session's initialization and teardown. It is
+	// held across the (potentially slow, up to ~60s) init and teardown work, but
+	// NO observer path (Clients/activeClientIDs/clientFromIDs) ever acquires it,
+	// so a session stuck initializing or tearing down can never stall the
+	// active-clients API or the client-DB GC.
+	lifecycleMu sync.Mutex
 
 	clients  map[string]*daggerClient // clientID -> client
 	clientMu sync.RWMutex
@@ -130,13 +139,40 @@ type workspaceLockState struct {
 	dirty    bool
 }
 
-type daggerSessionState string
+// daggerSessionState is the lifecycle state of a session. It is intentionally
+// int-backed (rather than string) so it can be stored in an atomic and read by
+// observers without locking; the zero value is sessionStateUninitialized.
+type daggerSessionState int32
 
 const (
-	sessionStateUninitialized daggerSessionState = "uninitialized"
-	sessionStateInitialized   daggerSessionState = "initialized"
-	sessionStateRemoved       daggerSessionState = "removed"
+	sessionStateUninitialized daggerSessionState = iota
+	sessionStateInitialized
+	sessionStateRemoved
 )
+
+func (s daggerSessionState) String() string {
+	switch s {
+	case sessionStateUninitialized:
+		return "uninitialized"
+	case sessionStateInitialized:
+		return "initialized"
+	case sessionStateRemoved:
+		return "removed"
+	default:
+		return fmt.Sprintf("unknown(%d)", int32(s))
+	}
+}
+
+// atomicSessionState wraps the session's lifecycle state so it can be read
+// lock-free by observer paths (Clients/activeClientIDs/clientFromIDs). Writes
+// only ever happen while holding the session's lifecycleMu, which serializes
+// state transitions; the atomic is what makes concurrent lock-free reads safe.
+type atomicSessionState struct {
+	v atomic.Int32
+}
+
+func (a *atomicSessionState) Load() daggerSessionState   { return daggerSessionState(a.v.Load()) }
+func (a *atomicSessionState) Store(s daggerSessionState) { a.v.Store(int32(s)) }
 
 type daggerClient struct {
 	daggerSession  *daggerSession
@@ -319,7 +355,7 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// requires that sess.stateMu is held
+// requires that sess.lifecycleMu is held
 func (srv *Server) initializeDaggerSession(
 	clientMetadata *engine.ClientMetadata,
 	sess *daggerSession,
@@ -328,10 +364,10 @@ func (srv *Server) initializeDaggerSession(
 	slog.Info("initializing new session", "session", clientMetadata.SessionID)
 	defer slog.Debug("initialized new session", "session", clientMetadata.SessionID)
 
-	sess.sessionID = clientMetadata.SessionID
-	sess.mainClientCallerID = clientMetadata.ClientID
+	// NOTE: sessionID, mainClientCallerID and the clients map are set at
+	// construction (before the session is published) and are immutable /
+	// clientMu-protected thereafter; they are deliberately not assigned here.
 	sess.wcprofEnabled = clientMetadata.Profile
-	sess.clients = map[string]*daggerClient{}
 	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
@@ -370,7 +406,10 @@ func (srv *Server) initializeDaggerSession(
 	})
 	failureCleanups.Add("close session analytics", sess.analytics.Close)
 
-	sess.state = sessionStateInitialized
+	// NOTE: state is NOT set to sessionStateInitialized here. getOrInitClient
+	// performs that atomic transition as its last step, after the main client is
+	// initialized and inserted, so observers never see an initialized session
+	// whose fields/clients aren't ready yet.
 	return nil
 }
 
@@ -396,12 +435,27 @@ func (sess *daggerSession) withClosingCancel(ctx context.Context) context.Contex
 	return ctx
 }
 
-// requires that sess.stateMu is held
+// requires that sess.lifecycleMu is held.
+//
+// removeDaggerSession does NOT remove the session from srv.daggerSessions; it
+// leaves it in place as a "removed" tombstone so observers see the removed state
+// and a concurrent same-id getOrInitClient bails out instead of resurrecting the
+// session while its cache is still being released. The caller must call
+// deleteSession (after releasing lifecycleMu) to drop the tombstone once
+// teardown is complete.
 func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession) error {
 	slog := slog.With("session", sess.sessionID)
 
 	slog.Info("removing session; stopping client services and flushing")
 	defer slog.Debug("session removed")
+
+	// Publish the removed state first (atomic) so observers holding a stale
+	// snapshot pointer, and any concurrent same-id getOrInitClient, observe it
+	// immediately and skip/bail instead of using a tearing-down session. The
+	// session is intentionally left in srv.daggerSessions as a tombstone until
+	// the caller drops it via deleteSession after lifecycleMu is released.
+	sess.state.Store(sessionStateRemoved)
+	sess.beginClosing()
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -410,13 +464,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		}
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
-
-	srv.daggerSessionsMu.Lock()
-	delete(srv.daggerSessions, sess.sessionID)
-	srv.daggerSessionsMu.Unlock()
-
-	sess.state = sessionStateRemoved
-	sess.beginClosing()
 
 	var errs error
 
@@ -514,6 +561,18 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	})
 
 	return errs
+}
+
+// deleteSession drops a session from the registry, but only if the map entry is
+// still this exact session pointer. Pointer-conditional deletion ensures a slow
+// teardown can't delete a freshly created same-id session. Call only after the
+// session's teardown is complete and lifecycleMu has been released.
+func (srv *Server) deleteSession(sess *daggerSession) {
+	srv.daggerSessionsMu.Lock()
+	if srv.daggerSessions[sess.sessionID] == sess {
+		delete(srv.daggerSessions, sess.sessionID)
+	}
+	srv.daggerSessionsMu.Unlock()
 }
 
 type ClientInitOpts struct {
@@ -787,13 +846,11 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 		return nil, err
 	}
 
-	// The session pointer is published before initializeDaggerSession populates
-	// its fields, so gate on state under stateMu before reading them. stateMu is
-	// taken only after releasing daggerSessionsMu to avoid inverting
-	// removeDaggerSession's stateMu->daggerSessionsMu lock order.
-	sess.stateMu.RLock()
-	defer sess.stateMu.RUnlock()
-	switch sess.state {
+	// Gate on the session's lifecycle state via a lock-free atomic read (never
+	// lifecycleMu), so this lookup can't block on a session that is initializing
+	// or tearing down. A client is inserted into sess.clients only after it is
+	// fully initialized, so a clientMu read can't observe a half-initialized one.
+	switch st := sess.state.Load(); st {
 	case sessionStateInitialized:
 		// continue
 	case sessionStateRemoved:
@@ -802,14 +859,21 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 	case sessionStateUninitialized:
 		return nil, fmt.Errorf("session %q not initialized", sessID)
 	default:
-		return nil, fmt.Errorf("session %q has unknown state %q", sessID, sess.state)
+		return nil, fmt.Errorf("session %q has unknown state %s", sessID, st)
 	}
 
 	sess.clientMu.RLock()
-	defer sess.clientMu.RUnlock()
 	client, ok := sess.clients[clientID]
+	sess.clientMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("client %q not found", clientID)
+	}
+
+	// Re-check state: if the session flipped to removed while we read the clients
+	// map, treat it as not-found rather than handing back a client whose session
+	// is tearing down. This is a lock-free atomic read, so it never blocks.
+	if sess.state.Load() == sessionStateRemoved {
+		return nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q not found", sessID)}
 	}
 
 	return client, nil
@@ -841,13 +905,10 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, fmt.Errorf("client secret token is required")
 	}
 
-	// cleanup to do if this method fails
+	// cleanup to do if this method fails; the failure handler that runs these is
+	// installed below, once we hold the session's lifecycleMu (so it can publish
+	// the removed tombstone before unlocking, then drop it only after cleanups).
 	failureCleanups := &cleanups.Cleanups{}
-	defer func() {
-		if rerr != nil {
-			rerr = errors.Join(rerr, failureCleanups.Run())
-		}
-	}()
 
 	// get or initialize the session as a whole
 
@@ -857,35 +918,75 @@ func (srv *Server) getOrInitClient(
 		return nil, nil, errServerShuttingDown
 	}
 	sess, sessionExists := srv.daggerSessions[sessionID]
-	stateMuLocked := false
+	createdSession := false
 	if !sessionExists {
+		// Construct with immutable identity and a non-nil clients map, and lock
+		// the new session's lifecycleMu BEFORE publishing it, so this goroutine
+		// is guaranteed to be the session's initializer: any concurrent caller
+		// that finds the published-but-uninitialized session blocks on
+		// lifecycleMu until initialization completes (or sees the removed
+		// tombstone if init fails). The session is still unreachable here, so this
+		// acquisition never contends and can't invert the lock order even though
+		// we currently hold daggerSessionsMu (the one "unpublished object"
+		// exception to "lifecycleMu and daggerSessionsMu are never nested").
 		sess = &daggerSession{
-			state: sessionStateUninitialized,
+			sessionID:          sessionID,
+			mainClientCallerID: clientID,
+			clients:            map[string]*daggerClient{},
 		}
-		// Lock stateMu before publishing the session below so a concurrent
-		// clientFromIDs that looks it up blocks until initialization finishes
-		// instead of observing uninitialized fields. The session is still
-		// unreachable by other goroutines here, so this never blocks and can't
-		// invert removeDaggerSession's stateMu->daggerSessionsMu order even
-		// though we currently hold daggerSessionsMu.
-		sess.stateMu.Lock()
-		stateMuLocked = true
+		sess.lifecycleMu.Lock()
+		createdSession = true
 		srv.daggerSessions[sessionID] = sess
-
-		failureCleanups.Add("delete session ID", func() error {
-			srv.daggerSessionsMu.Lock()
-			delete(srv.daggerSessions, sessionID)
-			srv.daggerSessionsMu.Unlock()
-			return nil
-		})
 	}
 	srv.daggerSessionsMu.Unlock()
 
-	if !stateMuLocked {
-		sess.stateMu.Lock()
+	if !createdSession {
+		// Fast, lock-free check: if the session is already a removed tombstone,
+		// bail immediately rather than blocking on lifecycleMu for the (possibly
+		// ~60s) teardown. A same-id reconnect then retries and gets a fresh
+		// session once the tombstone is dropped.
+		if sess.state.Load() == sessionStateRemoved {
+			return nil, nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q removed", sessionID)}
+		}
+		sess.lifecycleMu.Lock()
 	}
-	defer sess.stateMu.Unlock()
-	switch sess.state {
+
+	// We now hold sess.lifecycleMu. The deferred handler below manages the unlock
+	// for both success and failure. On failure of a session WE created it:
+	// publishes the removed tombstone (while still holding lifecycleMu, so a
+	// waiting same-id caller observes removed and bails instead of resurrecting a
+	// half-built session), releases the lock, runs resource cleanups, and only
+	// THEN drops the tombstone from the registry — so no fresh same-id session can
+	// be created while this one's resources are still being released.
+	lifecycleHeld := true
+	unlockLifecycle := func() {
+		if lifecycleHeld {
+			lifecycleHeld = false
+			sess.lifecycleMu.Unlock()
+		}
+	}
+	defer func() {
+		if rerr == nil {
+			unlockLifecycle()
+			return
+		}
+		if createdSession {
+			sess.state.Store(sessionStateRemoved)
+		}
+		unlockLifecycle()
+		rerr = errors.Join(rerr, failureCleanups.Run())
+		// No engineCache.ReleaseSession is needed here: session-scoped cache refs
+		// are only attached (via AttachResult) during nested-client init carrying
+		// Env/Module context, which always targets an already-existing session
+		// (createdSession=false). In current in-tree call paths a created session
+		// is always a main-client session that has attached nothing session-scoped,
+		// so there is nothing to release before dropping the tombstone.
+		if createdSession {
+			srv.deleteSession(sess)
+		}
+	}()
+
+	switch sess.state.Load() {
 	case sessionStateUninitialized:
 		if err := srv.initializeDaggerSession(opts.ClientMetadata, sess, failureCleanups); err != nil {
 			return nil, nil, fmt.Errorf("initialize session: %w", err)
@@ -893,13 +994,20 @@ func (srv *Server) getOrInitClient(
 	case sessionStateInitialized:
 		// nothing to do
 	case sessionStateRemoved:
-		return nil, nil, fmt.Errorf("session %q removed", sess.sessionID)
+		return nil, nil, flightcontrol.RetryableError{Err: fmt.Errorf("session %q removed", sessionID)}
 	}
 
-	// get or initialize the client itself
-
-	sess.clientMu.Lock()
+	// get or initialize the client itself.
+	//
+	// A client is inserted into sess.clients only AFTER it is fully initialized,
+	// so observer paths (clientFromIDs/activeClientIDs) can never see a
+	// half-initialized client. We hold lifecycleMu here, so no other goroutine
+	// can be creating the same client concurrently; a brief clientMu read to find
+	// an existing client is therefore sufficient (no double-checked locking).
+	sess.clientMu.RLock()
 	client, clientExists := sess.clients[clientID]
+	sess.clientMu.RUnlock()
+
 	if !clientExists {
 		client = &daggerClient{
 			state:          clientStateUninitialized,
@@ -910,9 +1018,9 @@ func (srv *Server) getOrInitClient(
 			shutdownCh:     make(chan struct{}),
 			clientMetadata: opts.ClientMetadata,
 		}
-		sess.clients[clientID] = client
 
-		// initialize SQLite DB early so we can subscribe to it immediately
+		// Open the SQLite DB outside clientMu (its busy_timeout is 10s) so a slow
+		// open can never block observers reading the clients map under clientMu.
 		if db, err := srv.clientDBs.Open(ctx, client.clientID); err != nil {
 			slog.Warn("failed to open client DB; continuing without keepalive",
 				"sessionID", sessionID,
@@ -926,20 +1034,14 @@ func (srv *Server) getOrInitClient(
 			})
 		}
 
+		sess.clientMu.RLock()
 		parent, parentExists := sess.clients[opts.CallerClientID]
+		sess.clientMu.RUnlock()
 		if parentExists {
 			client.parents = slices.Clone(parent.parents)
 			client.parents = append(client.parents, parent)
 		}
-
-		failureCleanups.Add("delete client ID", func() error {
-			sess.clientMu.Lock()
-			delete(sess.clients, clientID)
-			sess.clientMu.Unlock()
-			return nil
-		})
 	}
-	sess.clientMu.Unlock()
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
@@ -948,6 +1050,11 @@ func (srv *Server) getOrInitClient(
 		if err := srv.initializeDaggerClient(ctx, client, opts); err != nil {
 			return nil, nil, fmt.Errorf("initialize client: %w", err)
 		}
+		// Now that the client is fully initialized, publish it into the session.
+		// (We hold lifecycleMu, so this is the only goroutine creating it.)
+		sess.clientMu.Lock()
+		sess.clients[clientID] = client
+		sess.clientMu.Unlock()
 	case clientStateInitialized:
 		// verify token matches existing client
 		if token != client.secretToken {
@@ -1001,6 +1108,13 @@ func (srv *Server) getOrInitClient(
 	// increment the number of active connections from this client
 	client.activeCount++
 
+	// If this call initialized the session, mark it initialized now — as the
+	// LAST step, after the main client has been initialized and inserted — so
+	// observers never see an initialized session whose main client isn't present.
+	if sess.state.Load() == sessionStateUninitialized {
+		sess.state.Store(sessionStateInitialized)
+	}
+
 	return client, func() error {
 		if clientID != sess.mainClientCallerID {
 			client.stateMu.Lock()
@@ -1012,46 +1126,48 @@ func (srv *Server) getOrInitClient(
 				return nil
 			}
 
-			slog := slog.With(
+			slog.With(
 				"sessionID", sess.sessionID,
 				"clientID", client.clientID,
-			)
-			slog.Info("all client connections closed")
+			).Info("all client connections closed")
 			return nil
 		}
 
-		sess.stateMu.Lock()
-		defer sess.stateMu.Unlock()
+		// Main client cleanup. Take lifecycleMu BEFORE client.stateMu (matching
+		// getOrInitClient's order) and hold it across the activeCount zero-check
+		// and the teardown decision, so a concurrent getOrInitClient (which bumps
+		// activeCount under lifecycleMu) cannot slip a new connection in between
+		// the check and removeDaggerSession.
+		sess.lifecycleMu.Lock()
 
-		// Keep the lock order consistent with getOrInitClient (session before
-		// client). If cleanup took client.stateMu first, a new request could
-		// hold stateMu while waiting on client.stateMu, while cleanup waited
-		// on stateMu.
 		client.stateMu.Lock()
 		client.activeCount--
 		activeCount := client.activeCount
 		client.stateMu.Unlock()
 
 		if activeCount > 0 {
+			sess.lifecycleMu.Unlock()
 			return nil
 		}
 
-		slog := slog.With(
+		slog.With(
 			"sessionID", sess.sessionID,
 			"clientID", client.clientID,
-		)
-		slog.Info("all client connections closed")
+		).Info("all client connections closed")
 
-		switch sess.state {
-		case sessionStateInitialized:
-			return srv.removeDaggerSession(ctx, sess)
-		default:
-			// this should never happen unless there's a bug
-			slog.Error("session state being removed not in initialized state",
-				"state", sess.state,
-			)
+		if sess.state.Load() != sessionStateInitialized {
+			// Already removed, or never fully initialized: nothing to tear down.
+			sess.lifecycleMu.Unlock()
 			return nil
 		}
+
+		err := srv.removeDaggerSession(ctx, sess)
+		sess.lifecycleMu.Unlock()
+		// Drop the tombstone now that teardown is complete and lifecycleMu is
+		// released (pointer-conditional, so a fresh same-id session is never
+		// deleted).
+		srv.deleteSession(sess)
+		return err
 	}, nil
 }
 
