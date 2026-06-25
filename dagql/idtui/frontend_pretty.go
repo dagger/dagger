@@ -4385,6 +4385,12 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 		return ""
 	}
 
+	// The braille rollup is a visual density cue; an agent reading the output as
+	// text gets nothing from it but noise, so skip it entirely.
+	if RunningInAgent() {
+		return ""
+	}
+
 	// Use pre-computed state instead of computing on every frame
 	state := span.RollUpState()
 	if state == nil {
