@@ -138,6 +138,11 @@ type frontendPretty struct {
 	// set when authenticated to Cloud
 	cloudURL string
 
+	// traceID is the trace being rendered, set by 'dagger trace' so surfaced
+	// failure logs can point at 'dagger cloud logs <trace> <span>' for the full,
+	// untruncated output. Empty for live runs (no follow-up command applies).
+	traceID string
+
 	// TUI state/config
 	spinnerEpoch time.Time // shared epoch so all spinners animate in sync
 	profile      termenv.Profile
@@ -746,6 +751,15 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 	})
 }
 
+// SetTraceID records the trace being rendered so surfaced failure logs can point
+// at 'dagger cloud logs <trace> <span>' for the full output. Called by 'dagger
+// trace'; no-op for live runs.
+func (fe *frontendPretty) SetTraceID(traceID string) {
+	fe.dispatch(func() {
+		fe.traceID = traceID
+	})
+}
+
 func traceMessage(profile termenv.Profile, url string, msg string) string {
 	buffer := &bytes.Buffer{}
 	out := NewOutput(buffer, termenv.WithProfile(profile))
@@ -1013,22 +1027,30 @@ func (fe *frontendPretty) RequestSurfacedLogs() {
 // descendant logs when the span is marked RollUpLogs (e.g. a check or test
 // whose real output lives in a sub-operation), mirroring the web UI.
 func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
+	span, ok := fe.db.Spans.Map[id]
+	if !ok {
+		// Span not loaded yet; it'll be requested once it's surfaced.
+		return
+	}
+	fe.requestLogsWith(id, span.RollUpLogs)
+}
+
+// requestLogsWith asks the log provider for a span's logs once, forcing whether
+// to roll up descendant logs. Used to roll up failed leaf test cases, whose real
+// output lives in a sub-operation even though the test span isn't marked
+// RollUpLogs.
+func (fe *frontendPretty) requestLogsWith(id dagui.SpanID, descendants bool) {
 	if fe.logProvider == nil || !id.IsValid() {
 		return
 	}
 	if fe.requestedLogs[id] {
 		return
 	}
-	span, ok := fe.db.Spans.Map[id]
-	if !ok {
-		// Span not loaded yet; it'll be requested once it's surfaced.
-		return
-	}
 	if fe.requestedLogs == nil {
 		fe.requestedLogs = make(map[dagui.SpanID]bool)
 	}
 	fe.requestedLogs[id] = true
-	fe.logProvider(id, span.RollUpLogs)
+	fe.logProvider(id, descendants)
 }
 
 // SetSpanProvider registers a callback that lazily supplies a span's children.
@@ -1926,7 +1948,20 @@ func (fe *frontendPretty) recalculateViewLocked() {
 			for _, node := range tv.BySpan {
 				if node != nil && node.Kind == dagui.TestNodeCase &&
 					node.SelfCategory == dagui.TestCategoryFailing && node.Span != nil {
-					fe.requestLogs(node.Span.ID)
+					// A failed leaf test case's real output (build/setup failures,
+					// panics) lives in a sub-operation it ran, not on the test span
+					// itself, so roll up its descendants even though the test span
+					// isn't marked RollUpLogs. A parent case is skipped for the roll-up
+					// -- it would just repeat its failing child's logs.
+					if isFailingLeafTestCase(node) {
+						// A failed leaf test's real output lives in a sub-operation it
+						// ran; roll up its descendants. The fetch flattens them onto the
+						// test span (its descendant spans aren't loaded incrementally, so
+						// a parent-walk roll-up can't attribute them).
+						fe.requestLogsWith(node.Span.ID, true)
+					} else {
+						fe.requestLogs(node.Span.ID)
+					}
 				}
 			}
 		}

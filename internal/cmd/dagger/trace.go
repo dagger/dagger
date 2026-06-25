@@ -98,6 +98,12 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 			return nil, err
 		}
 
+		// Let the frontend point surfaced failure logs at 'dagger cloud logs
+		// <trace> <span>' for the full, untruncated output.
+		if t, ok := Frontend.(interface{ SetTraceID(string) }); ok {
+			t.SetTraceID(traceID)
+		}
+
 		logExp := Frontend.LogExporter()
 		defer logExp.Shutdown(ctx)
 
@@ -130,6 +136,17 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 				logSem <- struct{}{}
 				defer func() { <-logSem }()
 				if err := client.StreamLogs(ctx, orgID, traceID, spanHex, descendants, func(logs []cloud.LogMessage) {
+					if descendants {
+						// Incremental --full only loads priority spans, so a rolled-up
+						// span's descendants aren't in the frontend's DB -- their log
+						// records would route to orphan buffers nothing renders. Attribute
+						// them to the span we fetched them for, like the summary's flat
+						// roll-up, so e.g. a failed test shows its sub-operation's output.
+						for i := range logs {
+							id := spanHex
+							logs[i].SpanID = &id
+						}
+					}
 					records := cloud.LogMessagesToRecords(traceID, logs)
 					if len(records) == 0 {
 						return
