@@ -21,9 +21,11 @@ var (
 	analyzeNoLogs     bool
 	analyzeLogTimeout time.Duration
 
-	logsOutput      string
-	logsDescendants bool
-	logsTimeout     time.Duration
+	logsOutput  string
+	logsTimeout time.Duration
+	logsSpan    string
+	logsCheck   string
+	logsTest    string
 )
 
 var cloudLogsCmd = newCloudLogsCmd()
@@ -34,19 +36,24 @@ func init() {
 
 func newCloudLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "logs <trace-id> <span-id>",
-		Short: "Print the full logs for a span in a Dagger Cloud trace",
-		Long: `Stream the full logs for a single span. Use this as a follow-up to
-'dagger cloud analyze' to inspect a failed span in detail. Redirect to a file
-to grep large logs in a controlled way:
+		Use:   "logs <trace-id> [--span <id> | --check <name> | --test <name>]",
+		Short: "Print the full logs for a Dagger Cloud trace, or a check/test/span within it",
+		Long: `Stream the full logs for a trace. Use this as a follow-up to
+'dagger trace' to inspect a failure in detail, addressing it by name rather than
+an opaque span ID. Redirect to a file to grep large logs in a controlled way:
 
-    dagger cloud logs <trace-id> <span-id> -o span.log
-    grep -i error span.log`,
-		Args: cobra.ExactArgs(2),
+    dagger cloud logs <trace-id> --check build:lint -o span.log
+    grep -i error span.log
+
+With no --span/--check/--test, the whole trace's logs are streamed. --check and
+--test roll up their subtree; --span is just that span.`,
+		Args: cobra.ExactArgs(1),
 		RunE: cloudCLI.CloudLogs,
 	}
+	cmd.Flags().StringVar(&logsSpan, "span", "", "Read just this span's logs, by span ID")
+	cmd.Flags().StringVar(&logsCheck, "check", "", "Read a check's logs, by name (rolls up its subtree)")
+	cmd.Flags().StringVar(&logsTest, "test", "", "Read a test's logs, by name (rolls up its subtree)")
 	cmd.Flags().StringVarP(&logsOutput, "output", "o", "", "Write logs to a file instead of stdout")
-	cmd.Flags().BoolVar(&logsDescendants, "descendants", true, "Include logs from descendant spans")
 	cmd.Flags().DurationVar(&logsTimeout, "timeout", 2*time.Minute, "Max time to spend streaming logs")
 	return cmd
 }
@@ -198,7 +205,7 @@ func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, 
 	// long they took). When that context matters, the full trace renders it.
 	var more strings.Builder
 	fmt.Fprintf(&more, "Full call tree, arguments, and timing:  dagger trace --full %s\n", traceID)
-	fmt.Fprintf(&more, "Full logs for any span:                 dagger cloud logs %s <span-id> -o span.log\n", traceID)
+	fmt.Fprintf(&more, "Full logs for any span:                 dagger cloud logs %s --span <span-id> -o span.log\n", traceID)
 	section(o, "MORE CONTEXT", more.String())
 }
 
@@ -331,7 +338,7 @@ func (cli *CloudCLI) prefetchLogTails(ctx context.Context, client *cloudapi.Clie
 // full logs to w, styling with o. A nil result means logs were disabled, so
 // just print the command.
 func (cli *CloudCLI) renderSpanLogs(w io.Writer, o *termenv.Output, traceID, spanID string, res *logResult) {
-	full := fmt.Sprintf("dagger cloud logs %s %s", traceID, spanID)
+	full := fmt.Sprintf("dagger cloud logs %s --span %s", traceID, spanID)
 	switch {
 	case res == nil:
 		fmt.Fprintf(w, "  %s  %s\n", bold(o, "logs:"), full)
@@ -358,7 +365,12 @@ func (cli *CloudCLI) renderSpanLogs(w io.Writer, o *termenv.Output, traceID, spa
 
 func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	traceID, spanID := args[0], args[1]
+	traceID := args[0]
+
+	sel := spanSelector{span: logsSpan, check: logsCheck, test: logsTest}
+	if err := sel.validate(); err != nil {
+		return err
+	}
 
 	client, cloudAuth, err := cli.cloudClient(ctx)
 	if err != nil {
@@ -382,8 +394,13 @@ func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(ctx, logsTimeout)
 	defer cancel()
 
+	spanID, descendants, err := sel.resolveSpan(ctx, client, org.ID, traceID)
+	if err != nil {
+		return err
+	}
+
 	var n int
-	streamErr := client.StreamLogs(ctx, org.ID, traceID, spanID, logsDescendants, func(msgs []cloudapi.LogMessage) {
+	streamErr := client.StreamLogs(ctx, org.ID, traceID, spanID, descendants, func(msgs []cloudapi.LogMessage) {
 		for _, m := range msgs {
 			n++
 			io.WriteString(w, m.Body)

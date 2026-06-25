@@ -21,8 +21,10 @@ import (
 )
 
 var (
-	traceFull bool
-	traceSpan string
+	traceFull  bool
+	traceSpan  string
+	traceCheck string
+	traceTest  string
 )
 
 var traceCmd = &cobra.Command{
@@ -49,6 +51,8 @@ tree, arguments, and timing.`,
 func init() {
 	traceCmd.Flags().BoolVar(&traceFull, "full", false, "Render the full trace (call tree, arguments, timing) instead of the failure summary")
 	traceCmd.Flags().StringVar(&traceSpan, "span", "", "With --full, scope and zoom the view to a span ID (fetches its subtree and logs)")
+	traceCmd.Flags().StringVar(&traceCheck, "check", "", "With --full, scope and zoom the view to a check by name")
+	traceCmd.Flags().StringVar(&traceTest, "test", "", "With --full, scope and zoom the view to a test by name")
 	traceCmd.Flags().BoolVar(&cloudJSON, "json", false, "Print the summary as JSON (no logs; ignored with --full)")
 	traceCmd.Flags().IntVar(&analyzeLogLines, "log-lines", 20, "Lines of log tail to show per failed span in the summary (0 to disable)")
 	traceCmd.Flags().BoolVar(&analyzeNoLogs, "no-logs", false, "Skip fetching logs in the summary, just the triage")
@@ -68,6 +72,11 @@ func traceRun(cmd *cobra.Command, args []string) error {
 
 func traceFullRender(cmd *cobra.Command, args []string) error {
 	traceID := args[0]
+
+	sel := spanSelector{span: traceSpan, check: traceCheck, test: traceTest}
+	if err := sel.validate(); err != nil {
+		return err
+	}
 
 	return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cloudAuth, err := auth.GetCloudAuth(ctx)
@@ -164,12 +173,17 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 			return noop, fmt.Errorf("stream trace: %w", err)
 		}
 
-		// --span: fetch the span's subtree and zoom the view to it, mirroring the
-		// web UI's ?span= deep link.
-		if traceSpan != "" {
-			sid, err := trace.SpanIDFromHex(traceSpan)
+		// --span/--check/--test: fetch the target span's subtree and zoom the view
+		// to it, mirroring the web UI's ?span= deep link. --check/--test resolve a
+		// name against the priority spans just loaded.
+		if sel.isSet() {
+			spanHex, _, err := sel.resolveSpan(ctx, client, orgID, traceID)
 			if err != nil {
-				return noop, fmt.Errorf("invalid --span %q: %w", traceSpan, err)
+				return noop, err
+			}
+			sid, err := trace.SpanIDFromHex(spanHex)
+			if err != nil {
+				return noop, fmt.Errorf("invalid span %q: %w", spanHex, err)
 			}
 			spanID := dagui.SpanID{SpanID: sid}
 			loader.listen(spanID)
