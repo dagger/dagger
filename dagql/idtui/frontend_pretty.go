@@ -1879,6 +1879,17 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 				ctx.Lines(testLines...)
 			}
 		}
+
+		if pol.showSuggestions {
+			var zoomSpan *dagui.Span
+			if zoomed {
+				zoomSpan = fe.rowsView.Zoomed
+			}
+			if suggLines := fe.renderSuggestionsSection(zoomSpan); len(suggLines) > 0 {
+				ctx.Line("")
+				ctx.Lines(suggLines...)
+			}
+		}
 		return
 	}
 
@@ -2006,6 +2017,91 @@ func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.
 	}
 	fe.claims.claimTestReport(span, view)
 	return lines
+}
+
+// reportSectionLines renders a titled block in the same style the failure
+// summary uses (daggercmd.section, which idtui can't import without a cycle): a
+// flat, greppable "== TITLE ==" marker with the body left at the margin when
+// driven by an agent, or a bold heading with the body indented two spaces for
+// humans. body lines are pre-rendered and may already carry styling.
+func reportSectionLines(out TermOutput, title string, body []string) []string {
+	if len(body) == 0 {
+		return nil
+	}
+	if RunningInAgent() {
+		return append([]string{fmt.Sprintf("== %s ==", title)}, body...)
+	}
+	lines := make([]string, 0, len(body)+1)
+	lines = append(lines, out.String(title).Bold().String())
+	for _, b := range body {
+		lines = append(lines, "  "+b)
+	}
+	return lines
+}
+
+// renderSuggestionsSection prints copy-paste 'dagger trace --full' commands that
+// scope the report to a single failure, so the reader learns how to drill in
+// with --check/--test. At the root it points at failed checks (and any failed
+// tests not under a check); zoomed to a check it points at that check's failed
+// tests. Returns nil when there's nothing to drill into or no trace ID to build
+// a command from. Gated by traceRenderPolicy.showSuggestions at the call site.
+func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string {
+	if fe.db == nil || fe.traceID == "" {
+		return nil
+	}
+
+	var targets []string
+	seen := map[string]bool{}
+	add := func(span *dagui.Span) {
+		if span == nil {
+			return
+		}
+		sel := cloudLogsTarget(span)
+		if sel == "" || seen[sel] {
+			return
+		}
+		seen[sel] = true
+		targets = append(targets, sel)
+	}
+
+	if zoomed != nil && zoomed.CheckName != "" {
+		for _, node := range failingLeafTestCases(fe.db.TestViewForSpan(zoomed)) {
+			add(node.Span)
+		}
+	} else {
+		// Root: surface the failed checks (broad) and the failing tests beneath
+		// them (specific), so the reader can jump straight to either level.
+		for span := range fe.db.Spans.Iter() {
+			if span.CheckName != "" && span.IsFailedOrCausedFailure() {
+				add(span)
+			}
+		}
+		for _, node := range failingLeafTestCases(fe.db.TestView()) {
+			add(node.Span)
+		}
+	}
+
+	if len(targets) == 0 {
+		return nil
+	}
+
+	const maxSuggestions = 8
+	more := 0
+	if len(targets) > maxSuggestions {
+		more = len(targets) - maxSuggestions
+		targets = targets[:maxSuggestions]
+	}
+
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	body := make([]string, 0, len(targets)+1)
+	for _, sel := range targets {
+		body = append(body, fmt.Sprintf("dagger trace %s --full %s", fe.traceID, sel))
+	}
+	if more > 0 {
+		note := fmt.Sprintf("... and %d more", more)
+		body = append(body, out.String(note).Foreground(termenv.ANSIBrightBlack).Faint().String())
+	}
+	return reportSectionLines(out, "MORE DETAILS", body)
 }
 
 // renderLogsLines returns the zoomed span's log output as lines.

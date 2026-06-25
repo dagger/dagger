@@ -1767,6 +1767,32 @@ func isFailingLeafTestCase(node *dagui.TestNode) bool {
 	return !hasFailingDescendantCase(node)
 }
 
+// failingLeafTestCases collects the failing leaf test cases in a view -- the
+// nodes whose own sub-operation carries the real failure -- in document order.
+// These back the --test drill-in suggestions.
+func failingLeafTestCases(view *dagui.TestView) []*dagui.TestNode {
+	if view == nil {
+		return nil
+	}
+	var out []*dagui.TestNode
+	var walk func(*dagui.TestNode)
+	walk = func(node *dagui.TestNode) {
+		if node == nil {
+			return
+		}
+		if isFailingLeafTestCase(node) {
+			out = append(out, node)
+		}
+		for _, child := range node.Children {
+			walk(child)
+		}
+	}
+	for _, root := range view.Roots {
+		walk(root)
+	}
+	return out
+}
+
 // errorTailStart returns the line index to start rendering a failed test's
 // rolled-up logs at: a few context lines before the trailing run of fail/error
 // lines (case-insensitive). It anchors on the last fail/error mention, then
