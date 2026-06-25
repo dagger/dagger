@@ -2094,12 +2094,19 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		}
 	} else {
 		// Root: surface the failed checks (broad) and the failing tests beneath
-		// them (specific), so the reader can jump straight to either level.
-		for span := range fe.db.Spans.Iter() {
-			if span.CheckName != "" && span.IsFailedOrCausedFailure() {
-				add(span)
+		// them (specific), so the reader can jump straight to either level. Use
+		// the boundary-respecting check set so checks a test intentionally runs as
+		// fixtures aren't suggested -- matching the CHECKS section and count.
+		var walkChecks func(ns []*dagui.CheckNode)
+		walkChecks = func(ns []*dagui.CheckNode) {
+			for _, n := range ns {
+				if n.Failed {
+					add(n.Span)
+				}
+				walkChecks(n.Children)
 			}
 		}
+		walkChecks(fe.db.SurfacedChecks())
 		for _, node := range failingLeafTestCases(fe.db.TestView()) {
 			add(node.Span)
 		}
