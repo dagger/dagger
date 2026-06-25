@@ -2116,21 +2116,10 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		return nil
 	}
 
-	const maxSuggestions = 8
-	more := 0
-	if len(targets) > maxSuggestions {
-		more = len(targets) - maxSuggestions
-		targets = targets[:maxSuggestions]
-	}
-
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	body := make([]string, 0, len(targets)+1)
+	body := make([]string, 0, len(targets))
 	for _, sel := range targets {
 		body = append(body, fmt.Sprintf("dagger trace %s --full %s", fe.traceID, sel))
-	}
-	if more > 0 {
-		note := fmt.Sprintf("... and %d more", more)
-		body = append(body, out.String(note).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 	return reportSectionLines(out, "MORE DETAILS", body)
 }
