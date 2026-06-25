@@ -1854,6 +1854,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		}
 
 		progressLines := fe.renderProgressLines(r, ctx, 0)
+		if !zoomed && len(progressLines) > 0 && fe.db.HasChecks() {
+			// At the root the progress rows are the checks; head them with a
+			// CHECKS heading and a pass/fail breakdown, mirroring TESTS.
+			ctx.Lines(fe.renderChecksHeader()...)
+		}
 		ctx.Lines(progressLines...)
 
 		if zoomed && pol.showOwnDescendantLogs {
@@ -2019,22 +2024,33 @@ func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.
 	return lines
 }
 
-// reportSectionLines renders a titled block in the same style the failure
-// summary uses (daggercmd.section, which idtui can't import without a cycle): a
-// flat, greppable "== TITLE ==" marker with the body left at the margin when
-// driven by an agent, or a bold heading with the body indented two spaces for
+// reportHeadingLine renders a section title in the failure summary's style
+// (daggercmd.section, which idtui can't import without a cycle): a flat,
+// greppable "== TITLE ==" marker under an AI agent, or a bold heading for
+// humans.
+func reportHeadingLine(out TermOutput, title string) string {
+	if RunningInAgent() {
+		return fmt.Sprintf("== %s ==", title)
+	}
+	return out.String(title).Bold().String()
+}
+
+// reportSectionLines renders a titled block: the heading from reportHeadingLine
+// with the body left at the margin under an agent or indented two spaces for
 // humans. body lines are pre-rendered and may already carry styling.
 func reportSectionLines(out TermOutput, title string, body []string) []string {
 	if len(body) == 0 {
 		return nil
 	}
-	if RunningInAgent() {
-		return append([]string{fmt.Sprintf("== %s ==", title)}, body...)
-	}
 	lines := make([]string, 0, len(body)+1)
-	lines = append(lines, out.String(title).Bold().String())
+	lines = append(lines, reportHeadingLine(out, title))
 	for _, b := range body {
-		lines = append(lines, "  "+b)
+		switch {
+		case RunningInAgent(), b == "":
+			lines = append(lines, b)
+		default:
+			lines = append(lines, "  "+b)
+		}
 	}
 	return lines
 }
@@ -2102,6 +2118,71 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		body = append(body, out.String(note).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 	return reportSectionLines(out, "MORE DETAILS", body)
+}
+
+// renderChecksHeader renders a "CHECKS" heading with the pass/fail tallies
+// joined onto the same line (mirroring the TESTS inspector header), to sit above
+// the root-level check rows (which carry their own tree indentation, so they're
+// left unwrapped).
+func (fe *frontendPretty) renderChecksHeader() []string {
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	line := reportHeadingLine(out, "CHECKS")
+	for _, part := range fe.checkBreakdownParts(out) {
+		line += "  " + part
+	}
+	return []string{line}
+}
+
+// checkBreakdownParts renders the failed/passed check tallies as "✘ N failed" /
+// "✔ N passed" parts, in the same icon+color style as the test summary.
+func (fe *frontendPretty) checkBreakdownParts(out TermOutput) []string {
+	failed, passed := fe.checkStatusCounts()
+	var parts []string
+	add := func(count int, icon string, color termenv.Color, label string) {
+		if count == 0 {
+			return
+		}
+		parts = append(parts, out.String(fmt.Sprintf("%s %d %s", icon, count, label)).Foreground(color).String())
+	}
+	add(failed, IconFailure, termenv.ANSIRed, "failed")
+	add(passed, IconSuccess, termenv.ANSIGreen, "passed")
+	return parts
+}
+
+// checkStatusCounts tallies distinct checks (by name) into failed vs passed.
+// A check counts as failed if any of its spans failed (directly or via a failed
+// link), matching the report's failure semantics. NB: with incremental --full
+// loading the passed tally only covers checks already fetched.
+func (fe *frontendPretty) checkStatusCounts() (failed, passed int) {
+	const (
+		rankPass = 1
+		rankFail = 2
+	)
+	rank := map[string]int{}
+	for span := range fe.db.Spans.Iter() {
+		if span.CheckName == "" {
+			continue
+		}
+		// A check that didn't fail counts as passed: a passing check's own span
+		// is often STATUS_CODE_UNSET (success is conveyed by effects/links, not
+		// the span status), so don't require an explicit Ok.
+		r := rankPass
+		if span.IsFailedOrCausedFailure() {
+			r = rankFail
+		}
+		if cur, ok := rank[span.CheckName]; !ok || r > cur {
+			rank[span.CheckName] = r
+		}
+	}
+	for _, r := range rank {
+		switch r {
+		case rankFail:
+			failed++
+		case rankPass:
+			passed++
+		}
+	}
+	return failed, passed
 }
 
 // renderLogsLines returns the zoomed span's log output as lines.
