@@ -1832,6 +1832,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 				Expanded: true,
 			}, "", fe, false)
 			linesFromView(ctx, zoomBuf.String())
+			ctx.Line("") // separate the header from its content
 		}
 
 		progressLines := fe.renderProgressLines(r, ctx, 0)
@@ -1841,7 +1842,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			// Surface the scoped span's own rolled-up failure logs, the same
 			// error-anchored window and 'dagger cloud logs' hint the summary uses.
 			logOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-			if logLines := fe.renderZoomedFinalLogs(logOut, "  "); len(logLines) > 0 {
+			if logLines := fe.renderZoomedFinalLogs(logOut, ""); len(logLines) > 0 {
 				ctx.Line("")
 				ctx.Lines(logLines...)
 			}
@@ -1865,8 +1866,8 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 
-	// Zoom header
-	var progPrefix string
+	// Zoom header: split the zoomed span off as a header above its (unindented)
+	// content, separated by a blank line.
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
 		zoomBuf := new(strings.Builder)
 		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
@@ -1875,14 +1876,14 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			Expanded: true,
 		}, "", fe, false)
 		linesFromView(ctx, zoomBuf.String())
-		progPrefix = "  "
+		ctx.Line("")
 	}
 
 	// Pre-render chrome below progress to measure its height for truncation.
 	// Global tests are rendered before progress so their claims can suppress
 	// duplicate test logs in the trace rows above them.
 	globalTestLines := fe.renderLiveGlobalTests(ctx)
-	logsLines := fe.renderLogsLines(progPrefix)
+	logsLines := fe.renderLogsLines("")
 
 	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
 	if len(logsLines) > 0 {
@@ -2128,30 +2129,15 @@ func (fe *frontendPretty) syncSpanTreeState() {
 		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
 	}
 
-	// Determine the zoom prefix for top-level trees.
-	var zoomPrefix string
-	if fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
-		zoomPrefix = "  "
-	}
-
+	// A zoomed subtree renders at the margin: its root is split off as a header
+	// (see Render), so the content below isn't indented under it.
 	body := fe.rowsView.Body
 	newTops := make([]*SpanTreeView, 0, len(body))
 	for i, tree := range body {
 		st := fe.getOrCreateSpanTree(tree.Span.ID)
 		st.parent = nil
 		st.indexInParent = i
-
-		// Top-level prefix (zoom indentation if applicable)
-		var newPrefix treePrefix
-		if zoomPrefix != "" {
-			newPrefix = treePrefix{
-				step:        zoomPrefix,
-				cont:        zoomPrefix,
-				forChildren: zoomPrefix,
-				contWidth:   lipgloss.Width(zoomPrefix),
-			}
-		}
-		fe.syncTreeNode(st, newPrefix)
+		fe.syncTreeNode(st, treePrefix{})
 		newTops = append(newTops, st)
 	}
 	fe.topTrees = newTops
