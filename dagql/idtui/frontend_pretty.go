@@ -143,6 +143,11 @@ type frontendPretty struct {
 	// untruncated output. Empty for live runs (no follow-up command applies).
 	traceID string
 
+	// pinnedZoom is an explicitly requested zoom (e.g. 'dagger trace
+	// --span/--check/--test') that persists into the final, non-interactive
+	// render, where an ordinary zoom is otherwise reset to the primary span.
+	pinnedZoom dagui.SpanID
+
 	// TUI state/config
 	spinnerEpoch time.Time // shared epoch so all spinners animate in sync
 	profile      termenv.Profile
@@ -1032,7 +1037,22 @@ func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
 		// Span not loaded yet; it'll be requested once it's surfaced.
 		return
 	}
-	fe.requestLogsWith(id, span.RollUpLogs)
+	// Roll up descendants for spans marked RollUpLogs and for failed leaf test
+	// cases, whose real output lives in a sub-operation even though the test span
+	// isn't flagged. Deciding it here keeps every entry point -- expand, zoom,
+	// surfaced failures -- consistent, so an early descendants=false fetch can't
+	// dedupe the roll-up.
+	fe.requestLogsWith(id, span.RollUpLogs || fe.isFailingLeafTestSpan(id))
+}
+
+// isFailingLeafTestSpan reports whether id is the span of a failing leaf test
+// case, whose descendant logs should roll up onto it.
+func (fe *frontendPretty) isFailingLeafTestSpan(id dagui.SpanID) bool {
+	tv := fe.db.TestView()
+	if tv == nil {
+		return false
+	}
+	return isFailingLeafTestCase(tv.BySpan[id])
 }
 
 // requestLogsWith asks the log provider for a span's logs once, forcing whether
@@ -1140,6 +1160,7 @@ func (fe *frontendPretty) ZoomToSpan(id dagui.SpanID) {
 			return
 		}
 		fe.ZoomedSpan = id
+		fe.pinnedZoom = id
 		fe.FocusedSpan = id
 		fe.autoFocus = false
 		fe.setExpanded(id, true)
@@ -1355,9 +1376,14 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Unfocus for the final render.
 	fe.focus(nil)
 
-	// Render the full trace.
+	// Render the full trace, or the pinned subtree when one was explicitly
+	// requested (e.g. 'dagger trace --span/--check/--test').
 	fe.claims = newRenderClaims()
-	fe.ZoomedSpan = fe.db.PrimarySpan
+	if fe.pinnedZoom.IsValid() {
+		fe.ZoomedSpan = fe.pinnedZoom
+	} else {
+		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
 	fe.viewDirty = false
 	fe.recalculateViewLocked()
 
@@ -1793,9 +1819,33 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 
 	if fe.finalRender {
 		// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
+		zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
+			fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
+
+		// When scoped to a span (e.g. --test/--span/--check), title the subtree
+		// with the zoomed span so it isn't a headless, mysteriously indented tree.
+		if zoomed {
+			zoomBuf := new(strings.Builder)
+			zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
+			fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
+				Span:     fe.rowsView.Zoomed,
+				Expanded: true,
+			}, "", fe, false)
+			linesFromView(ctx, zoomBuf.String())
+		}
+
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
-		if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
+
+		if zoomed {
+			// Surface the scoped span's own rolled-up failure logs, the same
+			// error-anchored window and 'dagger cloud logs' hint the summary uses.
+			logOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+			if logLines := fe.renderZoomedFinalLogs(logOut, "  "); len(logLines) > 0 {
+				ctx.Line("")
+				ctx.Lines(logLines...)
+			}
+		} else if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
 			if len(progressLines) > 0 {
 				ctx.Line("")
 			}
@@ -1877,6 +1927,27 @@ func linesFromView(ctx tuist.Context, view string) {
 	ctx.Lines(strings.Split(strings.TrimSuffix(view, "\n"), "\n")...)
 }
 
+// renderZoomedFinalLogs renders the zoomed span's rolled-up logs for the final
+// report -- the same error-anchored window and 'dagger cloud logs' hint the test
+// summary uses -- so 'dagger trace --full --test X' surfaces X's failure output
+// (its descendants having been fetched and re-keyed onto it).
+func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) []string {
+	span, ok := fe.db.Spans.Map[fe.ZoomedSpan]
+	if !ok {
+		return nil
+	}
+	logs := fe.logs.Logs[fe.ZoomedSpan]
+	if logs == nil || logs.UsedHeight() == 0 {
+		return nil
+	}
+	var buf strings.Builder
+	if err := logs.PrintRaw(&buf); err != nil {
+		return nil
+	}
+	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+	return errorWindowLines(out, rawLines, indent, fe.traceID, cloudLogsTarget(span))
+}
+
 // renderLogsLines returns the zoomed span's log output as lines.
 func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 	logs := fe.logs.Logs[fe.ZoomedSpan]
@@ -1948,20 +2019,9 @@ func (fe *frontendPretty) recalculateViewLocked() {
 			for _, node := range tv.BySpan {
 				if node != nil && node.Kind == dagui.TestNodeCase &&
 					node.SelfCategory == dagui.TestCategoryFailing && node.Span != nil {
-					// A failed leaf test case's real output (build/setup failures,
-					// panics) lives in a sub-operation it ran, not on the test span
-					// itself, so roll up its descendants even though the test span
-					// isn't marked RollUpLogs. A parent case is skipped for the roll-up
-					// -- it would just repeat its failing child's logs.
-					if isFailingLeafTestCase(node) {
-						// A failed leaf test's real output lives in a sub-operation it
-						// ran; roll up its descendants. The fetch flattens them onto the
-						// test span (its descendant spans aren't loaded incrementally, so
-						// a parent-walk roll-up can't attribute them).
-						fe.requestLogsWith(node.Span.ID, true)
-					} else {
-						fe.requestLogs(node.Span.ID)
-					}
+					// requestLogs rolls up a failed leaf test's descendants (its real
+					// output lives in a sub-operation it ran, not the test span itself).
+					fe.requestLogs(node.Span.ID)
 				}
 			}
 		}

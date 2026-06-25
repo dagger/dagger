@@ -795,49 +795,32 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 		return nil
 	}
 	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-	hidden := 0
 	if final {
-		// Anchor on the failure rather than an arbitrary tail: render from a few
-		// lines before the last fail/error mention through the end, so a rolled-up
-		// test shows its real cause without the full (often huge) log.
-		start := errorTailStart(rawLines, 5)
-		hidden = start
-		rawLines = rawLines[start:]
-	} else if len(rawLines) > limit {
+		// Anchor on the failure rather than an arbitrary tail, and point at the
+		// full logs -- the same treatment the zoomed (--test) view uses.
+		return errorWindowLines(out, rawLines, indent, tv.TraceID, cloudLogsTarget(entry.span))
+	}
+
+	// Live (interactive) summary: a small tail with a "more lines" footer.
+	hidden := 0
+	if len(rawLines) > limit {
 		hidden = len(rawLines) - limit
 		rawLines = rawLines[len(rawLines)-limit:]
 	}
 	textWidth := max(width-lipgloss.Width(indent), 1)
-	lines := make([]string, 0, len(rawLines)+2)
-	if final && hidden > 0 {
-		// The trimmed lines are above the window, so note them at the top.
-		marker := out.String(fmt.Sprintf("... %d earlier log lines ...", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
-		lines = append(lines, clipTestSummaryLine(indent+marker, width))
-	}
+	lines := make([]string, 0, len(rawLines)+1)
 	for _, line := range rawLines {
-		if !final && strings.TrimSpace(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if final {
-			lines = append(lines, indent+line)
-		} else {
-			lines = append(lines, clipTestSummaryLine(indent+clipPlain(line, textWidth), width))
-		}
+		lines = append(lines, clipTestSummaryLine(indent+clipPlain(line, textWidth), width))
 	}
 	if len(lines) == 0 {
 		return nil
 	}
-	if !final && hidden > 0 {
+	if hidden > 0 {
 		marker := out.String(fmt.Sprintf("... %d more log lines ...", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 		lines = append(lines, clipTestSummaryLine(indent+marker, width))
-	}
-	if final && tv.TraceID != "" && entry.span != nil {
-		target := fmt.Sprintf("--span %s", entry.span.ID)
-		if entry.span.TestCaseName != "" {
-			target = fmt.Sprintf("--test %q", entry.span.TestCaseName)
-		}
-		hint := out.String(fmt.Sprintf("full: dagger cloud logs %s %s", tv.TraceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
-		lines = append(lines, clipTestSummaryLine(indent+hint, width))
 	}
 	return lines
 }
@@ -1818,6 +1801,43 @@ func errorTailStart(lines []string, context int) int {
 		anchor = i
 	}
 	return max(anchor-context, 0)
+}
+
+// cloudLogsTarget returns the 'dagger cloud logs' selector that addresses span
+// by name when possible (--test/--check), else by --span. Empty for a nil span.
+func cloudLogsTarget(span *dagui.Span) string {
+	switch {
+	case span == nil:
+		return ""
+	case span.TestCaseName != "":
+		return fmt.Sprintf("--test %q", span.TestCaseName)
+	case span.CheckName != "":
+		return fmt.Sprintf("--check %q", span.CheckName)
+	default:
+		return fmt.Sprintf("--span %s", span.ID)
+	}
+}
+
+// errorWindowLines renders a failed span's rolled-up logs for a final report:
+// the error-anchored window (errorTailStart) prefixed with a marker for any
+// trimmed lines, then a 'dagger cloud logs' hint for the full output when a
+// trace ID and selector target are known. Lines are prefixed with indent and
+// left unclipped -- the hint is a copy-paste command.
+func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target string) []string {
+	start := errorTailStart(rawLines, 5)
+	lines := make([]string, 0, len(rawLines)-start+2)
+	if start > 0 {
+		marker := out.String(fmt.Sprintf("... %d earlier log lines ...", start)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		lines = append(lines, indent+marker)
+	}
+	for _, line := range rawLines[start:] {
+		lines = append(lines, indent+line)
+	}
+	if traceID != "" && target != "" {
+		hint := out.String(fmt.Sprintf("full: dagger cloud logs %s %s", traceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		lines = append(lines, indent+hint)
+	}
+	return lines
 }
 
 func hasFailingDescendantCase(node *dagui.TestNode) bool {
