@@ -772,6 +772,12 @@ class Binding(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
+    def as_schema(self) -> "Schema":
+        """Retrieve the binding value, as type Schema"""
+        _args: list[Arg] = []
+        _ctx = self._select("asSchema", _args)
+        return Schema(_ctx)
+
     def as_search_result(self) -> "SearchResult":
         """Retrieve the binding value, as type SearchResult"""
         _args: list[Arg] = []
@@ -7280,6 +7286,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withModuleSourceOutput", _args)
+        return Env(_ctx)
+
+    def with_schema_input(
+        self,
+        name: str,
+        value: "Schema",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Schema in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Schema value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSchemaInput", _args)
+        return Env(_ctx)
+
+    def with_schema_output(self, name: str, description: str) -> Self:
+        """Declare a desired Schema output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSchemaOutput", _args)
         return Env(_ctx)
 
     def with_search_result_input(
@@ -13815,6 +13863,20 @@ class Query(Root):
         _ctx = self._select("node", _args)
         return _NodeClient(_ctx)
 
+    def schema(self, json: JSON) -> "Schema":
+        """Load a GraphQL introspection schema for merging.
+
+        Parameters
+        ----------
+        json:
+            The introspection schema JSON to load.
+        """
+        _args = [
+            Arg("json", json),
+        ]
+        _ctx = self._select("schema", _args)
+        return Schema(_ctx)
+
     def secret(
         self,
         uri: str,
@@ -14121,6 +14183,91 @@ class ScalarTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
+
+
+@typecheck
+class Schema(Type):
+    """A GraphQL introspection schema that can be inspected and merged."""
+
+    async def contents(self) -> JSON:
+        """Serialize the schema back to introspection JSON.
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contents", _args)
+        return await _ctx.execute(JSON)
+
+    async def id(self) -> str:
+        """A unique identifier for this Schema.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def merge(
+        self,
+        module_types: JSON,
+        module_name: str,
+    ) -> Self:
+        """Merge a module's introspection-shaped type definitions into the
+        schema, returning the combined schema.
+
+        Parameters
+        ----------
+        module_types:
+            Introspection JSON describing the types the module defines.
+            Object, interface and enum types are appended to the schema, and a
+            constructor field for the module is added to the Query type.
+        module_name:
+            The name of the module whose types are being merged. Used to stamp
+            the @sourceModuleName directive and to derive the module's
+            constructor field.
+        """
+        _args = [
+            Arg("moduleTypes", module_types),
+            Arg("moduleName", module_name),
+        ]
+        _ctx = self._select("merge", _args)
+        return Schema(_ctx)
+
+    def with_(self, cb: Callable[["Schema"], "Schema"]) -> "Schema":
+        """Call the provided callable with current Schema.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -16800,6 +16947,7 @@ __all__ = [
     "ReturnType",
     "SDKConfig",
     "ScalarTypeDef",
+    "Schema",
     "SearchResult",
     "SearchSubmatch",
     "Secret",

@@ -236,6 +236,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type Schema
+     */
+    public function asSchema(): Schema
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSchema');
+        return new \Dagger\Schema($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type SearchResult
      */
     public function asSearchResult(): SearchResult
