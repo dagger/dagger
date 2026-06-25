@@ -1819,6 +1819,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 
 	if fe.finalRender {
 		// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
+		pol := fe.renderPolicy()
 		zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
 			fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
 
@@ -1835,10 +1836,27 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			ctx.Line("") // separate the header from its content
 		}
 
+		if pol.showRootCause {
+			// XXX: we always render the root cause for now, even when the same
+			// failing span also shows up under a test below (the cause often
+			// lives in a test, which already prints it -- so this can repeat the
+			// test's logs). This is where a dedupe conditional would go, e.g.
+			// skip an origin already covered by a rendered test. Compare both
+			// cases on the litmus trace (a0d14706d2b326f778989c181585e9df):
+			//   with root cause (current):
+			//     dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
+			//   without it (tests carry the cause):
+			//     DAGGER_TRACE_RENDER=root dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
+			if rcLines := fe.renderRootCauseSection(ctx, r); len(rcLines) > 0 {
+				ctx.Lines(rcLines...)
+				ctx.Line("")
+			}
+		}
+
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
 
-		if zoomed {
+		if zoomed && pol.showOwnDescendantLogs {
 			// Surface the scoped span's own rolled-up failure logs, the same
 			// error-anchored window and 'dagger cloud logs' hint the summary uses.
 			logOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
@@ -1846,11 +1864,20 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 				ctx.Line("")
 				ctx.Lines(logLines...)
 			}
-		} else if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
-			if len(progressLines) > 0 {
+		} else if zoomed && pol.showSubtests {
+			// Zoomed to a check: show the tests beneath it (with their logs)
+			// instead of the check's own rolled-up descendant log dump.
+			if testLines := fe.renderZoomedCheckTests(ctx, fe.rowsView.Zoomed); len(testLines) > 0 {
 				ctx.Line("")
+				ctx.Lines(testLines...)
 			}
-			ctx.Lines(testLines...)
+		} else if !zoomed && pol.showSubtests {
+			if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
+				if len(progressLines) > 0 {
+					ctx.Line("")
+				}
+				ctx.Lines(testLines...)
+			}
 		}
 		return
 	}
@@ -1949,6 +1976,38 @@ func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) [
 	return errorWindowLines(out, rawLines, indent, fe.traceID, cloudLogsTarget(span))
 }
 
+// renderZoomedCheckTests renders the tests beneath a zoomed check as inline
+// summaries -- the same way they appear under the check in the unscoped report.
+// When zoomed to a check the check is rendered as the (headerized) zoom root, so
+// the normal renderInlineTests path doesn't fire; this surfaces them explicitly.
+func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.Span) []string {
+	if span == nil || span.CheckName == "" {
+		return nil
+	}
+	view := fe.db.TestViewForSpan(span)
+	if !view.HasTests() {
+		return nil
+	}
+	tv := &TestView{
+		Profile:         fe.profile,
+		Logs:            fe.logs.Logs,
+		SummaryIndent:   2,
+		SummaryLogLines: -1,
+		TraceID:         fe.traceID,
+	}
+	width := ctx.Width
+	if width <= 0 {
+		width = finalRenderTestsWidth
+	}
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
+	lines := tv.renderTestSummaryLines(out, view, max(width, finalRenderTestsWidth), finalTestViewHeight(tv))
+	if len(lines) == 0 {
+		return nil
+	}
+	fe.claims.claimTestReport(span, view)
+	return lines
+}
+
 // renderLogsLines returns the zoomed span's log output as lines.
 func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 	logs := fe.logs.Logs[fe.ZoomedSpan]
@@ -2023,6 +2082,15 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					// requestLogs rolls up a failed leaf test's descendants (its real
 					// output lives in a sub-operation it ran, not the test span itself).
 					fe.requestLogs(node.Span.ID)
+				}
+			}
+		}
+		// Eagerly fetch logs for the zoom target's root-cause origins so the
+		// ROOT CAUSE section has its detail in the single final render.
+		if fe.renderPolicy().showRootCause {
+			if zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]; zoomSpan != nil {
+				for _, origin := range fe.checkRootCauses(zoomSpan) {
+					fe.requestLogs(origin.ID)
 				}
 			}
 		}
@@ -3703,6 +3771,83 @@ func (fe *frontendPretty) renderProgressSpanRow(ctx tuist.Context, out TermOutpu
 	}
 	fe.renderStepTitle(ctx, out, r, syntheticRow, prefix, statusHost, false, false)
 	fmt.Fprintln(out)
+}
+
+// checkRootCauses returns the failing origin span(s) for a zoom target -- the
+// span-derived equivalent of the summary's "root cause". It prefers the
+// ErrorOrigins already propagated onto the span via causal links, and otherwise
+// walks the subtree for failed leaves (a failed span with no failed child).
+func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
+	var origins []*dagui.Span
+	seen := map[dagui.SpanID]bool{}
+	add := func(s *dagui.Span) {
+		if s == nil || seen[s.ID] {
+			return
+		}
+		seen[s.ID] = true
+		origins = append(origins, s)
+	}
+	for _, o := range root.ErrorOrigins.Order {
+		add(o)
+	}
+	if len(origins) > 0 {
+		return origins
+	}
+	var walk func(s *dagui.Span)
+	walk = func(s *dagui.Span) {
+		if s.IsFailed() {
+			for _, o := range s.ErrorOrigins.Order {
+				add(o)
+			}
+			failedChild := false
+			for _, c := range s.ChildSpans.Order {
+				if c.IsFailedOrCausedFailure() {
+					failedChild = true
+				}
+			}
+			if !failedChild && len(s.ErrorOrigins.Order) == 0 {
+				add(s)
+			}
+		}
+		for _, c := range s.ChildSpans.Order {
+			walk(c)
+		}
+	}
+	walk(root)
+	return origins
+}
+
+// renderRootCauseSection renders the zoom target's root-cause origin span(s)
+// with the same `› parent context › failed span` breadcrumb, logs, and error
+// the live tree uses. It reuses renderErrorCause, whose logs.View() preserves
+// the user program's own ANSI colour (UI chrome is handled by the agent/ASCII
+// profile elsewhere -- we must not strip the user's output here).
+func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer) []string {
+	zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]
+	if zoomSpan == nil {
+		return nil
+	}
+	origins := fe.checkRootCauses(zoomSpan)
+	if len(origins) == 0 {
+		return nil
+	}
+	zoomRow := &dagui.TraceRow{Span: zoomSpan, Expanded: true}
+	buf := new(strings.Builder)
+	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	rendered := false
+	for _, origin := range origins {
+		if !origin.Received {
+			// Incremental --full may not have loaded the origin span (or its
+			// logs) yet; skip rather than render an empty stub.
+			continue
+		}
+		fe.renderErrorCause(ctx, out, r, zoomRow, "", origin, fe)
+		rendered = true
+	}
+	if !rendered {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
 func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span, statusHost statusIconHost) {
