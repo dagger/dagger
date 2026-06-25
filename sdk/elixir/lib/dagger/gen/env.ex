@@ -1326,6 +1326,41 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type TOMLValue in the environment
+  """
+  @spec with_toml_value_input(t(), String.t(), Dagger.TOMLValue.t(), String.t()) :: Dagger.Env.t()
+  def with_toml_value_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withTOMLValueInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired TOMLValue output to be assigned in the environment
+  """
+  @spec with_toml_value_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_toml_value_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withTOMLValueOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type UpGroup in the environment
   """
   @spec with_up_group_input(t(), String.t(), Dagger.UpGroup.t(), String.t()) :: Dagger.Env.t()

@@ -299,6 +299,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type TOMLValue
+     */
+    public function asTOMLValue(): TOMLValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asTOMLValue');
+        return new \Dagger\TOMLValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Up
      */
     public function asUp(): Up

@@ -250,6 +250,12 @@ func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	return client.SourceMap(filename, line, column)
 }
 
+// Initialize a TOML value
+func TOML() *dagger.TOMLValue {
+	client := initClient()
+	return client.TOML()
+}
+
 // Create a new TypeDef.
 func TypeDef() *dagger.TypeDef {
 	client := initClient()

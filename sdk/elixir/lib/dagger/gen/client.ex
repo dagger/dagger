@@ -602,6 +602,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Initialize a TOML value
+  """
+  @spec toml(t()) :: Dagger.TOMLValue.t()
+  def toml(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("toml")
+
+    %Dagger.TOMLValue{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new TypeDef.
   """
   @spec type_def(t()) :: Dagger.TypeDef.t()

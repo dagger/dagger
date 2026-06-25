@@ -2426,6 +2426,11 @@ export type ServiceUpOpts = {
   random?: boolean
 }
 
+/**
+ * An arbitrary TOML-encoded value.
+ */
+export type TOML = string & { __TOML: never }
+
 export type TypeDefWithEnumOpts = {
   /**
    * A doc string for the enum, if any
@@ -3320,6 +3325,14 @@ export class Binding extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Retrieve the binding value, as type TOMLValue
+   */
+  asTOMLValue = (): TOMLValue => {
+    const ctx = this._ctx.select("asTOMLValue")
+    return new TOMLValue(ctx)
   }
 
   /**
@@ -8165,6 +8178,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type TOMLValue in the environment
+   * @param name The name of the binding
+   * @param value The TOMLValue value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withTOMLValueInput = (
+    name: string,
+    value: TOMLValue,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withTOMLValueInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired TOMLValue output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withTOMLValueOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withTOMLValueOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type UpGroup in the environment
    * @param name The name of the binding
    * @param value The UpGroup value to assign to the binding
@@ -8998,6 +9040,14 @@ export class File extends BaseClient {
   asJSON = (): JSONValue => {
     const ctx = this._ctx.select("asJSON")
     return new JSONValue(ctx)
+  }
+
+  /**
+   * Parse the file contents as TOML.
+   */
+  asTOML = (): TOMLValue => {
+    const ctx = this._ctx.select("asTOML")
+    return new TOMLValue(ctx)
   }
 
   /**
@@ -13394,6 +13444,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize a TOML value
+   */
+  toml = (): TOMLValue => {
+    const ctx = this._ctx.select("toml")
+    return new TOMLValue(ctx)
+  }
+
+  /**
    * Create a new TypeDef.
    */
   typeDef = (): TypeDef => {
@@ -14369,6 +14427,201 @@ export class _SyncerClient extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return new _SyncerClient(ctx.copy().selectNode(response, "Syncer"))
+  }
+}
+
+export class TOMLValue extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _asBoolean?: boolean = undefined
+  private readonly _asInteger?: number = undefined
+  private readonly _asString?: string = undefined
+  private readonly _contents?: TOML = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _asBoolean?: boolean,
+    _asInteger?: number,
+    _asString?: string,
+    _contents?: TOML,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._asBoolean = _asBoolean
+    this._asInteger = _asInteger
+    this._asString = _asString
+    this._contents = _contents
+  }
+
+  /**
+   * A unique identifier for this TOMLValue.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode an array from TOML
+   */
+  asArray = async (): Promise<TOMLValue[]> => {
+    type asArray = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("asArray").select("id")
+
+    const response: Awaited<asArray[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new TOMLValue(ctx.copy().selectNode(r.id, "TOMLValue")),
+    )
+  }
+
+  /**
+   * Decode a boolean from TOML
+   */
+  asBoolean = async (): Promise<boolean> => {
+    if (this._asBoolean) {
+      return this._asBoolean
+    }
+
+    const ctx = this._ctx.select("asBoolean")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode an integer from TOML
+   */
+  asInteger = async (): Promise<number> => {
+    if (this._asInteger) {
+      return this._asInteger
+    }
+
+    const ctx = this._ctx.select("asInteger")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode a string from TOML
+   */
+  asString = async (): Promise<string> => {
+    if (this._asString) {
+      return this._asString
+    }
+
+    const ctx = this._ctx.select("asString")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the value encoded as TOML
+   */
+  contents = async (): Promise<TOML> => {
+    if (this._contents) {
+      return this._contents
+    }
+
+    const ctx = this._ctx.select("contents")
+
+    const response: Awaited<TOML> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Lookup the field at the given path, and return its value.
+   * @param path Path of the field to lookup, encoded as an array of field names
+   */
+  field = (path: string[]): TOMLValue => {
+    const ctx = this._ctx.select("field", { path })
+    return new TOMLValue(ctx)
+  }
+
+  /**
+   * List fields of the encoded table
+   */
+  fields = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("fields")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Encode a boolean to TOML
+   * @param value New boolean value
+   */
+  newBoolean = (value: boolean): TOMLValue => {
+    const ctx = this._ctx.select("newBoolean", { value })
+    return new TOMLValue(ctx)
+  }
+
+  /**
+   * Encode an integer to TOML
+   * @param value New integer value
+   */
+  newInteger = (value: number): TOMLValue => {
+    const ctx = this._ctx.select("newInteger", { value })
+    return new TOMLValue(ctx)
+  }
+
+  /**
+   * Encode a string to TOML
+   * @param value New string value
+   */
+  newString = (value: string): TOMLValue => {
+    const ctx = this._ctx.select("newString", { value })
+    return new TOMLValue(ctx)
+  }
+
+  /**
+   * Return a new TOML value, decoded from the given content
+   * @param contents New TOML-encoded contents
+   */
+  withContents = (contents: TOML): TOMLValue => {
+    const ctx = this._ctx.select("withContents", { contents })
+    return new TOMLValue(ctx)
+  }
+
+  /**
+   * Set a new field at the given path, preserving the existing formatting
+   * @param path Path of the field to set, encoded as an array of field names
+   * @param value The new value of the field
+   */
+  withField = (path: string[], value: TOMLValue): TOMLValue => {
+    const ctx = this._ctx.select("withField", { path, value })
+    return new TOMLValue(ctx)
+  }
+
+  /**
+   * Call the provided function with current TOMLValue.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: TOMLValue) => TOMLValue) => {
+    return arg(this)
   }
 }
 

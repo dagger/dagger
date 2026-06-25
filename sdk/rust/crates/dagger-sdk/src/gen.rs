@@ -69,6 +69,23 @@ impl Platform {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct Toml(pub String);
+impl From<&str> for Toml {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for Toml {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl Toml {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Void(pub String);
 impl From<&str> for Void {
     fn from(value: &str) -> Self {
@@ -773,6 +790,15 @@ impl Binding {
     pub async fn as_string(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Retrieve the binding value, as type TOMLValue
+    pub fn as_toml_value(&self) -> TomlValue {
+        let query = self.selection.select("asTOMLValue");
+        TomlValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Retrieve the binding value, as type Up
     pub fn as_up(&self) -> Up {
@@ -8325,6 +8351,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type TOMLValue in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The TOMLValue value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_toml_value_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withTOMLValueInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired TOMLValue output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_toml_value_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withTOMLValueOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type UpGroup in the environment
     ///
     /// # Arguments
@@ -9346,6 +9421,15 @@ impl File {
     pub fn as_json(&self) -> JsonValue {
         let query = self.selection.select("asJSON");
         JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Parse the file contents as TOML.
+    pub fn as_toml(&self) -> TomlValue {
+        let query = self.selection.select("asTOML");
+        TomlValue {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -14343,6 +14427,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Initialize a TOML value
+    pub fn toml(&self) -> TomlValue {
+        let query = self.selection.select("toml");
+        TomlValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create a new TypeDef.
     pub fn type_def(&self) -> TypeDef {
         let query = self.selection.select("typeDef");
@@ -15154,6 +15247,189 @@ impl Stat {
     }
 }
 impl Node for Stat {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct TomlValue {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for TomlValue {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for TomlValue {
+    fn graphql_type() -> &'static str {
+        "TOMLValue"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl TomlValue {
+    /// Decode an array from TOML
+    pub async fn as_array(&self) -> Result<Vec<TomlValue>, DaggerError> {
+        let query = self.selection.select("asArray");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| TomlValue {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TOMLValue"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Decode a boolean from TOML
+    pub async fn as_boolean(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("asBoolean");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Decode an integer from TOML
+    pub async fn as_integer(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("asInteger");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Decode a string from TOML
+    pub async fn as_string(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("asString");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return the value encoded as TOML
+    pub async fn contents(&self) -> Result<Toml, DaggerError> {
+        let query = self.selection.select("contents");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Lookup the field at the given path, and return its value.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path of the field to lookup, encoded as an array of field names
+    pub fn field(&self, path: Vec<impl Into<String>>) -> TomlValue {
+        let mut query = self.selection.select("field");
+        query = query.arg(
+            "path",
+            path.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        TomlValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// List fields of the encoded table
+    pub async fn fields(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("fields");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this TOMLValue.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Encode a boolean to TOML
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - New boolean value
+    pub fn new_boolean(&self, value: bool) -> TomlValue {
+        let mut query = self.selection.select("newBoolean");
+        query = query.arg("value", value);
+        TomlValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Encode an integer to TOML
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - New integer value
+    pub fn new_integer(&self, value: isize) -> TomlValue {
+        let mut query = self.selection.select("newInteger");
+        query = query.arg("value", value);
+        TomlValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Encode a string to TOML
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - New string value
+    pub fn new_string(&self, value: impl Into<String>) -> TomlValue {
+        let mut query = self.selection.select("newString");
+        query = query.arg("value", value.into());
+        TomlValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return a new TOML value, decoded from the given content
+    ///
+    /// # Arguments
+    ///
+    /// * `contents` - New TOML-encoded contents
+    pub fn with_contents(&self, contents: Toml) -> TomlValue {
+        let mut query = self.selection.select("withContents");
+        query = query.arg("contents", contents);
+        TomlValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set a new field at the given path, preserving the existing formatting
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path of the field to set, encoded as an array of field names
+    /// * `value` - The new value of the field
+    pub fn with_field(&self, path: Vec<impl Into<String>>, value: impl IntoID<Id>) -> TomlValue {
+        let mut query = self.selection.select("withField");
+        query = query.arg(
+            "path",
+            path.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        TomlValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for TomlValue {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
