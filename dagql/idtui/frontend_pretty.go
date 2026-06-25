@@ -1853,13 +1853,21 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			}
 		}
 
-		progressLines := fe.renderProgressLines(r, ctx, 0)
-		if !zoomed && len(progressLines) > 0 && fe.db.HasChecks() {
-			// At the root the progress rows are the checks; head them with a
-			// CHECKS heading and a pass/fail breakdown, mirroring TESTS.
-			ctx.Lines(fe.renderChecksHeader()...)
+		// At the root, render the checks reveal-independently: a CHECKS heading
+		// with the pass/fail breakdown, then every surfaced check nested under
+		// its parent (renderChecksSection). This replaces the reveal-based
+		// progress rows, which miss checks nested under another check and drop
+		// passing ones. Fall back to the progress tree when there are no surfaced
+		// checks (e.g. a plain trace, or one whose only checks are test fixtures).
+		var renderedRows bool
+		if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
+			ctx.Lines(checkLines...)
+			renderedRows = true
+		} else {
+			progressLines := fe.renderProgressLines(r, ctx, 0)
+			ctx.Lines(progressLines...)
+			renderedRows = len(progressLines) > 0
 		}
-		ctx.Lines(progressLines...)
 
 		if zoomed && pol.showOwnDescendantLogs {
 			// Surface the scoped span's own rolled-up failure logs, the same
@@ -1878,7 +1886,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			}
 		} else if !zoomed && pol.showSubtests {
 			if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
-				if len(progressLines) > 0 {
+				if renderedRows {
 					ctx.Line("")
 				}
 				ctx.Lines(testLines...)
@@ -2149,39 +2157,24 @@ func (fe *frontendPretty) checkBreakdownParts(out TermOutput) []string {
 	return parts
 }
 
-// checkStatusCounts tallies distinct checks (by name) into failed vs passed.
-// A check counts as failed if any of its spans failed (directly or via a failed
-// link), matching the report's failure semantics. NB: with incremental --full
-// loading the passed tally only covers checks already fetched.
+// checkStatusCounts tallies the surfaced checks into failed vs passed, so the
+// CHECKS heading agrees with the rendered list -- both honor boundaries, so
+// checks a test intentionally runs aren't counted. A check counts as failed if
+// any of its spans failed (directly or via a failed link). NB: with incremental
+// --full loading the passed tally only covers checks already fetched.
 func (fe *frontendPretty) checkStatusCounts() (failed, passed int) {
-	const (
-		rankPass = 1
-		rankFail = 2
-	)
-	rank := map[string]int{}
-	for span := range fe.db.Spans.Iter() {
-		if span.CheckName == "" {
-			continue
-		}
-		// A check that didn't fail counts as passed: a passing check's own span
-		// is often STATUS_CODE_UNSET (success is conveyed by effects/links, not
-		// the span status), so don't require an explicit Ok.
-		r := rankPass
-		if span.IsFailedOrCausedFailure() {
-			r = rankFail
-		}
-		if cur, ok := rank[span.CheckName]; !ok || r > cur {
-			rank[span.CheckName] = r
+	var walk func(ns []*dagui.CheckNode)
+	walk = func(ns []*dagui.CheckNode) {
+		for _, n := range ns {
+			if n.Failed {
+				failed++
+			} else {
+				passed++
+			}
+			walk(n.Children)
 		}
 	}
-	for _, r := range rank {
-		switch r {
-		case rankFail:
-			failed++
-		case rankPass:
-			passed++
-		}
-	}
+	walk(fe.db.SurfacedChecks())
 	return failed, passed
 }
 
@@ -2271,6 +2264,15 @@ func (fe *frontendPretty) recalculateViewLocked() {
 				}
 			}
 		}
+		// Eagerly fetch logs for surfaced failed checks' root causes so the
+		// reveal-independent CHECKS section's inline failure detail is ready.
+		// These aren't all tree rows -- a check nested under another check is
+		// collapsed -- so the failed-row loop above misses them.
+		eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
+			for _, origin := range fe.checkRootCauses(n.Span) {
+				fe.requestLogs(origin.ID)
+			}
+		})
 	}
 
 	if len(fe.rows.Order) == 0 {
