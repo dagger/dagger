@@ -283,6 +283,7 @@ func (c *Client) StreamSpansWith(
 		if err := json.Unmarshal(data, &resp); err != nil {
 			return fmt.Errorf("unmarshal span updates: %w", err)
 		}
+		c.stats.addRecords("GetSpanUpdates", len(resp.Data.SpansUpdated))
 		handler(resp.Data.SpansUpdated)
 		return nil
 	}
@@ -344,6 +345,7 @@ func (c *Client) StreamLogs(
 		if len(logs) == 0 {
 			return nil
 		}
+		c.stats.addRecords("GetSpanLogs", len(logs))
 		handler(logs)
 		return nil
 	})
@@ -357,6 +359,8 @@ func (c *Client) streamGraphQL(ctx context.Context, gqlReq *graphqlRequest, cb f
 	if err != nil {
 		return fmt.Errorf("marshal graphql request: %w", err)
 	}
+
+	c.stats.addRequest(gqlReq.OpName)
 
 	endpoint := c.u.JoinPath("/query").String()
 	slog.Debug("connecting to cloud GraphQL SSE", "url", endpoint, "op", gqlReq.OpName)
@@ -404,6 +408,7 @@ func (c *Client) streamGraphQL(ctx context.Context, gqlReq *graphqlRequest, cb f
 			if len(event.Data) == 0 {
 				continue
 			}
+			c.stats.addEvent(gqlReq.OpName, len(event.Data))
 			// A subscription can deliver GraphQL errors (e.g. a validation error)
 			// in-band as a 200 "next" event with a top-level "errors" array and
 			// null data. Surface them instead of silently yielding no results.

@@ -78,7 +78,8 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+	var client *cloud.Client
+	runErr := Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cloudAuth, err := auth.GetCloudAuth(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cloud auth: %w", err)
@@ -87,7 +88,7 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 			return nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
 		}
 
-		client, err := cloud.NewClient(ctx, cloudAuth)
+		client, err = cloud.NewClient(ctx, cloudAuth)
 		if err != nil {
 			return nil, fmt.Errorf("cloud client: %w", err)
 		}
@@ -233,6 +234,13 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 
 		return noop, nil
 	})
+
+	// With --debug, report how much data the run pulled from Cloud so expensive
+	// fetches are visible.
+	if opts.Debug && client != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), client.StatsSummary())
+	}
+	return runErr
 }
 
 // traceLoader fetches a trace's spans incrementally from Dagger Cloud, mirroring
