@@ -65,6 +65,23 @@ func generateCode(
 	// internal/dagger/dagger.gen.go.
 	depNames := schema.DependencyNames()
 
+	// The self-call flow merges the current module's own types into the schema,
+	// where they carry a @sourceMap for this module and so appear in
+	// DependencyNames. Those types belong in the main generated file
+	// (unprefixed), not in a prefixed per-dependency file, so drop the current
+	// module here. In non-self-call generation the current module is absent from
+	// DependencyNames, making this a no-op.
+	if cfg.ModuleConfig != nil && cfg.ModuleConfig.ModuleName != "" {
+		self := strcase.ToCamel(cfg.ModuleConfig.ModuleName)
+		kept := depNames[:0]
+		for _, n := range depNames {
+			if strcase.ToCamel(n) != self {
+				kept = append(kept, n)
+			}
+		}
+		depNames = kept
+	}
+
 	// When there are dependencies, generate the core schema (excluding all
 	// deps) into the main dagger.gen.go, then generate each dependency into
 	// its own file.

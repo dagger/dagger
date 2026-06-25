@@ -433,15 +433,24 @@ type ModuleConfigView struct {
 
 type ModuleCodegenConfig struct {
 	// Whether to automatically generate a .gitignore file for this module.
+	//
+	// When explicitly false, the module commits its generated files rather
+	// than ignoring them, and the Go SDK trusts those committed files at
+	// runtime: it skips the runtime codegen pass and builds straight from
+	// the committed dagger.gen.go + internal/dagger. Codegen still runs at
+	// module init / develop / generate time. Other SDKs only use this field
+	// to decide whether to write the .gitignore.
+	//
+	// Default (nil or true): write the .gitignore and run codegen at runtime
+	// (legacy behavior).
 	AutomaticGitignore *bool `json:"automaticGitignore,omitempty" toml:"automaticGitignore,omitempty"`
 }
 
 func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
-	if cfg.AutomaticGitignore == nil {
-		return &cfg
+	if cfg.AutomaticGitignore != nil {
+		clone := *cfg.AutomaticGitignore
+		cfg.AutomaticGitignore = &clone
 	}
-	clone := *cfg.AutomaticGitignore
-	cfg.AutomaticGitignore = &clone
 	return &cfg
 }
 

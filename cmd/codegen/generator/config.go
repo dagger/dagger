@@ -66,6 +66,11 @@ type ModuleGeneratorConfig struct {
 
 	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
 	LibVersion string
+
+	// SelfCalls indicates the module has the self-calls experimental
+	// feature enabled. When true, generate-module merges the module's
+	// own types into the introspection schema before generating bindings.
+	SelfCalls bool
 }
 
 type ModuleSourceDependency struct {

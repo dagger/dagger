@@ -3,6 +3,7 @@ package gogenerator
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,6 +15,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
@@ -112,6 +114,36 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	// respect existing package name
 	pkgInfo.PackageName = pkg.Name
+
+	// When self-calls is enabled, emit the module's own types as introspection
+	// JSON and merge them into the deps schema via schemaTools.  This is
+	// idempotent: the engine currently still self-appends, so the merge hits
+	// moduleAlreadyMerged and is a no-op.  Behavior changes in the next patch
+	// when the engine-side self-append is removed.
+	if g.Config.ModuleConfig.SelfCalls && g.Config.Dag != nil {
+		emitter := templates.NewModuleIntrospectionEmitter(ctx, schema, schemaVersion, g.Config, pkg, fset)
+		moduleTypesJSON, err := emitter.ModuleIntrospectionJSON(g.Config.ModuleConfig.ModuleName)
+		if err != nil {
+			return nil, fmt.Errorf("emit module types for self-call merge: %w", err)
+		}
+		// NOTE: relies on IntrospectionJSON being populated, which holds because
+		// the engine's codegen path always passes --introspection-json-path.
+		// --self-calls is only set on that same path.
+		merged, err := g.Config.Dag.
+			Schema(dagger.JSON(g.Config.IntrospectionJSON)).
+			Merge(dagger.JSON(moduleTypesJSON), g.Config.ModuleConfig.ModuleName).
+			Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("merge module types into schema: %w", err)
+		}
+		var resp introspection.Response
+		if err := json.Unmarshal([]byte(merged), &resp); err != nil {
+			return nil, fmt.Errorf("unmarshal merged introspection JSON: %w", err)
+		}
+		schema = resp.Schema
+		generator.SetSchemaParents(schema)
+		generator.SetSchema(schema)
+	}
 
 	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, pkg, fset, 1); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
