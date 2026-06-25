@@ -59,7 +59,7 @@ func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*M
 func (ms *mockServer) CurrentModule(_ context.Context) (dagql.ObjectResult[*Module], error) {
 	var zero dagql.ObjectResult[*Module]
 	if ms.moduleSource == nil {
-		return zero, nil
+		return zero, ErrNoCurrentModule
 	}
 	// This helper only builds test-only module results. Keep using
 	// context.Background here: passing the caller ctx would not change
