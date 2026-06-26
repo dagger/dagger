@@ -14,6 +14,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/charmbracelet/huh"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
@@ -64,8 +65,9 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		// confirm form). The migrate write lands here; the session is closed
 		// before the install session opens so the workspace lock is released.
 		var (
-			recs    []recommendation
-			install bool
+			recs     []recommendation
+			install  bool
+			migrated bool
 		)
 		if err := func() error {
 			sess, closeSess, err := connect(ctx)
@@ -74,7 +76,8 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			}
 			defer closeSess()
 			dag := sess.Dagger()
-			if err := setupStepMigrate(ctx, cmd, dag); err != nil {
+			migrated, err = setupStepMigrate(ctx, cmd, dag)
+			if err != nil {
 				return fmt.Errorf("step 2 (migrate): %w", err)
 			}
 			recs, install, err = planRecommend(ctx, cmd, dag)
@@ -86,16 +89,28 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 
-		// Session 2: install in a fresh session, which re-detects the workspace
-		// migrated in session 1 as native.
-		if install && len(recs) > 0 {
+		// Session 2: a fresh session re-detects the workspace migrated in
+		// session 1 as native. Resolve any SDK that migration recorded by short
+		// name to its real ref (sdks.json), then install accepted recommendations.
+		needInstall := install && len(recs) > 0
+		if migrated || needInstall {
 			sess, closeSess, err := connect(ctx)
 			if err != nil {
 				return err
 			}
 			defer closeSess()
-			if err := installRecommended(ctx, cmd, sess.Dagger(), recs); err != nil {
-				return fmt.Errorf("step 3 (install): %w", err)
+			dag := sess.Dagger()
+			// Only a migration writes SDK installs by short name, so scope the
+			// resolution to that case — never rewrite an already-native config.
+			if migrated {
+				if err := setupResolveMigratedSDKs(ctx, cmd, dag); err != nil {
+					return fmt.Errorf("step 2 (resolve SDKs): %w", err)
+				}
+			}
+			if needInstall {
+				if err := installRecommended(ctx, cmd, dag, recs); err != nil {
+					return fmt.Errorf("step 3 (install): %w", err)
+				}
 			}
 		}
 
@@ -131,7 +146,9 @@ func setupStepLogin(cmd *cobra.Command) error {
 
 // --- Step 2: Migrate ---
 
-func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) error {
+// setupStepMigrate reports whether a migration was needed (and thus a fresh
+// session should resolve SDKs migration may have recorded by short name).
+func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (bool, error) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "\nStep 2: Workspace migration")
 
@@ -141,27 +158,60 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 
 	changesID, err := changes.ID(ctx)
 	if err != nil {
-		return fmt.Errorf("compute migration: %w", err)
+		return false, fmt.Errorf("compute migration: %w", err)
 	}
 	changes = dagger.Ref[*dagger.Changeset](dag, changesID)
 
 	isEmpty, err := changes.IsEmpty(ctx)
 	if err != nil {
-		return fmt.Errorf("check migration: %w", err)
+		return false, fmt.Errorf("check migration: %w", err)
 	}
 	if isEmpty {
 		fmt.Fprintln(out, "  No migration needed.")
-		return nil
+		return false, nil
 	}
 
 	exportPath, err := currentWorkspaceExportPath(ctx, ws)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// handleChangesetResponseAt owns the apply prompt via a huh form when
 	// autoApply is false — we don't run our own confirm() here, otherwise
 	// the user would face two prompts back-to-back for the same action.
-	return handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath)
+	if err := handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// setupResolveMigratedSDKs rewrites SDK installs that migration recorded by bare
+// short name (e.g. `php`) to their real ref and canonical name from sdks.json,
+// so the SDK is loadable for authoring (`dagger module init <sdk>`) instead of
+// being treated as a local path. Runs in a post-migration session where the
+// workspace is native; a no-op when nothing was recorded by short name (and
+// when the user declined migration, leaving the legacy config in place).
+func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) error {
+	ws := dag.CurrentWorkspace()
+	raw, err := ws.ConfigRead(ctx)
+	if err != nil {
+		return err
+	}
+	cfg, err := workspace.ParseConfig([]byte(raw))
+	if err != nil {
+		return err
+	}
+
+	out := cmd.OutOrStdout()
+	for _, fix := range planMigratedSDKFixups(cfg) {
+		if _, err := ws.ConfigWrite(ctx, "modules."+fix.ModuleName+".source", fix.Ref); err != nil {
+			return fmt.Errorf("set %s SDK source: %w", fix.SDKName, err)
+		}
+		if _, err := ws.ConfigWrite(ctx, "modules."+fix.ModuleName+".as-sdk.name", fix.SDKName); err != nil {
+			return fmt.Errorf("set %s SDK name: %w", fix.SDKName, err)
+		}
+		fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
+	}
+	return nil
 }
 
 // --- Step 3: Recommend modules ---

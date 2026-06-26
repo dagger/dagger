@@ -19,6 +19,11 @@ const (
 // Builtins lists every SDK runtime short name bundled in the engine.
 var Builtins = []string{Go, Dang, Python, Typescript, PHP, Elixir, Java}
 
+// InstallNamePrefix is prepended to the workspace install name of a known SDK
+// (e.g. "go" -> "dagger-go-sdk") to reduce the chance of colliding with an
+// unrelated module. The SDK's source ref and as-sdk name are unaffected.
+const InstallNamePrefix = "dagger-"
+
 // IsBuiltin reports whether name (without any "@version" suffix) is a builtin
 // SDK runtime short name.
 func IsBuiltin(name string) bool {

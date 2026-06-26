@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 )
@@ -62,8 +63,9 @@ func sdkResolve(input string) (string, error) {
 
 // sdkResolveInstall maps an SDK install value to:
 //   - the canonical full ref that should flow downstream to the engine; and
-//   - the registry repo basename to use as the workspace install name when the
-//     user did not pass --name; and
+//   - the workspace install name to use when the user did not pass --name: the
+//     registry repo basename with a "dagger-" prefix (e.g. "dagger-go-sdk"),
+//     reducing the chance of colliding with an unrelated module; and
 //   - the registry's canonical user-facing name to persist as as-sdk.name.
 //
 // Full refs return an empty install name so Workspace.install keeps its normal
@@ -99,7 +101,7 @@ func sdkResolveInstall(input string) (ref string, installName string, asSDKName 
 	case 0:
 		return "", "", "", fmt.Errorf("SDK %q not found in registry; try `dagger sdk search %s` or pass a full ref (e.g., github.com/dagger/go-sdk)", input, input)
 	case 1:
-		return matches[0].Repo, sdkRegistryRepoBase(matches[0].Repo), matches[0].Name, nil
+		return matches[0].Repo, sdkmeta.InstallNamePrefix + sdkRegistryRepoBase(matches[0].Repo), matches[0].Name, nil
 	default:
 		names := make([]string, 0, len(matches))
 		for _, m := range matches {

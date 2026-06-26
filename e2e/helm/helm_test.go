@@ -11,6 +11,7 @@
 //go:test:include ../../core/modules
 //go:test:include ../../core/openrouter
 //go:test:include ../../core/prompts
+//go:test:include ../../core/sdk/sdkmeta
 //go:test:include ../../core/workspace
 //go:test:include ../../dagql
 //go:test:include ../../engine

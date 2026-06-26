@@ -305,7 +305,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.Equal(t, root, plans[0].ProjectRoot)
 		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
 		require.NoError(t, err)
-		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["dagger-go-sdk"].Source)
 		require.Equal(t, []string{
 			"modules/video requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m modules/video ...`.",
 		}, plans[0].Warnings)
@@ -327,7 +327,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.Equal(t, root, plans[0].ProjectRoot)
 		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
 		require.NoError(t, err)
-		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["dagger-go-sdk"].Source)
 		require.Equal(t, []string{
 			"Root module requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m . ...`.",
 		}, plans[0].Warnings)
@@ -352,7 +352,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.Empty(t, plans)
 		cfg, err := workspace.ParseConfig(migrated.WorkspaceConfigData)
 		require.NoError(t, err)
-		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["dagger-go-sdk"].Source)
 		require.Equal(t, []string{
 			"services/api/modules/video requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m services/api/modules/video ...`.",
 		}, workspaceMigrationWarnings(migrated))
@@ -392,7 +392,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
 		require.NoError(t, err)
 		require.Len(t, cfg.Modules, 1)
-		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["dagger-go-sdk"].Source)
 	})
 
 	t.Run("parent SDK module name conflicts get a stable alternate name", func(t *testing.T) {
@@ -402,7 +402,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 }`)
 		migrated := &workspace.MigrationPlan{
 			ProjectRoot: filepath.Join(root, "services", "api"),
-			WorkspaceConfigData: []byte(`[modules.go-sdk]
+			WorkspaceConfigData: []byte(`[modules.dagger-go-sdk]
 source = "github.com/acme/custom-go-sdk"
 `),
 		}
@@ -411,8 +411,8 @@ source = "github.com/acme/custom-go-sdk"
 		require.NoError(t, err)
 		cfg, err := workspace.ParseConfig(migrated.WorkspaceConfigData)
 		require.NoError(t, err)
-		require.Equal(t, "github.com/acme/custom-go-sdk", cfg.Modules["go-sdk"].Source)
-		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk-runtime"].Source)
+		require.Equal(t, "github.com/acme/custom-go-sdk", cfg.Modules["dagger-go-sdk"].Source)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["dagger-go-sdk-runtime"].Source)
 	})
 }
 

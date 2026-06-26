@@ -256,7 +256,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "myapp")
-		goSDK := cfg.Modules["go-sdk"]
+		goSDK := cfg.Modules["dagger-go-sdk"]
 		require.NotNil(t, goSDK.AsSDK)
 		require.Equal(t, []workspacecfg.SDKManagedModule{{Path: ".dagger/modules/myapp"}}, goSDK.AsSDK.Modules)
 
@@ -265,7 +265,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 
 		cfg = readInstalledWorkspaceConfig(t, workdir)
 		require.NotContains(t, cfg.Modules, "myapp")
-		goSDK = cfg.Modules["go-sdk"]
+		goSDK = cfg.Modules["dagger-go-sdk"]
 		require.NotNil(t, goSDK.AsSDK)
 		require.Empty(t, goSDK.AsSDK.Modules)
 
