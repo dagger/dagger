@@ -4184,6 +4184,14 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		if p.Span.ID == row.Span.ID {
 			break
 		}
+		if !p.Span.Received {
+			// An ancestor we never fetched: the error origin is point-fetched by
+			// ID, but its parents aren't, so a synthetic-tree walk can reach an
+			// unreceived placeholder (no name, call, or message). renderStepTitle
+			// would render it blank, leaving a stray "› " breadcrumb segment with
+			// nothing before it. Skip it -- we have no data to show.
+			continue
+		}
 		parentRow := &dagui.TraceRow{
 			Span:     p.Span,
 			Chained:  p.Chained,
