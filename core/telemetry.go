@@ -138,6 +138,7 @@ func AroundFunc(
 	return ctx, func(res dagql.AnyResult, cached bool, err *error) {
 		slog.InfoContext(ctx, "end call",
 			"field", spanName,
+			"cached", cached,
 			"digest", callDigest.String(),
 		)
 
