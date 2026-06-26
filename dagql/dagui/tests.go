@@ -575,6 +575,56 @@ func buildTestView(roots []*TestNode, nodesBySpan map[SpanID]*TestNode) *TestVie
 	return view
 }
 
+// FilterCases returns a deep-cloned view containing only the case nodes for
+// which keep returns true. Suites (real or virtual) left without surviving
+// descendants are pruned, and aggregates/counts are recomputed. When keep
+// accepts every case the result is structurally equivalent to v. Spans are
+// shared (read-only); only the node tree is cloned.
+func (v *TestView) FilterCases(keep func(*TestNode) bool) *TestView {
+	if v == nil {
+		return nil
+	}
+	var cloneNode func(*TestNode) *TestNode
+	cloneNode = func(n *TestNode) *TestNode {
+		if n == nil {
+			return nil
+		}
+		var kids []*TestNode
+		for _, child := range n.Children {
+			if c := cloneNode(child); c != nil {
+				kids = append(kids, c)
+			}
+		}
+		keepSelf := n.Kind == TestNodeCase && keep(n)
+		if !keepSelf && len(kids) == 0 {
+			return nil
+		}
+		clone := *n
+		clone.Parent = nil
+		clone.Children = kids
+		if clone.Kind != TestNodeCase {
+			// Re-derive suite status from the retained cases rather than the
+			// backing span: a suite kept only for its surviving (e.g. passing)
+			// cases must not inherit the failing status contributed by sibling
+			// cases that were filtered out.
+			clone.Kind = TestNodeVirtualSuite
+			clone.Span = nil
+			clone.RepresentativeSpan = nil
+		}
+		for _, child := range kids {
+			child.Parent = &clone
+		}
+		return &clone
+	}
+	var roots []*TestNode
+	for _, root := range v.Roots {
+		if c := cloneNode(root); c != nil {
+			roots = append(roots, c)
+		}
+	}
+	return buildTestView(roots, nil)
+}
+
 func addTestNameIndex(index map[string][]*TestNode, node *TestNode) {
 	if node.FullName != "" {
 		index[node.FullName] = append(index[node.FullName], node)

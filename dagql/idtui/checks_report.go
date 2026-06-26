@@ -56,8 +56,12 @@ func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []
 		)
 
 		// A failed leaf check renders its failure inline; a failed parent check
-		// defers to the failed children that explain it.
-		if node.Failed && !node.HasFailedChild() {
+		// defers to the failed children that explain it. A passing leaf check that
+		// ran tests nests their full rollup, so every test stays attributed to the
+		// check that produced it and the global section is left for tests no check
+		// covers.
+		switch {
+		case node.Failed && !node.HasFailedChild():
 			if fe.checkDefersToTests(node.Span) {
 				// The check's failures are test cases: render them per-test with
 				// rolled-up logs (richer than the check's raw command output).
@@ -74,6 +78,10 @@ func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []
 					}
 					fe.renderCauseDetail(ctx, out, r, origin, depth+1)
 				}
+			}
+		case !node.Failed && len(node.Children) == 0 && fe.checkHasTests(node.Span):
+			for _, line := range fe.renderCheckTests(ctx, node.Span, depth) {
+				fmt.Fprintln(buf, line)
 			}
 		}
 
@@ -132,6 +140,12 @@ func (fe *frontendPretty) renderCheckTests(ctx tuist.Context, span *dagui.Span, 
 // check's own command output.
 func (fe *frontendPretty) checkDefersToTests(span *dagui.Span) bool {
 	return len(failingLeafTestCases(fe.db.TestViewForSpan(span))) > 0
+}
+
+// checkHasTests reports whether a check ran any test cases, so a passing leaf
+// check can nest their rollup and keep its tests attributed to it.
+func (fe *frontendPretty) checkHasTests(span *dagui.Span) bool {
+	return fe.db.TestViewForSpan(span).HasTests()
 }
 
 // eachFailedLeafCheck visits every surfaced check that failed and has no failed

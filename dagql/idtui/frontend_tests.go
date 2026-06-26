@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -1634,11 +1635,11 @@ func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 	if fe.db == nil {
 		return nil
 	}
-	view := fe.db.TestView()
-	if !view.HasTests() || testViewAllReportEntriesUnderChecks(view) {
+	orphan := fe.orphanTestView()
+	if orphan == nil || !orphan.HasTests() {
 		return nil
 	}
-	tv := fe.inlineTestView(dagui.SpanID{})
+	tv := fe.orphanTestsComponent()
 	if tv.SummaryIndent != 0 {
 		tv.SummaryIndent = 0
 		tv.Update()
@@ -1661,21 +1662,23 @@ func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 		width = finalRenderTestsWidth
 	}
 	lines := fe.RenderChildResult(ctx.Resize(max(width, 1), limit), tv).Lines
-	if len(lines) > 0 {
-		fe.claims.claimTestReport(nil, view)
+	if len(lines) == 0 {
+		return nil
 	}
-	return lines
+	warn := fe.orphanWarningLines(orphan)
+	fe.claims.claimTestReport(nil, orphan)
+	return append(warn, lines...)
 }
 
 func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 	if fe.db == nil {
 		return nil
 	}
-	view := fe.db.TestView()
-	if !view.HasTests() || testViewAllReportEntriesUnderChecks(view) {
+	orphan := fe.orphanTestView()
+	if orphan == nil || !orphan.HasTests() {
 		return nil
 	}
-	tv := fe.inlineTestView(dagui.SpanID{})
+	tv := fe.orphanTestsComponent()
 	if tv.SummaryIndent != 0 {
 		tv.SummaryIndent = 0
 		tv.Update()
@@ -1698,7 +1701,13 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 		width = finalRenderTestsWidth
 	}
 	width = max(width, finalRenderTestsWidth)
-	return fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
+	lines := fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
+	if len(lines) == 0 {
+		return nil
+	}
+	warn := fe.orphanWarningLines(orphan)
+	fe.claims.claimTestReport(nil, orphan)
+	return append(warn, lines...)
 }
 
 func liveTestViewHeight(ctx tuist.Context) int {
@@ -1713,46 +1722,85 @@ func finalTestViewHeight(tv *TestView) int {
 	return 10000
 }
 
-func testViewAllReportEntriesUnderChecks(view *dagui.TestView) bool {
-	if view == nil {
-		return false
+// orphanTestView is the global test view filtered to the cases no check's test
+// report claimed this render pass. When every case sits under a rendered check
+// the result is empty and the global section is skipped. The remainder are
+// tests run outside any check, plus orphans whose ancestor spans are missing
+// from the trace data (see orphanWarningLines). Checks render -- and claim --
+// before the global section, so claims are populated by the time this runs.
+func (fe *frontendPretty) orphanTestView() *dagui.TestView {
+	if fe.db == nil {
+		return nil
 	}
-	seenEntry := false
-	allUnderChecks := true
-	var walk func(*dagui.TestNode)
-	walk = func(node *dagui.TestNode) {
-		if node == nil {
-			return
-		}
-		switch {
-		case node.Kind == dagui.TestNodeCase:
-			seenEntry = true
-			if !testSpanUnderCheck(node.Span) {
-				allUnderChecks = false
-			}
-		case node.Counts.Total() == 0 && node.Category != dagui.TestCategoryPassing:
-			seenEntry = true
-			if !testSpanUnderCheck(testTUISpan(node)) {
-				allUnderChecks = false
-			}
-		}
-		for _, child := range node.Children {
-			walk(child)
-		}
+	view := fe.db.TestView()
+	if !view.HasTests() {
+		return nil
 	}
-	for _, root := range view.Roots {
-		walk(root)
-	}
-	return seenEntry && allUnderChecks
+	return view.FilterCases(func(node *dagui.TestNode) bool {
+		return node.Span == nil || !fe.claims.hasTestCase(node.Span.ID)
+	})
 }
 
-func testSpanUnderCheck(span *dagui.Span) bool {
-	for cur := span; cur != nil; cur = cur.ParentSpan {
-		if cur.CheckName != "" {
-			return true
+func (fe *frontendPretty) orphanTestsComponent() *TestView {
+	if fe.orphanTests == nil {
+		tv := fe.newTestView(dagui.SpanID{}, "")
+		tv.ListOnly = true
+		tv.View = func() *dagui.TestView { return fe.orphanTestView() }
+		fe.orphanTests = tv
+	}
+	return fe.orphanTests
+}
+
+// orphanWarningLines flags cases that dangle because intermediate ancestor spans
+// were never exported to the trace (Span.FirstMissingAncestor), distinguishing
+// them from tests legitimately run outside any check (which warn-free). With
+// --debug each affected case is listed with its span ID and the missing parent.
+func (fe *frontendPretty) orphanWarningLines(orphan *dagui.TestView) []string {
+	if orphan == nil || !fe.claims.anyTestCases() {
+		// No check rendered tests this pass, so the global section is the whole
+		// test view -- missing-ancestor cases aren't displaced from anything.
+		return nil
+	}
+	type orphanInfo struct {
+		name   string
+		span   dagui.SpanID
+		parent dagui.SpanID
+	}
+	var missing []orphanInfo
+	for _, node := range orphan.BySpan {
+		if node == nil || node.Kind != dagui.TestNodeCase || node.Span == nil {
+			continue
+		}
+		if anc := node.Span.FirstMissingAncestor(); anc != nil {
+			name := node.FullName
+			if name == "" {
+				name = node.Name
+			}
+			missing = append(missing, orphanInfo{name: name, span: node.Span.ID, parent: anc.ID})
 		}
 	}
-	return false
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Slice(missing, func(i, j int) bool { return missing[i].name < missing[j].name })
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
+	noun := "test"
+	if len(missing) != 1 {
+		noun = "tests"
+	}
+	lines := []string{
+		out.String(fmt.Sprintf("! %d %s could not be attributed to a check (ancestor spans missing from trace data)",
+			len(missing), noun)).Foreground(termenv.ANSIYellow).String(),
+	}
+	if fe.Debug {
+		for _, m := range missing {
+			lines = append(lines, out.String(fmt.Sprintf("  %s  span=%s  missing parent=%s",
+				m.name, m.span, m.parent)).Foreground(termenv.ANSIBrightBlack).String())
+		}
+	} else {
+		lines = append(lines, out.String("  (run with --debug to list them)").Foreground(termenv.ANSIBrightBlack).String())
+	}
+	return lines
 }
 
 // isFailingLeafTestCase reports whether node is a failing test case with no
