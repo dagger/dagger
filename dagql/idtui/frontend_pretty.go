@@ -1042,7 +1042,15 @@ func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
 	// isn't flagged. Deciding it here keeps every entry point -- expand, zoom,
 	// surfaced failures -- consistent, so an early descendants=false fetch can't
 	// dedupe the roll-up.
-	fe.requestLogsWith(id, span.RollUpLogs || fe.isFailingLeafTestSpan(id))
+	descendants := span.RollUpLogs || fe.isFailingLeafTestSpan(id)
+	// ...except a check whose failures are test cases: the report renders them
+	// per-test (each test rolls up its own logs), never the check's own
+	// rolled-up dump. Rolling up here would fetch the check's entire subtree --
+	// every test's output, tens of MB -- that nothing renders.
+	if span.CheckName != "" && fe.checkDefersToTests(span) {
+		descendants = false
+	}
+	fe.requestLogsWith(id, descendants)
 }
 
 // isFailingLeafTestSpan reports whether id is the span of a failing leaf test
