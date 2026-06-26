@@ -6407,6 +6407,20 @@ type WorkspaceModule implements Node {
 
   """The module source path."""
   source: String!
+
+  """Type definitions for this module, loading only this module on demand."""
+  typeDefs(
+    """
+    Return the full referenced typedef closure instead of only top-level served typedefs.
+    """
+    returnAllTypes: Boolean = false
+
+    """
+    Strip core API functions from the Query type, leaving only module-sourced
+    functions (constructors, entrypoint proxies, etc.).
+    """
+    hideCore: Boolean
+  ): [TypeDef!]!
 }
 
 """A constructor-backed module setting."""

@@ -423,14 +423,14 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	t.Run("constructor match loads only matching module", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"foo"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"foo"})
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
 	t.Run("unknown root field with multiple entrypoints loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"doThing"})
 		require.Equal(t, mods, filtered)
 	})
 
@@ -438,36 +438,189 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		t.Parallel()
 
 		oneEntrypoint := []pendingModule{mods[0], mods[1]}
-		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, []string{"doThing"})
 		require.Equal(t, []pendingModule{mods[1]}, filtered)
 	})
 
 	t.Run("introspection loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"__schema"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"__schema"})
 		require.Equal(t, mods, filtered)
 	})
 
-	t.Run("current typedefs loads all", func(t *testing.T) {
+	t.Run("current typedefs loads all (targeted introspection narrows via operation-name scope)", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"currentTypeDefs"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentTypeDefs"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("current module loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"currentModule"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentModule"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("core-only query loads none", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"container", "version"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"container", "version"})
 		require.Empty(t, filtered)
+	})
+
+	t.Run("current workspace loads none (resolvers load on demand)", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentWorkspace"})
+		require.Empty(t, filtered)
+	})
+
+	t.Run("already-served root field loads none", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"my-mod": {}}
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, []string{"myMod"})
+		require.Empty(t, filtered)
+	})
+
+	t.Run("served field combined with pending field loads only pending", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"my-mod": {}}
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, []string{"myMod", "foo"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("env loads all (resolver snapshots served deps)", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"env"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("unrecognized loadFromID field loads all", func(t *testing.T) {
+		t.Parallel()
+
+		// The type name in load<Type>FromID needn't embed the module name, so
+		// only a full load can guarantee the field exists.
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"loadSomethingFromID"})
+		require.Equal(t, mods, filtered)
+	})
+}
+
+func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
+	t.Parallel()
+
+	mods := []pendingModule{
+		{Kind: moduleLoadKindAmbient, Name: "go-sdk"},
+		{Kind: moduleLoadKindAmbient, Name: "rust-sdk"},
+		{Kind: moduleLoadKindAmbient, Name: "php-sdk"},
+	}
+
+	t.Run("module:generator selects only that module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"go-sdk:generate"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("module:item works for checks and services too", func(t *testing.T) {
+		t.Parallel()
+
+		// The module-name resolution is identical across generate/check/up: the
+		// segment before ':' is the module name regardless of the item kind.
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"rust-sdk:lint", "php-sdk:web"})
+		require.Equal(t, []pendingModule{mods[1], mods[2]}, filtered)
+	})
+
+	t.Run("bare module name selects only that module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"go-sdk"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("multiple patterns select each named module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"go-sdk", "php-sdk:api"})
+		require.Equal(t, []pendingModule{mods[0], mods[2]}, filtered)
+	})
+
+	t.Run("bare token not matching a module selects all", func(t *testing.T) {
+		t.Parallel()
+
+		// e.g. an item served by the entrypoint module.
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"generate"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("module:item not matching a module selects all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"typo-sdk:generate"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("empty include selects all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, nil)
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("already-served module is recognized and selects nothing", func(t *testing.T) {
+		t.Parallel()
+
+		// A re-evaluated selector (e.g. loading a GeneratorGroup from its ID
+		// on a later request) names a module that already loaded; it must not
+		// fall back to loading everything.
+		served := map[string]struct{}{"dang-sdk": {}}
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, served, []string{"dang-sdk"})
+		require.Empty(t, filtered)
+	})
+
+	t.Run("served and pending patterns select only the pending module", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"dang-sdk": {}}
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, served, []string{"dang-sdk:generate", "go-sdk"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("camelCase pattern selects the kebab-case module", func(t *testing.T) {
+		t.Parallel()
+
+		// Name matching is kebab-normalized on both sides, like the include
+		// matchers the selector resolvers use (ModTreePath.Glob/CliCase).
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"goSdk:generate"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("kebab-case pattern selects the camelCase module", func(t *testing.T) {
+		t.Parallel()
+
+		// The CLI presents module commands in kebab-case, so a module declared
+		// as "myMod" (or "mod1", which kebab-cases to "mod-1") is targeted by
+		// its kebab-case name.
+		camelMods := []pendingModule{
+			{Kind: moduleLoadKindAmbient, Name: "myMod"},
+			{Kind: moduleLoadKindAmbient, Name: "mod1"},
+			{Kind: moduleLoadKindAmbient, Name: "other"},
+		}
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(camelMods, nil, []string{"my-mod", "mod-1:generate"})
+		require.Equal(t, []pendingModule{camelMods[0], camelMods[1]}, filtered)
+	})
+
+	t.Run("glob pattern selects all", func(t *testing.T) {
+		t.Parallel()
+
+		// Glob metacharacters survive normalization and never equal a module
+		// name, so glob patterns conservatively load everything.
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"go-*"})
+		require.Equal(t, mods, filtered)
 	})
 }
 

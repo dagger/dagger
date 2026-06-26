@@ -30,56 +30,70 @@ fragment FieldParts on FieldTypeDef {
   }
 }
 
+fragment TypeDefParts on TypeDef {
+	name
+	kind
+	optional
+	asObject {
+		name
+		description
+		sourceModuleName
+		constructor {
+			...FunctionParts
+		}
+		functions {
+			...FunctionParts
+		}
+		fields {
+			...FieldParts
+		}
+	}
+	asScalar {
+		name
+		description
+		sourceModuleName
+	}
+	asEnum {
+		name
+		description
+		sourceModuleName
+		members {
+			name
+			description
+		}
+	}
+	asInterface {
+		name
+		description
+		sourceModuleName
+		functions {
+			...FunctionParts
+		}
+	}
+	asInput {
+		name
+		fields {
+			...FieldParts
+		}
+	}
+	asList {
+		elementTypeDef {
+			...TypeDefRefParts
+		}
+	}
+}
+
 query TypeDefs($hideCore: Boolean) {
 	typeDefs: currentTypeDefs(returnAllTypes: true, hideCore: $hideCore) {
-		name
-		kind
-		optional
-		asObject {
-			name
-			description
-			sourceModuleName
-			constructor {
-				...FunctionParts
-			}
-			functions {
-				...FunctionParts
-			}
-			fields {
-				...FieldParts
-			}
-		}
-		asScalar {
-			name
-			description
-			sourceModuleName
-		}
-		asEnum {
-			name
-			description
-			sourceModuleName
-			members {
-				name
-				description
-			}
-		}
-		asInterface {
-			name
-			description
-			sourceModuleName
-			functions {
-				...FunctionParts
-			}
-		}
-		asInput {
-			name
-			fields {
-				...FieldParts
-			}
-		}
-		asList {
-			elementTypeDef {
-				...TypeDefRefParts
+		...TypeDefParts
+	}
+}
+
+query ModuleTypeDefs($module: String!, $hideCore: Boolean) {
+	currentWorkspace {
+		moduleList(module: $module) {
+			typeDefs(returnAllTypes: true, hideCore: $hideCore) {
+				...TypeDefParts
 			}
 		}
 	}

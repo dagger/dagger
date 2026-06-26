@@ -267,6 +267,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("settings", s.moduleSettings).
 			DoNotCache("Reads live config and module metadata from the workspace").
 			Doc("List constructor-backed settings for this module."),
+		dagql.NodeFunc("typeDefs", s.moduleTypeDefs).
+			DoNotCache("Loads the module on demand and reads live config from the workspace").
+			Doc("Type definitions for this module, loading only this module on demand.").
+			Args(
+				dagql.Arg("returnAllTypes").Doc("Return the full referenced typedef closure instead of only top-level served typedefs."),
+				dagql.Arg("hideCore").Doc("Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.)."),
+			),
 	}.Install(srv)
 	dagql.Fields[*core.WorkspaceModuleSetting]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
@@ -1266,6 +1273,9 @@ func (s *workspaceSchema) checks(
 		noGenerate = true
 	}
 
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -1375,6 +1385,9 @@ func (s *workspaceSchema) generators(
 		return nil, err
 	}
 
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -1493,6 +1506,9 @@ func (s *workspaceSchema) services(
 		return nil, err
 	}
 
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -1645,6 +1661,17 @@ func matchWorkspaceIncludePath(
 		}
 	}
 	return false, nil
+}
+
+// ensureWorkspaceIncludeModulesLoaded loads the workspace modules the include
+// patterns demand (all when they don't narrow). Selector fields validate
+// against the core schema, so loading can wait until resolution.
+func ensureWorkspaceIncludeModulesLoaded(ctx context.Context, include []string) error {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	return query.Server.EnsureWorkspaceModules(ctx, include)
 }
 
 func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {
