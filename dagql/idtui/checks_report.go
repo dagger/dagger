@@ -55,16 +55,25 @@ func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []
 			out.String(dur).Faint().String(),
 		)
 
-		// A failed leaf check shows its error cause inline; a failed parent check
+		// A failed leaf check renders its failure inline; a failed parent check
 		// defers to the failed children that explain it.
 		if node.Failed && !node.HasFailedChild() {
-			for _, origin := range fe.checkRootCauses(node.Span) {
-				if !origin.Received {
-					// Incremental --full may not have loaded the origin (or its logs);
-					// skip rather than render an empty stub.
-					continue
+			if fe.checkDefersToTests(node.Span) {
+				// The check's failures are test cases: render them per-test with
+				// rolled-up logs (richer than the check's raw command output).
+				for _, line := range fe.renderCheckTests(ctx, node.Span, depth) {
+					fmt.Fprintln(buf, line)
 				}
-				fe.renderCauseDetail(ctx, out, r, origin, depth+1)
+			} else {
+				// Otherwise show the failed command and its logs.
+				for _, origin := range fe.checkRootCauses(node.Span) {
+					if !origin.Received {
+						// Incremental --full may not have loaded the origin (or its
+						// logs); skip rather than render an empty stub.
+						continue
+					}
+					fe.renderCauseDetail(ctx, out, r, origin, depth+1)
+				}
 			}
 		}
 
@@ -101,6 +110,30 @@ func (fe *frontendPretty) renderCauseDetail(ctx tuist.Context, out TermOutput, r
 	fe.claims.claimError(origin)
 }
 
+// renderCheckTests renders a check's tests (the failing ones with rolled-up
+// logs) beneath it, reusing the zoomed-check tests view. renderZoomedCheckTests
+// indents one level under a depth-0 check; pad by the check's own depth so a
+// nested check's tests sit one level under it too.
+func (fe *frontendPretty) renderCheckTests(ctx tuist.Context, span *dagui.Span, depth int) []string {
+	lines := fe.renderZoomedCheckTests(ctx, span)
+	if depth == 0 || len(lines) == 0 {
+		return lines
+	}
+	pad := strings.Repeat("  ", depth)
+	for i := range lines {
+		lines[i] = pad + lines[i]
+	}
+	return lines
+}
+
+// checkDefersToTests reports whether a check's failures are test cases. When
+// they are, the global TESTS block renders them per-test (with rolled-up logs),
+// so the checks section leaves the failure detail to it rather than dumping the
+// check's own command output.
+func (fe *frontendPretty) checkDefersToTests(span *dagui.Span) bool {
+	return len(failingLeafTestCases(fe.db.TestViewForSpan(span))) > 0
+}
+
 // eachFailedLeafCheck visits every surfaced check that failed and has no failed
 // child -- i.e. the checks renderChecksSection renders an error cause for. Used
 // to pre-fetch their logs before the single final render.
@@ -128,6 +161,11 @@ func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
 		}
 	}
 	eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
+		if fe.checkDefersToTests(n.Span) {
+			// The TESTS block renders these, and its failing-test-case log fetch
+			// already pulls their detail -- no need to fetch the check's subtree.
+			return
+		}
 		// The check span's subtree (covers a cause that's a plain descendant).
 		add(n.Span.ID)
 		// The cause is often reached via a forward link instead -- a check
