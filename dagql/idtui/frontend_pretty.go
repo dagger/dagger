@@ -1430,6 +1430,17 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	}
 
 	// Replay the primary output log to stdout/stderr.
+	if fe.reportOnly {
+		// In report mode a failed plain-call's root cause is already rendered
+		// above (renderRootCauseSection); the primary span's own logs are that
+		// same output wrapped by the engine as `Error: ... Stdout: ... Stderr:
+		// ...`. Replaying them here would duplicate the root cause (and reprint
+		// the raw, un-vterm'd stream). Skip the replay for a failed primary
+		// span; a passing call still replays its result (e.g. test output).
+		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailedOrCausedFailure() {
+			return nil
+		}
+	}
 	return renderPrimaryOutput(w, fe.db)
 }
 
