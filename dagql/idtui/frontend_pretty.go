@@ -1845,6 +1845,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			ctx.Line("") // separate the header from its content
 		}
 
+		rootCauseRendered := false
 		if pol.showRootCause {
 			// XXX: we always render the root cause for now, even when the same
 			// failing span also shows up under a test below (the cause often
@@ -1859,6 +1860,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			if rcLines := fe.renderRootCauseSection(ctx, r); len(rcLines) > 0 {
 				ctx.Lines(rcLines...)
 				ctx.Line("")
+				rootCauseRendered = true
 			}
 		}
 
@@ -1872,7 +1874,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
 			ctx.Lines(checkLines...)
 			renderedRows = true
-		} else {
+		} else if !rootCauseRendered {
+			// Only fall back to the raw progress tree when there's nothing better.
+			// A plain `dagger call` failure renders its root cause above; dumping
+			// the bootstrap spans (connect / load workspace / parsing args) under
+			// it would just be noise.
 			progressLines := fe.renderProgressLines(r, ctx, 0)
 			ctx.Lines(progressLines...)
 			renderedRows = len(progressLines) > 0
