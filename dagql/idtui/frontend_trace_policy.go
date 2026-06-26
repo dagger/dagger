@@ -102,11 +102,7 @@ func (fe *frontendPretty) renderPolicy() traceRenderPolicy {
 	// its own tier.
 	if k == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
 		if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
-			// A failed call surfaces its root cause; a passing one has none, so show
-			// the primary span's own rolled-up output -- the command's output --
-			// instead of a silent call tree (the render picks one or the other).
 			pol.showRootCause = true
-			pol.showOwnDescendantLogs = true
 		}
 	}
 	return pol

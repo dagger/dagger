@@ -1892,16 +1892,6 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 				ctx.Line("")
 				ctx.Lines(logLines...)
 			}
-		} else if !zoomed && pol.showOwnDescendantLogs && !rootCauseRendered {
-			// Plain passing call: append the primary span's own rolled-up output
-			// (the command's output) beneath the call tree, so the report isn't
-			// silent. Skipped when a root cause rendered -- that already carries the
-			// relevant output.
-			logOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-			if logLines := fe.renderFinalLogs(fe.db.PrimarySpan, logOut, ""); len(logLines) > 0 {
-				ctx.Line("")
-				ctx.Lines(logLines...)
-			}
 		} else if zoomed && pol.showSubtests {
 			// Zoomed to a check: show the tests beneath it (with their logs)
 			// instead of the check's own rolled-up descendant log dump.
@@ -2009,19 +1999,11 @@ func linesFromView(ctx tuist.Context, view string) {
 // summary uses -- so 'dagger trace --full --test X' surfaces X's failure output
 // (its descendants having been fetched and re-keyed onto it).
 func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) []string {
-	return fe.renderFinalLogs(fe.ZoomedSpan, out, indent)
-}
-
-// renderFinalLogs renders a span's own rolled-up output as a windowed log block
-// (the last lines plus a pointer to the full logs), the same treatment the
-// zoomed view gives its target. Used both for an explicit --span/--test zoom and
-// for a plain passing call's primary span.
-func (fe *frontendPretty) renderFinalLogs(spanID dagui.SpanID, out TermOutput, indent string) []string {
-	span, ok := fe.db.Spans.Map[spanID]
+	span, ok := fe.db.Spans.Map[fe.ZoomedSpan]
 	if !ok {
 		return nil
 	}
-	logs := fe.logs.Logs[spanID]
+	logs := fe.logs.Logs[fe.ZoomedSpan]
 	if logs == nil || logs.UsedHeight() == 0 {
 		return nil
 	}
@@ -2293,13 +2275,17 @@ func (fe *frontendPretty) recalculateViewLocked() {
 				}
 			}
 		}
-		// A plain passing call has no failure to surface: fetch the primary span's
-		// own rolled-up output (the command's output) so the report shows it
-		// instead of a silent call tree. Bounded to the one span; the render only
-		// uses it when no root cause is shown.
-		if fe.zoomKind() == zoomRoot && fe.renderPolicy().showOwnDescendantLogs {
-			if prim := fe.db.PrimarySpan; prim.IsValid() {
-				fe.requestLogsWith(prim, true)
+		// For a plain call (no checks, no tests) fetch the primary span's own logs:
+		// these are the command's result output, which the engine prints onto the
+		// root span. renderPrimaryOutput replays db.PrimaryLogs at the end of the
+		// run, so without this the report shows the call tree but never the output.
+		// descendants=false keeps it to the primary output itself, not the whole
+		// rolled-up build log.
+		if fe.zoomKind() == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
+			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
+				if prim := fe.db.PrimarySpan; prim.IsValid() {
+					fe.requestLogsWith(prim, false)
+				}
 			}
 		}
 		// Eagerly fetch logs for surfaced failed checks' root causes so the
