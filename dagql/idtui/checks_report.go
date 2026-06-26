@@ -152,31 +152,42 @@ func eachFailedLeafCheck(nodes []*dagui.CheckNode, f func(*dagui.CheckNode)) {
 // *parent* checks are skipped: their subtree is the whole run, and they defer
 // their detail to the failed children anyway.
 func (fe *frontendPretty) SurfacedFailedCheckSpans() []dagui.SpanID {
-	seen := map[dagui.SpanID]bool{}
+	// Run on the event loop: SurfacedChecks/checkDefersToTests read (and lazily
+	// rebuild) shared DB state -- the test index in particular -- which the
+	// loader's dispatched ImportSnapshots is concurrently mutating. Touching it
+	// directly from the run goroutine races ("concurrent map iteration and map
+	// write"), so go through dispatch like every other DB access and block for
+	// the result.
 	var ids []dagui.SpanID
-	add := func(id dagui.SpanID) {
-		if id.IsValid() && !seen[id] {
-			seen[id] = true
-			ids = append(ids, id)
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		seen := map[dagui.SpanID]bool{}
+		add := func(id dagui.SpanID) {
+			if id.IsValid() && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
 		}
-	}
-	eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
-		if fe.checkDefersToTests(n.Span) {
-			// The TESTS block renders these, and its failing-test-case log fetch
-			// already pulls their detail -- no need to fetch the check's subtree.
-			return
-		}
-		// The check span's subtree (covers a cause that's a plain descendant).
-		add(n.Span.ID)
-		// The cause is often reached via a forward link instead -- a check
-		// links to the lazy-eval span that did (and failed) the work, which the
-		// subtree fetch doesn't descend into. Fetch those targets directly.
-		for _, o := range n.Span.ErrorOrigins.Order {
-			add(o.ID)
-		}
-		for _, l := range n.Span.Links {
-			add(l.SpanContext.SpanID)
-		}
+		eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
+			if fe.checkDefersToTests(n.Span) {
+				// The TESTS block renders these, and its failing-test-case log fetch
+				// already pulls their detail -- no need to fetch the check's subtree.
+				return
+			}
+			// The check span's subtree (covers a cause that's a plain descendant).
+			add(n.Span.ID)
+			// The cause is often reached via a forward link instead -- a check
+			// links to the lazy-eval span that did (and failed) the work, which the
+			// subtree fetch doesn't descend into. Fetch those targets directly.
+			for _, o := range n.Span.ErrorOrigins.Order {
+				add(o.ID)
+			}
+			for _, l := range n.Span.Links {
+				add(l.SpanContext.SpanID)
+			}
+		})
 	})
+	<-done
 	return ids
 }
