@@ -1832,6 +1832,16 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
 			fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
 
+		// Lead the whole-trace report with the overall verdict -- did it pass or
+		// fail, what command ran, and the top-level error -- the one-glance summary
+		// the server-computed summary used to provide. A zoom titles itself below.
+		if !zoomed {
+			if hdr := fe.renderTraceHeader(r); len(hdr) > 0 {
+				ctx.Lines(hdr...)
+				ctx.Line("")
+			}
+		}
+
 		// When scoped to a span (e.g. --test/--span/--check), title the subtree
 		// with the zoomed span so it isn't a headless, mysteriously indented tree.
 		if zoomed {
@@ -1992,6 +2002,69 @@ func linesFromView(ctx tuist.Context, view string) {
 		return
 	}
 	ctx.Lines(strings.Split(strings.TrimSuffix(view, "\n"), "\n")...)
+}
+
+// renderTraceHeader renders the trace's overall verdict at the top of the
+// whole-trace report: the invoked command, whether it passed or failed, and the
+// top-level error. The sections below explain the failure in detail; this is the
+// one-glance outcome the server-computed summary used to lead with.
+func (fe *frontendPretty) renderTraceHeader(r *renderer) []string {
+	root := fe.db.RootSpan
+	if root == nil {
+		return nil
+	}
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+
+	icon, word, color := IconSuccess, "PASSED", termenv.ANSIGreen
+	switch {
+	case root.IsFailed():
+		icon, word, color = IconFailure, "FAILED", termenv.ANSIRed
+	case root.IsRunning():
+		icon, word, color = Diamond, "RUNNING", termenv.ANSIYellow
+	}
+	status := out.String(fmt.Sprintf("%s %s", icon, word)).Foreground(color).String()
+	lines := []string{reportHeadingLine(out, "TRACE") + "  " + status}
+
+	name := root.Name
+	if name == "" {
+		name = "-"
+	}
+	dur := out.String(dagui.FormatDuration(root.Activity.Duration(r.now))).Faint().String()
+	lines = append(lines, fmt.Sprintf("%s  %s", name, dur))
+
+	// Top-level error, traceparent markers stripped (they're cross-SDK plumbing,
+	// not part of the message). The detailed cause is rendered below.
+	if root.IsFailed() {
+		if msg := stripTraceparent(root.Status.Description); strings.TrimSpace(msg) != "" {
+			for _, ln := range strings.Split(strings.TrimRight(msg, "\n"), "\n") {
+				if strings.TrimSpace(ln) == "" {
+					continue
+				}
+				lines = append(lines, out.String("! "+ln).Foreground(termenv.ANSIRed).String())
+			}
+		}
+	}
+	return lines
+}
+
+// stripTraceparent removes the cross-SDK "[traceparent:<trace>-<span>]" error
+// markers (and any single space before them) from a message.
+func stripTraceparent(s string) string {
+	for {
+		i := strings.Index(s, "[traceparent:")
+		if i < 0 {
+			return s
+		}
+		end := strings.IndexByte(s[i:], ']')
+		if end < 0 {
+			return s
+		}
+		start := i
+		if start > 0 && s[start-1] == ' ' {
+			start--
+		}
+		s = s[:start] + s[i+end+1:]
+	}
 }
 
 // renderZoomedFinalLogs renders the zoomed span's rolled-up logs for the final
