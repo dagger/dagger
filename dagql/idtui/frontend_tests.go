@@ -2280,6 +2280,7 @@ func (tv *TestView) flattenTestRows(view *dagui.TestView) []testSidebarRow {
 }
 
 func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int, parentKey string) {
+	nodes = nonEmptyTestNodes(nodes)
 	partition := dagui.PartitionTests(nodes)
 	groups := [][]*dagui.TestNode{
 		partition.Failing,
@@ -2317,6 +2318,20 @@ func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNo
 		*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth})
 		tv.appendTestRows(rows, node.Children, depth+1, string(node.ID))
 	}
+}
+
+// nonEmptyTestNodes drops packages/suites that discovered no tests (0 total) so
+// they don't clutter the sidebar and push real results off-screen. A test case
+// always counts >=1 and counts roll up to parents, so this only removes
+// genuinely empty suites; a package with only skipped tests (Skipped > 0) stays.
+func nonEmptyTestNodes(nodes []*dagui.TestNode) []*dagui.TestNode {
+	out := make([]*dagui.TestNode, 0, len(nodes))
+	for _, n := range nodes {
+		if n != nil && n.Counts.Total() > 0 {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func testTUISpan(node *dagui.TestNode) *dagui.Span {
