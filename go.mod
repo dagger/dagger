@@ -386,3 +386,8 @@ tool github.com/matryer/moq
 // containerd v2.2.x requires bbolt v1.4.3, which is semver-higher than
 // the main-branch pseudo-version containing the freelist merge fix.
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.4.0-beta.0.0.20260422092123-cd4bafc17e45
+
+// TODO(headless-harness): local tuist provides the headless synchronous
+// driver (HeadlessTerminal, TUI.Step/Inject/Frame) used by the idtui test
+// harness. Replace with a tagged release (≥ v0.0.7) and drop this before merge.
+replace github.com/vito/tuist => /home/vito/src/tuist
