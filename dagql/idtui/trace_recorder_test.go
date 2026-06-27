@@ -35,6 +35,26 @@ func TestRecordTraceFixture(t *testing.T) {
 	if traceID == "" || out == "" {
 		t.Skip("set RECORD_TRACE_FIXTURE_ID and RECORD_TRACE_FIXTURE_OUT to record a fixture")
 	}
+
+	fix := liveTraceFixture(t, traceID)
+	// OUT is relative to the package directory (go test's cwd); create the dir.
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		t.Fatalf("mkdir for fixture: %v", err)
+	}
+	if err := fix.Save(out); err != nil {
+		t.Fatalf("save fixture: %v", err)
+	}
+	t.Logf("recorded %d spans (%d priority), %d spans with logs -> %s",
+		len(fix.Spans), len(fix.Priority), len(fix.Logs), out)
+}
+
+// liveTraceFixture fetches a whole trace from Cloud into a TraceFixture: the
+// priority spans, the full tree (swept by listening on every span with
+// children), and every span's logs in both forms. It's the shared Cloud-fetch
+// path behind TestRecordTraceFixture (which saves it) and TestDriveTrace (which
+// drives it). Fails the test on any auth/transport error.
+func liveTraceFixture(t *testing.T, traceID string) *TraceFixture {
+	t.Helper()
 	ctx := context.Background()
 
 	cloudAuth, err := auth.GetCloudAuth(ctx)
@@ -124,16 +144,7 @@ func TestRecordTraceFixture(t *testing.T) {
 	for i, s := range spans {
 		snaps[i] = recordSpanDataToSnapshot(s)
 	}
-	fix := &TraceFixture{TraceID: traceID, Spans: snaps, Priority: priority, Logs: logs}
-	// OUT is relative to the package directory (go test's cwd); create the dir.
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
-		t.Fatalf("mkdir for fixture: %v", err)
-	}
-	if err := fix.Save(out); err != nil {
-		t.Fatalf("save fixture: %v", err)
-	}
-	t.Logf("recorded %d spans (%d priority), %d spans with logs -> %s",
-		len(snaps), len(priority), len(logs), out)
+	return &TraceFixture{TraceID: traceID, Spans: snaps, Priority: priority, Logs: logs}
 }
 
 // recordSpanDataToSnapshot mirrors spanDataToSnapshot in

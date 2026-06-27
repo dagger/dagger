@@ -209,6 +209,13 @@ func (s *traceSession) Resize(width, height int) string {
 	return s.settle()
 }
 
+// Zoom scopes the view to a span (the --span deep link), fetching its subtree
+// on demand, then settles. Handy for jumping straight to a misbehaving span.
+func (s *traceSession) Zoom(id dagui.SpanID) string {
+	s.fe.ZoomToSpan(id)
+	return s.settle()
+}
+
 // Network returns the fetch counters accumulated so far — the sanctioned
 // side-channel for asserting on network behaviour (what the CLI's --debug
 // prints).
