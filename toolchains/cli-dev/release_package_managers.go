@@ -241,13 +241,13 @@ func nixPackage(version string, baseURL string, archives []cliNixArchive) string
 	return fmt.Sprintf(`# %[1]s
 # vim: set ft=nix ts=2 sw=2 sts=2 et sta
 {
-system ? builtins.currentSystem
-, lib
+lib
 , fetchurl
 , installShellFiles
 , stdenvNoCC
 }:
 let
+  inherit (stdenvNoCC.hostPlatform) system;
   shaMap = {
 %[3]s  };
 
@@ -267,7 +267,9 @@ stdenvNoCC.mkDerivation {
   nativeBuildInputs = [ installShellFiles ];
 
   installPhase = ''
+  	runHook preInstall
     install -Dm755 dagger $out/bin/dagger
+	runHook postInstall
   '';
 
   postInstall = ''
@@ -276,8 +278,6 @@ stdenvNoCC.mkDerivation {
       --fish <($out/bin/dagger completion fish) \
       --zsh <($out/bin/dagger completion zsh)
   '';
-
-  system = system;
 
   meta = {
     description = "Dagger is an integrated platform to orchestrate the delivery of applications";
