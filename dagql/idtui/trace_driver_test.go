@@ -43,31 +43,8 @@ import (
 //
 // Leave AI_AGENT/CLAUDECODE set for the compact ASCII (agent) styling instead.
 func TestDriveTrace(t *testing.T) {
-	fixturePath := os.Getenv("DRIVE_FIXTURE")
-	traceID := os.Getenv("DRIVE_TRACE_ID")
-	if fixturePath == "" && traceID == "" {
-		t.Skip("set DRIVE_FIXTURE=<path> or DRIVE_TRACE_ID=<id> to drive a trace")
-	}
-
-	var fix *TraceFixture
-	source := "fixture"
-	switch {
-	case fixturePath != "":
-		fix = LoadTraceFixture(t, fixturePath)
-	default:
-		source = "live"
-		fix = liveTraceFixture(t, traceID)
-	}
-
-	sess := newTraceSession(t, fix, func(opts *dagui.FrontendOpts) {
-		if v := os.Getenv("DRIVE_VERBOSITY"); v != "" {
-			n, err := strconv.Atoi(v)
-			if err != nil {
-				t.Fatalf("DRIVE_VERBOSITY=%q: %v", v, err)
-			}
-			opts.Verbosity = n
-		}
-	})
+	fix, source := driveSource(t)
+	sess := newTraceSession(t, fix, driveConfigure(t))
 
 	if w, h := os.Getenv("DRIVE_WIDTH"), os.Getenv("DRIVE_HEIGHT"); w != "" || h != "" {
 		sess.Resize(atoiOr(t, w, 120), atoiOr(t, h, 40))
@@ -107,12 +84,47 @@ func TestDriveTrace(t *testing.T) {
 		fmt.Printf("\n-- after keys: %s --\n\n%s\n", strings.Join(keys, " "), show(frame))
 	}
 
-	st := sess.Network()
+	fmt.Printf("\n== network ==\n%s", networkSummary(sess.Network()))
+}
+
+// driveSource resolves the trace to drive from env: DRIVE_FIXTURE (offline) or
+// DRIVE_TRACE_ID (live from Cloud). It skips the test when neither is set, and
+// returns the fixture plus a short source label. Shared by the one-shot console
+// (TestDriveTrace) and the HTTP console (TestServeTrace).
+func driveSource(t *testing.T) (fix *TraceFixture, source string) {
+	t.Helper()
+	switch {
+	case os.Getenv("DRIVE_FIXTURE") != "":
+		return LoadTraceFixture(t, os.Getenv("DRIVE_FIXTURE")), "fixture"
+	case os.Getenv("DRIVE_TRACE_ID") != "":
+		return liveTraceFixture(t, os.Getenv("DRIVE_TRACE_ID")), "live"
+	default:
+		t.Skip("set DRIVE_FIXTURE=<path> or DRIVE_TRACE_ID=<id> to drive a trace")
+		return nil, ""
+	}
+}
+
+// driveConfigure returns a session configurator honoring DRIVE_VERBOSITY.
+func driveConfigure(t *testing.T) func(*dagui.FrontendOpts) {
+	t.Helper()
+	return func(opts *dagui.FrontendOpts) {
+		if v := os.Getenv("DRIVE_VERBOSITY"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				t.Fatalf("DRIVE_VERBOSITY=%q: %v", v, err)
+			}
+			opts.Verbosity = n
+		}
+	}
+}
+
+// networkSummary renders the fetch counters the way `dagger trace --debug` does.
+func networkSummary(st *fetchStats) string {
 	su, sl := st.op(opSpanUpdates), st.op(opSpanLogs)
-	fmt.Printf("\n== network ==\n"+
+	return fmt.Sprintf(
 		"GetSpanUpdates: %d reqs / %d records / %d bytes\n"+
-		"GetSpanLogs:    %d reqs / %d records / %d bytes\n"+
-		"log spans fetched: %d\n",
+			"GetSpanLogs:    %d reqs / %d records / %d bytes\n"+
+			"log spans fetched: %d\n",
 		su.Requests, su.Records, su.Bytes,
 		sl.Requests, sl.Records, sl.Bytes,
 		len(st.logRequests))
