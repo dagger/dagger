@@ -837,8 +837,17 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		fe.err = fe.runWithTUI(ctx, run)
 	}
 
-	// print the final output display to stderr
-	if renderErr := fe.FinalRender(os.Stderr); renderErr != nil {
+	// Print the final report. Normally it goes to stderr so a redirected stdout
+	// stays the command's result. But a report-mode command (`dagger trace`)
+	// driven by an agent has no separate result stream -- the report *is* the
+	// output -- so route it to stdout there, letting `dagger trace X > out.txt`
+	// capture the report instead of an empty file. Scoped to RunningInAgent to
+	// leave the human and interactive (`dagger call`) streams unchanged.
+	reportOut := io.Writer(os.Stderr)
+	if fe.reportOnly && RunningInAgent() {
+		reportOut = os.Stdout
+	}
+	if renderErr := fe.FinalRender(reportOut); renderErr != nil {
 		return renderErr
 	}
 
