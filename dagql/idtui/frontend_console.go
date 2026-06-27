@@ -182,10 +182,16 @@ func (fe *frontendPretty) consoleSpans(q string) string {
 		if q != "" && !strings.Contains(sp.Name, q) {
 			continue
 		}
+		// A span often passes its own OTel status through while the failure rides
+		// on a link (a test/check whose error is on a descendant or linked span).
+		// Surface that as FAIL so a caller can still find it by name, distinct
+		// from ERROR (the span itself errored).
 		status := "ok"
 		switch {
 		case sp.IsFailed():
 			status = "ERROR"
+		case sp.IsFailedOrCausedFailure():
+			status = "FAIL"
 		case sp.IsRunning():
 			status = "run"
 		}

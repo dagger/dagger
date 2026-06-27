@@ -79,8 +79,12 @@ curl -s --data 'enter'       localhost:7777/key   # jump to the match
 
 ### Typical flow: find a failure and inspect it
 
+The `/spans` status column is `ERROR` when the span itself errored and `FAIL`
+when it only *caused* a failure via a link (a test/check whose error rides on a
+descendant or linked span), so match both:
+
 ```bash
-SID=$(curl -s 'localhost:7777/spans?q=TestThatFailed' | grep ERROR | head -1 | awk '{print $1}')
+SID=$(curl -s 'localhost:7777/spans?q=TestThatFailed' | grep -E 'ERROR|FAIL' | head -1 | awk '{print $1}')
 curl -s --data "$SID" localhost:7777/zoom
 curl -s --data 'right' localhost:7777/key      # expand for logs/detail
 ```
