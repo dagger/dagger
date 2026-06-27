@@ -1,0 +1,5 @@
+# Recorded trace fixtures are large (logs dominate). Don't commit them; record
+# locally with TestRecordTraceFixture (see trace_recorder_test.go). The
+# real-trace replay test skips when its fixture is absent.
+*.json
+*.json.gz
