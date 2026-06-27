@@ -609,8 +609,16 @@ func (fe *frontendPretty) dispatch(fn func()) {
 }
 
 func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
+	return newWithTerminal(w, db, tuist.NewStdTerminal())
+}
+
+// newWithTerminal builds a pretty frontend whose TUI is backed by the given
+// terminal. Production uses NewWithDB (a real std terminal); the headless test
+// harness injects a tuist.HeadlessTerminal so it can drive the frontend
+// synchronously, without the event-loop goroutine.
+func newWithTerminal(w io.Writer, db *dagui.DB, term tuist.Terminal) *frontendPretty {
 	profile := ColorProfile()
-	tui := tuist.New(tuist.NewStdTerminal())
+	tui := tuist.New(term)
 	fe := &frontendPretty{
 		db:        db,
 		logs:      newPrettyLogs(profile, db),
@@ -1313,6 +1321,15 @@ func (fe *frontendPretty) startTUI() {
 			fe.tui.SetDebugWriter(f)
 		}
 	}
+	fe.setupTUI()
+	fe.tui.Start()
+}
+
+// setupTUI installs the keymap bar and gives the frontend input focus. It is
+// the non-goroutine portion of TUI bring-up, shared by the interactive
+// startTUI and the headless test driver (which advances the TUI by hand via
+// tui.Step instead of running the event loop).
+func (fe *frontendPretty) setupTUI() {
 	fe.keymapBar = &KeymapBar{
 		Profile:          fe.profile,
 		UsingCloudEngine: fe.UsingCloudEngine,
@@ -1320,7 +1337,6 @@ func (fe *frontendPretty) startTUI() {
 	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
-	fe.tui.Start()
 }
 
 // OnMount is called by tuist when the component is mounted into the TUI tree.

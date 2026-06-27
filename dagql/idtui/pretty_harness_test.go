@@ -6,30 +6,41 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/internal/cloud"
+	"github.com/vito/tuist"
 )
 
-// prettyHarness drives the interactive (non-report) pretty frontend from a test:
-// it loads a real (or hand-built) TraceFixture, wires fake span/log providers
-// that serve the fixture and COUNT what's fetched (like the cloud client's
-// --debug stats), and exposes expand/zoom/key controls + Render(). No pty, no
-// CLI, no Cloud connection.
+// traceSession drives the real interactive pretty frontend as a black box. It
+// builds the frontend on a headless terminal, wires fixture-backed span/log
+// providers through the SAME public seams the CLI uses (SetSpanProvider /
+// SetLogProvider / ImportSnapshots / LogExporter), and advances the UI with
+// tui.Step — the synchronous equivalent of the event loop. A test reads like:
 //
-// Data flow mirrors the real loader but is deterministic: a provider call during
-// expand or render only RECORDS the request and queues the data (it never
-// mutates the frontend mid-render); deliver() then applies the arrivals
-// synchronously, and the next render reflects them -- modelling the real
-// re-render-on-arrival without an event loop. settle() runs that loop to quiet,
-// draining lazy fetches the way an interactive session would.
-type prettyHarness struct {
-	t   *testing.T
-	fe  *frontendPretty
-	fix *TraceFixture
+//	sess := newTraceSession(t, fix, nil)
+//	sess.Render()             // wait for output
+//	sess.Press("down", "+")   // send keystrokes (real focus routing)
+//	sess.Render()             // expect output
+//	sess.Network()            // observe fetches (the sanctioned side-channel)
+//
+// The only "test side channel" is the provider closures: like the CLI's Cloud
+// client they serve the fixture and count what's fetched, so the frontend's
+// network behaviour is observable without reaching into its internals.
+//
+// Fetches are modelled deterministically: a provider call during a key press or
+// render only RECORDS the request and QUEUES the data (it never mutates the
+// frontend mid-render). settle() then delivers queued arrivals through the real
+// public exporters and Steps again, so the next frame reflects them — the same
+// re-render-on-arrival an interactive session resolves over successive frames.
+type traceSession struct {
+	t    *testing.T
+	fe   *frontendPretty
+	term *tuist.HeadlessTerminal
+	fix  *TraceFixture
+	net  *fetchStats
 
-	stats         *fetchStats
 	childOf       map[string][]dagui.SpanSnapshot // parent hex -> children
 	listened      map[string]bool                 // spans whose children were served
 	requestedLogs map[string]bool                 // (hex|desc) already served
@@ -38,87 +49,95 @@ type prettyHarness struct {
 	pendingLogs  []cloud.LogMessage
 }
 
-// newPrettyHarness builds the frontend, wires the fixture-backed providers, and
-// loads the priority spans. configure (may be nil) tweaks FrontendOpts before
-// the first render (e.g. verbosity, window size).
-func newPrettyHarness(t *testing.T, fix *TraceFixture, configure func(*frontendPretty)) *prettyHarness {
+// newTraceSession builds the frontend, wires the fixture-backed providers, loads
+// the priority spans, and settles the first frame. configure (may be nil) tweaks
+// FrontendOpts before the first render (e.g. verbosity, window size).
+func newTraceSession(t *testing.T, fix *TraceFixture, configure func(*dagui.FrontendOpts)) *traceSession {
 	t.Helper()
 	t.Setenv("NO_COLOR", "1")
 
-	h := &prettyHarness{
+	s := &traceSession{
 		t:             t,
 		fix:           fix,
-		stats:         newFetchStats(),
+		net:           newFetchStats(),
+		term:          tuist.NewHeadlessTerminal(120, 40),
 		childOf:       map[string][]dagui.SpanSnapshot{},
 		listened:      map[string]bool{},
 		requestedLogs: map[string]bool{},
 	}
-	for _, s := range fix.Spans {
-		if s.ParentID.IsValid() {
-			ph := s.ParentID.String()
-			h.childOf[ph] = append(h.childOf[ph], s)
+	for _, sp := range fix.Spans {
+		if sp.ParentID.IsValid() {
+			ph := sp.ParentID.String()
+			s.childOf[ph] = append(s.childOf[ph], sp)
 		}
 	}
 
-	h.fe = NewWithDB(io.Discard, dagui.NewDB())
-	h.fe.traceID = fix.TraceID
-	// A terminal-sized window so the tree renders with real layout (otherwise
-	// the zero window collapses most output).
-	h.fe.setWindowSizeLocked(windowSize{Width: 120, Height: 40})
-	h.fe.autoFocus = true
-	if configure != nil {
-		configure(h.fe)
+	s.fe = newWithTerminal(io.Discard, dagui.NewDB(), s.term)
+
+	// Apply the opts the CLI would pass to Run, including Run's defaults, then
+	// let the test override. We don't call Run (it blocks on the event loop);
+	// this is the same configuration input by a different door.
+	s.fe.FrontendOpts = dagui.FrontendOpts{
+		Verbosity:        dagui.ShowCompletedVerbosity,
+		TooFastThreshold: 100 * time.Millisecond,
+		GCThreshold:      time.Hour,
 	}
-	// Set providers directly: SetSpanProvider/SetLogProvider dispatch onto the
-	// (absent) event loop, so the assignment would never take effect in a test.
-	h.fe.logProvider = h.serveLogs
-	h.fe.spanProvider = h.serveSpans
+	if configure != nil {
+		configure(&s.fe.FrontendOpts)
+	}
+
+	// Bring up the TUI without the event loop, then drive it via Step.
+	s.fe.setupTUI()
+
+	// Wire the real public seams, exactly like internal/cmd/dagger/trace.go.
+	s.fe.SetTraceID(fix.TraceID)
+	s.fe.SetSpanProvider(s.serveSpans)
+	s.fe.SetLogProvider(s.serveLogs)
 
 	// loadInitial: the priority spans arrive as the root load.
 	prio := fix.prioritySet()
 	var initial []dagui.SpanSnapshot
-	for _, s := range fix.Spans {
-		if prio[s.ID.String()] {
-			initial = append(initial, s)
+	for _, sp := range fix.Spans {
+		if prio[sp.ID.String()] {
+			initial = append(initial, sp)
 		}
 	}
-	h.fe.db.ImportSnapshots(initial)
-	h.fe.viewDirty = true
-	h.render() // first render, drains any eager (render-driven) requests
-	h.settle()
-	return h
+	s.fe.ImportSnapshots(initial)
+
+	s.settle()
+	return s
 }
 
 // serveSpans is the fixture-backed span provider (lazy child load on expand).
-func (h *prettyHarness) serveSpans(id dagui.SpanID) {
+func (s *traceSession) serveSpans(id dagui.SpanID) {
 	hex := id.String()
-	if h.listened[hex] {
+	if s.listened[hex] {
 		return
 	}
-	h.listened[hex] = true
-	kids := h.childOf[hex]
+	s.listened[hex] = true
+	kids := s.childOf[hex]
 	if len(kids) == 0 {
 		return
 	}
-	h.stats.add(opSpanUpdates, len(kids), jsonBytes(kids))
-	h.pendingSpans = append(h.pendingSpans, kids...)
+	s.net.add(opSpanUpdates, len(kids), jsonBytes(kids))
+	s.pendingSpans = append(s.pendingSpans, kids...)
 }
 
 // serveLogs is the fixture-backed log provider. descendants picks the rolled-up
 // variant and re-keys the logs onto the fetched span, exactly like the CLI's
 // fetchSpanLogs (internal/cmd/dagger/trace.go).
-func (h *prettyHarness) serveLogs(id dagui.SpanID, descendants bool) {
+func (s *traceSession) serveLogs(id dagui.SpanID, descendants bool) {
 	hex := id.String()
 	key := hex
 	if descendants {
 		key += "|d"
 	}
-	if h.requestedLogs[key] {
+	if s.requestedLogs[key] {
 		return
 	}
-	h.requestedLogs[key] = true
+	s.requestedLogs[key] = true
 
-	fl := h.fix.Logs[hex]
+	fl := s.fix.Logs[hex]
 	msgs := fl.Own
 	if descendants {
 		msgs = fl.Roll
@@ -131,96 +150,69 @@ func (h *prettyHarness) serveLogs(id dagui.SpanID, descendants bool) {
 		}
 		msgs = rekeyed
 	}
-	h.stats.logRequests = append(h.stats.logRequests, hex)
-	h.stats.add(opSpanLogs, len(msgs), jsonBytes(msgs))
-	h.pendingLogs = append(h.pendingLogs, msgs...)
+	s.net.logRequests = append(s.net.logRequests, hex)
+	s.net.add(opSpanLogs, len(msgs), jsonBytes(msgs))
+	s.pendingLogs = append(s.pendingLogs, msgs...)
 }
 
-// deliver applies queued span/log arrivals to the frontend synchronously
-// (bypassing the event-loop dispatch). Returns whether anything was delivered.
-func (h *prettyHarness) deliver() bool {
-	if len(h.pendingSpans) == 0 && len(h.pendingLogs) == 0 {
+// deliver applies queued span/log arrivals through the real public exporters
+// (the same path the CLI's loader/log streamer uses). Returns whether anything
+// was delivered.
+func (s *traceSession) deliver() bool {
+	if len(s.pendingSpans) == 0 && len(s.pendingLogs) == 0 {
 		return false
 	}
-	if len(h.pendingSpans) > 0 {
-		h.fe.db.ImportSnapshots(h.pendingSpans)
-		h.pendingSpans = nil
+	if len(s.pendingSpans) > 0 {
+		s.fe.ImportSnapshots(s.pendingSpans)
+		s.pendingSpans = nil
 	}
-	if len(h.pendingLogs) > 0 {
-		records := cloud.LogMessagesToRecords(h.fix.TraceID, h.pendingLogs)
-		ctx := context.Background()
-		_ = h.fe.db.LogExporter().Export(ctx, records)
-		_ = h.fe.logs.Export(ctx, records)
-		h.pendingLogs = nil
+	if len(s.pendingLogs) > 0 {
+		records := cloud.LogMessagesToRecords(s.fix.TraceID, s.pendingLogs)
+		_ = s.fe.LogExporter().Export(context.Background(), records)
+		s.pendingLogs = nil
 	}
-	h.fe.viewDirty = true
 	return true
 }
 
-// render rebuilds the view if dirty and returns the rendered frame. Rendering
-// fires the interactive render-site log requests (requestLogsOnRender,
-// LogsView.OnMount), which queue fetches for the next deliver().
-func (h *prettyHarness) render() string {
-	if h.fe.viewDirty {
-		h.fe.recalculateViewLocked()
-	}
-	return strings.Join(h.fe.tui.RenderLines(), "\n")
-}
-
-// settle drives render → deliver until no new data arrives, draining the lazy
-// fetches an interactive session resolves over successive frames.
-func (h *prettyHarness) settle() string {
+// settle Steps the TUI, delivering queued fetch arrivals between frames, until
+// no new data arrives — draining the lazy fetches an interactive session would
+// resolve over successive frames. Returns the final frame.
+func (s *traceSession) settle() string {
 	var out string
-	for i := 0; i < 32; i++ {
-		out = h.render()
-		if !h.deliver() {
+	for i := 0; i < 64; i++ {
+		out = strings.Join(s.fe.tui.Step(), "\n")
+		if !s.deliver() {
 			return out
 		}
 	}
-	h.t.Fatal("prettyHarness.settle did not converge after 32 frames")
+	s.t.Fatal("traceSession.settle did not converge after 64 frames")
 	return out
 }
 
 // Render returns the current frame, settling lazy fetches first.
-func (h *prettyHarness) Render() string { return h.settle() }
+func (s *traceSession) Render() string { return s.settle() }
 
-// Stats returns the fetch counters accumulated so far.
-func (h *prettyHarness) Stats() *fetchStats { return h.stats }
-
-// Expand toggles a span open via the real interactive path (setExpanded), which
-// lazily requests its children and logs, then settles.
-func (h *prettyHarness) Expand(id dagui.SpanID) string {
-	h.fe.setExpanded(id, true)
-	h.fe.syncAfterExpandToggle(id)
-	return h.settle()
+// Press feeds key presses through the real input path (tui.Inject ->
+// dispatchEvent -> focus routing), then settles. Key names follow tuist.ParseKey
+// (the frontend's keymap): "down"/"up"/"left"/"right", "enter", "esc", "space",
+// "ctrl+c", and any printable rune ("+", "-", "/", ...).
+func (s *traceSession) Press(keys ...string) string {
+	for _, k := range keys {
+		s.fe.tui.Inject(tuist.ParseKey(k))
+	}
+	return s.settle()
 }
 
-// Collapse toggles a span closed.
-func (h *prettyHarness) Collapse(id dagui.SpanID) string {
-	h.fe.setExpanded(id, false)
-	h.fe.syncAfterExpandToggle(id)
-	return h.settle()
+// Resize changes the terminal dimensions (e.g. to test reflow) and settles.
+func (s *traceSession) Resize(width, height int) string {
+	s.term.Resize(width, height)
+	return s.settle()
 }
 
-// Zoom scopes the view to a span (mirrors --span / a deep link), which fetches
-// its subtree.
-func (h *prettyHarness) Zoom(id dagui.SpanID) string {
-	h.fe.ZoomToSpan(id)
-	return h.settle()
-}
-
-// Focus moves durable focus to a span (so a subsequent key acts on it).
-func (h *prettyHarness) Focus(id dagui.SpanID) {
-	h.fe.autoFocus = false
-	h.fe.FocusedSpan = id
-	h.fe.viewDirty = true
-}
-
-// PressKey feeds a key through the real input handler, then settles.
-func (h *prettyHarness) PressKey(k uv.Key) string {
-	h.fe.handleNavKeyUV(uv.KeyPressEvent(k))
-	return h.settle()
-}
+// Network returns the fetch counters accumulated so far — the sanctioned
+// side-channel for asserting on network behaviour (what the CLI's --debug
+// prints).
+func (s *traceSession) Network() *fetchStats { return s.net }
 
 // jsonBytes approximates the wire size of a fetched batch (the real client
 // counts raw SSE payload bytes; JSON size is the closest deterministic proxy).

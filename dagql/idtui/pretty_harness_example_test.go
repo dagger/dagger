@@ -9,12 +9,12 @@ import (
 	"github.com/dagger/dagger/internal/cloud"
 )
 
-// TestPrettyHarnessLazyFetch shows the harness driving the interactive frontend
-// from a (hand-built) fixture and asserting on fetch stats -- the thing that
+// TestTraceSessionLazyFetch drives the interactive frontend as a black box from
+// a hand-built fixture and asserts on the fetch side-channel — the thing that
 // previously needed the live CLI's --debug. A failing test case is a lazy child
 // of the root: until the root is expanded and the case actually renders, its
 // (rolled-up) logs are never fetched.
-func TestPrettyHarnessLazyFetch(t *testing.T) {
+func TestTraceSessionLazyFetch(t *testing.T) {
 	start := time.Unix(100, 0)
 	rootID := prettyTestSpanID(1)
 	caseID := prettyTestSpanID(2)
@@ -56,28 +56,25 @@ func TestPrettyHarnessLazyFetch(t *testing.T) {
 		},
 	}
 
-	h := newPrettyHarness(t, fix, func(fe *frontendPretty) {
-		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
-		fe.FrontendOpts.GCThreshold = time.Hour
-	})
+	sess := newTraceSession(t, fix, nil)
 
 	// Before expanding, the case isn't loaded, so nothing has rendered it and
 	// its logs were never fetched -- this is the over-fetch we eliminated.
-	if h.Stats().fetchedLog(caseID) {
-		t.Fatalf("failing case logs fetched before it was rendered; requests=%v", h.Stats().logRequests)
+	if sess.Network().fetchedLog(caseID) {
+		t.Fatalf("failing case logs fetched before it was rendered; requests=%v", sess.Network().logRequests)
 	}
 
-	// Expand the root: the lazy case loads, the TESTS summary renders it, and
-	// only THEN are its rolled-up logs fetched.
-	out := h.Expand(rootID)
+	// Expand the focused root with the real "right" key: the lazy case loads,
+	// the TESTS summary renders it, and only THEN are its rolled-up logs fetched.
+	out := sess.Press("right")
 	if !strings.Contains(out, "unit failure") {
 		t.Fatalf("expanded view missing the failing test:\n%s", out)
 	}
-	if !h.Stats().fetchedLog(caseID) {
-		t.Fatalf("failing case logs not fetched after rendering it; requests=%v", h.Stats().logRequests)
+	if !sess.Network().fetchedLog(caseID) {
+		t.Fatalf("failing case logs not fetched after rendering it; requests=%v", sess.Network().logRequests)
 	}
 
-	logs := h.Stats().op(opSpanLogs)
+	logs := sess.Network().op(opSpanLogs)
 	if logs.Requests == 0 || logs.Bytes == 0 {
 		t.Fatalf("expected a non-empty GetSpanLogs fetch, got %+v", logs)
 	}

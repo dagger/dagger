@@ -18,7 +18,7 @@ import (
 )
 
 // TestRecordTraceFixture captures a real trace into a TraceFixture JSON for use
-// with prettyHarness. It talks to Cloud, so it's opt-in: set the trace ID and
+// with a traceSession. It talks to Cloud, so it's opt-in: set the trace ID and
 // output path (and DAGGER_CLOUD_URL / auth) to run it.
 //
 //	RECORD_TRACE_FIXTURE_ID=<traceID> \

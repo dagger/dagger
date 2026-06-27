@@ -16,8 +16,8 @@ import (
 // both the own-only and rolled-up forms, mirroring the two GetSpanLogs variants
 // the real loader fetches.
 //
-// Capture one with `prettyHarness`'s recorder (see recordTraceFixture) or build
-// one by hand for a focused scenario.
+// Capture one with TestRecordTraceFixture or build one by hand for a focused
+// scenario, then drive it through a traceSession (pretty_harness_test.go).
 type TraceFixture struct {
 	TraceID string `json:"traceID"`
 	// Spans is the entire tree. Priority lists the hex IDs that arrive in the
