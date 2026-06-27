@@ -2287,6 +2287,21 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		for _, node := range failingLeafTestCases(fe.db.TestView()) {
 			add(node.Span)
 		}
+		// Plain call (no checks, no tests) that failed: point at the root-cause
+		// origin span(s) so the reader has a span id and a command to pull the
+		// failure's full logs. Without this a checkless/testless failure renders
+		// no drill-in footer at all -- the one thing the summary always provided.
+		// Mirror renderPolicy's showRootCause guard so a *passing* trace with
+		// boundary-contained fixture failures doesn't surface those as drill-ins.
+		root := fe.db.RootSpan
+		if len(targets) == 0 && root != nil && root.IsFailed() &&
+			len(fe.db.SurfacedChecks()) == 0 {
+			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
+				for _, origin := range fe.checkRootCauses(root) {
+					add(origin)
+				}
+			}
+		}
 	}
 
 	if len(targets) == 0 {
