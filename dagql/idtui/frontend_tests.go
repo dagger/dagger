@@ -1096,6 +1096,15 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		return []string{out.String("No test selected").Foreground(termenv.ANSIBrightBlack).String()}
 	}
 	span := node.Span
+	// Request the selected span's logs up front. detailLogLineCount returns 0
+	// until the logs are loaded, which would gate out renderDetailLogLines (the
+	// only other RequestLogs caller) and leave a failing test's detail pane
+	// permanently empty -- the fetch is never triggered because nothing renders,
+	// and nothing renders because the fetch never happened. Asking here breaks
+	// that cycle; the logs render on the next frame once they arrive.
+	if span != nil && tv.RequestLogs != nil {
+		tv.RequestLogs(span.ID)
+	}
 	representative := testTUISpan(node)
 	color := testCategoryColor(node.Category)
 	var lines []string
