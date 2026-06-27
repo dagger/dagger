@@ -108,6 +108,7 @@ func (fe *frontendPretty) renderCauseDetail(ctx tuist.Context, out TermOutput, r
 	_ = fe.renderStepTitle(ctx, out, r, row, indent, fe, false, false)
 	fmt.Fprintln(out)
 
+	fe.requestLogsOnRender(origin.ID)
 	if logs := fe.logs.Logs[origin.ID]; logs != nil && !fe.claims.hasLog(origin.ID) {
 		pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(origin)).String()
 		logs.SetPrefix(indent + pipe + " ")
