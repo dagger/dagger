@@ -128,6 +128,12 @@ type frontendPretty struct {
 	spanProvider   func(dagui.SpanID)
 	requestedSpans map[dagui.SpanID]bool
 
+	// fetchWaiter, when set, blocks until in-flight background span/log fetches
+	// have completed. The console settle calls it so a request reflects fetches
+	// a zoom/expand triggered instead of returning mid-round-trip; nil for the
+	// live TUI (which re-renders on arrival) and report mode.
+	fetchWaiter func()
+
 	// updated as events are written
 	db           *dagui.DB
 	logs         *prettyLogs
@@ -1185,6 +1191,18 @@ func (fe *frontendPretty) SetSpanProvider(provider func(dagui.SpanID)) {
 	})
 }
 
+// SetFetchWaiter registers a callback that blocks until in-flight background
+// fetches (issued via the span/log providers) have completed. The console uses
+// it so a single HTTP request reflects the result of fetches a zoom/expand
+// triggered, instead of returning before the async network round-trip lands.
+// The live TUI doesn't need it -- it re-renders when results arrive -- so only
+// the console settle calls it.
+func (fe *frontendPretty) SetFetchWaiter(wait func()) {
+	fe.dispatch(func() {
+		fe.fetchWaiter = wait
+	})
+}
+
 // requestSpans asks the span provider for a span's children, once. The provider
 // only needs to be asked when the server reported children we haven't loaded
 // yet (ChildCount exceeds the children we actually have); otherwise the subtree
@@ -1203,6 +1221,32 @@ func (fe *frontendPretty) requestSpans(id dagui.SpanID) {
 	}
 	if span.ChildCount == 0 {
 		// Leaf span: nothing deeper to fetch.
+		return
+	}
+	if fe.requestedSpans == nil {
+		fe.requestedSpans = make(map[dagui.SpanID]bool)
+	}
+	fe.requestedSpans[id] = true
+	fe.spanProvider(id)
+}
+
+// requestSubtree asks the span provider for a span's children even when its
+// reported ChildCount is 0. ChildCount is unreliable for spans loaded outside
+// the priority window -- e.g. external traces, whose priority MV is empty, so
+// the spans arrive via the root-spans path carrying no child count -- which
+// makes requestSpans treat them as leaves and never fetch. An explicit zoom is
+// the user asking to see exactly this subtree, so fetch it regardless, mirroring
+// what `dagger trace --span` does (it calls loader.listen directly, bypassing
+// the gate). The requestedSpans dedup still prevents repeat fetches.
+func (fe *frontendPretty) requestSubtree(id dagui.SpanID) {
+	if fe.spanProvider == nil || !id.IsValid() {
+		return
+	}
+	if fe.requestedSpans[id] {
+		return
+	}
+	if _, ok := fe.db.Spans.Map[id]; !ok {
+		// Span not loaded yet; it'll be requested once it's surfaced.
 		return
 	}
 	if fe.requestedSpans == nil {
@@ -2430,6 +2474,16 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.promoteChecksLocked()
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
+
+	// Interactive zoom: force-fetch the zoomed span's subtree so navigating
+	// straight to a failure shows its detail. ChildCount is unreliable for
+	// externally-loaded spans, so the ChildCount-gated requestSpans (via
+	// setExpanded) silently no-ops on them, leaving the zoomed view empty.
+	// Report mode already fetches the pinned subtree up front (trace.go --span),
+	// so this is interactive-only; requestSubtree dedups against that.
+	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+		fe.requestSubtree(fe.ZoomedSpan)
+	}
 
 	if fe.logProvider != nil {
 		// The primary output is replayed at end of run from OUTSIDE the render

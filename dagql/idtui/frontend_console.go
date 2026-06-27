@@ -158,6 +158,15 @@ func (fe *frontendPretty) consoleSettle() string {
 	deadline := time.Now().Add(consoleSettleTimeout)
 	stable := 0
 	for time.Now().Before(deadline) {
+		// Block until any background fetches the last Step triggered (lazy
+		// span/log loads via the providers -- e.g. a zoom's subtree) have
+		// landed. Without this the frame settles "stable but empty" in the
+		// ~80ms before a network round-trip returns, so a zoom/expand looks
+		// like it surfaced nothing. The fetched spans are imported onto the
+		// dispatch queue, which the next Step applies.
+		if fe.fetchWaiter != nil {
+			fe.fetchWaiter()
+		}
 		time.Sleep(40 * time.Millisecond)
 		next := strings.Join(fe.tui.Step(), "\n")
 		if next == frame {

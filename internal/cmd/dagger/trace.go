@@ -249,6 +249,19 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 			return noop, err
 		}
 
+		// Let the console block on in-flight lazy fetches so a single HTTP
+		// request reflects a zoom/expand's results instead of returning before
+		// the network round-trip lands. Registered after the initial drains
+		// above so it only ever runs on the console's (single) goroutine -- the
+		// loader/log errgroups are then fed and waited from that one goroutine,
+		// keeping their Go/Wait calls sequential.
+		if fw, ok := Frontend.(interface{ SetFetchWaiter(func()) }); ok {
+			fw.SetFetchWaiter(func() {
+				_ = loader.wait()
+				_ = logEg.Wait()
+			})
+		}
+
 		return noop, nil
 	})
 
