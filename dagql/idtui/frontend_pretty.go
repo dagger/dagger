@@ -77,6 +77,10 @@ type frontendPretty struct {
 	reportOnly bool
 	reportMu   sync.Mutex // protects state in reportOnly mode (no TUI event loop)
 
+	// console, when set (DAGGER_TUI_CONSOLE=<addr>), serves the TUI over HTTP on
+	// a headless terminal instead of attaching to a real one (frontend_console.go).
+	console string
+
 	// updated by Run
 	tui         *tuist.TUI
 	run         func(context.Context) (cleanups.CleanupF, error)
@@ -609,6 +613,13 @@ func (fe *frontendPretty) dispatch(fn func()) {
 }
 
 func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
+	if addr := os.Getenv("DAGGER_TUI_CONSOLE"); addr != "" {
+		// Console mode: drive the TUI headlessly over HTTP (frontend_console.go)
+		// instead of a real terminal, so it works without a tty.
+		fe := newWithTerminal(w, db, tuist.NewHeadlessTerminal(consoleWidth, consoleHeight))
+		fe.console = addr
+		return fe
+	}
 	return newWithTerminal(w, db, tuist.NewStdTerminal())
 }
 
@@ -818,6 +829,9 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 			err = errors.Join(err, cleanup())
 		}
 		fe.err = err
+	} else if fe.console != "" {
+		// serve the TUI over HTTP instead of attaching to a terminal
+		fe.err = fe.runWithConsole(ctx, run)
 	} else {
 		// run the function wrapped in the TUI
 		fe.err = fe.runWithTUI(ctx, run)

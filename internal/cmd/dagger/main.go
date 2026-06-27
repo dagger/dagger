@@ -820,6 +820,12 @@ func Main() {
 		// if silent, don't even bother with the pretty frontend
 		progress = "plain"
 	}
+	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
+	// force it regardless of progress mode / tty (it doesn't need one).
+	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
+		progress = "tty"
+		hasTTY = true
+	}
 	switch progress {
 	case "plain":
 		Frontend = idtui.NewPlain(stderr)
