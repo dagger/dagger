@@ -21,7 +21,6 @@ import (
 )
 
 var (
-	traceFull  bool
 	traceSpan  string
 	traceCheck string
 	traceTest  string
@@ -37,40 +36,24 @@ var traceCmd = &cobra.Command{
 	},
 	Aliases: []string{"t", "analyze", "diagnose"},
 	Short:   "Diagnose or view a Dagger Cloud trace.",
-	Long: `Summarize why a trace failed: overall status, the command(s) that caused the
-failure, check results, and failed tests, each with the tail of its logs. This
-summary is computed server-side without loading the whole trace, and is the
-default.
+	Long: `Stream and render a Dagger Cloud trace: the overall pass/fail verdict, the
+command(s) that caused a failure, check results, and failed tests, each with the
+tail of its logs, plus the full call tree, arguments, and timing. Spans and logs
+are fetched incrementally, so the whole trace doesn't have to load up front.
 
-Pass --full to instead stream and render the entire trace -- the full call
-tree, arguments, and timing.`,
+Use --span/--check/--test to scope and zoom the view to a single span, check, or
+test by name.`,
 	Example: `dagger trace 2f123ba77bf7bd2d4db2f70ed20613e8`,
 	RunE:    traceRun,
 }
 
 func init() {
-	traceCmd.Flags().BoolVar(&traceFull, "full", false, "Render the full trace (call tree, arguments, timing) instead of the failure summary")
-	traceCmd.Flags().StringVar(&traceSpan, "span", "", "With --full, scope and zoom the view to a span ID (fetches its subtree and logs)")
-	traceCmd.Flags().StringVar(&traceCheck, "check", "", "With --full, scope and zoom the view to a check by name")
-	traceCmd.Flags().StringVar(&traceTest, "test", "", "With --full, scope and zoom the view to a test by name")
-	traceCmd.Flags().BoolVar(&cloudJSON, "json", false, "Print the summary as JSON (no logs; ignored with --full)")
-	traceCmd.Flags().IntVar(&analyzeLogLines, "log-lines", 20, "Lines of log tail to show per failed span in the summary (0 to disable)")
-	traceCmd.Flags().BoolVar(&analyzeNoLogs, "no-logs", false, "Skip fetching logs in the summary, just the triage")
-	traceCmd.Flags().DurationVar(&analyzeLogTimeout, "log-timeout", 30*time.Second, "Max time to spend fetching each span's log tail in the summary")
+	traceCmd.Flags().StringVar(&traceSpan, "span", "", "Scope and zoom the view to a span ID (fetches its subtree and logs)")
+	traceCmd.Flags().StringVar(&traceCheck, "check", "", "Scope and zoom the view to a check by name")
+	traceCmd.Flags().StringVar(&traceTest, "test", "", "Scope and zoom the view to a test by name")
 }
 
-// traceRun shows the server-computed failure summary by default, and the full
-// streamed trace when --full is given. The summary path is the same one the
-// 'cloud analyze' work produced; --full keeps the original render-everything
-// behavior.
 func traceRun(cmd *cobra.Command, args []string) error {
-	if traceFull {
-		return traceFullRender(cmd, args)
-	}
-	return cloudCLI.Analyze(cmd, args)
-}
-
-func traceFullRender(cmd *cobra.Command, args []string) error {
 	traceID := args[0]
 
 	sel := spanSelector{span: traceSpan, check: traceCheck, test: traceTest}

@@ -13,14 +13,9 @@ import (
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
-	analyzeLogLines   int
-	analyzeNoLogs     bool
-	analyzeLogTimeout time.Duration
-
 	logsOutput  string
 	logsTimeout time.Duration
 	logsSpan    string
@@ -58,157 +53,6 @@ With no --span/--check/--test, the whole trace's logs are streamed. --check and
 	return cmd
 }
 
-func (cli *CloudCLI) Analyze(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	traceID := args[0]
-
-	client, cloudAuth, err := cli.cloudClient(ctx)
-	if err != nil {
-		return err
-	}
-	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
-	if err != nil {
-		return err
-	}
-
-	tq, err := client.TraceQuestions(ctx, org.ID, traceID)
-	if err != nil {
-		return err
-	}
-	if tq == nil {
-		return fmt.Errorf("trace %q not found (or no data yet)", traceID)
-	}
-
-	if cloudJSON {
-		return writeCloudJSON(cmd, tq)
-	}
-
-	cli.printAnalysis(cmd, client, org.ID, traceID, tq)
-	return nil
-}
-
-func (cli *CloudCLI) printAnalysis(cmd *cobra.Command, client *cloudapi.Client, orgID, traceID string, tq *cloudapi.TraceQuestions) {
-	// idtui.NewOutput keeps styling consistent with the rest of the CLI: it
-	// colors unless NO_COLOR is set or an AI agent is driving us (see
-	// idtui.ColorProfile), so piped/agent output stays plain automatically.
-	o := idtui.NewOutput(cmd.OutOrStdout())
-
-	// Fetch all the failed spans' log tails up front, concurrently: the log
-	// endpoints are slow, and rendering is sequential, so doing them inline would
-	// serialize the wait. Results are keyed by span id and looked up while
-	// rendering. nil when logs are disabled.
-	logs := cli.prefetchLogTails(cmd.Context(), client, orgID, traceID, tq)
-
-	fmt.Fprintf(o, "%s %s\n", bold(o, "TRACE"), traceID)
-	if s := tq.Outcome; s != nil {
-		fmt.Fprintf(o, "%s  %s\n", bold(o, "Status:"), statusHeadline(o, s.Status))
-		if s.Command != "" {
-			fmt.Fprintf(o, "%s %s\n", bold(o, "Command:"), s.Command)
-		}
-		if s.Error != "" {
-			// Values align at column 9 ("Error:" + 3). The real cause is often on
-			// a later line (the first is a generic "exit code N" wrapper), so show
-			// the whole message rather than truncating to the first line.
-			fmt.Fprintf(o, "%s   %s\n", bold(o, "Error:"), errText(s.Error, 9))
-		}
-	} else {
-		fmt.Fprintf(o, "%s  UNKNOWN (no root span found)\n", bold(o, "Status:"))
-	}
-
-	// What command caused the failure.
-	var rootCause strings.Builder
-	if len(tq.FailingCommands) == 0 {
-		fmt.Fprintln(&rootCause, "(nothing failed)")
-	}
-	for i, fc := range tq.FailingCommands {
-		if i > 0 {
-			fmt.Fprintln(&rootCause)
-		}
-		// The ROOT CAUSE heading already says what this is; just show the status
-		// marker before the command, consistent with checks and tests.
-		fmt.Fprintf(&rootCause, "%s %s\n", marker(o, "failed"), emptyDash(fc.Command))
-		if fc.Error != "" {
-			fmt.Fprintf(&rootCause, "  %s %s\n", bold(o, "error:"), errText(fc.Error, 9))
-		}
-		fmt.Fprintf(&rootCause, "  %s  %s\n", bold(o, "span:"), fc.Span.ID)
-		cli.renderSpanLogs(&rootCause, o, traceID, fc.Span.ID, logs[fc.Span.ID])
-	}
-	section(o, "ROOT CAUSE", rootCause.String())
-
-	// Checks. Always show the section so "no checks ran" is explicit rather than
-	// an ambiguous omission. The pass/fail tally is computed server-side.
-	var checks strings.Builder
-	if tq.Checks.Total == 0 {
-		fmt.Fprintln(&checks, "(no checks ran)")
-	}
-	for i, c := range tq.Checks.Items {
-		if i > 0 {
-			fmt.Fprintln(&checks)
-		}
-		fmt.Fprintf(&checks, "%s %s\n", marker(o, c.Status), bold(o, emptyDash(c.Name)))
-		if c.Error != "" {
-			fmt.Fprintf(&checks, "  %s %s\n", bold(o, "error:"), errText(c.Error, 9))
-		}
-		if c.Status == "failed" {
-			fmt.Fprintf(&checks, "  %s  %s\n", bold(o, "span:"), c.Span.ID)
-			cli.renderSpanLogs(&checks, o, traceID, c.Span.ID, logs[c.Span.ID])
-		}
-	}
-	section(o, fmt.Sprintf("CHECKS (%d passed, %d failed, %d total)", tq.Checks.Passed, tq.Checks.Failed, tq.Checks.Total), checks.String())
-
-	// Failed tests. Always show the section for the same reason.
-	var tests strings.Builder
-	if len(tq.FailedTests) == 0 {
-		fmt.Fprintln(&tests, "(no failed tests)")
-	}
-	leaves := leafFailedTests(tq.FailedTests)
-	for i, t := range tq.FailedTests {
-		if i > 0 {
-			fmt.Fprintln(&tests)
-		}
-		name := t.Name
-		if t.Suite != "" && t.Suite != t.Name {
-			// Use an ASCII separator for agents; the test name is a prime grep
-			// target and › is awkward to match.
-			sep := " › "
-			if idtui.RunningInAgent() {
-				sep = " > "
-			}
-			name = t.Suite + sep + t.Name
-		}
-		fmt.Fprintf(&tests, "%s %s\n", marker(o, "failed"), bold(o, emptyDash(name)))
-		var causeCommand, causeError string
-		if t.Cause != nil {
-			causeCommand = t.Cause.Command
-			causeError = t.Cause.Error
-		}
-		if causeCommand != "" {
-			fmt.Fprintf(&tests, "  %s %s\n", bold(o, "caused by:"), causeCommand)
-		}
-		if msg := firstNonEmptyStr(causeError, t.Error); msg != "" {
-			// Values in this block align at column 13 ("caused by:" + 1).
-			fmt.Fprintf(&tests, "  %s     %s\n", bold(o, "error:"), errText(msg, 13))
-		}
-		fmt.Fprintf(&tests, "  %s      %s\n", bold(o, "span:"), t.Span.ID)
-		// Roll up the descendant logs for leaf tests: the real failure usually
-		// lives in a sub-operation the test ran (a withExec, a nested dagger
-		// call), not on the test span itself. Aggregate parent tests are skipped
-		// -- they'd just repeat their children's logs.
-		if leaves[t.Span.ID] {
-			cli.renderSpanLogs(&tests, o, traceID, t.Span.ID, logs[t.Span.ID])
-		}
-	}
-	section(o, fmt.Sprintf("FAILED TESTS (%d)", len(tq.FailedTests)), tests.String())
-
-	// This summary is intentionally a flat triage: it drops the call tree that
-	// led to each failure (which function calls, with which arguments, and how
-	// long they took). When that context matters, the full trace renders it.
-	var more strings.Builder
-	fmt.Fprintf(&more, "Full call tree, arguments, and timing:  dagger trace --full %s\n", traceID)
-	fmt.Fprintf(&more, "Full logs for any span:                 dagger cloud logs %s --span <span-id> -o span.log\n", traceID)
-	section(o, "MORE CONTEXT", more.String())
-}
-
 // section renders a titled block. For humans the title is a bold, all-caps
 // heading with the body indented two spaces -- the style used elsewhere in the
 // CLI. For agents it's a flat, greppable "== TITLE ==" marker with the body
@@ -237,130 +81,6 @@ func indentLines(s, prefix string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-// logTarget is a span whose logs we want to fetch for the analysis.
-type logTarget struct {
-	spanID      string
-	descendants bool
-}
-
-// logResult is the outcome of fetching one span's log tail.
-type logResult struct {
-	tail     *lineTail
-	timedOut bool
-	err      error
-}
-
-// logTargets returns the spans whose logs the analysis displays, in no
-// particular order. Failing commands want their own output (descendants=false:
-// a withExec's stdout/stderr is on the span itself); checks and leaf failed
-// tests want their subtree, so the failure that happened in a sub-operation
-// rolls up.
-func logTargets(tq *cloudapi.TraceQuestions) []logTarget {
-	var targets []logTarget
-	for _, fc := range tq.FailingCommands {
-		targets = append(targets, logTarget{fc.Span.ID, false})
-	}
-	for _, c := range tq.Checks.Items {
-		if c.Status == "failed" {
-			targets = append(targets, logTarget{c.Span.ID, true})
-		}
-	}
-	leaves := leafFailedTests(tq.FailedTests)
-	for _, t := range tq.FailedTests {
-		if leaves[t.Span.ID] {
-			targets = append(targets, logTarget{t.Span.ID, true})
-		}
-	}
-	return targets
-}
-
-// leafFailedTests returns the span IDs of the failed tests that are leaves: no
-// other failed test is nested beneath them, by "/"-delimited name within the
-// same suite (Go subtests). Only leaves get a descendant log roll-up; an
-// ancestor's subtree would just repeat its children's logs.
-func leafFailedTests(tests []cloudapi.FailedTest) map[string]bool {
-	leaves := make(map[string]bool, len(tests))
-	for _, t := range tests {
-		leaf := true
-		for _, other := range tests {
-			if other.Span.ID == t.Span.ID {
-				continue
-			}
-			if other.Suite == t.Suite && strings.HasPrefix(other.Name, t.Name+"/") {
-				leaf = false
-				break
-			}
-		}
-		if leaf {
-			leaves[t.Span.ID] = true
-		}
-	}
-	return leaves
-}
-
-// prefetchLogTails fetches every target span's log tail concurrently. The log
-// endpoints are slow and rendering is sequential, so fetching inline would add
-// up the waits; fetching in parallel makes the total roughly the slowest single
-// span. Returns nil when logs are disabled. Per-span errors are kept in the
-// result so one failure doesn't sink the rest.
-func (cli *CloudCLI) prefetchLogTails(ctx context.Context, client *cloudapi.Client, orgID, traceID string, tq *cloudapi.TraceQuestions) map[string]*logResult {
-	if analyzeNoLogs || analyzeLogLines <= 0 {
-		return nil
-	}
-	targets := logTargets(tq)
-	if len(targets) == 0 {
-		return nil
-	}
-
-	results := make([]*logResult, len(targets))
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(8)
-	for i, tgt := range targets {
-		i, tgt := i, tgt
-		eg.Go(func() error {
-			tail, timedOut, err := cli.tailSpanLogs(ctx, client, orgID, traceID, tgt.spanID, tgt.descendants)
-			results[i] = &logResult{tail: tail, timedOut: timedOut, err: err}
-			return nil
-		})
-	}
-	_ = eg.Wait()
-
-	out := make(map[string]*logResult, len(targets))
-	for i, tgt := range targets {
-		out[tgt.spanID] = results[i]
-	}
-	return out
-}
-
-// renderSpanLogs writes a span's prefetched log tail and the command to get the
-// full logs to w, styling with o. A nil result means logs were disabled, so
-// just print the command.
-func (cli *CloudCLI) renderSpanLogs(w io.Writer, o *termenv.Output, traceID, spanID string, res *logResult) {
-	full := fmt.Sprintf("dagger cloud logs %s --span %s", traceID, spanID)
-	switch {
-	case res == nil:
-		fmt.Fprintf(w, "  %s  %s\n", bold(o, "logs:"), full)
-		return
-	case res.err != nil:
-		fmt.Fprintf(w, "  %s  (error fetching: %v) %s\n", bold(o, "logs:"), res.err, full)
-		return
-	case res.tail == nil || res.tail.total == 0:
-		fmt.Fprintf(w, "  %s  (none) — %s\n", bold(o, "logs:"), full)
-		return
-	}
-
-	suffix := ""
-	if res.timedOut {
-		suffix = ", timed out — partial"
-	}
-	header := fmt.Sprintf("logs (last %d of %d lines%s; full: %s):", len(res.tail.lines), res.tail.total, suffix, full)
-	fmt.Fprintf(w, "  %s\n", bold(o, header))
-	pipe := dim(o, "|")
-	for _, ln := range res.tail.lines {
-		fmt.Fprintf(w, "    %s %s\n", pipe, ln)
-	}
 }
 
 func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
@@ -419,44 +139,6 @@ func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// lineTail keeps the last n lines streamed to it (a ring buffer), tracking the
-// total seen so the caller can report "last N of M".
-type lineTail struct {
-	n     int
-	lines []string
-	total int
-}
-
-func (t *lineTail) addBody(body string) {
-	body = strings.TrimSuffix(body, "\n")
-	if body == "" {
-		return
-	}
-	for _, ln := range strings.Split(body, "\n") {
-		t.total++
-		t.lines = append(t.lines, ln)
-		if len(t.lines) > t.n {
-			t.lines = t.lines[1:]
-		}
-	}
-}
-
-func (cli *CloudCLI) tailSpanLogs(ctx context.Context, client *cloudapi.Client, orgID, traceID, spanID string, descendants bool) (*lineTail, bool, error) {
-	cctx, cancel := context.WithTimeout(ctx, analyzeLogTimeout)
-	defer cancel()
-
-	tail := &lineTail{n: analyzeLogLines}
-	err := client.StreamLogs(cctx, orgID, traceID, spanID, descendants, func(msgs []cloudapi.LogMessage) {
-		for _, m := range msgs {
-			tail.addBody(m.Body)
-		}
-	})
-	if errors.Is(cctx.Err(), context.DeadlineExceeded) {
-		return tail, true, nil
-	}
-	return tail, false, err
-}
-
 // marker is the leading status indicator for a check or test line. For humans
 // it's a colored glyph matching the report frontend's vocabulary (green ✔ /
 // red ✘); for agents it's a greppable ASCII token like "[FAILED]", so a single
@@ -486,24 +168,6 @@ func statusToken(status string) string {
 	return "[" + w + "]"
 }
 
-// statusHeadline renders the overall outcome on the Status line: a colored
-// glyph plus the uppercased word for humans, or just the ASCII token for agents
-// (which already spells out the outcome, so no separate word is needed).
-func statusHeadline(o *termenv.Output, status string) string {
-	if idtui.RunningInAgent() {
-		return statusToken(status)
-	}
-	word := strings.ToUpper(emptyDash(status))
-	switch status {
-	case "passed":
-		return o.String("✔ " + word).Foreground(termenv.ANSIGreen).String()
-	case "failed":
-		return o.String("✘ " + word).Foreground(termenv.ANSIRed).String()
-	default:
-		return marker(o, status) + " " + word
-	}
-}
-
 // bold styles headings and labels.
 func bold(o *termenv.Output, s string) string {
 	return o.String(s).Bold().String()
@@ -514,39 +178,3 @@ func dim(o *termenv.Output, s string) string {
 	return o.String(s).Foreground(termenv.ANSIBrightBlack).String()
 }
 
-func emptyDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
-}
-
-// errText formats a possibly multi-line error message for display after a
-// label. The first line follows the label; subsequent non-empty lines are
-// indented to align beneath it (indent columns). Blank lines are dropped so
-// wrapped errors stay compact. We deliberately keep every non-empty line: the
-// real cause is frequently below a generic "exit code N" first line, so
-// collapsing to one line would hide it. Returns "-" for an empty message.
-func errText(msg string, indent int) string {
-	var lines []string
-	for _, ln := range strings.Split(msg, "\n") {
-		ln = strings.TrimRight(ln, " \t")
-		if strings.TrimSpace(ln) == "" {
-			continue
-		}
-		lines = append(lines, ln)
-	}
-	if len(lines) == 0 {
-		return "-"
-	}
-	return strings.Join(lines, "\n"+strings.Repeat(" ", indent))
-}
-
-func firstNonEmptyStr(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}

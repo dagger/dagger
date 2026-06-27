@@ -2209,7 +2209,7 @@ func stripTraceparent(s string) string {
 
 // renderZoomedFinalLogs renders the zoomed span's rolled-up logs for the final
 // report -- the same error-anchored window and 'dagger cloud logs' hint the test
-// summary uses -- so 'dagger trace --full --test X' surfaces X's failure output
+// summary uses -- so 'dagger trace --test X' surfaces X's failure output
 // (its descendants having been fetched and re-keyed onto it).
 func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) []string {
 	span, ok := fe.db.Spans.Map[fe.ZoomedSpan]
@@ -2293,7 +2293,7 @@ func reportSectionLines(out TermOutput, title string, body []string) []string {
 	return lines
 }
 
-// renderSuggestionsSection prints copy-paste 'dagger trace --full' commands that
+// renderSuggestionsSection prints copy-paste 'dagger trace' commands that
 // scope the report to a single failure, so the reader learns how to drill in
 // with --check/--test. At the root it points at failed checks (and any failed
 // tests not under a check); zoomed to a check it points at that check's failed
@@ -2364,7 +2364,7 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	body := make([]string, 0, len(targets))
 	for _, sel := range targets {
-		body = append(body, fmt.Sprintf("dagger trace %s --full %s", fe.traceID, sel))
+		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
 	}
 	return reportSectionLines(out, "MORE DETAILS", body)
 }
