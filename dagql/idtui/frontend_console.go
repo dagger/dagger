@@ -103,6 +103,19 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		}
 		writeScreen(w, r, fe.consoleSettle())
 	})
+	mux.HandleFunc("/type", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		// Type a literal string one rune at a time, as if entered at the
+		// keyboard — for driving the search prompt ("/") and any other text
+		// input. Unlike /key, the body is NOT tokenized: spaces and commas are
+		// typed verbatim. Body is taken raw (only a trailing newline trimmed).
+		raw, _ := io.ReadAll(r.Body)
+		for _, ru := range strings.TrimRight(string(raw), "\n") {
+			fe.tui.Inject(tuist.ParseKey(string(ru)))
+		}
+		writeScreen(w, r, fe.consoleSettle())
+	})
 	mux.HandleFunc("/zoom", func(w http.ResponseWriter, r *http.Request) {
 		hex := reqBody(r)
 		sid, err := oteltrace.SpanIDFromHex(hex)
@@ -186,6 +199,7 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 	io.WriteString(w, "dagger TUI console — endpoints:\n"+
 		"  GET  /screen        current frame (?raw=1 keeps ANSI)\n"+
 		"  POST /key   <keys>   apply key script, return frame\n"+
+		"  POST /type  <text>   type a literal string (e.g. into / search)\n"+
 		"  POST /zoom  <hex>    zoom to a span, return frame\n"+
 		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
 		"  GET  /help           this list\n"+

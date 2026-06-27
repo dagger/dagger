@@ -51,6 +51,7 @@ keep color).
 curl -s localhost:7777/screen                  # current frame
 curl -s --data 'right'     localhost:7777/key  # expand the focused span
 curl -s --data 'down down' localhost:7777/key  # navigate (keys: tuist.ParseKey names)
+curl -s --data 'TestFoo'   localhost:7777/type # type a literal string (e.g. into / search)
 curl -s 'localhost:7777/spans?q=TestFoo'       # list loaded spans matching a name
 curl -s --data '<spanHex>' localhost:7777/zoom # jump straight to a span
 curl -s localhost:7777/help                    # endpoints + keymap
@@ -66,6 +67,15 @@ GET `/screen` again.
 zoom · `esc` back out · `r` jump to error origin · `L` logs · `+`/`-` verbosity ·
 `/` search · `T` tests view. A `down*3` token repeats a key; commas or spaces
 separate keys (`"down,down,right"`).
+
+To type into the search field, open it with `/` then POST the query to `/type`
+(which is *not* tokenized — spaces are typed verbatim), then submit with `enter`:
+
+```bash
+curl -s --data '/'           localhost:7777/key
+curl -s --data 'TestFoo'     localhost:7777/type
+curl -s --data 'enter'       localhost:7777/key   # jump to the match
+```
 
 ### Typical flow: find a failure and inspect it
 
