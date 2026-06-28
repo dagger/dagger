@@ -19,16 +19,17 @@ type EngineConn interface {
 }
 
 type Config struct {
-	Workdir              string
-	Workspace            string
-	LogOutput            io.Writer
-	RunnerHost           string
-	Conn                 EngineConn
-	VersionOverride      string
-	Verbosity            int
-	ExtraEnv             []string
-	LoadWorkspaceModules bool
-	SkipWorkspaceModules bool
+	Workdir                string
+	Workspace              string
+	LogOutput              io.Writer
+	RunnerHost             string
+	Conn                   EngineConn
+	VersionOverride        string
+	Verbosity              int
+	ExtraEnv               []string
+	AllowedHostPortModules []string
+	LoadWorkspaceModules   bool
+	SkipWorkspaceModules   bool
 }
 
 type ConnectParams struct {
@@ -50,14 +51,15 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		return nil, err
 	}
 	cfg = &Config{
-		Workdir:              cfg.Workdir,
-		Workspace:            cfg.Workspace,
-		LogOutput:            cfg.LogOutput,
-		RunnerHost:           cfg.RunnerHost,
-		VersionOverride:      cfg.VersionOverride,
-		Verbosity:            cfg.Verbosity,
-		ExtraEnv:             cfg.ExtraEnv,
-		LoadWorkspaceModules: loadWorkspaceModules,
+		Workdir:                cfg.Workdir,
+		Workspace:              cfg.Workspace,
+		LogOutput:              cfg.LogOutput,
+		RunnerHost:             cfg.RunnerHost,
+		VersionOverride:        cfg.VersionOverride,
+		Verbosity:              cfg.Verbosity,
+		ExtraEnv:               cfg.ExtraEnv,
+		AllowedHostPortModules: cfg.AllowedHostPortModules,
+		LoadWorkspaceModules:   loadWorkspaceModules,
 	}
 
 	// Try DAGGER_SESSION_PORT next
@@ -74,6 +76,9 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		}
 		if cfg.LoadWorkspaceModules {
 			return nil, fmt.Errorf("cannot configure workspace module loading for existing session")
+		}
+		if len(cfg.AllowedHostPortModules) > 0 {
+			return nil, fmt.Errorf("cannot configure host port module allowlist for existing session")
 		}
 		return conn, nil
 	}

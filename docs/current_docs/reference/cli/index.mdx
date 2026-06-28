@@ -15,6 +15,7 @@ dagger [options] [subcommand | file...]
 ### Options
 
 ```
+      --allow-host-ports strings     List of local/Git modules allowed to publish ports on the host, or 'local'/'all' to allow broader scopes
       --allow-llm strings            List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
   -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -c, --command string               Execute a dagger shell command
@@ -150,12 +151,13 @@ dagger api call [options] [function]...
 ### Options
 
 ```
-      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --eager-runtime        load module runtime eagerly
-  -j, --json                 Present result as JSON
-  -m, --load-module string   Use a one-off module (local path or git ref)
-  -M, --no-load-module       Don't load any module for this command
-  -o, --output string        Save the result to a local file or directory
+      --allow-host-ports strings   List of local/Git modules allowed to publish ports on the host, or 'local'/'all' to allow broader scopes
+      --allow-llm strings          List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --eager-runtime              load module runtime eagerly
+  -j, --json                       Present result as JSON
+  -m, --load-module string         Use a one-off module (local path or git ref)
+  -M, --no-load-module             Don't load any module for this command
+  -o, --output string              Save the result to a local file or directory
 ```
 
 ### Options inherited from parent commands
@@ -399,9 +401,10 @@ dagger api functions [options] [function]...
 ### Options
 
 ```
-      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --eager-runtime        load module runtime eagerly
-  -m, --load-module string   Use a one-off module (local path or git ref)
+      --allow-host-ports strings   List of local/Git modules allowed to publish ports on the host, or 'local'/'all' to allow broader scopes
+      --allow-llm strings          List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --eager-runtime              load module runtime eagerly
+  -m, --load-module string         Use a one-off module (local path or git ref)
 ```
 
 ### Options inherited from parent commands
@@ -466,13 +469,14 @@ EOF
 ### Options
 
 ```
-      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --doc string           Read query from file (defaults to reading from stdin)
-      --eager-runtime        load module runtime eagerly
-  -m, --load-module string   Use a one-off module (local path or git ref)
-  -M, --no-load-module       Don't load any module for this command
-      --var strings          List of query variables, in key=value format
-      --var-json string      Query variables in JSON format (overrides --var)
+      --allow-host-ports strings   List of local/Git modules allowed to publish ports on the host, or 'local'/'all' to allow broader scopes
+      --allow-llm strings          List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --doc string                 Read query from file (defaults to reading from stdin)
+      --eager-runtime              load module runtime eagerly
+  -m, --load-module string         Use a one-off module (local path or git ref)
+  -M, --no-load-module             Don't load any module for this command
+      --var strings                List of query variables, in key=value format
+      --var-json string            Query variables in JSON format (overrides --var)
 ```
 
 ### Options inherited from parent commands
@@ -522,17 +526,18 @@ dagger check [options] [pattern...]
 ### Options
 
 ```
-      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --eager-runtime        load module runtime eagerly
-      --failfast             Cancel remaining checks on first failure
-      --generate             Only run generate-as-checks, skip annotated check functions
-  -l, --list                 List available checks
-  -m, --load-module string   Use a one-off module (local path or git ref)
-      --no-generate          Only run annotated check functions, skip generate-as-checks
-      --no-past              Disable past Cloud Checks lookup
-      --past                 Only replay past Cloud Checks results
-      --run                  Run checks even when past Cloud Checks results are replayed
-      --skip stringArray     Skip checks matching the specified patterns
+      --allow-host-ports strings   List of local/Git modules allowed to publish ports on the host, or 'local'/'all' to allow broader scopes
+      --allow-llm strings          List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --eager-runtime              load module runtime eagerly
+      --failfast                   Cancel remaining checks on first failure
+      --generate                   Only run generate-as-checks, skip annotated check functions
+  -l, --list                       List available checks
+  -m, --load-module string         Use a one-off module (local path or git ref)
+      --no-generate                Only run annotated check functions, skip generate-as-checks
+      --no-past                    Disable past Cloud Checks lookup
+      --past                       Only replay past Cloud Checks results
+      --run                        Run checks even when past Cloud Checks results are replayed
+      --skip stringArray           Skip checks matching the specified patterns
 ```
 
 ### Options inherited from parent commands

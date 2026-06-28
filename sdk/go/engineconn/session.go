@@ -92,6 +92,9 @@ func cliSessionArgs(cfg *Config) []string {
 	if cfg.LoadWorkspaceModules {
 		args = append(args, "--load-workspace-modules")
 	}
+	for _, module := range cfg.AllowedHostPortModules {
+		args = append(args, "--allow-host-ports", module)
+	}
 
 	if cfg.Verbosity > 0 {
 		args = append(args, "-"+strings.Repeat("v", cfg.Verbosity))

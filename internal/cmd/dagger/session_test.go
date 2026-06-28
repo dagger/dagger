@@ -16,6 +16,13 @@ func TestSessionCmdWorkspaceFlag(t *testing.T) {
 	require.Equal(t, "W", flag.Shorthand)
 }
 
+func TestSessionCmdAllowHostPortsFlag(t *testing.T) {
+	cmd := sessionCmd()
+
+	flag := cmd.Flags().Lookup("allow-host-ports")
+	require.NotNil(t, flag)
+}
+
 // TestSessionClientParamsWorkspace verifies that the session command forwards
 // its explicit workspace selection into engine client params.
 func TestSessionClientParamsWorkspace(t *testing.T) {
@@ -24,18 +31,21 @@ func TestSessionClientParamsWorkspace(t *testing.T) {
 	oldVersion := sessionVersion
 	oldLoad := sessionLoadWorkspaceModules
 	oldSkip := sessionSkipWorkspaceModules
+	oldAllowedHostPorts := sessionAllowedHostPorts
 	t.Cleanup(func() {
 		sessionWorkspace = oldWorkspace
 		workspaceRef = oldGlobalWorkspace
 		sessionVersion = oldVersion
 		sessionLoadWorkspaceModules = oldLoad
 		sessionSkipWorkspaceModules = oldSkip
+		sessionAllowedHostPorts = oldAllowedHostPorts
 	})
 
 	sessionWorkspace = "github.com/acme/ws"
 	workspaceRef = ""
 	sessionVersion = "v1.2.3"
 	sessionLoadWorkspaceModules = true
+	sessionAllowedHostPorts = []string{"local", "github.com/acme/mod@v1.2.3"}
 
 	params, err := sessionClientParams("secret")
 	require.NoError(t, err)
@@ -45,6 +55,7 @@ func TestSessionClientParamsWorkspace(t *testing.T) {
 	require.True(t, params.LoadWorkspaceModules)
 	require.NotNil(t, params.Workspace)
 	require.Equal(t, "github.com/acme/ws", *params.Workspace)
+	require.Equal(t, []string{"local", "github.com/acme/mod@v1.2.3"}, params.AllowedHostPortModules)
 }
 
 func TestSessionClientParamsGlobalWorkspace(t *testing.T) {
@@ -53,12 +64,14 @@ func TestSessionClientParamsGlobalWorkspace(t *testing.T) {
 	oldVersion := sessionVersion
 	oldLoad := sessionLoadWorkspaceModules
 	oldSkip := sessionSkipWorkspaceModules
+	oldAllowedHostPorts := sessionAllowedHostPorts
 	t.Cleanup(func() {
 		sessionWorkspace = oldWorkspace
 		workspaceRef = oldGlobalWorkspace
 		sessionVersion = oldVersion
 		sessionLoadWorkspaceModules = oldLoad
 		sessionSkipWorkspaceModules = oldSkip
+		sessionAllowedHostPorts = oldAllowedHostPorts
 	})
 
 	sessionWorkspace = ""
@@ -66,6 +79,7 @@ func TestSessionClientParamsGlobalWorkspace(t *testing.T) {
 	sessionVersion = ""
 	sessionLoadWorkspaceModules = false
 	sessionSkipWorkspaceModules = false
+	sessionAllowedHostPorts = nil
 
 	params, err := sessionClientParams("secret")
 	require.NoError(t, err)
@@ -79,17 +93,20 @@ func TestSessionClientParamsRejectConflictingWorkspaceModuleFlags(t *testing.T) 
 	oldGlobalWorkspace := workspaceRef
 	oldLoad := sessionLoadWorkspaceModules
 	oldSkip := sessionSkipWorkspaceModules
+	oldAllowedHostPorts := sessionAllowedHostPorts
 	t.Cleanup(func() {
 		sessionWorkspace = oldWorkspace
 		workspaceRef = oldGlobalWorkspace
 		sessionLoadWorkspaceModules = oldLoad
 		sessionSkipWorkspaceModules = oldSkip
+		sessionAllowedHostPorts = oldAllowedHostPorts
 	})
 
 	sessionWorkspace = ""
 	workspaceRef = ""
 	sessionLoadWorkspaceModules = true
 	sessionSkipWorkspaceModules = true
+	sessionAllowedHostPorts = nil
 
 	_, err := sessionClientParams("secret")
 	require.ErrorContains(t, err, "mutually exclusive")

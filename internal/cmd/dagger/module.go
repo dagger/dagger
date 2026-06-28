@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	moduleURL         string
-	moduleNoURL       bool
-	allowedLLMModules []string
+	moduleURL              string
+	moduleNoURL            bool
+	allowedLLMModules      []string
+	allowedHostPortModules []string
 
 	installName   string
 	workspaceHere bool
@@ -49,8 +50,17 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 	}
 	flags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
 
+	flags.StringSliceVar(&allowedHostPortModules, "allow-host-ports", defaultAllowedHostPortModules(), "List of local/Git modules allowed to publish ports on the host, or 'local'/'all' to allow broader scopes")
+
 	// Add the eager module loading flag to disable lazy load on runtime.
 	flags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
+}
+
+func defaultAllowedHostPortModules() []string {
+	if allowHostPortsEnv := os.Getenv("DAGGER_ALLOW_HOST_PORTS"); allowHostPortsEnv != "" {
+		return strings.Split(allowHostPortsEnv, ",")
+	}
+	return nil
 }
 
 func init() {

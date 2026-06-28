@@ -31,6 +31,18 @@ func TestCLISessionArgsIncludeLoadWorkspaceModules(t *testing.T) {
 	require.NotContains(t, args, "--skip-workspace-modules")
 }
 
+func TestCLISessionArgsIncludeAllowedHostPorts(t *testing.T) {
+	t.Parallel()
+
+	args := cliSessionArgs(&Config{
+		AllowedHostPortModules: []string{"local", "github.com/acme/mod@v1.2.3"},
+	})
+
+	require.Contains(t, args, "--allow-host-ports")
+	require.Contains(t, args, "local")
+	require.Contains(t, args, "github.com/acme/mod@v1.2.3")
+}
+
 // TestGetRejectsWorkspaceForExistingSession verifies that an existing session's
 // workspace binding cannot be overridden by client config.
 func TestGetRejectsWorkspaceForExistingSession(t *testing.T) {
@@ -51,4 +63,14 @@ func TestGetRejectsWorkspaceModuleLoadingForExistingSession(t *testing.T) {
 		LoadWorkspaceModules: true,
 	})
 	require.ErrorContains(t, err, "cannot configure workspace module loading for existing session")
+}
+
+func TestGetRejectsAllowedHostPortsForExistingSession(t *testing.T) {
+	t.Setenv("DAGGER_SESSION_PORT", "1234")
+	t.Setenv("DAGGER_SESSION_TOKEN", "secret")
+
+	_, err := Get(context.Background(), &Config{
+		AllowedHostPortModules: []string{"local"},
+	})
+	require.ErrorContains(t, err, "cannot configure host port module allowlist for existing session")
 }

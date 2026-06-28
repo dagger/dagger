@@ -41,6 +41,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -1696,6 +1697,89 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 
 		_, err := c.Host().Tunnel(srv).ID(ctx)
 		require.Error(t, err)
+	})
+}
+
+func (ServiceSuite) TestPublishFromModule(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+	copyTestdataFixture(ctx, t, modDir, "modules", "go", "service-publish")
+
+	t.Run("denied without opt-in", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+
+		_, err := testutil.QueryWithClient[struct {
+			Test struct {
+				PublishEndpoint string
+			}
+		}](c, t, `{test{publishEndpoint}}`, nil)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "not allowed to publish host ports")
+		require.ErrorContains(t, err, "--allow-host-ports=local")
+	})
+
+	t.Run("allowed local module publishes random host port", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t, dagger.WithAllowedHostPorts("local"))
+		require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+
+		res, err := testutil.QueryWithClient[struct {
+			Test struct {
+				PublishEndpoint string
+			}
+		}](c, t, `{test{publishEndpoint}}`, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res.Test.PublishEndpoint)
+
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			resp, err := http.Get(res.Test.PublishEndpoint)
+			require.NoError(c, err)
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(c, err)
+			require.Equal(c, http.StatusOK, resp.StatusCode)
+			require.Equal(c, "published from module", string(body))
+		}, time.Minute, time.Second)
+	})
+
+	t.Run("published service handle can start and stop", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t, dagger.WithAllowedHostPorts("local"))
+		require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+
+		res, err := testutil.QueryWithClient[struct {
+			Test struct {
+				PublishStartStop string
+			}
+		}](c, t, `{test{publishStartStop}}`, nil)
+		require.NoError(t, err)
+		require.Equal(t, "ok", res.Test.PublishStartStop)
+	})
+
+	t.Run("fixed port collision fails", func(ctx context.Context, t *testctx.T) {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		defer listener.Close()
+
+		_, portStr, err := net.SplitHostPort(listener.Addr().String())
+		require.NoError(t, err)
+		port, err := strconv.Atoi(portStr)
+		require.NoError(t, err)
+
+		c := connect(ctx, t, dagger.WithAllowedHostPorts("local"))
+		require.NoError(t, c.ModuleSource(modDir).AsModule().Serve(ctx))
+
+		_, err = testutil.QueryWithClient[struct {
+			Test struct {
+				PublishFixed string
+			}
+		}](c, t, `query PublishFixed($frontend: Int!){test{publishFixed(frontend:$frontend)}}`, &testutil.QueryOptions{
+			Operation: "PublishFixed",
+			Variables: map[string]any{
+				"frontend": port,
+			},
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, strconv.Itoa(port))
 	})
 }
 

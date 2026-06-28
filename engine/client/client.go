@@ -113,7 +113,8 @@ type Params struct {
 
 	WithTerminal terminal.WithTerminalFunc
 
-	AllowedLLMModules []string
+	AllowedLLMModules      []string
+	AllowedHostPortModules []string
 
 	PromptHandler prompt.PromptHandler
 
@@ -1157,7 +1158,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Host:   "dagger",
 			Path:   r.URL.Path,
 		},
-		Header: r.Header,
+		Header: c.AppendHTTPRequestHeaders(r.Header),
 		Body:   r.Body,
 	}
 	proxyReq = proxyReq.WithContext(ctx)
@@ -1443,6 +1444,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:             c.InteractiveCommand,
 		SSHAuthSocketPath:              sshAuthSock,
 		AllowedLLMModules:              c.AllowedLLMModules,
+		AllowedHostPortModules:         c.AllowedHostPortModules,
 		EagerRuntime:                   c.EagerRuntime,
 		SingleQuery:                    c.SingleQuery,
 		SuppressCompatWorkspaceWarning: c.SuppressCompatWorkspaceWarning,

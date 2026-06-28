@@ -2,12 +2,16 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
 type serviceSchema struct{}
@@ -128,6 +132,17 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("up", s.up).
 			DoNotCache("Starts a host tunnel, possibly with ports that change each time it's started.").
 			Doc(`Creates a tunnel that forwards traffic from the caller's network to this service.`).
+			Args(
+				dagql.Arg("ports").Doc(`List of frontend/backend port mappings to forward.`,
+					`Frontend is the port accepting traffic on the host, backend is the service port.`),
+				dagql.Arg("random").Doc(`Bind each tunnel port to a random port on the host.`),
+			),
+
+		dagql.NodeFunc("publish", s.publish).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Starts a host tunnel, possibly with ports that change each time it's started.").
+			Doc(`Start this service and publish its ports on the main client's host.`,
+				`Nested module calls require explicit host-port permission.`).
 			Args(
 				dagql.Arg("ports").Doc(`List of frontend/backend port mappings to forward.`,
 					`Frontend is the port accepting traffic on the host, backend is the service port.`),
@@ -454,7 +469,11 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.ObjectResult[*co
 	if err != nil {
 		return res, err
 	}
-	if _, err := svcs.StartResult(ctx, parent, parent.Self().TunnelUpstream.Self() != nil); err != nil {
+	runtimeCtx, err := parent.Self().RuntimeContext(ctx)
+	if err != nil {
+		return res, err
+	}
+	if _, err := svcs.StartResult(runtimeCtx, parent, parent.Self().TunnelUpstream.Self() != nil); err != nil {
 		return res, err
 	}
 
@@ -525,21 +544,23 @@ type UpArgs struct {
 
 const InstrumentationLibrary = "dagger.io/engine.schema"
 
-func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Service], args UpArgs) (res dagql.Nullable[core.Void], _ error) {
-	void := dagql.Null[core.Void]()
-
+func (s *serviceSchema) hostTunnel(
+	ctx context.Context,
+	svc dagql.ObjectResult[*core.Service],
+	args UpArgs,
+) (dagql.ObjectResult[*core.Service], error) {
+	var hostSvc dagql.ObjectResult[*core.Service]
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return res, fmt.Errorf("failed to get Dagger server: %w", err)
+		return hostSvc, fmt.Errorf("failed to get Dagger server: %w", err)
 	}
 	svcID, err := svc.ID()
 	if err != nil {
-		return res, fmt.Errorf("service ID: %w", err)
+		return hostSvc, fmt.Errorf("service ID: %w", err)
 	}
 
 	useNative := !args.Random && len(args.Ports) == 0
 
-	var hostSvc dagql.Result[*core.Service]
 	err = srv.Select(ctx, srv.Root(), &hostSvc,
 		dagql.Selector{
 			Field: "host",
@@ -554,7 +575,17 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 		},
 	)
 	if err != nil {
-		return res, fmt.Errorf("failed to select host service: %w", err)
+		return hostSvc, fmt.Errorf("failed to select host service: %w", err)
+	}
+	return hostSvc, nil
+}
+
+func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Service], args UpArgs) (res dagql.Nullable[core.Void], _ error) {
+	void := dagql.Null[core.Void]()
+
+	hostSvc, err := s.hostTunnel(ctx, svc, args)
+	if err != nil {
+		return res, err
 	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -573,6 +604,111 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 		return res, fmt.Errorf("failed to start host service: %w", err)
 	}
 
+	logTunnelStarted(ctx, runningSvc)
+
+	// wait for the request to be canceled
+	<-ctx.Done()
+
+	return void, nil
+}
+
+func (s *serviceSchema) publish(ctx context.Context, svc dagql.ObjectResult[*core.Service], args UpArgs) (dagql.ObjectResult[*core.Service], error) {
+	var res dagql.ObjectResult[*core.Service]
+	if err := s.allowHostPortPublish(ctx); err != nil {
+		return res, err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return res, err
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	mainClientMetadata, err := query.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get main client metadata: %w", err)
+	}
+	hostSvc, err := s.hostTunnel(ctx, svc, args)
+	if err != nil {
+		return res, err
+	}
+	publishedSvc := hostSvc.Self().Clone()
+	publishedSvc.TunnelUpstreamClientID = clientMetadata.ClientID
+	publishedSvc.TunnelListenClientID = mainClientMetadata.ClientID
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get Dagger server: %w", err)
+	}
+	res, err = newPublishedServiceResult(ctx, srv, publishedSvc)
+	if err != nil {
+		return res, err
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get Dagger cache: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return res, fmt.Errorf("failed to attach published service: empty session ID")
+	}
+	attachedAny, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, res)
+	if err != nil {
+		return res, fmt.Errorf("failed to attach published service: %w", err)
+	}
+	attached, ok := attachedAny.(dagql.ObjectResult[*core.Service])
+	if !ok {
+		return res, fmt.Errorf("failed to attach published service: expected %T, got %T", res, attachedAny)
+	}
+	res = attached
+	publishedSvc = res.Self()
+
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get host services: %w", err)
+	}
+	hostSvcDig, err := res.ContentPreferredDigest(ctx)
+	if err != nil {
+		return res, fmt.Errorf("host service digest: %w", err)
+	}
+	runtimeCtx, err := publishedSvc.RuntimeContext(ctx)
+	if err != nil {
+		return res, err
+	}
+	runningSvc, err := svcs.Start(runtimeCtx, hostSvcDig, publishedSvc, true)
+	if err != nil {
+		return res, fmt.Errorf("failed to publish host service: %w", err)
+	}
+
+	logTunnelStarted(ctx, runningSvc)
+	return res, nil
+}
+
+func newPublishedServiceResult(
+	ctx context.Context,
+	srv *dagql.Server,
+	svc *core.Service,
+) (dagql.ObjectResult[*core.Service], error) {
+	var res dagql.ObjectResult[*core.Service]
+	publishCall := (&dagql.CallRequest{ResultCall: dagql.CurrentCall(ctx)}).Clone().ResultCall
+	if publishCall == nil {
+		return res, fmt.Errorf("current call is nil")
+	}
+	// publish allocates listener state on a specific host client. Give the
+	// returned handle a unique recipe identity so attaching it cannot reuse a
+	// cached tunnel with stale session/client ownership or a previous random port.
+	publishCall.ImplicitInputs = append(publishCall.ImplicitInputs, &dagql.ResultCallArg{
+		Name: "service.publish.id",
+		Value: &dagql.ResultCallLiteral{
+			Kind:        dagql.ResultCallLiteralKindString,
+			StringValue: identity.NewID(),
+		},
+	})
+	return dagql.NewObjectResultForCall(svc, srv, publishCall)
+}
+
+func logTunnelStarted(ctx context.Context, runningSvc *core.RunningService) {
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	for _, port := range runningSvc.Ports {
@@ -588,9 +724,68 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 			"description", *port.Description,
 		)
 	}
+}
 
-	// wait for the request to be canceled
-	<-ctx.Done()
+func (s *serviceSchema) allowHostPortPublish(ctx context.Context) error {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	mainClientMetadata, err := query.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get main client metadata: %w", err)
+	}
+	if clientMetadata.ClientID == mainClientMetadata.ClientID {
+		return nil
+	}
 
-	return void, nil
+	mod, err := query.CurrentModule(ctx)
+	if err != nil {
+		if errors.Is(err, core.ErrNoCurrentModule) {
+			return fmt.Errorf("nested clients must be executing a module to publish host ports")
+		}
+		return fmt.Errorf("failed to determine module for host port permission: %w", err)
+	}
+	if !mod.Self().ContextSource.Valid || mod.Self().ContextSource.Value.Self() == nil {
+		return fmt.Errorf("module %q has no context source for host port permission", mod.Self().NameField)
+	}
+	src := mod.Self().ContextSource.Value.Self()
+	if hostPortModuleAllowed(mainClientMetadata.AllowedHostPortModules, src) {
+		return nil
+	}
+	return fmt.Errorf("module %q is not allowed to publish host ports; pass --allow-host-ports=%s to allow", mod.Self().NameField, hostPortAllowHint(src))
+}
+
+func hostPortModuleAllowed(allowed []string, src *core.ModuleSource) bool {
+	for _, entry := range allowed {
+		switch strings.TrimSpace(entry) {
+		case "all":
+			return true
+		case "local":
+			if src.Kind == core.ModuleSourceKindLocal || src.Kind == core.ModuleSourceKindDir {
+				return true
+			}
+		default:
+			if src.Kind == core.ModuleSourceKindGit && src.Git != nil && strings.TrimSpace(entry) == src.Git.Symbolic {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hostPortAllowHint(src *core.ModuleSource) string {
+	switch src.Kind {
+	case core.ModuleSourceKindLocal, core.ModuleSourceKindDir:
+		return "local"
+	case core.ModuleSourceKindGit:
+		if src.Git != nil && src.Git.Symbolic != "" {
+			return src.Git.Symbolic
+		}
+	}
+	return "all"
 }

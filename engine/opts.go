@@ -97,6 +97,9 @@ type ClientMetadata struct {
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
 
+	// Modules permitted to publish ports on the main client's host, or "local"/"all" to allow broader scopes.
+	AllowedHostPortModules []string `json:"allowed_host_port_modules"`
+
 	// Disable lazy loading on module runtime.
 	EagerRuntime bool `json:"eager_runtime"`
 

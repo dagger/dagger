@@ -46,6 +46,68 @@ dagger up web
 curl http://localhost:80
 ```
 
+`dagger up` is intended for interactive use from the CLI. It starts the
+selected services, publishes their ports on your host, and blocks until you stop
+it with Ctrl+C.
+
+Functions can publish service ports too, but this is an explicit trust grant
+because it opens ports on the host running the Dagger session. Use
+`Service.publish()` when trusted module code needs to start a host-published
+tunnel and manage its lifecycle from inside a function.
+
+```typescript
+import { dag, func, object, NetworkProtocol } from "@dagger.io/dagger"
+
+@object()
+export class App {
+  @func()
+  async endpoint(): Promise<string> {
+    const service = dag
+      .container()
+      .from("nginx")
+      .withExposedPort(80)
+      .asService()
+
+    const tunnel = await service
+      .publish({
+        ports: [{ frontend: 8080, backend: 80, protocol: NetworkProtocol.Tcp }],
+      })
+      .start()
+
+    try {
+      return await tunnel.endpoint({ scheme: "http" })
+    } finally {
+      await tunnel.stop({ kill: true })
+    }
+  }
+}
+```
+
+Set `random: true` to bind each published port to a random available host port,
+then read the selected port with `endpoint()` or `ports()`.
+
+The service returned by `publish()` is the tunnel handle. Use that handle for
+`endpoint()`, `ports()`, and `stop()`. If another container needs to connect to
+the service inside Dagger, bind the original service instead of the published
+tunnel handle.
+
+When a nested module calls `publish()`, the main client must allow it:
+
+```shell
+# Allow local modules to publish host ports
+dagger call --allow-host-ports=local endpoint
+
+# Allow one Git module by symbolic module ref
+dagger call -m github.com/example/tools --allow-host-ports=github.com/example/tools endpoint
+
+# Environment variable equivalent
+DAGGER_ALLOW_HOST_PORTS=local dagger call endpoint
+```
+
+Use `--allow-host-ports=all` only for trusted sessions. Main-client direct calls
+are allowed; nested module calls require `local`, an exact Git module ref, or
+`all`.
+
 ## Host-to-container networking
 
 Containers running in Dagger can also connect to services on your host machine. This is useful for testing against a locally running database or API.

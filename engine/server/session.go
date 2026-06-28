@@ -1067,6 +1067,9 @@ func (srv *Server) getOrInitClient(
 		if client.clientMetadata.AllowedLLMModules == nil {
 			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
 		}
+		if client.clientMetadata.AllowedHostPortModules == nil {
+			client.clientMetadata.AllowedHostPortModules = opts.AllowedHostPortModules
+		}
 		if opts.LoadWorkspaceModules {
 			client.clientMetadata.LoadWorkspaceModules = true
 		}
@@ -1258,6 +1261,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.ClientMetadata) *engine.ClientMetadata {
 	clientMetadata := *nestedClientMetadata
 	clientMetadata.AllowedLLMModules = slices.Clone(nestedClientMetadata.AllowedLLMModules)
+	clientMetadata.AllowedHostPortModules = slices.Clone(nestedClientMetadata.AllowedHostPortModules)
 	if clientMetadata.ClientVersion == "" {
 		clientMetadata.ClientVersion = engine.Version
 	}

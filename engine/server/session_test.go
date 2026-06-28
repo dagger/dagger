@@ -1251,8 +1251,9 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			Labels: map[string]string{
 				"ignored": "true",
 			},
-			SSHAuthSocketPath: "/tmp/ssh.sock",
-			AllowedLLMModules: []string{"parent"},
+			SSHAuthSocketPath:      "/tmp/ssh.sock",
+			AllowedLLMModules:      []string{"parent"},
+			AllowedHostPortModules: []string{"local"},
 			ExtraModules: []engine.ExtraModule{{
 				Ref: "github.com/dagger/base-extra",
 			}},
@@ -1280,6 +1281,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Empty(t, md.Labels)
 		require.Equal(t, "/tmp/ssh.sock", md.SSHAuthSocketPath)
 		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
+		require.Equal(t, []string{"local"}, md.AllowedHostPortModules)
 		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
 		require.Empty(t, md.ExtraModules)
 		require.False(t, md.LoadWorkspaceModules)
@@ -1290,6 +1292,8 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 
 		base.AllowedLLMModules[0] = "mutated"
 		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
+		base.AllowedHostPortModules[0] = "mutated"
+		require.Equal(t, []string{"local"}, md.AllowedHostPortModules)
 	})
 
 	t.Run("overlays request-scoped forwarded metadata", func(t *testing.T) {
@@ -1307,8 +1311,9 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			Labels: map[string]string{
 				"forwarded": "ignored",
 			},
-			SSHAuthSocketPath: "/tmp/forwarded-ssh.sock",
-			AllowedLLMModules: []string{"child"},
+			SSHAuthSocketPath:      "/tmp/forwarded-ssh.sock",
+			AllowedLLMModules:      []string{"child"},
+			AllowedHostPortModules: []string{"all"},
 			ExtraModules: []engine.ExtraModule{{
 				Ref:        "github.com/dagger/mod",
 				Entrypoint: true,
@@ -1333,6 +1338,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 
 		require.Equal(t, "v-test", md.ClientVersion)
 		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
+		require.Equal(t, []string{"local"}, md.AllowedHostPortModules)
 		require.Equal(t, string(workspace.LockModeLive), md.LockMode)
 		require.True(t, md.LoadWorkspaceModules)
 		require.True(t, md.EagerRuntime)
@@ -1350,14 +1356,16 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		t.Parallel()
 
 		forwarded := engine.ClientMetadata{
-			ClientVersion:     "v-test",
-			AllowedLLMModules: []string{"child"},
+			ClientVersion:          "v-test",
+			AllowedLLMModules:      []string{"child"},
+			AllowedHostPortModules: []string{"all"},
 		}
 
 		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
 
 		require.Equal(t, "v-test", md.ClientVersion)
 		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
+		require.Equal(t, []string{"local"}, md.AllowedHostPortModules)
 		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
 		require.Nil(t, md.WorkspaceEnv)
 		require.True(t, md.UseRecipeIDsByDefault)

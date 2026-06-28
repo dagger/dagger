@@ -26,6 +26,7 @@ var (
 	sessionLoadWorkspaceModules bool
 	sessionSkipWorkspaceModules bool
 	sessionWorkspace            string
+	sessionAllowedHostPorts     []string
 )
 
 func sessionCmd() *cobra.Command {
@@ -53,6 +54,7 @@ func newSessionCmd(hidden bool) *cobra.Command {
 	cmd.Flags().StringVarP(&sessionWorkspace, "workspace", "W", "", "select the workspace to load")
 	cmd.Flags().BoolVar(&sessionLoadWorkspaceModules, "load-workspace-modules", false, "load workspace modules")
 	cmd.Flags().BoolVar(&sessionSkipWorkspaceModules, "skip-workspace-modules", false, "skip loading workspace modules")
+	cmd.Flags().StringSliceVar(&sessionAllowedHostPorts, "allow-host-ports", defaultAllowedHostPortModules(), "List of local/Git modules allowed to publish ports on the host, or 'local'/'all' to allow broader scopes")
 	return cmd
 }
 
@@ -146,9 +148,10 @@ func sessionClientParams(secretToken string) (client.Params, error) {
 	}
 
 	params := client.Params{
-		SecretToken:          secretToken,
-		Version:              sessionVersion,
-		LoadWorkspaceModules: sessionLoadWorkspaceModules,
+		SecretToken:            secretToken,
+		Version:                sessionVersion,
+		LoadWorkspaceModules:   sessionLoadWorkspaceModules,
+		AllowedHostPortModules: sessionAllowedHostPorts,
 	}
 	if sessionWorkspace != "" {
 		params.Workspace = &sessionWorkspace
