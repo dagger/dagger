@@ -840,6 +840,49 @@ func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutWorkspace(t *test
 	require.Empty(t, client.pendingModules)
 }
 
+func TestDetectAndLoadWorkspaceReportsMissingGitRepository(t *testing.T) {
+	t.Parallel()
+
+	// No .git anywhere: detection succeeds with no workspace, but the reason
+	// must be recorded so CurrentWorkspace can give an actionable error instead
+	// of a bare "workspace not loaded".
+	statFS := core.StatFSFunc(func(_ context.Context, _ string) (string, *core.Stat, error) {
+		return "", nil, os.ErrNotExist
+	})
+	readFile := func(_ context.Context, _ string) ([]byte, error) {
+		return nil, os.ErrNotExist
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata:       &engine.ClientMetadata{LoadWorkspaceModules: true},
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/tmp/nogit",
+		func(ws *workspace.Workspace, relPath string) string {
+			return filepath.Join(ws.Root, relPath)
+		},
+		nil,
+		true,
+	)
+	require.NoError(t, err)
+	require.Nil(t, client.workspace)
+	require.Empty(t, client.pendingModules)
+
+	require.Error(t, client.noWorkspaceErr)
+	require.ErrorIs(t, client.noWorkspaceErr, core.ErrNoCurrentWorkspace)
+	require.Contains(t, client.noWorkspaceErr.Error(), "/tmp/nogit")
+	require.Contains(t, client.noWorkspaceErr.Error(), "git init")
+}
+
 func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	t.Parallel()
 

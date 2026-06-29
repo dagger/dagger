@@ -47,8 +47,16 @@ func (srv *Server) invalidateClientWorkspace(ctx context.Context) error {
 	client.workspaceLoaded = false
 	client.workspaceErr = nil
 	client.workspace = nil
+	client.noWorkspaceErr = nil
 	client.pendingModules = nil
 	return nil
+}
+
+// noGitWorkspaceError describes the missing-Git-repository condition that leaves
+// a local client with no workspace. Wraps ErrNoCurrentWorkspace so semantic
+// checks keep working while the message tells the user how to fix it.
+func noGitWorkspaceError(cwd string) error {
+	return fmt.Errorf("%w: no Git repository found in %q or any parent directory; Dagger uses the Git repository as the workspace boundary — run 'git init' to create one", core.ErrNoCurrentWorkspace, cwd)
 }
 
 // CurrentWorkspace returns the cached workspace for the current client.
@@ -58,6 +66,9 @@ func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error
 		return nil, err
 	}
 	if client.workspace == nil {
+		if client.noWorkspaceErr != nil {
+			return nil, client.noWorkspaceErr
+		}
 		return nil, fmt.Errorf("%w: workspace not loaded", core.ErrNoCurrentWorkspace)
 	}
 	return client.workspace, nil
@@ -183,8 +194,16 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 
 		parent.workspaceMu.Lock()
 		parentWorkspace := parent.workspace
+		parentNoWorkspaceErr := parent.noWorkspaceErr
 		parent.workspaceMu.Unlock()
 		if parentWorkspace == nil {
+			// Carry the nearest parent's reason so a nested client still
+			// explains why no workspace is available (e.g. no Git repository).
+			if parentNoWorkspaceErr != nil {
+				client.workspaceMu.Lock()
+				client.noWorkspaceErr = parentNoWorkspaceErr
+				client.workspaceMu.Unlock()
+			}
 			continue
 		}
 
@@ -687,6 +706,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if ws == nil {
 		client.workspace = nil
 		client.pendingModules = nil
+		// ws is only ever nil for local detection that found no .git root
+		// (DetectInRoot always yields a workspace for remote/declared roots).
+		if isLocal {
+			client.noWorkspaceErr = noGitWorkspaceError(cwd)
+		}
 		return nil
 	}
 	if wsConfig == nil && compatWorkspace == nil {
@@ -704,6 +728,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 	coreWS.SetCompatWorkspace(compatWorkspace)
 	client.workspace = coreWS
+	client.noWorkspaceErr = nil
 
 	if !loadModules {
 		return nil
