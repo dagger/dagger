@@ -148,13 +148,10 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		if rows <= 0 {
 			rows = fe.consoleTerm.Rows()
 		}
+		// Resize notifies the TUI (like SIGWINCH), and tuist's cache keys
+		// height-dependent renders on ScreenHeight, so the next Step reflows to
+		// the new size on its own -- no manual generation bump needed.
 		fe.consoleTerm.Resize(cols, rows)
-		// The frontend caches its rendered output keyed on (generation, width),
-		// not height, so a height-only resize would otherwise reuse the stale
-		// layout (a live run re-renders constantly and never hits this; a settled
-		// replayed trace has no other re-render trigger). Bump the generation so
-		// the next Step re-runs Render at the new ScreenHeight.
-		fe.Update()
 		writeScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/spans", func(w http.ResponseWriter, r *http.Request) {
