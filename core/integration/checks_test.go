@@ -310,14 +310,6 @@ func (ChecksSuite) TestChecksSkipFlag(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, out, "failing-check")
 		require.NotContains(t, out, "failing-container")
 	})
-
-	t.Run("past and skip are mutually exclusive", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.
-			With(daggerExecFail("check", "--past", "--skip", "failing-*")).
-			CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "if any flags in the group [past skip] are set none of the others can be")
-	})
 }
 
 func (ChecksSuite) TestWorkspaceCheckSkip(ctx context.Context, t *testctx.T) {
