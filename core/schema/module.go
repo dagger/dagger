@@ -231,13 +231,28 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
-			WithInput(dagql.CurrentSchemaInput).
+			// PerClientInput is load-bearing: modules now load inside the
+			// resolver, so the schema digest no longer identifies the workspace
+			// and different workspaces would otherwise share a cache entry.
+			// CurrentSchemaInput refreshes as the served schema grows.
+			WithInput(dagql.CurrentSchemaInput, dagql.PerClientInput).
 			Args(
 				dagql.Arg("returnAllTypes").Doc(`Return the full referenced typedef closure instead of only top-level served typedefs.`),
 				dagql.Arg("hideCore").Doc(
 					`Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).`,
 					`Core types (Container, Directory, etc.) are kept so return types and method chaining still work.`,
 				),
+				// Gate out of the base schema view: a new public arg on a
+				// base-view field must be version-gated (TestBaseSchemaAllowlist).
+				dagql.Arg("include").
+					Doc(
+						`Narrow on-demand workspace module loading to the named modules (and their dependencies) before computing typedefs.`,
+						`Each pattern is a workspace module name or "module:item"; the workspace entrypoint module, when one is configured, is always loaded as well since the pattern may name one of its root-proxied functions.`,
+						`A pattern that does not name a workspace module loads every module, unless an entrypoint module can resolve it.`,
+						`Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.`,
+						`Modules already loaded in the session are always reflected; other pending workspace modules stay loadable by later requests.`,
+					).
+					View(AfterVersion("v1.0.0-0")),
 			).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
@@ -2110,9 +2125,23 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.ObjectResu
 type currentTypeDefsArgs struct {
 	ReturnAllTypes bool `default:"false"`
 	HideCore       dagql.Optional[dagql.Boolean]
+	Include        dagql.Optional[dagql.ArrayInput[dagql.String]]
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, args currentTypeDefsArgs) (dagql.ObjectResultArray[*core.TypeDef], error) {
+	// The query validates against the core schema, so module loading waits
+	// until here, where include narrows it.
+	var include []string
+	if args.Include.Valid {
+		include = make([]string, 0, len(args.Include.Value))
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	if err := self.Server.EnsureWorkspaceModulesForTypeDefs(ctx, include); err != nil {
+		return nil, fmt.Errorf("failed to load workspace modules: %w", err)
+	}
+
 	deps, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)

@@ -59,3 +59,45 @@ func TestFunctionName(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadTypeDefsScopedQuery checks the two query variants differ only by the
+// include argument.
+func TestLoadTypeDefsScopedQuery(t *testing.T) {
+	require.Contains(t, loadTypeDefsScopedQuery, "$include: [String!]")
+	require.Contains(t, loadTypeDefsScopedQuery, "include: $include")
+	require.NotContains(t, loadTypeDefsQuery, "$include")
+}
+
+func TestWorkspaceModuleScope(t *testing.T) {
+	type example struct {
+		name string
+		args []string
+		want []string
+	}
+	for _, test := range []example{
+		{
+			name: "first positional token is the scope",
+			args: []string{"my-mod", "container-echo", "--string-arg", "hi"},
+			want: []string{"my-mod"},
+		},
+		{
+			name: "self-contained flags are skipped",
+			args: []string{"--json=true", "my-mod", "fn"},
+			want: []string{"my-mod"},
+		},
+		{
+			name: "ambiguous flag sends no scope",
+			args: []string{"-o", "out.txt", "my-mod", "fn"},
+			want: nil,
+		},
+		{
+			name: "no args sends no scope",
+			args: nil,
+			want: nil,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, workspaceModuleScope(test.args))
+		})
+	}
+}

@@ -53,6 +53,14 @@ func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Wor
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string) error {
+	return nil
+}
+
+func (s *currentTypeDefsTestServer) EnsureWorkspaceModulesForTypeDefs(context.Context, []string) error {
+	return nil
+}
+
 func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.SchemaBuilder, error) {
 	return s.deps, nil
 }

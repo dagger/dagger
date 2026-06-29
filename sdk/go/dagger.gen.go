@@ -13383,6 +13383,16 @@ type CurrentTypeDefsOpts struct {
 	//
 	// Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
 	HideCore bool
+	// Narrow on-demand workspace module loading to the named modules (and their dependencies) before computing typedefs.
+	//
+	// Each pattern is a workspace module name or "module:item"; the workspace entrypoint module, when one is configured, is always loaded as well since the pattern may name one of its root-proxied functions.
+	//
+	// A pattern that does not name a workspace module loads every module, unless an entrypoint module can resolve it.
+	//
+	// Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.
+	//
+	// Modules already loaded in the session are always reflected; other pending workspace modules stay loadable by later requests.
+	Include []string
 }
 
 // The TypeDef representations of the objects currently being served in the session.
@@ -13396,6 +13406,10 @@ func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts
 		// `hideCore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].HideCore) {
 			q = q.Arg("hideCore", opts[i].HideCore)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
 		}
 	}
 

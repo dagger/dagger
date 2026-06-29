@@ -1,3 +1,7 @@
+# Fragments for the TypeDefs introspection. The query operation is built in
+# module_inspect.go (plain and include-scoped variants) so the two only differ
+# in the optional include argument.
+
 fragment TypeDefRefParts on TypeDef {
 	name
 	optional
@@ -23,64 +27,62 @@ fragment FunctionParts on Function {
 }
 
 fragment FieldParts on FieldTypeDef {
-  name
-  description
-  typeDef {
-    ...TypeDefRefParts
-  }
+	name
+	description
+	typeDef {
+		...TypeDefRefParts
+	}
 }
 
-query TypeDefs($hideCore: Boolean) {
-	typeDefs: currentTypeDefs(returnAllTypes: true, hideCore: $hideCore) {
+fragment TypeDefParts on TypeDef {
+	name
+	kind
+	optional
+	asObject {
 		name
-		kind
-		optional
-		asObject {
+		description
+		sourceModuleName
+		constructor {
+			...FunctionParts
+		}
+		functions {
+			...FunctionParts
+		}
+		fields {
+			...FieldParts
+		}
+	}
+	asScalar {
+		name
+		description
+		sourceModuleName
+	}
+	asEnum {
+		name
+		description
+		sourceModuleName
+		members {
 			name
 			description
-			sourceModuleName
-			constructor {
-				...FunctionParts
-			}
-			functions {
-				...FunctionParts
-			}
-			fields {
-				...FieldParts
-			}
 		}
-		asScalar {
-			name
-			description
-			sourceModuleName
+	}
+	asInterface {
+		name
+		description
+		sourceModuleName
+		functions {
+			...FunctionParts
 		}
-		asEnum {
-			name
-			description
-			sourceModuleName
-			members {
-				name
-				description
-			}
+	}
+	asInput {
+		name
+		fields {
+			...FieldParts
 		}
-		asInterface {
-			name
-			description
-			sourceModuleName
-			functions {
-				...FunctionParts
-			}
-		}
-		asInput {
-			name
-			fields {
-				...FieldParts
-			}
-		}
-		asList {
-			elementTypeDef {
-				...TypeDefRefParts
-			}
+	}
+	asList {
+		elementTypeDef {
+			...TypeDefRefParts
 		}
 	}
 }

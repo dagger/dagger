@@ -2163,6 +2163,19 @@ export type ClientCurrentTypeDefsOpts = {
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
   hideCore?: boolean
+
+  /**
+   * Narrow on-demand workspace module loading to the named modules (and their dependencies) before computing typedefs.
+   *
+   * Each pattern is a workspace module name or "module:item"; the workspace entrypoint module, when one is configured, is always loaded as well since the pattern may name one of its root-proxied functions.
+   *
+   * A pattern that does not name a workspace module loads every module, unless an entrypoint module can resolve it.
+   *
+   * Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.
+   *
+   * Modules already loaded in the session are always reflected; other pending workspace modules stay loadable by later requests.
+   */
+  include?: string[]
 }
 
 export type ClientEnvOpts = {
@@ -13146,6 +13159,15 @@ export class Client extends BaseClient {
    * @param opts.hideCore Strip core API functions from the Query type, leaving only module-sourced functions (constructors, entrypoint proxies, etc.).
    *
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
+   * @param opts.include Narrow on-demand workspace module loading to the named modules (and their dependencies) before computing typedefs.
+   *
+   * Each pattern is a workspace module name or "module:item"; the workspace entrypoint module, when one is configured, is always loaded as well since the pattern may name one of its root-proxied functions.
+   *
+   * A pattern that does not name a workspace module loads every module, unless an entrypoint module can resolve it.
+   *
+   * Used by clients (e.g. the CLI) that target a single module so an unrelated broken or stale module cannot block building the command tree.
+   *
+   * Modules already loaded in the session are always reflected; other pending workspace modules stay loadable by later requests.
    */
   currentTypeDefs = async (
     opts?: ClientCurrentTypeDefsOpts,

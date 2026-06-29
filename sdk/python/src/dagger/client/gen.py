@@ -13431,6 +13431,7 @@ class Query(Root):
         *,
         return_all_types: bool | None = False,
         hide_core: bool | None = None,
+        include: list[str] | None = None,
     ) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
@@ -13445,10 +13446,25 @@ class Query(Root):
             sourced functions (constructors, entrypoint proxies, etc.).
             Core types (Container, Directory, etc.) are kept so return types
             and method chaining still work.
+        include:
+            Narrow on-demand workspace module loading to the named modules
+            (and their dependencies) before computing typedefs.
+            Each pattern is a workspace module name or "module:item"; the
+            workspace entrypoint module, when one is configured, is always
+            loaded as well since the pattern may name one of its root-proxied
+            functions.
+            A pattern that does not name a workspace module loads every
+            module, unless an entrypoint module can resolve it.
+            Used by clients (e.g. the CLI) that target a single module so an
+            unrelated broken or stale module cannot block building the command
+            tree.
+            Modules already loaded in the session are always reflected; other
+            pending workspace modules stay loadable by later requests.
         """
         _args = [
             Arg("returnAllTypes", return_all_types, False),
             Arg("hideCore", hide_core, None),
+            Arg("include", include, None),
         ]
         _ctx = self._select("currentTypeDefs", _args)
         return await _ctx.execute_object_list(TypeDef)
