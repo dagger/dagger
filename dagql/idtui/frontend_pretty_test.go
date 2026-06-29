@@ -421,11 +421,63 @@ func TestLiveGlobalTestsSkipCheckScopedTests(t *testing.T) {
 	db.SetPrimarySpan(checkID)
 
 	fe := NewWithDB(io.Discard, db)
-	// In the real render the check renders (and claims) its tests before the
-	// global section runs; simulate that so the case is recognised as covered.
-	fe.claims.claimTestCase(testID)
+	fe.recalculateViewLocked()
+	// Drive the real seeding the interactive render runs before the global
+	// section: the check's inline rollup claims this case, so the global section
+	// must skip it. Manually claiming here would mask a render-order regression
+	// (the global section is emitted before the rollups that claim) -- the very
+	// bug that let check tests duplicate into the global section.
+	fe.claimInlineTestCases()
 	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) != 0 {
 		t.Fatalf("expected no global live report for check-scoped tests, got:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// TestInteractiveCheckScopedTestsNotDuplicated drives a full interactive render
+// and guards the render order itself: the live global tests section is emitted
+// before the trace rows (so its log claims suppress duplicate logs above it),
+// so Render must seed the inline rollups' case claims first or every check's
+// tests repeat in a second, unindented global section. A single check with one
+// failing case must therefore produce exactly one TESTS section -- the inline
+// rollup -- and no global copy.
+func TestInteractiveCheckScopedTestsNotDuplicated(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	checkID := prettyTestSpanID(1)
+	testID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        checkID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "check unit",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			CheckName: "unit",
+			Final:     true,
+		},
+		{
+			ID:           testID,
+			TraceID:      prettyTestTraceID(),
+			Name:         "unit failure",
+			StartTime:    start.Add(time.Second),
+			EndTime:      start.Add(2 * time.Second),
+			ParentID:     checkID,
+			TestCaseName: "unit failure",
+			TestStatus:   dagui.TestStatusFailure,
+			Final:        true,
+		},
+	})
+	db.SetPrimarySpan(checkID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	out := strings.Join(fe.tui.RenderLines(), "\n")
+	if !strings.Contains(out, "TESTS") {
+		t.Fatalf("expected the check's inline tests rollup, got:\n%s", out)
+	}
+	if n := strings.Count(out, "TESTS"); n != 1 {
+		t.Fatalf("check-scoped tests duplicated into a global section: got %d TESTS sections, want 1:\n%s", n, out)
 	}
 }
 

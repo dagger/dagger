@@ -1656,6 +1656,24 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	return lines
 }
 
+// claimInlineTestCases seeds case claims for the checks whose inline rollups
+// will render, so the global tests section's orphan filter can subtract them.
+// The interactive render emits the global section before the trace rows -- so
+// the section's log claims suppress duplicate logs in the rows above it -- but
+// that puts it ahead of the rollups that would otherwise claim these cases.
+// Seeding here closes that gap; the rollups re-claim idempotently when they
+// render. The report path renders progress first and needs no seeding.
+func (fe *frontendPretty) claimInlineTestCases() {
+	if fe.rows == nil {
+		return
+	}
+	for _, row := range fe.rows.Order {
+		if fe.shouldRenderInlineTests(row) {
+			fe.claims.claimTestCases(fe.db.TestViewForSpan(row.Span))
+		}
+	}
+}
+
 func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 	if fe.db == nil {
 		return nil

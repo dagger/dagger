@@ -2115,6 +2115,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		zoomHeader = append(zoomHeader, "") // blank line separating the bar from the content
 	}
 
+	// Seed test-case claims for the checks whose inline rollups render below, so
+	// the global tests section (rendered first, just below) subtracts them
+	// instead of repeating every check's tests. See claimInlineTestCases.
+	fe.claimInlineTestCases()
+
 	// Pre-render chrome below progress. Global tests are rendered before
 	// progress so their claims can suppress duplicate test logs in the trace
 	// rows above them.
