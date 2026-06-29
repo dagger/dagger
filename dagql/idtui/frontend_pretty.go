@@ -2413,23 +2413,45 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	return reportSectionLines(out, "MORE DETAILS", body)
 }
 
-// renderChecksHeader renders a "CHECKS" heading with the pass/fail tallies
-// joined onto the same line (mirroring the TESTS inspector header), to sit above
-// the root-level check rows (which carry their own tree indentation, so they're
-// left unwrapped).
+// renderChecksHeader renders the top-level "CHECKS" heading -- the tally of the
+// trace's root checks -- to sit above the root-level check rows (which carry
+// their own tree indentation, so they're left unwrapped). Each parent check
+// nests its own CHECKS header for its sub-checks (see renderChecksSection), the
+// way a check nests a TESTS header for its tests, so this top tally counts the
+// roots only; the per-level tallies live on the nested headers.
 func (fe *frontendPretty) renderChecksHeader() []string {
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	line := reportHeadingLine(out, "CHECKS")
-	for _, part := range fe.checkBreakdownParts(out) {
-		line += "  " + part
-	}
-	return []string{line}
+	return []string{checksHeaderLine(out, fe.db.SurfacedChecks())}
 }
 
-// checkBreakdownParts renders the failed/passed check tallies as "✘ N failed" /
-// "✔ N passed" parts, in the same icon+color style as the test summary.
-func (fe *frontendPretty) checkBreakdownParts(out TermOutput) []string {
-	failed, passed := fe.checkStatusCounts()
+// checksHeaderLine renders a "CHECKS" heading with the failed/passed tally for
+// the given checks joined onto the same line (mirroring the TESTS header). The
+// nodes are the checks listed directly beneath this header -- a level -- so the
+// tally agrees with what's rendered right under it.
+func checksHeaderLine(out TermOutput, nodes []*dagui.CheckNode) string {
+	line := reportHeadingLine(out, "CHECKS")
+	for _, part := range checkBreakdownPartsFor(out, nodes) {
+		line += "  " + part
+	}
+	return line
+}
+
+// checkBreakdownPartsFor renders the failed/passed tallies as "✘ N failed" /
+// "✔ N passed" parts (same icon+color style as the test summary) for the given
+// checks, counted directly rather than recursively: each CHECKS header tallies
+// the checks listed directly beneath it. Boundaries are already honored by
+// SurfacedChecks, so checks a test intentionally runs aren't among the nodes.
+// NB: with incremental --full loading the passed tally only covers checks
+// already fetched.
+func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
+	var failed, passed int
+	for _, n := range nodes {
+		if n.Failed {
+			failed++
+		} else {
+			passed++
+		}
+	}
 	var parts []string
 	add := func(count int, icon string, color termenv.Color, label string) {
 		if count == 0 {
@@ -2440,27 +2462,6 @@ func (fe *frontendPretty) checkBreakdownParts(out TermOutput) []string {
 	add(failed, IconFailure, termenv.ANSIRed, "failed")
 	add(passed, IconSuccess, termenv.ANSIGreen, "passed")
 	return parts
-}
-
-// checkStatusCounts tallies the surfaced checks into failed vs passed, so the
-// CHECKS heading agrees with the rendered list -- both honor boundaries, so
-// checks a test intentionally runs aren't counted. A check counts as failed if
-// any of its spans failed (directly or via a failed link). NB: with incremental
-// --full loading the passed tally only covers checks already fetched.
-func (fe *frontendPretty) checkStatusCounts() (failed, passed int) {
-	var walk func(ns []*dagui.CheckNode)
-	walk = func(ns []*dagui.CheckNode) {
-		for _, n := range ns {
-			if n.Failed {
-				failed++
-			} else {
-				passed++
-			}
-			walk(n.Children)
-		}
-	}
-	walk(fe.db.SurfacedChecks())
-	return failed, passed
 }
 
 // renderLogsLines returns the zoomed span's log output as lines.

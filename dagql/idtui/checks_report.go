@@ -85,8 +85,15 @@ func (fe *frontendPretty) renderChecksSection(ctx tuist.Context, r *renderer) []
 			}
 		}
 
-		for _, child := range node.Children {
-			render(child, depth+1)
+		// Sub-checks get their own CHECKS header (with this check's direct-children
+		// tally), the way a check's tests get a TESTS header, then nest one level
+		// under it.
+		if len(node.Children) > 0 {
+			subIndent := strings.Repeat("  ", depth+1)
+			fmt.Fprintf(buf, "%s%s\n", subIndent, checksHeaderLine(out, node.Children))
+			for _, child := range node.Children {
+				render(child, depth+2)
+			}
 		}
 	}
 	for _, root := range roots {

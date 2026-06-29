@@ -391,6 +391,103 @@ func TestLiveInlineCheckTestsIndentedUnderTrace(t *testing.T) {
 	}
 }
 
+// TestChecksReportNestsSubCheckHeader verifies the final report introduces a
+// check's sub-checks with their own CHECKS header -- mirroring how a check nests
+// a TESTS header for its tests -- indented one level under the parent, and that
+// each header tallies the checks directly beneath it: the top header counts the
+// roots only (1 here), not every descendant (which would read "2 passed").
+func TestChecksReportNestsSubCheckHeader(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	bootstrapID := prettyTestSpanID(1)
+	goLintID := prettyTestSpanID(2)
+	helmLintID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        bootstrapID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "ci:bootstrap",
+			StartTime: start,
+			EndTime:   end,
+			CheckName: "ci:bootstrap",
+			Final:     true,
+		},
+		{
+			ID:        goLintID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "go:lint",
+			StartTime: start,
+			EndTime:   end,
+			ParentID:  bootstrapID,
+			CheckName: "go:lint",
+			Final:     true,
+		},
+		{
+			ID:        helmLintID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "helm:lint",
+			StartTime: start,
+			EndTime:   end,
+			ParentID:  bootstrapID,
+			CheckName: "helm:lint",
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(bootstrapID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.checksReport(tuist.Context{Width: 120}, r, false)
+	if len(lines) == 0 {
+		t.Fatal("checksReport returned no lines")
+	}
+	joined := strings.Join(lines, "\n")
+
+	// Top header: roots only.
+	if !strings.HasPrefix(lines[0], "CHECKS") || !strings.Contains(lines[0], "1 passed") {
+		t.Fatalf("top CHECKS header = %q, want roots-only tally (1 passed)\n%s", lines[0], joined)
+	}
+
+	bootstrapIdx, nestedIdx, goLintIdx, helmLintIdx := -1, -1, -1, -1
+	for i, l := range lines {
+		switch {
+		case bootstrapIdx == -1 && strings.Contains(l, "ci:bootstrap"):
+			bootstrapIdx = i
+		case nestedIdx == -1 && strings.HasPrefix(l, "  CHECKS"):
+			nestedIdx = i
+		case goLintIdx == -1 && strings.Contains(l, "go:lint"):
+			goLintIdx = i
+		case helmLintIdx == -1 && strings.Contains(l, "helm:lint"):
+			helmLintIdx = i
+		}
+	}
+	if bootstrapIdx == -1 || nestedIdx == -1 || goLintIdx == -1 || helmLintIdx == -1 {
+		t.Fatalf("missing expected rows (bootstrap=%d nested=%d go=%d helm=%d):\n%s",
+			bootstrapIdx, nestedIdx, goLintIdx, helmLintIdx, joined)
+	}
+	// Parent, then its nested CHECKS header, then the children.
+	if !(bootstrapIdx < nestedIdx && nestedIdx < goLintIdx && nestedIdx < helmLintIdx) {
+		t.Fatalf("rows out of order (bootstrap=%d nested=%d go=%d helm=%d):\n%s",
+			bootstrapIdx, nestedIdx, goLintIdx, helmLintIdx, joined)
+	}
+	// The nested header tallies the parent's direct children.
+	if !strings.Contains(lines[nestedIdx], "2 passed") {
+		t.Fatalf("nested CHECKS header = %q, want direct-children tally (2 passed)", lines[nestedIdx])
+	}
+	// The parent sits at the margin; its sub-checks indent one level under the
+	// nested header (four spaces: depth-2 tree indent).
+	if strings.HasPrefix(lines[bootstrapIdx], " ") {
+		t.Fatalf("parent check line = %q, want no indent", lines[bootstrapIdx])
+	}
+	if !strings.HasPrefix(lines[goLintIdx], "    ") {
+		t.Fatalf("sub-check line = %q, want four-space indent under the nested header", lines[goLintIdx])
+	}
+}
+
 func TestLiveGlobalTestsSkipCheckScopedTests(t *testing.T) {
 	db := dagui.NewDB()
 	checkID := prettyTestSpanID(1)
