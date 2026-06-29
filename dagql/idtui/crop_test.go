@@ -54,12 +54,12 @@ func TestCropEnd(t *testing.T) {
 			wantEnd:        70, // focusEnd=70, remaining=0, below=0, end=70
 		},
 		{
-			name:           "focused span exceeds viewport: never crop bottom",
+			name:           "focused span exceeds viewport: anchor top, crop tail",
 			totalLines:     100,
 			viewportHeight: 20,
 			focusLine:      50,
 			focusHeight:    30,
-			wantEnd:        80, // focusEnd=80, must not be cropped
+			wantEnd:        70, // focusLine+viewport=70: header stays, tail cropped
 		},
 		{
 			name:           "focused span exceeds viewport at end of content",
@@ -67,7 +67,7 @@ func TestCropEnd(t *testing.T) {
 			viewportHeight: 20,
 			focusLine:      75,
 			focusHeight:    25,
-			wantEnd:        100, // focusEnd=100
+			wantEnd:        95, // focusLine+viewport=95: header stays, tail cropped
 		},
 		{
 			name:           "focused at very top: fill below",
@@ -99,25 +99,32 @@ func TestCropEnd(t *testing.T) {
 	}
 }
 
-// TestCropEndFocusAlwaysVisible verifies the key invariant: the focused
-// span is never cropped, regardless of inputs.
-func TestCropEndFocusAlwaysVisible(t *testing.T) {
+// TestCropEndFocusHeaderAlwaysVisible verifies the key invariant: the focused
+// span's header (its top line, focusLine) is always within the visible window
+// [end-viewport, end). When the focus fits in the viewport its whole content
+// stays visible; when it is taller than the viewport its tail is cropped (its
+// top anchored) rather than its header scrolling offscreen.
+func TestCropEndFocusHeaderAlwaysVisible(t *testing.T) {
 	for totalLines := 1; totalLines <= 60; totalLines += 10 {
 		for viewport := 1; viewport <= 40; viewport += 5 {
 			for focusLine := 0; focusLine < totalLines; focusLine += 5 {
 				for focusHeight := 1; focusHeight <= totalLines-focusLine; focusHeight += 5 {
 					end := cropEnd(totalLines, viewport, focusLine, focusHeight)
-					focusEnd := focusLine + focusHeight
-					if focusEnd > totalLines {
-						focusEnd = totalLines
-					}
-					if end < focusEnd {
-						t.Errorf("cropEnd(%d, %d, %d, %d) = %d, but focusEnd = %d (focus cropped!)",
-							totalLines, viewport, focusLine, focusHeight, end, focusEnd)
-					}
 					if end > totalLines {
 						t.Errorf("cropEnd(%d, %d, %d, %d) = %d, exceeds totalLines",
 							totalLines, viewport, focusLine, focusHeight, end)
+					}
+					// The header must be visible in the window [visibleStart, end).
+					visibleStart := max(0, end-viewport)
+					if focusLine < visibleStart || focusLine >= end {
+						t.Errorf("cropEnd(%d, %d, %d, %d) = %d: header line %d not visible (window [%d, %d))",
+							totalLines, viewport, focusLine, focusHeight, end, focusLine, visibleStart, end)
+					}
+					// A focus that fits must not be cropped at all.
+					focusEnd := min(focusLine+focusHeight, totalLines)
+					if focusHeight <= viewport && end < focusEnd {
+						t.Errorf("cropEnd(%d, %d, %d, %d) = %d crops a focus that fits (focusEnd = %d)",
+							totalLines, viewport, focusLine, focusHeight, end, focusEnd)
 					}
 				}
 			}

@@ -2095,45 +2095,59 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		ctx.Line("")
 	}
 
-	// Pre-render chrome below progress to measure its height for truncation.
-	// Global tests are rendered before progress so their claims can suppress
-	// duplicate test logs in the trace rows above them.
+	// Pre-render chrome below progress. Global tests are rendered before
+	// progress so their claims can suppress duplicate test logs in the trace
+	// rows above them.
 	globalTestLines := fe.renderLiveGlobalTests(ctx)
 	logsLines := fe.renderLogsLines("")
 
-	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
-	if len(logsLines) > 0 {
-		chromeHeight += len(logsLines) + 1
-	}
-	if len(globalTestLines) > 0 {
-		chromeHeight += len(globalTestLines) + 1
-	}
-	chromeHeight += fe.errorLabelHeight() // promptErrLabel is a sibling, not rendered here
-	chromeHeight += fe.editlineHeight()   // textInput is a sibling, not rendered here
-	chromeHeight += fe.formHeight()       // formWrap is a sibling, not rendered here
+	// Lines the TUI renders as siblings outside this component, which are
+	// always shown and so must be reserved out of the screen height: the keymap
+	// bar, error label, text input, form, and search input.
+	reserved := 1 // keymap bar
+	reserved += fe.errorLabelHeight()
+	reserved += fe.editlineHeight()
+	reserved += fe.formHeight()
 	if fe.searchInput != nil {
-		chromeHeight += 1 // searchInput is a sibling, 1 line
+		reserved++
 	}
 
-	// Render progress rows via tree-based components
-	progressLines := fe.renderProgressLines(r, ctx, chromeHeight)
+	// Assemble progress + chrome, then crop the bottom to what fits. The focused
+	// progress rows are anchored at the focused row's header by
+	// renderProgressLines (passed `reserved` so they get the whole content area),
+	// and the chrome below (logs, then the global tests summary) sits beneath
+	// them -- so cropping the bottom makes the chrome, not the focused header,
+	// what scrolls offscreen. This is the "main content wins" rule: reserving
+	// chrome space up front -- the old behaviour -- let a tall global TESTS block
+	// squeeze progress until the focused row's own header scrolled off the top.
+	progressLines := fe.renderProgressLines(r, ctx, reserved)
+	var body []string
 	if len(progressLines) > 0 {
-		ctx.Lines(progressLines...)
-		ctx.Line("") // gap line after progress
+		body = append(body, progressLines...)
+		body = append(body, "") // gap line after progress
 	}
-
-	// Append chrome
 	if len(logsLines) > 0 {
-		ctx.Lines(logsLines...)
-		ctx.Line("") // trailing gap
+		body = append(body, logsLines...)
+		body = append(body, "") // trailing gap
 	}
 	if len(globalTestLines) > 0 {
-		ctx.Lines(globalTestLines...)
-		ctx.Line("") // trailing gap
+		body = append(body, globalTestLines...)
+		body = append(body, "") // trailing gap
 	}
-	// NOTE: textInput and formWrap are rendered as siblings in the TUI
-	// container, not here. Their cursors propagate through tuist automatically.
-	// NOTE: keymapBar is rendered as a sibling in the TUI container.
+
+	// Crop the bottom to the rows available for this component (the screen minus
+	// the always-shown siblings). A non-positive ScreenHeight means the height is
+	// unknown (RenderLines / the report discovery render, before a frame sizes
+	// the terminal) -- render everything, like the old behaviour.
+	if h := ctx.ScreenHeight(); h > 0 {
+		if avail := h - reserved; avail > 0 && len(body) > avail {
+			body = body[:avail]
+		}
+	}
+	ctx.Lines(body...)
+	// NOTE: textInput, formWrap, and keymapBar are rendered as siblings in the
+	// TUI container, not here (accounted for in reserved above). Their cursors
+	// propagate through tuist automatically.
 }
 
 // linesFromView splits a string view into lines and emits them via ctx.
@@ -2836,51 +2850,61 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		return allLines
 	}
 
-	// Crop the bottom so the focused span stays within the visible
-	// screen area. Content above scrolls into terminal scrollback
-	// naturally — we never crop the top.
+	// Crop to the visible window so the focused span stays onscreen. The
+	// caller composes progress + chrome and the result must fit the screen
+	// exactly: returning more than the viewport (relying on the terminal to
+	// clip the overflow) scrolls the top — including the focused row's own
+	// header — offscreen when the focused content is tall.
+	// A non-positive ScreenHeight means the height is unknown (RenderLines / the
+	// report discovery render, before a frame sizes the terminal) -- don't crop.
+	if ctx.ScreenHeight() <= 0 {
+		return allLines
+	}
 	viewportHeight := max(ctx.ScreenHeight()-chromeHeight, 1)
-
-	end := len(allLines)
-	if focusLine >= 0 && len(allLines) > viewportHeight {
-		// Use the root span's own rendered height (selfLineCount), not
-		// the entire tree height. Children may extend below the viewport,
-		// but the root's own content must stay in view.
-		focusHeight := 1
-		if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
-			focusHeight = focused.selfLineCount
-		}
-		end = cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	if focusLine < 0 || len(allLines) <= viewportHeight {
+		return allLines
 	}
 
-	return allLines[:end]
+	// Use the root span's own rendered height (selfLineCount), not the entire
+	// tree height. Children may extend below the viewport, but the root's own
+	// content must stay in view.
+	focusHeight := 1
+	if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+		focusHeight = focused.selfLineCount
+	}
+	end := cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	return allLines[max(0, end-viewportHeight):end]
 }
 
-// cropEnd computes the end index for slicing rendered lines so that the
-// focused span's own content [focusLine, focusLine+focusHeight) is always
-// visible within [end-viewportHeight, end). Remaining viewport space is
-// split evenly above and below the focused span's root content.
-//
-// Content above the visible window scrolls into terminal scrollback naturally.
+// cropEnd computes the end index for the visible window [end-viewportHeight,
+// end) so that the focused span's own content [focusLine, focusLine+focusHeight)
+// stays visible. When the focus root fits, remaining viewport space is split
+// evenly above and below it; when it is taller than the viewport, its top is
+// anchored so the header survives and its tail is cropped. The caller slices
+// allLines[end-viewportHeight:end].
 func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
 	focusEnd := min(focusLine+focusHeight, totalLines)
 
+	// When the focus root's own content is taller than the viewport, anchor
+	// its TOP: the visible window is [end-viewportHeight, end), so end =
+	// focusLine+viewportHeight makes the focus root's header the first visible
+	// line and crops its overflowing tail. Anchoring the bottom (focusEnd)
+	// instead would scroll the header offscreen, so the row you are focused on
+	// loses its header — its identity, status, and duration.
+	if focusHeight >= viewportHeight {
+		return min(focusLine+viewportHeight, totalLines)
+	}
+
 	// Split remaining viewport space evenly above and below the focus root.
-	remaining := max(viewportHeight-focusHeight, 0)
+	remaining := viewportHeight - focusHeight
 	below := remaining / 2
 
 	end := focusEnd + below
 
 	// Ensure the focus root stays fully visible: the visible window is
 	// [end-viewportHeight, end), so cap end so focusLine >= end-viewportHeight.
-	if focusHeight <= viewportHeight && end > focusLine+viewportHeight {
+	if end > focusLine+viewportHeight {
 		end = focusLine + viewportHeight
-	}
-
-	// When the focus root is taller than the viewport, at least show up
-	// to its end.
-	if end < focusEnd {
-		end = focusEnd
 	}
 
 	// Never crop to less than a full viewport when there's enough content.
