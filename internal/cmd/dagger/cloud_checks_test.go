@@ -1,13 +1,10 @@
 package daggercmd
 
 import (
-	"fmt"
-	"io"
 	"testing"
 	"time"
 
 	cloudapi "github.com/dagger/dagger/internal/cloud"
-	telemetry "github.com/dagger/otel-go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -73,7 +70,7 @@ func TestCloudRowsForWorkspaceAddress(t *testing.T) {
 		},
 	})
 
-	filtered, _, err := cloudRowsForWorkspaceAddress(
+	filtered, err := cloudRowsForWorkspaceAddress(
 		t.Context(),
 		rows,
 		"github.com/acme/mono/services/api@main",
@@ -143,47 +140,6 @@ func TestWorkspaceActivityRowsUseCommitMessageDescription(t *testing.T) {
 	activityRows := workspaceActivityRows(rows)
 	require.Len(t, activityRows, 1)
 	require.Equal(t, "Update workspace docs", activityRows[0].Description)
-}
-
-func TestSyntheticCloudCheckSpanMarksCheckStatus(t *testing.T) {
-	started := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
-	span, _, _ := syntheticCloudCheckSpan("trace", "span", cloudapi.Check{
-		Name:      "lint",
-		Status:    "success",
-		StartedAt: &started,
-	}, started)
-	require.Equal(t, "lint", span.Attributes[telemetry.CheckNameAttr])
-	require.Equal(t, true, span.Attributes[telemetry.CheckPassedAttr])
-
-	span, _, _ = syntheticCloudCheckSpan("trace", "span", cloudapi.Check{
-		Name:      "unit",
-		Status:    "failure",
-		StartedAt: &started,
-	}, started)
-	require.Equal(t, "unit", span.Attributes[telemetry.CheckNameAttr])
-	require.Equal(t, false, span.Attributes[telemetry.CheckPassedAttr])
-}
-
-func TestCloudCheckReplayFrontendFollowsProgressMode(t *testing.T) {
-	originalProgress := progress
-	t.Cleanup(func() {
-		progress = originalProgress
-	})
-
-	progress = "plain"
-	require.Contains(t, fmt.Sprintf("%T", newCloudCheckReplayFrontend(io.Discard)), "frontendPlain")
-
-	progress = "dots"
-	require.Contains(t, fmt.Sprintf("%T", newCloudCheckReplayFrontend(io.Discard)), "frontendDots")
-
-	progress = "logs"
-	require.Contains(t, fmt.Sprintf("%T", newCloudCheckReplayFrontend(io.Discard)), "frontendLogs")
-
-	progress = "tty"
-	require.Contains(t, fmt.Sprintf("%T", newCloudCheckReplayFrontend(io.Discard)), "frontendPretty")
-
-	progress = "report"
-	require.Contains(t, fmt.Sprintf("%T", newCloudCheckReplayFrontend(io.Discard)), "frontendPretty")
 }
 
 func TestCloudCheckWorkspaceAddress(t *testing.T) {
