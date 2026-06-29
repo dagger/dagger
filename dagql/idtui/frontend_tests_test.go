@@ -403,6 +403,98 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 	}
 }
 
+// TestTestViewSummaryCondenses checks the inline rollup's height-aware
+// condensation: as the budget shrinks it sheds detail in priority order while
+// always keeping the heading and a one-line counts summary, never exceeding the
+// budget, down to a 2-row floor. The old behaviour tail-cropped, dropping the
+// counts and failing detail that matter most.
+func TestTestViewSummaryCondenses(t *testing.T) {
+	spanID := func(id byte) dagui.SpanID {
+		return dagui.SpanID{SpanID: trace.SpanID{id}}
+	}
+	const summaryIndent = 2
+	logsBySpan := map[dagui.SpanID]*Vterm{}
+	var roots []*dagui.TestNode
+	names := []string{"alpha", "beta", "gamma"}
+	for i, name := range names {
+		id := spanID(byte(i + 1))
+		logs := NewVterm(termenv.Ascii)
+		// Match the width renderTestSummaryLogs will request (summary width minus
+		// the log indent) so its SetWidth is a no-op -- resizing a written term
+		// reflows it to blank.
+		logs.SetWidth(80 - (summaryIndent + 8))
+		_, _ = logs.Write([]byte(name + "-log-one\n" + name + "-log-two\n"))
+		logsBySpan[id] = logs
+		roots = append(roots, &dagui.TestNode{
+			ID:           dagui.TestNodeID(name),
+			Kind:         dagui.TestNodeCase,
+			Name:         name + " fails",
+			Span:         &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: id, Name: name + " fails"}},
+			SelfCategory: dagui.TestCategoryFailing,
+			Category:     dagui.TestCategoryFailing,
+			Counts:       dagui.TestCounts{Failing: 1},
+		})
+	}
+	view := &dagui.TestView{
+		Roots:  roots,
+		Counts: dagui.TestCounts{Failing: 3, Passing: 5},
+	}
+	tv := &TestView{SummaryIndent: summaryIndent, SummaryLogLines: 8, Logs: logsBySpan}
+
+	render := func(height int) []string {
+		var buf strings.Builder
+		out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+		return tv.renderTestSummaryLines(out, view, 80, height)
+	}
+
+	// Across every budget the rollup stays within it, leads with the heading,
+	// and keeps the counts -- the invariant the dumb tail-crop broke.
+	for _, height := range []int{20, 15, 12, 8, 5, 3, 2} {
+		lines := render(height)
+		joined := strings.Join(lines, "\n")
+		if len(lines) > height {
+			t.Fatalf("height=%d: rollup overflowed budget with %d lines:\n%s", height, len(lines), joined)
+		}
+		if len(lines) == 0 || !strings.Contains(lines[0], "TESTS") {
+			t.Fatalf("height=%d: missing TESTS heading:\n%s", height, joined)
+		}
+		if !strings.Contains(joined, "3 failed") || !strings.Contains(joined, "5 passed") {
+			t.Fatalf("height=%d: counts dropped:\n%s", height, joined)
+		}
+	}
+
+	// Full budget: the roomy layout, every failing name with its logs.
+	full := strings.Join(render(20), "\n")
+	for _, name := range names {
+		if !strings.Contains(full, name+" fails") || !strings.Contains(full, name+"-log-one") {
+			t.Fatalf("full render missing %q name or logs:\n%s", name, full)
+		}
+	}
+
+	// Names fit but logs don't: all three names, no log lines.
+	namesOnly := strings.Join(render(5), "\n")
+	for _, name := range names {
+		if !strings.Contains(namesOnly, name+" fails") {
+			t.Fatalf("names-only render missing %q:\n%s", name, namesOnly)
+		}
+	}
+	if strings.Contains(namesOnly, "-log-") {
+		t.Fatalf("names-only render should have shed logs:\n%s", namesOnly)
+	}
+
+	// Names don't fit: a "more" marker stands in for the dropped rows.
+	marked := strings.Join(render(3), "\n")
+	if !strings.Contains(marked, "more") {
+		t.Fatalf("over-tight render should mark dropped rows:\n%s", marked)
+	}
+
+	// Floor: heading + a single combined counts line, exactly two rows.
+	floor := render(2)
+	if len(floor) != 2 || !strings.Contains(floor[1], "3 failed") || !strings.Contains(floor[1], "5 passed") {
+		t.Fatalf("2-row floor not heading+counts:\n%s", strings.Join(floor, "\n"))
+	}
+}
+
 func TestTestViewPrettyReportSkippedSuites(t *testing.T) {
 	spanID := func(id byte) dagui.SpanID {
 		return dagui.SpanID{SpanID: trace.SpanID{id}}

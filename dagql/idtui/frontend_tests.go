@@ -674,20 +674,84 @@ func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, se
 	return selector + " " + iconStyle.String() + " " + indent + nameStyle.String() + count
 }
 
+// testSummaryBlock is one non-passing entry: its name line and any inline log
+// lines beneath it. Splitting them lets the condenser shed logs before names.
+type testSummaryBlock struct {
+	name string
+	logs []string
+}
+
 func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView, width, height int) []string {
 	if tv.testSummaryFinal() {
 		width = 0
 	}
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
-	lines := []string{tv.renderTestSummaryHeader(out, prefix, width)}
+	header := tv.renderTestSummaryHeader(out, prefix, width)
 	if view == nil {
-		return cropLines(lines, height)
+		return []string{header}
 	}
+
 	entries := collectTestSummaryEntries(view)
+	var blocks []testSummaryBlock
+	addBlock := func(entry testSummaryEntry) {
+		entryLines := tv.renderTestSummaryEntry(out, entry, width)
+		blk := testSummaryBlock{name: entryLines[0]}
+		if len(entryLines) > 1 {
+			blk.logs = entryLines[1:]
+		}
+		blocks = append(blocks, blk)
+	}
+	for _, entry := range entries.failing {
+		addBlock(entry)
+	}
+	for _, entry := range entries.skipped {
+		addBlock(entry)
+	}
+	for _, entry := range entries.running {
+		addBlock(entry)
+	}
+	var passing []string
+	for _, entry := range entries.passing {
+		passing = append(passing, tv.renderTestSummaryPassingSuite(out, entry, width))
+	}
+	counts := renderTestSummaryCounts(out, view.Counts, tv.SummaryIndent, width)
+
+	full := assembleTestSummary(header, blocks, passing, counts)
+	// height <= 0 means unbounded (the final report, or a size-unknown render):
+	// show everything. Otherwise, if it already fits, keep the spacious layout.
+	if height <= 0 || len(full) <= height {
+		return full
+	}
+	if height == 1 {
+		// Too tight for even heading+counts on separate rows: combine them so the
+		// outcome still shows.
+		return []string{tv.renderTestSummaryOneLine(out, view.Counts, width)}
+	}
+	compact := tv.renderTestSummaryCountsCompact(out, view.Counts, width)
+	return tv.condenseTestSummary(out, header, blocks, passing, compact, height)
+}
+
+// renderTestSummaryOneLine collapses the whole rollup onto one row -- the
+// heading followed by the tallies -- the floor used when a single line is all
+// there is room for.
+func (tv *TestView) renderTestSummaryOneLine(out TermOutput, counts dagui.TestCounts, width int) string {
+	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
+	line := prefix + reportHeadingLine(out, "TESTS")
+	if parts := renderTestCountParts(out, counts); len(parts) > 0 {
+		line += "  " + strings.Join(parts, "  ")
+	}
+	return clipTestSummaryLine(line, width)
+}
+
+// assembleTestSummary lays out the roomy summary: the heading, each non-passing
+// entry (with its logs), the passing-suite breakdown, then the counts, with a
+// blank line before multiline entries and the trailing sections.
+func assembleTestSummary(header string, blocks []testSummaryBlock, passing, counts []string) []string {
+	lines := []string{header}
 	addedContent := false
 	lastMultiline := false
-	appendEntry := func(entry testSummaryEntry) {
-		entryLines := tv.renderTestSummaryEntry(out, entry, width)
+	for _, blk := range blocks {
+		entryLines := append([]string{blk.name}, blk.logs...)
 		multiline := len(entryLines) > 1
 		if addedContent && (lastMultiline || multiline) {
 			lines = append(lines, "")
@@ -696,31 +760,84 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 		addedContent = true
 		lastMultiline = multiline
 	}
-	for _, entry := range entries.failing {
-		appendEntry(entry)
-	}
-	for _, entry := range entries.skipped {
-		appendEntry(entry)
-	}
-	for _, entry := range entries.running {
-		appendEntry(entry)
-	}
-	if len(entries.passing) > 0 {
+	if len(passing) > 0 {
 		if addedContent {
 			lines = append(lines, "")
 		}
-		for _, entry := range entries.passing {
-			lines = append(lines, tv.renderTestSummaryPassingSuite(out, entry, width))
-		}
+		lines = append(lines, passing...)
 		addedContent = true
 	}
-	if counts := renderTestSummaryCounts(out, view.Counts, tv.SummaryIndent, width); len(counts) > 0 {
+	if len(counts) > 0 {
 		if addedContent {
 			lines = append(lines, "")
 		}
 		lines = append(lines, counts...)
 	}
-	return cropLines(lines, height)
+	return lines
+}
+
+// condenseTestSummary fits the rollup into height rows when the roomy layout
+// won't. The heading and a one-line counts summary -- the at-a-glance outcome
+// -- are always kept (a 2-row floor); the space between is filled in priority
+// order: every failing/skipped/running test's name first, then their logs top
+// entry first, then the passing-suite breakdown. Blank separators are dropped.
+// When even the names overflow, as many as fit are shown with a "more" marker.
+func (tv *TestView) condenseTestSummary(out TermOutput, header string, blocks []testSummaryBlock, passing []string, compactCounts string, height int) []string {
+	if height <= 2 || len(blocks)+len(passing) == 0 {
+		return []string{header, compactCounts}
+	}
+	bodyBudget := height - 2 // heading + counts
+	if len(blocks) > bodyBudget {
+		// Not every name fits; show as many as we can and mark the remainder.
+		shown := max(bodyBudget-1, 0)
+		body := make([]string, 0, bodyBudget)
+		for _, blk := range blocks[:shown] {
+			body = append(body, blk.name)
+		}
+		body = append(body, tv.renderTestSummaryMore(out, len(blocks)-shown))
+		return append(append([]string{header}, body...), compactCounts)
+	}
+	// Every name fits; spend the remainder on logs (top entry first), then on
+	// the passing-suite breakdown.
+	leftover := bodyBudget - len(blocks)
+	body := make([]string, 0, bodyBudget)
+	for _, blk := range blocks {
+		body = append(body, blk.name)
+		for _, log := range blk.logs {
+			if leftover <= 0 {
+				break
+			}
+			body = append(body, log)
+			leftover--
+		}
+	}
+	for _, line := range passing {
+		if leftover <= 0 {
+			break
+		}
+		body = append(body, line)
+		leftover--
+	}
+	return append(append([]string{header}, body...), compactCounts)
+}
+
+// renderTestSummaryMore is the faint "… N more …" line shown when condensing
+// drops test rows that wouldn't fit.
+func (tv *TestView) renderTestSummaryMore(out TermOutput, hidden int) string {
+	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
+	return indent + out.String(fmt.Sprintf("… %d more …", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+}
+
+// renderTestSummaryCountsCompact renders the pass/fail tallies on a single line
+// (e.g. "✘ 2 failed  ✔ 644 passed") for the condensed rollup, where the roomy
+// one-per-line counts would cost rows the body needs.
+func (tv *TestView) renderTestSummaryCountsCompact(out TermOutput, counts dagui.TestCounts, width int) string {
+	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
+	parts := renderTestCountParts(out, counts)
+	if len(parts) == 0 {
+		return clipTestSummaryLine(indent+out.String("0 tests").Foreground(termenv.ANSIBrightBlack).Faint().String(), width)
+	}
+	return clipTestSummaryLine(indent+strings.Join(parts, "  "), width)
 }
 
 func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width int) string {
@@ -1554,6 +1671,18 @@ func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
 // finalRenderTestsWidth is used when report mode has no live terminal width.
 const finalRenderTestsWidth = 80
 
+const (
+	// inlineTestsChromeReserve is the height a focused check row's inline test
+	// rollup yields to surrounding chrome: the row's own title line, the pipe
+	// separator above the rollup, and the keymap bar. The rest of the viewport
+	// is the rollup's budget, which it condenses to fit.
+	inlineTestsChromeReserve = 3
+	// minInlineTestsRollupHeight is the condensed floor. At 1 the heading and
+	// counts share a single line, so the outcome survives even when the screen
+	// is too small for the usual two-row heading+counts.
+	minInlineTestsRollupHeight = 1
+)
+
 func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
 	if row == nil || row.Span == nil || row.Span.CheckName == "" {
 		return false
@@ -1611,7 +1740,18 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.ShowTestViewerHint = showHint
 		tv.Update()
 	}
+	// Budget the rollup to the viewport so it condenses (renderTestSummaryLines)
+	// rather than rendering tall and getting tail-cropped -- which drops the
+	// counts and failing-test detail that matter most. The focused row's rollup
+	// is its main content, so give it the screen minus room for the row's own
+	// title, the pipe separator above the rollup, and the keymap bar. The final
+	// report (finalRender) and size-unknown renders stay unbounded.
 	limit := finalTestViewHeight(tv)
+	if !s.fe.finalRender {
+		if sh := ctx.ScreenHeight(); sh > 0 {
+			limit = max(sh-inlineTestsChromeReserve, minInlineTestsRollupHeight)
+		}
+	}
 	if tv.MaxHeight != limit {
 		tv.MaxHeight = limit
 		tv.Update()
