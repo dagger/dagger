@@ -2087,8 +2087,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 
-	// Zoom header: split the zoomed span off as a header above its (unindented)
-	// content, separated by a blank line.
+	// Zoom header: the zoomed span shown above its (unindented) content. Captured
+	// rather than emitted directly so its height can be reserved out of the body
+	// crop below -- otherwise it pushes the body down until the focused row's
+	// header, or the zoom header itself, scrolls off the top.
+	var zoomHeader []string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
 		zoomBuf := new(strings.Builder)
 		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
@@ -2096,8 +2099,10 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
 		}, "", fe, false)
-		linesFromView(ctx, zoomBuf.String())
-		ctx.Line("")
+		if v := strings.TrimSuffix(zoomBuf.String(), "\n"); v != "" {
+			zoomHeader = strings.Split(v, "\n")
+		}
+		zoomHeader = append(zoomHeader, "") // blank line separating header from content
 	}
 
 	// Pre-render chrome below progress. Global tests are rendered before
@@ -2119,13 +2124,14 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 
 	// Assemble progress + chrome, then crop the bottom to what fits. The focused
 	// progress rows are anchored at the focused row's header by
-	// renderProgressLines (passed `reserved` so they get the whole content area),
-	// and the chrome below (logs, then the global tests summary) sits beneath
-	// them -- so cropping the bottom makes the chrome, not the focused header,
-	// what scrolls offscreen. This is the "main content wins" rule: reserving
-	// chrome space up front -- the old behaviour -- let a tall global TESTS block
-	// squeeze progress until the focused row's own header scrolled off the top.
-	progressLines := fe.renderProgressLines(r, ctx, reserved)
+	// renderProgressLines (passed the reserved + zoom-header height so they get
+	// exactly the body area), and the chrome below (logs, then the global tests
+	// summary) sits beneath them -- so cropping the bottom makes the chrome, not
+	// the focused header, what scrolls offscreen. This is the "main content wins"
+	// rule: reserving chrome space up front -- the old behaviour -- let a tall
+	// global TESTS block squeeze progress until the focused row's own header
+	// scrolled off the top.
+	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader))
 	var body []string
 	if len(progressLines) > 0 {
 		body = append(body, progressLines...)
@@ -2140,15 +2146,19 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		body = append(body, "") // trailing gap
 	}
 
-	// Crop the bottom to the rows available for this component (the screen minus
-	// the always-shown siblings). A non-positive ScreenHeight means the height is
-	// unknown (RenderLines / the report discovery render, before a frame sizes
-	// the terminal) -- render everything, like the old behaviour.
+	// Crop the bottom to the rows available for the body: the screen minus the
+	// always-shown siblings and the pinned zoom header. A non-positive
+	// ScreenHeight means the height is unknown (RenderLines / the report discovery
+	// render, before a frame sizes the terminal) -- render everything, like the
+	// old behaviour.
 	if h := ctx.ScreenHeight(); h > 0 {
-		if avail := h - reserved; avail > 0 && len(body) > avail {
+		if avail := h - reserved - len(zoomHeader); avail > 0 && len(body) > avail {
 			body = body[:avail]
 		}
 	}
+
+	// The zoom header is pinned above the body so the zoomed span stays in view.
+	ctx.Lines(zoomHeader...)
 	ctx.Lines(body...)
 	// NOTE: textInput, formWrap, and keymapBar are rendered as siblings in the
 	// TUI container, not here (accounted for in reserved above). Their cursors
