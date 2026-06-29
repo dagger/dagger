@@ -80,6 +80,9 @@ type frontendPretty struct {
 	// console, when set (DAGGER_TUI_CONSOLE=<addr>), serves the TUI over HTTP on
 	// a headless terminal instead of attaching to a real one (frontend_console.go).
 	console string
+	// consoleTerm is the headless terminal backing console mode, kept so the
+	// /resize endpoint can change its dimensions live.
+	consoleTerm *tuist.HeadlessTerminal
 
 	// updated by Run
 	tui         *tuist.TUI
@@ -622,8 +625,10 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	if addr := os.Getenv("DAGGER_TUI_CONSOLE"); addr != "" {
 		// Console mode: drive the TUI headlessly over HTTP (frontend_console.go)
 		// instead of a real terminal, so it works without a tty.
-		fe := newWithTerminal(w, db, tuist.NewHeadlessTerminal(consoleWidth, consoleHeight))
+		term := tuist.NewHeadlessTerminal(consoleWidth, consoleHeight)
+		fe := newWithTerminal(w, db, term)
 		fe.console = addr
+		fe.consoleTerm = term
 		return fe
 	}
 	return newWithTerminal(w, db, tuist.NewStdTerminal())

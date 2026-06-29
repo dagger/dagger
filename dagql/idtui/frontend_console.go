@@ -128,6 +128,35 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		fe.ZoomToSpan(dagui.SpanID{SpanID: sid})
 		writeScreen(w, r, fe.consoleSettle())
 	})
+	mux.HandleFunc("/resize", func(w http.ResponseWriter, r *http.Request) {
+		// Body is "<cols>x<rows>" or "<cols> <rows>"; either dimension may be
+		// omitted (or 0) to keep the current value, so "x12" just changes rows.
+		fields := strings.FieldsFunc(reqBody(r), func(c rune) bool {
+			return c == 'x' || c == 'X' || c == ' ' || c == ',' || c == '\t'
+		})
+		if len(fields) != 2 {
+			http.Error(w, "want <cols>x<rows>", http.StatusBadRequest)
+			return
+		}
+		cols, _ := strconv.Atoi(fields[0])
+		rows, _ := strconv.Atoi(fields[1])
+		mu.Lock()
+		defer mu.Unlock()
+		if cols <= 0 {
+			cols = fe.consoleTerm.Columns()
+		}
+		if rows <= 0 {
+			rows = fe.consoleTerm.Rows()
+		}
+		fe.consoleTerm.Resize(cols, rows)
+		// The frontend caches its rendered output keyed on (generation, width),
+		// not height, so a height-only resize would otherwise reuse the stale
+		// layout (a live run re-renders constantly and never hits this; a settled
+		// replayed trace has no other re-render trigger). Bump the generation so
+		// the next Step re-runs Render at the new ScreenHeight.
+		fe.Update()
+		writeScreen(w, r, fe.consoleSettle())
+	})
 	mux.HandleFunc("/spans", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -152,9 +181,10 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 // consoleSettle Steps the TUI (draining dispatched telemetry and injected keys,
 // then rendering) and keeps stepping until the frame stops changing or the
 // timeout elapses — giving background lazy fetches a moment to land. Returns the
-// rendered frame.
+// rendered frame, clipped to the terminal viewport.
 func (fe *frontendPretty) consoleSettle() string {
-	frame := strings.Join(fe.tui.Step(), "\n")
+	lines := fe.tui.Step()
+	frame := strings.Join(lines, "\n")
 	deadline := time.Now().Add(consoleSettleTimeout)
 	stable := 0
 	for time.Now().Before(deadline) {
@@ -168,8 +198,9 @@ func (fe *frontendPretty) consoleSettle() string {
 			fe.fetchWaiter()
 		}
 		time.Sleep(40 * time.Millisecond)
-		next := strings.Join(fe.tui.Step(), "\n")
-		if next == frame {
+		next := fe.tui.Step()
+		joined := strings.Join(next, "\n")
+		if joined == frame {
 			stable++
 			if stable >= 2 {
 				break
@@ -177,9 +208,26 @@ func (fe *frontendPretty) consoleSettle() string {
 			continue
 		}
 		stable = 0
-		frame = next
+		lines = next
+		frame = joined
 	}
-	return frame
+	return strings.Join(fe.consoleViewport(lines), "\n")
+}
+
+// consoleViewport mirrors what a real terminal actually shows: when the
+// rendered frame is taller than the terminal, only the bottom Rows() lines are
+// visible and the top scrolls offscreen (tuist switches to the alt screen and
+// renders newLines[len-height:] — see applyFrameAltScreen). The headless
+// terminal does no such clipping on its own, so without this the console would
+// show content a real user could never see at that size. Reproducing the clip
+// is what surfaces rendering bugs that only bite when content overflows — e.g.
+// a focused row whose own promoted tests/logs push its header above the top.
+func (fe *frontendPretty) consoleViewport(lines []string) []string {
+	h := fe.consoleTerm.Rows()
+	if h > 0 && len(lines) > h {
+		return lines[len(lines)-h:]
+	}
+	return lines
 }
 
 // consoleSpans lists the spans currently loaded in the DB (everything fetched so
@@ -216,6 +264,7 @@ func (fe *frontendPretty) consoleHelp(w http.ResponseWriter, _ *http.Request) {
 		"  POST /key   <keys>   apply key script, return frame\n"+
 		"  POST /type  <text>   type a literal string (e.g. into / search)\n"+
 		"  POST /zoom  <hex>    zoom to a span, return frame\n"+
+		"  POST /resize <CxR>   resize the terminal (e.g. 120x12), return frame\n"+
 		"  GET  /spans[?q=sub]  loaded-span id/status/name listing\n"+
 		"  GET  /help           this list\n"+
 		"keys: ←↑↓→ move · right/l expand · left/h collapse · enter zoom · "+
