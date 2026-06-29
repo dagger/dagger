@@ -104,6 +104,22 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Extracts an archive file into a directory.
+  """
+  @spec extract(t(), [{:strip_components, integer() | nil}]) :: Dagger.Directory.t()
+  def extract(%__MODULE__{} = file, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("extract")
+      |> QB.maybe_put_arg("stripComponents", optional_args[:strip_components])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   A unique identifier for this File.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}

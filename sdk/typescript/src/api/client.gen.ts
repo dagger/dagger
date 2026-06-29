@@ -1477,6 +1477,15 @@ export type FileExportOpts = {
   allowParentDirPath?: boolean
 }
 
+export type FileExtractOpts = {
+  /**
+   * Number of leading path components to strip from each archive entry.
+   *
+   * Entries with fewer components than this are skipped.
+   */
+  stripComponents?: number
+}
+
 export type FileSearchOpts = {
   /**
    * Interpret the pattern as a literal string instead of a regular expression.
@@ -9066,6 +9075,17 @@ export class File extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Extracts an archive file into a directory.
+   * @param opts.stripComponents Number of leading path components to strip from each archive entry.
+   *
+   * Entries with fewer components than this are skipped.
+   */
+  extract = (opts?: FileExtractOpts): Directory => {
+    const ctx = this._ctx.select("extract", { ...opts })
+    return new Directory(ctx)
   }
 
   /**

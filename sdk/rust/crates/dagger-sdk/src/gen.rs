@@ -9250,6 +9250,13 @@ pub struct FileExportOpts {
     pub allow_parent_dir_path: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileExtractOpts {
+    /// Number of leading path components to strip from each archive entry.
+    /// Entries with fewer components than this are skipped.
+    #[builder(setter(into, strip_option), default)]
+    pub strip_components: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileSearchOpts<'a> {
     /// Allow the . pattern to match newlines in multiline mode.
     #[builder(setter(into, strip_option), default)]
@@ -9442,6 +9449,35 @@ impl File {
             query = query.arg("allowParentDirPath", allow_parent_dir_path);
         }
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Extracts an archive file into a directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn extract(&self) -> Directory {
+        let query = self.selection.select("extract");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Extracts an archive file into a directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn extract_opts(&self, opts: FileExtractOpts) -> Directory {
+        let mut query = self.selection.select("extract");
+        if let Some(strip_components) = opts.strip_components {
+            query = query.arg("stripComponents", strip_components);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// A unique identifier for this File.
     pub async fn id(&self) -> Result<Id, DaggerError> {

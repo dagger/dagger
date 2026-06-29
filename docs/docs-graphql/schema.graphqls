@@ -3664,6 +3664,16 @@ type File implements Exportable & Node & Syncer {
     allowParentDirPath: Boolean = false
   ): String!
 
+  """Extracts an archive file into a directory."""
+  extract(
+    """
+    Number of leading path components to strip from each archive entry.
+
+    Entries with fewer components than this are skipped.
+    """
+    stripComponents: Int = 0
+  ): Directory!
+
   """A unique identifier for this File."""
   id: ID!
 

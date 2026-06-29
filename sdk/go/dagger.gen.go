@@ -8179,6 +8179,29 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	return response, q.Execute(ctx)
 }
 
+// FileExtractOpts contains options for File.Extract
+type FileExtractOpts struct {
+	// Number of leading path components to strip from each archive entry.
+	//
+	// Entries with fewer components than this are skipped.
+	StripComponents int
+}
+
+// Extracts an archive file into a directory.
+func (r *File) Extract(opts ...FileExtractOpts) *Directory {
+	q := r.query.Select("extract")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `stripComponents` optional argument
+		if !querybuilder.IsZeroValue(opts[i].StripComponents) {
+			q = q.Arg("stripComponents", opts[i].StripComponents)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // A unique identifier for this File.
 func (r *File) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {

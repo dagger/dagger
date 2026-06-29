@@ -8618,6 +8618,26 @@ class File(Type):
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
 
+    def extract(
+        self,
+        *,
+        strip_components: int | None = 0,
+    ) -> Directory:
+        """Extracts an archive file into a directory.
+
+        Parameters
+        ----------
+        strip_components:
+            Number of leading path components to strip from each archive
+            entry.
+            Entries with fewer components than this are skipped.
+        """
+        _args = [
+            Arg("stripComponents", strip_components, 0),
+        ]
+        _ctx = self._select("extract", _args)
+        return Directory(_ctx)
+
     async def id(self) -> str:
         """A unique identifier for this File.
 
