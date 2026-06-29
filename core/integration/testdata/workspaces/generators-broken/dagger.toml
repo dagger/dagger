@@ -1,0 +1,5 @@
+[modules.good]
+source = ".dagger/modules/good"
+
+[modules.bad]
+source = ".dagger/modules/bad"
