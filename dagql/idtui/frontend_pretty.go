@@ -23,6 +23,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
@@ -2087,10 +2088,14 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 
-	// Zoom header: the zoomed span shown above its (unindented) content. Captured
-	// rather than emitted directly so its height can be reserved out of the body
-	// crop below -- otherwise it pushes the body down until the focused row's
-	// header, or the zoom header itself, scrolls off the top.
+	// Zoom header: the zoomed span shown above its (unindented) content as a
+	// title bar -- a full-width background bar, the same style the log pager
+	// gives its title (frontend_log_pager.go). Captured rather than emitted
+	// directly so its height can be reserved out of the body crop below --
+	// otherwise it pushes the body down until the focused row's header, or the
+	// zoom header itself, scrolls off the top. The rich row's own colours are
+	// flattened to plain text so the bar reads uniformly and stays legible on the
+	// background (the caret, for one, is the same bright black as the bar).
 	var zoomHeader []string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
 		zoomBuf := new(strings.Builder)
@@ -2099,10 +2104,15 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
 		}, "", fe, false)
-		if v := strings.TrimSuffix(zoomBuf.String(), "\n"); v != "" {
-			zoomHeader = strings.Split(v, "\n")
+		titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+		for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
+			if ctx.Width > 0 {
+				line = titleOut.String(padANSI(clipPlain(ansi.Strip(line), ctx.Width), ctx.Width)).
+					Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
+			}
+			zoomHeader = append(zoomHeader, line)
 		}
-		zoomHeader = append(zoomHeader, "") // blank line separating header from content
+		zoomHeader = append(zoomHeader, "") // blank line separating the bar from the content
 	}
 
 	// Pre-render chrome below progress. Global tests are rendered before
