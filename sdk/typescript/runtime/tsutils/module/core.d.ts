@@ -11,6 +11,7 @@ export function connection(
 ): Promise<void>
 export function connect(cb: CallbackFct, opts?: ConnectOpts): Promise<void>
 export class Context {}
+export class BaseClient {}
 
 export type ArgumentOptions = {
   defaultPath?: string

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"text/template"
 
+	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
@@ -62,32 +64,91 @@ func generate(config generator.Config, target string, schema *introspection.Sche
 		})
 	}
 
-	tmpl := templates.New(schemaVersion, config)
-	data := struct {
-		Schema        *introspection.Schema
-		SchemaVersion string
-		Types         []*introspection.Type
-	}{
-		Schema:        schema,
-		SchemaVersion: schemaVersion,
-		Types:         schema.Types,
+	// Split dependency-contributed types into their own <dep>.gen.ts files.
+	// The core file (client.gen.ts) is rendered from a schema with the
+	// dep-owned types removed; for the extendable types (Query/Binding/Env)
+	// the dep-contributed fields are dropped and re-attached as prototype
+	// augmentations in each per-dep file. With no dependencies this is a
+	// no-op and client.gen.ts retains its full-schema contents.
+	// Only split *dependencies* into their own files; the module being
+	// generated for keeps its own types in client.gen.ts.
+	selfModule := selfModuleName(config)
+	depNames := templates.DependencyModules(schema, selfModule)
+	coreSchema := schema
+	if len(depNames) > 0 {
+		coreSchema = schema.Exclude(depNames...)
 	}
-	var b bytes.Buffer
-	err := tmpl.ExecuteTemplate(&b, "api", data)
-	if err != nil {
-		return nil, err
-	}
+
+	// The template funcs always get the full schema so the dependency-
+	// splitting helpers can enumerate deps regardless of which (possibly
+	// filtered) schema a given file is rendered from.
+	tmpl := templates.New(schemaVersion, schema, selfModule, config)
 
 	mfs := memfs.New()
 
-	if err := mfs.MkdirAll(filepath.Dir(target), 0700); err != nil {
-		return nil, fmt.Errorf("failed to create target directory %s: %w", filepath.Dir(target), err)
+	// Render the core file (client.gen.ts) from the filtered core schema.
+	if err := renderTemplate(mfs, tmpl, "api", target, depFileData{
+		Schema:        coreSchema,
+		SchemaVersion: schemaVersion,
+		Types:         coreSchema.Types,
+	}); err != nil {
+		return nil, err
 	}
-	if err := mfs.WriteFile(target, b.Bytes(), 0600); err != nil {
-		return nil, fmt.Errorf("failed to write client file at %s: %w", target, err)
+
+	// Render one <dep>.gen.ts file per dependency.
+	for _, depName := range depNames {
+		depSchema := schema.Include(depName)
+		depTarget := filepath.Join(filepath.Dir(target), strcase.ToKebab(depName)+".gen.ts")
+		if err := renderTemplate(mfs, tmpl, "dep", depTarget, depFileData{
+			Schema:        depSchema,
+			SchemaVersion: schemaVersion,
+			Types:         depSchema.Types,
+			DepName:       depName,
+		}); err != nil {
+			return nil, fmt.Errorf("render dependency %q: %w", depName, err)
+		}
 	}
 
 	return &generator.GeneratedState{
 		Overlay: mfs,
 	}, nil
+}
+
+// selfModuleName returns the name of the module the client is generated for
+// (from the module or client config), or "" when generating outside a module
+// (e.g. the SDK's own library client).
+func selfModuleName(config generator.Config) string {
+	if config.ModuleConfig != nil {
+		return config.ModuleConfig.ModuleName
+	}
+	if config.ClientConfig != nil {
+		return config.ClientConfig.ModuleName
+	}
+	return ""
+}
+
+// depFileData is the template "dot" for both the core "api" template and the
+// per-dependency "dep" template. DepName is only set for dep files and is used
+// to derive a unique augmentation function name.
+type depFileData struct {
+	Schema        *introspection.Schema
+	SchemaVersion string
+	Types         []*introspection.Type
+	DepName       string
+}
+
+// renderTemplate executes the named template against data and writes the
+// result to target inside mfs.
+func renderTemplate(mfs *memfs.FS, tmpl *template.Template, name, target string, data depFileData) error {
+	var b bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&b, name, data); err != nil {
+		return fmt.Errorf("render %q: %w", name, err)
+	}
+	if err := mfs.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return fmt.Errorf("failed to create target directory %s: %w", filepath.Dir(target), err)
+	}
+	if err := mfs.WriteFile(target, b.Bytes(), 0600); err != nil {
+		return fmt.Errorf("failed to write client file at %s: %w", target, err)
+	}
+	return nil
 }
