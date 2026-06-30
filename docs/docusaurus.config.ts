@@ -14,6 +14,14 @@ const docsPath = "./current_docs";
 const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
 const latestVersion = "0.21.4";
 const versions = require("./versions.json") as string[];
+// Local search only indexes the default version (served at the root). Keep the
+// auto-generated SDK reference and every non-default version out of the index.
+const localSearchExclude = [
+  "/reference/typescript/",
+  ...versions
+    .filter((v) => v !== latestVersion)
+    .map((v) => `${baseUrl}${v}/`),
+];
 const versionLabels: Record<string, string> = {};
 const versionSelectOptions = [
   ...versions.map((version) => ({
@@ -181,6 +189,10 @@ const config: Config = {
     // Parses docs-graphql/schema.graphqls into the model rendered by the
     // API reference components on the type reference pages.
     daggerApiReference,
+    // Builds a client-side search index over the current docs version. Pairs
+    // with the swizzled SearchBar (src/theme/SearchBar) for a local,
+    // command-palette search that needs no external service.
+    ["./plugins/local-search", { exclude: localSearchExclude }],
     [
       "posthog-docusaurus",
       {
@@ -312,11 +324,6 @@ const config: Config = {
           className: "header-searchbar",
         },
       ],
-    },
-    algolia: {
-      apiKey: "bffda1490c07dcce81a26a144115cc02",
-      indexName: "dagger",
-      appId: "XEIYPBWGOI",
     },
     colorMode: {
       defaultMode: "light",

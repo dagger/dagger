@@ -1050,80 +1050,12 @@ html[data-theme="dark"] .language-shell > div:nth-child(1) {
   padding-bottom: 0 !important;
 }
 
-// DocSearch button styling to match background color in both themes
-html[data-theme="light"] .DocSearch.DocSearch-Button {
-  background-color: var(--color-white) !important;
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 8px !important; /* Match Dagger Cloud button radius */
-  height: 36px !important; /* Match navbar links height */
-  padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
-
-  &:hover {
-    background-color: var(--color-backgroundSecondary) !important;
-  }
-}
-
-html[data-theme="dark"] .DocSearch.DocSearch-Button {
-  background-color: var(--color-gray-900) !important;
-  border: none !important;
-  border-radius: 8px !important; /* Match Dagger Cloud button radius */
-  height: 36px !important; /* Match navbar links height */
-  padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
-
-  &:hover {
-    background-color: var(--color-gray-800) !important;
-  }
-
-  @include mobile {
-    background-color: var(--color-purple-800) !important; /* Match announcement bar color in dark mode */
-  }
-}
-
 /* Dark mode toggle button consistent height */
 .navbar__item--right .react-toggle,
 .navbar__item--right .navbar__toggle {
   height: 36px !important;
   display: flex !important;
   align-items: center !important;
-}
-
-// Use mobile-style search (magnifying glass only) on tablet screens
-@include tablet {
-  .DocSearch-Button {
-    width: 48px !important;
-    min-width: 48px !important;
-    padding: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-
-    .DocSearch-Button-Container {
-      justify-content: center !important;
-      align-items: center !important;
-      display: flex !important;
-    }
-
-    .DocSearch-Search-Icon {
-      width: 20px !important;
-      height: 20px !important;
-      margin: 0 !important;
-    }
-
-    .DocSearch-Button-Placeholder,
-    .DocSearch-Button-Keys {
-      display: none !important;
-    }
-  }
-
-  // Apply mobile hover effect for dark theme on tablet
-  html[data-theme="dark"] .DocSearch.DocSearch-Button {
-    background-color: var(--color-purple-800) !important;
-
-    &:hover {
-      background-color: var(--color-purple-700) !important;
-    }
-  }
 }
 
 @include desktop {
@@ -1136,27 +1068,6 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
     margin-top: 0.75rem;
     min-width: 0;
     width: 100%;
-
-    .DocSearch.DocSearch-Button {
-      flex-grow: 1 !important;
-      max-width: 100% !important;
-      min-width: 0 !important;
-      justify-content: space-between !important;
-      padding: 0 0.75rem !important;
-      width: auto !important;
-    }
-
-    .DocSearch-Button-Container {
-      min-width: 0 !important;
-    }
-
-    .DocSearch-Button-Placeholder {
-      display: inline !important;
-    }
-
-    .DocSearch-Button-Keys {
-      display: flex !important;
-    }
   }
 }
 
