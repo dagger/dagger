@@ -144,7 +144,6 @@ type LogMessage struct {
 	Attributes map[string]any `json:"attributes"`
 }
 
-
 // SSE GraphQL response envelope.
 
 type graphqlSSEResponse[T any] struct {
@@ -158,7 +157,6 @@ type spansUpdatedResponse struct {
 type logsEmittedResponse struct {
 	LogsEmitted []LogMessage `json:"logsEmitted"`
 }
-
 
 // graphqlStatusError is returned when the GraphQL endpoint responds with a
 // non-200 status (e.g. 422 for a validation error). It carries the body so
@@ -241,6 +239,67 @@ type SpanStreamOpts struct {
 	// trace size. Falls back to a full fetch against an API that predates the
 	// argument.
 	Incremental bool
+}
+
+const getTraceMetadataOperation = `
+query GetTraceMetadata ($org: ID!, $traceID: ID!) {
+	trace(id: $traceID, org: $org) {
+		git {
+			ref
+			branch
+			tag
+		}
+		ci {
+			isNativeCI
+			repository
+			change {
+				id
+				headSHA
+				branch
+			}
+		}
+	}
+}
+`
+
+// TraceMetadata is the trace's source git/CI context: the commit it ran on and,
+// for native CI, the change (PR) and whether re-running via Dagger Cloud applies.
+type TraceMetadata struct {
+	Git *TraceGitMetadata `json:"git"`
+	CI  *TraceCIMetadata  `json:"ci"`
+}
+
+type TraceGitMetadata struct {
+	Ref    string `json:"ref"`
+	Branch string `json:"branch"`
+	Tag    string `json:"tag"`
+}
+
+type TraceCIMetadata struct {
+	IsNativeCI bool           `json:"isNativeCI"`
+	Repository string         `json:"repository"`
+	Change     *TraceCIChange `json:"change"`
+}
+
+type TraceCIChange struct {
+	ID      string `json:"id"` // change number, e.g. the PR number
+	HeadSHA string `json:"headSHA"`
+	Branch  string `json:"branch"`
+}
+
+// TraceMetadata fetches a trace's git/CI context. Returns nil (no error) when the
+// trace has no metadata recorded.
+func (c *Client) TraceMetadata(ctx context.Context, orgID, traceID string) (*TraceMetadata, error) {
+	var data struct {
+		Trace *TraceMetadata `json:"trace"`
+	}
+	if err := c.doGraphQL(ctx, "GetTraceMetadata", getTraceMetadataOperation, map[string]any{
+		"org":     orgID,
+		"traceID": traceID,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return data.Trace, nil
 }
 
 // StreamSpans streams a trace's priority (root) spans. It's a convenience

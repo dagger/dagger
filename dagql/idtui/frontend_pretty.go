@@ -157,6 +157,12 @@ type frontendPretty struct {
 	// untruncated output. Empty for live runs (no follow-up command applies).
 	traceID string
 
+	// ciMeta is the trace's source commit / CI change, set by 'dagger trace' from
+	// the Cloud trace metadata so the report can suggest re-run commands scoped to
+	// the exact commit. Nil for live/local runs, where only a local 'dagger check'
+	// applies.
+	ciMeta *ciContext
+
 	// pinnedZoom is an explicitly requested zoom (e.g. 'dagger trace
 	// --span/--check/--test') that persists into the final, non-interactive
 	// render, where an ordinary zoom is otherwise reset to the primary span.
@@ -811,6 +817,27 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 func (fe *frontendPretty) SetTraceID(traceID string) {
 	fe.dispatch(func() {
 		fe.traceID = traceID
+	})
+}
+
+// ciContext is the trace's source git/CI context: the commit it ran on and, for
+// native CI, the change (PR) number. It drives the report's re-run suggestions.
+type ciContext struct {
+	commit     string // git ref / commit SHA the trace ran on
+	prNumber   string // CI change number, e.g. the PR number
+	isNativeCI bool   // ran in Dagger Cloud native CI (so 'dagger cloud rerun' applies)
+}
+
+// SetCIContext records the trace's source commit / CI change so the report can
+// suggest commit-scoped re-run commands. Called by 'dagger trace' for Cloud
+// traces; no-op for live/local runs.
+func (fe *frontendPretty) SetCIContext(commit, prNumber string, isNativeCI bool) {
+	fe.dispatch(func() {
+		fe.ciMeta = &ciContext{
+			commit:     commit,
+			prNumber:   prNumber,
+			isNativeCI: isNativeCI,
+		}
 	})
 }
 
@@ -2074,6 +2101,10 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			if zoomed {
 				zoomSpan = fe.rowsView.Zoomed
 			}
+			if rerunLines := fe.renderRerunSection(zoomSpan); len(rerunLines) > 0 {
+				ctx.Line("")
+				ctx.Lines(rerunLines...)
+			}
 			if suggLines := fe.renderSuggestionsSection(zoomSpan); len(suggLines) > 0 {
 				ctx.Line("")
 				ctx.Lines(suggLines...)
@@ -2416,6 +2447,85 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
 	}
 	return reportSectionLines(out, "MORE DETAILS", body)
+}
+
+// renderRerunSection prints copy-paste commands to re-run the failed checks. For
+// a Cloud trace that ran in Dagger native CI it leads with 'dagger cloud rerun'
+// scoped to the trace's commit (the CI re-run), followed by 'dagger check' to
+// reproduce locally; otherwise it offers just the local 'dagger check'. Only
+// outermost checks are re-runnable, so sub-checks roll up to their root. Returns
+// nil when no failed check applies. Gated by showSuggestions at the call site.
+func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
+	if fe.db == nil {
+		return nil
+	}
+	roots := fe.db.SurfacedChecks()
+
+	var names []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+
+	switch {
+	case zoomed != nil && zoomed.CheckName != "":
+		// Zoomed to a check: re-run its outermost surfaced check (the re-runnable
+		// unit), if that check failed.
+		if root := outermostSurfacedCheck(roots, zoomed.CheckName); root != nil && root.Failed {
+			add(root.Name)
+		}
+	case zoomed == nil:
+		// Whole trace: re-run every failed outermost check.
+		for _, n := range roots {
+			if n.Failed {
+				add(n.Name)
+			}
+		}
+	}
+
+	if len(names) == 0 {
+		return nil
+	}
+
+	cloudRerun := fe.ciMeta != nil && fe.ciMeta.isNativeCI && fe.ciMeta.commit != ""
+	var rerunLines, checkLines []string
+	for _, name := range names {
+		if cloudRerun {
+			rerunLines = append(rerunLines, fmt.Sprintf("dagger cloud rerun --commit %s --check %q", fe.ciMeta.commit, name))
+		}
+		checkLines = append(checkLines, fmt.Sprintf("dagger check %q", name))
+	}
+
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	return reportSectionLines(out, "RE-RUN", append(rerunLines, checkLines...))
+}
+
+// outermostSurfacedCheck returns the top-level surfaced check whose subtree
+// contains checkName (itself included), or nil. It maps a (possibly nested)
+// check to the outermost unit that 'dagger cloud rerun'/'dagger check' can target.
+func outermostSurfacedCheck(roots []*dagui.CheckNode, checkName string) *dagui.CheckNode {
+	var contains func(n *dagui.CheckNode) bool
+	contains = func(n *dagui.CheckNode) bool {
+		if n.Name == checkName {
+			return true
+		}
+		for _, c := range n.Children {
+			if contains(c) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, root := range roots {
+		if contains(root) {
+			return root
+		}
+	}
+	return nil
 }
 
 // renderChecksHeader renders the top-level "CHECKS" heading -- the tally of the

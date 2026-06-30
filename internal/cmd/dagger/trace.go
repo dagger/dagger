@@ -88,6 +88,33 @@ func traceRun(cmd *cobra.Command, args []string) error {
 			t.SetTraceID(traceID)
 		}
 
+		// Fetch the trace's source commit / CI change so the report can suggest
+		// commit-scoped re-run commands. Best-effort: a missing metadata query just
+		// means the report falls back to a local 'dagger check' suggestion.
+		if t, ok := Frontend.(interface {
+			SetCIContext(commit, prNumber string, isNativeCI bool)
+		}); ok {
+			if meta, err := client.TraceMetadata(ctx, orgID, traceID); err != nil {
+				slog.Warn("failed to fetch trace metadata for re-run suggestions", "err", err)
+			} else if meta != nil {
+				var commit, prNumber string
+				var isNativeCI bool
+				if meta.Git != nil {
+					commit = meta.Git.Ref
+				}
+				if meta.CI != nil {
+					isNativeCI = meta.CI.IsNativeCI
+					if meta.CI.Change != nil {
+						prNumber = meta.CI.Change.ID
+						if commit == "" {
+							commit = meta.CI.Change.HeadSHA
+						}
+					}
+				}
+				t.SetCIContext(commit, prNumber, isNativeCI)
+			}
+		}
+
 		logExp := Frontend.LogExporter()
 		defer logExp.Shutdown(ctx)
 
