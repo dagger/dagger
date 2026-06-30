@@ -129,7 +129,8 @@ export default function SearchBar(): JSX.Element {
 
   // Scope results to the version the reader is currently on: "next" under the
   // unreleased docs, otherwise the default version served at the root.
-  const {pathname} = useLocation();
+  const location = useLocation();
+  const {pathname} = location;
   const nextBase = useBaseUrl("/next/");
   const vkey =
     pathname === nextBase.slice(0, -1) || pathname.startsWith(nextBase)
@@ -170,6 +171,12 @@ export default function SearchBar(): JSX.Element {
 
   // Reset the highlighted row when the result set changes.
   useEffect(() => setActive(0), [results]);
+
+  // Dismiss the palette on navigation, so picking a result closes it (covers
+  // SPA hash jumps where the click handler's state update might not flush).
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname, location.hash]);
 
   // Global Cmd/Ctrl+K to toggle, Escape to close.
   useEffect(() => {
