@@ -3968,7 +3968,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
 			} else if row.Span.RollUpLogs && row.IsRunningOrChildRunning {
 				// Only show rolled-up logs while the span is running.
-				fe.renderStepLogs(out, r, row, prefix, focused)
+				fe.renderStepLogs(ctx, out, r, row, prefix, focused)
 			}
 		}
 	}
@@ -4106,7 +4106,7 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 // thing
 const llmLogsLastLines = 8
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
+func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
 	if fe.claims.hasLog(row.Span.ID) {
 		return false
 	}
@@ -4114,7 +4114,15 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	// spans), so request them when it renders -- the interactive path no longer
 	// pre-fetches. (Inline expanded-step logs go through LogsView instead.)
 	fe.requestLogsOnRender(row.Span.ID)
+	// A third of the screen, read off ScreenHeight (not the cached
+	// fe.window.Height) so this in-tree log window tracks a resize. See
+	// renderInlineLogs.
 	limit := fe.window.Height / 3
+	if !fe.finalRender {
+		if sh := ctx.ScreenHeight(); sh > 0 {
+			limit = sh / 3
+		}
+	}
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
 	}
@@ -4586,7 +4594,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// NOTE: arguably this should be opt-in, but it's not clear how the
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
-		if fe.renderStepLogs(out, r, row, prefix, focused) {
+		if fe.renderStepLogs(ctx, out, r, row, prefix, focused) {
 			if span.LLMRole == telemetry.LLMRoleUser {
 				// Bail early if we printed a user message span; these don't have any
 				// further information to show. Duration is always 0, metrics are empty,

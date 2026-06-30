@@ -3,6 +3,8 @@ package idtui
 import (
 	"fmt"
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -240,6 +242,79 @@ func TestInlineLogsReactToScreenHeight(t *testing.T) {
 
 	if tall != 20 || short != 10 {
 		t.Fatalf("inline log window did not track screen height: tall=%d (want 20), short=%d (want 10)", tall, short)
+	}
+}
+
+// TestInTreeMessageLogsReactToScreenHeight is the in-tree counterpart of
+// TestInlineLogsReactToScreenHeight: a message span renders its logs straight in
+// the progress tree (renderStepLogs, not the LogsView), windowed to a third of
+// the screen. Driving a real resize, the "...N lines hidden..." trim marker --
+// anchored at the top of the block, so not subject to the outer crop -- must
+// grow as the screen (and thus the window) shrinks.
+func TestInTreeMessageLogsReactToScreenHeight(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	msgID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root call",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:        msgID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "output",
+			Message:   "output",
+			StartTime: start.Add(time.Second),
+			EndTime:   start.Add(2 * time.Second),
+			ParentID:  rootID,
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{rootID: true, msgID: true}
+
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(80)
+	for i := 0; i < 60; i++ {
+		_, _ = logs.Write([]byte(fmt.Sprintf("log line %02d\n", i)))
+	}
+	fe.logs.Logs[msgID] = logs
+
+	fe.recalculateViewLocked()
+
+	hidden := func() int {
+		re := regexp.MustCompile(`\.\.\.(\d+) lines hidden\.\.\.`)
+		for _, line := range fe.tui.Frame() {
+			if m := re.FindStringSubmatch(line); m != nil {
+				n, _ := strconv.Atoi(m[1])
+				return n
+			}
+		}
+		return -1
+	}
+
+	tall := hidden()
+	term.Resize(120, 30)
+	short := hidden()
+
+	if tall < 0 || short < 0 {
+		t.Fatalf("no log trim marker found (tall=%d short=%d); message-span logs not windowed", tall, short)
+	}
+	// A taller screen hides fewer lines: window grows with the screen.
+	if !(short > tall) {
+		t.Fatalf("in-tree log window did not track screen height: hidden tall=%d, short=%d (want short > tall)", tall, short)
 	}
 }
 
