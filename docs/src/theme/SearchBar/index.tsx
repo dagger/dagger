@@ -178,6 +178,14 @@ export default function SearchBar(): JSX.Element {
     setOpen(false);
   }, [location.pathname, location.hash]);
 
+  // Clear the query when the palette closes, so it opens fresh next time.
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      setActive(0);
+    }
+  }, [open]);
+
   // Global Cmd/Ctrl+K to toggle, Escape to close.
   useEffect(() => {
     function onKey(ev: KeyboardEvent) {
