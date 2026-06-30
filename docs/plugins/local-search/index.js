@@ -53,10 +53,11 @@ module.exports = function localSearchPlugin(context, options) {
 
       for (const route of routesPaths) {
         if (!route.startsWith(baseUrl)) continue;
-        // Only index the current/default version (served at the root). The
-        // unreleased "next" docs and old versions are intentionally excluded.
-        if (route.startsWith(nextPrefix)) continue;
+        // Index the default version (served at the root) and the unreleased
+        // "next" version, tagging each entry so the UI can scope results to
+        // whichever version the reader is on. Old versions stay out (excluded).
         if (exclude.some((frag) => route.includes(frag))) continue;
+        const version = route.startsWith(nextPrefix) ? "next" : "";
 
         const rel = "/" + route.slice(baseUrl.length); // normalize to "/foo/"
         const htmlFile = path.join(outDir, route.slice(baseUrl.length), "index.html");
@@ -92,13 +93,15 @@ module.exports = function localSearchPlugin(context, options) {
         });
         sections.push(cur);
 
-        const pageCrumb = crumbFromRoute(rel);
+        // Drop the version segment from next-version crumbs ("Next › …").
+        const pageCrumb = crumbFromRoute(version ? rel.replace(/^\/next/, "") : rel);
         for (const s of sections) {
           const text = collapse(s.parts.join(" ")).slice(0, MAX_TEXT);
           if (!s.id) {
             // Page-level entry; skip an empty intro when the page has sections.
             if (!text && sections.length > 1) continue;
             entries.push({
+              version,
               title: pageTitle,
               crumb: pageCrumb,
               location: route,
@@ -107,6 +110,7 @@ module.exports = function localSearchPlugin(context, options) {
           } else {
             if (!text && !s.title) continue;
             entries.push({
+              version,
               title: s.title,
               crumb: pageTitle,
               location: route + "#" + s.id,
@@ -116,11 +120,19 @@ module.exports = function localSearchPlugin(context, options) {
         }
       }
 
+      const byVersion = entries.reduce((acc, e) => {
+        const k = e.version || "default";
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {});
       fs.writeFileSync(
         path.join(outDir, indexFileName),
         JSON.stringify(entries),
       );
-      console.log(`[local-search] indexed ${entries.length} sections -> ${indexFileName}`);
+      console.log(
+        `[local-search] indexed ${entries.length} sections ` +
+          `(${JSON.stringify(byVersion)}) -> ${indexFileName}`,
+      );
     },
   };
 };

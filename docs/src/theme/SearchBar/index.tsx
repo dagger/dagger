@@ -13,13 +13,14 @@ import React, {
   useState,
 } from "react";
 import {createPortal} from "react-dom";
-import {useHistory} from "@docusaurus/router";
+import {useHistory, useLocation} from "@docusaurus/router";
 import useBaseUrl from "@docusaurus/useBaseUrl";
 import useIsBrowser from "@docusaurus/useIsBrowser";
 
 import styles from "./styles.module.css";
 
 type Entry = {
+  version: string; // "" for the default version, "next" for the unreleased docs
   title: string;
   crumb: string;
   location: string;
@@ -126,6 +127,15 @@ export default function SearchBar(): JSX.Element {
   const indexUrl = useBaseUrl("/search_index.json");
   const isBrowser = useIsBrowser();
 
+  // Scope results to the version the reader is currently on: "next" under the
+  // unreleased docs, otherwise the default version served at the root.
+  const {pathname} = useLocation();
+  const nextBase = useBaseUrl("/next/");
+  const vkey =
+    pathname === nextBase.slice(0, -1) || pathname.startsWith(nextBase)
+      ? "next"
+      : "";
+
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<Entry[] | null>(cachedEntries);
@@ -139,8 +149,14 @@ export default function SearchBar(): JSX.Element {
     isBrowser && /Mac|iPhone|iPad/.test(navigator.platform || "");
 
   const results = useMemo(
-    () => (entries && query ? search(query, entries) : []),
-    [entries, query],
+    () =>
+      entries && query
+        ? search(
+            query,
+            entries.filter((e) => (e.version || "") === vkey),
+          )
+        : [],
+    [entries, query, vkey],
   );
 
   // Load index + focus input whenever the palette opens.
