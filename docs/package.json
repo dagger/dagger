@@ -52,6 +52,7 @@
     "@docusaurus/tsconfig": "^3.9.2",
     "@docusaurus/types": "^3.5.2",
     "@types/node": "^25.5",
+    "cheerio": "^1.0.0",
     "markdownlint-cli": "^0.48.0"
   },
   "browserslist": {
