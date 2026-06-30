@@ -106,7 +106,7 @@ func (lv *LogsView) sync(logPrefix, trimPrefix string, height int, finalRender, 
 // trigger their fetches, which trace.go drains before the single final render.
 func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dagui.TraceRow, focused bool) []string {
 	span := row.Span
-	if span.Message != "" || !(row.Expanded || span.LLMTool != "") {
+	if span.Message != "" || (!row.Expanded && span.LLMTool == "") {
 		return nil
 	}
 	if s.fe.claims.hasLog(span.ID) {

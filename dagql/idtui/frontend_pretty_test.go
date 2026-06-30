@@ -313,7 +313,7 @@ func TestInTreeMessageLogsReactToScreenHeight(t *testing.T) {
 		t.Fatalf("no log trim marker found (tall=%d short=%d); message-span logs not windowed", tall, short)
 	}
 	// A taller screen hides fewer lines: window grows with the screen.
-	if !(short > tall) {
+	if short <= tall {
 		t.Fatalf("in-tree log window did not track screen height: hidden tall=%d, short=%d (want short > tall)", tall, short)
 	}
 }
@@ -614,7 +614,7 @@ func TestChecksReportNestsSubCheckHeader(t *testing.T) {
 			bootstrapIdx, nestedIdx, goLintIdx, helmLintIdx, joined)
 	}
 	// Parent, then its nested CHECKS header, then the children.
-	if !(bootstrapIdx < nestedIdx && nestedIdx < goLintIdx && nestedIdx < helmLintIdx) {
+	if bootstrapIdx >= nestedIdx || nestedIdx >= goLintIdx || nestedIdx >= helmLintIdx {
 		t.Fatalf("rows out of order (bootstrap=%d nested=%d go=%d helm=%d):\n%s",
 			bootstrapIdx, nestedIdx, goLintIdx, helmLintIdx, joined)
 	}
@@ -692,7 +692,7 @@ func TestRerunSectionCloudAndLocalForNativeCI(t *testing.T) {
 		t.Fatalf("missing local check line:\n%s", joined)
 	}
 	// The CI re-run section leads; the local reproduce section follows.
-	if ciIdx, localIdx := indexOfLine(lines, "RE-RUN IN CI"), indexOfLine(lines, "RUN LOCALLY"); !(ciIdx >= 0 && ciIdx < localIdx) {
+	if ciIdx, localIdx := indexOfLine(lines, "RE-RUN IN CI"), indexOfLine(lines, "RUN LOCALLY"); ciIdx < 0 || ciIdx >= localIdx {
 		t.Fatalf("expected RE-RUN IN CI before RUN LOCALLY (ci=%d local=%d):\n%s", ciIdx, localIdx, joined)
 	}
 }

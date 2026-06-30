@@ -2005,111 +2005,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, fe.finalRender)
 
 	if fe.finalRender {
-		// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
-		pol := fe.renderPolicy()
-		zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
-			fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
-
-		// Lead the whole-trace report with the overall verdict -- did it pass or
-		// fail, what command ran, and the top-level error -- the one-glance summary
-		// the server-computed summary used to provide. A zoom titles itself below.
-		if !zoomed {
-			if hdr := fe.renderTraceHeader(r); len(hdr) > 0 {
-				ctx.Lines(hdr...)
-				ctx.Line("")
-			}
-		}
-
-		// When scoped to a span (e.g. --test/--span/--check), title the subtree
-		// with the zoomed span so it isn't a headless, mysteriously indented tree.
-		if zoomed {
-			zoomBuf := new(strings.Builder)
-			zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
-			fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
-				Span:     fe.rowsView.Zoomed,
-				Expanded: true,
-			}, "", fe, false)
-			linesFromView(ctx, zoomBuf.String())
-			ctx.Line("") // separate the header from its content
-		}
-
-		rootCauseRendered := false
-		if pol.showRootCause {
-			// XXX: we always render the root cause for now, even when the same
-			// failing span also shows up under a test below (the cause often
-			// lives in a test, which already prints it -- so this can repeat the
-			// test's logs). This is where a dedupe conditional would go, e.g.
-			// skip an origin already covered by a rendered test. Compare both
-			// cases on the litmus trace (a0d14706d2b326f778989c181585e9df):
-			//   with root cause (current):
-			//     dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
-			//   without it (tests carry the cause):
-			//     DAGGER_TRACE_RENDER=root dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
-			if rcLines := fe.renderRootCauseSection(ctx, r); len(rcLines) > 0 {
-				ctx.Lines(rcLines...)
-				ctx.Line("")
-				rootCauseRendered = true
-			}
-		}
-
-		// At the root, render the checks reveal-independently: a CHECKS heading
-		// with the pass/fail breakdown, then every surfaced check nested under
-		// its parent (renderChecksSection). This replaces the reveal-based
-		// progress rows, which miss checks nested under another check and drop
-		// passing ones. Fall back to the progress tree when there are no surfaced
-		// checks (e.g. a plain trace, or one whose only checks are test fixtures).
-		var renderedRows bool
-		if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
-			ctx.Lines(checkLines...)
-			renderedRows = true
-		} else if !rootCauseRendered {
-			// Only fall back to the raw progress tree when there's nothing better.
-			// A plain `dagger call` failure renders its root cause above; dumping
-			// the bootstrap spans (connect / load workspace / parsing args) under
-			// it would just be noise.
-			progressLines := fe.renderProgressLines(r, ctx, 0)
-			ctx.Lines(progressLines...)
-			renderedRows = len(progressLines) > 0
-		}
-
-		if zoomed && pol.showOwnDescendantLogs {
-			// Surface the scoped span's own rolled-up failure logs, the same
-			// error-anchored window and 'dagger cloud logs' hint the summary uses.
-			logOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-			if logLines := fe.renderZoomedFinalLogs(logOut, ""); len(logLines) > 0 {
-				ctx.Line("")
-				ctx.Lines(logLines...)
-			}
-		} else if zoomed && pol.showSubtests {
-			// Zoomed to a check: show the tests beneath it (with their logs)
-			// instead of the check's own rolled-up descendant log dump.
-			if testLines := fe.renderZoomedCheckTests(ctx, fe.rowsView.Zoomed); len(testLines) > 0 {
-				ctx.Line("")
-				ctx.Lines(testLines...)
-			}
-		} else if !zoomed && pol.showSubtests {
-			if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
-				if renderedRows {
-					ctx.Line("")
-				}
-				ctx.Lines(testLines...)
-			}
-		}
-
-		if pol.showSuggestions {
-			var zoomSpan *dagui.Span
-			if zoomed {
-				zoomSpan = fe.rowsView.Zoomed
-			}
-			if rerunLines := fe.renderRerunSection(zoomSpan); len(rerunLines) > 0 {
-				ctx.Line("")
-				ctx.Lines(rerunLines...)
-			}
-			if suggLines := fe.renderSuggestionsSection(zoomSpan); len(suggLines) > 0 {
-				ctx.Line("")
-				ctx.Lines(suggLines...)
-			}
-		}
+		fe.renderFinalReport(ctx, r)
 		return
 	}
 
@@ -2214,6 +2110,118 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// NOTE: textInput, formWrap, and keymapBar are rendered as siblings in the
 	// TUI container, not here (accounted for in reserved above). Their cursors
 	// propagate through tuist automatically.
+}
+
+// renderFinalReport renders the whole-trace report for the final
+// (non-interactive) render: the overall verdict header, the root cause, the
+// checks breakdown, tests, and re-run suggestions -- no live-TUI chrome or
+// truncation. r is the renderer Render already built for this frame.
+func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
+	// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
+	pol := fe.renderPolicy()
+	zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
+		fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
+
+	// Lead the whole-trace report with the overall verdict -- did it pass or
+	// fail, what command ran, and the top-level error -- the one-glance summary
+	// the server-computed summary used to provide. A zoom titles itself below.
+	if !zoomed {
+		if hdr := fe.renderTraceHeader(r); len(hdr) > 0 {
+			ctx.Lines(hdr...)
+			ctx.Line("")
+		}
+	}
+
+	// When scoped to a span (e.g. --test/--span/--check), title the subtree
+	// with the zoomed span so it isn't a headless, mysteriously indented tree.
+	if zoomed {
+		zoomBuf := new(strings.Builder)
+		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
+		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
+			Span:     fe.rowsView.Zoomed,
+			Expanded: true,
+		}, "", fe, false)
+		linesFromView(ctx, zoomBuf.String())
+		ctx.Line("") // separate the header from its content
+	}
+
+	rootCauseRendered := false
+	if pol.showRootCause {
+		// XXX: we always render the root cause for now, even when the same
+		// failing span also shows up under a test below (the cause often
+		// lives in a test, which already prints it -- so this can repeat the
+		// test's logs). This is where a dedupe conditional would go, e.g.
+		// skip an origin already covered by a rendered test. Compare both
+		// cases on the litmus trace (a0d14706d2b326f778989c181585e9df):
+		//   with root cause (current):
+		//     dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
+		//   without it (tests carry the cause):
+		//     DAGGER_TRACE_RENDER=root dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
+		if rcLines := fe.renderRootCauseSection(ctx, r); len(rcLines) > 0 {
+			ctx.Lines(rcLines...)
+			ctx.Line("")
+			rootCauseRendered = true
+		}
+	}
+
+	// At the root, render the checks reveal-independently: a CHECKS heading
+	// with the pass/fail breakdown, then every surfaced check nested under
+	// its parent (renderChecksSection). This replaces the reveal-based
+	// progress rows, which miss checks nested under another check and drop
+	// passing ones. Fall back to the progress tree when there are no surfaced
+	// checks (e.g. a plain trace, or one whose only checks are test fixtures).
+	var renderedRows bool
+	if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
+		ctx.Lines(checkLines...)
+		renderedRows = true
+	} else if !rootCauseRendered {
+		// Only fall back to the raw progress tree when there's nothing better.
+		// A plain `dagger call` failure renders its root cause above; dumping
+		// the bootstrap spans (connect / load workspace / parsing args) under
+		// it would just be noise.
+		progressLines := fe.renderProgressLines(r, ctx, 0)
+		ctx.Lines(progressLines...)
+		renderedRows = len(progressLines) > 0
+	}
+
+	if zoomed && pol.showOwnDescendantLogs {
+		// Surface the scoped span's own rolled-up failure logs, the same
+		// error-anchored window and 'dagger cloud logs' hint the summary uses.
+		logOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+		if logLines := fe.renderZoomedFinalLogs(logOut, ""); len(logLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(logLines...)
+		}
+	} else if zoomed && pol.showSubtests {
+		// Zoomed to a check: show the tests beneath it (with their logs)
+		// instead of the check's own rolled-up descendant log dump.
+		if testLines := fe.renderZoomedCheckTests(ctx, fe.rowsView.Zoomed); len(testLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(testLines...)
+		}
+	} else if !zoomed && pol.showSubtests {
+		if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
+			if renderedRows {
+				ctx.Line("")
+			}
+			ctx.Lines(testLines...)
+		}
+	}
+
+	if pol.showSuggestions {
+		var zoomSpan *dagui.Span
+		if zoomed {
+			zoomSpan = fe.rowsView.Zoomed
+		}
+		if rerunLines := fe.renderRerunSection(zoomSpan); len(rerunLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(rerunLines...)
+		}
+		if suggLines := fe.renderSuggestionsSection(zoomSpan); len(suggLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(suggLines...)
+		}
+	}
 }
 
 // linesFromView splits a string view into lines and emits them via ctx.
