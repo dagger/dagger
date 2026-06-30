@@ -49,9 +49,11 @@
   }
 }
 
-/* Full-width trigger when rendered inside the desktop sidebar. */
+/* Full-width, surface-colored trigger when rendered inside the desktop sidebar
+   (white in light mode) so it reads as a search input. */
 :global(.docs-sidebar-search) .trigger {
   width: 100%;
+  background: var(--ifm-background-surface-color);
 }
 
 :global(.docs-sidebar-search) .kbd {
