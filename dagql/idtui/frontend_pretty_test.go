@@ -430,6 +430,66 @@ func TestFinalGlobalTestsUnindented(t *testing.T) {
 	}
 }
 
+// TestOrphanTestsSectionTitledAndWarned verifies that when a check claims its
+// tests but some test cases dangle (an ancestor span is missing from the trace
+// data), the leftover global section is titled "ORPHANED TESTS" and the warning
+// renders indented beneath that heading -- not floating, headerless, above it.
+func TestOrphanTestsSectionTitledAndWarned(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+
+	checkID := prettyTestSpanID(1)
+	claimedTestID := prettyTestSpanID(2)
+	orphanTestID := prettyTestSpanID(3)
+	missingID := prettyTestSpanID(99) // referenced as a parent but never imported
+
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: checkID, TraceID: prettyTestTraceID(), Name: "ci:bootstrap",
+			StartTime: start, EndTime: end, CheckName: "ci:bootstrap", Final: true,
+		},
+		{
+			ID: claimedTestID, TraceID: prettyTestTraceID(), Name: "claimed test",
+			StartTime: start, EndTime: end, ParentID: checkID,
+			TestCaseName: "claimed test", TestStatus: dagui.TestStatusSuccess, Final: true,
+		},
+		{
+			// Parented to a span that's never imported, so its ancestor chain has a
+			// genuine gap (FirstMissingAncestor != nil) -- a true orphan.
+			ID: orphanTestID, TraceID: prettyTestTraceID(), Name: "orphan test",
+			StartTime: start, EndTime: end, ParentID: missingID,
+			TestCaseName: "orphan test", TestStatus: dagui.TestStatusSuccess, Final: true,
+		},
+	})
+	db.SetPrimarySpan(checkID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.finalRender = true
+	fe.recalculateViewLocked()
+
+	// The checks report claims its own test first, mirroring Render's order, so the
+	// global section is left with just the orphan.
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	fe.checksReport(tuist.Context{Width: 100}, r, false)
+
+	lines := fe.renderFinalGlobalTests(tuist.Context{Width: 100})
+	if len(lines) < 3 {
+		t.Fatalf("orphan global tests rendered too few lines:\n%s", strings.Join(lines, "\n"))
+	}
+	if lines[0] != "ORPHANED TESTS" {
+		t.Fatalf("heading = %q, want %q\n%s", lines[0], "ORPHANED TESTS", strings.Join(lines, "\n"))
+	}
+	if !strings.HasPrefix(lines[1], "  ! ") ||
+		!strings.Contains(lines[1], "could not be attributed to a check") {
+		t.Fatalf("warning line = %q, want indented under the heading\n%s", lines[1], strings.Join(lines, "\n"))
+	}
+	if lines[2] != "    (run with --debug to list them)" {
+		t.Fatalf("hint line = %q, want indented under the warning\n%s", lines[2], strings.Join(lines, "\n"))
+	}
+}
+
 func TestTraceHeaderShowsVerdict(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	start := time.Unix(100, 0)
