@@ -4475,7 +4475,14 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		if fe.finalRender {
 			logs.SetHeight(logs.UsedHeight())
 		} else {
-			logs.SetHeight(fe.window.Height / 3)
+			// Read ScreenHeight (not the cached fe.window.Height) so this row's
+			// render is height-dependent and the cause log window tracks a resize
+			// instead of sticking at its first-paint height. See renderInlineLogs.
+			height := fe.window.Height / 3
+			if sh := ctx.ScreenHeight(); sh > 0 {
+				height = sh / 3
+			}
+			logs.SetHeight(height)
 		}
 		fmt.Fprint(out, logs.View())
 	}

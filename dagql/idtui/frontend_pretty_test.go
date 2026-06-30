@@ -175,6 +175,74 @@ func TestInlineLogsViewFetchesOnMountAndRenders(t *testing.T) {
 	}
 }
 
+// TestInlineLogsReactToScreenHeight drives a real resize through the headless
+// terminal and asserts a row's inline log window (a third of the screen) tracks
+// the new height instead of sticking at the height it first saw. It reads the
+// window height the owner synced onto the LogsView, sidestepping the outer
+// viewport crop. Regression guard for sizing the window off the imperatively
+// cached fe.window.Height (which leaves the memoized row cache-keyed on width
+// alone) rather than ctx.ScreenHeight().
+func TestInlineLogsReactToScreenHeight(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	childID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root call",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:        childID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "child op",
+			StartTime: start.Add(time.Second),
+			EndTime:   start.Add(2 * time.Second),
+			ParentID:  rootID,
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{rootID: true, childID: true}
+
+	// Deliver a tall log so the third-of-screen window actually clips it.
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(80)
+	for i := 0; i < 60; i++ {
+		_, _ = logs.Write([]byte(fmt.Sprintf("log line %02d\n", i)))
+	}
+	fe.logs.Logs[childID] = logs
+
+	fe.recalculateViewLocked()
+
+	// Tall screen: the window is a third of it.
+	_ = fe.tui.Frame()
+	lv := fe.logsViews[childID]
+	if lv == nil {
+		t.Fatal("no LogsView created for expanded child")
+	}
+	tall := lv.height
+
+	// Shrink the screen and repaint: the window must follow it down.
+	term.Resize(120, 30)
+	_ = fe.tui.Frame()
+	short := lv.height
+
+	if tall != 20 || short != 10 {
+		t.Fatalf("inline log window did not track screen height: tall=%d (want 20), short=%d (want 10)", tall, short)
+	}
+}
+
 func TestInteractiveDoesNotEagerlyFetchFailureLogs(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	rootID := prettyTestSpanID(1)
