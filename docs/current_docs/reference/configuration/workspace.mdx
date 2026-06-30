@@ -43,6 +43,18 @@ dagger settings eslint packageManager yarn   # set one
 
 `dagger settings <module> <key> <value>` is a typed front-end over the config file — it writes `modules.<module>.settings.<key>`. For values it can't express on the command line (such as lists), edit `dagger.toml` directly. `dagger workspace config <key> <value>` is the lower-level key/value interface to the same file.
 
+#### Function references
+
+A setting value may also be a **function reference**: an inline table `{ from = "<module>:<function>" }` that resolves to the output of a function on another workspace module, wiring it into this module's constructor argument. This is how modules that don't know about each other compose — a `Service` from a `+up` function (the path shown by `dagger up -l`), or a `Container` from any `Container`-returning function:
+
+```toml
+[modules.playwright.settings]
+app = { from = "docusaurus:serve" }      # Service provided by docusaurus's +up function
+base = { from = "base-images:chromium" } # Container provided by base-images
+```
+
+The target constructor argument is typically declared optional by the module author. Invalid references — unknown module or function, or a return type that doesn't match the argument — fail at runtime when the consuming module is constructed, not at config parse time. See [Running Services](../../using-dagger/services.mdx) for a worked example.
+
 ### Skipping functions for a verb
 
 A module can opt specific functions out of a verb with a `skip` list:

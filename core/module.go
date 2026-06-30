@@ -276,7 +276,8 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 				continue
 			}
 			updatedArg := arg
-			if argSelf.TypeDef.Self().Kind == TypeDefKindObject {
+			_, isFunctionRef := extractFunctionRef(val)
+			if isFunctionRef || argSelf.TypeDef.Self().Kind == TypeDefKindObject {
 				if !argSelf.TypeDef.Self().Optional {
 					var updatedTypeDef dagql.ObjectResult[*TypeDef]
 					if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
@@ -528,7 +529,8 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag 
 		updatedFn, changed, err := mod.patchFunctionArg(ctx, dag, fn, cust.Argument, func(arg dagql.ObjectResult[*FunctionArg]) (dagql.ObjectResult[*FunctionArg], error) {
 			updatedArg := arg
 			argSelf := arg.Self()
-			setOptional := cust.DefaultPath != "" || cust.DefaultAddress != ""
+			_, isFunctionRef := extractFunctionRef(cust.Default)
+			setOptional := isFunctionRef || cust.DefaultPath != "" || cust.DefaultAddress != ""
 			if setOptional && !argSelf.TypeDef.Self().Optional {
 				var updatedTypeDef dagql.ObjectResult[*TypeDef]
 				if err := dag.Select(ctx, argSelf.TypeDef, &updatedTypeDef, dagql.Selector{
@@ -550,12 +552,16 @@ func (mod *Module) ApplyLegacyCustomizationsToTypeDefs(ctx context.Context, dag 
 					}
 				}
 			}
-			if jsonValue, ok := legacyArgDefaultValue(argSelf.TypeDef.Self(), cust.Default); ok {
-				if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
-					Field: "__withDefaultValue",
-					Args:  []dagql.NamedInput{{Name: "defaultValue", Value: jsonValue}},
-				}); err != nil {
-					return updatedArg, fmt.Errorf("legacy customization arg %q default value: %w", argSelf.Name, err)
+			if !isFunctionRef {
+				if s, ok := cust.Default.(string); ok {
+					if jsonValue, ok := legacyArgDefaultValue(argSelf.TypeDef.Self(), s); ok {
+						if err := dag.Select(ctx, updatedArg, &updatedArg, dagql.Selector{
+							Field: "__withDefaultValue",
+							Args:  []dagql.NamedInput{{Name: "defaultValue", Value: jsonValue}},
+						}); err != nil {
+							return updatedArg, fmt.Errorf("legacy customization arg %q default value: %w", argSelf.Name, err)
+						}
+					}
 				}
 			}
 			if cust.DefaultPath != "" {
