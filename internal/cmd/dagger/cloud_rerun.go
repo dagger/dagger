@@ -78,7 +78,7 @@ func (cli *CloudCLI) Rerun(cmd *cobra.Command, _ []string) error {
 
 	// Load every check on the target commit (unfiltered) so a bad --check name
 	// can be reported against the real list rather than silently matching none.
-	res, selectors, err := cli.loadCloudCheckRowsForWorkspace(ctx, address, nil, true)
+	res, selectors, err := cli.loadCloudCheckQueryForWorkspace(ctx, address, nil, true)
 	if err != nil {
 		return err
 	}
