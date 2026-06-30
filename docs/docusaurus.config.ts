@@ -189,35 +189,6 @@ const config: Config = {
         enableInDevelopment: true, // Enable tracking in development
       },
     ],
-    [
-      "docusaurus-plugin-typedoc",
-      {
-        id: "current-generation",
-        plugin: ["typedoc-plugin-markdown", "typedoc-plugin-frontmatter"],
-        entryPoints: [
-          "../sdk/typescript/src/connect.ts",
-          "../sdk/typescript/src/api/client.gen.ts",
-          "../sdk/typescript/src/common/errors/index.ts",
-        ],
-        tsconfig: "../sdk/typescript/tsconfig.json",
-        out: "current_docs/reference/typescript/",
-        excludeProtected: true,
-        exclude: "../sdk/typescript/node_modules/**",
-        skipErrorChecking: true,
-        disableSources: true,
-        sanitizeComments: true,
-        frontmatterGlobals: {
-          displayed_sidebar: "current",
-          sidebar_label: "TypeScript SDK Reference",
-          title: "TypeScript SDK Reference",
-        },
-        textContentMappings: {
-          "title.indexPage": "TypeScript SDK Reference",
-          "footer.text": "",
-        },
-        requiredToBeDocumented: ["Class"],
-      },
-    ],
   ],
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
