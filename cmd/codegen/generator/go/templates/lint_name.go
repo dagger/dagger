@@ -118,7 +118,8 @@ var commonInitialisms = map[string]bool{
 	"XSS":   true,
 
 	// Custom added for dagger
-	"FS":  true,
-	"SDK": true,
-	"LLM": true,
+	"FS":   true,
+	"SDK":  true,
+	"LLM":  true,
+	"TOML": true,
 }

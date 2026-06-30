@@ -461,6 +461,15 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Initialize a TOML value
+     */
+    public function toml(): TOMLValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('toml');
+        return new \Dagger\TOMLValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create a new TypeDef.
      */
     public function typeDef(): TypeDef

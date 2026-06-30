@@ -111,6 +111,9 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("asJSON", s.asJSON).
 			Doc(`Parse the file contents as JSON.`),
+		dagql.NodeFunc("asTOML", s.asTOML).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Parse the file contents as TOML.`),
 	}.Install(srv)
 }
 
@@ -374,4 +377,16 @@ func (s *fileSchema) asJSON(ctx context.Context, parent dagql.ObjectResult[*core
 		return nil, err
 	}
 	return &core.JSONValue{Data: []byte(json)}, nil
+}
+
+func (s *fileSchema) asTOML(ctx context.Context, parent dagql.ObjectResult[*core.File], args struct{}) (*core.TOMLValue, error) {
+	toml, err := parent.Self().AsTOML(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	data, err := tomlSourceToData([]byte(toml))
+	if err != nil {
+		return nil, err
+	}
+	return &core.TOMLValue{Data: data, Source: []byte(toml)}, nil
 }

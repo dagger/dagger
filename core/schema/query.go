@@ -56,6 +56,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	srv.InstallScalar(core.JSON{})
+	srv.InstallScalar(core.TOML(""), AfterVersion("v1.0.0-0"))
 	srv.InstallScalar(core.Void{})
 
 	srv.InstallObject(dagql.NewClass[*core.RemoteGitMirror](srv).View(AfterVersion("v0.21.0")))

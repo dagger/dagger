@@ -22,6 +22,10 @@ class Platform(Scalar):
     "windows/amd64", "linux/arm64")."""
 
 
+class TOML(Scalar):
+    """An arbitrary TOML-encoded value."""
+
+
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
     resolvers that do not return anything."""
@@ -828,6 +832,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str | None)
+
+    def as_toml_value(self) -> "TOMLValue":
+        """Retrieve the binding value, as type TOMLValue"""
+        _args: list[Arg] = []
+        _ctx = self._select("asTOMLValue", _args)
+        return TOMLValue(_ctx)
 
     def as_up(self) -> "Up":
         """Retrieve the binding value, as type Up"""
@@ -7578,6 +7588,48 @@ class Env(Type):
         _ctx = self._select("withStringOutput", _args)
         return Env(_ctx)
 
+    def with_toml_value_input(
+        self,
+        name: str,
+        value: "TOMLValue",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type TOMLValue in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The TOMLValue value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withTOMLValueInput", _args)
+        return Env(_ctx)
+
+    def with_toml_value_output(self, name: str, description: str) -> Self:
+        """Declare a desired TOMLValue output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withTOMLValueOutput", _args)
+        return Env(_ctx)
+
     def with_up_group_input(
         self,
         name: str,
@@ -8492,6 +8544,12 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("asJSON", _args)
         return JSONValue(_ctx)
+
+    def as_toml(self) -> "TOMLValue":
+        """Parse the file contents as TOML."""
+        _args: list[Arg] = []
+        _ctx = self._select("asTOML", _args)
+        return TOMLValue(_ctx)
 
     def chown(self, owner: str) -> Self:
         """Change the owner of the file recursively.
@@ -13890,6 +13948,12 @@ class Query(Root):
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
 
+    def toml(self) -> "TOMLValue":
+        """Initialize a TOML value"""
+        _args: list[Arg] = []
+        _ctx = self._select("toml", _args)
+        return TOMLValue(_ctx)
+
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
         _args: list[Arg] = []
@@ -14941,6 +15005,238 @@ class Stat(Type):
         _args: list[Arg] = []
         _ctx = self._select("size", _args)
         return await _ctx.execute(int)
+
+
+@typecheck
+class TOMLValue(Type):
+    async def as_array(self) -> list["TOMLValue"]:
+        """Decode an array from TOML"""
+        _args: list[Arg] = []
+        _ctx = self._select("asArray", _args)
+        return await _ctx.execute_object_list(TOMLValue)
+
+    async def as_boolean(self) -> bool:
+        """Decode a boolean from TOML
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asBoolean", _args)
+        return await _ctx.execute(bool)
+
+    async def as_integer(self) -> int:
+        """Decode an integer from TOML
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asInteger", _args)
+        return await _ctx.execute(int)
+
+    async def as_string(self) -> str:
+        """Decode a string from TOML
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asString", _args)
+        return await _ctx.execute(str)
+
+    async def contents(self) -> TOML:
+        """Return the value encoded as TOML
+
+        Returns
+        -------
+        TOML
+            An arbitrary TOML-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contents", _args)
+        return await _ctx.execute(TOML)
+
+    def field(self, path: list[str]) -> Self:
+        """Lookup the field at the given path, and return its value.
+
+        Parameters
+        ----------
+        path:
+            Path of the field to lookup, encoded as an array of field names
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("field", _args)
+        return TOMLValue(_ctx)
+
+    async def fields(self) -> list[str]:
+        """List fields of the encoded table
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("fields", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> str:
+        """A unique identifier for this TOMLValue.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def new_boolean(self, value: bool) -> Self:
+        """Encode a boolean to TOML
+
+        Parameters
+        ----------
+        value:
+            New boolean value
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newBoolean", _args)
+        return TOMLValue(_ctx)
+
+    def new_integer(self, value: int) -> Self:
+        """Encode an integer to TOML
+
+        Parameters
+        ----------
+        value:
+            New integer value
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newInteger", _args)
+        return TOMLValue(_ctx)
+
+    def new_string(self, value: str) -> Self:
+        """Encode a string to TOML
+
+        Parameters
+        ----------
+        value:
+            New string value
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newString", _args)
+        return TOMLValue(_ctx)
+
+    def with_contents(self, contents: TOML) -> Self:
+        """Return a new TOML value, decoded from the given content
+
+        Parameters
+        ----------
+        contents:
+            New TOML-encoded contents
+        """
+        _args = [
+            Arg("contents", contents),
+        ]
+        _ctx = self._select("withContents", _args)
+        return TOMLValue(_ctx)
+
+    def with_field(self, path: list[str], value: Self) -> Self:
+        """Set a new field at the given path, preserving the existing formatting
+
+        Parameters
+        ----------
+        path:
+            Path of the field to set, encoded as an array of field names
+        value:
+            The new value of the field
+        """
+        _args = [
+            Arg("path", path),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withField", _args)
+        return TOMLValue(_ctx)
+
+    def with_(self, cb: Callable[["TOMLValue"], "TOMLValue"]) -> "TOMLValue":
+        """Call the provided callable with current TOMLValue.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -16724,6 +17020,7 @@ dag = Client()
 __all__ = [
     "JSON",
     "LLM",
+    "TOML",
     "Address",
     "Binding",
     "BuildArg",
@@ -16808,6 +17105,7 @@ __all__ = [
     "SourceMap",
     "Stat",
     "Syncer",
+    "TOMLValue",
     "Terminal",
     "TypeDef",
     "TypeDefKind",
