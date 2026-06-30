@@ -12,6 +12,8 @@ type ContainerID = dagql.ID[*Container]
 
 type ServiceID = dagql.ID[*Service]
 
+type ServiceDirectoryMountID = dagql.ID[*ServiceDirectoryMount]
+
 type CacheVolumeID = dagql.ID[*CacheVolume]
 
 type DirectoryID = dagql.ID[*Directory]

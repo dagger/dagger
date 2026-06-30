@@ -654,6 +654,15 @@ func (r *Binding) AsService() *Service {
 	}
 }
 
+// Retrieve the binding value, as type ServiceDirectoryMount
+func (r *Binding) AsServiceDirectoryMount() *ServiceDirectoryMount {
+	q := r.query.Select("asServiceDirectoryMount")
+
+	return &ServiceDirectoryMount{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type Socket
 func (r *Binding) AsSocket() *Socket {
 	q := r.query.Select("asSocket")
@@ -7076,6 +7085,30 @@ func (r *Env) WithSecretInput(name string, value *Secret, description string) *E
 // Declare a desired Secret output to be assigned in the environment
 func (r *Env) WithSecretOutput(name string, description string) *Env {
 	q := r.query.Select("withSecretOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ServiceDirectoryMount in the environment
+func (r *Env) WithServiceDirectoryMountInput(name string, value *ServiceDirectoryMount, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withServiceDirectoryMountInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ServiceDirectoryMount output to be assigned in the environment
+func (r *Env) WithServiceDirectoryMountOutput(name string, description string) *Env {
+	q := r.query.Select("withServiceDirectoryMountOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -14625,6 +14658,32 @@ func (r *Service) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// ServiceMountDirectoryOpts contains options for Service.MountDirectory
+type ServiceMountDirectoryOpts struct {
+	// Replace "${VAR}" or "$VAR" in the path according to the current environment variables defined in the service container.
+	Expand bool
+}
+
+// Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.
+//
+// The service is started if it is not already running. The mount is exclusive by path: another mount at the same path fails until this mount is snapshotted with keepMounted=false or unmounted.
+func (r *Service) MountDirectory(path string, source *Directory, opts ...ServiceMountDirectoryOpts) *ServiceDirectoryMount {
+	assertNotNil("source", source)
+	q := r.query.Select("mountDirectory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &ServiceDirectoryMount{
+		query: q,
+	}
+}
+
 // Retrieves the list of ports provided by the service.
 func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 	q := r.query.Select("ports")
@@ -14781,6 +14840,167 @@ func (r *Service) AsNode() Node {
 // AsSyncer returns this Service as a Syncer.
 // This is a local type conversion — no GraphQL call.
 func (r *Service) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
+// A directory mounted into a running service.
+type ServiceDirectoryMount struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	path *string
+	sync *ID
+}
+
+func (r *ServiceDirectoryMount) WithGraphQLQuery(q *querybuilder.Selection) *ServiceDirectoryMount {
+	return &ServiceDirectoryMount{
+		query: q,
+	}
+}
+
+// ServiceDirectoryMountChangesOpts contains options for ServiceDirectoryMount.Changes
+type ServiceDirectoryMountChangesOpts struct {
+	// Base directory snapshot to compare against. If unset, the mount's original source is used.
+	From *Directory
+}
+
+// Return changes from the original source, or from an explicit base Directory.
+func (r *ServiceDirectoryMount) Changes(opts ...ServiceDirectoryMountChangesOpts) *Changeset {
+	q := r.query.Select("changes")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `from` optional argument
+		if !querybuilder.IsZeroValue(opts[i].From) {
+			q = q.Arg("from", opts[i].From)
+		}
+	}
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// ServiceDirectoryMountDirectoryOpts contains options for ServiceDirectoryMount.Directory
+type ServiceDirectoryMountDirectoryOpts struct {
+	// Keep the path mounted after snapshotting by remounting a fresh mutable copy of the snapshot.
+	//
+	// Default: true
+	KeepMounted bool
+}
+
+// Snapshot the current mount contents as an immutable Directory.
+//
+// By default, Dagger detaches the old mutable mount and remounts a fresh mutable copy of the snapshot so the service can keep using the same path.
+func (r *ServiceDirectoryMount) Directory(opts ...ServiceDirectoryMountDirectoryOpts) *Directory {
+	q := r.query.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `keepMounted` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KeepMounted) {
+			q = q.Arg("keepMounted", opts[i].KeepMounted)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// A unique identifier for this ServiceDirectoryMount.
+func (r *ServiceDirectoryMount) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ServiceDirectoryMount) XXX_GraphQLType() string {
+	return "ServiceDirectoryMount"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ServiceDirectoryMount) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ServiceDirectoryMount) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ServiceDirectoryMount) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Path where this directory is mounted in the service container.
+func (r *ServiceDirectoryMount) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The service this mount belongs to.
+func (r *ServiceDirectoryMount) Service() *Service {
+	q := r.query.Select("service")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// Force the runtime mount side effect.
+func (r *ServiceDirectoryMount) Sync(ctx context.Context) (*ServiceDirectoryMount, error) {
+	q := r.query.Select("sync")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &ServiceDirectoryMount{
+		query: selectNode(q.Root(), id, "ServiceDirectoryMount"),
+	}, nil
+}
+
+// Detach the mount from the service and release its mutable backing ref.
+func (r *ServiceDirectoryMount) Unmount() *Service {
+	q := r.query.Select("unmount")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// AsNode returns this ServiceDirectoryMount as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ServiceDirectoryMount) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this ServiceDirectoryMount as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *ServiceDirectoryMount) AsSyncer() Syncer {
 	return &SyncerClient{
 		query: r.query,
 	}
@@ -17392,6 +17612,8 @@ func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
 		return &ModuleSource{query: selectNode(r.query.Root(), id, "ModuleSource")}, nil
 	case "Service":
 		return &Service{query: selectNode(r.query.Root(), id, "Service")}, nil
+	case "ServiceDirectoryMount":
+		return &ServiceDirectoryMount{query: selectNode(r.query.Root(), id, "ServiceDirectoryMount")}, nil
 	case "Terminal":
 		return &Terminal{query: selectNode(r.query.Root(), id, "Terminal")}, nil
 	default:

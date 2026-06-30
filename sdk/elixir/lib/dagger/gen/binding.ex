@@ -408,6 +408,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type ServiceDirectoryMount
+  """
+  @spec as_service_directory_mount(t()) :: Dagger.ServiceDirectoryMount.t()
+  def as_service_directory_mount(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asServiceDirectoryMount")
+
+    %Dagger.ServiceDirectoryMount{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type Socket
   """
   @spec as_socket(t()) :: Dagger.Socket.t()

@@ -1488,6 +1488,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\ServiceDirectoryMount",
+			"p": "Dagger/ServiceDirectoryMount.html",
+			"d": "<p>A directory mounted into a running service.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\ServiceId",
 			"p": "Dagger/ServiceId.html",
 			"d": "<p>A unique identifier for an object.</p>",
@@ -2085,6 +2095,12 @@
 			"n": "Dagger\\Binding::asService",
 			"p": "Dagger/Binding.html#method_asService",
 			"d": "<p>Retrieve the binding value, as type Service</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asServiceDirectoryMount",
+			"p": "Dagger/Binding.html#method_asServiceDirectoryMount",
+			"d": "<p>Retrieve the binding value, as type ServiceDirectoryMount</p>"
 		},
 		{
 			"t": "M",
@@ -4254,6 +4270,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withServiceDirectoryMountInput",
+			"p": "Dagger/Env.html#method_withServiceDirectoryMountInput",
+			"d": "<p>Create or update a binding of type ServiceDirectoryMount in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withServiceDirectoryMountOutput",
+			"p": "Dagger/Env.html#method_withServiceDirectoryMountOutput",
+			"d": "<p>Declare a desired ServiceDirectoryMount output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withServiceInput",
 			"p": "Dagger/Env.html#method_withServiceInput",
 			"d": "<p>Create or update a binding of type Service in the environment</p>"
@@ -6336,6 +6364,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Service::mountDirectory",
+			"p": "Dagger/Service.html#method_mountDirectory",
+			"d": "<p>Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Service::ports",
 			"p": "Dagger/Service.html#method_ports",
 			"d": "<p>Retrieves the list of ports provided by the service.</p>"
@@ -6375,6 +6409,48 @@
 			"n": "Dagger\\Service::withHostname",
 			"p": "Dagger/Service.html#method_withHostname",
 			"d": "<p>Configures a hostname which can be used by clients within the session to reach this container.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ServiceDirectoryMount::changes",
+			"p": "Dagger/ServiceDirectoryMount.html#method_changes",
+			"d": "<p>Return changes from the original source, or from an explicit base Directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ServiceDirectoryMount::directory",
+			"p": "Dagger/ServiceDirectoryMount.html#method_directory",
+			"d": "<p>Snapshot the current mount contents as an immutable Directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ServiceDirectoryMount::id",
+			"p": "Dagger/ServiceDirectoryMount.html#method_id",
+			"d": "<p>A unique identifier for this ServiceDirectoryMount.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ServiceDirectoryMount::path",
+			"p": "Dagger/ServiceDirectoryMount.html#method_path",
+			"d": "<p>Path where this directory is mounted in the service container.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ServiceDirectoryMount::service",
+			"p": "Dagger/ServiceDirectoryMount.html#method_service",
+			"d": "<p>The service this mount belongs to.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ServiceDirectoryMount::sync",
+			"p": "Dagger/ServiceDirectoryMount.html#method_sync",
+			"d": "<p>Force the runtime mount side effect.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ServiceDirectoryMount::unmount",
+			"p": "Dagger/ServiceDirectoryMount.html#method_unmount",
+			"d": "<p>Detach the mount from the service and release its mutable backing ref.</p>"
 		},
 		{
 			"t": "M",

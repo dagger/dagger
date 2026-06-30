@@ -7,7 +7,9 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/opencontainers/go-digest"
 )
 
 type serviceSchema struct{}
@@ -143,6 +145,54 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 
 		dagql.NodeFunc("terminal", s.terminal).
 			DoNotCache("Imperatively mutates runtime state."),
+
+		dagql.NodeFunc("mountDirectory", s.mountDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.`,
+				`The service is started if it is not already running. The mount is exclusive by path: another mount at the same path fails until this mount is snapshotted with keepMounted=false or unmounted.`).
+			Args(
+				dagql.Arg("path").Doc(`Path where the directory is mounted in the service container.`),
+				dagql.Arg("source").Doc(`Directory snapshot to mount.`),
+				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the path according to the current environment variables defined in the service container.`),
+			),
+	}.Install(srv)
+
+	srv.InstallObject(dagql.NewClass[*core.ServiceDirectoryMount](srv).View(AfterVersion("v1.0.0-0")))
+
+	dagql.Fields[*core.ServiceDirectoryMount]{
+		Syncer[*core.ServiceDirectoryMount]().
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Force the runtime mount side effect.`),
+
+		dagql.NodeFunc("path", s.serviceDirectoryMountPath).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Path where this directory is mounted in the service container.`),
+
+		dagql.NodeFunc("service", s.serviceDirectoryMountService).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The service this mount belongs to.`),
+
+		dagql.NodeFunc("directory", s.serviceDirectoryMountDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Snapshots mutable runtime mount state.").
+			Doc(`Snapshot the current mount contents as an immutable Directory.`,
+				`By default, Dagger detaches the old mutable mount and remounts a fresh mutable copy of the snapshot so the service can keep using the same path.`).
+			Args(
+				dagql.Arg("keepMounted").Doc(`Keep the path mounted after snapshotting by remounting a fresh mutable copy of the snapshot.`),
+			),
+
+		dagql.NodeFunc("changes", s.serviceDirectoryMountChanges).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Snapshots mutable runtime mount state.").
+			Doc(`Return changes from the original source, or from an explicit base Directory.`).
+			Args(
+				dagql.Arg("from").Doc(`Base directory snapshot to compare against. If unset, the mount's original source is used.`),
+			),
+
+		dagql.NodeFunc("unmount", s.serviceDirectoryMountUnmount).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Imperatively mutates runtime mount state.").
+			Doc(`Detach the mount from the service and release its mutable backing ref.`),
 	}.Install(srv)
 }
 
@@ -516,6 +566,165 @@ func (s *serviceSchema) terminal(ctx context.Context, parent dagql.ObjectResult[
 	}
 
 	return parent, nil
+}
+
+type serviceMountDirectoryArgs struct {
+	Path   string
+	Source core.DirectoryID
+	Expand bool `default:"false"`
+}
+
+func (s *serviceSchema) mountDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Service],
+	args serviceMountDirectoryArgs,
+) (dagql.ObjectResult[*core.ServiceDirectoryMount], error) {
+	var res dagql.ObjectResult[*core.ServiceDirectoryMount]
+	ctr := parent.Self().Container
+	if ctr.Self() == nil {
+		return res, fmt.Errorf("mountDirectory is only supported on container services")
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	source, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+
+	path, err := expandEnvVar(ctx, ctr.Self(), args.Path, args.Expand)
+	if err != nil {
+		return res, err
+	}
+	target := absPath(ctr.Self().Config.WorkingDir, path)
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return res, err
+	}
+	running, err := svcs.StartResult(ctx, parent, parent.Self().TunnelUpstream.Self() != nil)
+	if err != nil {
+		return res, err
+	}
+	concrete, err := parent.Self().MountDirectory(ctx, parent, running, target, source)
+	if err != nil {
+		return res, err
+	}
+	return bindServiceDirectoryMountHandle(ctx, srv, concrete)
+}
+
+func bindServiceDirectoryMountHandle(
+	ctx context.Context,
+	srv *dagql.Server,
+	concrete *core.ServiceDirectoryMount,
+) (dagql.ObjectResult[*core.ServiceDirectoryMount], error) {
+	var res dagql.ObjectResult[*core.ServiceDirectoryMount]
+	if concrete == nil {
+		return res, fmt.Errorf("service directory mount is nil")
+	}
+	if concrete.Handle == "" {
+		return res, fmt.Errorf("service directory mount %q has no handle", concrete.ID)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get client metadata from context: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get dagql cache: %w", err)
+	}
+
+	handleVal := &core.ServiceDirectoryMount{
+		Handle:  concrete.Handle,
+		ID:      concrete.ID,
+		PathVal: concrete.PathVal,
+		Service: concrete.Service,
+	}
+	res, err = dagql.NewObjectResultForCurrentCall(ctx, srv, handleVal)
+	if err != nil {
+		return res, err
+	}
+	res, err = res.WithContentDigest(ctx, digest.Digest(concrete.Handle))
+	if err != nil {
+		return res, err
+	}
+	res, err = res.WithSessionResourceHandle(ctx, concrete.Handle)
+	if err != nil {
+		return res, err
+	}
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, concrete.Handle, concrete); err != nil {
+		return res, fmt.Errorf("bind service directory mount: %w", err)
+	}
+	return res, nil
+}
+
+func (s *serviceSchema) serviceDirectoryMountPath(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.ServiceDirectoryMount],
+	args struct{},
+) (dagql.Result[dagql.String], error) {
+	path, err := parent.Self().Path(ctx)
+	if err != nil {
+		return dagql.Result[dagql.String]{}, err
+	}
+	return dagql.NewResultForCurrentCall(ctx, dagql.NewString(path))
+}
+
+func (s *serviceSchema) serviceDirectoryMountService(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.ServiceDirectoryMount],
+	args struct{},
+) (dagql.ObjectResult[*core.Service], error) {
+	return parent.Self().ServiceResult(ctx)
+}
+
+type serviceDirectoryMountDirectoryArgs struct {
+	KeepMounted bool `default:"true"`
+}
+
+func (s *serviceSchema) serviceDirectoryMountDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.ServiceDirectoryMount],
+	args serviceDirectoryMountDirectoryArgs,
+) (dagql.ObjectResult[*core.Directory], error) {
+	return parent.Self().Directory(ctx, args.KeepMounted)
+}
+
+type serviceDirectoryMountChangesArgs struct {
+	From dagql.Optional[core.DirectoryID]
+}
+
+func (s *serviceSchema) serviceDirectoryMountChanges(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.ServiceDirectoryMount],
+	args serviceDirectoryMountChangesArgs,
+) (*core.Changeset, error) {
+	var from dagql.ObjectResult[*core.Directory]
+	if args.From.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		from, err = args.From.Value.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return parent.Self().Changes(ctx, from)
+}
+
+func (s *serviceSchema) serviceDirectoryMountUnmount(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.ServiceDirectoryMount],
+	args struct{},
+) (dagql.ObjectResult[*core.Service], error) {
+	return parent.Self().Unmount(ctx)
 }
 
 type UpArgs struct {

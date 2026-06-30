@@ -51,6 +51,22 @@ class Service extends Client\AbstractObject implements Client\IdAble, Node, Sync
     }
 
     /**
+     * Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.
+     *
+     * The service is started if it is not already running. The mount is exclusive by path: another mount at the same path fails until this mount is snapshotted with keepMounted=false or unmounted.
+     */
+    public function mountDirectory(string $path, Directory $source, ?bool $expand = false): ServiceDirectoryMount
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('mountDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\ServiceDirectoryMount($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves the list of ports provided by the service.
      */
     public function ports(): array

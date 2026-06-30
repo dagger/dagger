@@ -796,6 +796,12 @@ class Binding(Type):
         _ctx = self._select("asService", _args)
         return Service(_ctx)
 
+    def as_service_directory_mount(self) -> "ServiceDirectoryMount":
+        """Retrieve the binding value, as type ServiceDirectoryMount"""
+        _args: list[Arg] = []
+        _ctx = self._select("asServiceDirectoryMount", _args)
+        return ServiceDirectoryMount(_ctx)
+
     def as_socket(self) -> "Socket":
         """Retrieve the binding value, as type Socket"""
         _args: list[Arg] = []
@@ -7408,6 +7414,50 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withSecretOutput", _args)
+        return Env(_ctx)
+
+    def with_service_directory_mount_input(
+        self,
+        name: str,
+        value: "ServiceDirectoryMount",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type ServiceDirectoryMount in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The ServiceDirectoryMount value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withServiceDirectoryMountInput", _args)
+        return Env(_ctx)
+
+    def with_service_directory_mount_output(self, name: str, description: str) -> Self:
+        """Declare a desired ServiceDirectoryMount output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withServiceDirectoryMountOutput", _args)
         return Env(_ctx)
 
     def with_service_input(
@@ -14531,6 +14581,38 @@ class Service(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    def mount_directory(
+        self,
+        path: str,
+        source: Directory,
+        *,
+        expand: bool | None = False,
+    ) -> "ServiceDirectoryMount":
+        """Mount a Directory snapshot into this running service and return a
+        handle that can snapshot changes made through that mount.
+
+        The service is started if it is not already running. The mount is
+        exclusive by path: another mount at the same path fails until this
+        mount is snapshotted with keepMounted=false or unmounted.
+
+        Parameters
+        ----------
+        path:
+            Path where the directory is mounted in the service container.
+        source:
+            Directory snapshot to mount.
+        expand:
+            Replace "${VAR}" or "$VAR" in the path according to the current
+            environment variables defined in the service container.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+            Arg("expand", expand, False),
+        ]
+        _ctx = self._select("mountDirectory", _args)
+        return ServiceDirectoryMount(_ctx)
+
     async def ports(self) -> list[Port]:
         """Retrieves the list of ports provided by the service."""
         _args: list[Arg] = []
@@ -14654,6 +14736,127 @@ class Service(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class ServiceDirectoryMount(Type):
+    """A directory mounted into a running service."""
+
+    def changes(self, *, from_: Directory | None = None) -> Changeset:
+        """Return changes from the original source, or from an explicit base
+        Directory.
+
+        Parameters
+        ----------
+        from_:
+            Base directory snapshot to compare against. If unset, the mount's
+            original source is used.
+        """
+        _args = [
+            Arg("from", from_, None),
+        ]
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
+    def directory(
+        self,
+        *,
+        keep_mounted: bool | None = True,
+    ) -> Directory:
+        """Snapshot the current mount contents as an immutable Directory.
+
+        By default, Dagger detaches the old mutable mount and remounts a fresh
+        mutable copy of the snapshot so the service can keep using the same
+        path.
+
+        Parameters
+        ----------
+        keep_mounted:
+            Keep the path mounted after snapshotting by remounting a fresh
+            mutable copy of the snapshot.
+        """
+        _args = [
+            Arg("keepMounted", keep_mounted, True),
+        ]
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this ServiceDirectoryMount.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def path(self) -> str:
+        """Path where this directory is mounted in the service container.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
+
+    def service(self) -> Service:
+        """The service this mount belongs to."""
+        _args: list[Arg] = []
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
+
+    async def sync(self) -> Self:
+        """Force the runtime mount side effect.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
+
+    def unmount(self) -> Service:
+        """Detach the mount from the service and release its mutable backing ref."""
+        _args: list[Arg] = []
+        _ctx = self._select("unmount", _args)
+        return Service(_ctx)
 
 
 @typecheck
@@ -16804,6 +17007,7 @@ __all__ = [
     "SearchSubmatch",
     "Secret",
     "Service",
+    "ServiceDirectoryMount",
     "Socket",
     "SourceMap",
     "Stat",

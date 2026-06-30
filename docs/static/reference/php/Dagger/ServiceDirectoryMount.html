@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\Service | API</title>
+    <title>Dagger\ServiceDirectoryMount | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_Service" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_ServiceDirectoryMount" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Service</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>ServiceDirectoryMount</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>Service    
+        <h1>ServiceDirectoryMount    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>Service</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>, <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
+    <strong>ServiceDirectoryMount</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>, <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>A content-addressed service providing TCP connectivity.</p></p>                    </div>
+            <p><p>A directory mounted into a running service.</p></p>                    </div>
             
         
     
@@ -143,22 +143,22 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_endpoint">endpoint</a>(int|null $port = null, string|null $scheme = &#039;&#039;)
+                    <a href="#method_changes">changes</a>(<abbr title="Dagger\Dagger\Directory">Directory</abbr>|null $from = null)
         
-                                            <p><p>Retrieves an endpoint that clients can use to reach this container.</p></p>                </div>
+                                            <p><p>Return changes from the original source, or from an explicit base Directory.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
+                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_hostname">hostname</a>()
+                    <a href="#method_directory">directory</a>(bool|null $keepMounted = true)
         
-                                            <p><p>Retrieves a hostname which can be used by clients to reach this container.</p></p>                </div>
+                                            <p><p>Snapshot the current mount contents as an immutable Directory.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -168,27 +168,17 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this Service.</p></p>                </div>
+                                            <p><p>A unique identifier for this ServiceDirectoryMount.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ServiceDirectoryMount.html"><abbr title="Dagger\ServiceDirectoryMount">ServiceDirectoryMount</abbr></a>
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_mountDirectory">mountDirectory</a>(string $path, <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a> $source, bool|null $expand = false)
+                    <a href="#method_path">path</a>()
         
-                                            <p><p>Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    array
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_ports">ports</a>()
-        
-                                            <p><p>Retrieves the list of ports provided by the service.</p></p>                </div>
+                                            <p><p>Path where this directory is mounted in the service container.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -196,19 +186,9 @@
                     <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_start">start</a>()
+                    <a href="#method_service">service</a>()
         
-                                            <p><p>Start the service and wait for its health checks to succeed.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_stop">stop</a>(bool|null $kill = false)
-        
-                                            <p><p>Stop the service.</p></p>                </div>
+                                            <p><p>The service this mount belongs to.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -218,7 +198,7 @@
                 <div class="col-md-8">
                     <a href="#method_sync">sync</a>()
         
-                                            <p><p>Forces evaluation of the pipeline in the engine.</p></p>                </div>
+                                            <p><p>Force the runtime mount side effect.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -226,30 +206,9 @@
                     <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_terminal">terminal</a>(array|null $cmd = [])
+                    <a href="#method_unmount">unmount</a>()
         
-                                            <p class="no-description">No description</p>
-                                    </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    void
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_up">up</a>(array|null $ports = null, bool|null $random = false)
-        
-                                            <p><p>Creates a tunnel that forwards traffic from the caller's network to this service.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withHostname">withHostname</a>(string $hostname)
-        
-                                            <p><p>Configures a hostname which can be used by clients within the session to reach this container.</p></p>                </div>
+                                            <p><p>Detach the mount from the service and release its mutable backing ref.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -348,10 +307,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_endpoint">
-        <div class="location">at line 23</div>
-        <code>                    string
-    <strong>endpoint</strong>(int|null $port = null, string|null $scheme = &#039;&#039;)
+                    <h3 id="method_changes">
+        <div class="location">at line 19</div>
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>changes</strong>(<abbr title="Dagger\Dagger\Directory">Directory</abbr>|null $from = null)
         </code>
     </h3>
     <div class="details">    
@@ -359,21 +318,15 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves an endpoint that clients can use to reach this container.</p></p>                <p><p>If no port is specified, the first exposed port is used. If none exist an error is returned.</p>
-<p>If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.</p></p>        
+                            <p><p>Return changes from the original source, or from an explicit base Directory.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
                     <tr>
-                <td>int|null</td>
-                <td>$port</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string|null</td>
-                <td>$scheme</td>
+                <td><abbr title="Dagger\Dagger\Directory">Directory</abbr>|null</td>
+                <td>$from</td>
                 <td></td>
             </tr>
             </table>
@@ -383,7 +336,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>string</td>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -396,10 +349,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_hostname">
-        <div class="location">at line 38</div>
-        <code>                    string
-    <strong>hostname</strong>()
+                    <h3 id="method_directory">
+        <div class="location">at line 33</div>
+        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+    <strong>directory</strong>(bool|null $keepMounted = true)
         </code>
     </h3>
     <div class="details">    
@@ -407,15 +360,25 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves a hostname which can be used by clients to reach this container.</p></p>                        
+                            <p><p>Snapshot the current mount contents as an immutable Directory.</p></p>                <p><p>By default, Dagger detaches the old mutable mount and remounts a fresh mutable copy of the snapshot so the service can keep using the same path.</p></p>        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$keepMounted</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td>string</td>
+            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -429,7 +392,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 47</div>
+        <div class="location">at line 45</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -439,7 +402,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this Service.</p></p>                        
+                            <p><p>A unique identifier for this ServiceDirectoryMount.</p></p>                        
         </div>
         <div class="tags">
             
@@ -460,10 +423,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_mountDirectory">
-        <div class="location">at line 58</div>
-        <code>                    <a href="../Dagger/ServiceDirectoryMount.html"><abbr title="Dagger\ServiceDirectoryMount">ServiceDirectoryMount</abbr></a>
-    <strong>mountDirectory</strong>(string $path, <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a> $source, bool|null $expand = false)
+                    <h3 id="method_path">
+        <div class="location">at line 54</div>
+        <code>                    string
+    <strong>path</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -471,35 +434,15 @@
             
 
         <div class="method-description">
-                            <p><p>Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.</p></p>                <p><p>The service is started if it is not already running. The mount is exclusive by path: another mount at the same path fails until this mount is snapshotted with keepMounted=false or unmounted.</p></p>        
+                            <p><p>Path where this directory is mounted in the service container.</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
-                <td>$source</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$expand</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/ServiceDirectoryMount.html"><abbr title="Dagger\ServiceDirectoryMount">ServiceDirectoryMount</abbr></a></td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -512,42 +455,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_ports">
-        <div class="location">at line 72</div>
-        <code>                    array
-    <strong>ports</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves the list of ports provided by the service.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>array</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_start">
-        <div class="location">at line 83</div>
+                    <h3 id="method_service">
+        <div class="location">at line 63</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>start</strong>()
+    <strong>service</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -555,51 +466,9 @@
             
 
         <div class="method-description">
-                            <p><p>Start the service and wait for its health checks to succeed.</p></p>                <p><p>Services bound to a Container do not need to be manually started.</p></p>        
+                            <p><p>The service this mount belongs to.</p></p>                        
         </div>
         <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_stop">
-        <div class="location">at line 93</div>
-        <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>stop</strong>(bool|null $kill = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Stop the service.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>bool|null</td>
-                <td>$kill</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
@@ -619,7 +488,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 106</div>
+        <div class="location">at line 72</div>
         <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -629,7 +498,7 @@
             
 
         <div class="method-description">
-                            <p><p>Forces evaluation of the pipeline in the engine.</p></p>                        
+                            <p><p>Force the runtime mount side effect.</p></p>                        
         </div>
         <div class="tags">
             
@@ -650,10 +519,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_terminal">
-        <div class="location">at line 113</div>
+                    <h3 id="method_unmount">
+        <div class="location">at line 82</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>terminal</strong>(array|null $cmd = [])
+    <strong>unmount</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -661,109 +530,9 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>Detach the mount from the service and release its mutable backing ref.</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>array|null</td>
-                <td>$cmd</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_up">
-        <div class="location">at line 125</div>
-        <code>                    void
-    <strong>up</strong>(array|null $ports = null, bool|null $random = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Creates a tunnel that forwards traffic from the caller's network to this service.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>array|null</td>
-                <td>$ports</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$random</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>void</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withHostname">
-        <div class="location">at line 140</div>
-        <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
-    <strong>withHostname</strong>(string $hostname)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Configures a hostname which can be used by clients within the session to reach this container.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$hostname</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 

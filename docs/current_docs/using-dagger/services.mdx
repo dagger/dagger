@@ -36,6 +36,52 @@ Service containers have three key properties:
 - **Just-in-time lifecycle.** Services start when first needed, are de-duplicated if multiple clients request the same service, and stop when no longer referenced.
 - **Health checks.** Services are health-checked before clients can connect. No race conditions between service startup and test execution.
 
+## Mounting directories into running services
+
+Long-running daemon services can receive a `Directory` without making that
+directory part of the service identity. Use `Service.mountDirectory()` to mount a
+mutable copy of a `Directory` into the running service, then snapshot the mount
+back into an immutable `Directory` after the service has finished writing.
+
+```typescript
+import { dag, func, object, Directory } from "@dagger.io/dagger"
+
+@object()
+export class Workspace {
+  @func()
+  async process(source: Directory): Promise<Directory> {
+    const daemon = dag
+      .container()
+      .from("my-daemon")
+      .withWorkdir("/workspace")
+      .withExposedPort(7777)
+      .asService()
+
+    const mount = await daemon.mountDirectory("/workspace", source).sync()
+
+    await dag
+      .container()
+      .from("alpine")
+      .withServiceBinding("daemon", daemon)
+      .withExec(["wget", "-O-", "http://daemon:7777/process"])
+      .sync()
+
+    return mount.directory({ keepMounted: false })
+  }
+}
+```
+
+`directory()` snapshots the current mount contents. By default it keeps the path
+mounted by remounting a fresh mutable copy of the snapshot, so the service can
+continue using the same path. Pass `keepMounted: false` for the final snapshot;
+this closes the live mount and releases the path for another mount. If that
+closed snapshot is evaluated again by downstream selectors, Dagger reuses the
+same immutable `Directory`.
+
+The service must still decide when its writes are complete. Use a daemon
+protocol, marker file, or request/response boundary that guarantees the service
+has flushed and closed the files you need before calling `directory()`.
+
 ## Container-to-host networking
 
 A service defined in a module can be exposed to your local machine:

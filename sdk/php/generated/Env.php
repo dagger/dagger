@@ -780,6 +780,32 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Create or update a binding of type ServiceDirectoryMount in the environment
+     */
+    public function withServiceDirectoryMountInput(
+        string $name,
+        ServiceDirectoryMount $value,
+        string $description,
+    ): Env {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withServiceDirectoryMountInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired ServiceDirectoryMount output to be assigned in the environment
+     */
+    public function withServiceDirectoryMountOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withServiceDirectoryMountOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type Service in the environment
      */
     public function withServiceInput(string $name, Service $value, string $description): Env

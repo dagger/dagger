@@ -272,6 +272,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type ServiceDirectoryMount
+     */
+    public function asServiceDirectoryMount(): ServiceDirectoryMount
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asServiceDirectoryMount');
+        return new \Dagger\ServiceDirectoryMount($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Socket
      */
     public function asSocket(): Socket

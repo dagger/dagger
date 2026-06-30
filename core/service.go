@@ -35,6 +35,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/network"
@@ -69,6 +70,16 @@ type Service struct {
 	HostSockets []*Socket
 }
 
+type ServiceDirectoryMount struct {
+	Handle  dagql.SessionResourceHandle
+	ID      string
+	PathVal string
+	Service dagql.ObjectResult[*Service]
+
+	running *RunningService
+	state   *runningServiceDirectoryMount
+}
+
 func (*Service) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Service",
@@ -76,8 +87,19 @@ func (*Service) Type() *ast.Type {
 	}
 }
 
+func (*ServiceDirectoryMount) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ServiceDirectoryMount",
+		NonNull:   true,
+	}
+}
+
 func (*Service) TypeDescription() string {
 	return "A content-addressed service providing TCP connectivity."
+}
+
+func (*ServiceDirectoryMount) TypeDescription() string {
+	return "A directory mounted into a running service."
 }
 
 var _ dagql.PersistedObject = (*Service)(nil)
@@ -305,6 +327,102 @@ func (svc *Service) Evaluate(ctx context.Context) error {
 
 func (svc *Service) Sync(ctx context.Context) error {
 	return svc.Evaluate(ctx)
+}
+
+func (mount *ServiceDirectoryMount) Sync(ctx context.Context) error {
+	_, err := mount.resolve(ctx)
+	return err
+}
+
+func (mount *ServiceDirectoryMount) Path(ctx context.Context) (string, error) {
+	concrete, err := mount.resolve(ctx)
+	if err != nil {
+		return "", err
+	}
+	return concrete.PathVal, nil
+}
+
+func (mount *ServiceDirectoryMount) ServiceResult(ctx context.Context) (dagql.ObjectResult[*Service], error) {
+	concrete, err := mount.resolve(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Service]{}, err
+	}
+	if concrete.Service.Self() == nil {
+		return dagql.ObjectResult[*Service]{}, fmt.Errorf("service directory mount %q has no service", concrete.ID)
+	}
+	return concrete.Service, nil
+}
+
+func (mount *ServiceDirectoryMount) Directory(ctx context.Context, keepMounted bool) (dagql.ObjectResult[*Directory], error) {
+	concrete, err := mount.resolve(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Directory]{}, err
+	}
+	return concrete.state.snapshotDirectory(ctx, concrete.running, keepMounted)
+}
+
+func (mount *ServiceDirectoryMount) Changes(
+	ctx context.Context,
+	from dagql.ObjectResult[*Directory],
+) (*Changeset, error) {
+	concrete, err := mount.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := concrete.state.snapshotDirectory(ctx, concrete.running, true)
+	if err != nil {
+		return nil, err
+	}
+	if from.Self() == nil {
+		from = concrete.state.source
+	}
+	if from.Self() == nil {
+		return nil, fmt.Errorf("service directory mount %q has no base directory", concrete.ID)
+	}
+	return NewChangeset(ctx, from, snapshot)
+}
+
+func (mount *ServiceDirectoryMount) Unmount(ctx context.Context) (dagql.ObjectResult[*Service], error) {
+	concrete, err := mount.resolve(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Service]{}, err
+	}
+	if err := concrete.running.unmountServiceDirectory(ctx, concrete.state); err != nil {
+		return dagql.ObjectResult[*Service]{}, err
+	}
+	return concrete.Service, nil
+}
+
+func (mount *ServiceDirectoryMount) resolve(ctx context.Context) (*ServiceDirectoryMount, error) {
+	if mount == nil {
+		return nil, fmt.Errorf("service directory mount is nil")
+	}
+	if mount.running != nil && mount.state != nil {
+		return mount, nil
+	}
+	if mount.Handle == "" {
+		return nil, fmt.Errorf("service directory mount %q is not attached to a running service", mount.ID)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve service directory mount %q: current client metadata: %w", mount.Handle, err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve service directory mount %q: current dagql cache: %w", mount.Handle, err)
+	}
+	resolvedAny, err := cache.ResolveSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, mount.Handle)
+	if err != nil {
+		return nil, err
+	}
+	concrete, ok := resolvedAny.(*ServiceDirectoryMount)
+	if !ok {
+		return nil, fmt.Errorf("resolve service directory mount %q: bound value is %T", mount.Handle, resolvedAny)
+	}
+	if concrete.running == nil || concrete.state == nil {
+		return nil, fmt.Errorf("resolve service directory mount %q: bound mount is not live", mount.Handle)
+	}
+	return concrete, nil
 }
 
 func (svc *Service) WithHostname(hostname string) *Service {
@@ -1414,6 +1532,466 @@ func (svc *Service) startReverseTunnel(ctx context.Context, running *RunningServ
 	}
 }
 
+type serviceDirectoryMountOpts struct {
+	replacePath bool
+	description string
+}
+
+type runningServiceDirectoryMount struct {
+	id            string
+	path          string
+	source        dagql.ObjectResult[*Directory]
+	sourceDirPath string
+	service       dagql.ObjectResult[*Service]
+	mutableRef    bkcache.MutableRef
+	description   string
+
+	mu                sync.Mutex
+	closed            bool
+	closedSnapshot    dagql.ObjectResult[*Directory]
+	closedSnapshotSet bool
+}
+
+func serviceDirectoryMountHandle(mountID string) dagql.SessionResourceHandle {
+	return dagql.SessionResourceHandle(digest.FromString("service-directory-mount:" + mountID).String())
+}
+
+func (svc *Service) MountDirectory(
+	ctx context.Context,
+	service dagql.ObjectResult[*Service],
+	running *RunningService,
+	target string,
+	source dagql.ObjectResult[*Directory],
+) (*ServiceDirectoryMount, error) {
+	if running == nil {
+		return nil, fmt.Errorf("running service is nil")
+	}
+	return running.mountDirectory(ctx, service, target, source, serviceDirectoryMountOpts{
+		description: "service directory mount",
+	})
+}
+
+func (running *RunningService) mountDirectory(
+	ctx context.Context,
+	service dagql.ObjectResult[*Service],
+	target string,
+	source dagql.ObjectResult[*Directory],
+	opts serviceDirectoryMountOpts,
+) (_ *ServiceDirectoryMount, rerr error) {
+	if running == nil {
+		return nil, fmt.Errorf("running service is nil")
+	}
+	if running.ContainerID == "" {
+		return nil, fmt.Errorf("service does not have a mount namespace")
+	}
+	if target == "" {
+		return nil, fmt.Errorf("service directory mount path cannot be empty")
+	}
+	if source.Self() == nil {
+		return nil, fmt.Errorf("service directory mount source is nil")
+	}
+	if opts.description == "" {
+		opts.description = "service directory mount"
+	}
+
+	if opts.replacePath {
+		if existing := running.removeServiceDirectoryMountByPath(target); existing != nil {
+			if err := existing.close(ctx, running, true); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	state := &runningServiceDirectoryMount{
+		id:          identity.NewID(),
+		path:        target,
+		source:      source,
+		service:     service,
+		description: opts.description,
+	}
+
+	running.mountsMu.Lock()
+	if running.mountIDsByPath == nil {
+		running.mountIDsByPath = map[string]string{}
+	}
+	if running.mountsByID == nil {
+		running.mountsByID = map[string]*runningServiceDirectoryMount{}
+	}
+	if existingID, ok := running.mountIDsByPath[target]; ok {
+		running.mountsMu.Unlock()
+		return nil, fmt.Errorf("service directory mount path %q is already mounted by %q", target, existingID)
+	}
+	running.mountsByID[state.id] = state
+	running.mountIDsByPath[target] = state.id
+	running.mountsMu.Unlock()
+
+	removeOnErr := true
+	defer func() {
+		if !removeOnErr {
+			return
+		}
+		running.removeServiceDirectoryMount(state)
+		if state.mutableRef != nil {
+			rerr = errors.Join(rerr, state.mutableRef.Release(context.WithoutCancel(ctx)))
+			state.mutableRef = nil
+		}
+	}()
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, source); err != nil {
+		return nil, fmt.Errorf("failed to evaluate source directory: %w", err)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := source.Self().Snapshot.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ref for source directory: %w", err)
+	}
+	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get path for source directory: %w", err)
+	}
+	state.sourceDirPath = sourceDirPath
+
+	mutableRef, err := query.SnapshotManager().New(ctx, ref,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(opts.description))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mutable ref for service directory mount: %w", err)
+	}
+	state.mutableRef = mutableRef
+
+	if err := running.ProtectRef(ctx, mutableRef); err != nil {
+		return nil, fmt.Errorf("protect service directory mount ref: %w", err)
+	}
+
+	if err := state.mountCurrentRef(ctx, running); err != nil {
+		return nil, err
+	}
+
+	removeOnErr = false
+	handle := serviceDirectoryMountHandle(state.id)
+	return &ServiceDirectoryMount{
+		Handle:  handle,
+		ID:      state.id,
+		PathVal: target,
+		Service: service,
+		running: running,
+		state:   state,
+	}, nil
+}
+
+func (running *RunningService) releaseDirectoryMounts(ctx context.Context) error {
+	if running == nil {
+		return nil
+	}
+	running.mountsMu.Lock()
+	mounts := make([]*runningServiceDirectoryMount, 0, len(running.mountsByID))
+	for _, mount := range running.mountsByID {
+		mounts = append(mounts, mount)
+	}
+	running.mountsByID = nil
+	running.mountIDsByPath = nil
+	running.mountsMu.Unlock()
+
+	var rerr error
+	for _, mount := range mounts {
+		rerr = errors.Join(rerr, mount.close(ctx, running, false))
+	}
+	return rerr
+}
+
+func (running *RunningService) removeServiceDirectoryMountByPath(path string) *runningServiceDirectoryMount {
+	if running == nil {
+		return nil
+	}
+	running.mountsMu.Lock()
+	defer running.mountsMu.Unlock()
+	id, ok := running.mountIDsByPath[path]
+	if !ok {
+		return nil
+	}
+	mount := running.mountsByID[id]
+	delete(running.mountIDsByPath, path)
+	delete(running.mountsByID, id)
+	return mount
+}
+
+func (running *RunningService) removeServiceDirectoryMount(mount *runningServiceDirectoryMount) {
+	if running == nil || mount == nil {
+		return
+	}
+	running.mountsMu.Lock()
+	defer running.mountsMu.Unlock()
+	if running.mountsByID != nil {
+		delete(running.mountsByID, mount.id)
+	}
+	if running.mountIDsByPath != nil {
+		if currentID, ok := running.mountIDsByPath[mount.path]; ok && currentID == mount.id {
+			delete(running.mountIDsByPath, mount.path)
+		}
+	}
+}
+
+func (running *RunningService) unmountServiceDirectory(ctx context.Context, mount *runningServiceDirectoryMount) error {
+	if running == nil {
+		return fmt.Errorf("running service is nil")
+	}
+	if mount == nil {
+		return fmt.Errorf("service directory mount is nil")
+	}
+	if err := mount.close(ctx, running, true); err != nil {
+		return err
+	}
+	running.removeServiceDirectoryMount(mount)
+	return nil
+}
+
+func (mnt *runningServiceDirectoryMount) mountCurrentRef(ctx context.Context, running *RunningService) error {
+	if mnt.mutableRef == nil {
+		return fmt.Errorf("service directory mount %q has no mutable ref", mnt.id)
+	}
+	return MountRef(ctx, mnt.mutableRef, func(root string, _ *mount.Mount) error {
+		resolvedDir, err := containerdfs.RootPath(root, mnt.sourceDirPath)
+		if err != nil {
+			return err
+		}
+		if err := mountIntoContainer(ctx, running.ContainerID, resolvedDir, mnt.path); err != nil {
+			return fmt.Errorf("mount directory into service: %w", err)
+		}
+		return nil
+	})
+}
+
+func (mnt *runningServiceDirectoryMount) hasChanges(ctx context.Context) (bool, error) {
+	mnt.mu.Lock()
+	defer mnt.mu.Unlock()
+	if mnt.closed {
+		return false, fmt.Errorf("service directory mount %q is closed", mnt.id)
+	}
+	if mnt.mutableRef == nil {
+		return false, fmt.Errorf("service directory mount %q has no mutable ref", mnt.id)
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return false, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get engine client: %w", err)
+	}
+	usage, err := bk.Snapshotter.Usage(ctx, mnt.mutableRef.SnapshotID())
+	if err != nil {
+		return false, fmt.Errorf("failed to check for changes: %w", err)
+	}
+	return usage.Inodes > 1 || usage.Size > 0, nil
+}
+
+func (mnt *runningServiceDirectoryMount) snapshotDirectory(
+	ctx context.Context,
+	running *RunningService,
+	keepMounted bool,
+) (_ dagql.ObjectResult[*Directory], rerr error) {
+	var res dagql.ObjectResult[*Directory]
+	if running == nil {
+		return res, fmt.Errorf("running service is nil")
+	}
+	mnt.mu.Lock()
+	defer mnt.mu.Unlock()
+	if mnt.closed {
+		if !keepMounted && mnt.closedSnapshotSet {
+			return mnt.closedSnapshot, nil
+		}
+		return res, fmt.Errorf("service directory mount %q is closed", mnt.id)
+	}
+	if mnt.mutableRef == nil {
+		return res, fmt.Errorf("service directory mount %q has no mutable ref", mnt.id)
+	}
+
+	if err := unmountInContainer(ctx, running.ContainerID, mnt.path); err != nil {
+		return res, err
+	}
+
+	immutableRef, err := mnt.mutableRef.Commit(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to commit service directory mount %q: %w", mnt.path, err)
+	}
+	mnt.mutableRef = nil
+
+	if keepMounted {
+		query, err := CurrentQuery(ctx)
+		if err != nil {
+			_ = immutableRef.Release(context.WithoutCancel(ctx))
+			return res, err
+		}
+		nextRef, err := query.SnapshotManager().New(ctx, immutableRef,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription(mnt.description))
+		if err != nil {
+			_ = immutableRef.Release(context.WithoutCancel(ctx))
+			return res, fmt.Errorf("failed to create fresh mutable ref for service directory mount: %w", err)
+		}
+		if err := running.ProtectRef(ctx, nextRef); err != nil {
+			_ = nextRef.Release(context.WithoutCancel(ctx))
+			_ = immutableRef.Release(context.WithoutCancel(ctx))
+			return res, fmt.Errorf("protect fresh service directory mount ref: %w", err)
+		}
+		mnt.mutableRef = nextRef
+		if err := mnt.mountCurrentRef(ctx, running); err != nil {
+			_ = nextRef.Release(context.WithoutCancel(ctx))
+			mnt.mutableRef = nil
+			mnt.closed = true
+			running.removeServiceDirectoryMount(mnt)
+			_ = immutableRef.Release(context.WithoutCancel(ctx))
+			return res, fmt.Errorf("failed to remount fresh mutable copy: %w", err)
+		}
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		_ = immutableRef.Release(context.WithoutCancel(ctx))
+		if !keepMounted {
+			mnt.closed = true
+			running.removeServiceDirectoryMount(mnt)
+		}
+		return res, fmt.Errorf("get dagql server: %w", err)
+	}
+
+	snapshot := &Directory{
+		Platform: mnt.source.Self().Platform,
+		Services: slices.Clone(mnt.source.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	snapshot.Dir.setValue(mnt.sourceDirPath)
+	snapshot.Snapshot.setValue(immutableRef)
+
+	inst, err := attachServiceDirectoryMountSnapshot(ctx, srv, snapshot, mnt.id, immutableRef.SnapshotID())
+	if err != nil {
+		if !keepMounted {
+			mnt.closed = true
+			running.removeServiceDirectoryMount(mnt)
+		}
+		return res, err
+	}
+
+	if !keepMounted {
+		mnt.closedSnapshot = inst
+		mnt.closedSnapshotSet = true
+		mnt.closed = true
+		running.removeServiceDirectoryMount(mnt)
+	}
+
+	return inst, nil
+}
+
+func attachServiceDirectoryMountSnapshot(
+	ctx context.Context,
+	srv *dagql.Server,
+	snapshot *Directory,
+	mountID string,
+	snapshotID string,
+) (_ dagql.ObjectResult[*Directory], rerr error) {
+	var res dagql.ObjectResult[*Directory]
+	if snapshot == nil {
+		return res, fmt.Errorf("service directory mount snapshot is nil")
+	}
+	if srv == nil {
+		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
+		return res, fmt.Errorf("dagql server is nil")
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
+		return res, fmt.Errorf("service directory mount snapshot client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
+		return res, fmt.Errorf("service directory mount snapshot: empty session ID")
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
+		return res, fmt.Errorf("service directory mount snapshot cache: %w", err)
+	}
+
+	req := &dagql.CallRequest{
+		ResultCall: &dagql.ResultCall{
+			Kind:        dagql.ResultCallKindSynthetic,
+			Type:        dagql.NewResultCallType(snapshot.Type()),
+			SyntheticOp: "serviceDirectoryMountSnapshot",
+			Args: []*dagql.ResultCallArg{
+				{
+					Name: "mountID",
+					Value: &dagql.ResultCallLiteral{
+						Kind:        dagql.ResultCallLiteralKindString,
+						StringValue: mountID,
+					},
+				},
+				{
+					Name: "snapshotID",
+					Value: &dagql.ResultCallLiteral{
+						Kind:        dagql.ResultCallLiteralKindString,
+						StringValue: snapshotID,
+					},
+				},
+			},
+			ExtraDigests: []call.ExtraDigest{{
+				Digest: digest.FromString("service-directory-mount-snapshot:" + mountID + ":" + snapshotID),
+				Label:  "service-directory-mount-snapshot",
+			}},
+		},
+	}
+
+	ownedByCache := false
+	attached, err := cache.GetOrInitCall(ctx, clientMetadata.SessionID, srv, req, func(ctx context.Context) (dagql.AnyResult, error) {
+		inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
+		if err != nil {
+			return nil, err
+		}
+		ownedByCache = true
+		return inst, nil
+	})
+	if !ownedByCache {
+		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
+	}
+	if err != nil {
+		return res, fmt.Errorf("attach service directory mount snapshot: %w", err)
+	}
+
+	res, ok := attached.(dagql.ObjectResult[*Directory])
+	if !ok {
+		return res, fmt.Errorf("attach service directory mount snapshot: expected %T, got %T", res, attached)
+	}
+	return res, nil
+}
+
+func (mnt *runningServiceDirectoryMount) close(ctx context.Context, running *RunningService, detach bool) error {
+	mnt.mu.Lock()
+	defer mnt.mu.Unlock()
+	if mnt.closed {
+		return nil
+	}
+	var rerr error
+	if detach && running != nil && running.ContainerID != "" {
+		rerr = errors.Join(rerr, unmountInContainer(ctx, running.ContainerID, mnt.path))
+	}
+	if mnt.mutableRef != nil {
+		rerr = errors.Join(rerr, mnt.mutableRef.Release(context.WithoutCancel(ctx)))
+		mnt.mutableRef = nil
+	}
+	mnt.closed = true
+	return rerr
+}
+
 // runAndSnapshotChanges mounts the given source directory into the given
 // container at the given target path, runs the given function, and then
 // snapshots any changes made to the directory during the function's execution.
@@ -1437,134 +2015,32 @@ func (svc *Service) runAndSnapshotChanges(
 	running.workspaceMu.Lock()
 	defer running.workspaceMu.Unlock()
 
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return res, false, err
-	}
-	if err := cache.Evaluate(ctx, source); err != nil {
-		return res, false, fmt.Errorf("failed to evaluate source directory: %w", err)
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return res, false, err
-	}
-
-	ref, err := source.Self().Snapshot.GetOrEval(ctx, source.Result)
-	if err != nil {
-		return res, false, fmt.Errorf("failed to get ref for source directory: %w", err)
-	}
-	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
-	if err != nil {
-		return res, false, fmt.Errorf("failed to get path for source directory: %w", err)
-	}
-
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return res, false, fmt.Errorf("failed to get engine client: %w", err)
-	}
-
-	mutableRef, err := query.SnapshotManager().New(ctx, ref,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("mcp remount"))
-	if err != nil {
-		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
-	}
-	defer func() {
-		if mutableRef != nil {
-			_ = mutableRef.Release(ctx)
-		}
-	}()
-
-	err = MountRef(ctx, mutableRef, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, sourceDirPath)
-		if err != nil {
-			return err
-		}
-		if err := mountIntoContainer(ctx, running.ContainerID, resolvedDir, target); err != nil {
-			return fmt.Errorf("remount container: %w", err)
-		}
-		return f()
+	mount, err := running.mountDirectory(ctx, dagql.ObjectResult[*Service]{}, target, source, serviceDirectoryMountOpts{
+		replacePath: true,
+		description: "mcp remount",
 	})
 	if err != nil {
 		return res, false, err
 	}
 
-	usage, err := bk.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
-	if err != nil {
-		return res, false, fmt.Errorf("failed to check for changes: %w", err)
+	if err := f(); err != nil {
+		return res, false, err
 	}
-	hasChanges = usage.Inodes > 1 || usage.Size > 0
+
+	hasChanges, err = mount.state.hasChanges(ctx)
+	if err != nil {
+		return res, false, err
+	}
 	if !hasChanges {
 		slog.Debug("mcp: no changes made to directory")
 		return res, false, nil
 	}
 
-	immutableRef, err := mutableRef.Commit(ctx)
+	res, err = mount.state.snapshotDirectory(ctx, running, true)
 	if err != nil {
-		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
-	}
-	mutableRef = nil
-
-	// Create a new mutable ref to leave the service with, to prevent further
-	// changes from mutating the now-immutable ref
-	//
-	// NOTE: there's technically a race here, for sure, but we can least prevent
-	// mutation outside of the bounds of this func
-	abandonedRef, err := query.SnapshotManager().New(ctx, immutableRef,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("mcp remount"))
-	if err != nil {
-		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
-	}
-
-	defer func() {
-		if rerr != nil && abandonedRef != nil {
-			// Only release this on error, otherwise leave it to be released when the
-			// service cleans up.
-			_ = abandonedRef.Release(ctx)
-		}
-	}()
-
-	// Mount the mutable ref of their changes over the target path.
-	err = MountRef(ctx, abandonedRef, func(root string, _ *mount.Mount) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, sourceDirPath)
-		if err != nil {
-			return err
-		}
-		return mountIntoContainer(ctx, running.ContainerID, resolvedDir, target)
-	})
-	if err != nil {
-		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
-	}
-
-	if err := running.TrackRef(ctx, abandonedRef); err != nil {
-		return res, false, fmt.Errorf("track mcp remount ref: %w", err)
-	}
-	abandonedRef = nil
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		_ = immutableRef.Release(ctx)
-		return res, false, fmt.Errorf("get dagql server: %w", err)
-	}
-
-	snapshot := &Directory{
-		Platform: source.Self().Platform,
-		Services: slices.Clone(source.Self().Services),
-		Dir:      new(LazyAccessor[string, *Directory]),
-		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-	}
-	snapshot.Dir.setValue(sourceDirPath)
-	snapshot.Snapshot.setValue(immutableRef)
-
-	inst, err := dagql.NewObjectResultForCurrentCall(ctx, srv, snapshot)
-	if err != nil {
-		_ = snapshot.OnRelease(context.WithoutCancel(ctx))
 		return res, false, err
 	}
-
-	return inst, true, nil
+	return res, true, nil
 }
 
 func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath string) error {
@@ -1595,6 +2071,18 @@ func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath
 			return fmt.Errorf("move mount to %s: %w", targetPath, err)
 		}
 
+		return nil
+	})
+}
+
+func unmountInContainer(ctx context.Context, containerID, targetPath string) error {
+	return engineutil.GetGlobalNamespaceWorkerPool().RunInNamespaces(ctx, containerID, []specs.LinuxNamespace{
+		{Type: specs.MountNamespace},
+	}, func() error {
+		err := unix.Unmount(targetPath, unix.MNT_DETACH)
+		if err != nil && err != unix.EINVAL && err != unix.ENOENT {
+			return fmt.Errorf("unmount %s: %w", targetPath, err)
+		}
 		return nil
 	})
 }

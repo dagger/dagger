@@ -57,6 +57,27 @@ defmodule Dagger.Service do
   end
 
   @doc """
+  Mount a Directory snapshot into this running service and return a handle that can snapshot changes made through that mount.
+
+  The service is started if it is not already running. The mount is exclusive by path: another mount at the same path fails until this mount is snapshotted with keepMounted=false or unmounted.
+  """
+  @spec mount_directory(t(), String.t(), Dagger.Directory.t(), [{:expand, boolean() | nil}]) ::
+          Dagger.ServiceDirectoryMount.t()
+  def mount_directory(%__MODULE__{} = service, path, source, optional_args \\ []) do
+    query_builder =
+      service.query_builder
+      |> QB.select("mountDirectory")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.ServiceDirectoryMount{
+      query_builder: query_builder,
+      client: service.client
+    }
+  end
+
+  @doc """
   Retrieves the list of ports provided by the service.
   """
   @spec ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
