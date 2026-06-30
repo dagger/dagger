@@ -2449,12 +2449,13 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	return reportSectionLines(out, "MORE DETAILS", body)
 }
 
-// renderRerunSection prints copy-paste commands to re-run the failed checks. For
-// a Cloud trace that ran in Dagger native CI it leads with 'dagger cloud rerun'
-// scoped to the trace's commit (the CI re-run), followed by 'dagger check' to
-// reproduce locally; otherwise it offers just the local 'dagger check'. Only
-// outermost checks are re-runnable, so sub-checks roll up to their root. Returns
-// nil when no failed check applies. Gated by showSuggestions at the call site.
+// renderRerunSection prints copy-paste commands to re-run the failed checks,
+// split by intent so the two very different actions read distinctly. For a Cloud
+// trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
+// cloud rerun' scoped to the trace's commit) followed by "REPRODUCE LOCALLY"
+// ('dagger check'); otherwise it emits just "REPRODUCE LOCALLY". Only outermost
+// checks are re-runnable, so sub-checks roll up to their root. Returns nil when
+// no failed check applies. Gated by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if fe.db == nil {
 		return nil
@@ -2491,17 +2492,32 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 		return nil
 	}
 
-	cloudRerun := fe.ciMeta != nil && fe.ciMeta.isNativeCI && fe.ciMeta.commit != ""
-	var rerunLines, checkLines []string
-	for _, name := range names {
-		if cloudRerun {
-			rerunLines = append(rerunLines, fmt.Sprintf("dagger cloud rerun --commit %s --check %q", fe.ciMeta.commit, name))
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	var lines []string
+
+	// Re-run the check in CI (Dagger native CI only, scoped to the trace's
+	// commit). A distinct section from the local reproduce: it kicks off a fresh
+	// Cloud run, it doesn't run anything here.
+	if fe.ciMeta != nil && fe.ciMeta.isNativeCI && fe.ciMeta.commit != "" {
+		body := make([]string, 0, len(names))
+		for _, name := range names {
+			body = append(body, fmt.Sprintf("dagger cloud rerun --commit %s --check %q", fe.ciMeta.commit, name))
 		}
-		checkLines = append(checkLines, fmt.Sprintf("dagger check %q", name))
+		lines = append(lines, reportSectionLines(out, "RE-RUN IN CI", body)...)
 	}
 
-	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	return reportSectionLines(out, "RE-RUN", append(rerunLines, checkLines...))
+	// Run the check locally to reproduce (and then fix) the failure against your
+	// working tree.
+	body := make([]string, 0, len(names))
+	for _, name := range names {
+		body = append(body, fmt.Sprintf("dagger check %q", name))
+	}
+	if len(lines) > 0 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, reportSectionLines(out, "REPRODUCE LOCALLY", body)...)
+
+	return lines
 }
 
 // outermostSurfacedCheck returns the top-level surfaced check whose subtree
