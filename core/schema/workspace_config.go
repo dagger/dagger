@@ -15,13 +15,9 @@ import (
 )
 
 const initialWorkspaceConfig = `# Dagger workspace configuration
-# Install modules with: dagger mod install <module>
+# Install modules with: dagger install <module>
 # Example:
-#   dagger mod install github.com/dagger/dagger/modules/wolfi
-
-# Run generators as part of 'dagger check' and fail when generated files are
-# stale. Set to false to skip them by default (like 'dagger check --no-generate').
-check-generated = true
+#   dagger install github.com/dagger/dagger/modules/wolfi
 
 [modules]
 `
@@ -117,13 +113,8 @@ func loadWorkspaceConfigForMutation(
 		return nil, false, fmt.Errorf("initialize workspace: %w", err)
 	}
 
-	// Keep this consistent with initialWorkspaceConfig: the freshly written file
-	// already carries `check-generated = true`, so the returned config must too,
-	// otherwise the next write would prune it as a removed key.
-	checkGenerated := true
 	return &workspace.Config{
-		Modules:        map[string]workspace.ModuleEntry{},
-		CheckGenerated: &checkGenerated,
+		Modules: map[string]workspace.ModuleEntry{},
 	}, true, nil
 }
 

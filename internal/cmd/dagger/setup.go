@@ -146,6 +146,17 @@ func setupStepLogin(cmd *cobra.Command) error {
 
 // --- Step 2: Migrate ---
 
+const emptyWorkspaceSetupHint = `  No workspace has been loaded — nothing to migrate and no modules are
+  installed here yet.
+
+  Install a module to get started:
+
+      dagger install <module>
+
+  For example:
+      dagger install github.com/dagger/go
+`
+
 // setupStepMigrate reports whether a migration was needed (and thus a fresh
 // session should resolve SDKs migration may have recorded by short name).
 func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (bool, error) {
@@ -167,6 +178,17 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 		return false, fmt.Errorf("check migration: %w", err)
 	}
 	if isEmpty {
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return false, fmt.Errorf("check workspace config: %w", err)
+		}
+		if configFile == "" {
+			// Nothing to migrate and no workspace config exists yet. Don't write a
+			// default dagger.toml — guide the user to create one by installing a
+			// module instead.
+			fmt.Fprint(out, emptyWorkspaceSetupHint)
+			return false, nil
+		}
 		fmt.Fprintln(out, "  No migration needed.")
 		return false, nil
 	}
