@@ -399,6 +399,11 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		ctx.Lines(inlineTests...)
 	}
 
+	if inlineChecks := s.renderInlineChecks(ctx, r, row); len(inlineChecks) > 0 {
+		s.selfLineCount += len(inlineChecks)
+		ctx.Lines(inlineChecks...)
+	}
+
 	// Render this row's own inline logs via its memoized LogsView child, so the
 	// expensive Vterm.View() is skipped on unrelated parent repaints.
 	if inlineLogs := s.renderInlineLogs(ctx, r, row, visualFocused); len(inlineLogs) > 0 {
@@ -3952,7 +3957,8 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	// precedence (it only fired when that case didn't).
 	inlineLogsCase := span.Message == "" && (row.Expanded || row.Span.LLMTool != "")
 	if !inlineLogsCase &&
-		(row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded && !fe.shouldRenderInlineTests(row) {
+		(row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded &&
+		!fe.shouldRenderInlineTests(row) && !fe.shouldRenderInlineChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
@@ -3969,7 +3975,11 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	if len(span.ProgressSpans.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
-	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
+	if fe.shouldRenderInlineChecks(row) {
+		// A check deferring to its inline CHECKS rollup: the failure is explained
+		// by the failed sub-checks rendered in the rollup above, so don't also dump
+		// this check's own orchestrating command error here.
+	} else if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		// Filter self-references and causes already rendered elsewhere in this
 		// trace: a span propagated as its own error origin should never be
 		// rendered as the cause of itself, and a cause already shown as a

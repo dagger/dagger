@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -485,6 +486,148 @@ func TestChecksReportNestsSubCheckHeader(t *testing.T) {
 	}
 	if !strings.HasPrefix(lines[goLintIdx], "    ") {
 		t.Fatalf("sub-check line = %q, want four-space indent under the nested header", lines[goLintIdx])
+	}
+}
+
+// TestInlineChecksRollupSurfacesSubChecks drives a full interactive render and
+// checks that a collapsed parent check surfaces its sub-checks as an inline
+// CHECKS rollup -- a CHECKS header and the sub-check rows beneath it, carrying
+// the row's tree pipe -- the same way a check surfaces its tests.
+func TestInlineChecksRollupSurfacesSubChecks(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	bootstrapID := prettyTestSpanID(1)
+	goLintID := prettyTestSpanID(2)
+	helmLintID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        bootstrapID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "ci:bootstrap",
+			StartTime: start,
+			EndTime:   end,
+			CheckName: "ci:bootstrap",
+			Final:     true,
+		},
+		{
+			ID:        goLintID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "go:lint",
+			StartTime: start,
+			EndTime:   end,
+			ParentID:  bootstrapID,
+			CheckName: "go:lint",
+			Final:     true,
+		},
+		{
+			ID:        helmLintID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "helm:lint",
+			StartTime: start,
+			EndTime:   end,
+			ParentID:  bootstrapID,
+			CheckName: "helm:lint",
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(bootstrapID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	lines := fe.tui.RenderLines()
+	checksLine, ok := findPrettyTestLine(lines, "CHECKS")
+	if !ok {
+		t.Fatalf("interactive render did not surface an inline CHECKS rollup:\n%s", strings.Join(lines, "\n"))
+	}
+	// The rollup carries the row's tree pipe, like the inline TESTS rollup.
+	if idx := strings.Index(checksLine, "CHECKS"); idx < 0 || !strings.Contains(checksLine[:idx], VertBoldBar) {
+		t.Fatalf("inline CHECKS line = %q, want the trace pipe before the header", checksLine)
+	}
+	if _, ok := findPrettyTestLine(lines, "go:lint"); !ok {
+		t.Fatalf("inline CHECKS rollup missing sub-check go:lint:\n%s", strings.Join(lines, "\n"))
+	}
+	if _, ok := findPrettyTestLine(lines, "helm:lint"); !ok {
+		t.Fatalf("inline CHECKS rollup missing sub-check helm:lint:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// TestChecksRollupCondenses verifies the inline rollup condenses to fit a height
+// budget: unbounded shows every sub-check, a tight budget never overflows, keeps
+// the CHECKS header (whose tally is the at-a-glance outcome), and marks the
+// dropped sub-checks; the floor is the header alone.
+func TestChecksRollupCondenses(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	bootstrapID := prettyTestSpanID(1)
+	start := time.Unix(100, 0)
+	end := start.Add(time.Second)
+	snaps := []dagui.SpanSnapshot{{
+		ID:        bootstrapID,
+		TraceID:   prettyTestTraceID(),
+		Name:      "ci:bootstrap",
+		StartTime: start,
+		EndTime:   end,
+		CheckName: "ci:bootstrap",
+		Final:     true,
+	}}
+	const n = 12
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("check-%02d", i)
+		snaps = append(snaps, dagui.SpanSnapshot{
+			ID:        prettyTestSpanID(byte(2 + i)),
+			TraceID:   prettyTestTraceID(),
+			Name:      name,
+			StartTime: start,
+			EndTime:   end,
+			ParentID:  bootstrapID,
+			CheckName: name,
+			Final:     true,
+		})
+	}
+	db.ImportSnapshots(snaps)
+	db.SetPrimarySpan(bootstrapID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	node := fe.checkNodeForSpan(db.Spans.Map[bootstrapID])
+	if node == nil || len(node.Children) != n {
+		t.Fatalf("checkNodeForSpan = %v, want %d children", node, n)
+	}
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, false)
+	ctx := tuist.Context{Width: 120}
+
+	// Unbounded: the header plus every sub-check.
+	full := fe.checksRollupLines(ctx, r, node.Children, 0)
+	if len(full) != n+1 {
+		t.Fatalf("unbounded rollup = %d lines, want %d:\n%s", len(full), n+1, strings.Join(full, "\n"))
+	}
+	if !strings.Contains(full[0], "CHECKS") {
+		t.Fatalf("rollup header = %q, want CHECKS", full[0])
+	}
+
+	// Tight budgets: never overflow, always keep the header, mark the remainder.
+	for _, h := range []int{8, 5, 3, 2} {
+		got := fe.checksRollupLines(ctx, r, node.Children, h)
+		if len(got) > h {
+			t.Fatalf("rollup at height %d = %d lines, want <= %d:\n%s", h, len(got), h, strings.Join(got, "\n"))
+		}
+		if !strings.Contains(got[0], "CHECKS") {
+			t.Fatalf("rollup at height %d dropped the header: %q", h, got[0])
+		}
+		if !strings.Contains(strings.Join(got, "\n"), "more") {
+			t.Fatalf("rollup at height %d hid sub-checks without a 'more' marker:\n%s", h, strings.Join(got, "\n"))
+		}
+	}
+
+	// Floor: the header alone.
+	floor := fe.checksRollupLines(ctx, r, node.Children, 1)
+	if len(floor) != 1 || !strings.Contains(floor[0], "CHECKS") {
+		t.Fatalf("floor rollup = %q, want the header alone", strings.Join(floor, "\n"))
 	}
 }
 
