@@ -116,6 +116,12 @@
   overflow-y: auto;
 }
 
+/* Before anything is typed the list renders with no items; collapse it so it
+   doesn't sit below the input as an empty, padded sliver. */
+.results:empty {
+  display: none;
+}
+
 .results li {
   margin: 0;
 }
