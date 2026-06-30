@@ -159,7 +159,7 @@ require (
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
-	github.com/vito/tuist v0.0.7
+	github.com/vito/tuist v0.0.8
 	github.com/vito/tuist/teav1 v0.0.0-20260330150345-de388bf31342
 	github.com/zeebo/xxh3 v1.1.0
 	go.etcd.io/bbolt v1.4.3
