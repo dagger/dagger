@@ -16,11 +16,19 @@ type CheckNode struct {
 // SurfacedChecks returns the trace's checks as a tree, independent of the
 // `reveal` mechanism.
 //
-// A span with a CheckName is surfaced only if no Boundary or Encapsulate
-// ancestor sits between it and the root. That drops checks a test intentionally
-// runs (e.g. fixtures asserting that a check fails), which are wrapped in a
-// boundary -- the same containment the reveal bubbling applies, minus the
-// reveal stop that hides legitimate checks nested under another check.
+// A span with a CheckName is surfaced only if its ancestor chain reaches the
+// trace root with no Boundary or Encapsulate span in between. That drops checks
+// a test intentionally runs (e.g. fixtures asserting that a check fails), which
+// are wrapped in a boundary -- the same containment the reveal bubbling applies,
+// minus the reveal stop that hides legitimate checks nested under another check.
+//
+// Requiring the chain to *reach the root* matters because the boundary span is
+// often not loaded: a fixture check reaches the outer trace through a nested
+// `dagger check` invocation, so its chain dead-ends at the reparenting seam (the
+// spawning withExec) -- below the test's Boundary span -- which the incremental
+// fetch never pulls in. A severed chain can't be proven boundary-free, so it's
+// treated as contained too; a legitimate trace-level check always reaches root,
+// since the priority fetch loads its full ancestor chain.
 //
 // Checks are deduped by name (a check is failed if any of its spans failed) and
 // nested under the nearest surfaced ancestor check. Roots and children are
@@ -36,11 +44,12 @@ func (db *DB) SurfacedChecks() []*CheckNode {
 		if span.CheckName == "" {
 			continue
 		}
-		// Walk ancestors: a Boundary/Encapsulate between this check and the root
-		// contains it (hide it); otherwise remember the nearest ancestor check to
-		// nest under.
+		// Walk ancestors toward the root: a Boundary/Encapsulate between this check
+		// and the root contains it (hide it); otherwise remember the nearest
+		// ancestor check to nest under, and note whether we reach the root at all.
 		contained := false
 		parentName := ""
+		reachedRoot := span == db.RootSpan
 		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
 			if p.Boundary || p.Encapsulate {
 				contained = true
@@ -49,6 +58,21 @@ func (db *DB) SurfacedChecks() []*CheckNode {
 			if parentName == "" && p.CheckName != "" && p.CheckName != span.CheckName {
 				parentName = p.CheckName
 			}
+			if p == db.RootSpan {
+				reachedRoot = true
+				break
+			}
+		}
+		// A check whose ancestor chain is severed before it reaches the trace
+		// root can't be proven boundary-free: a check a test runs as a fixture
+		// reaches the outer trace through a nested `dagger check` invocation (a
+		// reparenting seam at the spawning withExec), so its chain dead-ends at
+		// that seam -- or at an unreceived placeholder -- below the test's
+		// Boundary span, which the incremental fetch never loaded. Treat that
+		// severance as containment, so fixtures stay hidden just like checks with
+		// a loaded Boundary ancestor.
+		if !contained && db.RootSpan != nil && !reachedRoot {
+			contained = true
 		}
 		if contained {
 			continue
