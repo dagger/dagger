@@ -682,7 +682,7 @@ func TestRerunSectionCloudAndLocalForNativeCI(t *testing.T) {
 		t.Fatalf("RE-RUN listed a sub-check:\n%s", joined)
 	}
 	// Two distinct sections so the CI re-run and local reproduce don't read as one.
-	if !strings.Contains(joined, "RE-RUN IN CI") || !strings.Contains(joined, "REPRODUCE LOCALLY") {
+	if !strings.Contains(joined, "RE-RUN IN CI") || !strings.Contains(joined, "RUN LOCALLY") {
 		t.Fatalf("missing one of the two section headings:\n%s", joined)
 	}
 	if !strings.Contains(joined, `dagger cloud rerun --commit abc123 --check "ci:bootstrap"`) {
@@ -692,8 +692,8 @@ func TestRerunSectionCloudAndLocalForNativeCI(t *testing.T) {
 		t.Fatalf("missing local check line:\n%s", joined)
 	}
 	// The CI re-run section leads; the local reproduce section follows.
-	if ciIdx, localIdx := indexOfLine(lines, "RE-RUN IN CI"), indexOfLine(lines, "REPRODUCE LOCALLY"); !(ciIdx >= 0 && ciIdx < localIdx) {
-		t.Fatalf("expected RE-RUN IN CI before REPRODUCE LOCALLY (ci=%d local=%d):\n%s", ciIdx, localIdx, joined)
+	if ciIdx, localIdx := indexOfLine(lines, "RE-RUN IN CI"), indexOfLine(lines, "RUN LOCALLY"); !(ciIdx >= 0 && ciIdx < localIdx) {
+		t.Fatalf("expected RE-RUN IN CI before RUN LOCALLY (ci=%d local=%d):\n%s", ciIdx, localIdx, joined)
 	}
 }
 
@@ -708,7 +708,7 @@ func TestRerunSectionLocalOnlyWithoutNativeCI(t *testing.T) {
 	if strings.Contains(joined, "cloud rerun") || strings.Contains(joined, "RE-RUN IN CI") {
 		t.Fatalf("did not expect a CI re-run section without native CI:\n%s", joined)
 	}
-	if !strings.Contains(joined, "REPRODUCE LOCALLY") || !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
+	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
 		t.Fatalf("missing local reproduce section:\n%s", joined)
 	}
 }

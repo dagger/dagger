@@ -2452,8 +2452,8 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 // renderRerunSection prints copy-paste commands to re-run the failed checks,
 // split by intent so the two very different actions read distinctly. For a Cloud
 // trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
-// cloud rerun' scoped to the trace's commit) followed by "REPRODUCE LOCALLY"
-// ('dagger check'); otherwise it emits just "REPRODUCE LOCALLY". Only outermost
+// cloud rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
+// check'); otherwise it emits just "RUN LOCALLY". Only outermost
 // checks are re-runnable, so sub-checks roll up to their root. Returns nil when
 // no failed check applies. Gated by showSuggestions at the call site.
 func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
@@ -2515,7 +2515,7 @@ func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
 	if len(lines) > 0 {
 		lines = append(lines, "")
 	}
-	lines = append(lines, reportSectionLines(out, "REPRODUCE LOCALLY", body)...)
+	lines = append(lines, reportSectionLines(out, "RUN LOCALLY", body)...)
 
 	return lines
 }
