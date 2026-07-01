@@ -167,9 +167,6 @@ type CheckGroupID = ID
 type CheckID = ID
 
 // A unique identifier for an object.
-type ClientFilesyncMirrorID = ID
-
-// A unique identifier for an object.
 type CloudID = ID
 
 // A unique identifier for an object.
@@ -242,9 +239,6 @@ type GitRefID = ID
 type GitRepositoryID = ID
 
 // A unique identifier for an object.
-type HTTPStateID = ID
-
-// A unique identifier for an object.
 type HealthcheckConfigID = ID
 
 // A unique identifier for an object.
@@ -296,9 +290,6 @@ type Platform string
 
 // A unique identifier for an object.
 type PortID = ID
-
-// A unique identifier for an object.
-type RemoteGitMirrorID = ID
 
 // A unique identifier for an object.
 type SDKConfigID = ID
@@ -751,15 +742,6 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	q := r.query.Select("asGitRepository")
 
 	return &GitRepository{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type HTTPState
-func (r *Binding) AsHTTPState() *HTTPState {
-	q := r.query.Select("asHTTPState")
-
-	return &HTTPState{
 		query: q,
 	}
 }
@@ -1367,7 +1349,6 @@ func (r *Changeset) AsSyncer() *Syncer {
 type Check struct {
 	query *querybuilder.Selection
 
-	checkType   *string
 	completed   *bool
 	description *string
 	id          *CheckID
@@ -1388,19 +1369,6 @@ func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	return &Check{
 		query: q,
 	}
-}
-
-// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
-func (r *Check) CheckType(ctx context.Context) (string, error) {
-	if r.checkType != nil {
-		return *r.checkType, nil
-	}
-	q := r.query.Select("checkType")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // Whether the check completed
@@ -1697,76 +1665,6 @@ func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 // AsNode returns this CheckGroup as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *CheckGroup) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-// An internal persistent filesync mirror.
-type ClientFilesyncMirror struct {
-	query *querybuilder.Selection
-
-	id *ClientFilesyncMirrorID
-}
-
-func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *ClientFilesyncMirror {
-	return &ClientFilesyncMirror{
-		query: q,
-	}
-}
-
-// A unique identifier for this ClientFilesyncMirror.
-func (r *ClientFilesyncMirror) ID(ctx context.Context) (ClientFilesyncMirrorID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ClientFilesyncMirrorID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ClientFilesyncMirror) XXX_GraphQLType() string {
-	return "ClientFilesyncMirror"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ClientFilesyncMirror) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ClientFilesyncMirror) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *ClientFilesyncMirror) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *ClientFilesyncMirror) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = ClientFilesyncMirror{query: selectNode(dag.query, id, "ClientFilesyncMirror")}
-	return nil
-}
-
-// AsNode returns this ClientFilesyncMirror as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *ClientFilesyncMirror) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -2342,23 +2240,9 @@ func (r *Container) File(path string, opts ...ContainerFileOpts) *File {
 	}
 }
 
-// ContainerFromOpts contains options for Container.From
-type ContainerFromOpts struct {
-	// Service to use as the registry endpoint for the image address.
-	//
-	// The service will be started only for this pull.
-	RegistryService *Service
-}
-
 // Download a container image, and apply it to the container state. All previous state will be lost.
-func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
+func (r *Container) From(address string) *Container {
 	q := r.query.Select("from")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `registryService` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
-			q = q.Arg("registryService", opts[i].RegistryService)
-		}
-	}
 	q = q.Arg("address", address)
 
 	return &Container{
@@ -2537,10 +2421,6 @@ type ContainerPublishOpts struct {
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
-	// Service to use as the registry endpoint for the image address.
-	//
-	// The service will be started only for this push.
-	RegistryService *Service
 }
 
 // Package the container state as an OCI image, and publish it to a registry
@@ -2563,10 +2443,6 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
-		}
-		// `registryService` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
-			q = q.Arg("registryService", opts[i].RegistryService)
 		}
 	}
 	q = q.Arg("address", address)
@@ -2836,8 +2712,6 @@ type ContainerWithDirectoryOpts struct {
 	Owner string
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
-
-	Permissions int
 }
 
 // Return a new container snapshot, with a directory added to its filesystem
@@ -2864,10 +2738,6 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
-		}
-		// `permissions` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Permissions) {
-			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
@@ -3268,8 +3138,6 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Mount the directory read-only.
-	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -3282,10 +3150,6 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-		}
-		// `readOnly` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
-			q = q.Arg("readOnly", opts[i].ReadOnly)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -4859,8 +4723,6 @@ type DirectoryWithDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Permission given to the copied directory and contents (e.g., 0755).
-	Permissions int
 }
 
 // Return a snapshot with a directory added
@@ -4883,10 +4745,6 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-		}
-		// `permissions` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Permissions) {
-			q = q.Arg("permissions", opts[i].Permissions)
 		}
 	}
 	q = q.Arg("path", path)
@@ -5473,8 +5331,6 @@ func (r *Env) Check(name string) *Check {
 type EnvChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
-	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate bool
 }
 
 // Return all checks defined by the installed modules
@@ -5486,10 +5342,6 @@ func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 
@@ -6043,30 +5895,6 @@ func (r *Env) WithGitRepositoryInput(name string, value *GitRepository, descript
 // Declare a desired GitRepository output to be assigned in the environment
 func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	q := r.query.Select("withGitRepositoryOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type HTTPState in the environment
-func (r *Env) WithHTTPStateInput(name string, value *HTTPState, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withHTTPStateInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired HTTPState output to be assigned in the environment
-func (r *Env) WithHTTPStateOutput(name string, description string) *Env {
-	q := r.query.Select("withHTTPStateOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -9165,76 +8993,6 @@ func (r *GitRepository) AsNode() Node {
 	}
 }
 
-// An internal persistent HTTP state.
-type HTTPState struct {
-	query *querybuilder.Selection
-
-	id *HTTPStateID
-}
-
-func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
-	return &HTTPState{
-		query: q,
-	}
-}
-
-// A unique identifier for this HTTPState.
-func (r *HTTPState) ID(ctx context.Context) (HTTPStateID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response HTTPStateID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *HTTPState) XXX_GraphQLType() string {
-	return "HTTPState"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *HTTPState) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *HTTPState) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *HTTPState) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *HTTPState) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = HTTPState{query: selectNode(dag.query, id, "HTTPState")}
-	return nil
-}
-
-// AsNode returns this HTTPState as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *HTTPState) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
 // Image healthcheck configuration.
 type HealthcheckConfig struct {
 	query *querybuilder.Selection
@@ -10648,8 +10406,6 @@ func (r *Module) Check(name string) *Check {
 type ModuleChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
-	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate bool
 }
 
 // Return all checks defined by the module
@@ -10661,10 +10417,6 @@ func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 
@@ -11259,6 +11011,8 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 }
 
 // The blueprint referenced by the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
 func (r *ModuleSource) Blueprint() *ModuleSource {
 	q := r.query.Select("blueprint")
 
@@ -11326,7 +11080,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 	return convert(response), nil
 }
 
-// Whether an existing dagger.json for the module was found.
+// Whether an existing module config file was found.
 func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	if r.configExists != nil {
 		return *r.configExists, nil
@@ -11562,7 +11316,7 @@ func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+// The original name of the module as read from the module config file (or set for the first time with the withName API).
 func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	if r.moduleOriginalName != nil {
 		return *r.moduleOriginalName, nil
@@ -11623,7 +11377,7 @@ func (r *ModuleSource) SDK() *SDKConfig {
 	}
 }
 
-// The path, relative to the context directory, that contains the module's dagger.json.
+// The path, relative to the context directory, that contains the module config.
 func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	if r.sourceRootSubpath != nil {
 		return *r.sourceRootSubpath, nil
@@ -11663,6 +11417,8 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 }
 
 // The toolchains referenced by the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
 func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	q := r.query.Select("toolchains")
 
@@ -11718,6 +11474,8 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 }
 
 // Set a blueprint for the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithBlueprint(blueprint *ModuleSource) *ModuleSource {
 	assertNotNil("blueprint", blueprint)
 	q := r.query.Select("withBlueprint")
@@ -11810,6 +11568,8 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 }
 
 // Add toolchains to the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
 	q := r.query.Select("withToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -11820,6 +11580,8 @@ func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource 
 }
 
 // Update the blueprint module to the latest version.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 	q := r.query.Select("withUpdateBlueprint")
 
@@ -11839,6 +11601,8 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 }
 
 // Update one or more toolchains.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithUpdateToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withUpdateToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -11859,6 +11623,8 @@ func (r *ModuleSource) WithUpdatedClients(clients []string) *ModuleSource {
 }
 
 // Remove the current blueprint from the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
 	q := r.query.Select("withoutBlueprint")
 
@@ -11898,6 +11664,8 @@ func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperi
 }
 
 // Remove the provided toolchains from the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withoutToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -12284,39 +12052,9 @@ func (r *Query) Address(value string) *Address {
 	}
 }
 
-// CacheVolumeOpts contains options for Query.CacheVolume
-type CacheVolumeOpts struct {
-	// Identifier of the directory to use as the cache volume's root.
-	Source *Directory
-	// Sharing mode of the cache volume.
-	//
-	// Default: SHARED
-	Sharing CacheSharingMode
-	// A user:group to set for the cache volume root.
-	//
-	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-	//
-	// If the group is omitted, it defaults to the same as the user.
-	Owner string
-}
-
 // Constructs a cache volume for a given cache key.
-func (r *Query) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
+func (r *Query) CacheVolume(key string) *CacheVolume {
 	q := r.query.Select("cacheVolume")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
-		}
-		// `sharing` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Sharing) {
-			q = q.Arg("sharing", opts[i].Sharing)
-		}
-		// `owner` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Owner) {
-			q = q.Arg("owner", opts[i].Owner)
-		}
-	}
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
@@ -12659,8 +12397,6 @@ type HTTPOpts struct {
 	Name string
 	// Permissions to set on the file.
 	Permissions int
-	// Expected digest of the downloaded content (e.g., "sha256:...").
-	Checksum string
 	// Secret used to populate the Authorization HTTP header
 	AuthHeader *Secret
 	// A service which must be started before the URL is fetched.
@@ -12678,10 +12414,6 @@ func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
-		}
-		// `checksum` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Checksum) {
-			q = q.Arg("checksum", opts[i].Checksum)
 		}
 		// `authHeader` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AuthHeader) {
@@ -12839,16 +12571,6 @@ func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 	q = q.Arg("id", id)
 
 	return &CheckGroup{
-		query: q,
-	}
-}
-
-// Load a ClientFilesyncMirror from its ID.
-func (r *Query) LoadClientFilesyncMirrorFromID(id ClientFilesyncMirrorID) *ClientFilesyncMirror {
-	q := r.query.Select("loadClientFilesyncMirrorFromID")
-	q = q.Arg("id", id)
-
-	return &ClientFilesyncMirror{
 		query: q,
 	}
 }
@@ -13092,16 +12814,6 @@ func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	}
 }
 
-// Load a HTTPState from its ID.
-func (r *Query) LoadHTTPStateFromID(id HTTPStateID) *HTTPState {
-	q := r.query.Select("loadHTTPStateFromID")
-	q = q.Arg("id", id)
-
-	return &HTTPState{
-		query: q,
-	}
-}
-
 // Load a HealthcheckConfig from its ID.
 func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
 	q := r.query.Select("loadHealthcheckConfigFromID")
@@ -13238,16 +12950,6 @@ func (r *Query) LoadPortFromID(id PortID) *Port {
 	q = q.Arg("id", id)
 
 	return &Port{
-		query: q,
-	}
-}
-
-// Load a RemoteGitMirror from its ID.
-func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror {
-	q := r.query.Select("loadRemoteGitMirrorFromID")
-	q = q.Arg("id", id)
-
-	return &RemoteGitMirror{
 		query: q,
 	}
 }
@@ -13414,7 +13116,7 @@ func (r *Query) Module() *Module {
 type ModuleSourceOpts struct {
 	// The pinned version of the module source
 	RefPin string
-	// If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+	// If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
 	DisableFindUp bool
 	// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
 	AllowNotExists bool
@@ -13532,76 +13234,6 @@ func (r *Query) Version(ctx context.Context) (string, error) {
 // AsNode returns this Query as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Query) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-// An internal persistent bare git mirror.
-type RemoteGitMirror struct {
-	query *querybuilder.Selection
-
-	id *RemoteGitMirrorID
-}
-
-func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGitMirror {
-	return &RemoteGitMirror{
-		query: q,
-	}
-}
-
-// A unique identifier for this RemoteGitMirror.
-func (r *RemoteGitMirror) ID(ctx context.Context) (RemoteGitMirrorID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response RemoteGitMirrorID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *RemoteGitMirror) XXX_GraphQLType() string {
-	return "RemoteGitMirror"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *RemoteGitMirror) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *RemoteGitMirror) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *RemoteGitMirror) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *RemoteGitMirror) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = RemoteGitMirror{query: selectNode(dag.query, id, "RemoteGitMirror")}
-	return nil
-}
-
-// AsNode returns this RemoteGitMirror as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *RemoteGitMirror) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -15617,12 +15249,11 @@ func (r *UpGroup) AsNode() Node {
 	}
 }
 
-// A Dagger workspace detected from the current working directory.
+// A Dagger workspace detected from the current working directory or constructed from a Directory.
 type Workspace struct {
 	query *querybuilder.Selection
 
 	address     *string
-	clientId    *string
 	configPath  *string
 	findUp      *string
 	hasConfig   *bool
@@ -15637,7 +15268,7 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	}
 }
 
-// Canonical Dagger address of the workspace directory.
+// Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
 func (r *Workspace) Address(ctx context.Context) (string, error) {
 	if r.address != nil {
 		return *r.address, nil
@@ -15654,10 +15285,6 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 type WorkspaceChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
-	// When true, only return annotated check functions; exclude generate-as-checks
-	NoGenerate bool
-	// When true, only return generate-as-checks; exclude annotated check functions
-	OnlyGenerate bool
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -15668,32 +15295,11 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
-		// `noGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
-			q = q.Arg("noGenerate", opts[i].NoGenerate)
-		}
-		// `onlyGenerate` optional argument
-		if !querybuilder.IsZeroValue(opts[i].OnlyGenerate) {
-			q = q.Arg("onlyGenerate", opts[i].OnlyGenerate)
-		}
 	}
 
 	return &CheckGroup{
 		query: q,
 	}
-}
-
-// The client ID that owns this workspace's host filesystem.
-func (r *Workspace) ClientID(ctx context.Context) (string, error) {
-	if r.clientId != nil {
-		return *r.clientId, nil
-	}
-	q := r.query.Select("clientId")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // Path to config.toml relative to the workspace boundary (empty if not initialized).
@@ -15721,7 +15327,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -15747,7 +15353,7 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 
 // Returns a File from the workspace.
 //
-// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -15759,7 +15365,7 @@ func (r *Workspace) File(path string) *File {
 
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
-	// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
+	// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
 	//
 	// Default: "."
 	From string
@@ -15769,9 +15375,9 @@ type WorkspaceFindUpOpts struct {
 //
 // Returns the absolute workspace path if found, or null if not found.
 //
-// Relative start paths resolve from the workspace directory.
+// Relative start paths resolve from the workspace cwd.
 //
-// The search stops at the workspace boundary and will not traverse above it.
+// The search stops at the workspace root and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil
@@ -15917,19 +15523,6 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 
 	return &UpGroup{
-		query: q,
-	}
-}
-
-// Refresh workspace-managed state and return the resulting changeset.
-//
-// Currently this refreshes existing lockfile entries only.
-//
-// Experimental: Experimental workspace update API currently refreshes existing lockfile entries only.
-func (r *Workspace) Update() *Changeset {
-	q := r.query.Select("update")
-
-	return &Changeset{
 		query: q,
 	}
 }
