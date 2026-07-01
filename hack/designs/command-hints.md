@@ -5,6 +5,7 @@
 path.*
 
 ## Table of Contents
+
 - [Problem](#problem)
 - [Solution](#solution)
 - [Hint 1: empty setup](#hint-1-empty-setup)
@@ -65,7 +66,7 @@ real ways to get started.
 
 **Proposed text:**
 
-```
+```text
   No workspace loaded here yet — nothing to migrate.
 
   To get started:
@@ -101,7 +102,7 @@ name `sdkCommandName` resolves for dispatch.
 
 **Proposed text (SDK with both capabilities):**
 
-```
+```text
   Installed SDK "go".
 
   This SDK can:
@@ -122,7 +123,7 @@ always means something is wrong — the ref probably isn't an SDK, or it's built
 for an incompatible engine version. Instead of a neutral note, surface a
 warning (to **stderr**, since it's a warning, not guidance):
 
-```
+```text
   ⚠ "x" was installed as an SDK, but it can neither create modules nor
     initialize clients (no initModule or initClient). This usually means the
     ref isn't an SDK, or it targets an incompatible engine version.
@@ -145,7 +146,7 @@ The hint closes that gap.
 
 **Proposed text:**
 
-```
+```text
   Client scaffolded.
 
   Generate the client bindings:
@@ -316,6 +317,7 @@ flowchart TD
 ## Phased plan
 
 **Phase 1 — text-only hints on existing code paths.** *Depends on #13556.*
+
 - Rebase #13556 onto current `main` (`setupStepMigrate` now returns
   `(bool, error)`).
 - Hint 1: broaden `emptyWorkspaceSetupHint` to the three next steps.
@@ -325,6 +327,7 @@ flowchart TD
 - No engine changes, no new API.
 
 **Phase 2 — capability-aware Hint 2.**
+
 - Add `sdkAuthoringCapabilities` (two `inspectSDKInitFunction` calls) and wire
   it into `runSDKInstall`, printing one hint per present capability, the
   neither-capability warning to stderr, and swallowing non-"not-found" probe
