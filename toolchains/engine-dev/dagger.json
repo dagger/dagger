@@ -29,10 +29,6 @@
       "source": "../go"
     },
     {
-      "name": "version",
-      "source": "../../version"
-    },
-    {
       "name": "wolfi",
       "source": "../../modules/wolfi"
     },
