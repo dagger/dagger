@@ -230,6 +230,12 @@ func Node(id dagger.ID) dagger.Node {
 	return client.Node(id)
 }
 
+// Load a GraphQL introspection schema for merging.
+func Schema(json dagger.JSON) *dagger.Schema {
+	client := initClient()
+	return client.Schema(json)
+}
+
 // Creates a new secret.
 func Secret(uri string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()
