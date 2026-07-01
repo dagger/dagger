@@ -42,14 +42,13 @@ func listWorkspaceModules(ctx context.Context, out io.Writer, dag *dagger.Client
 	var res struct {
 		CurrentWorkspace struct {
 			ModuleList []struct {
-				Name       string
-				Source     string
-				Entrypoint bool
+				Name   string
+				Source string
 			}
 		}
 	}
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `query { currentWorkspace { moduleList { name source entrypoint } } }`,
+		Query: `query { currentWorkspace { moduleList { name source } } }`,
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -64,11 +63,11 @@ func listWorkspaceModules(ctx context.Context, out io.Writer, dag *dagger.Client
 	}
 
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tSOURCE\tENTRYPOINT"); err != nil {
+	if _, err := fmt.Fprintln(w, "NAME\tSOURCE"); err != nil {
 		return err
 	}
 	for _, m := range mods {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%t\n", m.Name, m.Source, m.Entrypoint); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", m.Name, m.Source); err != nil {
 			return err
 		}
 	}
