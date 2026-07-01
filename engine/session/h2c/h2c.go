@@ -94,17 +94,37 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 			}
 
 			go func() {
+				// Always release the conn when this goroutine exits: close
+				// the underlying conn, drop it from the map, and tell the peer
+				// to close its end too. Without this, conns whose read side
+				// ends (e.g. EOF from the local client) are left open in the
+				// map, leaking FDs until the whole tunnel is torn down and
+				// eventually exhausting the accept loop.
+				defer func() {
+					connsL.Lock()
+					delete(conns, connID)
+					connsL.Unlock()
+					conn.Close()
+
+					sendL.Lock()
+					err := srv.Send(&ListenResponse{
+						ConnId: connID,
+						Close:  true,
+					})
+					sendL.Unlock()
+					if err != nil {
+						slog.Warn("listener send close error", "error", err)
+					}
+				}()
+
 				for {
 					// Read data from the connection
 					data := make([]byte, 1024)
 					n, err := conn.Read(data)
 					if err != nil {
-						if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-							// conn closed
-							return
+						if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+							slog.Warn("conn read error", "error", err)
 						}
-
-						slog.Warn("conn read error", "error", err)
 						return
 					}
 
@@ -155,7 +175,11 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 		conn, ok := conns[connID]
 		connsL.Unlock()
 		if !ok {
-			slog.Warn("listener request for unknown connID", "connID", connID)
+			// A close can race with our own goroutine-side cleanup, so don't
+			// warn when the conn is already gone.
+			if !req.GetClose() {
+				slog.Warn("listener request for unknown connID", "connID", connID)
+			}
 			continue
 		}
 
