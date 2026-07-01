@@ -114,8 +114,25 @@ name `sdkCommandName` resolves for dispatch.
 ```
 
 For a single-capability SDK, print only the matching bullet (and drop the "can"
-framing to a single line). For an SDK with **neither** capability, print a
-neutral one-liner (see [edge cases](#edge-cases-and-lifecycle)).
+framing to a single line).
+
+**SDK with neither capability → warn.** A module marked as an SDK that can
+neither init a module nor init a client is useless as an SDK, which almost
+always means something is wrong — the ref probably isn't an SDK, or it's built
+for an incompatible engine version. Instead of a neutral note, surface a
+warning (to **stderr**, since it's a warning, not guidance):
+
+```
+  ⚠ "x" was installed as an SDK, but it can neither create modules nor
+    initialize clients (no initModule or initClient). This usually means the
+    ref isn't an SDK, or it targets an incompatible engine version.
+
+    If that's not what you wanted, remove it:
+        dagger sdk uninstall x
+```
+
+The install itself already succeeded, so this is a warning, not a failure — see
+[edge cases](#edge-cases-and-lifecycle).
 
 ## Hint 3: after client init
 
@@ -219,8 +236,10 @@ surface and is already the source of truth for these capabilities.
 - **Format:** plain multi-line string to `cmd.OutOrStdout()`, matching #13556
   and every existing CLI hint (`sdk list`/`search` footers). No new styling
   system; no color. Interpolate the SDK name with `fmt.Fprintf` where needed.
-- **Stream:** stdout, consistent with existing hints. (Arguably advisory text
-  belongs on stderr; see [open questions](#open-questions).)
+- **Stream:** hints go to stdout, consistent with existing hints. The Hint 2
+  neither-capability **warning** goes to stderr — the conventional split (guidance
+  on stdout, warnings on stderr) and it keeps the warning out of piped output.
+  (See [open questions](#open-questions) on stdout vs stderr for hints.)
 - **Tone/shape:** a blank line, a one-line lead, then indented `•` bullets with
   the command on its own indented line — identical across all three so they're
   visually one family.
@@ -239,7 +258,7 @@ flowchart TD
     D -- yes --> E{capabilities}
     E -- initModule --> H2a[hint: module init]
     E -- initClient --> H2b[hint: client init]
-    E -- neither --> H2c[neutral note]
+    E -- neither --> H2c[warn: not a usable SDK]
     D -- no --> N2[error, no hint]
 
     F[dagger api client init] --> G{changeset applied?}
@@ -250,9 +269,10 @@ flowchart TD
 ## Edge cases and lifecycle
 
 - **SDK with both / one / neither capability (Hint 2).** Both → both bullets.
-  One → that bullet only. Neither → a neutral line, e.g. `Installed SDK "x". It
-  doesn't provide module or client authoring here.` — avoids implying an action
-  that would fail.
+  One → that bullet only. Neither → a **warning** to stderr (see Hint 2): a
+  module that authors nothing is not a usable SDK, so flag it as likely-wrong
+  and offer `dagger sdk uninstall`, rather than a neutral note that implies all
+  is well.
 - **Unknown / third-party SDK refs.** Handled by construction: `<sdk>` is the
   resolved command name, and capabilities come from introspecting the actual
   installed module, not a registry. A direct-ref SDK gets correct hints.
@@ -275,7 +295,9 @@ flowchart TD
    in `main.go`. Hints are guidance, not core output, and pollute piped stdout.
    **Recommendation:** gate all three on `!silent` (a scripted `--silent` run
    wants clean output); leave `-q` alone (it governs progress cleanup, not
-   stdout). Low effort, one shared guard in `printHint`.
+   stdout). Low effort, one shared guard in `printHint`. The Hint 2
+   neither-capability **warning** is exempt — it's a warning, not a hint, and
+   should surface even under `--silent`.
 2. **stdout vs stderr.** Existing hints all use stdout, so matching that keeps
    consistency; but advisory text on stderr keeps stdout pipe-clean.
    **Recommendation:** stay on stdout for consistency now; revisit globally if
@@ -304,8 +326,9 @@ flowchart TD
 
 **Phase 2 — capability-aware Hint 2.**
 - Add `sdkAuthoringCapabilities` (two `inspectSDKInitFunction` calls) and wire
-  it into `runSDKInstall`, printing one hint per present capability, neutral
-  note for none, swallow non-"not-found" probe errors.
+  it into `runSDKInstall`, printing one hint per present capability, the
+  neither-capability warning to stderr, and swallowing non-"not-found" probe
+  errors.
 - Still no engine changes.
 
 Both phases are CLI-only. A later, optional Phase 3 could replace Phase 2's
