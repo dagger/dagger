@@ -85,6 +85,43 @@ type ContainerExecOpts struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+
+	// Resource constraints applied to this exec via cgroups.
+	// All fields are optional; nil means no limit (current behaviour).
+	Resources *ContainerExecResources `default:"null"`
+}
+
+// ContainerExecResources defines cgroup resource constraints for a single exec.
+// All fields are optional; zero/nil means no limit (current behaviour).
+type ContainerExecResources struct {
+	// Hard memory limit in bytes (cgroup memory.max).
+	// The process is OOM-killed if it exceeds this.
+	MemoryBytes int64 `default:"0" doc:"Hard memory limit in bytes (cgroup memory.max). The process is OOM-killed if it exceeds this."`
+
+	// Soft memory limit in bytes (OCI memory reservation / cgroup memory.low on v2,
+	// soft_limit_in_bytes on v1). The kernel reclaims from this process first under
+	// memory pressure; it is not a hard cap and does not trigger OOM-kill.
+	MemorySoftBytes int64 `default:"0" doc:"Soft memory reservation in bytes (OCI memory.reservation). The kernel reclaims from this process first under memory pressure; no hard cap."`
+
+	// CPU limit in fractional cores, e.g. 1.5 (cgroup cpu.max quota/period).
+	// Translated to quota=int64(CPUs*1e5), period=100000.
+	CPUs float64 `default:"0" doc:"CPU limit in fractional cores (cgroup cpu.max quota/period). E.g. 1.5 for one-and-a-half cores."`
+
+	// Relative CPU scheduling weight (OCI cpu.shares / cgroup v1 cpu.shares scale,
+	// 2-262144; runc converts to cgroup v2 cpu.weight on v2 hosts).
+	// Does not cap CPU; only affects sharing when the engine is saturated.
+	CPUShares int64 `default:"0" doc:"Relative CPU scheduling weight (OCI cpu.shares, 2-262144). Does not cap CPU; only affects priority under contention."`
+
+	// Maximum number of processes/threads (cgroup pids.max).
+	Pids int64 `default:"0" doc:"Maximum number of processes/threads allowed (cgroup pids.max)."`
+}
+
+func (ContainerExecResources) TypeName() string {
+	return "ContainerExecResources"
+}
+
+func (ContainerExecResources) TypeDescription() string {
+	return "Cgroup resource constraints for a container exec. All fields are optional; zero means no limit."
 }
 
 type ContainerExecState struct {
@@ -356,6 +393,17 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
 	}
 
+	effective := mergeExecResources(container.DefaultExecResources, opts.Resources)
+	if effective != nil {
+		rm := resourcesIntoMeta(effective)
+		metaSpec.MemoryBytes = rm.MemoryBytes
+		metaSpec.MemorySoftBytes = rm.MemorySoftBytes
+		metaSpec.CPUQuota = rm.CPUQuota
+		metaSpec.CPUPeriod = rm.CPUPeriod
+		metaSpec.CPUShares = rm.CPUShares
+		metaSpec.PidsLimit = rm.PidsLimit
+	}
+
 	return &metaSpec, nil
 }
 
@@ -370,6 +418,58 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 		return pb.NetMode_HOST, nil
 	}
 	return pb.NetMode_UNSET, nil
+}
+
+// resourcesIntoMeta converts ContainerExecResources fields into executor.Meta
+// cgroup resource fields. A nil r is a no-op (returns zero Meta).
+func resourcesIntoMeta(r *ContainerExecResources) executor.Meta {
+	if r == nil {
+		return executor.Meta{}
+	}
+	m := executor.Meta{
+		MemoryBytes:     r.MemoryBytes,
+		MemorySoftBytes: r.MemorySoftBytes,
+		CPUShares:       r.CPUShares,
+		PidsLimit:       r.Pids,
+	}
+	if r.CPUs > 0 {
+		const period = 100000
+		m.CPUQuota = int64(r.CPUs * period)
+		m.CPUPeriod = period
+	}
+	return m
+}
+
+// mergeExecResources merges per-exec resources on top of container defaults.
+// Per-exec non-zero fields override the corresponding default. Returns nil if
+// both inputs are nil.
+func mergeExecResources(defaults, perExec *ContainerExecResources) *ContainerExecResources {
+	if defaults == nil && perExec == nil {
+		return nil
+	}
+	merged := ContainerExecResources{}
+	if defaults != nil {
+		merged = *defaults
+	}
+	if perExec == nil {
+		return &merged
+	}
+	if perExec.MemoryBytes != 0 {
+		merged.MemoryBytes = perExec.MemoryBytes
+	}
+	if perExec.MemorySoftBytes != 0 {
+		merged.MemorySoftBytes = perExec.MemorySoftBytes
+	}
+	if perExec.CPUs != 0 {
+		merged.CPUs = perExec.CPUs
+	}
+	if perExec.CPUShares != 0 {
+		merged.CPUShares = perExec.CPUShares
+	}
+	if perExec.Pids != 0 {
+		merged.Pids = perExec.Pids
+	}
+	return &merged
 }
 
 type serviceBindingExitError struct {
