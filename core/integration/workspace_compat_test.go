@@ -686,7 +686,7 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.go-sdk]`)
+		require.Contains(t, configOut, `[modules.dagger-go-sdk]`)
 		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
 
 		reportOut, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)

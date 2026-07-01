@@ -1835,7 +1835,7 @@ SDKs are workspace modules whose role is to scaffold/codegen other things:
 new Dagger modules (`dagger module init`) or typed clients against the
 Dagger API (`dagger api client init`). An install becomes an SDK when
 added through this group — `dagger sdk install go` installs
-[modules.go-sdk] with [modules.go-sdk.as-sdk] name = "go" so
+[modules.dagger-go-sdk] with [modules.dagger-go-sdk.as-sdk] name = "go" so
 `dagger module init go` / `dagger api client init go`
 dispatch through that SDK.
 
@@ -1919,9 +1919,9 @@ Install an SDK into the current workspace and mark it with the
 
 Alias resolution: `dagger sdk install go` resolves "go" via the
 embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the canonical ref basename (`go-sdk`), and the
-user-facing name is persisted as [modules.go-sdk.as-sdk] name = "go".
-Direct refs work too:
+install name is the canonical ref basename prefixed with "dagger-"
+(`dagger-go-sdk`), and the user-facing name is persisted as
+[modules.dagger-go-sdk.as-sdk] name = "go". Direct refs work too:
 `dagger sdk install github.com/foo/sdk` is installed as
 [modules.sdk] by basename.
 
@@ -1942,7 +1942,7 @@ dagger sdk install go
 
 ```
       --here          Write to the workspace config directory at the workspace cwd
-  -n, --name string   Override the workspace install name (defaults to the registry repo basename, or the basename of a direct ref)
+  -n, --name string   Override the workspace install name (defaults to the registry repo basename prefixed with "dagger-", or the basename of a direct ref)
 ```
 
 ### Options inherited from parent commands

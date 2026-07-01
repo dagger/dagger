@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -71,7 +72,7 @@ func (l *Loader) SDKForModule(
 	fmt.Fprintln(stdio.Stderr, "-", extErr)
 	fmt.Fprintln(stdio.Stderr)
 	fmt.Fprintln(stdio.Stderr, "The available SDKs are:")
-	for _, sdk := range validInbuiltSDKs {
+	for _, sdk := range sdkmeta.Builtins {
 		fmt.Fprintln(stdio.Stderr, "-", sdk)
 	}
 	fmt.Fprintln(stdio.Stderr, "- any git module ref, e.g. github.com/dagger/dagger/sdk/elixir@main")
@@ -231,7 +232,7 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 
 	// this validation may seem redundant, but it helps keep the list of
 	// builtin sdk between invalidSDKError message and builtinSDK function in sync.
-	if !slices.Contains(validInbuiltSDKs, sdk(sdkNameParsed)) {
+	if !sdkmeta.IsBuiltin(sdkNameParsed) {
 		return "", "", errUnknownBuiltinSDK
 	}
 
@@ -260,5 +261,5 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 // modules that can be loaded from a path or ref.
 func IsBuiltinSDKName(source string) bool {
 	name, _, _ := strings.Cut(source, "@")
-	return slices.Contains(validInbuiltSDKs, sdk(name))
+	return sdkmeta.IsBuiltin(name)
 }

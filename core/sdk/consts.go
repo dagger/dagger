@@ -1,5 +1,7 @@
 package sdk
 
+import "github.com/dagger/dagger/core/sdk/sdkmeta"
+
 const (
 	RuntimeWorkdirPath = "/scratch"
 )
@@ -7,26 +9,14 @@ const (
 type sdk string
 
 const (
-	sdkGo         sdk = "go"
-	sdkDang       sdk = "dang"
-	sdkPython     sdk = "python"
-	sdkTypescript sdk = "typescript"
-	sdkPHP        sdk = "php"
-	sdkElixir     sdk = "elixir"
-	sdkJava       sdk = "java"
+	sdkGo         sdk = sdkmeta.Go
+	sdkDang       sdk = sdkmeta.Dang
+	sdkPython     sdk = sdkmeta.Python
+	sdkTypescript sdk = sdkmeta.Typescript
+	sdkPHP        sdk = sdkmeta.PHP
+	sdkElixir     sdk = sdkmeta.Elixir
+	sdkJava       sdk = sdkmeta.Java
 )
-
-// this list is to format the invalid sdk msg
-// and keeping that in sync with builtinSDK func
-var validInbuiltSDKs = []sdk{
-	sdkGo,
-	sdkDang,
-	sdkPython,
-	sdkTypescript,
-	sdkPHP,
-	sdkElixir,
-	sdkJava,
-}
 
 // The list of functions that may be implemented by a SDK module.
 var sdkFunctions = []string{

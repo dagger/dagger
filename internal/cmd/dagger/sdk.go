@@ -36,7 +36,7 @@ SDKs are workspace modules whose role is to scaffold/codegen other things:
 new Dagger modules (` + "`dagger module init`" + `) or typed clients against the
 Dagger API (` + "`dagger api client init`" + `). An install becomes an SDK when
 added through this group — ` + "`dagger sdk install go`" + ` installs
-[modules.go-sdk] with [modules.go-sdk.as-sdk] name = "go" so
+[modules.dagger-go-sdk] with [modules.dagger-go-sdk.as-sdk] name = "go" so
 ` + "`dagger module init go`" + ` / ` + "`dagger api client init go`" + `
 dispatch through that SDK.`,
 }
@@ -57,9 +57,9 @@ var sdkInstallCmd = &cobra.Command{
 
 Alias resolution: ` + "`dagger sdk install go`" + ` resolves "go" via the
 embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the canonical ref basename (` + "`go-sdk`" + `), and the
-user-facing name is persisted as [modules.go-sdk.as-sdk] name = "go".
-Direct refs work too:
+install name is the canonical ref basename prefixed with "dagger-"
+(` + "`dagger-go-sdk`" + `), and the user-facing name is persisted as
+[modules.dagger-go-sdk.as-sdk] name = "go". Direct refs work too:
 ` + "`dagger sdk install github.com/foo/sdk`" + ` is installed as
 [modules.sdk] by basename.
 
@@ -131,7 +131,7 @@ Requires the SDK to implement the initClient capability.`,
 }
 
 func init() {
-	sdkInstallCmd.Flags().StringVarP(&sdkInstallName, "name", "n", "", "Override the workspace install name (defaults to the registry repo basename, or the basename of a direct ref)")
+	sdkInstallCmd.Flags().StringVarP(&sdkInstallName, "name", "n", "", "Override the workspace install name (defaults to the registry repo basename prefixed with \"dagger-\", or the basename of a direct ref)")
 	sdkInstallCmd.Flags().BoolVar(&sdkInstallHere, "here", false, "Write to the workspace config directory at the workspace cwd")
 
 	sdkUninstallCmd.Flags().BoolVar(&sdkUninstallForce, "force", false, "Remove even if modules or clients are authored under this SDK")
@@ -429,6 +429,51 @@ func printSDKInitOptions(out io.Writer, sdkName string, kind sdkInitKind, args [
 		}
 	}
 	return w.Flush()
+}
+
+// migratedSDKFixup describes a workspace SDK install that migration recorded by
+// bare SDK short name and that must be resolved to its real ref and canonical
+// name through the sdks.json registry.
+type migratedSDKFixup struct {
+	ModuleName string
+	Ref        string
+	SDKName    string
+}
+
+// planMigratedSDKFixups finds [modules.<name>.as-sdk] installs whose source is a
+// bare SDK short name — how `dagger setup` migration records a legacy `sdk`
+// field (e.g. "php") — and resolves each through sdks.json to its real ref and
+// canonical name. A bare source is treated as a local path by the authoring
+// commands (`dagger module init <sdk>`), so it must be rewritten to a loadable
+// ref. Entries whose source is already a path/ref, or a bare name absent from
+// the registry, are left untouched.
+func planMigratedSDKFixups(cfg *workspace.Config) []migratedSDKFixup {
+	if cfg == nil {
+		return nil
+	}
+	var fixups []migratedSDKFixup
+	for name, entry := range cfg.Modules {
+		if entry.AsSDK == nil {
+			continue
+		}
+		// A migrated builtin SDK is recorded by bare short name, optionally with
+		// an "@version" the engine accepts (e.g. "php", "php@v0.18"). A full ref
+		// or a local path always contains a slash and is left untouched.
+		if entry.Source == "" || strings.Contains(entry.Source, "/") {
+			continue
+		}
+		base, version, _ := strings.Cut(entry.Source, "@")
+		ref, _, sdkName, err := sdkResolveInstall(base)
+		if err != nil {
+			continue
+		}
+		if version != "" {
+			ref += "@" + version
+		}
+		fixups = append(fixups, migratedSDKFixup{ModuleName: name, Ref: ref, SDKName: sdkName})
+	}
+	sort.Slice(fixups, func(i, j int) bool { return fixups[i].ModuleName < fixups[j].ModuleName })
+	return fixups
 }
 
 func readLocalWorkspaceConfig() (*workspace.Config, string, error) {

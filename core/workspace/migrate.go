@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 )
 
 // ConventionalSDKShortName returns the workspace-side short name to use for
@@ -23,6 +24,35 @@ func ConventionalSDKShortName(sdkRef string) string {
 		ref = ref[i+1:]
 	}
 	return ref
+}
+
+// migrationSDKInstallName returns the workspace module install name to record
+// for a legacy SDK ref. A builtin runtime short name (e.g. "go", "php@v1") is
+// keyed by a "dagger-"-prefixed canonical basename ("dagger-go-sdk",
+// "dagger-php-sdk"), matching `dagger sdk install`, so the SDK install cannot
+// collide with an unrelated module legitimately named "go". External refs and
+// custom/local SDK names keep their existing basename.
+func migrationSDKInstallName(sdkRef string) string {
+	name := ConventionalSDKShortName(sdkRef)
+	if sdkmeta.IsBuiltin(name) {
+		return sdkmeta.InstallNamePrefix + name + "-sdk"
+	}
+	return name
+}
+
+// uniqueModuleName returns base if free, otherwise base with a numeric suffix,
+// so a migrated SDK install never silently overwrites an unrelated module that
+// happens to share its name.
+func uniqueModuleName(modules map[string]ModuleEntry, base string) string {
+	if _, taken := modules[base]; !taken {
+		return base
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if _, taken := modules[candidate]; !taken {
+			return candidate
+		}
+	}
 }
 
 // IsLocalRef performs a fast heuristic check to determine whether a module
@@ -104,8 +134,17 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	// [modules.<sdk>.as-sdk.*]. This is the file-format catch-up for the
 	// runtime/SDK split.
 	if hasSDK {
-		sdkName := ConventionalSDKShortName(cfg.SDK.Source)
+		sdkName := migrationSDKInstallName(cfg.SDK.Source)
+		sdkIsBuiltin := sdkmeta.IsBuiltin(ConventionalSDKShortName(cfg.SDK.Source))
 		entry, exists := wsCfg.Modules[sdkName]
+		// A builtin SDK's legacy source (e.g. "go") is a runtime name, not a
+		// module source, so an existing same-named module is never the same
+		// install. For external/custom SDKs the source is a real ref/path, so
+		// reuse the entry only when it matches; otherwise don't clobber it.
+		if exists && (sdkIsBuiltin || entry.Source != cfg.SDK.Source) {
+			sdkName = uniqueModuleName(wsCfg.Modules, sdkName)
+			exists = false
+		}
 		if !exists {
 			entry = ModuleEntry{Source: cfg.SDK.Source}
 		}
