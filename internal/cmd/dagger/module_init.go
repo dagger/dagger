@@ -185,7 +185,8 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 			return err
 		}
 
-		return handleChangesetResponseAt(ctx, dag, changesetID, autoApply, exportPath)
+		_, err = handleChangesetResponseAt(ctx, dag, changesetID, autoApply, exportPath)
+		return err
 	})
 }
 
