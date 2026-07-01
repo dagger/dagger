@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/spf13/cobra"
 )
 
@@ -163,13 +164,84 @@ func runSDKInstall(cmd *cobra.Command, args []string) error {
 	if name == "" {
 		name = defaultName
 	}
+	// The name the authoring commands dispatch on: the as-sdk alias if the
+	// registry set one, otherwise the install name.
+	hintName := asSDKName
+	if hintName == "" {
+		hintName = name
+	}
 
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		return callSDKInstall(ctx, ec.Dagger(), cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere)
+		dag := ec.Dagger()
+		if err := callSDKInstall(ctx, dag, cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere); err != nil {
+			return err
+		}
+		printSDKInstallCapabilityHints(ctx, dag, cmd, hintName, canonicalRef)
+		return nil
 	})
+}
+
+// sdkAuthoringCapabilities reports whether the SDK at sdkRef can author modules
+// (initModule) and/or clients (initClient) — the capabilities that gate
+// `dagger module init` and `dagger api client init`. A probe error other than
+// "capability absent" is returned, so callers can skip guidance rather than
+// wrongly imply the SDK does nothing.
+func sdkAuthoringCapabilities(ctx context.Context, dag *dagger.Client, sdkRef string) (module, client bool, _ error) {
+	_, errModule := inspectSDKInitFunction(ctx, dag, sdkRef, sdkInitKindModule)
+	if errModule != nil && !errors.Is(errModule, errSDKInitFunctionNotFound) {
+		return false, false, errModule
+	}
+	_, errClient := inspectSDKInitFunction(ctx, dag, sdkRef, sdkInitKindClient)
+	if errClient != nil && !errors.Is(errClient, errSDKInitFunctionNotFound) {
+		return false, false, errClient
+	}
+	return errModule == nil, errClient == nil, nil
+}
+
+// sdkInstallNoCapabilityWarning is shown when a just-installed SDK can author
+// neither modules nor clients: that's not a usable SDK, so it likely isn't one
+// (or targets an incompatible engine version).
+const sdkInstallNoCapabilityWarning = `
+  ⚠ %q was installed as an SDK, but it can neither create modules nor
+    initialize clients (no initModule or initClient). This usually means the
+    ref isn't an SDK, or it targets an incompatible engine version.
+
+    If that's not what you wanted, remove it:
+        dagger sdk uninstall %[1]s
+`
+
+// printSDKInstallCapabilityHints prints, after a successful install, one hint
+// per authoring capability the SDK has. An SDK that authors neither modules nor
+// clients is warned about (to stderr, and not suppressed by --silent) rather
+// than hinted at. Best-effort: a probe failure is logged and skipped, never
+// fatal — the install already succeeded.
+func printSDKInstallCapabilityHints(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, sdkName, sdkRef string) {
+	canModule, canClient, err := sdkAuthoringCapabilities(ctx, dag, sdkRef)
+	if err != nil {
+		slog.Debug("inspect SDK capabilities for install hint", "sdk", sdkName, "err", err)
+		return
+	}
+
+	if !canModule && !canClient {
+		fmt.Fprintf(cmd.ErrOrStderr(), sdkInstallNoCapabilityWarning, sdkName)
+		return
+	}
+
+	if silent {
+		return
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\n  Installed SDK %q. This SDK can:\n", sdkName)
+	if canModule {
+		fmt.Fprintf(out, "\n    • Create a new module:\n        dagger module init %s <name>\n", sdkName)
+	}
+	if canClient {
+		fmt.Fprintf(out, "\n    • Initialize a generated API client:\n        dagger api client init %s <path> <module>\n", sdkName)
+	}
 }
 
 // callSDKInstall invokes Workspace.install with asSdk=true via raw GraphQL.

@@ -81,9 +81,25 @@ func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef 
 			return err
 		}
 
-		return handleChangesetResponseAt(ctx, dag, changesetID, autoApply, exportPath)
+		applied, err := handleChangesetResponseAt(ctx, dag, changesetID, autoApply, exportPath)
+		if err != nil {
+			return err
+		}
+		if applied && !silent {
+			fmt.Fprint(cmd.OutOrStdout(), clientInitGenerateHint)
+		}
+		return nil
 	})
 }
+
+// clientInitGenerateHint points the user at the generate step: `api client
+// init` records and scaffolds the client, but its bindings are produced by
+// `dagger generate`.
+const clientInitGenerateHint = `
+  Client scaffolded. Generate its bindings with:
+
+      dagger generate
+`
 
 func callClientInit(
 	ctx context.Context,

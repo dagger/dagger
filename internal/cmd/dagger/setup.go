@@ -146,6 +146,23 @@ func setupStepLogin(cmd *cobra.Command) error {
 
 // --- Step 2: Migrate ---
 
+// emptyWorkspaceSetupHint is printed when `dagger setup` has nothing to migrate
+// and no workspace config exists yet: the greenfield case, where the useful
+// thing is to show how to get started rather than write an empty dagger.toml.
+const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to migrate.
+
+  To get started:
+
+    • Install a published module as a dependency:
+        dagger install <module>
+
+    • Install an SDK to author your own:
+        dagger sdk install <sdk>        (e.g. dagger sdk install go)
+
+    • Create a new module (after installing an SDK):
+        dagger module init <sdk> <name>
+`
+
 // setupStepMigrate reports whether a migration was needed (and thus a fresh
 // session should resolve SDKs migration may have recorded by short name).
 func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (bool, error) {
@@ -167,6 +184,18 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 		return false, fmt.Errorf("check migration: %w", err)
 	}
 	if isEmpty {
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return false, fmt.Errorf("check workspace config: %w", err)
+		}
+		if configFile == "" {
+			// Nothing to migrate and no workspace config yet — don't seed an empty
+			// dagger.toml; guide the user to get started instead.
+			if !silent {
+				fmt.Fprint(out, emptyWorkspaceSetupHint)
+			}
+			return false, nil
+		}
 		fmt.Fprintln(out, "  No migration needed.")
 		return false, nil
 	}
@@ -178,7 +207,7 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 	// handleChangesetResponseAt owns the apply prompt via a huh form when
 	// autoApply is false — we don't run our own confirm() here, otherwise
 	// the user would face two prompts back-to-back for the same action.
-	if err := handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath); err != nil {
+	if _, err := handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath); err != nil {
 		return false, err
 	}
 	return true, nil
