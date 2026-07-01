@@ -171,13 +171,6 @@ type asEnvFileArgs struct {
 
 func (s envfileSchema) asEnvFile(ctx context.Context, parent dagql.ObjectResult[*core.File], args asEnvFileArgs) (dagql.ObjectResult[*core.EnvFile], error) {
 	expand := args.Expand.Valid && args.Expand.Value.Bool()
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.EnvFile]{}, err
-	}
-	if err := cache.Evaluate(ctx, parent); err != nil {
-		return dagql.ObjectResult[*core.EnvFile]{}, err
-	}
 	contents, err := parent.Self().Contents(ctx, parent, nil, nil)
 	if err != nil {
 		return dagql.ObjectResult[*core.EnvFile]{}, err
