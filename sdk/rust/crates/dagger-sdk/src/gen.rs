@@ -14636,7 +14636,7 @@ impl Schema {
     /// # Arguments
     ///
     /// * `module_types` - Introspection JSON describing the types the module defines. Object, interface and enum types are appended to the schema, and a constructor field for the module is added to the Query type.
-    /// * `module_name` - The name of the module whose types are being merged. Used to stamp the @sourceModuleName directive and to derive the module's constructor field.
+    /// * `module_name` - The name of the module whose types are being merged. Used to stamp the @sourceMap directive and to derive the module's constructor field.
     pub fn merge(&self, module_types: Json, module_name: impl Into<String>) -> Schema {
         let mut query = self.selection.select("merge");
         query = query.arg("moduleTypes", module_types);

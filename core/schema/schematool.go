@@ -34,7 +34,7 @@ func (s *schemaToolsSchema) Install(srv *dagql.Server) {
 			Doc(`Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.`).
 			Args(
 				dagql.Arg("moduleTypes").Doc(`Introspection JSON describing the types the module defines. Object, interface and enum types are appended to the schema, and a constructor field for the module is added to the Query type.`),
-				dagql.Arg("moduleName").Doc(`The name of the module whose types are being merged. Used to stamp the @sourceModuleName directive and to derive the module's constructor field.`),
+				dagql.Arg("moduleName").Doc(`The name of the module whose types are being merged. Used to stamp the @sourceMap directive and to derive the module's constructor field.`),
 			),
 	}.Install(srv)
 }

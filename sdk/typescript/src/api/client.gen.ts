@@ -13694,7 +13694,7 @@ export class Schema extends BaseClient {
   /**
    * Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.
    * @param moduleTypes Introspection JSON describing the types the module defines. Object, interface and enum types are appended to the schema, and a constructor field for the module is added to the Query type.
-   * @param moduleName The name of the module whose types are being merged. Used to stamp the @sourceModuleName directive and to derive the module's constructor field.
+   * @param moduleName The name of the module whose types are being merged. Used to stamp the @sourceMap directive and to derive the module's constructor field.
    */
   merge = (moduleTypes: JSON, moduleName: string): Schema => {
     const ctx = this._ctx.select("merge", { moduleTypes, moduleName })

@@ -11,12 +11,6 @@ import (
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-// sourceModuleDirectiveName is the directive stamped on every type and
-// constructor field a module contributes to a schema, recording which module
-// owns it. It mirrors the @sourceModuleName directive carried by the
-// introspection JSON the engine hands to SDKs.
-const sourceModuleDirectiveName = "sourceModuleName"
-
 // Schema is a manipulable, in-memory GraphQL introspection schema. It wraps
 // the introspection JSON shape (cmd/codegen/introspection) shared by every SDK
 // so that schema inspection and merge operations can be exposed as engine
@@ -70,13 +64,16 @@ func (s *Schema) Contents() (JSON, error) {
 
 // Merge returns a new Schema with the module-defined types from moduleTypes
 // (itself introspection JSON) appended. Every inserted type, and the module's
-// Query constructor field, is stamped with an @sourceModuleName directive
-// carrying moduleName.
+// Query constructor field, is stamped with an @sourceMap directive carrying
+// moduleName — the same directive the engine stamps on module types and the
+// codegen file-splitter routes on.
 //
 // Merge is idempotent: re-merging a module already present on the schema is a
-// no-op (the multi-pass codegen loop reuses the same schema across passes). A
-// genuine name collision with a pre-existing, differently-owned type is an
-// error. Neither the receiver nor the moduleTypes input is mutated.
+// no-op (the multi-pass codegen loop reuses the same schema across passes).
+// Presence is detected via @sourceMap.module, so types the engine itself
+// contributed for the module are recognized too. A genuine name collision with
+// a pre-existing, differently-owned type is an error. Neither the receiver nor
+// the moduleTypes input is mutated.
 func (s *Schema) Merge(moduleTypes JSON, moduleName string) (*Schema, error) {
 	if moduleName == "" {
 		return nil, fmt.Errorf("module name is required")
@@ -105,7 +102,7 @@ func (s *Schema) Merge(moduleTypes JSON, moduleName string) (*Schema, error) {
 		if target.Types.Get(t.Name) != nil {
 			return nil, fmt.Errorf("type %q already exists in schema", t.Name)
 		}
-		t.Directives = append(t.Directives, sourceModuleDirective(moduleName), sourceMapDirective(moduleName))
+		t.Directives = append(t.Directives, sourceMapDirective(moduleName))
 		target.Types = append(target.Types, t)
 	}
 
@@ -155,7 +152,7 @@ func mergeQueryConstructor(target, module *codegenintrospection.Schema, moduleNa
 
 	if modQuery := module.Query(); modQuery != nil {
 		if field := findField(modQuery, fieldName); field != nil {
-			field.Directives = append(field.Directives, sourceModuleDirective(moduleName), sourceMapDirective(moduleName))
+			field.Directives = append(field.Directives, sourceMapDirective(moduleName))
 			queryType.Fields = append(queryType.Fields, field)
 			return nil
 		}
@@ -178,51 +175,30 @@ func mergeQueryConstructor(target, module *codegenintrospection.Schema, moduleNa
 			},
 		},
 		Args:       codegenintrospection.InputValues{},
-		Directives: codegenintrospection.Directives{sourceModuleDirective(moduleName), sourceMapDirective(moduleName)},
+		Directives: codegenintrospection.Directives{sourceMapDirective(moduleName)},
 	})
 	return nil
 }
 
 // moduleAlreadyMerged reports whether the schema already carries a type or a
-// Query constructor field stamped with @sourceModuleName for the given module.
+// Query constructor field stamped with @sourceMap for the given module. This
+// keys on the same directive the engine emits on module types, so a module
+// whose types are already present — whether from a prior Merge or contributed
+// by the engine — is recognized.
 func moduleAlreadyMerged(schema *codegenintrospection.Schema, moduleName string) bool {
-	want := encodeDirectiveValue(moduleName)
 	for _, t := range schema.Types {
-		if hasSourceModuleDirective(t.Directives, want) {
+		if sm := t.Directives.SourceMap(); sm != nil && sm.Module == moduleName {
 			return true
 		}
 	}
 	if query := schema.Query(); query != nil {
 		for _, f := range query.Fields {
-			if hasSourceModuleDirective(f.Directives, want) {
+			if sm := f.Directives.SourceMap(); sm != nil && sm.Module == moduleName {
 				return true
 			}
 		}
 	}
 	return false
-}
-
-// hasSourceModuleDirective reports whether directives contain an
-// @sourceModuleName whose name argument equals the encoded value.
-func hasSourceModuleDirective(directives codegenintrospection.Directives, encodedName string) bool {
-	d := directives.Directive(sourceModuleDirectiveName)
-	if d == nil {
-		return false
-	}
-	v := d.Arg("name")
-	return v != nil && *v == encodedName
-}
-
-// sourceModuleDirective builds the @sourceModuleName directive stamped on
-// merged types and constructor fields.
-func sourceModuleDirective(moduleName string) *codegenintrospection.Directive {
-	value := encodeDirectiveValue(moduleName)
-	return &codegenintrospection.Directive{
-		Name: sourceModuleDirectiveName,
-		Args: []*codegenintrospection.DirectiveArg{
-			{Name: "name", Value: &value},
-		},
-	}
 }
 
 // sourceMapDirective builds the @sourceMap directive stamped on merged
@@ -241,8 +217,8 @@ func sourceMapDirective(moduleName string) *codegenintrospection.Directive {
 
 // encodeDirectiveValue JSON-encodes a directive argument value, mirroring how
 // introspection responses carry directive argument values (a string is
-// quoted). The write side (sourceModuleDirective) and the read side
-// (moduleAlreadyMerged) share this so the encoding can never drift.
+// quoted). sourceMapDirective uses it on the write side; the read side decodes
+// via Directives.SourceMap().
 func encodeDirectiveValue(s string) string {
 	encoded, _ := json.Marshal(s)
 	return string(encoded)

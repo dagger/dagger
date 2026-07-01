@@ -14252,8 +14252,8 @@ class Schema(Type):
             constructor field for the module is added to the Query type.
         module_name:
             The name of the module whose types are being merged. Used to stamp
-            the @sourceModuleName directive and to derive the module's
-            constructor field.
+            the @sourceMap directive and to derive the module's constructor
+            field.
         """
         _args = [
             Arg("moduleTypes", module_types),

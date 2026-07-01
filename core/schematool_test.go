@@ -140,14 +140,11 @@ func TestSchemaMerge(t *testing.T) {
 	merged, err := base.Merge(JSON(echoModuleJSON), "echo")
 	require.NoError(t, err)
 
-	// The module's type is added and stamped with @sourceModuleName.
+	// The module's type is added and stamped with @sourceMap.
 	echo := schemaType(merged, "Echo")
 	require.NotNil(t, echo)
-	stamp := echo.Directives.Directive(sourceModuleDirectiveName)
-	require.NotNil(t, stamp)
-	require.Equal(t, `"echo"`, *stamp.Arg("name"))
 
-	// @sourceMap is also stamped so the codegen file-splitter
+	// @sourceMap is stamped so the codegen file-splitter
 	// (DependencyNames/Include/Exclude) can place the type in
 	// internal/dagger/echo.gen.go.
 	echoSM := echo.Directives.SourceMap()
@@ -160,7 +157,6 @@ func TestSchemaMerge(t *testing.T) {
 	require.Equal(t, codegenintrospection.TypeKindNonNull, ctor.TypeRef.Kind)
 	require.Equal(t, "Echo", ctor.TypeRef.OfType.Name)
 	require.Empty(t, ctor.Args)
-	require.NotNil(t, ctor.Directives.Directive(sourceModuleDirectiveName))
 
 	// The synthesized constructor field also carries @sourceMap.
 	ctorSM := ctor.Directives.SourceMap()
@@ -186,7 +182,6 @@ func TestSchemaMergeReusesModuleConstructor(t *testing.T) {
 	require.NotNil(t, ctor)
 	require.Len(t, ctor.Args, 1)
 	require.Equal(t, "prefix", ctor.Args[0].Name)
-	require.NotNil(t, ctor.Directives.Directive(sourceModuleDirectiveName))
 
 	// The reused constructor field also carries @sourceMap so the codegen
 	// file-splitter can route it into internal/dagger/greeter.gen.go.
@@ -230,7 +225,6 @@ func TestSchemaMergeInterfaceAndEnum(t *testing.T) {
 		animal := schemaType(merged, "Animal")
 		require.NotNil(t, animal)
 		require.Equal(t, codegenintrospection.TypeKindInterface, animal.Kind)
-		require.NotNil(t, animal.Directives.Directive(sourceModuleDirectiveName))
 		sm := animal.Directives.SourceMap()
 		require.NotNil(t, sm, "@sourceMap directive must be present on merged interface type")
 		require.Equal(t, "zoo", sm.Module)

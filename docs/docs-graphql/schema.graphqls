@@ -5556,7 +5556,7 @@ type Schema implements Node {
 
     """
     The name of the module whose types are being merged. Used to stamp the
-    @sourceModuleName directive and to derive the module's constructor field.
+    @sourceMap directive and to derive the module's constructor field.
     """
     moduleName: String!
   ): Schema!

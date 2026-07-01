@@ -111,13 +111,13 @@ func (s introSchema) findType(name string) *introType {
 	return nil
 }
 
-func hasSourceModuleStamp(directives []introDirective, encodedName string) bool {
+func hasSourceMapStamp(directives []introDirective, encodedModule string) bool {
 	for _, d := range directives {
-		if d.Name != "sourceModuleName" {
+		if d.Name != "sourceMap" {
 			continue
 		}
 		for _, a := range d.Args {
-			if a.Name == "name" && a.Value != nil && *a.Value == encodedName {
+			if a.Name == "module" && a.Value != nil && *a.Value == encodedModule {
 				return true
 			}
 		}
@@ -159,8 +159,8 @@ func (SchemaToolsSuite) TestMerge(ctx context.Context, t *testctx.T) {
 	require.NotNil(t, echo)
 	require.Equal(t, "OBJECT", echo.Kind)
 	require.Equal(t, "Echo object", echo.Description)
-	require.True(t, hasSourceModuleStamp(echo.Directives, `"echo"`),
-		"Echo type should carry @sourceModuleName")
+	require.True(t, hasSourceMapStamp(echo.Directives, `"echo"`),
+		"Echo type should carry @sourceMap")
 
 	query := merged.findType("Query")
 	require.NotNil(t, query)
@@ -177,8 +177,8 @@ func (SchemaToolsSuite) TestMerge(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "OBJECT", ctor.Type.OfType.Kind)
 	require.NotNil(t, ctor.Type.OfType.Name)
 	require.Equal(t, "Echo", *ctor.Type.OfType.Name)
-	require.True(t, hasSourceModuleStamp(ctor.Directives, `"echo"`),
-		"echo constructor should carry @sourceModuleName")
+	require.True(t, hasSourceMapStamp(ctor.Directives, `"echo"`),
+		"echo constructor should carry @sourceMap")
 }
 
 func (SchemaToolsSuite) TestMergeIdempotent(ctx context.Context, t *testctx.T) {
