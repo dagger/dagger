@@ -337,6 +337,22 @@ func (JavaSuite) TestGitRef(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "container-echo")
 }
 
+// TestNewStyleSkipsCodegen loads a "new-style" Java module — one that vendors
+// the SDK as committed source and sets codegen.automaticGitignore=false —
+// and verifies the runtime builds and runs it without running codegen. The
+// build only succeeds via the build-only branch: the module ships the new
+// two-pass pom and committed entrypoint, so the legacy codegen path (which
+// expects the dagger.module.deps version dance) would fail on it.
+func (JavaSuite) TestNewStyleSkipsCodegen(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := javaModule(t, c, "new-style").
+		With(daggerCallAt(".", "container-echo", "--string-arg", "hi-new-style", "stdout")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hi-new-style")
+}
+
 func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/java", moduleName))

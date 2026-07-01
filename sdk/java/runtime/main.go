@@ -79,6 +79,18 @@ func (m *JavaSdk) Codegen(
 	if err := m.setModuleConfig(ctx, modSource); err != nil {
 		return nil, err
 	}
+
+	// New-style modules own their codegen in dagger/java-sdk: the engine must
+	// not regenerate or re-vendor anything here, so `dagger develop` is a no-op
+	// on them. Return the existing sources unchanged.
+	if newStyle, err := m.newStyleModule(ctx, modSource); err != nil {
+		return nil, err
+	} else if newStyle {
+		return dag.GeneratedCode(
+			dag.Directory().WithDirectory("/", modSource.ContextDirectory()),
+		), nil
+	}
+
 	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
@@ -302,13 +314,25 @@ func (m *JavaSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	// Get a container with the user module sources and the SDK packages built and installed
-	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
+	newStyle, err := m.newStyleModule(ctx, modSource)
 	if err != nil {
 		return nil, err
 	}
-	// Build the executable jar
-	jar, err := m.buildJar(ctx, mvnCtr)
+
+	var jar *dagger.File
+	if newStyle {
+		// New-style module: the vendored SDK and the generated entrypoint are
+		// already committed, so there is no codegen to run; just build the jar.
+		jar, err = m.buildModuleOnly(ctx, modSource)
+	} else {
+		// Legacy module: build the SDK dependencies, run codegen, then build the jar.
+		var mvnCtr *dagger.Container
+		mvnCtr, err = m.codegenBase(ctx, modSource, introspectionJSON)
+		if err != nil {
+			return nil, err
+		}
+		jar, err = m.buildJar(ctx, mvnCtr)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -323,6 +347,24 @@ func (m *JavaSdk) ModuleRuntime(
 		WithEntrypoint([]string{"java", "-jar", filepath.Join(ModDirPath, "module.jar")})
 
 	return javaCtr, nil
+}
+
+// buildModuleOnly builds the jar for a new-style module without any codegen or
+// SDK vendoring: the module already carries its vendored SDK sources and the
+// generated entrypoint as committed source, so a plain `mvn package` (the pom's
+// dagger.proc defaults to "none") is enough. It needs neither m.SDKSourceDir
+// nor the introspection schema.
+func (m *JavaSdk) buildModuleOnly(ctx context.Context, modSource *dagger.ModuleSource) (*dagger.File, error) {
+	ctr, err := m.mvnContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.
+		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2"), dagger.ContainerWithMountedCacheOpts{Sharing: dagger.CacheSharingModeLocked}).
+		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
+		WithWorkdir(m.moduleConfig.modulePath()).
+		WithExec(m.mavenCommand("mvn", "clean", "package", "-DskipTests"))
+	return m.finalJar(ctx, ctr)
 }
 
 // buildJar builds and returns the generated jar from the user module
@@ -411,6 +453,52 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 	}
 
 	return nil
+}
+
+// daggerConfig is the subset of dagger.json this runtime needs to read.
+type daggerConfig struct {
+	Codegen *struct {
+		AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
+	} `json:"codegen,omitempty"`
+}
+
+// newStyleFromConfig reports whether a dagger.json marks a "new-style" module:
+// codegen.automaticGitignore explicitly false. Opting out of the generated
+// .gitignore means the module commits its generated files, so the runtime
+// trusts them and skips codegen, building straight from the committed sources.
+// Anything else (missing, true, or unparseable) is treated as a legacy module
+// so existing modules keep their current behaviour.
+//
+// This mirrors the Go SDK's useRuntimeCodegen signal. Unlike Go, we do not add
+// an engine-version gate: a new-style Java module vendors the SDK library and
+// the generated entrypoint together as committed source, so it is fully
+// self-contained and always compiles — there is no engine-version-specific
+// dispatch that could go stale across versions.
+func newStyleFromConfig(content []byte) bool {
+	var cfg daggerConfig
+	if err := json.Unmarshal(content, &cfg); err != nil {
+		return false
+	}
+	return cfg.Codegen != nil &&
+		cfg.Codegen.AutomaticGitignore != nil &&
+		!*cfg.Codegen.AutomaticGitignore
+}
+
+// newStyleModule reads the module's dagger.json from the module source and
+// reports whether it is a new-style module (see newStyleFromConfig).
+func (m *JavaSdk) newStyleModule(ctx context.Context, modSource *dagger.ModuleSource) (bool, error) {
+	root, err := modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return false, err
+	}
+	content, err := modSource.
+		ContextDirectory().
+		File(filepath.Join(root, "dagger.json")).
+		Contents(ctx)
+	if err != nil {
+		return false, nil //nolint:nilerr // a missing/unreadable dagger.json falls back to the legacy codegen path
+	}
+	return newStyleFromConfig([]byte(content)), nil
 }
 
 func (m *JavaSdk) getDaggerVersionForModule(ctx context.Context, introspectionJSON *dagger.File) (string, error) {
