@@ -155,11 +155,11 @@ func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *test
 		return out, runErr
 	}
 
-	// Initialize a workspace with the go-sdk generator installed.
+	// Initialize a workspace with go-sdk installed and marked as an SDK.
+	// Workspace creation is implicit on first install (it creates dagger.toml
+	// at the workspace root), so there is no separate `workspace init` step.
 	require.NoError(t, exec.Command("git", "-C", workDir, "init").Run())
-	out, err := run("workspace", "init")
-	require.NoError(t, err, string(out))
-	out, err = run("install", "github.com/dagger/go-sdk")
+	out, err := run("sdk", "install", "go")
 	require.NoError(t, err, string(out))
 
 	// A Go SDK module (discovered by go-sdk's generate-all) that declares the

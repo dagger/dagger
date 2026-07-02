@@ -84,8 +84,14 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		partial = true
 	}
 
-	if len(initialGoFiles) == 0 {
+	if len(initialGoFiles) == 0 && !moduleConfig.IsInit {
 		// write an initial main.go if no main pkg exists yet
+		//
+		// Skipped at module-init time: the SDK that drives `dagger module init`
+		// owns the starter source via its `initModule` Changeset, and the engine
+		// merges that with this generated context. Scaffolding a main.go here too
+		// would make both changesets add the same path and the merge would fail
+		// with "path added in both changesets".
 		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
 			return nil, err
 		}

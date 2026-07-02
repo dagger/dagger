@@ -115,9 +115,10 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 			modGen := goGitBase(t, c).
 				With(withModuleFixture(t, c, ".", "go/source-map-root")).
 				With(withModuleFixture(t, c, "dep", tc.fixture)).
-				With(daggerClientInstallAt("go", "client"))
+				With(clientGeneratorWorkspaceClients(clientGeneratorSDKClientFor("go", "client"))).
+				With(daggerExec("generate", "-y"))
 
-			codegenContents, err := modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
+			codegenContents, err := modGen.File("client/dep.gen.go").Contents(ctx)
 			require.NoError(t, err)
 
 			for _, match := range tc.matches.golang {
@@ -133,9 +134,12 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 			modGen := goGitBase(t, c).
 				With(withModuleFixture(t, c, ".", "typescript/source-map-root")).
 				With(withModuleFixture(t, c, "dep", tc.fixture)).
-				With(daggerClientInstallAt("typescript", "sdk"))
+				With(clientGeneratorWorkspaceClients(clientGeneratorSDKClientFor("typescript", "sdk"))).
+				With(daggerExec("generate", "-y"))
 
-			codegenContents, err := modGen.File(sdkCodegenFile(t, "typescript")).Contents(ctx)
+			// Dependency types are split into their own <dep>.gen.ts file, so the
+			// dep's source-map comments land in dep.gen.ts, not client.gen.ts.
+			codegenContents, err := modGen.File("sdk/dep.gen.ts").Contents(ctx)
 			require.NoError(t, err)
 
 			for _, match := range tc.matches.typescript {

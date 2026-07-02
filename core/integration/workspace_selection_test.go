@@ -11,6 +11,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,15 +35,6 @@ func workspaceSelectionDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-		})
-	}
-}
-
-func workspaceSelectionDaggerExecFail(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-			Expect:                        dagger.ReturnTypeFailure,
 		})
 	}
 }
@@ -283,6 +275,17 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", remoteRef)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":"/","configFile":"dagger.toml"}}`, out)
+
+		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{directory(path:"/"){entries}}}`, "-W", remoteRef)).Stdout(ctx)
+		require.NoError(t, err)
+		var got struct {
+			CurrentWorkspace struct {
+				Directory directoryEntries `json:"directory"`
+			} `json:"currentWorkspace"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(out), &got))
+		requireEntry(t, got.CurrentWorkspace.Directory.Entries, "dagger.toml")
+		requireNoEntry(t, got.CurrentWorkspace.Directory.Entries, ".git")
 	})
 
 	t.Run("relative -W is resolved after --workdir changes cwd", func(ctx context.Context, t *testctx.T) {
@@ -323,21 +326,20 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 // TestWorkspaceSelectionCommandPolicy should pin down which commands accept
 // --workspace and where local-only restrictions are enforced.
 func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.Context, t *testctx.T) {
-	t.Run("migrate rejects -W in integration", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		ctr := workspaceBase(t, c)
-
-		out, err := ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "migrate")).CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, `--workspace is not supported for "dagger migrate"`)
-	})
+	// The `dagger migrate` command was removed in the CLI 1.0 redesign;
+	// migration is now part of `dagger setup`. The -W rejection test it
+	// used to anchor no longer applies.
 
 	t.Run("local-only workspace mutations accept a local selected workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
+		// `dagger workspace init` was removed in CLI 1.0; a raw `workspace
+		// config` write (which creates dagger.toml when missing) is the modern
+		// local-only mutation that materializes a workspace config at the
+		// selected workspace's cwd.
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			WithWorkdir("/work/caller").
-			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "init", "--here"))
+			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "config", "modules.example.source", "github.com/acme/example", "--here"))
 
 		_, err := ctr.WithExec([]string{"test", "-f", "/work/selected/dagger.toml"}).Sync(ctx)
 		require.NoError(t, err)
@@ -349,14 +351,42 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 		c := connect(ctx, t)
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceSelectionSimpleWorkspaceDir(c, "remote", "Remote", "remote workspace"))
 
-		out, err := c.Container().From(alpineImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/empty").
-			With(workspaceSelectionDaggerQueryFail(`{currentWorkspace{init}}`, "-W", remoteRef)).
-			CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "workspace init is local-only")
-		require.NotContains(t, out, "--workspace must be a local path")
+		for _, tc := range []struct {
+			name  string
+			query string
+		}{
+			{
+				name:  "init",
+				query: `{currentWorkspace{init}}`,
+			},
+			{
+				name:  "configWrite",
+				query: `{currentWorkspace{configWrite(key:"modules.demo.source", value:"demo")}}`,
+			},
+			{
+				name:  "moduleInit",
+				query: `{currentWorkspace{moduleInit(name:"demo")}}`,
+			},
+			{
+				name:  "update",
+				query: `{currentWorkspace{update{isEmpty}}}`,
+			},
+			{
+				name:  "migrate",
+				query: `{currentWorkspace{migrate{steps{id}}}}`,
+			},
+		} {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				out, err := c.Container().From(alpineImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/empty").
+					With(workspaceSelectionDaggerQueryFail(tc.query, "-W", remoteRef)).
+					CombinedOutput(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "local-only")
+				require.NotContains(t, out, "--workspace must be a local path")
+			})
+		}
 	})
 }
 
@@ -816,7 +846,6 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx conte
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
-			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
 source = ".dagger/modules/nester"
@@ -843,7 +872,6 @@ greeting = "selected-ci"
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
-			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
 source = ".dagger/modules/nester"

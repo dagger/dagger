@@ -2,27 +2,17 @@ package daggercmd
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"text/tabwriter"
 	"time"
 
-	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/dagql/dagui"
-	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/engine/slog"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
-	"github.com/dagger/dagger/util/cleanups"
-	telemetry "github.com/dagger/otel-go"
 )
 
 const cloudCheckFetchLimit = 100
@@ -35,19 +25,6 @@ type cloudCheckSelectorFlags struct {
 	GitSHA     []string
 	Workspace  []string
 	Check      []string
-}
-
-func (f cloudCheckSelectorFlags) hasCloudSelector() bool {
-	return len(f.GitHubRepo) > 0 ||
-		len(f.GitHubPR) > 0 ||
-		len(f.GitBranch) > 0 ||
-		len(f.GitTag) > 0 ||
-		len(f.GitSHA) > 0 ||
-		len(f.Workspace) > 0
-}
-
-func (f cloudCheckSelectorFlags) selected(dim string) bool {
-	return len(f.values(dim)) > 0
 }
 
 func (f cloudCheckSelectorFlags) values(dim string) []string {
@@ -81,13 +58,6 @@ var cloudCheckDimensions = []string{
 	"check",
 }
 
-type cloudCheckQueryResult struct {
-	OrgName string
-	OrgID   string
-	Client  *cloudapi.Client
-	Rows    []cloudCheckRow
-}
-
 type cloudCheckRow struct {
 	Dimensions map[string]string `json:"dimensions"`
 	Result     string            `json:"result"`
@@ -100,54 +70,7 @@ type cloudCheckRow struct {
 	Check  cloudapi.Check       `json:"-"`
 }
 
-func (cli *CloudCLI) TryReplayCloudChecksForWorkspace(cmd *cobra.Command, address string, checks []string) (bool, error) {
-	res, selectors, err := cli.loadCloudCheckRowsForWorkspaceAcrossUserOrgs(cmd.Context(), address, checks, false)
-	if err != nil {
-		return false, err
-	}
-	if len(res.Rows) == 0 {
-		return false, nil
-	}
-	if err := cli.replayCloudCheckResult(cmd, res, selectors); err != nil {
-		return true, err
-	}
-	return true, nil
-}
-
-func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQueryResult, selectors cloudCheckSelectorFlags) error {
-	if len(res.Rows) == 0 {
-		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("no Cloud check result found")}
-	}
-
-	commit, rows, err := selectCloudCheckCommit(res.Rows, selectors)
-	if err != nil {
-		renderAmbiguousCloudChecks(cmd, res.Rows)
-		return err
-	}
-	checks := checksFromRows(rows)
-	if len(checks) == 0 {
-		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("no Cloud check result found")}
-	}
-
-	result := aggregateCloudResult(rows)
-	renderCloudCheckReplayBanner(cmd, commit, rows, result)
-
-	if cloudChecksHaveTraces(checks) {
-		if err := replayCloudChecks(cmd, res.Client, res.OrgID, commit, checks); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Cloud trace replay failed: %v\n\n", err)
-			renderCloudCheckRows(cmd, res.OrgName, rows)
-		}
-	} else {
-		renderCloudCheckRows(cmd, res.OrgName, rows)
-	}
-
-	if result != "green" {
-		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("cloud checks are %s", result)}
-	}
-	return nil
-}
-
-func (cli *CloudCLI) loadCloudCheckRowsAcrossUserOrgs(ctx context.Context, selectors cloudCheckSelectorFlags, login bool) (*cloudCheckQueryResult, error) {
+func (cli *CloudCLI) loadCloudCheckRowsAcrossUserOrgs(ctx context.Context, selectors cloudCheckSelectorFlags, login bool) ([]cloudCheckRow, error) {
 	client, _, err := cli.cloudClientWithLogin(ctx, login)
 	if err != nil {
 		return nil, err
@@ -164,12 +87,7 @@ func (cli *CloudCLI) loadCloudCheckRowsAcrossUserOrgs(ctx context.Context, selec
 			return nil, err
 		}
 		if len(rows) > 0 {
-			return &cloudCheckQueryResult{
-				OrgName: org.Name,
-				OrgID:   org.ID,
-				Client:  client,
-				Rows:    rows,
-			}, nil
+			return rows, nil
 		}
 	}
 
@@ -195,10 +113,7 @@ func (cli *CloudCLI) loadCloudCheckRowsAcrossUserOrgs(ctx context.Context, selec
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	return &cloudCheckQueryResult{
-		Client: client,
-		Rows:   rows,
-	}, nil
+	return rows, nil
 }
 
 func loadCloudCheckRowsForOrg(ctx context.Context, client *cloudapi.Client, orgName string, selectors cloudCheckSelectorFlags) ([]cloudCheckRow, error) {
@@ -250,126 +165,55 @@ func cloudRepoOwner(repo string) string {
 	return ""
 }
 
-func (cli *CloudCLI) loadCloudCheckRowsForWorkspaceAcrossUserOrgs(ctx context.Context, address string, checks []string, login bool) (*cloudCheckQueryResult, cloudCheckSelectorFlags, error) {
+func (cli *CloudCLI) loadCloudCheckRowsForWorkspace(ctx context.Context, address string, checks []string, login bool) ([]cloudCheckRow, error) {
 	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
 	if err != nil {
-		return nil, cloudCheckSelectorFlags{}, err
+		return nil, err
 	}
 	if !ok {
-		return nil, cloudCheckSelectorFlags{}, fmt.Errorf("workspace %q is not remote", address)
-	}
-
-	baseSelectors := cloudCheckSelectorFlags{
-		GitHubRepo: []string{remote.CloneRef},
-		Workspace:  []string{remote.BaseAddress},
-		Check:      checks,
+		return nil, fmt.Errorf("workspace %q is not remote", address)
 	}
 
 	client, _, err := cli.cloudClientWithLogin(ctx, login)
 	if err != nil {
-		return nil, cloudCheckSelectorFlags{}, err
+		return nil, err
 	}
-	user, err := client.User(ctx)
+
+	commits, err := client.UserChecks(ctx, []string{remote.CloneRef}, cloudCheckFetchLimit)
 	if err != nil {
-		return nil, cloudCheckSelectorFlags{}, err
+		return nil, fmt.Errorf("fetch Cloud checks for %s: %w", remote.CloneRef, err)
 	}
 
-	loadOrg := func(org cloudauth.Org) (*cloudCheckQueryResult, cloudCheckSelectorFlags, error) {
-		rows, err := loadCloudCheckRowsForOrg(ctx, client, org.Name, cloudCheckSelectorFlags{
-			GitHubRepo: []string{remote.CloneRef},
-		})
-		if err != nil {
-			return nil, cloudCheckSelectorFlags{}, err
+	commitsByOrg := map[string][]cloudapi.CheckCommit{}
+	orgs := make([]cloudauth.Org, 0)
+	for _, commit := range commits {
+		org := commit.Org
+		if _, ok := commitsByOrg[org.ID]; !ok {
+			orgs = append(orgs, cloudauth.Org{ID: org.ID, Name: org.Name})
 		}
-		rows, selectors, err := cloudRowsForWorkspaceAddress(ctx, rows, address, checks)
-		if err != nil {
-			return nil, cloudCheckSelectorFlags{}, err
-		}
-		if !selectors.hasCloudSelector() {
-			selectors = baseSelectors
-		}
-		return &cloudCheckQueryResult{
-			OrgName: org.Name,
-			OrgID:   org.ID,
-			Client:  client,
-			Rows:    rows,
-		}, selectors, nil
+		commitsByOrg[org.ID] = append(commitsByOrg[org.ID], commit)
 	}
 
-	orgs, preferred := orderCloudOrgsForRepos(user.Orgs, []string{remote.CloneRef})
-	for _, org := range orgs[:preferred] {
-		res, selectors, err := loadOrg(org)
+	ordered, _ := orderCloudOrgsForRepos(orgs, []string{remote.CloneRef})
+	for _, org := range ordered {
+		rows, err := cloudRowsForWorkspaceAddress(ctx, cloudCheckRows(org.Name, commitsByOrg[org.ID]), address, checks)
 		if err != nil {
-			return nil, cloudCheckSelectorFlags{}, err
+			return nil, err
 		}
-		if len(res.Rows) > 0 {
-			return res, selectors, nil
-		}
-	}
-
-	type orgWorkspaceRows struct {
-		index     int
-		res       *cloudCheckQueryResult
-		selectors cloudCheckSelectorFlags
-	}
-	results := make([]orgWorkspaceRows, 0, len(orgs)-preferred)
-	var mu sync.Mutex
-	eg, egctx := errgroup.WithContext(ctx)
-	eg.SetLimit(8)
-	for i, org := range orgs[preferred:] {
-		i, org := i, org
-		eg.Go(func() error {
-			rows, err := loadCloudCheckRowsForOrg(egctx, client, org.Name, cloudCheckSelectorFlags{
-				GitHubRepo: []string{remote.CloneRef},
-			})
-			if err != nil {
-				return err
-			}
-			rows, selectors, err := cloudRowsForWorkspaceAddress(egctx, rows, address, checks)
-			if err != nil {
-				return err
-			}
-			if !selectors.hasCloudSelector() {
-				selectors = baseSelectors
-			}
-			mu.Lock()
-			results = append(results, orgWorkspaceRows{
-				index:     i,
-				selectors: selectors,
-				res: &cloudCheckQueryResult{
-					OrgName: org.Name,
-					OrgID:   org.ID,
-					Client:  client,
-					Rows:    rows,
-				},
-			})
-			mu.Unlock()
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, cloudCheckSelectorFlags{}, err
-	}
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].index < results[j].index
-	})
-	for _, result := range results {
-		if len(result.res.Rows) > 0 {
-			return result.res, result.selectors, nil
+		if len(rows) > 0 {
+			return rows, nil
 		}
 	}
-	return &cloudCheckQueryResult{
-		Client: client,
-	}, baseSelectors, nil
+	return nil, nil
 }
 
-func cloudRowsForWorkspaceAddress(ctx context.Context, rows []cloudCheckRow, address string, checks []string) ([]cloudCheckRow, cloudCheckSelectorFlags, error) {
+func cloudRowsForWorkspaceAddress(ctx context.Context, rows []cloudCheckRow, address string, checks []string) ([]cloudCheckRow, error) {
 	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
 	if err != nil {
-		return nil, cloudCheckSelectorFlags{}, err
+		return nil, err
 	}
 	if !ok {
-		return nil, cloudCheckSelectorFlags{}, nil
+		return nil, nil
 	}
 	baseSelectors := cloudCheckSelectorFlags{
 		GitHubRepo: []string{remote.CloneRef},
@@ -381,7 +225,7 @@ func cloudRowsForWorkspaceAddress(ctx context.Context, rows []cloudCheckRow, add
 	for _, selector := range selectors {
 		out = append(out, filterCloudCheckRows(rows, selector)...)
 	}
-	return dedupeCloudCheckRows(out), firstNonEmptyCloudSelector(selectors), nil
+	return dedupeCloudCheckRows(out), nil
 }
 
 func cloudWorkspaceSelectors(base cloudCheckSelectorFlags, version string) []cloudCheckSelectorFlags {
@@ -436,15 +280,6 @@ func dedupeCloudCheckRows(rows []cloudCheckRow) []cloudCheckRow {
 		out = append(out, row)
 	}
 	return out
-}
-
-func firstNonEmptyCloudSelector(selectors []cloudCheckSelectorFlags) cloudCheckSelectorFlags {
-	for _, selector := range selectors {
-		if selector.hasCloudSelector() {
-			return selector
-		}
-	}
-	return cloudCheckSelectorFlags{}
 }
 
 func cloudCheckRows(orgName string, commits []cloudapi.CheckCommit) []cloudCheckRow {
@@ -598,451 +433,6 @@ func cloudDimensionMatches(dim, got string, values []string) bool {
 	return false
 }
 
-func selectCloudCheckCommit(rows []cloudCheckRow, selectors cloudCheckSelectorFlags) (cloudapi.CheckCommit, []cloudCheckRow, error) {
-	byCommit := map[string][]cloudCheckRow{}
-	for _, row := range rows {
-		key := cloudCommitKey(row.Commit)
-		byCommit[key] = append(byCommit[key], row)
-	}
-	if len(byCommit) == 1 {
-		for _, commitRows := range byCommit {
-			return commitRows[0].Commit, commitRows, nil
-		}
-	}
-
-	subjects := map[string]struct{}{}
-	for _, row := range rows {
-		subjects[cloudCheckSubject(row, selectors)] = struct{}{}
-	}
-	if len(subjects) > 1 {
-		return cloudapi.CheckCommit{}, nil, fmt.Errorf("selectors match multiple Cloud check subjects; add more selectors")
-	}
-
-	var selected []cloudCheckRow
-	for _, commitRows := range byCommit {
-		if selected == nil || latestCloudRowTime(commitRows).After(latestCloudRowTime(selected)) {
-			selected = commitRows
-		}
-	}
-	return selected[0].Commit, selected, nil
-}
-
-func cloudCheckSubject(row cloudCheckRow, selectors cloudCheckSelectorFlags) string {
-	repo := row.Dimensions["github-repo"]
-	switch {
-	case selectors.selected("github-pr") || row.Dimensions["github-pr"] != "":
-		return repo + "|pr|" + row.Dimensions["github-pr"]
-	case selectors.selected("git-branch") || row.Dimensions["git-branch"] != "":
-		return repo + "|branch|" + row.Dimensions["git-branch"]
-	case selectors.selected("git-tag") || row.Dimensions["git-tag"] != "":
-		return repo + "|tag|" + row.Dimensions["git-tag"]
-	case selectors.selected("git-sha"):
-		return repo + "|sha|" + row.Dimensions["git-sha"]
-	default:
-		return repo
-	}
-}
-
-func checksFromRows(rows []cloudCheckRow) []cloudapi.Check {
-	byName := make(map[string]cloudapi.Check, len(rows))
-	order := make([]string, 0, len(rows))
-	for _, row := range rows {
-		name := row.Check.Name
-		if _, ok := byName[name]; !ok {
-			order = append(order, name)
-		}
-		byName[name] = row.Check
-	}
-	checks := make([]cloudapi.Check, 0, len(order))
-	for _, name := range order {
-		checks = append(checks, byName[name])
-	}
-	return checks
-}
-
-func renderAmbiguousCloudChecks(cmd *cobra.Command, rows []cloudCheckRow) {
-	fmt.Fprintln(cmd.OutOrStdout(), "Selectors match multiple Cloud check subjects. Add more selectors.")
-	renderCloudList(cmd, rows, []string{"github-repo", "github-pr", "git-branch", "git-tag", "git-sha"})
-}
-
-func renderCloudCheckReplayBanner(cmd *cobra.Command, commit cloudapi.CheckCommit, rows []cloudCheckRow, result string) {
-	row := rows[0]
-	ref := cloudCheckRef(row)
-	fmt.Fprintf(cmd.OutOrStdout(), "Replaying Cloud Checks result from %s\n", relativeTime(latestCloudRowTime(rows)))
-	fmt.Fprintf(cmd.OutOrStdout(), "Workspace: %s\n", row.Dimensions["workspace"])
-	if ref != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "Ref:       %s\n", ref)
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "SHA:       %s\n", shortCloudSHA(firstNonEmpty(row.Dimensions["git-sha"], commit.CommitSHA)))
-	fmt.Fprintf(cmd.OutOrStdout(), "Result:    %s\n\n", result)
-}
-
-func renderCloudCheckRows(cmd *cobra.Command, orgName string, rows []cloudCheckRow) {
-	_ = orgName
-	renderCloudList(cmd, rows, []string{"check"})
-}
-
-func renderCloudList(cmd *cobra.Command, rows []cloudCheckRow, columns []string) {
-	grouped := groupCloudListRows(rows, columns)
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	headers := make([]string, 0, len(columns)+4)
-	for _, col := range columns {
-		headers = append(headers, strings.ToUpper(col))
-	}
-	headers = append(headers, "RESULT")
-	if contains(columns, "check") {
-		headers = append(headers, "DURATION", "TRACE")
-	}
-	headers = append(headers, "UPDATED")
-	fmt.Fprintln(tw, strings.Join(headers, "\t"))
-	for _, row := range grouped {
-		fields := make([]string, 0, len(headers))
-		for _, col := range columns {
-			fields = append(fields, dash(row.Values[col]))
-		}
-		fields = append(fields, row.Result)
-		if contains(columns, "check") {
-			fields = append(fields, formatCloudDuration(row.Duration), dash(row.TraceURL))
-		}
-		fields = append(fields, relativeTime(row.UpdatedAt))
-		fmt.Fprintln(tw, strings.Join(fields, "\t"))
-	}
-	_ = tw.Flush()
-}
-
-type groupedCloudListRow struct {
-	Values    map[string]string
-	Result    string
-	UpdatedAt time.Time
-	Duration  time.Duration
-	TraceURL  string
-	count     int
-}
-
-func groupCloudListRows(rows []cloudCheckRow, columns []string) []groupedCloudListRow {
-	byKey := map[string]*groupedCloudListRow{}
-	order := []string{}
-	for _, row := range rows {
-		values := map[string]string{}
-		keyParts := make([]string, len(columns))
-		for i, col := range columns {
-			values[col] = row.Dimensions[col]
-			keyParts[i] = col + "=" + row.Dimensions[col]
-		}
-		key := strings.Join(keyParts, "\x00")
-		group, ok := byKey[key]
-		if !ok {
-			group = &groupedCloudListRow{
-				Values:    values,
-				Result:    row.Result,
-				UpdatedAt: row.UpdatedAt,
-				Duration:  row.Duration,
-				TraceURL:  row.TraceURL,
-				count:     1,
-			}
-			byKey[key] = group
-			order = append(order, key)
-			continue
-		}
-		group.count++
-		group.Result = stricterCloudResult(group.Result, row.Result)
-		if row.UpdatedAt.After(group.UpdatedAt) {
-			group.UpdatedAt = row.UpdatedAt
-		}
-		if group.Duration != row.Duration {
-			group.Duration = 0
-		}
-		if group.TraceURL != row.TraceURL {
-			group.TraceURL = ""
-		}
-	}
-	out := make([]groupedCloudListRow, 0, len(order))
-	for _, key := range order {
-		out = append(out, *byKey[key])
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].UpdatedAt.After(out[j].UpdatedAt)
-	})
-	return out
-}
-
-func replayCloudChecks(cmd *cobra.Command, client *cloudapi.Client, orgID string, commit cloudapi.CheckCommit, checks []cloudapi.Check) error {
-	replayFrontend := newCloudCheckReplayFrontend(cmd.ErrOrStderr())
-	replayOpts := opts
-	replayOpts.NoExit = false
-	return replayFrontend.Run(cmd.Context(), replayOpts, func(ctx context.Context) (cleanups.CleanupF, error) {
-		spanExp := replayFrontend.SpanExporter()
-		defer spanExp.Shutdown(ctx)
-		logExp := replayFrontend.LogExporter()
-		defer logExp.Shutdown(ctx)
-
-		traceID, err := randomHexID(16)
-		if err != nil {
-			return nil, err
-		}
-		rootID, err := randomHexID(8)
-		if err != nil {
-			return nil, err
-		}
-
-		var allSpans []cloudapi.SpanData
-		var logBatches []struct {
-			OriginalTraceID string
-			RootSpanID      string
-		}
-		var rootStart, rootEnd time.Time
-
-		bulkReplay := len(checks) > 3
-		var mu sync.Mutex
-		eg, ctx := errgroup.WithContext(ctx)
-		eg.SetLimit(16)
-		for _, check := range checks {
-			check := check
-			eg.Go(func() error {
-				if bulkReplay || check.TraceID == "" {
-					checkSpanID, err := randomHexID(8)
-					if err != nil {
-						return err
-					}
-					checkSpan, start, end := syntheticCloudCheckSpan(traceID, checkSpanID, check, commit.Timestamp)
-					mu.Lock()
-					rootStart, rootEnd = extendBounds(rootStart, rootEnd, start, end)
-					allSpans = append(allSpans, checkSpan)
-					mu.Unlock()
-					return nil
-				}
-
-				var spans []cloudapi.SpanData
-				traceCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-				defer cancel()
-				if err := client.StreamSpans(traceCtx, orgID, check.TraceID, func(batch []cloudapi.SpanData) {
-					spans = append(spans, batch...)
-				}); err != nil {
-					if len(spans) == 0 {
-						slog.Warn("error streaming Cloud check trace", "check", check.Name, "trace", check.TraceID, "err", err)
-						return nil
-					}
-					slog.Warn("using partial Cloud check trace", "check", check.Name, "trace", check.TraceID, "err", err)
-				}
-				if len(spans) == 0 {
-					return nil
-				}
-				checkSpanID, err := randomHexID(8)
-				if err != nil {
-					return err
-				}
-				start, end := cloudSpanBounds(spans)
-				statusCode := "STATUS_CODE_OK"
-				if cloudResultForStatus(check.Status) == "red" {
-					statusCode = "STATUS_CODE_ERROR"
-				}
-				checkSpan := cloudapi.SpanData{
-					ID:         checkSpanID,
-					TraceID:    traceID,
-					Name:       check.Name,
-					Timestamp:  start,
-					EndTime:    &end,
-					Attributes: cloudCheckSpanAttributes(check),
-					Status: cloudapi.SpanStatus{
-						Code:    statusCode,
-						Message: check.Status,
-					},
-				}
-				var checkLogBatches []struct {
-					OriginalTraceID string
-					RootSpanID      string
-				}
-				for i := range spans {
-					if spans[i].ParentID == nil {
-						originalRootID := spans[i].ID
-						checkLogBatches = append(checkLogBatches, struct {
-							OriginalTraceID string
-							RootSpanID      string
-						}{OriginalTraceID: check.TraceID, RootSpanID: originalRootID})
-						parentID := checkSpanID
-						spans[i].ParentID = &parentID
-					}
-					spans[i].TraceID = traceID
-				}
-				mu.Lock()
-				rootStart, rootEnd = extendBounds(rootStart, rootEnd, start, end)
-				allSpans = append(allSpans, checkSpan)
-				allSpans = append(allSpans, spans...)
-				logBatches = append(logBatches, checkLogBatches...)
-				mu.Unlock()
-				return nil
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			return nil, err
-		}
-
-		if len(allSpans) == 0 {
-			return nil, fmt.Errorf("no replayable traces found")
-		}
-		if rootStart.IsZero() {
-			rootStart = time.Now()
-		}
-		if rootEnd.IsZero() || rootEnd.Before(rootStart) {
-			rootEnd = rootStart
-		}
-		rootSpan := cloudapi.SpanData{
-			ID:        rootID,
-			TraceID:   traceID,
-			Name:      "dagger check",
-			Timestamp: rootStart,
-			EndTime:   &rootEnd,
-			Attributes: map[string]any{
-				"dagger.io/replay":        true,
-				"dagger.io/replay.source": "cloud-checks",
-				"git.sha":                 commit.CommitSHA,
-			},
-		}
-		allSpans = append([]cloudapi.SpanData{rootSpan}, allSpans...)
-		for i := range allSpans {
-			if allSpans[i].ID != rootID && allSpans[i].ParentID == nil {
-				parentID := rootID
-				allSpans[i].ParentID = &parentID
-			}
-		}
-
-		spans := telemetry.SpansFromPB(cloudapi.SpansToPB(allSpans))
-		if err := spanExp.ExportSpans(ctx, spans); err != nil {
-			return nil, err
-		}
-		replayFrontend.SetPrimary(dagui.SpanID{SpanID: spans[0].SpanContext().SpanID()})
-
-		if len(checks) <= 3 {
-			eg, ctx := errgroup.WithContext(ctx)
-			for _, logs := range logBatches {
-				logs := logs
-				eg.Go(func() error {
-					return client.StreamLogs(ctx, orgID, logs.OriginalTraceID, logs.RootSpanID, func(messages []cloudapi.LogMessage) {
-						records := cloudapi.LogMessagesToRecords(traceID, messages)
-						if len(records) == 0 {
-							return
-						}
-						if err := logExp.Export(ctx, records); err != nil {
-							slog.Warn("error exporting logs", "err", err)
-						}
-					})
-				})
-			}
-			if err := eg.Wait(); err != nil {
-				return nil, err
-			}
-		}
-
-		return func() error { return nil }, nil
-	})
-}
-
-func newCloudCheckReplayFrontend(w io.Writer) idtui.Frontend {
-	switch progress {
-	case "plain":
-		return idtui.NewPlain(w)
-	case "dots":
-		return idtui.NewDots(w)
-	case "logs":
-		return idtui.NewLogs(w)
-	case "report", "tty":
-		return idtui.NewReporter(w)
-	default:
-		return idtui.NewReporter(w)
-	}
-}
-
-func syntheticCloudCheckSpan(traceID, spanID string, check cloudapi.Check, fallback time.Time) (cloudapi.SpanData, time.Time, time.Time) {
-	start := cloudCheckStart(check)
-	if start.IsZero() {
-		start = fallback
-	}
-	if start.IsZero() {
-		start = time.Now()
-	}
-	end := start
-	if check.EndTime != nil {
-		end = *check.EndTime
-	} else if d := check.DurationAsTime(); d > 0 {
-		end = start.Add(d)
-	}
-	if end.Before(start) {
-		end = start
-	}
-	statusCode := "STATUS_CODE_OK"
-	if cloudResultForStatus(check.Status) == "red" {
-		statusCode = "STATUS_CODE_ERROR"
-	}
-	return cloudapi.SpanData{
-		ID:        spanID,
-		TraceID:   traceID,
-		Name:      check.Name,
-		Timestamp: start,
-		EndTime:   &end,
-		Attributes: map[string]any{
-			"dagger.io/replay.summary": true,
-			"dagger.io/original.trace": check.TraceID,
-			telemetry.CheckNameAttr:    check.Name,
-			telemetry.CheckPassedAttr:  cloudResultForStatus(check.Status) == "green",
-		},
-		Status: cloudapi.SpanStatus{
-			Code:    statusCode,
-			Message: check.Status,
-		},
-	}, start, end
-}
-
-func cloudCheckSpanAttributes(check cloudapi.Check) map[string]any {
-	return map[string]any{
-		telemetry.CheckNameAttr:   check.Name,
-		telemetry.CheckPassedAttr: cloudResultForStatus(check.Status) == "green",
-	}
-}
-
-func cloudSpanBounds(spans []cloudapi.SpanData) (time.Time, time.Time) {
-	var start, end time.Time
-	for _, span := range spans {
-		if start.IsZero() || span.Timestamp.Before(start) {
-			start = span.Timestamp
-		}
-		spanEnd := span.Timestamp
-		if span.EndTime != nil {
-			spanEnd = *span.EndTime
-		}
-		if end.IsZero() || spanEnd.After(end) {
-			end = spanEnd
-		}
-	}
-	return start, end
-}
-
-func extendBounds(rootStart, rootEnd, start, end time.Time) (time.Time, time.Time) {
-	if rootStart.IsZero() || start.Before(rootStart) {
-		rootStart = start
-	}
-	if rootEnd.IsZero() || end.After(rootEnd) {
-		rootEnd = end
-	}
-	return rootStart, rootEnd
-}
-
-func randomHexID(bytesLen int) (string, error) {
-	buf := make([]byte, bytesLen)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
-}
-
-func cloudChecksHaveTraces(checks []cloudapi.Check) bool {
-	for _, check := range checks {
-		if check.TraceID != "" {
-			return true
-		}
-	}
-	return false
-}
-
 func normalizeGitHubRepo(repo string) string {
 	repo = strings.TrimSpace(repo)
 	repo = strings.TrimPrefix(repo, "https://")
@@ -1081,14 +471,6 @@ func cloudResultRank(result string) int {
 	default:
 		return 0
 	}
-}
-
-func aggregateCloudResult(rows []cloudCheckRow) string {
-	result := "green"
-	for _, row := range rows {
-		result = stricterCloudResult(result, row.Result)
-	}
-	return result
 }
 
 func cloudChecksSummary(rows []cloudCheckRow) string {
@@ -1252,19 +634,6 @@ func cloudCommitKey(commit cloudapi.CheckCommit) string {
 	return normalizeGitHubRepo(commit.Repo) + "@" + commit.CommitSHA
 }
 
-func cloudCheckRef(row cloudCheckRow) string {
-	switch {
-	case row.Dimensions["github-pr"] != "":
-		return "PR #" + row.Dimensions["github-pr"]
-	case row.Dimensions["git-branch"] != "":
-		return "branch " + row.Dimensions["git-branch"]
-	case row.Dimensions["git-tag"] != "":
-		return "tag " + row.Dimensions["git-tag"]
-	default:
-		return ""
-	}
-}
-
 func cloudTraceURL(orgName, traceID string) string {
 	if traceID == "" {
 		return ""
@@ -1288,22 +657,6 @@ func shortCloudSHA(sha string) string {
 	return sha
 }
 
-func formatCloudDuration(d time.Duration) string {
-	if d <= 0 {
-		return "-"
-	}
-	switch {
-	case d < time.Second:
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	case d < time.Minute:
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	case d < time.Hour:
-		return fmt.Sprintf("%dm%02ds", int(d/time.Minute), int((d%time.Minute)/time.Second))
-	default:
-		return fmt.Sprintf("%dh%02dm", int(d/time.Hour), int((d%time.Hour)/time.Minute))
-	}
-}
-
 func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return "-"
@@ -1322,20 +675,4 @@ func relativeTime(t time.Time) string {
 	default:
 		return t.Format("2006-01-02")
 	}
-}
-
-func dash(value string) string {
-	if value == "" {
-		return "-"
-	}
-	return value
-}
-
-func contains(values []string, needle string) bool {
-	for _, value := range values {
-		if value == needle {
-			return true
-		}
-	}
-	return false
 }

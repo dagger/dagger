@@ -26,6 +26,7 @@ import (
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
@@ -199,6 +200,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		locker: locker.New(),
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
+
+	// Let core (e.g. changeset export) drop this server's per-client workspace
+	// cache after workspace config is written to the host. One engine = one
+	// Server, so a process-global hook is sufficient.
+	core.SetWorkspaceInvalidator(srv.invalidateClientWorkspace)
 
 	// start the global namespace worker pool, which is used for running Go funcs
 	// in container namespaces dynamically
@@ -690,11 +696,11 @@ func (srv *Server) EngineName() string {
 }
 
 func (srv *Server) Clients() []string {
-	// Snapshot under daggerSessionsMu, then read mainClientCallerID under
-	// stateMu (it is set during initialization). Releasing daggerSessionsMu
-	// before taking stateMu avoids inverting removeDaggerSession's
-	// stateMu->daggerSessionsMu lock order; skip sessions that aren't
-	// initialized yet.
+	// Snapshot the session pointers under daggerSessionsMu, then read each
+	// session's liveness and identity WITHOUT any per-session lock: state is
+	// atomic and mainClientCallerID is immutable (set at construction). This is
+	// what keeps the active-clients API (polled by the cloud keepalive) from ever
+	// blocking on a session that is initializing or tearing down.
 	srv.daggerSessionsMu.RLock()
 	sessions := make([]*daggerSession, 0, len(srv.daggerSessions))
 	for _, sess := range srv.daggerSessions {
@@ -704,13 +710,10 @@ func (srv *Server) Clients() []string {
 
 	clients := map[string]struct{}{}
 	for _, sess := range sessions {
-		sess.stateMu.RLock()
-		if sess.state != sessionStateInitialized {
-			sess.stateMu.RUnlock()
+		if sess.state.Load() != sessionStateInitialized {
 			continue
 		}
 		clients[sess.mainClientCallerID] = struct{}{}
-		sess.stateMu.RUnlock()
 	}
 
 	return slices.Collect(maps.Keys(clients))
@@ -725,8 +728,14 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 
 	// note this *could* cause a panic in Session if it was still running, so
 	// the server should be shutdown first
+	// snapshot the session pointers into a slice (not an alias of the live map)
+	// so concurrent pointer-conditional deleteSession calls can't race this
+	// iteration.
 	srv.daggerSessionsMu.Lock()
-	daggerSessions := srv.daggerSessions
+	daggerSessions := make([]*daggerSession, 0, len(srv.daggerSessions))
+	for _, s := range srv.daggerSessions {
+		daggerSessions = append(daggerSessions, s)
+	}
 	srv.daggerSessionsMu.Unlock()
 
 	if srv.engineCache != nil {
@@ -735,9 +744,15 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	}
 
 	for _, s := range daggerSessions {
-		s.stateMu.Lock()
-		err = errors.Join(err, srv.removeDaggerSession(ctx, s))
-		s.stateMu.Unlock()
+		s.lifecycleMu.Lock()
+		// Wait out any in-flight init (lifecycleMu serializes it), then tear down
+		// only if the session actually initialized; an already-removed tombstone
+		// or a still-uninitialized session has nothing (more) to remove here.
+		if s.state.Load() == sessionStateInitialized {
+			err = errors.Join(err, srv.removeDaggerSession(ctx, s))
+		}
+		s.lifecycleMu.Unlock()
+		srv.deleteSession(s)
 	}
 
 	if srv.engineCache != nil && len(srv.workerGCPolicies) > 0 {
@@ -921,11 +936,10 @@ func (srv *Server) gcClientDBs() {
 func (srv *Server) activeClientIDs() map[string]bool {
 	keep := map[string]bool{}
 
-	// Snapshot the sessions under daggerSessionsMu, then drop it before taking
-	// per-session locks: clients is written by getOrInitClient under clientMu
-	// (so must be read under clientMu), and removeDaggerSession takes
-	// daggerSessionsMu while holding stateMu, so holding daggerSessionsMu while
-	// acquiring stateMu here would risk a lock-order inversion.
+	// Snapshot session pointers under daggerSessionsMu, then per session read
+	// state atomically (lock-free) and the clients map under clientMu. No
+	// per-session lifecycle lock is taken, so the client-DB GC ticker can never
+	// block on a session that is initializing or tearing down.
 	srv.daggerSessionsMu.RLock()
 	sessions := make([]*daggerSession, 0, len(srv.daggerSessions))
 	for _, sess := range srv.daggerSessions {
@@ -934,12 +948,10 @@ func (srv *Server) activeClientIDs() map[string]bool {
 	srv.daggerSessionsMu.RUnlock()
 
 	for _, sess := range sessions {
-		sess.stateMu.RLock()
-		// clients is only populated once a session is initialized, and a
-		// removed session's client DBs are already being torn down, so only
-		// initialized sessions contribute IDs worth keeping.
-		if sess.state != sessionStateInitialized {
-			sess.stateMu.RUnlock()
+		// clients is only populated once a session is initialized, and a removed
+		// session's client DBs are already being torn down, so only initialized
+		// sessions contribute IDs worth keeping.
+		if sess.state.Load() != sessionStateInitialized {
 			continue
 		}
 		sess.clientMu.RLock()
@@ -947,7 +959,6 @@ func (srv *Server) activeClientIDs() map[string]bool {
 			keep[id] = true
 		}
 		sess.clientMu.RUnlock()
-		sess.stateMu.RUnlock()
 	}
 
 	return keep

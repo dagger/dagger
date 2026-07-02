@@ -36,24 +36,15 @@ If you use the GitHub web UI instead, clone your fork locally before continuing.
 git checkout -b add-dagger-checks
 ```
 
-## Find modules to install
+## Setup your workspace
+
+Scans your project and recommends suitable Dagger modules to be installed.
 
 ```shell
-dagger mod recommend
+dagger setup
 ```
 
-Dagger scans the project and recommends modules that match the tools it finds.
-
-## Install recommended modules
-
-Install the modules you want from the recommendations:
-
-```shell
-dagger mod install github.com/dagger/eslint
-dagger mod install github.com/dagger/vitest
-dagger mod install github.com/dagger/prettier
-```
-
+Select `Install` when prompted to install the recommended modules.
 This creates a `dagger.toml` configuration file and adds three modules: a linter, a test runner, and a code formatter.
 
 ## Run checks
@@ -62,14 +53,14 @@ This creates a `dagger.toml` configuration file and adds three modules: a linter
 dagger check
 ```
 
-All three modules run their checks concurrently. The linter and tests pass, but `prettier:check` fails — the example project has some unformatted files, so `dagger check` exits non-zero.
+All three modules run their checks concurrently. Some checks pass, but `prettier:check` fails — the example project has some unformatted files, so `dagger check` exits non-zero.
 
 ## Fix the formatting
 
 Let Prettier rewrite the files for you:
 
 ```shell
-dagger call prettier write
+dagger api call prettier write
 ```
 
 This returns a [changeset](../using-dagger/changesets.mdx) — the reformatted files — and applies it to your working tree. Run the checks again:
@@ -99,7 +90,7 @@ dagger ws remote
 Enable automatic checks for that repository:
 
 ```shell
-dagger ws autocheck on
+dagger cloud check on
 ```
 
 If you are not signed in to Dagger Cloud yet, the command guides you through signup or login. If the GitHub integration is not installed yet, the command guides you through authorizing GitHub and selecting the forked repository.
@@ -125,7 +116,7 @@ If you use the GitHub web UI instead, open a pull request from `add-dagger-check
 Your pull request should show Dagger check statuses. You can also inspect recent Dagger Cloud activity from the CLI:
 
 ```shell
-dagger ws activity
+dagger activity
 ```
 
 ## Next steps

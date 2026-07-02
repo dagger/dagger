@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	daggercmd "github.com/dagger/dagger/internal/cmd/dagger"
 	"github.com/dagger/dagger/internal/cobradocs"
@@ -64,8 +65,38 @@ func main() {
 		fmt.Fprintf(os.Stderr, "create output dir: %v\n", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(output, buf.Bytes(), 0o600); err != nil {
+	if err := os.WriteFile(output, []byte(escapeMDXAngles(buf.String())), 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "write %s: %v\n", output, err)
 		os.Exit(1)
 	}
+}
+
+// escapeMDXAngles makes the generated Markdown safe for MDX (Docusaurus). A
+// bare placeholder like <path> or <sdk> in a command description is otherwise
+// parsed as an unclosed JSX tag and breaks the docs build. It escapes < and >
+// to their HTML entities, but only outside inline code spans (backticks) and
+// fenced code blocks, so command-usage like `dagger sdk install <sdk>` and the
+// ```...``` synopsis blocks are left verbatim.
+func escapeMDXAngles(md string) string {
+	var b strings.Builder
+	inFence := false
+	for _, line := range strings.SplitAfter(md, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+			b.WriteString(line)
+			continue
+		}
+		if inFence {
+			b.WriteString(line)
+			continue
+		}
+		// Split on backticks: even-indexed segments are outside inline code.
+		segs := strings.Split(line, "`")
+		for i := 0; i < len(segs); i += 2 {
+			segs[i] = strings.ReplaceAll(segs[i], "<", "&lt;")
+			segs[i] = strings.ReplaceAll(segs[i], ">", "&gt;")
+		}
+		b.WriteString(strings.Join(segs, "`"))
+	}
+	return b.String()
 }

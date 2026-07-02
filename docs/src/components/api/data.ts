@@ -1,4 +1,5 @@
 import { usePluginData } from "@docusaurus/useGlobalData";
+import { useActiveVersion } from "@docusaurus/plugin-content-docs/client";
 
 // Mirrors the model produced by plugins/dagger-api-reference/schema.js.
 export type NamedKind =
@@ -112,12 +113,33 @@ export function typeSlug(name: string): string {
     .toLowerCase();
 }
 
-export function typeHref(name: string): string {
-  // Keep generated type links within the active docs version. Docusaurus does
-  // not rewrite root URL paths like /extending/types/foo for /next or
-  // /<version>/ docs routes, but relative URLs resolve from the current type
-  // page to the matching page in the same version.
-  return `./${typeSlug(name)}`;
+function joinUrlPaths(...parts: string[]): string {
+  const path = parts
+    .map((part, index) =>
+      index === 0
+        ? part.replace(/\/+$/g, "")
+        : part.replace(/^\/+|\/+$/g, "")
+    )
+    .filter(Boolean)
+    .join("/");
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+export function typePath(name: string): string {
+  return `/extending/types/${typeSlug(name)}`;
+}
+
+export function typeHref(name: string, versionPath = "/"): string {
+  return joinUrlPaths(versionPath, typePath(name));
+}
+
+export function useTypeHref(): (name: string) => string {
+  const activeVersion = useActiveVersion(undefined);
+  return (name: string) => {
+    const docId = `extending/types/${typeSlug(name)}`;
+    const activeVersionDoc = activeVersion?.docs.find((doc) => doc.id === docId);
+    return activeVersionDoc?.path ?? typeHref(name, activeVersion?.path ?? "/");
+  };
 }
 
 function namedType(type: TypeRef): Extract<TypeRef, { kind: "named" }> {

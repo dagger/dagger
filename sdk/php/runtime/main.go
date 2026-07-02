@@ -48,8 +48,15 @@ func (m *PhpSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
+	subPath, err := modSource.SourceSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module source path: %w", err)
+	}
+	// vendor/ is reinstalled by ModuleRuntime on every run, so keep it out of
+	// the generated changeset. Leaving it in makes the workspace diff-stat walk
+	// thousands of dependency files, which exhausts the engine's OS threads.
 	return dag.
-		GeneratedCode(ctr.Directory(ModSourcePath)).
+		GeneratedCode(ctr.Directory(ModSourcePath).WithoutDirectory(filepath.Join(subPath, "vendor"))).
 		WithVCSGeneratedPaths([]string{
 			GenPath + "/**",
 			"entrypoint.php",

@@ -548,6 +548,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a GraphQL introspection schema for merging.
+  """
+  @spec schema(t(), Dagger.JSON.t()) :: Dagger.Schema.t()
+  def schema(%__MODULE__{} = client, json) do
+    query_builder =
+      client.query_builder |> QB.select("schema") |> QB.put_arg("json", json)
+
+    %Dagger.Schema{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Creates a new secret.
   """
   @spec secret(t(), String.t(), [{:cache_key, String.t() | nil}]) :: Dagger.Secret.t()

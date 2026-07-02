@@ -18,7 +18,9 @@ type peekGraphQLRequest struct {
 }
 
 // PeekRootFields returns the top-level field names selected by a GraphQL-over-HTTP
-// request while preserving the request body for the real server.
+// request while preserving the request body for the real server. The operation
+// to inspect is chosen by the request's operation name (or the sole operation
+// when the document has just one).
 func PeekRootFields(r *http.Request) (bool, []string, error) {
 	query, operationName, ok, err := peekGraphQLRequestBody(r)
 	if err != nil || !ok {

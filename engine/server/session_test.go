@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -15,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
@@ -39,11 +42,11 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 	// Without the lock, ranging the map while another goroutine writes it is a
 	// fatal "concurrent map iteration and map write" (caught here under -race).
 	sess := &daggerSession{
-		state: sessionStateInitialized,
 		clients: map[string]*daggerClient{
 			"client-a": {clientID: "client-a"},
 		},
 	}
+	sess.state.Store(sessionStateInitialized)
 	srv := &Server{
 		daggerSessions: map[string]*daggerSession{
 			"session-a": sess,
@@ -86,13 +89,12 @@ func TestActiveClientIDsConcurrentSessionClientMutation(t *testing.T) {
 func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
 	t.Parallel()
 
-	// Regression test: clientFromIDs must read sess.state/sess.clients under
-	// stateMu while another goroutine reassigns those fields during session
-	// initialization. Without the stateMu gate this is a data race (caught
+	// Regression test: clientFromIDs must read sess.state (atomically) and
+	// sess.clients (under clientMu) while another goroutine mutates them during
+	// session initialization. Without that discipline this is a data race (caught
 	// here under -race).
-	sess := &daggerSession{
-		state: sessionStateUninitialized,
-	}
+	sess := &daggerSession{}
+	sess.state.Store(sessionStateUninitialized)
 	srv := &Server{
 		daggerSessions: map[string]*daggerSession{
 			"session-a": sess,
@@ -125,29 +127,228 @@ func TestClientFromIDsConcurrentSessionInitialization(t *testing.T) {
 	<-started
 
 	for i := 0; i < 1000; i++ {
-		sess.stateMu.Lock()
+		sess.clientMu.Lock()
 		sess.clients = map[string]*daggerClient{
 			"client-a": {clientID: "client-a"},
 		}
-		sess.state = sessionStateInitialized
-		sess.state = sessionStateUninitialized
+		sess.clientMu.Unlock()
+		sess.state.Store(sessionStateInitialized)
+		sess.state.Store(sessionStateUninitialized)
+		sess.clientMu.Lock()
 		sess.clients = nil
-		sess.stateMu.Unlock()
+		sess.clientMu.Unlock()
 	}
 
 	client := &daggerClient{clientID: "client-a"}
-	sess.stateMu.Lock()
 	sess.clientMu.Lock()
 	sess.clients = map[string]*daggerClient{
 		client.clientID: client,
 	}
 	sess.clientMu.Unlock()
-	sess.state = sessionStateInitialized
-	sess.stateMu.Unlock()
+	sess.state.Store(sessionStateInitialized)
 
 	got, err := srv.clientFromIDs("session-a", client.clientID)
 	require.NoError(t, err)
 	require.Same(t, client, got)
+}
+
+func TestClientsDoesNotBlockWhileSessionLifecycleLocked(t *testing.T) {
+	t.Parallel()
+
+	// Regression for the >15s active-clients stall (Discord: "Session lock might
+	// be causing unwanted session shutdowns"): Clients() must never acquire a
+	// session's lifecycleMu. A session stuck initializing or tearing down holds
+	// lifecycleMu for a long time (teardown has a 60s safeguard), but that must
+	// not stall the active-clients API the cloud keepalive polls.
+	live := &daggerSession{sessionID: "live", mainClientCallerID: "main-live"}
+	live.state.Store(sessionStateInitialized)
+	busy := &daggerSession{sessionID: "busy", mainClientCallerID: "main-busy"}
+	busy.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{
+		"live": live,
+		"busy": busy,
+	}}
+
+	// Simulate an in-progress init/teardown holding busy's lifecycleMu.
+	busy.lifecycleMu.Lock()
+	defer busy.lifecycleMu.Unlock()
+
+	done := make(chan []string, 1)
+	go func() { done <- srv.Clients() }()
+
+	select {
+	case clients := <-done:
+		require.ElementsMatch(t, []string{"main-live", "main-busy"}, clients)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Clients() blocked while a session's lifecycleMu was held")
+	}
+}
+
+func TestActiveClientIDsDoesNotBlockWhileSessionLifecycleLocked(t *testing.T) {
+	t.Parallel()
+
+	// activeClientIDs() (the client-DB GC ticker) must also never acquire a
+	// session's lifecycleMu, for the same reason as Clients().
+	live := &daggerSession{
+		sessionID: "live",
+		clients:   map[string]*daggerClient{"c-live": {clientID: "c-live"}},
+	}
+	live.state.Store(sessionStateInitialized)
+	busy := &daggerSession{
+		sessionID: "busy",
+		clients:   map[string]*daggerClient{"c-busy": {clientID: "c-busy"}},
+	}
+	busy.state.Store(sessionStateInitialized)
+	srv := &Server{daggerSessions: map[string]*daggerSession{
+		"live": live,
+		"busy": busy,
+	}}
+
+	busy.lifecycleMu.Lock()
+	defer busy.lifecycleMu.Unlock()
+
+	done := make(chan map[string]bool, 1)
+	go func() { done <- srv.activeClientIDs() }()
+
+	select {
+	case keep := <-done:
+		require.True(t, keep["c-live"], "expected live session's client to be kept")
+		require.True(t, keep["c-busy"], "expected initialized busy session's client to be kept")
+	case <-time.After(10 * time.Second):
+		t.Fatal("activeClientIDs() blocked while a session's lifecycleMu was held")
+	}
+}
+
+func TestGetOrInitClientReturnsFastForRemovedTombstone(t *testing.T) {
+	t.Parallel()
+
+	// A session mid-teardown holds lifecycleMu and is marked removed (a tombstone
+	// left in the registry until cleanup completes). A same-id getOrInitClient
+	// must bail immediately via the lock-free removed pre-check rather than block
+	// on lifecycleMu for the (possibly ~60s) teardown.
+	tombstone := &daggerSession{sessionID: "s", mainClientCallerID: "m"}
+	tombstone.state.Store(sessionStateRemoved)
+	srv := &Server{daggerSessions: map[string]*daggerSession{"s": tombstone}}
+
+	// Hold lifecycleMu to simulate an in-progress teardown.
+	tombstone.lifecycleMu.Lock()
+	defer tombstone.lifecycleMu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+			ClientMetadata: &engine.ClientMetadata{
+				SessionID:         "s",
+				ClientID:          "m",
+				ClientSecretToken: "token",
+			},
+		})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		var retryable flightcontrol.RetryableError
+		require.ErrorAs(t, err, &retryable, "removed tombstone should yield a retryable error")
+	case <-time.After(10 * time.Second):
+		t.Fatal("getOrInitClient blocked on lifecycleMu for a removed tombstone")
+	}
+}
+
+func TestClientFromIDsStateGating(t *testing.T) {
+	t.Parallel()
+
+	// clientFromIDs gates on the session's (atomic) lifecycle state without ever
+	// taking lifecycleMu, and never returns a client whose session isn't usable.
+	client := &daggerClient{clientID: "c"}
+	sess := &daggerSession{
+		sessionID: "s",
+		clients:   map[string]*daggerClient{"c": client},
+	}
+	srv := &Server{daggerSessions: map[string]*daggerSession{"s": sess}}
+
+	// uninitialized: not yet usable.
+	sess.state.Store(sessionStateUninitialized)
+	_, err := srv.clientFromIDs("s", "c")
+	require.ErrorContains(t, err, "not initialized")
+
+	// removed: retryable not-found (session is tearing down).
+	sess.state.Store(sessionStateRemoved)
+	_, err = srv.clientFromIDs("s", "c")
+	var retryable flightcontrol.RetryableError
+	require.ErrorAs(t, err, &retryable)
+
+	// initialized: returns the client.
+	sess.state.Store(sessionStateInitialized)
+	got, err := srv.clientFromIDs("s", "c")
+	require.NoError(t, err)
+	require.Same(t, client, got)
+}
+
+func TestSessionLifecycleObserverConcurrency(t *testing.T) {
+	t.Parallel()
+
+	// Stress the observer paths (Clients/activeClientIDs/clientFromIDs) against
+	// concurrent session churn. The churners exercise the observer-visible state
+	// the way the real lifecycle does — registry writes under daggerSessionsMu,
+	// the clients map under clientMu, the lifecycle state via the atomic, and a
+	// pointer-conditional deleteSession on teardown — but deliberately do NOT take
+	// lifecycleMu, since the whole point of the redesign is that observers don't
+	// depend on it. Run under -race to catch data races; the observers must also
+	// never block (completing while churn runs is the liveness assertion).
+	srv := &Server{daggerSessions: map[string]*daggerSession{}}
+
+	const (
+		churners         = 4
+		cyclesPerChurner = 1000
+	)
+	var wg sync.WaitGroup
+	for i := range churners {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			id := fmt.Sprintf("s%d", n)
+			for range cyclesPerChurner {
+				sess := &daggerSession{
+					sessionID:          id,
+					mainClientCallerID: "m" + id,
+					clients:            map[string]*daggerClient{},
+				}
+				// publish, then populate clients, then flip to initialized last.
+				srv.daggerSessionsMu.Lock()
+				srv.daggerSessions[id] = sess
+				srv.daggerSessionsMu.Unlock()
+				sess.clientMu.Lock()
+				sess.clients["c"] = &daggerClient{clientID: "c"}
+				sess.clientMu.Unlock()
+				sess.state.Store(sessionStateInitialized)
+
+				// teardown: removed first, then pointer-conditional delete.
+				sess.state.Store(sessionStateRemoved)
+				srv.deleteSession(sess)
+			}
+		}(i)
+	}
+
+	churnDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(churnDone)
+	}()
+
+	// Hammer the observers concurrently until every churner has finished its
+	// fixed workload, so the race window is exercised deterministically rather
+	// than depending on scheduler timing.
+	for {
+		select {
+		case <-churnDone:
+			return
+		default:
+		}
+		_ = srv.Clients()
+		_ = srv.activeClientIDs()
+		_, _ = srv.clientFromIDs("s0", "c")
+	}
 }
 
 func TestPendingLegacyModule(t *testing.T) {
@@ -222,14 +423,14 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	t.Run("constructor match loads only matching module", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"foo"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"foo"})
 		require.Equal(t, []pendingModule{mods[0]}, filtered)
 	})
 
 	t.Run("unknown root field with multiple entrypoints loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"doThing"})
 		require.Equal(t, mods, filtered)
 	})
 
@@ -237,36 +438,189 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		t.Parallel()
 
 		oneEntrypoint := []pendingModule{mods[0], mods[1]}
-		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, []string{"doThing"})
+		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, nil, []string{"doThing"})
 		require.Equal(t, []pendingModule{mods[1]}, filtered)
 	})
 
 	t.Run("introspection loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"__schema"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"__schema"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("current typedefs loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"currentTypeDefs"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentTypeDefs"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("current module loads all", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"currentModule"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentModule"})
 		require.Equal(t, mods, filtered)
 	})
 
 	t.Run("core-only query loads none", func(t *testing.T) {
 		t.Parallel()
 
-		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"container", "version"})
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"container", "version"})
 		require.Empty(t, filtered)
+	})
+
+	t.Run("current workspace loads none (resolvers load on demand)", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"currentWorkspace"})
+		require.Empty(t, filtered)
+	})
+
+	t.Run("already-served root field loads none", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"my-mod": {}}
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, []string{"myMod"})
+		require.Empty(t, filtered)
+	})
+
+	t.Run("served field combined with pending field loads only pending", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"my-mod": {}}
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, served, []string{"myMod", "foo"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("env loads all (resolver snapshots served deps)", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"env"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("unrecognized loadFromID field loads all", func(t *testing.T) {
+		t.Parallel()
+
+		// The type name in load<Type>FromID needn't embed the module name, so
+		// only a full load can guarantee the field exists.
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"loadSomethingFromID"})
+		require.Equal(t, mods, filtered)
+	})
+}
+
+func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
+	t.Parallel()
+
+	mods := []pendingModule{
+		{Kind: moduleLoadKindAmbient, Name: "go-sdk"},
+		{Kind: moduleLoadKindAmbient, Name: "rust-sdk"},
+		{Kind: moduleLoadKindAmbient, Name: "php-sdk"},
+	}
+
+	t.Run("module:generator selects only that module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"go-sdk:generate"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("module:item works for checks and services too", func(t *testing.T) {
+		t.Parallel()
+
+		// The module-name resolution is identical across generate/check/up: the
+		// segment before ':' is the module name regardless of the item kind.
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"rust-sdk:lint", "php-sdk:web"})
+		require.Equal(t, []pendingModule{mods[1], mods[2]}, filtered)
+	})
+
+	t.Run("bare module name selects only that module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"go-sdk"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("multiple patterns select each named module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"go-sdk", "php-sdk:api"})
+		require.Equal(t, []pendingModule{mods[0], mods[2]}, filtered)
+	})
+
+	t.Run("bare token not matching a module selects all", func(t *testing.T) {
+		t.Parallel()
+
+		// e.g. an item served by the entrypoint module.
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"generate"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("module:item not matching a module selects all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"typo-sdk:generate"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("empty include selects all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, nil)
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("already-served module is recognized and selects nothing", func(t *testing.T) {
+		t.Parallel()
+
+		// A re-evaluated selector (e.g. loading a GeneratorGroup from its ID
+		// on a later request) names a module that already loaded; it must not
+		// fall back to loading everything.
+		served := map[string]struct{}{"dang-sdk": {}}
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, served, []string{"dang-sdk"})
+		require.Empty(t, filtered)
+	})
+
+	t.Run("served and pending patterns select only the pending module", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"dang-sdk": {}}
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, served, []string{"dang-sdk:generate", "go-sdk"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("camelCase pattern selects the kebab-case module", func(t *testing.T) {
+		t.Parallel()
+
+		// Name matching is kebab-normalized on both sides, like the include
+		// matchers the selector resolvers use (ModTreePath.Glob/CliCase).
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"goSdk:generate"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("kebab-case pattern selects the camelCase module", func(t *testing.T) {
+		t.Parallel()
+
+		// The CLI presents module commands in kebab-case, so a module declared
+		// as "myMod" (or "mod1", which kebab-cases to "mod-1") is targeted by
+		// its kebab-case name.
+		camelMods := []pendingModule{
+			{Kind: moduleLoadKindAmbient, Name: "myMod"},
+			{Kind: moduleLoadKindAmbient, Name: "mod1"},
+			{Kind: moduleLoadKindAmbient, Name: "other"},
+		}
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(camelMods, nil, []string{"my-mod", "mod-1:generate"})
+		require.Equal(t, []pendingModule{camelMods[0], camelMods[1]}, filtered)
+	})
+
+	t.Run("glob pattern selects all", func(t *testing.T) {
+		t.Parallel()
+
+		// Glob metacharacters survive normalization and never equal a module
+		// name, so glob patterns conservatively load everything.
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil, []string{"go-*"})
+		require.Equal(t, mods, filtered)
 	})
 }
 
@@ -688,6 +1042,7 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 		},
 		false,
 		dagql.ObjectResult[*core.Directory]{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "subdir", client.workspace.Cwd)
@@ -746,6 +1101,7 @@ func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 		},
 		false,
 		dagql.ObjectResult[*core.Directory]{},
+		nil,
 	)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join("subdir", "child"), client.workspace.Cwd)
@@ -1011,7 +1367,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 			Cwd:        filepath.Join("services", "payment", "src"),
 			ConfigFile: filepath.Join("services", "payment", workspace.ConfigFileName),
 			LockFile:   filepath.Join("services", "payment", workspace.LockDirName, workspace.LockFileName),
-		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		}, true, dagql.ObjectResult[*core.Directory]{}, nil, "")
 		require.NoError(t, err)
 		require.Equal(t, "file:///repo/services/payment/src", ws.Address)
 		require.Equal(t, filepath.Join("services", "payment", "src"), ws.Cwd)
@@ -1027,7 +1383,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 			Root:     "/repo",
 			Cwd:      ".",
 			LockFile: filepath.Join(workspace.LockDirName, workspace.LockFileName),
-		}, true, dagql.ObjectResult[*core.Directory]{}, "")
+		}, true, dagql.ObjectResult[*core.Directory]{}, nil, "")
 		require.NoError(t, err)
 		require.Empty(t, ws.ConfigFile)
 		require.Equal(t, filepath.Join(workspace.LockDirName, workspace.LockFileName), ws.LockFile)

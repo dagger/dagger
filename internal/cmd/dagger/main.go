@@ -143,33 +143,70 @@ func init() {
 	stdout = maybeWrapWriter(os.Stdout, "DAGGER_LOG_STDOUT")
 	stderr = maybeWrapWriter(os.Stderr, "DAGGER_LOG_STDERR")
 
+	// Visual grouping for `dagger --help`. Groups render in the order declared
+	// here, separated by blank lines. Titles are intentionally empty —
+	// readers parse the surface by visual chunking, not by section headers.
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "setup", Title: ""},
+		&cobra.Group{ID: "daily", Title: ""},
+		&cobra.Group{ID: "workspace", Title: ""},
+		&cobra.Group{ID: "toolbox", Title: ""},
+		&cobra.Group{ID: "utility", Title: ""},
+	)
+
+	// Assign each visible top-level command to its group.
+	setupCmd.GroupID = "setup"
+
+	checksCmd.GroupID = "daily"
+	generateCmd.GroupID = "daily"
+	upCmd.GroupID = "daily"
+	activityCmd.GroupID = "daily"
+
+	moduleDepInstallCmd.GroupID = "workspace"
+	moduleDepUninstallCmd.GroupID = "workspace"
+	installedCmd.GroupID = "workspace"
+	moduleUpdateCmd.GroupID = "workspace"
+	searchCmd.GroupID = "workspace"
+	settingsCmd.GroupID = "workspace"
+
+	apiCmd.GroupID = "toolbox"
+	moduleCmd.GroupID = "toolbox"
+	sdkCmd.GroupID = "toolbox"
+	cloudCmd.GroupID = "toolbox"
+	workspaceCmd.GroupID = "toolbox"
+
+	versionRoot := versionCmd()
+	versionRoot.GroupID = "utility"
+
+	// Cobra auto-creates the help command; assign it to the utility group too.
+	rootCmd.SetHelpCommandGroupID("utility")
+
 	rootCmd.AddCommand(
 		listenCmd,
-		versionCmd(),
+		versionRoot,
 		queryCmd,
-		runCmd,
 		apiCmd,
 		traceCmd,
 		lockCmd,
-		configCmd,
-		envCmd,
 		settingsCmd,
 		checksCmd,
 		upCmd,
 		generateCmd,
 		workspaceCmd,
-		migrateCmd,
 		moduleDepInstallCmd,
 		moduleDepUninstallCmd,
 		moduleUpdateCmd,
-		modCmd,
-		functionCmd,
-		funcListCmd,
+		setupCmd,
+		searchCmd,
+		installedCmd,
+		activityCmd,
+		moduleCmd,
+		sdkCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
+		functionsAliasCmd,
 		sessionAliasCmd,
 		shellCmd,
-		clientCmd,
 		mcpCmd,
 	)
 
@@ -182,6 +219,7 @@ func init() {
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
 	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
+	cobra.AddTemplateFunc("cmdShortWrappedListByGroups", cmdShortWrappedListByGroups)
 	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
 	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
 	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
@@ -582,6 +620,10 @@ func xReleaseLogLine(msg string) string {
 	return line
 }
 
+// policy is currently always workspaceFlagPolicyLocalOnly, but the annotation
+// also supports workspaceFlagPolicyDisallow, so keep it parameterized.
+//
+//nolint:unparam
 func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
@@ -751,7 +793,6 @@ func Main() {
 		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), "internal error: experimental release exec returned without replacing the current process")
 		exitWithCode(1)
 	}
-
 	opts.Silent = silent                   // show no progress
 	opts.Debug = debugFlag                 // show everything
 	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
@@ -807,6 +848,13 @@ func Main() {
 
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
+
+	if shouldRegisterSDKInitCommands(os.Args[1:]) {
+		if err := registerInstalledSDKInitCommands(ctx, os.Args[1:]); err != nil {
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			exitWithCode(1)
+		}
+	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		var exit idtui.ExitError
@@ -924,6 +972,70 @@ func wrapCmdDescription(name, short string, padding int) string {
 		short = strings.TrimLeftFunc(indented, unicode.IsSpace)
 	}
 	return name + short
+}
+
+// cmdShortWrappedListByGroups renders the AVAILABLE COMMANDS section for a
+// parent command. When the parent has registered cobra groups (rootCmd
+// does; subcommands don't), commands render in group order with blank
+// lines between groups. Otherwise, fall back to the original leaf-then-
+// parent rendering so subcommand help (`dagger module --help`, etc.) is
+// unchanged.
+func cmdShortWrappedListByGroups(cmd *cobra.Command) string {
+	cmds := cmd.Commands()
+
+	// No groups → preserve the prior shape: leaves first, then parents.
+	if len(cmd.Groups()) == 0 {
+		out := cmdShortWrappedList(cmds, false)
+		if hasParentCommands(cmds) {
+			if out != "" {
+				out += "\n\n"
+			}
+			out += cmdShortWrappedList(cmds, true)
+		}
+		return out
+	}
+
+	// Compute display padding across every visible command so columns
+	// align across groups.
+	padding := 0
+	for _, c := range cmds {
+		if !isHelpOrAvailableCommand(c) {
+			continue
+		}
+		if n := len(cmdDisplayName(c)); n > padding {
+			padding = n
+		}
+	}
+
+	var sections []string
+	for _, group := range cmd.Groups() {
+		var lines []string
+		for _, c := range cmds {
+			if c.GroupID != group.ID || !isHelpOrAvailableCommand(c) {
+				continue
+			}
+			lines = append(lines, wrapCmdDescription(cmdDisplayName(c), c.Short, padding))
+		}
+		if len(lines) > 0 {
+			sections = append(sections, strings.Join(lines, "\n"))
+		}
+	}
+
+	// Render any ungrouped (but available) commands last. Keeps stragglers
+	// visible if a future cmd forgot to set GroupID — better than dropping
+	// them silently.
+	var ungrouped []string
+	for _, c := range cmds {
+		if c.GroupID != "" || !isHelpOrAvailableCommand(c) {
+			continue
+		}
+		ungrouped = append(ungrouped, wrapCmdDescription(cmdDisplayName(c), c.Short, padding))
+	}
+	if len(ungrouped) > 0 {
+		sections = append(sections, strings.Join(ungrouped, "\n"))
+	}
+
+	return strings.Join(sections, "\n\n")
 }
 
 func cmdShortWrappedList(cmds []*cobra.Command, parents bool) string {
@@ -1183,13 +1295,10 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- end}}
 
-{{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
+{{- if .HasAvailableSubCommands}}
 
 {{ "Available Commands" | toUpperBold }}
-{{cmdShortWrappedList $cmds false}}
-{{ if hasParentCommands $cmds}}
-{{cmdShortWrappedList $cmds true}}
-{{- end}}{{/* if hasParentCommands */}}
+{{cmdShortWrappedListByGroups .}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
 
 {{- if .HasAvailableLocalFlags}}

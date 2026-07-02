@@ -82,9 +82,19 @@ func generateEntrypoint() (*dagger.File, error) {
 
 func generateConfig(logLevel string) (*dagger.File, error) {
 	cfg := struct {
-		LogLevel string `json:"logLevel,omitempty"`
+		LogLevel   string `json:"logLevel,omitempty"`
+		Registries map[string]struct {
+			Mirrors []string `json:"mirrors"`
+		} `json:"registries"`
 	}{
 		LogLevel: logLevel,
+		Registries: map[string]struct {
+			Mirrors []string `json:"mirrors"`
+		}{
+			"docker.io": {
+				Mirrors: []string{"mirror.gcr.io"},
+			},
+		},
 	}
 
 	res, err := json.MarshalIndent(cfg, "", "  ")

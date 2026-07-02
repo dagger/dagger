@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/engine/client"
-	cloudapi "github.com/dagger/dagger/internal/cloud"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
@@ -18,29 +17,16 @@ import (
 func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"install"})
 	require.NoError(t, err)
-	require.True(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.False(t, cmd.Hidden)
+	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
 
-	cmd, _, err = rootCmd.Find([]string{"workspace", "install"})
-	require.NoError(t, err)
-	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
-	require.Nil(t, cmd.Flags().Lookup("compat"))
-	require.NotNil(t, cmd.Flags().Lookup("name"))
-
 	cmd, _, err = rootCmd.Find([]string{"update"})
 	require.NoError(t, err)
-	require.True(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
-	require.Nil(t, cmd.Flags().Lookup("compat"))
-
-	cmd, _, err = rootCmd.Find([]string{"workspace", "update"})
-	require.NoError(t, err)
 	require.False(t, cmd.Hidden)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("load-module"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 }
 
@@ -52,32 +38,33 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	cmd, _, err = rootCmd.Find([]string{"i"})
 	require.NoError(t, err)
 	require.Same(t, moduleDepInstallCmd, cmd)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"un"})
+	require.NoError(t, err)
+	require.Same(t, moduleDepUninstallCmd, cmd)
+	require.False(t, cmd.Hidden)
 }
 
 func TestCosmeticCommandAliases(t *testing.T) {
-	cmd, _, err := rootCmd.Find([]string{"function"})
+	cmd, _, err := rootCmd.Find([]string{"api", "call"})
 	require.NoError(t, err)
-	require.Same(t, functionCmd, cmd)
-
-	cmd, _, err = rootCmd.Find([]string{"fn"})
-	require.NoError(t, err)
-	require.Same(t, functionCmd, cmd)
-
-	cmd, _, err = rootCmd.Find([]string{"function", "list"})
-	require.NoError(t, err)
-	require.Same(t, functionListCmd, cmd)
+	require.Same(t, apiCallCmd.Command(), cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"functions"})
+	cmd, _, err = rootCmd.Find([]string{"api", "functions"})
 	require.NoError(t, err)
-	require.Same(t, funcListCmd, cmd)
-	require.True(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"function", "call"})
-	require.NoError(t, err)
-	require.Same(t, functionCallCmd.Command(), cmd)
+	require.Same(t, apiFunctionsCmd, cmd)
 	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"api", "client"})
+	require.NoError(t, err)
+	require.Same(t, apiClientCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"client"})
+	require.NoError(t, err)
+	require.NotSame(t, apiClientCmd, cmd)
 
 	cmd, _, err = rootCmd.Find([]string{"call"})
 	require.NoError(t, err)
@@ -88,20 +75,12 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, callCoreCmd.Command(), cmd)
 	require.True(t, cmd.Hidden)
-	require.Contains(t, cmd.Deprecated, "dagger -m core function call")
+	require.Contains(t, cmd.Deprecated, "dagger -m core api call")
 
-	cmd, _, err = rootCmd.Find([]string{"module"})
+	// exec / run moved under `dagger api`; available at root for backward compat
+	cmd, _, err = rootCmd.Find([]string{"api", "exec"})
 	require.NoError(t, err)
-	require.Same(t, modCmd, cmd)
-	require.False(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"mod"})
-	require.NoError(t, err)
-	require.Same(t, modCmd, cmd)
-
-	cmd, _, err = rootCmd.Find([]string{"exec"})
-	require.NoError(t, err)
-	require.Same(t, runCmd, cmd)
+	require.Same(t, apiExecCmd, cmd)
 
 	cmd, _, err = rootCmd.Find([]string{"run"})
 	require.NoError(t, err)
@@ -139,45 +118,25 @@ func TestCosmeticCommandAliases(t *testing.T) {
 	require.Same(t, sessionAliasCmd, cmd)
 	require.True(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"workspace", "migrate"})
-	require.NoError(t, err)
-	require.Same(t, workspaceMigrateCmd, cmd)
-	require.False(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"migrate"})
-	require.NoError(t, err)
-	require.Same(t, migrateCmd, cmd)
-	require.True(t, cmd.Hidden)
-
 	cmd, _, err = rootCmd.Find([]string{"workspace", "config"})
 	require.NoError(t, err)
 	require.Same(t, workspaceConfigCmd, cmd)
 	require.False(t, cmd.Hidden)
 
-	cmd, _, err = rootCmd.Find([]string{"config"})
-	require.NoError(t, err)
-	require.Same(t, configCmd, cmd)
-	require.True(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"workspace", "settings"})
-	require.NoError(t, err)
-	require.Same(t, workspaceSettingsCmd, cmd)
-	require.False(t, cmd.Hidden)
-
 	cmd, _, err = rootCmd.Find([]string{"settings"})
 	require.NoError(t, err)
 	require.Same(t, settingsCmd, cmd)
-	require.True(t, cmd.Hidden)
-
-	cmd, _, err = rootCmd.Find([]string{"workspace", "uninstall"})
-	require.NoError(t, err)
-	require.Same(t, workspaceUninstallCmd, cmd)
 	require.False(t, cmd.Hidden)
 
 	cmd, _, err = rootCmd.Find([]string{"uninstall"})
 	require.NoError(t, err)
 	require.Same(t, moduleDepUninstallCmd, cmd)
-	require.True(t, cmd.Hidden)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"installed"})
+	require.NoError(t, err)
+	require.Same(t, installedCmd, cmd)
+	require.False(t, cmd.Hidden)
 
 	cmd, _, err = rootCmd.Find([]string{"lock"})
 	require.NoError(t, err)
@@ -239,25 +198,30 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 	require.NotContains(t, help, "DAGGER MODULE COMMANDS")
 	require.NotContains(t, help, "DAGGER WORKSPACE COMMANDS")
 	require.NotContains(t, help, "EXECUTION COMMANDS")
-	require.Contains(t, help, "check, checks")
-	require.Contains(t, help, "function, fn")
-	require.Contains(t, help, "module, mod")
+	require.NotContains(t, help, "check, checks")
+	require.NotContains(t, help, "function, fn")
+	require.NotContains(t, help, "module, mod")
 	require.Contains(t, help, "workspace, ws")
 	require.NotContains(t, help, "exec, run")
 
 	names := rootHelpCommandNames(help)
 	for _, name := range []string{
+		"activity",
 		"check",
-		"exec",
 		"generate",
+		"install",
+		"installed",
+		"search",
+		"settings",
+		"setup",
+		"uninstall",
 		"up",
+		"update",
 		"version",
 		"api",
 		"cloud",
-		"env",
-		"function",
-		"integration",
 		"module",
+		"sdk",
 		"workspace",
 	} {
 		require.Contains(t, names, name)
@@ -269,26 +233,25 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 		"completion",
 		"config",
 		"core",
+		"env",
+		"exec",
+		"function",
 		"functions",
-		"install",
+		"integration",
 		"listen",
 		"lock",
 		"login",
 		"logout",
-		"migrate",
 		"org",
 		"query",
 		"run",
 		"session",
-		"settings",
-		"uninstall",
-		"update",
 	} {
 		require.NotContains(t, names, name)
 	}
 
-	for _, leaf := range []string{"check", "exec", "generate", "up", "version"} {
-		for _, parent := range []string{"api", "cloud", "env", "function", "integration", "module", "workspace"} {
+	for _, leaf := range []string{"activity", "check", "generate", "install", "installed", "search", "settings", "setup", "uninstall", "up", "update"} {
+		for _, parent := range []string{"api", "cloud", "module", "sdk", "workspace"} {
 			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
 		}
 	}
@@ -296,10 +259,8 @@ func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
 
 func TestHelpAliasesRespectHiddenAliases(t *testing.T) {
 	require.Contains(t, renderHelp(t, workspaceCmd), "workspace, ws")
-	require.Contains(t, renderHelp(t, functionCmd), "function, fn")
-	require.Contains(t, renderHelp(t, modCmd), "module, mod")
 
-	execHelp := renderHelp(t, runCmd)
+	execHelp := renderHelp(t, apiExecCmd)
 	require.NotContains(t, execHelp, "exec, run")
 	require.NotContains(t, execHelp, "exec, r")
 	require.NotContains(t, execHelp, "ALIASES")
@@ -401,14 +362,6 @@ func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
 	require.Equal(t, "./ws", workspaceRef)
 }
 
-func TestConfigAliasFlags(t *testing.T) {
-	cmd, _, err := rootCmd.Find([]string{"config"})
-	require.NoError(t, err)
-	require.Same(t, configCmd, cmd)
-	require.Nil(t, cmd.Flags().Lookup("mod"))
-	require.Nil(t, cmd.Flags().Lookup("json"))
-}
-
 func TestWorkspaceFlagPolicy(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	oldWorkspaceEnv := workspaceEnv
@@ -418,27 +371,18 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	})
 
 	workspaceRef = "github.com/acme/ws"
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil), "must be a local path")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(migrateCmd, nil), "not supported")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceMigrateCmd, nil), "not supported")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source", "x"}), "must be a local path")
-	require.NoError(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source"}))
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}), "must be a local path")
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(envRmCmd, []string{"ci"}), "must be a local path")
 
 	workspaceRef = "./local-workspace"
-	require.NoError(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil))
-	require.NoError(t, validateWorkspaceFlagPolicy(functionCallCmd.Command(), nil))
+	require.NoError(t, validateWorkspaceFlagPolicy(apiCallCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}))
-	require.NoError(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}))
 }
 
 func TestApplyWorkspaceClientParams(t *testing.T) {
@@ -561,19 +505,10 @@ func TestRenderWorkspaceRemoteRowsIncludesAutocheck(t *testing.T) {
 	require.Contains(t, out.String(), "🟢1")
 }
 
-func TestValidateWorkspaceAutocheckArgs(t *testing.T) {
-	require.NoError(t, validateWorkspaceAutocheckArgs(nil, nil))
-	require.NoError(t, validateWorkspaceAutocheckArgs(nil, []string{"on"}))
-	require.NoError(t, validateWorkspaceAutocheckArgs(nil, []string{"off"}))
-	require.ErrorContains(t, validateWorkspaceAutocheckArgs(nil, []string{"yes"}), "on or off")
-	require.ErrorContains(t, validateWorkspaceAutocheckArgs(nil, []string{"on", "off"}), "expected 0 or 1 arguments")
-}
-
-func TestWorkspaceAutocheckSelectedSourceRepos(t *testing.T) {
-	selected, enabled := workspaceSelectedSourceRepos([]cloudapi.SourceRepository{
-		{Repository: "github.com/acme/one", Selected: true},
-		{Repository: "https://github.com/acme/two", Selected: true},
-		{Repository: "github.com/acme/three", Selected: false},
+func TestWorkspaceAutocheckSelectedRepos(t *testing.T) {
+	selected, enabled := workspaceSelectedRepos([]string{
+		"github.com/acme/one",
+		"https://github.com/acme/two",
 	}, "github.com/acme/two")
 
 	require.True(t, enabled)
@@ -698,44 +633,6 @@ func TestSelectedRemoteWorkspaceAddressUsesExplicitRemoteWorkspace(t *testing.T)
 	require.Equal(t, "github.com/acme/mono", remote.CloneRef)
 	require.Equal(t, "services/api", remote.Path)
 	require.Equal(t, "main", remote.Version)
-}
-
-func TestCheckPastWorkspaceAddress(t *testing.T) {
-	oldWorkspaceRef := workspaceRef
-	t.Cleanup(func() {
-		workspaceRef = oldWorkspaceRef
-	})
-
-	workspaceRef = "github.com/acme/mono/services/api@main"
-	address, ok, reason, err := checkPastWorkspaceAddress(t.Context())
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Empty(t, reason)
-	require.Equal(t, "github.com/acme/mono/services/api@main", address)
-
-	workspaceRef = ""
-	t.Chdir(t.TempDir())
-	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Empty(t, address)
-	require.Contains(t, reason, "find git root")
-
-	_, workspaceDir, sha := setupCleanWorkspaceRepo(t)
-	workspaceRef = "."
-	t.Chdir(workspaceDir)
-	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Empty(t, reason)
-	require.Equal(t, "github.com/acme/mono/services/api@"+sha, address)
-
-	require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "dirty.txt"), []byte("dirty\n"), 0o600))
-	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Empty(t, address)
-	require.Equal(t, "workspace has uncommitted changes", reason)
 }
 
 func TestNormalizeWorkspaceGitOrigin(t *testing.T) {

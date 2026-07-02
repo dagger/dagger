@@ -55,6 +55,22 @@ query GetOrgChecks ($org: String!, $repos: [String!], $first: Int) {
 }
 ` + checkCommitFragments
 
+const getUserChecksOperation = `
+query GetUserChecks ($repos: [String!], $first: Int) {
+	user {
+		checks(repos: $repos, first: $first) {
+			nodes {
+				... CheckCommitProps
+				org {
+					id
+					name
+				}
+			}
+		}
+	}
+}
+` + checkCommitFragments
+
 const getModuleChecksOperation = `
 query GetModuleChecks ($org: String!, $moduleRef: String!, $moduleVersion: String!) {
 	org(name: $org) {
@@ -131,6 +147,15 @@ type CheckCommit struct {
 	Events        []CheckEvent     `json:"events"`
 	Refs          []CheckCommitRef `json:"refs"`
 	Checks        []Check          `json:"checks"`
+	// Org identifies the owning org of the commit. It is only populated by
+	// user-scoped queries (e.g. UserChecks) where checks may span orgs; the
+	// org-scoped queries leave it zero since the org is known from context.
+	Org CheckCommitOrg `json:"org"`
+}
+
+type CheckCommitOrg struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type CheckEvent struct {
@@ -210,6 +235,33 @@ func (c *Client) OrgChecks(
 		return nil, fmt.Errorf("org %q not found", org)
 	}
 	return data.Org.Checks.Nodes, nil
+}
+
+func (c *Client) UserChecks(
+	ctx context.Context,
+	repos []string,
+	first int,
+) ([]CheckCommit, error) {
+	vars := map[string]any{
+		"repos": expandRepoForms(repos),
+	}
+	if first > 0 {
+		vars["first"] = first
+	}
+	var data struct {
+		User *struct {
+			Checks struct {
+				Nodes []CheckCommit `json:"nodes"`
+			} `json:"checks"`
+		} `json:"user"`
+	}
+	if err := c.doGraphQL(ctx, "GetUserChecks", getUserChecksOperation, vars, &data); err != nil {
+		return nil, err
+	}
+	if data.User == nil {
+		return nil, nil
+	}
+	return data.User.Checks.Nodes, nil
 }
 
 func (c *Client) ModuleChecks(

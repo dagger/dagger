@@ -27,7 +27,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "336f7b79a6df9834f16d8b4d105e05b9b1a39981" // v0.21.6
+	goSDKLibVersion = "1309520660f6a5b35ef97b4fbe151e32a06a8dc5" // v0.21.7
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
@@ -78,6 +78,18 @@ func (sdk *goSDK) AsCodeGenerator() (core.CodeGenerator, bool) {
 
 func (sdk *goSDK) AsClientGenerator() (core.ClientGenerator, bool) {
 	return sdk, true
+}
+
+func (sdk *goSDK) AsModuleInitializer() (core.ModuleInitializer, bool) {
+	return nil, false
+}
+
+func (sdk *goSDK) AsClientInitializer() (core.ClientInitializer, bool) {
+	return nil, false
+}
+
+func (sdk *goSDK) AsRuntimeTarget() (core.RuntimeTarget, bool) {
+	return nil, false
 }
 
 func (sdk *goSDK) AttachDependencyResults(

@@ -11,6 +11,7 @@
 //go:test:include ../../core/modules
 //go:test:include ../../core/openrouter
 //go:test:include ../../core/prompts
+//go:test:include ../../core/sdk/sdkmeta
 //go:test:include ../../core/workspace
 //go:test:include ../../dagql
 //go:test:include ../../engine
@@ -117,10 +118,25 @@ func TestInstallK3S(t *testing.T) {
 		WithFile("/.kube/config", k3s.config).
 		WithEnvVariable("KUBECONFIG", "/.kube/config").
 		WithEnvVariable("CACHEBUSTER", time.Now().String()).
-		WithExec([]string{"kubectl", "get", "nodes", "--output=wide"}).
+		// Kubeconfig and the k3s service port can be available before API discovery is ready.
+		WithExec([]string{"sh", "-c", `
+set -eu
+
+for i in $(seq 1 90); do
+	if kubectl --request-timeout=5s get nodes --output=wide &&
+		kubectl wait --for=condition=Ready nodes --all --timeout=5s; then
+		exit 0
+	fi
+	sleep 1
+done
+
+kubectl get nodes --output=wide || true
+kubectl get pods -A || true
+exit 1
+`}).
 		Sync(ctx)
 	if err != nil {
-		t.Fatalf("initialize kubectl: %v", err)
+		t.Fatalf("wait for k3s readiness: %v", err)
 	}
 
 	tests := []struct {

@@ -50,7 +50,9 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	// content-addressed cache.
 	sdkLibraryDir := NewLibGenerator(d.sdkSourceDir, d.cfg.libGeneratorOpts()).
 		GenerateBundleLibrary(d.introspectionJSON, ModSourceDirPath)
-	clientBindings := sdkLibraryDir.File("client.gen.ts")
+	// Pass the whole library directory (client.gen.ts + any per-dep
+	// <dep>.gen.ts files) so the introspector can resolve dep types.
+	clientBindings := sdkLibraryDir
 
 	eg, gctx := errgroup.WithContext(ctx)
 

@@ -53,7 +53,7 @@ func daggerNonNestedExecFail(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
-	args = append([]string{"run"}, args...)
+	args = append([]string{"api", "exec"}, args...)
 	return daggerNonNestedExec(args...)
 }
 

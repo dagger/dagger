@@ -28,8 +28,12 @@ query WorkspaceSettings($module: String!) {
 }
 `
 
-var workspaceSettingsCmd = newSettingsCmd(false)
-var settingsCmd = newSettingsCmd(true)
+var settingsCmd = newSettingsCmd(false)
+
+// workspaceSettingsCmd is retained as a hidden alias under `dagger workspace`
+// for any tests / scripts that still reach for `dagger workspace settings`.
+// It can be removed when there are no remaining callers.
+var workspaceSettingsCmd = newSettingsCmd(true)
 
 func init() {
 	workspaceCmd.AddCommand(workspaceSettingsCmd)
@@ -40,7 +44,7 @@ func init() {
 func newSettingsCmd(hidden bool) *cobra.Command {
 	return &cobra.Command{
 		Use:    "settings [module] [key] [value]",
-		Short:  "Get or set module settings",
+		Short:  "Get or set module settings (use --env for an env overlay)",
 		Hidden: hidden,
 		Args:   cobra.MaximumNArgs(3),
 		RunE:   runWorkspaceSettings,

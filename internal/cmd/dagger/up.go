@@ -28,8 +28,8 @@ func init() {
 
 var upCmd = &cobra.Command{
 	Use:   "up [options] [pattern...]",
-	Short: "Start services defined by the module and expose them on the host",
-	Long: `Start services defined by the module and expose them on the host
+	Short: "Run your project's services for local development — databases, APIs, dev servers, etc.",
+	Long: `Run your project's services for local development — databases, APIs, dev servers, etc.
 
 Examples:
   dagger up                       # Start all services

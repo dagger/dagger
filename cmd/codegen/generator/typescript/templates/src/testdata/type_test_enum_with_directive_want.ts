@@ -14,7 +14,7 @@ export enum ImageLayerCompression {
  * Utility function to convert a ImageLayerCompression value to its name so
  * it can be uses as argument to call a exposed function.
  */
-function ImageLayerCompressionValueToName(value: ImageLayerCompression): string {
+export function ImageLayerCompressionValueToName(value: ImageLayerCompression): string {
   switch (value) {
     case ImageLayerCompression.EstarGz:
       return "EStarGZ"
@@ -33,7 +33,7 @@ function ImageLayerCompressionValueToName(value: ImageLayerCompression): string 
  * Utility function to convert a ImageLayerCompression name to its value so
  * it can be properly used inside the module runtime.
  */
-function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
+export function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
   switch (name) {
     case "EStarGZ":
       return ImageLayerCompression.EstarGz

@@ -118,58 +118,10 @@ func withEngine(
 			return nil
 		})
 
-		if debugFlag {
-			params.LogLevel = slog.LevelDebug
-		}
-
-		if useCloudEngine {
-			params.RunnerHost = engine.DefaultCloudRunnerHost
-		} else if params.RunnerHost == "" {
-			params.RunnerHost = RunnerHost
-		}
-
-		if RunnerImageLoader != "" {
-			backend, err := imageload.GetBackend(RunnerImageLoader)
-			if err != nil {
-				return cleanup.Run, err
-			}
-			params.ImageLoaderBackend = backend
-		}
-
-		params.AllowedLLMModules = allowedLLMModules
-
-		params.Profile = profileFlag
-
-		params.CloudURLCallback = Frontend.SetCloudURL
-
-		params.EngineTrace = telemetry.SpanForwarder{
-			Processors: telemetry.SpanProcessors,
-		}
-		params.EngineLogs = telemetry.LogForwarder{
-			Processors: telemetry.LogProcessors,
-		}
-		params.EngineMetrics = telemetry.MetricExporters
-
-		params.WithTerminal = withTerminal
-
-		params.Interactive = interactive
-		params.InteractiveCommand = interactiveCommandParsed
-
-		effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
+		params, err := finalizeEngineParams(ctx, params)
 		if err != nil {
 			return cleanup.Run, err
 		}
-		params.LockMode = effectiveLockMode
-
-		if hasTTY {
-			params.PromptHandler = Frontend
-		}
-
-		ca, err := auth.GetCloudAuth(ctx)
-		if err != nil {
-			return cleanup.Run, err
-		}
-		params.CloudAuth = ca
 
 		// Connect to and run with the engine
 		sess, err := client.Connect(ctx, params)
@@ -181,6 +133,120 @@ func withEngine(
 		Frontend.SetClient(sess.Dagger())
 
 		return cleanup.Run, fn(ctx, sess)
+	})
+}
+
+// finalizeEngineParams fills in the run-scoped client params that depend on the
+// frontend and telemetry being set up. Must be called inside Frontend.Run,
+// after initEngineTelemetry. Shared by withEngine and withSetupSessions.
+func finalizeEngineParams(ctx context.Context, params client.Params) (client.Params, error) {
+	if debugFlag {
+		params.LogLevel = slog.LevelDebug
+	}
+
+	if useCloudEngine {
+		params.RunnerHost = engine.DefaultCloudRunnerHost
+	} else if params.RunnerHost == "" {
+		params.RunnerHost = RunnerHost
+	}
+
+	if RunnerImageLoader != "" {
+		backend, err := imageload.GetBackend(RunnerImageLoader)
+		if err != nil {
+			return params, err
+		}
+		params.ImageLoaderBackend = backend
+	}
+
+	params.AllowedLLMModules = allowedLLMModules
+
+	params.Profile = profileFlag
+
+	params.CloudURLCallback = Frontend.SetCloudURL
+
+	params.EngineTrace = telemetry.SpanForwarder{
+		Processors: telemetry.SpanProcessors,
+	}
+	params.EngineLogs = telemetry.LogForwarder{
+		Processors: telemetry.LogProcessors,
+	}
+	params.EngineMetrics = telemetry.MetricExporters
+
+	params.WithTerminal = withTerminal
+
+	params.Interactive = interactive
+	params.InteractiveCommand = interactiveCommandParsed
+
+	effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
+	if err != nil {
+		return params, err
+	}
+	params.LockMode = effectiveLockMode
+
+	if hasTTY {
+		params.PromptHandler = Frontend
+	}
+
+	ca, err := auth.GetCloudAuth(ctx)
+	if err != nil {
+		return params, err
+	}
+	params.CloudAuth = ca
+
+	return params, nil
+}
+
+// withSetupSessions runs fn under a single Frontend (one live TUI) while letting
+// it open more than one engine session via connect. dagger setup needs both:
+// its prompts are Frontend forms (which require the single-TUI run), and its
+// recommended-module install must run in a FRESH session so it re-detects the
+// workspace migrated earlier in the same command — the per-client workspace is
+// detected once and cached for a session's lifetime, so reusing the migrate
+// session would keep seeing the legacy dagger.json ("run dagger setup first").
+func withSetupSessions(
+	ctx context.Context,
+	fn func(ctx context.Context, connect func(context.Context) (*client.Client, func(), error)) error,
+) (rerr error) {
+	params := client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}
+	if err := applyWorkspaceClientParams(&params); err != nil {
+		return err
+	}
+	if sessionWorkspace != "" && params.Workspace == nil {
+		params.Workspace = &sessionWorkspace
+	}
+	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
+		var cleanup cleanups.Cleanups
+
+		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+			if opts.Debug {
+				slog.Error("failed to emit telemetry", "error", err)
+			}
+			Frontend.SetTelemetryError(err)
+		}))
+		cleanup.Add("close telemetry", func() error {
+			cleanupTelemetry(rerr)
+			return nil
+		})
+
+		fp, err := finalizeEngineParams(ctx, params)
+		if err != nil {
+			return cleanup.Run, err
+		}
+
+		connect := func(ctx context.Context) (*client.Client, func(), error) {
+			sess, err := client.Connect(ctx, fp)
+			if err != nil {
+				return nil, nil, err
+			}
+			Frontend.SetClient(sess.Dagger())
+			return sess, func() { _ = sess.Close() }, nil
+		}
+
+		return cleanup.Run, fn(ctx, connect)
 	})
 }
 
@@ -226,22 +292,44 @@ func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
 	return string(mode), nil
 }
 
-func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
-	// Setup telemetry config
-	telemetryCfg := telemetry.Config{
-		Detect:   true,
+// skipSharedTelemetryExporters, when set, makes engineTelemetryConfig leave out
+// the process-wide OTLP exporter singletons (Dagger Cloud + the OTEL_* "Detect"
+// exporters). It is toggled by withEngineSilent for internal plumbing sessions;
+// see engineTelemetryConfig for why.
+var skipSharedTelemetryExporters bool
+
+// engineTelemetryConfig builds the telemetry pipeline for one engine session.
+//
+// Internal plumbing sessions (see skipSharedTelemetryExporters) opt out of the
+// process-wide OTLP exporter singletons — the Dagger Cloud exporters and the
+// OTEL_* "Detect" exporters. Those singletons are sync.Once-cached and get shut
+// down by telemetry.Close(); a pre-command session that wired them up and then
+// tore them down would leave them dead for the real command that runs next in
+// the same process, surfacing "HTTP exporter is shutdown" / "context canceled"
+// telemetry warnings (e.g. the second session opened by `dagger module init`).
+// Such sessions render to a discard frontend and have no reason to export to
+// Cloud, so they simply skip the shared exporters.
+func engineTelemetryConfig(ctx context.Context) telemetry.Config {
+	cfg := telemetry.Config{
+		Detect:   !skipSharedTelemetryExporters,
 		Resource: Resource(ctx),
 
 		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
 		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
 		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
 	}
-	if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
-		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
-		telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
-		telemetryCfg.LiveMetricExporters = append(telemetryCfg.LiveMetricExporters, metrics)
+	if !skipSharedTelemetryExporters {
+		if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
+			cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, spans)
+			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
+			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
+		}
 	}
-	ctx = telemetry.Init(ctx, telemetryCfg)
+	return cfg
+}
+
+func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
+	ctx = telemetry.Init(ctx, engineTelemetryConfig(ctx))
 	// telemetry.Init extracts inherited OTel baggage from the environment.
 	// Re-apply explicit local process settings afterward so a nested Dagger
 	// command's own NO_COLOR/debug request wins over parent baggage.

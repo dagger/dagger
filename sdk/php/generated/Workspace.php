@@ -23,6 +23,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return the changes from another workspace to this workspace.
+     */
+    public function changes(Workspace $other): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        $innerQueryBuilder->setArgument('other', $other);
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return all checks from modules loaded in the workspace.
      */
     public function checks(
@@ -48,12 +58,35 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * The client ID that owns this workspace's host filesystem.
+     * Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
      */
-    public function clientId(): string
+    public function clientGenerate(): Changeset
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clientId');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'clientId');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientGenerate');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+     */
+    public function clientInit(
+        string $path,
+        string $sdk,
+        string $module,
+        ?bool $here = false,
+        ?Json $args = null,
+    ): Changeset {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('clientInit');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        $innerQueryBuilder->setArgument('module', $module);
+        if (null !== $here) {
+        $innerQueryBuilder->setArgument('here', $here);
+        }
+        if (null !== $args) {
+        $innerQueryBuilder->setArgument('args', $args);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -246,8 +279,13 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Install a module into the workspace, writing dagger.toml to the host.
      */
-    public function install(string $ref, ?string $name = '', ?bool $here = false): string
-    {
+    public function install(
+        string $ref,
+        ?string $name = '',
+        ?bool $here = false,
+        ?bool $asSdk = false,
+        ?string $asSdkName = '',
+    ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('install');
         $leafQueryBuilder->setArgument('ref', $ref);
         if (null !== $name) {
@@ -255,6 +293,12 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         if (null !== $here) {
         $leafQueryBuilder->setArgument('here', $here);
+        }
+        if (null !== $asSdk) {
+        $leafQueryBuilder->setArgument('asSdk', $asSdk);
+        }
+        if (null !== $asSdkName) {
+        $leafQueryBuilder->setArgument('asSdkName', $asSdkName);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'install');
     }
@@ -264,44 +308,45 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
      *
      * The returned plan has an empty changeset and no steps when no migration is needed.
      */
-    public function migrate(?bool $force = false): WorkspaceMigration
+    public function migrate(): WorkspaceMigration
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('migrate');
-        if (null !== $force) {
-        $innerQueryBuilder->setArgument('force', $force);
-        }
         return new \Dagger\WorkspaceMigration($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Create a new module owned by the workspace and auto-install it in dagger.toml.
+     * Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
      */
     public function moduleInit(
         string $name,
         ?string $sdk = '',
+        ?string $path = '',
         ?string $source = '',
         ?array $include = [],
-        ?bool $selfCalls = false,
         ?bool $here = false,
-    ): string {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
-        $leafQueryBuilder->setArgument('name', $name);
+        ?Json $args = null,
+    ): Changeset {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
+        $innerQueryBuilder->setArgument('name', $name);
         if (null !== $sdk) {
-        $leafQueryBuilder->setArgument('sdk', $sdk);
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        }
+        if (null !== $path) {
+        $innerQueryBuilder->setArgument('path', $path);
         }
         if (null !== $source) {
-        $leafQueryBuilder->setArgument('source', $source);
+        $innerQueryBuilder->setArgument('source', $source);
         }
         if (null !== $include) {
-        $leafQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $selfCalls) {
-        $leafQueryBuilder->setArgument('selfCalls', $selfCalls);
+        $innerQueryBuilder->setArgument('include', $include);
         }
         if (null !== $here) {
-        $leafQueryBuilder->setArgument('here', $here);
+        $innerQueryBuilder->setArgument('here', $here);
         }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'moduleInit');
+        if (null !== $args) {
+        $innerQueryBuilder->setArgument('args', $args);
+        }
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -350,5 +395,40 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('update');
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a changeset applied, without mutating the source.
+     */
+    public function withChanges(Changeset $changes): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
+        $innerQueryBuilder->setArgument('changes', $changes);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a directory added, without mutating the source.
+     */
+    public function withNewDirectory(string $path, Directory $source): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return this workspace with a new or replaced file, without mutating the source.
+     */
+    public function withNewFile(string $path, string $contents, ?int $permissions = 420): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('contents', $contents);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

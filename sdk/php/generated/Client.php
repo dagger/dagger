@@ -417,6 +417,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load a GraphQL introspection schema for merging.
+     */
+    public function schema(Json $json): Schema
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('schema');
+        $innerQueryBuilder->setArgument('json', $json);
+        return new \Dagger\Schema($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Creates a new secret.
      */
     public function secret(string $uri, ?string $cacheKey = null): Secret
