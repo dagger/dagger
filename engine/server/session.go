@@ -247,6 +247,11 @@ type daggerClient struct {
 	// Cached workspace result from ensureWorkspaceLoaded.
 	workspace *core.Workspace
 
+	// noWorkspaceErr explains why detection found no workspace (e.g. no Git
+	// repository in cwd or any parent). Surfaced by CurrentWorkspace so callers
+	// get an actionable error instead of a bare "workspace not loaded".
+	noWorkspaceErr error
+
 	pendingModules      []pendingModule      // gathered in detectAndLoadWorkspaceWithRootfs
 	pendingExtraModules []engine.ExtraModule // populated from clientMD, can arrive late
 	modulesMu           sync.Mutex
