@@ -1267,14 +1267,14 @@ public class Test {
 }
 
 func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T) {
-	// Submodule and git-worktree checkouts have a .git pointer *file* whose
-	// target lives outside the synced context, so the context can't be used
-	// as a git repository. An *optional* contextual GitRepository/GitRef arg
-	// resolves to null in that case, letting the function proceed without
-	// git info; a required arg still fails.
+	// When the context can't be used as a git repository at all — no .git,
+	// or a .git pointer file whose target doesn't exist — a contextual
+	// GitRepository/GitRef arg resolves to null, letting the function
+	// proceed without git info. (Resolvable pointer files are covered by
+	// TestContextGitSubmodule/TestContextGitWorktree.)
 
-	// Simulate a submodule checkout: worktree files present, .git is a
-	// pointer file whose target isn't part of the context.
+	// Simulate a submodule checkout whose real git dir is gone: worktree
+	// files present, .git is a pointer file at a dead path.
 	brokenGit := func(c *dagger.Client) *dagger.Container {
 		return moduleFixture(t, c, "go/path-context-git-optional").
 			WithExec([]string{"sh", "-c", "rm -rf .git && echo 'gitdir: ../../.git/modules/work' > .git"})
@@ -1283,6 +1283,20 @@ func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T)
 	t.Run("optional repo resolves to null", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := brokenGit(c).With(daggerCall("optional-repo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "no repo", out)
+	})
+
+	t.Run("no git repository at all", func(ctx context.Context, t *testctx.T) {
+		// The `dagger init` before `git init` flow: a module in a plain
+		// directory. Modules with contextual git args must still be callable.
+		c := connect(ctx, t)
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(withModuleFixture(t, c, ".", "go/path-context-git-optional")).
+			With(daggerCall("optional-repo")).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "no repo", out)
 	})
