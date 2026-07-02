@@ -361,9 +361,6 @@ type SDKConfigID string
 type ScalarTypeDefID string
 
 // A unique identifier for an object.
-type SdksID string
-
-// A unique identifier for an object.
 type SearchResultID string
 
 // A unique identifier for an object.
@@ -13511,16 +13508,6 @@ func (r *Query) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	q = q.Arg("id", id)
 
 	return &ScalarTypeDef{
-		query: q,
-	}
-}
-
-// Load a Sdks from its ID.
-func (r *Query) LoadSdksFromID(id SdksID) *Sdks {
-	q := r.query.Select("loadSdksFromID")
-	q = q.Arg("id", id)
-
-	return &Sdks{
 		query: q,
 	}
 }

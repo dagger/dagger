@@ -33,16 +33,6 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 	}
 }
 
-// Bump the Go SDK's Engine dependency
-func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:119:1)
-	q := r.query.Select("bump")
-	q = q.Arg("engineVersion", engineVersion)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Check the docs website build
 func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../toolchains/docs-dev/main.go:52:1)
 	if r.check != nil {
@@ -54,7 +44,7 @@ func (r *DocsDev) Check(ctx context.Context) error { // docs-dev (../../../../to
 }
 
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:134:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:120:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -120,13 +110,13 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:167:2)
+	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:153:2)
 
-	APIURL string // docs-dev (../../../../toolchains/docs-dev/main.go:169:2)
+	APIURL string // docs-dev (../../../../toolchains/docs-dev/main.go:155:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:163:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:149:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
