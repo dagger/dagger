@@ -959,6 +959,102 @@ HEALTHCHECK --interval=21s --timeout=4s --start-period=9s --start-interval=2s --
 	})
 }
 
+// TestDockerBuildBuildPlatformArg is a regression repro for the layer-caching regression
+// reported upgrading 0.20.8 -> 0.21.x for Dockerfiles that pin stages to the build platform
+// via `FROM --platform=$BUILDPLATFORM`.
+//
+// The predefined BUILDPLATFORM build arg must resolve to the engine's *native* (build host)
+// platform, independent of the target platform being built. That is what BuildKit's frontend
+// did (and what 0.20.8 relied on): dockerui.Client.init always sets BuildPlatforms to the
+// worker's native platform (see internal/buildkit/frontend/dockerui/config.go).
+//
+// In 0.21.x the dagql-native dockerBuild path (core/container.go Container.Build) constructs
+// dockerfile2llb.ConvertOpt with TargetPlatform set but WITHOUT setting BuildPlatforms, so
+// buildPlatformOpt (internal/buildkit/frontend/dockerfile/dockerfile2llb/platform.go) falls
+// back to using TargetPlatform as the build platform. That makes BUILDPLATFORM ==
+// TARGETPLATFORM, which both emulates stages that should run natively on the host and diverges
+// the cache key per target platform, so the identical $BUILDPLATFORM stages of an amd64 vs
+// arm64 build stop sharing cache.
+func (DockerfileSuite) TestDockerBuildBuildPlatformArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	nativePlatform, err := c.DefaultPlatform(ctx)
+	require.NoError(t, err)
+	nativeUname, ok := platformToUname[nativePlatform]
+	require.True(t, ok, "unsupported native platform %q", nativePlatform)
+
+	// a target platform that differs from the engine's native platform
+	targetPlatform := dagger.Platform("linux/arm64")
+	if nativePlatform == targetPlatform {
+		targetPlatform = "linux/amd64"
+	}
+	require.NotEqual(t, string(nativePlatform), string(targetPlatform))
+
+	dockerfile := "FROM --platform=$BUILDPLATFORM " + busyboxImage + `
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
+RUN printf '%s' "$BUILDPLATFORM" > /buildplatform.txt
+RUN printf '%s' "$TARGETPLATFORM" > /targetplatform.txt
+RUN uname -m > /uname.txt
+`
+	dir := c.Directory().WithNewFile("Dockerfile", dockerfile)
+
+	buildInfo := func(ctx context.Context, t *testctx.T, opts dagger.DirectoryDockerBuildOpts) (buildPlatform, targetPlatformArg, uname string) {
+		ctr := dir.DockerBuild(opts)
+		buildPlatform, err := ctr.File("/buildplatform.txt").Contents(ctx)
+		require.NoError(t, err)
+		targetPlatformArg, err = ctr.File("/targetplatform.txt").Contents(ctx)
+		require.NoError(t, err)
+		unameOut, err := ctr.File("/uname.txt").Contents(ctx)
+		require.NoError(t, err)
+		return buildPlatform, targetPlatformArg, strings.TrimSpace(unameOut)
+	}
+
+	t.Run("BUILDPLATFORM resolves to the native build platform, not the target", func(ctx context.Context, t *testctx.T) {
+		buildPlatform, targetPlatformArg, uname := buildInfo(ctx, t, dagger.DirectoryDockerBuildOpts{
+			Platform: targetPlatform,
+		})
+
+		// sanity: TARGETPLATFORM must reflect the requested target
+		require.Equal(t, string(targetPlatform), targetPlatformArg)
+
+		// BUILDPLATFORM must be the engine's native/build-host platform, NOT the target.
+		require.Equal(t, string(nativePlatform), buildPlatform,
+			"BUILDPLATFORM should be the native build platform, got the target platform instead")
+
+		// the $BUILDPLATFORM-pinned stage must run natively (no emulation), so uname reports
+		// the native architecture rather than the (emulated) target architecture.
+		require.Equal(t, nativeUname, uname,
+			"$BUILDPLATFORM stage should build for the native arch, not be emulated to the target")
+	})
+
+	t.Run("$BUILDPLATFORM stages are identical across target platforms", func(ctx context.Context, t *testctx.T) {
+		// The whole point of --platform=$BUILDPLATFORM is that these stages are identical
+		// regardless of which target arch we ultimately build for, so they share cache. If the
+		// build platform tracks the target, the two builds diverge into separate DAGs.
+		_, _, unameNativeTarget := buildInfo(ctx, t, dagger.DirectoryDockerBuildOpts{
+			Platform: nativePlatform,
+		})
+		_, _, unameCrossTarget := buildInfo(ctx, t, dagger.DirectoryDockerBuildOpts{
+			Platform: targetPlatform,
+		})
+		require.Equal(t, unameNativeTarget, unameCrossTarget,
+			"$BUILDPLATFORM stage differs across target platforms; the DAGs/cache keys have diverged")
+	})
+
+	t.Run("explicit BUILDPLATFORM build arg restores native behavior", func(ctx context.Context, t *testctx.T) {
+		// The reported workaround: pin BUILDPLATFORM to the native platform explicitly.
+		buildPlatform, _, uname := buildInfo(ctx, t, dagger.DirectoryDockerBuildOpts{
+			Platform: targetPlatform,
+			BuildArgs: []dagger.BuildArg{
+				{Name: "BUILDPLATFORM", Value: string(nativePlatform)},
+			},
+		})
+		require.Equal(t, string(nativePlatform), buildPlatform)
+		require.Equal(t, nativeUname, uname)
+	})
+}
+
 func (DockerfileSuite) TestBuildMergesWithParent(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

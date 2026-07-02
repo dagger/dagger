@@ -5166,6 +5166,14 @@ func (container *Container) Build(
 		Config: dockerui.Config{
 			BuildArgs: buildArgMap,
 			Target:    target,
+			// BuildPlatforms must be the engine's native platform, matching what
+			// BuildKit's dockerui frontend does (see dockerui.Client.init). This is
+			// what feeds the predefined BUILDPLATFORM/BUILDOS/BUILDARCH build args. If
+			// left unset, buildPlatformOpt falls back to using the target platform as
+			// the build platform, so BUILDPLATFORM would incorrectly track the target
+			// (emulating $BUILDPLATFORM stages and diverging the cache key per target
+			// platform instead of sharing it across them).
+			BuildPlatforms: []specs.Platform{query.Platform().Spec()},
 		},
 		MainContext:    &mainContext,
 		TargetPlatform: ptr(container.Platform.Spec()),
