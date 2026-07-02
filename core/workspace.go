@@ -52,6 +52,10 @@ type Workspace struct {
 	// dagger.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
 
+	// ignorePatterns stores workspace-config ignore patterns, resolved relative
+	// to the workspace boundary. Internal only.
+	ignorePatterns []string
+
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
 	Cwd        string
 	ConfigFile string
@@ -251,6 +255,24 @@ func (ws *Workspace) SetCompatWorkspace(compat *workspacepkg.CompatWorkspace) {
 	ws.compatWorkspace = compat
 }
 
+// IgnorePatterns returns workspace-config ignore patterns, resolved relative to
+// the workspace boundary.
+func (ws *Workspace) IgnorePatterns() []string {
+	if ws == nil || len(ws.ignorePatterns) == 0 {
+		return nil
+	}
+	return append([]string(nil), ws.ignorePatterns...)
+}
+
+// SetIgnorePatterns sets workspace-config ignore patterns.
+func (ws *Workspace) SetIgnorePatterns(ignore []string) {
+	if len(ignore) == 0 {
+		ws.ignorePatterns = nil
+		return
+	}
+	ws.ignorePatterns = append([]string(nil), ignore...)
+}
+
 func (*Workspace) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Workspace",
@@ -270,6 +292,7 @@ type persistedWorkspacePayload struct {
 	RootfsResultID  uint64                        `json:"rootfsResultID,omitempty"`
 	Source          *persistedWorkspaceSource     `json:"source,omitempty"`
 	CompatWorkspace *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
+	IgnorePatterns  []string                      `json:"ignorePatterns,omitempty"`
 	Address         string                        `json:"address,omitempty"`
 	Cwd             string                        `json:"cwd,omitempty"`
 	ConfigFile      string                        `json:"configFile,omitempty"`
@@ -415,6 +438,7 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 
 	payload := persistedWorkspacePayload{
 		CompatWorkspace: ws.compatWorkspace,
+		IgnorePatterns:  ws.ignorePatterns,
 		Address:         ws.Address,
 		Cwd:             ws.Cwd,
 		ConfigFile:      ws.ConfigFile,
@@ -482,6 +506,7 @@ func (*Workspace) DecodePersistedObject(
 	ws := &Workspace{
 		rootfs:          rootfs,
 		compatWorkspace: persisted.CompatWorkspace,
+		ignorePatterns:  append([]string(nil), persisted.IgnorePatterns...),
 		Address:         persisted.Address,
 		Cwd:             cwd,
 		ConfigFile:      configFile,
@@ -610,6 +635,7 @@ func attachWorkspaceSource(
 
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
+	cp.ignorePatterns = append([]string(nil), ws.ignorePatterns...)
 	return &cp
 }
 

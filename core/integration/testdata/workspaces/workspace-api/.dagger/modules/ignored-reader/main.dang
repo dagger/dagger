@@ -1,0 +1,12 @@
+type IgnoredReader {
+  pub content: String!
+
+  new(ws: Workspace!) {
+    self.content = ws.file("ignored/secret.txt").contents
+    self
+  }
+
+  pub read: String! {
+    content
+  }
+}
