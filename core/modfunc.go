@@ -1070,12 +1070,15 @@ func (fn *ModuleFunction) loadContextualArg(
 	case "GitRepository", "GitRef":
 		id, err := fn.loadContextualGitArg(ctx, dag, arg)
 		if err != nil && arg.TypeDef.Self().Optional && errors.Is(err, gitutil.ErrGitNoRepo) {
-			// The context isn't a usable git repository: submodule and
-			// worktree checkouts sync only a .git pointer file whose target
-			// lives outside the context, and exported trees have no .git at
-			// all. For an optional arg that's an environmental condition, not
-			// a configuration error, so resolve to null and let the function
-			// proceed without git info.
+			// The context isn't a usable git repository: exported trees have
+			// no .git at all, and a submodule/worktree .git pointer file can
+			// be unresolvable (see ModuleSource.resolveGitPointer for the
+			// resolvable case). That's an environmental condition, not a
+			// configuration error, so resolve a nullable arg to null and let
+			// the function proceed without git info. SDK codegen marks every
+			// defaultPath arg optional in the schema, so in practice this
+			// covers all contextual git args; modules decide how strictly to
+			// treat a null.
 			slog.Warn("skipping contextual git argument: context is not a usable git repository",
 				"function", fn.metadata.Name,
 				"arg", arg.OriginalName,

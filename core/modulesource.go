@@ -1796,6 +1796,13 @@ func (src *ModuleSource) LoadContextGit(
 		return inst, fmt.Errorf("failed to load contextual git: %w", err)
 	}
 
+	// Submodule and worktree checkouts have a .git pointer file whose target
+	// lives outside the context; resolve it into a real .git directory.
+	dir, err = src.resolveGitPointer(ctx, dag, dir)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git: %w", err)
+	}
+
 	err = dag.Select(ctx, dir, &inst,
 		dagql.Selector{
 			Field: "asGit",
