@@ -11,16 +11,18 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// targetVersion reads the canonical release version from the embedded
+// targetVersion reads the release version from the embedded
 // internal/version/VERSION file, the single source of truth for the
-// engine/CLI version. The file holds a bare semver (no leading "v").
+// engine/CLI version. Any leading "v" is stripped, so the version flows
+// through the pipeline bare and each sink re-adds the prefix where it needs
+// one (e.g. Helm). This tolerates the file being either bare or v-prefixed.
 func (r *Release) targetVersion(ctx context.Context) (string, error) {
 	const versionFile = "internal/version/VERSION"
 	contents, err := r.releaseSource(versionFile).File(versionFile).Contents(ctx)
 	if err != nil {
 		return "", err
 	}
-	version := strings.TrimSpace(contents)
+	version := strings.TrimPrefix(strings.TrimSpace(contents), "v")
 	if !semver.IsValid("v" + version) {
 		return "", fmt.Errorf("invalid version in %s: %q", versionFile, version)
 	}
