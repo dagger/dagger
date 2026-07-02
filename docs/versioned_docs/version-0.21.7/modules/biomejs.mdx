@@ -1,0 +1,45 @@
+---
+title: "Biome"
+slug: /modules/biomejs
+description: "Lint and fix source with Biome."
+---
+
+# Biome
+
+The Biome module runs Biome linting over your JavaScript and TypeScript source and can return a fixed version when Biome can repair issues. Reach for it when a project uses Biome as its main code quality tool, so a single combined tool handles both lint and format rules instead of a separate ESLint and Prettier pair.
+
+Official module: [dagger/biomejs](https://github.com/dagger/biomejs)
+
+## Add it to your workspace
+
+```bash
+dagger install github.com/dagger/biomejs
+```
+
+## Run the check
+
+```bash
+dagger check              # run every check in the workspace
+dagger check biomejs:lint # run Biome against the workspace source
+```
+
+`biomejs:lint` installs dependencies and runs `biome check` over the whole workspace using the project's own `biome.json`. Biome's `check` covers both linting and formatting, which is why this single check replaces a separate ESLint and Prettier pair.
+
+## Fix issues
+
+Biome also exposes a `fix` function that runs `biome check --write` and returns the repaired source as a changeset (covering `.js`, `.ts`, `.jsx`, `.tsx`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger api call` (run `dagger api functions` to see available functions).
+
+## Configure it
+
+List the current settings and their values with `dagger settings biomejs`, then set one with `dagger settings biomejs <key> <value>`. Settings are stored in `dagger.toml` under `[modules.biomejs.settings]`:
+
+- **`baseImageAddress`** (default `node:25-alpine`): the Node base image Biome runs in. Pin it to the project's Node version, for example `node:22-alpine`. Biome installs with npm, so unlike the ESLint and Prettier modules there is no package-manager setting.
+
+```toml
+[modules.biomejs.settings]
+baseImageAddress = "node:22-alpine"
+```
+
+## Working with other modules
+
+Use Biome for projects that already have Biome config. If your project uses ESLint and Prettier separately, use those modules instead.

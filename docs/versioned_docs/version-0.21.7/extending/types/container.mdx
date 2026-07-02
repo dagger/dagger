@@ -1,0 +1,96 @@
+---
+title: "Container"
+slug: /extending/types/container
+description: "Learn about the Container type in Dagger and how to use it for container operations."
+sidebar_position: 2
+toc_max_heading_level: 2
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+import ContainerType from "@daggerTypes/_container.mdx";
+import ApiType from "@site/src/components/api/ApiType";
+
+<ContainerType />
+
+## Default addresses
+
+It is possible to assign a default address for a `Container` argument in a Dagger Function. Dagger will automatically use this default address to pull the container image when no value is specified for the argument.
+
+:::tip
+Default addresses are only available for `Container` arguments. They are
+commonly used to provide a sensible default base image for build or test
+operations. When a value is explicitly passed for the argument, it always
+overrides the default address.
+:::
+
+Here's an example:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+The default address is set by adding a `defaultAddress` pragma on the corresponding Dagger Function `ctr` argument.
+
+```go file=./snippets/default-address/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+
+The default address is set by adding a `DefaultAddress` annotation on the corresponding Dagger Function `ctr` argument.
+
+```python file=./snippets/default-address/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+The default address is set by adding an `@argument` decorator with a `defaultAddress` parameter on the corresponding Dagger Function `ctr` argument.
+
+```typescript file=./snippets/default-address/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+
+The default address is set by adding a `#[DefaultAddress]` Attribute on the corresponding Dagger Function `ctr` argument.
+
+```php file=./snippets/default-address/php/src/MyModule.php
+```
+</TabItem>
+</Tabs>
+
+The default address can be any valid container image reference, such as:
+- `alpine:latest` - Docker Hub image with tag
+- `alpine:3.19` - Docker Hub image with specific version
+- `ghcr.io/owner/image:tag` - GitHub Container Registry image
+- `gcr.io/project/image:tag` - Google Container Registry image
+
+## Volatile variables
+
+`withVolatileVariable` sets a non-secret environment variable for future
+`withExec` calls without invalidating exec cache when only the variable's value
+changes.
+
+Typical examples include CI and reporting metadata such as commit SHAs, branch
+or ref names, and CI run IDs.
+
+:::warning
+`withVolatileVariable` is an expert-only escape hatch. Use it only when you are
+certain that changing the variable alone must not invalidate cached `withExec`
+results. If that assumption is wrong, Dagger may reuse stale or incorrect
+cached results.
+:::
+
+Unlike `withEnvVariable`, volatile variables:
+
+- are visible only to future `withExec` calls
+- are not persisted into the container image config
+- are not returned by `envVariable` or `envVariables`
+- are not available to `expand: true`
+
+Use `withEnvVariable` for normal container configuration, `withSecretVariable`
+for sensitive values, and `withVolatileVariable` only for exec-time metadata
+that should not decide cache reuse.
+
+## API reference
+
+<ApiType name="Container" />

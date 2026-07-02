@@ -126,6 +126,10 @@ export const daggerVersion = "%s";
 `, engineVersion)
 
 	layer := d.Source.WithNewFile("docs/current_docs/partials/version.js", versionFile)
+
+	layer = dag.Docusaurus(d.Source, dagger.DocusaurusOpts{Dir: "./docs", Yarn: true}).
+		Base().
+		WithExec([]string{"yarn", "docs:version", engineVersion}).Directory(".")
 	return layer.Changes(d.Source), nil
 }
 

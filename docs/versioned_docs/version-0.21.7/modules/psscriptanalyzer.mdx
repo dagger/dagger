@@ -1,0 +1,51 @@
+---
+title: "PSScriptAnalyzer"
+slug: /modules/psscriptanalyzer
+description: "Check PowerShell scripts with PSScriptAnalyzer."
+---
+
+# PSScriptAnalyzer
+
+The PSScriptAnalyzer module checks PowerShell scripts with PSScriptAnalyzer, applying the same review bar to your `.ps1`, `.psm1`, and `.psd1` files as you would to application code. Reach for it whenever PowerShell is part of the project and you want to enforce style, safety, and ruleset expectations in CI and Dagger Cloud. Its workspace alias is `ps-analyzer`, so its check and settings use that name.
+
+Official module: [dagger/PsScriptAnalyzer](https://github.com/dagger/PsScriptAnalyzer)
+
+## Add it to your workspace
+
+```bash
+dagger install github.com/dagger/PsScriptAnalyzer
+```
+
+## Run the check
+
+```bash
+dagger check                   # run every check in the workspace
+dagger check ps-analyzer:check # run PSScriptAnalyzer on discovered PowerShell scripts
+```
+
+`ps-analyzer:check` finds every `.ps1`, `.psm1`, and `.psd1` file in the workspace and runs `Invoke-ScriptAnalyzer` recursively, failing on any diagnostic it reports.
+
+## Configure it
+
+List the current settings and their values with `dagger settings ps-analyzer`, then set one with `dagger settings ps-analyzer <key> <value>`. They live in `dagger.toml` under `[modules.ps-analyzer.settings]`:
+
+- **`version`** (default `1.22.0`): the PSScriptAnalyzer release to install. Pin it so the same ruleset and analyzer behavior run locally and in CI.
+- **`exclude`** (default: none): a list of script paths to skip.
+- **`includeExtraFiles`** (default empty): extra non-PowerShell paths to mount, for scripts that read data files or other project context during analysis.
+
+```bash
+dagger settings ps-analyzer version 1.22.0
+```
+
+The list-valued settings are edited directly in `dagger.toml`:
+
+```toml
+[modules.ps-analyzer.settings]
+version = "1.22.0"
+exclude = ["tests/"]
+includeExtraFiles = ["data/"]
+```
+
+## Working with other modules
+
+Use this module for repos with PowerShell automation, Windows support scripts, or PowerShell modules. It complements ShellCheck in mixed shell workspaces.

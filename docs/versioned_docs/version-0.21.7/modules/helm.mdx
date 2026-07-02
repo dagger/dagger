@@ -1,0 +1,56 @@
+---
+title: "Helm"
+slug: /modules/helm
+description: "Lint Helm charts and check rendered templates."
+---
+
+# Helm
+
+The Helm module validates Helm charts across your workspace. It discovers charts, lints them, and checks that values files render with `helm template --dry-run=client` — catching structural and templating problems before a PR ever reaches a cluster. Reach for it in any repo that ships Kubernetes applications with Helm, where it makes a strong PR check by validating chart changes before deploy tooling sees them, and it shares one pinned Helm version across the whole workspace.
+
+Official module: [dagger/helm](https://github.com/dagger/helm)
+
+## Add it to your workspace
+
+```bash
+dagger install github.com/dagger/helm
+```
+
+## Run the checks
+
+```bash
+dagger check                       # run every check in the workspace
+dagger check helm:lint             # lint every discovered chart
+dagger check helm:assert-template  # render discovered values files and fail on errors
+```
+
+The module discovers charts by finding every `Chart.yaml` in the workspace and treats the containing directory as the chart root, so templates, subcharts, CRDs, and files referenced through `.Files` are all available to Helm. You can see which charts the module finds with `charts`.
+
+`lint` runs `helm lint` against each chart's default values, and once more for each discovered values file. `assert-template` renders each values file with `helm template --dry-run=client` and fails if templating breaks; it intentionally skips the bare chart, since some charts only render with one of their explicit values files.
+
+## Configure it
+
+List the current settings and their values with `dagger settings helm`, then set one with `dagger settings helm <key> <value>`. Settings are stored in `dagger.toml` under `[modules.helm.settings]`:
+
+- **`version`** (default `3.18.4`): the Helm version used for `lint` and `template`. Pin it so local runs and CI use the same Helm release.
+- **`valuesGlob`** (default `ci/*-values.yaml`): a glob, relative to each chart root, that selects the values files to check. Every matching file becomes a separate scenario in both `lint` and `assert-template`. The default follows Helm chart-testing's CI convention, so files like `ci/prod-values.yaml` are picked up automatically.
+
+```bash
+dagger settings helm version 3.18.4
+dagger settings helm valuesGlob "ci/*-values.yaml"
+```
+
+To check a chart under several configurations, add more values files that match the glob. With the default glob, the chart below is rendered and linted once per file under `ci/`:
+
+```
+charts/api/
+  Chart.yaml
+  values.yaml
+  ci/
+    prod-values.yaml
+    minimal-values.yaml
+```
+
+## Working with other modules
+
+Use this module for repos that ship Kubernetes applications with Helm. It is a strong PR check because it validates chart changes before deploy tooling sees them.

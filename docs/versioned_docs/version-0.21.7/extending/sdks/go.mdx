@@ -1,0 +1,1024 @@
+---
+title: "Go SDK"
+slug: /extending/sdks/go
+description: "Develop Dagger modules in Go: create modules with the Go SDK module, define objects and functions, manage dependencies, regenerate bindings, and ship releases."
+---
+
+# Go SDK
+
+The Go SDK lets you write Dagger modules in Go. You define plain Go structs and methods; the SDK turns them into Dagger objects and functions that anyone can call from the CLI, from another module, or over the API. In return, your module gets a generated, fully-typed Go client (`dag`) for the entire Dagger API — containers, directories, files, secrets, services, and every module you depend on.
+
+This page is a standalone guide to the Go SDK. It assumes you already understand the platform concepts covered in the [Module Developer Guide](../index.mdx):
+
+- [Type system](../type-system/index.mdx) — how SDK types map to the Dagger API
+- [Checks](../how-dagger-works/checks.mdx) — functions that validate your code
+- [Changesets](../../using-dagger/changesets.mdx) — how generators and tooling return diffs for you to apply
+
+A useful, reusable module provides at least one of the three first-class function types — a **check**, a **generator**, or a **service**. See [Checks, generators, services, directives, and ignore patterns](#checks-generators-services-directives-and-ignore-patterns) for the Go syntax.
+
+Module development tooling lives in the SDK module, not the `dagger` CLI: **the Go SDK is itself a Dagger module — `github.com/dagger/go-sdk`**. You install it into your workspace once, then scaffold, generate, and maintain Go modules by calling its functions by name:
+
+```shell
+# Install the Go SDK into your workspace (once)
+dagger install github.com/dagger/go-sdk
+
+# Then call its functions
+dagger call go-sdk <function> ...
+```
+
+## Create a module
+
+:::note
+Run these commands from inside a Git repository — that's where the new module is created.
+:::
+
+Install the Go SDK into your workspace, then create a new module with its `init` function. The only required argument is `--name`:
+
+```shell
+dagger install github.com/dagger/go-sdk
+dagger call go-sdk init --name my-module
+```
+
+Like every Dagger tool that modifies your workspace, `init` returns a [changeset](../../using-dagger/changesets.mdx) — a structured diff of the files to create — which Dagger shows you to review before anything is written to disk.
+
+### Where the module is created
+
+By default, `init` places the new module under the nearest `.dagger` directory visible from your current workspace path:
+
+```
+<nearest .dagger>/modules/<name>
+```
+
+Pass `--path` to choose a different location (the target must not already contain a Dagger module):
+
+```shell
+dagger call go-sdk init --name my-module --path ./ci
+```
+
+Pass `--template` to materialize a non-default starter from the SDK module's `templates/<template>` directory. The empty default uses the minimal template. List available templates with:
+
+```shell
+dagger call go-sdk templates
+```
+
+By default the generated SDK files are checked into version control. Pass `--ignore-generated` to instead configure generation to add those paths to `.gitignore`:
+
+```shell
+dagger call go-sdk init --name my-module --ignore-generated
+```
+
+### Resulting file layout
+
+Once initialized and generated, a Go module looks like this:
+
+```
+my-module/
+├── dagger-module.toml
+├── go.mod
+├── go.sum
+├── main.go                       # your code
+├── dagger.gen.go                 # generated: top-level helpers (committed)
+├── .gitattributes                # marks generated files for linguist
+└── internal/
+    ├── dagger/                   # generated: the typed Dagger client (committed)
+    │   └── dagger.gen.go
+    ├── querybuilder/             # generated
+    └── telemetry/                # generated
+```
+
+:::note
+`init` writes only `dagger-module.toml` and `main.go`. The generated files (`dagger.gen.go`, `go.mod`/`go.sum`, `.gitattributes`, and everything under `internal/`) are produced by the first [binding regeneration](#regenerate-bindings-and-generated-files) — committed by default — not by `init` itself.
+:::
+
+The `dagger-module.toml` records that this is a Go SDK module via `runtime.source`:
+
+```toml title="dagger-module.toml"
+name = "my-module"
+engineVersion = "v1.0.0-beta.3"
+
+[runtime]
+source = "go"
+```
+
+`runtime.source: "go"` is what makes this a Go module — it tells the engine to use the Go runtime and is how the SDK module's `modules` function discovers Go modules in a workspace. The generated files in `dagger.gen.go` and `internal/` are not handwritten; see [Regenerate bindings](#regenerate-bindings-and-generated-files).
+
+:::tip
+You can list the Go modules in a workspace with `dagger call go-sdk modules` — it returns every module whose `runtime.source` is `"go"`.
+:::
+
+## Define objects and functions
+
+A Go module is an ordinary Go package named `main`. The **main object** is a struct whose name matches your module (Dagger PascalCases the module name): a module named `my-module` has a `MyModule` struct. Every **exported method** on that struct becomes a callable Dagger Function.
+
+```go title="main.go"
+// A simple example module to say hello.
+
+// Further documentation for the module here.
+
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type MyModule struct{}
+
+// Return a greeting.
+func (m *MyModule) Hello(
+	// Who to greet
+	name string,
+	// The greeting to display
+	greeting string,
+) string {
+	return fmt.Sprintf("%s, %s!", greeting, name)
+}
+
+// Return a loud greeting.
+func (m *MyModule) LoudHello(
+	// Who to greet
+	name string,
+	// The greeting to display
+	greeting string,
+) string {
+	out := fmt.Sprintf("%s, %s!", greeting, name)
+	return strings.ToUpper(out)
+}
+```
+
+Key rules:
+
+- The package is always `package main`.
+- Method receivers may be value (`func (m MyModule)`) or pointer (`func (m *MyModule)`) — be consistent within a type.
+- **Exported** (capitalized) methods become Dagger Functions. Unexported methods are private Go helpers, invisible to callers.
+- The first parameter may be a `context.Context`; it does not appear as a Dagger argument and is supplied by the runtime.
+- A method may return an error as its last value; a non-nil error fails the function.
+
+Call your functions exactly like any other module — from the directory that contains `dagger-module.toml` (or with `-m <path>`):
+
+```shell
+dagger call hello --name=World --greeting=Hello
+# Hello, World!
+
+dagger call loud-hello --name=World --greeting=Hello
+# HELLO, WORLD!
+```
+
+Go method and argument names are converted to kebab-case on the CLI (`LoudHello` → `loud-hello`, `name` → `--name`).
+
+### The constructor
+
+If you define a `New` function in the same package, it becomes the module's **constructor**. Its arguments become arguments of the main object, and its return value is the initialized main object. Use it for module-wide configuration and shared state.
+
+A common pattern is to accept a `*dagger.Workspace` so the module can read the project it runs against (see [Workspace inputs](#workspace-inputs)). Dagger auto-populates it from the current workspace, and content is pulled lazily, so you store the project directory once and reuse it:
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+
+	"dagger/my-module/internal/dagger"
+)
+
+type MyModule struct {
+	Source *dagger.Directory
+}
+
+func New(
+	// The current workspace, auto-populated by Dagger.
+	ws *dagger.Workspace,
+) *MyModule {
+	return &MyModule{
+		// Read the workspace root; nothing is uploaded until a function uses it.
+		Source: ws.Directory("/"),
+	}
+}
+
+func (m *MyModule) Foo(ctx context.Context) ([]string, error) {
+	return dag.Container().
+		From("alpine:latest").
+		WithMountedDirectory("/app", m.Source).
+		Directory("/app").
+		Entries(ctx)
+}
+```
+
+Exported struct fields (like `Source` above) are part of the object's state and are serialized between functions in a chain. Mark a field private to Dagger — present in Go but hidden from the API — with a `+private` comment:
+
+```go
+type LintRun struct {
+	// +private
+	Source *dagger.Directory
+}
+```
+
+## Arguments and return values
+
+Dagger derives a function's argument and return types from the Go signature. The mapping is:
+
+| Go type | Dagger type |
+|---|---|
+| `string` | `String` |
+| `int` | `Int` |
+| `float64` | `Float` |
+| `bool` | `Boolean` |
+| `[]T` | `[T]` (list) |
+| `*dagger.Directory` | `Directory` |
+| `*dagger.File` | `File` |
+| `*dagger.Container` | `Container` |
+| `*dagger.Secret` | `Secret` |
+| `*dagger.Service` | `Service` |
+| a custom struct `T` | object `T` |
+| a custom `string` type with consts | enum |
+
+### Documentation
+
+Doc comments become API documentation, surfaced in `dagger functions` and `dagger call --help`. A comment directly above a method documents the function; a comment directly above a parameter documents that argument; a comment above the `package main` declaration documents the whole module.
+
+```go
+// Return a greeting.
+func (m *MyModule) Hello(
+	// Who to greet
+	name string,
+) string {
+	return fmt.Sprintf("Hello, %s!", name)
+}
+```
+
+### Optional and default arguments
+
+Dagger arguments are required by default. Make one optional, or give it a default, with a magic comment on the parameter:
+
+```go title="optional"
+func (m *MyModule) Hello(
+	ctx context.Context,
+	// +optional
+	name string,
+) (string, error) {
+	if name != "" {
+		return fmt.Sprintf("Hello, %s", name), nil
+	}
+	return "Hello, world", nil
+}
+```
+
+```go title="default value"
+func (m *MyModule) Hello(
+	ctx context.Context,
+	// +default="world"
+	name string,
+) (string, error) {
+	return fmt.Sprintf("Hello, %s", name), nil
+}
+```
+
+- `+optional` makes the argument optional. For scalar types it defaults to the Go zero value; for pointer types (`*dagger.Directory`, etc.) it defaults to `nil`, so you can detect "not passed."
+- `+default="..."` makes the argument optional and supplies a default value when the caller omits it.
+
+### Nullability
+
+Use a pointer to a core type (e.g. `*dagger.Secret`) when an argument or return value may be absent. A `nil` pointer corresponds to a null/omitted value. Non-pointer scalars (`string`, `int`, `bool`) are always present.
+
+### Enums
+
+Model a closed set of string values as a named `string` type with a block of typed constants. Dagger turns it into an enum and validates inputs:
+
+```go title="main.go"
+package main
+
+import "context"
+
+type MyModule struct{}
+
+// Vulnerability severity levels
+type Severity string
+
+const (
+	// Undetermined risk; analyze further.
+	Unknown Severity = "UNKNOWN"
+
+	// Minimal risk; routine fix.
+	Low Severity = "LOW"
+
+	// Moderate risk; timely fix.
+	Medium Severity = "MEDIUM"
+
+	// Serious risk; quick fix needed.
+	High Severity = "HIGH"
+
+	// Severe risk; immediate action.
+	Critical Severity = "CRITICAL"
+)
+
+func (m *MyModule) Scan(ctx context.Context, ref string, severity Severity) (string, error) {
+	return dag.Container().
+		From("aquasec/trivy:0.50.4").
+		WithExec([]string{
+			"trivy", "image",
+			"--severity=" + string(severity),
+			ref,
+		}).Stdout(ctx)
+}
+```
+
+Passing a value outside the enum produces a clear error listing the allowed choices:
+
+```shell
+dagger call scan --ref=alpine:latest --severity=FOO
+# Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+```
+
+### Custom object types
+
+Return a struct to expose a custom object. Exported fields become readable values, and exported methods on the type become chainable functions. Dagger prefixes custom type names with the module name in the API schema (e.g. `MyModuleOrganization`) to avoid collisions:
+
+```go title="main.go"
+package main
+
+import "dagger/my-module/internal/dagger"
+
+type MyModule struct{}
+
+func (module *MyModule) DaggerOrganization() *Organization {
+	url := "https://github.com/dagger"
+	return &Organization{
+		URL:          url,
+		Repositories: []*dagger.GitRepository{dag.Git(url + "/dagger")},
+		Members: []*Account{
+			{"jane", "jane@example.com"},
+			{"john", "john@example.com"},
+		},
+	}
+}
+
+type Organization struct {
+	URL          string
+	Repositories []*dagger.GitRepository
+	Members      []*Account
+}
+
+type Account struct {
+	Username string
+	Email    string
+}
+
+func (account *Account) URL() string {
+	return "https://github.com/" + account.Username
+}
+```
+
+This enables chaining on the CLI and API:
+
+```shell
+dagger call dagger-organization members url
+```
+
+### Interfaces
+
+Interfaces let your module accept arbitrary objects from other modules without depending on their concrete types. Declare a Go interface that embeds `DaggerObject` and lists the functions you need; any object that provides matching functions can be passed in:
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+	"dagger/my-module/internal/dagger"
+)
+
+type MyModule struct{}
+
+type Fooer interface {
+	DaggerObject
+	Foo(ctx context.Context, bar int) (string, error)
+}
+
+func (m *MyModule) Foo(ctx context.Context, fooer Fooer) (string, error) {
+	return fooer.Foo(ctx, 42)
+}
+```
+
+The `DaggerObject` marker (provided by the generated client) is required so Dagger knows this interface describes a Dagger object rather than a plain Go interface.
+
+## Working with core Dagger types
+
+The generated client exposes the entire Dagger API through a package-level variable named `dag`. You use it to build containers, mount directories and files, handle secrets, and run services. Core types live in the `internal/dagger` package, imported as `dagger`.
+
+### Containers
+
+Each builder method returns a new, immutable `*dagger.Container`. Nothing mutates in place, and every step is content-addressed and cached automatically.
+
+```go
+package main
+
+import (
+	"dagger/my-module/internal/dagger"
+)
+
+type MyModule struct{}
+
+// Build and return a container
+func (m *MyModule) Build(source *dagger.Directory) *dagger.Container {
+	return dag.Container().
+		From("node:20").
+		WithDirectory("/app", source).
+		WithWorkdir("/app").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "build"})
+}
+```
+
+### Directories and files
+
+`*dagger.Directory` and `*dagger.File` are first-class, "just-in-time" artifacts you can accept as arguments, produce as return values, mount into containers, and export to the host. Some builder methods take an options struct for less-common parameters — for example `WithDirectory` accepts `dagger.ContainerWithDirectoryOpts`:
+
+```go
+func (m *MyModule) CopyDirectoryWithExclusions(
+	ctx context.Context,
+	// Source directory
+	source *dagger.Directory,
+	// Exclusion pattern
+	// +optional
+	exclude []string,
+) *dagger.Container {
+	return dag.Container().
+		From("alpine:latest").
+		WithDirectory("/src", source, dagger.ContainerWithDirectoryOpts{Exclude: exclude})
+}
+```
+
+The pattern is consistent: required parameters are positional Go arguments, optional ones live in a generated `XxxOpts` struct.
+
+### Workspace inputs {#workspace-inputs}
+
+When a module needs to read the user's project — its source tree, config files, lockfiles — it takes a `*dagger.Workspace` argument, almost always on the **constructor**. You don't pass it: Dagger **auto-populates** it from the current workspace, and nothing is uploaded up front. Project content is pulled **lazily, on demand** when a function actually reads a path, so a module can declare access to the whole workspace cheaply and only pay for what it touches.
+
+```go title="main.go"
+package main
+
+import (
+	"dagger/my-module/internal/dagger"
+)
+
+type MyModule struct {
+	Source *dagger.Directory
+}
+
+func New(
+	// The current workspace, auto-populated by Dagger.
+	ws *dagger.Workspace,
+) *MyModule {
+	return &MyModule{
+		// Pull the workspace root as a Directory (lazy — no upload yet).
+		Source: ws.Directory("/"),
+	}
+}
+
+// Functions reuse the pulled Directory like any other.
+func (m *MyModule) Build() *dagger.Container {
+	return dag.Container().
+		From("node:20").
+		WithDirectory("/app", m.Source).
+		WithWorkdir("/app").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "build"})
+}
+```
+
+The `Workspace` client type exposes accessors for reading project content:
+
+| Accessor | Signature | Returns |
+|---|---|---|
+| `Directory` | `ws.Directory(path string, opts ...dagger.WorkspaceDirectoryOpts) *dagger.Directory` | a `Directory` at `path` |
+| `File` | `ws.File(path string) *dagger.File` | a `File` at `path` |
+| `FindUp` | `ws.FindUp(ctx, name string, opts ...dagger.WorkspaceFindUpOpts) (string, error)` | the workspace path of `name`, searching upward |
+
+**Path resolution.** A **relative** path resolves from the workspace's current working directory; an **absolute** path (starting with `/`) resolves from the workspace root (boundary). So `ws.Directory("/")` is the whole project root, while `ws.Directory(".")` is wherever the user invoked Dagger from.
+
+**Excluding files.** `Directory` takes a `dagger.WorkspaceDirectoryOpts` options struct to filter what gets pulled. Tight filters matter for cache efficiency — loading less means fewer cache invalidations:
+
+```go
+func New(ws *dagger.Workspace) *MyModule {
+	return &MyModule{
+		Source: ws.Directory("/", dagger.WorkspaceDirectoryOpts{
+			Exclude:   []string{"node_modules", ".git", "dist"},
+			// Include:   []string{"app/", "package.*"}, // allowlist instead
+			// Gitignore: true,                          // apply .gitignore rules
+		}),
+	}
+}
+```
+
+`FindUp` walks up from a start path (relative paths resolve from the workspace cwd; pass `dagger.WorkspaceFindUpOpts{From: "..."}` to change it) and returns the absolute workspace path of the first match, stopping at the workspace boundary. Use it to locate a project root marker such as `package.json` or `go.mod`.
+
+:::tip
+A function that doesn't take a `*dagger.Workspace` argument can still reach the current workspace through the client with `dag.CurrentWorkspace()`, which returns the same `*dagger.Workspace` type.
+:::
+
+### Secrets
+
+Accept sensitive values as `*dagger.Secret`, never as plain strings. Dagger scrubs secret plaintext from logs, caches, and crash reports:
+
+```go
+package main
+
+import (
+	"context"
+	"dagger/my-module/internal/dagger"
+)
+
+type MyModule struct{}
+
+// Query the GitHub API
+func (m *MyModule) GithubApi(
+	ctx context.Context,
+	// GitHub API token
+	token *dagger.Secret,
+) (string, error) {
+	return dag.Container().
+		From("alpine:3.17").
+		WithSecretVariable("GITHUB_API_TOKEN", token).
+		WithExec([]string{"apk", "add", "curl"}).
+		WithExec([]string{"sh", "-c", `curl "https://api.github.com/repos/dagger/dagger/issues" --header "Authorization: Bearer $GITHUB_API_TOKEN"`}).
+		Stdout(ctx)
+}
+```
+
+Callers supply secrets through providers on the CLI:
+
+```shell
+dagger call github-api --token=env:GITHUB_TOKEN     # environment variable
+dagger call github-api --token=file:./token.txt      # file
+dagger call github-api --token=cmd:"gh auth token"   # command output
+dagger call github-api --token=op://vault/item/field # 1Password
+```
+
+### Services
+
+Return `*dagger.Service` to expose a long-running service, and bind it into other containers with `WithServiceBinding`. Services are content-addressed, so a given definition always gets the same hostname — no port conflicts:
+
+```go
+package main
+
+import (
+	"context"
+	"dagger/my-module/internal/dagger"
+)
+
+type MyModule struct{}
+
+// Start and return an HTTP service
+func (m *MyModule) HttpService() *dagger.Service {
+	return dag.Container().
+		From("python").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "Hello, world!").
+		WithExposedPort(8080).
+		AsService(dagger.ContainerAsServiceOpts{Args: []string{"python", "-m", "http.server", "8080"}})
+}
+
+// Send a request to an HTTP service and return the response
+func (m *MyModule) Get(ctx context.Context) (string, error) {
+	return dag.Container().
+		From("alpine").
+		WithServiceBinding("www", m.HttpService()).
+		WithExec([]string{"wget", "-O-", "http://www:8080"}).
+		Stdout(ctx)
+}
+```
+
+### A larger example
+
+Real modules combine these pieces. This is adapted from Dagger's own `ruff` module (a Go SDK module in the Dagger repo) — note custom types, chaining, error returns, and the use of `dag.CurrentModule()` to reach the module's own source:
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/dagger/dagger/modules/ruff/internal/dagger"
+)
+
+// Ruff is a fast Python linter implemented in Rust
+type Ruff struct{}
+
+// Lint a Python codebase
+func (ruff Ruff) Lint(
+	// The Python source directory to lint
+	source *dagger.Directory,
+) *LintRun {
+	return &LintRun{Source: source}
+}
+
+// The result of running the Ruff lint tool
+type LintRun struct {
+	// +private
+	Source *dagger.Directory
+}
+
+// Return a JSON report file for this run
+func (run LintRun) Report() *dagger.File {
+	cmd := []string{"/ruff", "check", "--exit-zero", "--output-format", "json", "."}
+	return dag.
+		CurrentModule().
+		Source().
+		Directory("build").
+		DockerBuild().
+		WithMountedDirectory("", run.Source).
+		WithExec(cmd, dagger.ContainerWithExecOpts{RedirectStdout: "ruff-report.json"}).
+		File("ruff-report.json")
+}
+
+// Return an error if the run reported any issues
+func (run LintRun) Assert(ctx context.Context) error {
+	contents, err := run.Report().Contents(ctx)
+	if err != nil {
+		return err
+	}
+	var issues []struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(contents), &issues); err != nil {
+		return err
+	}
+	if len(issues) > 0 {
+		var lines []string
+		for _, i := range issues {
+			lines = append(lines, " - "+i.Message)
+		}
+		return errors.New(fmt.Sprintf("%d issues\n%s", len(issues), strings.Join(lines, "\n")))
+	}
+	return nil
+}
+```
+
+## Module dependencies
+
+A module can depend on other Dagger modules and call them through `dag` — for example `dag.Ruff()` once `ruff` is a dependency. Dependencies are recorded in `dagger-module.toml` under `dependencies`:
+
+```toml title="dagger-module.toml"
+name = "dev"
+engineVersion = "v1.0.0-beta.3"
+
+[runtime]
+source = "go"
+
+[[dependencies]]
+name = "go"
+source = "../../modules/go"
+
+[[dependencies]]
+name = "wolfi"
+source = "../wolfi"
+```
+
+A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, e.g. `github.com/shykes/daggerverse/hello@v0.3.0`.
+
+Manage dependencies with the SDK module's `mod deps` operations rather than hand-editing `dagger-module.toml`. Each returns a [changeset](../../using-dagger/changesets.mdx) for you to review and apply.
+
+Add a dependency (`--source` required, `--name` optional alias):
+
+```shell
+dagger call go-sdk mod deps add \
+  --source github.com/shykes/daggerverse/hello@v0.3.0
+```
+
+List the current dependencies (returns names where present, otherwise sources):
+
+```shell
+dagger call go-sdk mod deps list
+```
+
+Update one dependency by name or source, or all remote dependencies when `--name` is omitted:
+
+```shell
+# Update a single dependency
+dagger call go-sdk mod deps update --name hello
+
+# Update all remote dependencies
+dagger call go-sdk mod deps update
+```
+
+Remove a dependency by name (`--name` required):
+
+```shell
+dagger call go-sdk mod deps remove --name hello
+```
+
+After changing dependencies, [regenerate bindings](#regenerate-bindings-and-generated-files) so the new module's functions appear on `dag`.
+
+:::note
+By default, `mod deps` resolves the module at or above your current workspace path. Pass `--path` to target a specific module, and `--find-up` to allow `--path` to point *inside* the module rather than at its root.
+:::
+
+## Regenerate bindings and generated files {#regenerate-bindings-and-generated-files}
+
+A Go module ships with generated code that you commit alongside your handwritten `main.go`:
+
+- `dagger.gen.go` — top-level helpers
+- `internal/dagger/` — the typed Dagger client, including `dag`, all core types (`Container`, `Directory`, …), every dependency's functions, and the `XxxOpts` option structs
+- `internal/querybuilder/`, `internal/telemetry/` — supporting generated code
+
+These files are generated, not authored. They are marked in `.gitattributes` as `linguist-generated` so platforms like GitHub collapse them in diffs:
+
+```text title=".gitattributes"
+/dagger.gen.go linguist-generated
+/internal/dagger/** linguist-generated
+/internal/querybuilder/** linguist-generated
+/internal/telemetry/** linguist-generated
+```
+
+Regenerate them whenever you change your module's functions, bump the engine version, or add/update/remove a dependency. Use the SDK module's `mod generate`, which returns a changeset:
+
+```shell
+# Review the regenerated files, then apply
+dagger call go-sdk mod generate
+```
+
+You can also regenerate *every* Go module discovered in the workspace at once:
+
+```shell
+dagger call go-sdk generate-all
+```
+
+`dagger generate` (the user-facing command described in [Generating Code](../../using-dagger/generating.mdx)) discovers and runs your module's generators, which for a Go module includes this binding regeneration. Both paths produce a [changeset](../../using-dagger/changesets.mdx) you review and apply.
+
+:::note
+A module (or an ancestor) can carry a "skip generate" marker; when present, `mod generate` returns an empty changeset. Check whether a marker is in effect with `dagger call go-sdk mod skip-generate`.
+:::
+
+:::tip
+Whether generated SDK files are committed or git-ignored is controlled per-module. It is set when you run `init` (the `--ignore-generated` flag) and recorded in `dagger-module.toml` under `codegen` (e.g. `"codegen": { "automaticGitignore": false }`). Committing them is the default and is recommended so consumers can build your module without first running codegen.
+:::
+
+## Engine version
+
+Each module declares the Dagger engine version it requires in `dagger-module.toml` (`engineVersion`). Manage it with the SDK module's `mod engine` operations.
+
+Read the currently required version (without the leading `v`):
+
+```shell
+dagger call go-sdk mod engine required
+```
+
+Pin a specific version, the current engine, or the latest stable release (each returns a changeset):
+
+```shell
+# A specific version (--version required)
+dagger call go-sdk mod engine require --version v1.0.0-beta.3
+
+# Whatever engine you're running now
+dagger call go-sdk mod engine require-current
+
+# Latest stable release
+dagger call go-sdk mod engine require-latest
+```
+
+Bumping the engine version usually means the generated bindings should change too, so follow with `mod generate`.
+
+## Checks, generators, services, directives, and ignore patterns
+
+A useful, reusable module provides at least one of the three first-class function types — a **check**, a **generator**, or a **service** — so that the platform verbs (`dagger check`, `dagger generate`, `dagger up`) have something to run. These work the same in Go as in any SDK; see the [Module Developer Guide](../index.mdx) for the full treatment. In Go, you mark each one with a doc-comment **pragma** on the function:
+
+| Pragma | Return type | Run by | Purpose |
+|---|---|---|---|
+| `// +check` | `error` (or `*dagger.Container`) | `dagger check` | validate the project (test/lint/scan) |
+| `// +generate` | `*dagger.Changeset` | `dagger generate` | produce a diff to apply to the workspace |
+| `// +up` | `*dagger.Service` | `dagger up` | start a long-running service |
+
+The Go-specific surface is:
+
+### Magic comment directives
+
+Go modules use `// +directive` comments to add Dagger metadata that Go's type system can't express:
+
+| Directive | Placement | Meaning |
+|---|---|---|
+| `// +optional` | above an argument | argument is optional |
+| `// +default="x"` | above an argument | optional with a default value |
+| `// +private` | above a struct field | keep the field out of the API |
+| `// +check` | above a method | mark the function as a [check](#checks) |
+| `// +generate` | above a method | mark the function as a [generator](#generators) |
+| `// +up` | above a method | mark the function as a [service](#up-services) |
+
+### Ignore patterns
+
+A module reads the user's project through a `*dagger.Workspace` argument (see [Workspace inputs](#workspace-inputs)), not a path-defaulted `*dagger.Directory`. To filter what gets pulled, use the **exclude option** when reading a workspace directory. Tight filters are essential for cache efficiency (load less → fewer cache invalidations):
+
+```go
+func New(ws *dagger.Workspace) *MyModule {
+	return &MyModule{
+		Source: ws.Directory("/", dagger.WorkspaceDirectoryOpts{
+			Exclude: []string{"node_modules", ".git", "dist"},
+		}),
+	}
+}
+```
+
+### Checks {#checks}
+
+Mark a function with the `// +check` pragma to make it a **check** — a validation function (test, lint, scan) that takes no caller arguments. `dagger check` discovers and runs every check a module exposes. A check fails when it returns a non-nil `error`, or when it returns a `*dagger.Container` whose execution exits non-zero. The platform model is described in [Checks](../how-dagger-works/checks.mdx).
+
+```go
+// Lint the project.
+//
+// +check
+func (m *MyModule) Lint(ctx context.Context) error {
+	_, err := dag.Container().
+		From("golangci/golangci-lint:latest").
+		WithMountedDirectory("/src", m.Source).
+		WithWorkdir("/src").
+		WithExec([]string{"golangci-lint", "run"}).
+		Sync(ctx)
+	return err
+}
+
+// A check can also return a container; a non-zero exit fails the check.
+//
+// +check
+func (m *MyModule) Build() *dagger.Container {
+	return dag.Container().From("alpine:3").WithExec([]string{"true"})
+}
+```
+
+The pragma may be placed on its own line within the doc comment (a blank `//` line separates the human-readable description from the pragma, as shown above). Checks can also be declared on custom object types, so you can group them (for example a `Test` object with `Lint` and `Unit` checks).
+
+### Generators {#generators}
+
+Mark a function with the `// +generate` pragma to make it a **generator**. It returns a `*dagger.Changeset`: it runs a tool, captures the resulting directory, and diffs it against the source. `dagger generate` discovers and runs every generator and presents the combined [changeset](../../using-dagger/changesets.mdx) for you to review and apply.
+
+```go
+// Format the source.
+//
+// +generate
+func (m *MyModule) Format() *dagger.Changeset {
+	formatted := dag.Container().
+		From("golang:latest").
+		WithMountedDirectory("/src", m.Source).
+		WithWorkdir("/src").
+		WithExec([]string{"gofmt", "-w", "."}).
+		Directory("/src")
+	return formatted.Changes(m.Source)
+}
+```
+
+:::note
+This author-written `// +generate` function is distinct from regenerating the SDK's own client bindings. Binding regeneration is the SDK module's `mod generate` operation, covered under [Regenerate bindings](#regenerate-bindings-and-generated-files); the user-facing `dagger generate` runs both your `// +generate` functions and (for a Go module) the binding regeneration.
+:::
+
+See [Generating Code](../../using-dagger/generating.mdx) and [Changesets](../../using-dagger/changesets.mdx).
+
+### Services {#up-services}
+
+Mark a function with the `// +up` pragma to make it a **service**. It returns a `*dagger.Service`, and `dagger up` discovers and starts every service the module exposes, exposing their ports on the host.
+
+```go
+// Run the web server.
+//
+// +up
+func (m *MyModule) Web() *dagger.Service {
+	return dag.Container().
+		From("nginx:alpine").
+		WithExposedPort(80).
+		AsService()
+}
+```
+
+Like checks, `// +up` services can also be declared on custom object types so you can group related services (for example an `Infra` object exposing a `Database` service). This is the same `*dagger.Service` type described under [Services](#services) above; the `// +up` pragma is what makes a service function runnable directly via `dagger up`.
+
+## Testing Go modules
+
+Because a Go module is ordinary Go, you have two complementary testing strategies.
+
+### Idiomatic Go tests
+
+Functions that contain pure Go logic — parsing reports, formatting summaries, computing counts — can be unit-tested with the standard `testing` package, with no engine involved:
+
+```go title="main_test.go"
+package main
+
+import "testing"
+
+func TestIssueSummary(t *testing.T) {
+	issue := Issue{
+		AbsFilename: "/src/app/main.py",
+		Message:     "undefined name",
+		Location:    Location{Row: 12},
+	}
+	got := issue.Summary()
+	want := "app/main.py:12 error: undefined name"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+```
+
+Run them like any Go test (these don't require the engine):
+
+```shell
+go test ./...
+```
+
+### Functional tests via checks
+
+For behavior that exercises containers and the Dagger API, write functions in your module and invoke them, or model them as checks so they run under `dagger check`. A check that builds, lints, or tests your project doubles as both a CI gate and a smoke test:
+
+```shell
+# Smoke test: does it build?
+dagger call build
+
+# Run all checks
+dagger check
+
+# Run generators and confirm there's no drift
+dagger check --generate
+```
+
+### In CI
+
+Run `dagger check` in CI to execute every check the module exposes. Because the heavy lifting happens in content-addressed containers, the same command runs identically on a laptop and on a CI runner, with full caching:
+
+```yaml title=".github/workflows/ci.yml"
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dagger/dagger-for-github@v6
+        with:
+          verb: check
+```
+
+## IDE setup, `go.mod` and `go.work`
+
+`init` generates a `go.mod` (and `go.sum`) scoped to your module so the generated client resolves. If the module lives in a sub-directory of a larger Go project, this separate module can confuse IDE tooling.
+
+Two options:
+
+1. **Reuse a parent `go.mod`.** If a parent directory already has a `go.mod` you want to use, delete the module's generated `go.mod`/`go.sum`; Dagger will fall back to the parent. Avoid this if your module pulls in dependencies irrelevant to the rest of the project, since most consumers prefer a narrower dependency set.
+
+2. **Use a Go workspace.** Keep the generated `go.mod` and stitch everything together with [`go.work`](https://go.dev/doc/tutorial/workspaces):
+
+   ```shell
+   # in the root of your repository
+   go work init
+   go work use ./
+   go work use ./path/to/module
+   ```
+
+   Restart your IDE and features like go-to-definition will work across both modules.
+
+`go.work` should usually stay out of version control:
+
+```shell
+echo go.work >> .gitignore
+echo go.work.sum >> .gitignore
+```
+
+### Source maps
+
+The Go SDK attaches source maps to type and function definitions — `./path/to/file:line` annotations recorded during generation. Most IDEs can follow these (natively or via a plugin such as the [Open file plugin](https://marketplace.visualstudio.com/items?itemName=Fr43nk.seito-openfile) for VS Code), so you can click straight from a Dagger Function in one module to its declaration in another.
+
+## Packaging and release
+
+A Go SDK module is distributed as a Git repository. There is no build artifact to publish — consumers fetch the source by reference.
+
+1. **Commit the generated files.** Keeping `dagger.gen.go` and `internal/` in version control (the default) means consumers can use your module without running codegen first.
+2. **Version with Git tags.** Releases are Git refs. Tag a release (e.g. `v1.2.0`) and consumers pin it with `@v1.2.0` in the reference.
+3. **Pin a sensible engine version.** Use `mod engine require` so consumers know which engine your module targets.
+
+Consumers add your module as a dependency with the user-facing workspace command:
+
+```shell
+dagger install github.com/you/your-module@v1.2.0
+```
+
+or by adding it to their `dagger-module.toml` `dependencies` and regenerating. A module reference follows `[proto://]host/repo[/subpath][@version]`; the version may be a tag, branch, or commit, and is resolved over HTTPS or SSH depending on available authentication.
+
+## Troubleshooting
+
+**`dagger init` / `dagger develop` not found.** Module development tooling lives in the Go SDK module, not the CLI. Install it with `dagger install github.com/dagger/go-sdk`, then use `dagger call go-sdk init ...` to scaffold and `dagger call go-sdk mod generate` to regenerate.
+
+**Nothing was written after `init`.** `init` returns a changeset; it doesn't write files on its own. Review and apply it to write the files into your workspace.
+
+**A new function or dependency doesn't show up.** Regenerate bindings with `dagger call go-sdk mod generate` (or `dagger generate`). The API surface comes from the generated `internal/dagger` package, which must be in sync with your code and `dagger-module.toml`.
+
+**`mod generate` returns an empty changeset.** A "skip generate" marker is likely in effect for this module or an ancestor. Confirm with `dagger call go-sdk mod skip-generate`.
+
+**Build/import errors referencing `internal/dagger` or `dag`.** The generated client is stale or missing. Regenerate as above; if `go.mod`/`go.sum` drifted, ensure they match the regenerated code (a workspace `go.work` can help your IDE here).
+
+**`git diff` is noisy after generation.** Confirm `.gitattributes` marks the generated paths as `linguist-generated`. If you'd rather not track them at all, re-init with `--ignore-generated`, or set `codegen.automaticGitignore` in `dagger-module.toml`.
+
+**Engine version mismatch.** Align the module with `mod engine require --version <v>` (or `require-current` / `require-latest`), then regenerate.
+
+## Next steps
+
+- [Module Developer Guide](../index.mdx) — platform concepts that apply to every SDK
+- [Type system](../type-system/index.mdx)
+- [Checks](../how-dagger-works/checks.mdx)
+- [Generating Code](../../using-dagger/generating.mdx) and [Changesets](../../using-dagger/changesets.mdx)

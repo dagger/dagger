@@ -1,0 +1,65 @@
+---
+title: "Prettier"
+slug: /modules/prettier
+description: "Check and rewrite source formatting with Prettier."
+---
+
+# Prettier
+
+The Prettier module keeps formatting boring, consistent, and enforced before
+code review. It checks formatting locally, in CI, and in Dagger Cloud, and can
+rewrite source to match — always using your project's own Prettier config. Keep
+it alongside a linter so formatting policy stays separate from lint rules.
+
+Official module: [dagger/prettier](https://github.com/dagger/prettier)
+
+## Add it to your workspace
+
+```bash
+dagger install github.com/dagger/prettier
+```
+
+## Run the check
+
+```bash
+dagger check                 # run every check in the workspace
+dagger check prettier:check  # just check formatting
+```
+
+`prettier:check` installs dependencies and runs `prettier --check .` across the
+workspace, failing if any file isn't formatted.
+
+## Fix formatting
+
+Prettier also exposes a `write` function that runs `prettier --write .` across
+the workspace and returns the reformatted source as a changeset (everything
+except `node_modules`). Which files it touches is governed by your project's own
+Prettier configuration and ignore files. It's a regular function, not a check, so
+it doesn't run during `dagger check` — call it directly:
+
+```bash
+dagger call prettier write
+```
+
+## Configure it
+
+List the current settings with `dagger settings prettier`, then change one with
+`dagger settings prettier <key> <value>`. They live in `dagger.toml`
+under `[modules.prettier.settings]`:
+
+- **`packageManager`** (default `npm`): the package manager used to install
+  dependencies before checking. Set it to `yarn` or `pnpm` to match the project.
+- **`baseImageAddress`** (default `node:25-alpine`): the Node base image
+  Prettier runs in. Pin it to your project's Node version, e.g. `node:22-alpine`.
+
+```toml
+[modules.prettier.settings]
+packageManager = "pnpm"
+baseImageAddress = "node:22-alpine"
+```
+
+## Working with other modules
+
+Prettier pairs well with ESLint — ESLint checks code quality, Prettier owns
+formatting. If your project uses Biome for both, use the [Biome](./biomejs.mdx)
+module instead.
