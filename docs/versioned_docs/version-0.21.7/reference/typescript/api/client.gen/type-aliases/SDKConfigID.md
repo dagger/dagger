@@ -1,0 +1,17 @@
+---
+displayed_sidebar: current
+sidebar_label: TypeScript SDK Reference
+title: TypeScript SDK Reference
+---
+
+# Type Alias: SDKConfigID
+
+> **SDKConfigID** = `string` & `object`
+
+A unique identifier for an object.
+
+## Type Declaration
+
+### \_\_SDKConfigID
+
+> **\_\_SDKConfigID**: `never`
