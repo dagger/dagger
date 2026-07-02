@@ -2191,11 +2191,14 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
 		ctx.Lines(checkLines...)
 		renderedRows = true
-	} else if !rootCauseRendered {
+	} else if !rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity {
 		// Only fall back to the raw progress tree when there's nothing better.
 		// A plain `dagger call` failure renders its root cause above; dumping
 		// the bootstrap spans (connect / load workspace / parsing args) under
-		// it would just be noise.
+		// it would just be noise. At -v the tree renders anyway: it carries
+		// context the cause section alone can't -- which module call owns the
+		// failure, and which downstream calls stayed pending rather than
+		// cascading the error.
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
 		renderedRows = len(progressLines) > 0
