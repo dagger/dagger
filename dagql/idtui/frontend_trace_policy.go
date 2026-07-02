@@ -99,10 +99,18 @@ func (fe *frontendPretty) renderPolicy() traceRenderPolicy {
 	// Surface the root span's root cause directly instead: the same span-derived
 	// origin (an `error_origin` link / traceparent marker on the root) the
 	// summary's ROOT CAUSE uses. Only at the root zoom; a check/test/span zoom has
-	// its own tier.
+	// its own tier. Only when the root actually failed (mirroring the drill-in
+	// suggestions guard): a passing run can still carry error origins -- tolerated
+	// probes (docker-build's .dockerignore stats) or encapsulated failures -- and
+	// leading a PASSED report with their ERROR blocks would be misleading.
+	// Anchored on the primary span (what the section itself renders from), not
+	// db.RootSpan: a nested run -- a propagated traceparent, e.g. dagger-in-dagger
+	// -- has no parentless root span at all.
 	if k == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
-		if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
-			pol.showRootCause = true
+		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailed() {
+			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
+				pol.showRootCause = true
+			}
 		}
 	}
 	return pol
