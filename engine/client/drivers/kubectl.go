@@ -200,8 +200,8 @@ func (k kubectl) createPod(ctx context.Context, kctx, namespace, podName, image 
 	if opts.DaggerCloudToken != "" {
 		cloudTokenKey := "cloudToken"
 		secret.Data[cloudTokenKey] = []byte(opts.DaggerCloudToken)
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  EnvDaggerCloudToken,
+		container.Env = append(container.Env, corev1.EnvVar{
+			Name: EnvDaggerCloudToken,
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{
