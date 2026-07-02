@@ -412,7 +412,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
-	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs)")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs, report)")
 	flags.StringVar(&lockMode, "lock", "", "Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
@@ -806,17 +806,33 @@ func Main() {
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
-		} else if os.Getenv("CLAUDECODE") == "1" {
+		} else if len(os.Args) > 1 && os.Args[1] == "session" {
+			// SDKs spawn `dagger session` and pipe its stderr to the user's
+			// log output as the live progress stream. The report frontend
+			// renders only once at exit -- for a long-lived session that
+			// leaves the stream empty the whole run -- so keep the streaming
+			// plain frontend. Checked before RunningInAgent: an agent-driven
+			// SDK program needs the stream just as much.
+			progress = "plain"
+		} else if idtui.RunningInAgent() {
+			// An AI agent consumes the output as text; the report frontend's
+			// single final render suits it better than the live TUI.
 			progress = "report"
 		} else if hasTTY {
 			progress = "tty"
 		} else {
-			progress = "plain"
+			progress = "report"
 		}
 	}
 	if silent {
 		// if silent, don't even bother with the pretty frontend
 		progress = "plain"
+	}
+	// DAGGER_TUI_CONSOLE=<addr> serves the pretty TUI over HTTP (headless), so
+	// force it regardless of progress mode / tty (it doesn't need one).
+	if os.Getenv("DAGGER_TUI_CONSOLE") != "" {
+		progress = "tty"
+		hasTTY = true
 	}
 	switch progress {
 	case "plain":

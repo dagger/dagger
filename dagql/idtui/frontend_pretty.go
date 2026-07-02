@@ -23,6 +23,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
@@ -77,6 +78,13 @@ type frontendPretty struct {
 	reportOnly bool
 	reportMu   sync.Mutex // protects state in reportOnly mode (no TUI event loop)
 
+	// console, when set (DAGGER_TUI_CONSOLE=<addr>), serves the TUI over HTTP on
+	// a headless terminal instead of attaching to a real one (frontend_console.go).
+	console string
+	// consoleTerm is the headless terminal backing console mode, kept so the
+	// /resize endpoint can change its dimensions live.
+	consoleTerm *tuist.HeadlessTerminal
+
 	// updated by Run
 	tui         *tuist.TUI
 	run         func(context.Context) (cleanups.CleanupF, error)
@@ -110,6 +118,26 @@ type frontendPretty struct {
 	shellRunning    bool
 	shellLock       sync.Mutex
 
+	// logProvider lazily fetches a span's logs on demand (e.g. on expand, or
+	// when a failure is surfaced). The bool is whether to roll up descendant
+	// logs (span.RollUpLogs). Set by 'dagger trace' to pull recorded logs per
+	// span; nil for live runs. requestedLogs dedups so each span is fetched once.
+	logProvider   func(dagui.SpanID, bool)
+	requestedLogs map[dagui.SpanID]bool
+
+	// spanProvider lazily fetches a span's children on demand when the user
+	// expands it (or it's surfaced/zoomed). Set by 'dagger trace' to fetch
+	// deeper spans incrementally instead of loading the whole trace up front;
+	// nil for live runs. requestedSpans dedups so each span is fetched once.
+	spanProvider   func(dagui.SpanID)
+	requestedSpans map[dagui.SpanID]bool
+
+	// fetchWaiter, when set, blocks until in-flight background span/log fetches
+	// have completed. The console settle calls it so a request reflects fetches
+	// a zoom/expand triggered instead of returning mid-round-trip; nil for the
+	// live TUI (which re-renders on arrival) and report mode.
+	fetchWaiter func()
+
 	// updated as events are written
 	db           *dagui.DB
 	logs         *prettyLogs
@@ -123,6 +151,22 @@ type frontendPretty struct {
 
 	// set when authenticated to Cloud
 	cloudURL string
+
+	// traceID is the trace being rendered, set by 'dagger trace' so surfaced
+	// failure logs can point at 'dagger cloud logs <trace> <span>' for the full,
+	// untruncated output. Empty for live runs (no follow-up command applies).
+	traceID string
+
+	// ciMeta is the trace's source commit / CI change, set by 'dagger trace' from
+	// the Cloud trace metadata so the report can suggest re-run commands scoped to
+	// the exact commit. Nil for live/local runs, where only a local 'dagger check'
+	// applies.
+	ciMeta *ciContext
+
+	// pinnedZoom is an explicitly requested zoom (e.g. 'dagger trace
+	// --span/--check/--test') that persists into the final, non-interactive
+	// render, where an ordinary zoom is otherwise reset to the primary span.
+	pinnedZoom dagui.SpanID
 
 	// TUI state/config
 	spinnerEpoch time.Time // shared epoch so all spinners animate in sync
@@ -154,7 +198,12 @@ type frontendPretty struct {
 	spanTrees      map[dagui.SpanID]*SpanTreeView
 	topTrees       []*SpanTreeView // top-level tree views, ordered
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
-	renderVersion  uint64 // bumped on global render config changes (verbosity, zoom)
+
+	// per-span inline log components. A LogsView owns the fetch (on mount) and
+	// the render of a span's inline logs, so the expensive Vterm.View() is
+	// memoized across unrelated parent repaints (spinner ticks, focus moves).
+	logsViews     map[dagui.SpanID]*LogsView
+	renderVersion uint64 // bumped on global render config changes (verbosity, zoom)
 
 	// progressExpanded tracks rows whose completed-transfer roll-up has
 	// been expanded into individual rows (the "p" keybind, distinct from
@@ -180,6 +229,7 @@ type frontendPretty struct {
 	testsReturnSpan  dagui.SpanID
 	fullscreenTests  *TestView
 	testViews        map[dagui.SpanID]*TestView
+	orphanTests      *TestView
 	testSpanChildren map[dagui.SpanID]*TestSpanChildrenView
 
 	// fullscreen log pager state
@@ -355,7 +405,19 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		ctx.Lines(inlineTests...)
 	}
 
-	// Render the rest (logs, errors, debug) into a separate buffer.
+	if inlineChecks := s.renderInlineChecks(ctx, r, row); len(inlineChecks) > 0 {
+		s.selfLineCount += len(inlineChecks)
+		ctx.Lines(inlineChecks...)
+	}
+
+	// Render this row's own inline logs via its memoized LogsView child, so the
+	// expensive Vterm.View() is skipped on unrelated parent repaints.
+	if inlineLogs := s.renderInlineLogs(ctx, r, row, visualFocused); len(inlineLogs) > 0 {
+		s.selfLineCount += len(inlineLogs)
+		ctx.Lines(inlineLogs...)
+	}
+
+	// Render the rest (errors, debug) into a separate buffer.
 	// Log highlighting is handled by the Vterm's own SearchQuery state,
 	// so we do NOT apply highlightANSI to these lines.
 	restBuf := new(strings.Builder)
@@ -572,8 +634,25 @@ func (fe *frontendPretty) dispatch(fn func()) {
 }
 
 func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
+	if addr := os.Getenv("DAGGER_TUI_CONSOLE"); addr != "" {
+		// Console mode: drive the TUI headlessly over HTTP (frontend_console.go)
+		// instead of a real terminal, so it works without a tty.
+		term := tuist.NewHeadlessTerminal(consoleWidth, consoleHeight)
+		fe := newWithTerminal(w, db, term)
+		fe.console = addr
+		fe.consoleTerm = term
+		return fe
+	}
+	return newWithTerminal(w, db, tuist.NewStdTerminal())
+}
+
+// newWithTerminal builds a pretty frontend whose TUI is backed by the given
+// terminal. Production uses NewWithDB (a real std terminal); the headless test
+// harness injects a tuist.HeadlessTerminal so it can drive the frontend
+// synchronously, without the event-loop goroutine.
+func newWithTerminal(w io.Writer, db *dagui.DB, term tuist.Terminal) *frontendPretty {
 	profile := ColorProfile()
-	tui := tuist.New(tuist.NewStdTerminal())
+	tui := tuist.New(term)
 	fe := &frontendPretty{
 		db:        db,
 		logs:      newPrettyLogs(profile, db),
@@ -732,6 +811,36 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 	})
 }
 
+// SetTraceID records the trace being rendered so surfaced failure logs can point
+// at 'dagger cloud logs <trace> <span>' for the full output. Called by 'dagger
+// trace'; no-op for live runs.
+func (fe *frontendPretty) SetTraceID(traceID string) {
+	fe.dispatch(func() {
+		fe.traceID = traceID
+	})
+}
+
+// ciContext is the trace's source git/CI context: the commit it ran on and, for
+// native CI, the change (PR) number. It drives the report's re-run suggestions.
+type ciContext struct {
+	commit     string // git ref / commit SHA the trace ran on
+	prNumber   string // CI change number, e.g. the PR number
+	isNativeCI bool   // ran in Dagger Cloud native CI (so 'dagger cloud rerun' applies)
+}
+
+// SetCIContext records the trace's source commit / CI change so the report can
+// suggest commit-scoped re-run commands. Called by 'dagger trace' for Cloud
+// traces; no-op for live/local runs.
+func (fe *frontendPretty) SetCIContext(commit, prNumber string, isNativeCI bool) {
+	fe.dispatch(func() {
+		fe.ciMeta = &ciContext{
+			commit:     commit,
+			prNumber:   prNumber,
+			isNativeCI: isNativeCI,
+		}
+	})
+}
+
 func traceMessage(profile termenv.Profile, url string, msg string) string {
 	buffer := &bytes.Buffer{}
 	out := NewOutput(buffer, termenv.WithProfile(profile))
@@ -764,13 +873,25 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 			err = errors.Join(err, cleanup())
 		}
 		fe.err = err
+	} else if fe.console != "" {
+		// serve the TUI over HTTP instead of attaching to a terminal
+		fe.err = fe.runWithConsole(ctx, run)
 	} else {
 		// run the function wrapped in the TUI
 		fe.err = fe.runWithTUI(ctx, run)
 	}
 
-	// print the final output display to stderr
-	if renderErr := fe.FinalRender(os.Stderr); renderErr != nil {
+	// Print the final report. Normally it goes to stderr so a redirected stdout
+	// stays the command's result. But a report-mode command (`dagger trace`)
+	// driven by an agent has no separate result stream -- the report *is* the
+	// output -- so route it to stdout there, letting `dagger trace X > out.txt`
+	// capture the report instead of an empty file. Scoped to RunningInAgent to
+	// leave the human and interactive (`dagger call`) streams unchanged.
+	reportOut := io.Writer(os.Stderr)
+	if fe.reportOnly && RunningInAgent() {
+		reportOut = os.Stdout
+	}
+	if renderErr := fe.FinalRender(reportOut); renderErr != nil {
 		return renderErr
 	}
 
@@ -970,9 +1091,263 @@ func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 	})
 }
 
+// SetLogProvider registers a callback that lazily supplies a span's logs. The
+// frontend calls it when a span's logs become relevant: the user expands the
+// span, or a failed span is surfaced in the view. The bool argument is whether
+// to roll up descendant logs (the span's RollUpLogs). The provider should fetch
+// asynchronously and feed results back through LogExporter. Used by 'dagger
+// trace' to fetch recorded logs per span on demand instead of streaming the
+// whole trace.
+func (fe *frontendPretty) SetLogProvider(provider func(dagui.SpanID, bool)) {
+	fe.dispatch(func() {
+		fe.logProvider = provider
+	})
+}
+
+// RequestSurfacedLogs asks the log provider for the logs of every failed span
+// currently visible in the view. It's used by non-interactive ('report') mode,
+// which renders only once: the caller invokes this after the spans are loaded,
+// waits for the fetches it triggers, then the final render includes the
+// surfaced failures' detail. Interactive mode surfaces these during its normal
+// recalc loop, but calling this is harmless (requestLogs dedups).
+func (fe *frontendPretty) RequestSurfacedLogs() {
+	fe.dispatch(func() {
+		fe.recalculateViewLocked()
+	})
+}
+
+// setupFinalRenderLocked puts the frontend into final-render state: mark the
+// render final, unfocus, reset per-pass claims, zoom to the pinned subtree (or
+// the primary span), and rebuild the view. Shared by FinalRender and the
+// report-mode discovery render so both mount the same component tree.
+func (fe *frontendPretty) setupFinalRenderLocked() {
+	// Hint for future rendering that this is the final, non-interactive render
+	// (so don't show key hints etc.). syncSpanTreeState copies this into each
+	// SpanTreeView and marks any changed tree dirty.
+	if !fe.finalRender {
+		fe.finalRender = true
+		fe.Update()
+	}
+
+	// Unfocus for the final render.
+	fe.focus(nil)
+
+	// Render the full trace, or the pinned subtree when one was explicitly
+	// requested (e.g. 'dagger trace --span/--check/--test').
+	fe.claims = newRenderClaims()
+	if fe.pinnedZoom.IsValid() {
+		fe.ZoomedSpan = fe.pinnedZoom
+	} else {
+		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
+	fe.viewDirty = false
+	fe.recalculateViewLocked()
+}
+
+// requestLogsOnRender is the interactive lazy-fetch hook: a render site calls it
+// as it renders a span's logs, so we fetch exactly what's on screen. It is a
+// no-op in report mode, whose single render can't wait for a mid-render fetch --
+// report pre-fetches its surfaced failures eagerly (recalculateViewLocked) and a
+// late render-site request would only waste a round-trip.
+func (fe *frontendPretty) requestLogsOnRender(id dagui.SpanID) {
+	if fe.reportOnly {
+		return
+	}
+	fe.requestLogs(id)
+}
+
+// requestLogs asks the log provider for a span's logs, once. It rolls up
+// descendant logs when the span is marked RollUpLogs (e.g. a check or test
+// whose real output lives in a sub-operation), mirroring the web UI.
+func (fe *frontendPretty) requestLogs(id dagui.SpanID) {
+	if _, ok := fe.db.Spans.Map[id]; !ok {
+		// Span not loaded yet; it'll be requested once it's surfaced.
+		return
+	}
+	fe.requestLogsWith(id, fe.logDescendants(id))
+}
+
+// logDescendants decides whether a span's log fetch should roll up its
+// descendants' logs. Centralised so every entry point -- expand, zoom,
+// surfaced failures, the LogsView mount -- agrees, so an early
+// descendants=false fetch can't dedupe a later roll-up.
+func (fe *frontendPretty) logDescendants(id dagui.SpanID) bool {
+	span, ok := fe.db.Spans.Map[id]
+	if !ok {
+		return false
+	}
+	// Roll up descendants for spans marked RollUpLogs and for failed leaf test
+	// cases, whose real output lives in a sub-operation even though the test span
+	// isn't flagged.
+	descendants := span.RollUpLogs || fe.isFailingLeafTestSpan(id)
+	// ...except a check whose failures are test cases: the report renders them
+	// per-test (each test rolls up its own logs), never the check's own
+	// rolled-up dump. Rolling up here would fetch the check's entire subtree --
+	// every test's output, tens of MB -- that nothing renders.
+	if span.CheckName != "" && fe.checkDefersToTests(span) {
+		descendants = false
+	}
+	return descendants
+}
+
+// isFailingLeafTestSpan reports whether id is the span of a failing leaf test
+// case, whose descendant logs should roll up onto it.
+func (fe *frontendPretty) isFailingLeafTestSpan(id dagui.SpanID) bool {
+	tv := fe.db.TestView()
+	if tv == nil {
+		return false
+	}
+	return isFailingLeafTestCase(tv.BySpan[id])
+}
+
+// requestLogsWith asks the log provider for a span's logs once, forcing whether
+// to roll up descendant logs. Used to roll up failed leaf test cases, whose real
+// output lives in a sub-operation even though the test span isn't marked
+// RollUpLogs.
+func (fe *frontendPretty) requestLogsWith(id dagui.SpanID, descendants bool) {
+	if fe.logProvider == nil || !id.IsValid() {
+		return
+	}
+	if fe.requestedLogs[id] {
+		return
+	}
+	if fe.requestedLogs == nil {
+		fe.requestedLogs = make(map[dagui.SpanID]bool)
+	}
+	fe.requestedLogs[id] = true
+	fe.logProvider(id, descendants)
+}
+
+// SetSpanProvider registers a callback that lazily supplies a span's children.
+// The frontend calls it when a span's subtree becomes relevant: the user
+// expands the span, or it's surfaced/zoomed. The provider should fetch
+// asynchronously and feed results back through ImportSnapshots. Used by 'dagger
+// trace' to fetch deeper spans on demand instead of streaming the whole trace.
+func (fe *frontendPretty) SetSpanProvider(provider func(dagui.SpanID)) {
+	fe.dispatch(func() {
+		fe.spanProvider = provider
+	})
+}
+
+// SetFetchWaiter registers a callback that blocks until in-flight background
+// fetches (issued via the span/log providers) have completed. The console uses
+// it so a single HTTP request reflects the result of fetches a zoom/expand
+// triggered, instead of returning before the async network round-trip lands.
+// The live TUI doesn't need it -- it re-renders when results arrive -- so only
+// the console settle calls it.
+func (fe *frontendPretty) SetFetchWaiter(wait func()) {
+	fe.dispatch(func() {
+		fe.fetchWaiter = wait
+	})
+}
+
+// requestSpans asks the span provider for a span's children, once. The provider
+// only needs to be asked when the server reported children we haven't loaded
+// yet (ChildCount exceeds the children we actually have); otherwise the subtree
+// is already present and expanding it is purely local.
+func (fe *frontendPretty) requestSpans(id dagui.SpanID) {
+	if fe.spanProvider == nil || !id.IsValid() {
+		return
+	}
+	if fe.requestedSpans[id] {
+		return
+	}
+	span, ok := fe.db.Spans.Map[id]
+	if !ok {
+		// Span not loaded yet; it'll be requested once it's surfaced.
+		return
+	}
+	if span.ChildCount == 0 {
+		// Leaf span: nothing deeper to fetch.
+		return
+	}
+	if fe.requestedSpans == nil {
+		fe.requestedSpans = make(map[dagui.SpanID]bool)
+	}
+	fe.requestedSpans[id] = true
+	fe.spanProvider(id)
+}
+
+// requestSubtree asks the span provider for a span's children even when its
+// reported ChildCount is 0. ChildCount is unreliable for spans loaded outside
+// the priority window -- e.g. external traces, whose priority MV is empty, so
+// the spans arrive via the root-spans path carrying no child count -- which
+// makes requestSpans treat them as leaves and never fetch. An explicit zoom is
+// the user asking to see exactly this subtree, so fetch it regardless, mirroring
+// what `dagger trace --span` does (it calls loader.listen directly, bypassing
+// the gate). The requestedSpans dedup still prevents repeat fetches.
+func (fe *frontendPretty) requestSubtree(id dagui.SpanID) {
+	if fe.spanProvider == nil || !id.IsValid() {
+		return
+	}
+	if fe.requestedSpans[id] {
+		return
+	}
+	if _, ok := fe.db.Spans.Map[id]; !ok {
+		// Span not loaded yet; it'll be requested once it's surfaced.
+		return
+	}
+	if fe.requestedSpans == nil {
+		fe.requestedSpans = make(map[dagui.SpanID]bool)
+	}
+	fe.requestedSpans[id] = true
+	fe.spanProvider(id)
+}
+
+// ImportSnapshots folds a batch of span snapshots into the DB and refreshes the
+// view. It's the snapshot-based counterpart to the OTLP ExportSpans path, used
+// by 'dagger trace' which receives spans as snapshots from Cloud (carrying
+// ChildCount and Partial, which the OTLP form drops). Mirrors the post-import
+// bookkeeping ExportSpans does so logs and test views stay in sync.
+func (fe *frontendPretty) ImportSnapshots(snapshots []dagui.SpanSnapshot) {
+	if len(snapshots) == 0 {
+		return
+	}
+	ids := make([]dagui.SpanID, len(snapshots))
+	for i, s := range snapshots {
+		ids[i] = s.ID
+	}
+	fe.dispatch(func() {
+		fe.db.ImportSnapshots(snapshots)
+		for _, id := range ids {
+			if fe.logs.flushResolvedLogsForSpan(id) {
+				fe.updateSpanTreesForLogs(id)
+				fe.updateLogPagerForLogs(id)
+			}
+			if sr, ok := fe.spanTrees[id]; ok {
+				sr.Update()
+			}
+		}
+		fe.updateTestViews()
+		// Don't recalculate here — set dirty flag so Render coalesces
+		// multiple batches into one recalculate per frame.
+		fe.viewDirty = true
+		fe.Update()
+	})
+}
+
 func (fe *frontendPretty) RevealAllSpans() {
 	fe.dispatch(func() {
 		fe.ZoomedSpan = dagui.SpanID{}
+		fe.Update()
+	})
+}
+
+// ZoomToSpan scopes the view to a span and treats it as expanded, mirroring the
+// web UI's ?span= deep link. It pulls the span's logs and children on demand
+// (via the registered providers) so 'dagger trace --span' can focus a subtree
+// without loading the whole trace.
+func (fe *frontendPretty) ZoomToSpan(id dagui.SpanID) {
+	fe.dispatch(func() {
+		if !id.IsValid() {
+			return
+		}
+		fe.ZoomedSpan = id
+		fe.pinnedZoom = id
+		fe.FocusedSpan = id
+		fe.autoFocus = false
+		fe.setExpanded(id, true)
+		fe.recalculateViewLocked()
 		fe.Update()
 	})
 }
@@ -1051,6 +1426,15 @@ func (fe *frontendPretty) startTUI() {
 			fe.tui.SetDebugWriter(f)
 		}
 	}
+	fe.setupTUI()
+	fe.tui.Start()
+}
+
+// setupTUI installs the keymap bar and gives the frontend input focus. It is
+// the non-goroutine portion of TUI bring-up, shared by the interactive
+// startTUI and the headless test driver (which advances the TUI by hand via
+// tui.Step instead of running the event loop).
+func (fe *frontendPretty) setupTUI() {
 	fe.keymapBar = &KeymapBar{
 		Profile:          fe.profile,
 		UsingCloudEngine: fe.UsingCloudEngine,
@@ -1058,7 +1442,6 @@ func (fe *frontendPretty) startTUI() {
 	}
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe)
-	fe.tui.Start()
 }
 
 // OnMount is called by tuist when the component is mounted into the TUI tree.
@@ -1173,22 +1556,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		return ExitError{OriginalCode: exitCode, Original: fe.err}
 	}
 
-	// Hint for future rendering that this is the final, non-interactive render
-	// (so don't show key hints etc.). syncSpanTreeState copies this into each
-	// SpanTreeView and marks any changed tree dirty.
-	if !fe.finalRender {
-		fe.finalRender = true
-		fe.Update()
-	}
-
-	// Unfocus for the final render.
-	fe.focus(nil)
-
-	// Render the full trace.
-	fe.claims = newRenderClaims()
-	fe.ZoomedSpan = fe.db.PrimarySpan
-	fe.viewDirty = false
-	fe.recalculateViewLocked()
+	fe.setupFinalRenderLocked()
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
@@ -1215,15 +1583,43 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			// If we've already shown the root cause error for the command, we can
 			// skip displaying the primary output and error, since it's just a poorer
 			// representation of the same error (`Error: input: ...`)
+			if fe.reportOnly {
+				// Only the error re-print is redundant, though: the stdout
+				// stream is the command's own result (e.g. a shell script's
+				// output from before it failed), so still replay it.
+				if err := replayPrimaryOutput(w, fe.db, false); err != nil {
+					return err
+				}
+			}
 			var exitErr ExitError
 			if errors.As(fe.err, &exitErr) {
 				return exitErr
+			}
+			// Keep the failed command's exit code (e.g. a shell script's failed
+			// exec must exit with the exec's own code) instead of flattening
+			// every rendered error to 1.
+			var execErr *dagger.ExecError
+			if errors.As(fe.err, &execErr) {
+				return ExitError{OriginalCode: execErr.ExitCode, Original: fe.err}
 			}
 			return ExitError{OriginalCode: 1, Original: fe.err}
 		}
 	}
 
 	// Replay the primary output log to stdout/stderr.
+	if fe.reportOnly {
+		// In report mode a failed run's root cause is already rendered above
+		// (renderRootCauseSection); the primary span's stderr stream is that
+		// same output wrapped by the engine as `Error: ... Stdout: ... Stderr:
+		// ...`. Replaying it here would duplicate the root cause (and reprint
+		// the raw, un-vterm'd stream). But the stdout stream is the command's
+		// own result — e.g. a shell script's output from before it failed —
+		// so replay that, matching the streaming frontends. A passing run
+		// still replays both streams.
+		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailedOrCausedFailure() {
+			return replayPrimaryOutput(w, fe.db, false)
+		}
+	}
 	return renderPrimaryOutput(w, fe.db)
 }
 
@@ -1270,6 +1666,11 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 	}
 	if sr, ok := fe.spanTrees[spanID]; ok {
 		sr.Update()
+	}
+	// The inline LogsView memoizes Vterm.View(); its content isn't an input the
+	// owner's sync() compares, so push an Update when logs arrive.
+	if lv, ok := fe.logsViews[spanID]; ok {
+		lv.Update()
 	}
 	if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
 		for id := spanID; ; {
@@ -1621,15 +2022,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, fe.finalRender)
 
 	if fe.finalRender {
-		// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
-		progressLines := fe.renderProgressLines(r, ctx, 0)
-		ctx.Lines(progressLines...)
-		if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
-			if len(progressLines) > 0 {
-				ctx.Line("")
-			}
-			ctx.Lines(testLines...)
-		}
+		fe.renderFinalReport(ctx, r)
 		return
 	}
 
@@ -1644,8 +2037,15 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 
-	// Zoom header
-	var progPrefix string
+	// Zoom header: the zoomed span shown above its (unindented) content as a
+	// title bar -- a full-width background bar, the same style the log pager
+	// gives its title (frontend_log_pager.go). Captured rather than emitted
+	// directly so its height can be reserved out of the body crop below --
+	// otherwise it pushes the body down until the focused row's header, or the
+	// zoom header itself, scrolls off the top. The rich row's own colours are
+	// flattened to plain text so the bar reads uniformly and stays legible on the
+	// background (the caret, for one, is the same bright black as the bar).
+	var zoomHeader []string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
 		zoomBuf := new(strings.Builder)
 		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
@@ -1653,49 +2053,206 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
 		}, "", fe, false)
-		linesFromView(ctx, zoomBuf.String())
-		progPrefix = "  "
+		titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+		for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
+			if ctx.Width > 0 {
+				line = titleOut.String(padANSI(clipPlain(ansi.Strip(line), ctx.Width), ctx.Width)).
+					Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
+			}
+			zoomHeader = append(zoomHeader, line)
+		}
+		zoomHeader = append(zoomHeader, "") // blank line separating the bar from the content
 	}
 
-	// Pre-render chrome below progress to measure its height for truncation.
-	// Global tests are rendered before progress so their claims can suppress
-	// duplicate test logs in the trace rows above them.
+	// Seed test-case claims for the checks whose inline rollups render below, so
+	// the global tests section (rendered first, just below) subtracts them
+	// instead of repeating every check's tests. See claimInlineTestCases.
+	fe.claimInlineTestCases()
+
+	// Pre-render chrome below progress. Global tests are rendered before
+	// progress so their claims can suppress duplicate test logs in the trace
+	// rows above them.
 	globalTestLines := fe.renderLiveGlobalTests(ctx)
-	logsLines := fe.renderLogsLines(progPrefix)
+	logsLines := fe.renderLogsLines("")
 
-	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
-	if len(logsLines) > 0 {
-		chromeHeight += len(logsLines) + 1
-	}
-	if len(globalTestLines) > 0 {
-		chromeHeight += len(globalTestLines) + 1
-	}
-	chromeHeight += fe.errorLabelHeight() // promptErrLabel is a sibling, not rendered here
-	chromeHeight += fe.editlineHeight()   // textInput is a sibling, not rendered here
-	chromeHeight += fe.formHeight()       // formWrap is a sibling, not rendered here
+	// Lines the TUI renders as siblings outside this component, which are
+	// always shown and so must be reserved out of the screen height: the keymap
+	// bar, error label, text input, form, and search input.
+	reserved := 1 // keymap bar
+	reserved += fe.errorLabelHeight()
+	reserved += fe.editlineHeight()
+	reserved += fe.formHeight()
 	if fe.searchInput != nil {
-		chromeHeight += 1 // searchInput is a sibling, 1 line
+		reserved++
 	}
 
-	// Render progress rows via tree-based components
-	progressLines := fe.renderProgressLines(r, ctx, chromeHeight)
+	// Assemble progress + chrome, then crop the bottom to what fits. The focused
+	// progress rows are anchored at the focused row's header by
+	// renderProgressLines (passed the reserved + zoom-header height so they get
+	// exactly the body area), and the chrome below (logs, then the global tests
+	// summary) sits beneath them -- so cropping the bottom makes the chrome, not
+	// the focused header, what scrolls offscreen. This is the "main content wins"
+	// rule: reserving chrome space up front -- the old behaviour -- let a tall
+	// global TESTS block squeeze progress until the focused row's own header
+	// scrolled off the top.
+	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader))
+	var body []string
 	if len(progressLines) > 0 {
-		ctx.Lines(progressLines...)
-		ctx.Line("") // gap line after progress
+		body = append(body, progressLines...)
+		body = append(body, "") // gap line after progress
 	}
-
-	// Append chrome
 	if len(logsLines) > 0 {
-		ctx.Lines(logsLines...)
-		ctx.Line("") // trailing gap
+		body = append(body, logsLines...)
+		body = append(body, "") // trailing gap
 	}
 	if len(globalTestLines) > 0 {
-		ctx.Lines(globalTestLines...)
-		ctx.Line("") // trailing gap
+		body = append(body, globalTestLines...)
+		body = append(body, "") // trailing gap
 	}
-	// NOTE: textInput and formWrap are rendered as siblings in the TUI
-	// container, not here. Their cursors propagate through tuist automatically.
-	// NOTE: keymapBar is rendered as a sibling in the TUI container.
+
+	// Crop the bottom to the rows available for the body: the screen minus the
+	// always-shown siblings and the pinned zoom header. A non-positive
+	// ScreenHeight means the height is unknown (RenderLines / the report discovery
+	// render, before a frame sizes the terminal) -- render everything, like the
+	// old behaviour.
+	if h := ctx.ScreenHeight(); h > 0 {
+		if avail := h - reserved - len(zoomHeader); avail > 0 && len(body) > avail {
+			body = body[:avail]
+		}
+	}
+
+	// The zoom header is pinned above the body so the zoomed span stays in view.
+	ctx.Lines(zoomHeader...)
+	ctx.Lines(body...)
+	// NOTE: textInput, formWrap, and keymapBar are rendered as siblings in the
+	// TUI container, not here (accounted for in reserved above). Their cursors
+	// propagate through tuist automatically.
+}
+
+// renderFinalReport renders the whole-trace report for the final
+// (non-interactive) render: the overall verdict header, the root cause, the
+// checks breakdown, tests, and re-run suggestions -- no live-TUI chrome or
+// truncation. r is the renderer Render already built for this frame.
+func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
+	// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
+	pol := fe.renderPolicy()
+	zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
+		fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
+
+	// Lead the whole-trace report with the overall verdict -- did it pass or
+	// fail, what command ran, and the top-level error -- the one-glance summary
+	// the server-computed summary used to provide. A zoom titles itself below.
+	if !zoomed {
+		if hdr := fe.renderTraceHeader(r); len(hdr) > 0 {
+			ctx.Lines(hdr...)
+			ctx.Line("")
+		}
+	}
+
+	// When scoped to a span (e.g. --test/--span/--check), title the subtree
+	// with the zoomed span so it isn't a headless, mysteriously indented tree.
+	if zoomed {
+		zoomBuf := new(strings.Builder)
+		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
+		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
+			Span:     fe.rowsView.Zoomed,
+			Expanded: true,
+		}, "", fe, false)
+		linesFromView(ctx, zoomBuf.String())
+		ctx.Line("") // separate the header from its content
+	}
+
+	rootCauseRendered := false
+	if pol.showRootCause {
+		// XXX: we always render the root cause for now, even when the same
+		// failing span also shows up under a test below (the cause often
+		// lives in a test, which already prints it -- so this can repeat the
+		// test's logs). This is where a dedupe conditional would go, e.g.
+		// skip an origin already covered by a rendered test. Compare both
+		// cases on the litmus trace (a0d14706d2b326f778989c181585e9df):
+		//   with root cause (current):
+		//     dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
+		//   without it (tests carry the cause):
+		//     DAGGER_TRACE_RENDER=root dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
+		if rcLines := fe.renderRootCauseSection(ctx, r, false); len(rcLines) > 0 {
+			ctx.Lines(rcLines...)
+			ctx.Line("")
+			rootCauseRendered = true
+		}
+	}
+
+	// At the root, render the checks reveal-independently: a CHECKS heading
+	// with the pass/fail breakdown, then every surfaced check nested under
+	// its parent (renderChecksSection). This replaces the reveal-based
+	// progress rows, which miss checks nested under another check and drop
+	// passing ones. Fall back to the progress tree when there are no surfaced
+	// checks (e.g. a plain trace, or one whose only checks are test fixtures).
+	var renderedRows bool
+	if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
+		ctx.Lines(checkLines...)
+		renderedRows = true
+	} else if !rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity {
+		// Only fall back to the raw progress tree when there's nothing better.
+		// A plain `dagger call` failure renders its root cause above; dumping
+		// the bootstrap spans (connect / load workspace / parsing args) under
+		// it would just be noise. At -v the tree renders anyway: it carries
+		// context the cause section alone can't -- which module call owns the
+		// failure, and which downstream calls stayed pending rather than
+		// cascading the error.
+		progressLines := fe.renderProgressLines(r, ctx, 0)
+		ctx.Lines(progressLines...)
+		renderedRows = len(progressLines) > 0
+	}
+
+	if zoomed && pol.showOwnDescendantLogs {
+		// Surface the scoped span's own rolled-up failure logs, the same
+		// error-anchored window and 'dagger cloud logs' hint the summary uses.
+		logOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+		if logLines := fe.renderZoomedFinalLogs(logOut, ""); len(logLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(logLines...)
+		}
+	} else if zoomed && pol.showSubtests {
+		// Zoomed to a check: show the tests beneath it (with their logs)
+		// instead of the check's own rolled-up descendant log dump.
+		if testLines := fe.renderZoomedCheckTests(ctx, fe.rowsView.Zoomed); len(testLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(testLines...)
+		}
+	} else if !zoomed && pol.showSubtests {
+		if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
+			if renderedRows {
+				ctx.Line("")
+			}
+			ctx.Lines(testLines...)
+		}
+	}
+
+	if pol.showRootCauseLast {
+		// After the tree, so claims are populated: only origins the tree didn't
+		// already tell in full (error AND logs) render here.
+		if rcLines := fe.renderRootCauseSection(ctx, r, true); len(rcLines) > 0 {
+			if renderedRows {
+				ctx.Line("")
+			}
+			ctx.Lines(rcLines...)
+		}
+	}
+
+	if pol.showSuggestions {
+		var zoomSpan *dagui.Span
+		if zoomed {
+			zoomSpan = fe.rowsView.Zoomed
+		}
+		if rerunLines := fe.renderRerunSection(zoomSpan); len(rerunLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(rerunLines...)
+		}
+		if suggLines := fe.renderSuggestionsSection(zoomSpan); len(suggLines) > 0 {
+			ctx.Line("")
+			ctx.Lines(suggLines...)
+		}
+	}
 }
 
 // linesFromView splits a string view into lines and emits them via ctx.
@@ -1706,8 +2263,380 @@ func linesFromView(ctx tuist.Context, view string) {
 	ctx.Lines(strings.Split(strings.TrimSuffix(view, "\n"), "\n")...)
 }
 
+// renderTraceHeader renders the trace's overall verdict at the top of the
+// whole-trace report: the invoked command, whether it passed or failed, and the
+// top-level error. The sections below explain the failure in detail; this is the
+// one-glance outcome the server-computed summary used to lead with.
+func (fe *frontendPretty) renderTraceHeader(r *renderer) []string {
+	root := fe.db.RootSpan
+	if root == nil {
+		return nil
+	}
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+
+	icon, word, color := IconSuccess, "PASSED", termenv.ANSIGreen
+	switch {
+	case root.IsFailed():
+		icon, word, color = IconFailure, "FAILED", termenv.ANSIRed
+	case root.IsRunning():
+		icon, word, color = Diamond, "RUNNING", termenv.ANSIYellow
+	}
+	status := out.String(fmt.Sprintf("%s %s", icon, word)).Foreground(color).String()
+	lines := []string{reportHeadingLine(out, "TRACE") + "  " + status}
+
+	name := root.Name
+	if name == "" {
+		name = "-"
+	}
+	dur := out.String(dagui.FormatDuration(root.Activity.Duration(r.now))).Faint().String()
+	lines = append(lines, fmt.Sprintf("%s  %s", name, dur))
+
+	// Top-level error, traceparent markers stripped (they're cross-SDK plumbing,
+	// not part of the message). The detailed cause is rendered below.
+	if root.IsFailed() {
+		if msg := stripTraceparent(root.Status.Description); strings.TrimSpace(msg) != "" {
+			for _, ln := range strings.Split(strings.TrimRight(msg, "\n"), "\n") {
+				if strings.TrimSpace(ln) == "" {
+					continue
+				}
+				lines = append(lines, out.String("! "+ln).Foreground(termenv.ANSIRed).String())
+			}
+		}
+	}
+	return lines
+}
+
+// stripTraceparent removes the cross-SDK "[traceparent:<trace>-<span>]" error
+// markers (and any single space before them) from a message.
+func stripTraceparent(s string) string {
+	for {
+		i := strings.Index(s, "[traceparent:")
+		if i < 0 {
+			return s
+		}
+		end := strings.IndexByte(s[i:], ']')
+		if end < 0 {
+			return s
+		}
+		start := i
+		if start > 0 && s[start-1] == ' ' {
+			start--
+		}
+		s = s[:start] + s[i+end+1:]
+	}
+}
+
+// renderZoomedFinalLogs renders the zoomed span's rolled-up logs for the final
+// report -- the same error-anchored window and 'dagger cloud logs' hint the test
+// summary uses -- so 'dagger trace --test X' surfaces X's failure output
+// (its descendants having been fetched and re-keyed onto it).
+func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) []string {
+	span, ok := fe.db.Spans.Map[fe.ZoomedSpan]
+	if !ok {
+		return nil
+	}
+	fe.requestLogsOnRender(fe.ZoomedSpan)
+	logs := fe.logs.Logs[fe.ZoomedSpan]
+	if logs == nil || logs.UsedHeight() == 0 {
+		return nil
+	}
+	var buf strings.Builder
+	if err := logs.PrintRaw(&buf); err != nil {
+		return nil
+	}
+	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+	return errorWindowLines(out, rawLines, indent, fe.traceID, cloudLogsTarget(span))
+}
+
+// renderZoomedCheckTests renders the tests beneath a zoomed check as inline
+// summaries -- the same way they appear under the check in the unscoped report.
+// When zoomed to a check the check is rendered as the (headerized) zoom root, so
+// the normal renderInlineTests path doesn't fire; this surfaces them explicitly.
+func (fe *frontendPretty) renderZoomedCheckTests(ctx tuist.Context, span *dagui.Span) []string {
+	if span == nil || span.CheckName == "" {
+		return nil
+	}
+	view := fe.db.TestViewForSpan(span)
+	if !view.HasTests() {
+		return nil
+	}
+	tv := &TestView{
+		Profile:         fe.profile,
+		Logs:            fe.logs.Logs,
+		RequestLogs:     fe.requestLogsOnRender,
+		SummaryIndent:   2,
+		SummaryLogLines: -1,
+		TraceID:         fe.traceID,
+	}
+	width := ctx.Width
+	if width <= 0 {
+		width = finalRenderTestsWidth
+	}
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
+	lines := tv.renderTestSummaryLines(out, view, max(width, finalRenderTestsWidth), finalTestViewHeight(tv))
+	if len(lines) == 0 {
+		return nil
+	}
+	fe.claims.claimTestReport(span, view)
+	return lines
+}
+
+// reportHeadingLine renders a section title in the failure summary's style
+// (daggercmd.section, which idtui can't import without a cycle): a flat,
+// greppable "== TITLE ==" marker under an AI agent, or a bold heading for
+// humans.
+func reportHeadingLine(out TermOutput, title string) string {
+	if RunningInAgent() {
+		return fmt.Sprintf("== %s ==", title)
+	}
+	return out.String(title).Bold().String()
+}
+
+// reportSectionLines renders a titled block: the heading from reportHeadingLine
+// with the body left at the margin under an agent or indented two spaces for
+// humans. body lines are pre-rendered and may already carry styling.
+func reportSectionLines(out TermOutput, title string, body []string) []string {
+	if len(body) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(body)+1)
+	lines = append(lines, reportHeadingLine(out, title))
+	for _, b := range body {
+		switch {
+		case RunningInAgent(), b == "":
+			lines = append(lines, b)
+		default:
+			lines = append(lines, "  "+b)
+		}
+	}
+	return lines
+}
+
+// renderSuggestionsSection prints copy-paste 'dagger trace' commands that
+// scope the report to a single failure, so the reader learns how to drill in
+// with --check/--test. At the root it points at failed checks (and any failed
+// tests not under a check); zoomed to a check it points at that check's failed
+// tests. Returns nil when there's nothing to drill into or no trace ID to build
+// a command from. Gated by traceRenderPolicy.showSuggestions at the call site.
+func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string {
+	if fe.db == nil || fe.traceID == "" {
+		return nil
+	}
+
+	var targets []string
+	seen := map[string]bool{}
+	add := func(span *dagui.Span) {
+		if span == nil {
+			return
+		}
+		sel := cloudLogsTarget(span)
+		if sel == "" || seen[sel] {
+			return
+		}
+		seen[sel] = true
+		targets = append(targets, sel)
+	}
+
+	if zoomed != nil && zoomed.CheckName != "" {
+		for _, node := range failingLeafTestCases(fe.db.TestViewForSpan(zoomed)) {
+			add(node.Span)
+		}
+	} else {
+		// Root: surface the failed checks (broad) and the failing tests beneath
+		// them (specific), so the reader can jump straight to either level. Use
+		// the boundary-respecting check set so checks a test intentionally runs as
+		// fixtures aren't suggested -- matching the CHECKS section and count.
+		var walkChecks func(ns []*dagui.CheckNode)
+		walkChecks = func(ns []*dagui.CheckNode) {
+			for _, n := range ns {
+				if n.Failed {
+					add(n.Span)
+				}
+				walkChecks(n.Children)
+			}
+		}
+		walkChecks(fe.db.SurfacedChecks())
+		for _, node := range failingLeafTestCases(fe.db.TestView()) {
+			add(node.Span)
+		}
+		// Plain call (no checks, no tests) that failed: point at the root-cause
+		// origin span(s) so the reader has a span id and a command to pull the
+		// failure's full logs. Without this a checkless/testless failure renders
+		// no drill-in footer at all -- the one thing the summary always provided.
+		// Mirror renderPolicy's showRootCause guard so a *passing* trace with
+		// boundary-contained fixture failures doesn't surface those as drill-ins.
+		root := fe.db.RootSpan
+		if len(targets) == 0 && root != nil && root.IsFailed() &&
+			len(fe.db.SurfacedChecks()) == 0 {
+			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
+				for _, origin := range fe.checkRootCauses(root) {
+					add(origin)
+				}
+			}
+		}
+	}
+
+	if len(targets) == 0 {
+		return nil
+	}
+
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	body := make([]string, 0, len(targets))
+	for _, sel := range targets {
+		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
+	}
+	return reportSectionLines(out, "MORE DETAILS", body)
+}
+
+// renderRerunSection prints copy-paste commands to re-run the failed checks,
+// split by intent so the two very different actions read distinctly. For a Cloud
+// trace that ran in Dagger native CI it emits a "RE-RUN IN CI" section ('dagger
+// cloud rerun' scoped to the trace's commit) followed by "RUN LOCALLY" ('dagger
+// check'); otherwise it emits just "RUN LOCALLY". Only outermost
+// checks are re-runnable, so sub-checks roll up to their root. Returns nil when
+// no failed check applies. Gated by showSuggestions at the call site.
+func (fe *frontendPretty) renderRerunSection(zoomed *dagui.Span) []string {
+	if fe.db == nil {
+		return nil
+	}
+	roots := fe.db.SurfacedChecks()
+
+	var names []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+
+	switch {
+	case zoomed != nil && zoomed.CheckName != "":
+		// Zoomed to a check: re-run its outermost surfaced check (the re-runnable
+		// unit), if that check failed.
+		if root := outermostSurfacedCheck(roots, zoomed.CheckName); root != nil && root.Failed {
+			add(root.Name)
+		}
+	case zoomed == nil:
+		// Whole trace: re-run every failed outermost check.
+		for _, n := range roots {
+			if n.Failed {
+				add(n.Name)
+			}
+		}
+	}
+
+	if len(names) == 0 {
+		return nil
+	}
+
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	var lines []string
+
+	// Re-run the check in CI (Dagger native CI only, scoped to the trace's
+	// commit). A distinct section from the local reproduce: it kicks off a fresh
+	// Cloud run, it doesn't run anything here.
+	if fe.ciMeta != nil && fe.ciMeta.isNativeCI && fe.ciMeta.commit != "" {
+		body := make([]string, 0, len(names))
+		for _, name := range names {
+			body = append(body, fmt.Sprintf("dagger cloud rerun --commit %s --check %q", fe.ciMeta.commit, name))
+		}
+		lines = append(lines, reportSectionLines(out, "RE-RUN IN CI", body)...)
+	}
+
+	// Run the check locally to reproduce (and then fix) the failure against your
+	// working tree.
+	body := make([]string, 0, len(names))
+	for _, name := range names {
+		body = append(body, fmt.Sprintf("dagger check %q", name))
+	}
+	if len(lines) > 0 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, reportSectionLines(out, "RUN LOCALLY", body)...)
+
+	return lines
+}
+
+// outermostSurfacedCheck returns the top-level surfaced check whose subtree
+// contains checkName (itself included), or nil. It maps a (possibly nested)
+// check to the outermost unit that 'dagger cloud rerun'/'dagger check' can target.
+func outermostSurfacedCheck(roots []*dagui.CheckNode, checkName string) *dagui.CheckNode {
+	var contains func(n *dagui.CheckNode) bool
+	contains = func(n *dagui.CheckNode) bool {
+		if n.Name == checkName {
+			return true
+		}
+		for _, c := range n.Children {
+			if contains(c) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, root := range roots {
+		if contains(root) {
+			return root
+		}
+	}
+	return nil
+}
+
+// renderChecksHeader renders the top-level "CHECKS" heading -- the tally of the
+// trace's root checks -- to sit above the root-level check rows (which carry
+// their own tree indentation, so they're left unwrapped). Each parent check
+// nests its own CHECKS header for its sub-checks (see renderChecksSection), the
+// way a check nests a TESTS header for its tests, so this top tally counts the
+// roots only; the per-level tallies live on the nested headers.
+func (fe *frontendPretty) renderChecksHeader() []string {
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	return []string{checksHeaderLine(out, fe.db.SurfacedChecks())}
+}
+
+// checksHeaderLine renders a "CHECKS" heading with the failed/passed tally for
+// the given checks joined onto the same line (mirroring the TESTS header). The
+// nodes are the checks listed directly beneath this header -- a level -- so the
+// tally agrees with what's rendered right under it.
+func checksHeaderLine(out TermOutput, nodes []*dagui.CheckNode) string {
+	line := reportHeadingLine(out, "CHECKS")
+	for _, part := range checkBreakdownPartsFor(out, nodes) {
+		line += "  " + part
+	}
+	return line
+}
+
+// checkBreakdownPartsFor renders the failed/passed tallies as "✘ N failed" /
+// "✔ N passed" parts (same icon+color style as the test summary) for the given
+// checks, counted directly rather than recursively: each CHECKS header tallies
+// the checks listed directly beneath it. Boundaries are already honored by
+// SurfacedChecks, so checks a test intentionally runs aren't among the nodes.
+// NB: with incremental --full loading the passed tally only covers checks
+// already fetched.
+func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
+	var failed, passed int
+	for _, n := range nodes {
+		if n.Failed {
+			failed++
+		} else {
+			passed++
+		}
+	}
+	var parts []string
+	add := func(count int, icon string, color termenv.Color, label string) {
+		if count == 0 {
+			return
+		}
+		parts = append(parts, out.String(fmt.Sprintf("%s %d %s", icon, count, label)).Foreground(color).String())
+	}
+	add(failed, IconFailure, termenv.ANSIRed, "failed")
+	add(passed, IconSuccess, termenv.ANSIGreen, "passed")
+	return parts
+}
+
 // renderLogsLines returns the zoomed span's log output as lines.
 func (fe *frontendPretty) renderLogsLines(prefix string) []string {
+	fe.requestLogsOnRender(fe.ZoomedSpan)
 	logs := fe.logs.Logs[fe.ZoomedSpan]
 	if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() {
 		return nil
@@ -1757,8 +2686,73 @@ func (fe *frontendPretty) formHeight() int {
 
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
+	fe.promoteChecksLocked()
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
+
+	// Interactive zoom: force-fetch the zoomed span's subtree so navigating
+	// straight to a failure shows its detail. ChildCount is unreliable for
+	// externally-loaded spans, so the ChildCount-gated requestSpans (via
+	// setExpanded) silently no-ops on them, leaving the zoomed view empty.
+	// Report mode already fetches the pinned subtree up front (trace.go --span),
+	// so this is interactive-only; requestSubtree dedups against that.
+	if !fe.reportOnly && fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+		fe.requestSubtree(fe.ZoomedSpan)
+	}
+
+	if fe.logProvider != nil {
+		// The primary output is replayed at end of run from OUTSIDE the render
+		// tree (renderPrimaryOutput reads db.PrimaryLogs), so no view fetches it
+		// on render -- request it eagerly in both modes. It's a single span
+		// (descendants=false), not the rolled-up build log, so it isn't the
+		// over-fetch interactive cares about.
+		if fe.zoomKind() == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
+			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
+				if prim := fe.db.PrimarySpan; prim.IsValid() {
+					fe.requestLogsWith(prim, false)
+				}
+			}
+		}
+
+		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
+		// renders once and can't wait for a fetch dispatched mid-render, so it
+		// pre-fetches every surfaced failure's logs here -- failed rows, failed
+		// test cases, root-cause origins, surfaced checks' causes. Interactive
+		// must NOT do this: it re-renders on arrival, so it fetches lazily from
+		// each view as it actually renders (LogsView.OnMount for inline logs,
+		// TestView.RequestLogs for test cases, renderErrorCause / renderCauseDetail
+		// for root causes). Fetching here would pull logs for collapsed/off-screen
+		// failures the user never opened -- the over-fetch we're eliminating.
+		if fe.reportOnly {
+			for _, row := range fe.rows.Order {
+				if row.Span != nil && row.Span.IsFailed() {
+					fe.requestLogs(row.Span.ID)
+				}
+			}
+			if tv := fe.db.TestView(); tv != nil {
+				for _, node := range tv.BySpan {
+					if node != nil && node.Kind == dagui.TestNodeCase &&
+						node.SelfCategory == dagui.TestCategoryFailing && node.Span != nil {
+						// requestLogs rolls up a failed leaf test's descendants (its real
+						// output lives in a sub-operation it ran, not the test span itself).
+						fe.requestLogs(node.Span.ID)
+					}
+				}
+			}
+			if pol := fe.renderPolicy(); pol.showRootCause || pol.showRootCauseLast {
+				if zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]; zoomSpan != nil {
+					for _, origin := range fe.checkRootCauses(zoomSpan) {
+						fe.requestLogs(origin.ID)
+					}
+				}
+			}
+			eachFailedLeafCheck(fe.db.SurfacedChecks(), func(n *dagui.CheckNode) {
+				for _, origin := range fe.checkRootCauses(n.Span) {
+					fe.requestLogs(origin.ID)
+				}
+			})
+		}
+	}
 
 	if len(fe.rows.Order) == 0 {
 		fe.focus(nil)
@@ -1796,6 +2790,31 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	// appearance). Now that syncSpanTreeState has created all
 	// SpanTreeViews, ensure the correct one has tuist keyboard focus.
 	fe.applyTuistFocus()
+}
+
+// promoteChecksLocked mirrors the web UI (cloud/components/trace.go): when a
+// trace has checks, mark the root span passthrough so RowsView surfaces the
+// revealed check spans -- all of them -- at the top level instead of the
+// root's setup children (the session and per-module loads). Checks bubble up
+// to the root via the reveal mechanism, so this reuses the existing tree/row
+// rendering and navigation without constructing a synthetic tree. The
+// passthrough branch in RowsView only fires when the root is the zoomed span,
+// so default the zoom to the primary (root) span when nothing else has zoomed.
+func (fe *frontendPretty) promoteChecksLocked() {
+	if fe.db == nil || fe.db.RootSpan == nil || !fe.db.HasChecks() {
+		return
+	}
+	if fe.db.RootSpan.CheckName != "" {
+		// The root span is itself a check: there's no setup noise above it to
+		// hide, and passing it through would reparent its children (the tests) to
+		// the top level, breaking the inline tests-under-check view. Nothing to
+		// promote.
+		return
+	}
+	fe.db.RootSpan.Passthrough = true
+	if !fe.ZoomedSpan.IsValid() {
+		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
 }
 
 // applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
@@ -1836,30 +2855,15 @@ func (fe *frontendPretty) syncSpanTreeState() {
 		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
 	}
 
-	// Determine the zoom prefix for top-level trees.
-	var zoomPrefix string
-	if fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
-		zoomPrefix = "  "
-	}
-
+	// A zoomed subtree renders at the margin: its root is split off as a header
+	// (see Render), so the content below isn't indented under it.
 	body := fe.rowsView.Body
 	newTops := make([]*SpanTreeView, 0, len(body))
 	for i, tree := range body {
 		st := fe.getOrCreateSpanTree(tree.Span.ID)
 		st.parent = nil
 		st.indexInParent = i
-
-		// Top-level prefix (zoom indentation if applicable)
-		var newPrefix treePrefix
-		if zoomPrefix != "" {
-			newPrefix = treePrefix{
-				step:        zoomPrefix,
-				cont:        zoomPrefix,
-				forChildren: zoomPrefix,
-				contWidth:   lipgloss.Width(zoomPrefix),
-			}
-		}
-		fe.syncTreeNode(st, newPrefix)
+		fe.syncTreeNode(st, treePrefix{})
 		newTops = append(newTops, st)
 	}
 	fe.topTrees = newTops
@@ -2047,51 +3051,61 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		return allLines
 	}
 
-	// Crop the bottom so the focused span stays within the visible
-	// screen area. Content above scrolls into terminal scrollback
-	// naturally — we never crop the top.
+	// Crop to the visible window so the focused span stays onscreen. The
+	// caller composes progress + chrome and the result must fit the screen
+	// exactly: returning more than the viewport (relying on the terminal to
+	// clip the overflow) scrolls the top — including the focused row's own
+	// header — offscreen when the focused content is tall.
+	// A non-positive ScreenHeight means the height is unknown (RenderLines / the
+	// report discovery render, before a frame sizes the terminal) -- don't crop.
+	if ctx.ScreenHeight() <= 0 {
+		return allLines
+	}
 	viewportHeight := max(ctx.ScreenHeight()-chromeHeight, 1)
-
-	end := len(allLines)
-	if focusLine >= 0 && len(allLines) > viewportHeight {
-		// Use the root span's own rendered height (selfLineCount), not
-		// the entire tree height. Children may extend below the viewport,
-		// but the root's own content must stay in view.
-		focusHeight := 1
-		if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
-			focusHeight = focused.selfLineCount
-		}
-		end = cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	if focusLine < 0 || len(allLines) <= viewportHeight {
+		return allLines
 	}
 
-	return allLines[:end]
+	// Use the root span's own rendered height (selfLineCount), not the entire
+	// tree height. Children may extend below the viewport, but the root's own
+	// content must stay in view.
+	focusHeight := 1
+	if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+		focusHeight = focused.selfLineCount
+	}
+	end := cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	return allLines[max(0, end-viewportHeight):end]
 }
 
-// cropEnd computes the end index for slicing rendered lines so that the
-// focused span's own content [focusLine, focusLine+focusHeight) is always
-// visible within [end-viewportHeight, end). Remaining viewport space is
-// split evenly above and below the focused span's root content.
-//
-// Content above the visible window scrolls into terminal scrollback naturally.
+// cropEnd computes the end index for the visible window [end-viewportHeight,
+// end) so that the focused span's own content [focusLine, focusLine+focusHeight)
+// stays visible. When the focus root fits, remaining viewport space is split
+// evenly above and below it; when it is taller than the viewport, its top is
+// anchored so the header survives and its tail is cropped. The caller slices
+// allLines[end-viewportHeight:end].
 func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
 	focusEnd := min(focusLine+focusHeight, totalLines)
 
+	// When the focus root's own content is taller than the viewport, anchor
+	// its TOP: the visible window is [end-viewportHeight, end), so end =
+	// focusLine+viewportHeight makes the focus root's header the first visible
+	// line and crops its overflowing tail. Anchoring the bottom (focusEnd)
+	// instead would scroll the header offscreen, so the row you are focused on
+	// loses its header — its identity, status, and duration.
+	if focusHeight >= viewportHeight {
+		return min(focusLine+viewportHeight, totalLines)
+	}
+
 	// Split remaining viewport space evenly above and below the focus root.
-	remaining := max(viewportHeight-focusHeight, 0)
+	remaining := viewportHeight - focusHeight
 	below := remaining / 2
 
 	end := focusEnd + below
 
 	// Ensure the focus root stays fully visible: the visible window is
 	// [end-viewportHeight, end), so cap end so focusLine >= end-viewportHeight.
-	if focusHeight <= viewportHeight && end > focusLine+viewportHeight {
+	if end > focusLine+viewportHeight {
 		end = focusLine + viewportHeight
-	}
-
-	// When the focus root is taller than the viewport, at least show up
-	// to its end.
-	if end < focusEnd {
-		end = focusEnd
 	}
 
 	// Never crop to less than a full viewport when there's enough content.
@@ -3070,6 +4084,11 @@ func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
 		fe.SpanExpanded = make(map[dagui.SpanID]bool)
 	}
 	fe.SpanExpanded[id] = expanded
+	if expanded {
+		// Lazily pull this span's logs and children the first time it's opened.
+		fe.requestLogs(id)
+		fe.requestSpans(id)
+	}
 }
 
 // syncAfterExpandToggle rebuilds the flat row list from the existing
@@ -3097,10 +4116,14 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) {
 	span := row.Span
 
-	if span.Message == "" && // messages are displayed in renderStep
-		(row.Expanded || row.Span.LLMTool != "") {
-		fe.renderStepLogs(out, r, row, prefix, focused)
-	} else if (row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded && !fe.shouldRenderInlineTests(row) {
+	// The expanded-step-logs case (span.Message == "" && (Expanded || LLMTool))
+	// is now rendered by SpanTreeView.renderInlineLogs via the memoized
+	// LogsView. The rollup/shell branch below is preserved with the same
+	// precedence (it only fired when that case didn't).
+	inlineLogsCase := span.Message == "" && (row.Expanded || row.Span.LLMTool != "")
+	if !inlineLogsCase &&
+		(row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded &&
+		!fe.shouldRenderInlineTests(row) && !fe.shouldRenderInlineChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
@@ -3110,14 +4133,18 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
 			} else if row.Span.RollUpLogs && row.IsRunningOrChildRunning {
 				// Only show rolled-up logs while the span is running.
-				fe.renderStepLogs(out, r, row, prefix, focused)
+				fe.renderStepLogs(ctx, out, r, row, prefix, focused)
 			}
 		}
 	}
 	if len(span.ProgressSpans.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
-	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
+	if fe.shouldRenderInlineChecks(row) {
+		// A check deferring to its inline CHECKS rollup: the failure is explained
+		// by the failed sub-checks rendered in the rollup above, so don't also dump
+		// this check's own orchestrating command error here.
+	} else if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		// Filter self-references and causes already rendered elsewhere in this
 		// trace: a span propagated as its own error origin should never be
 		// rendered as the cause of itself, and a cause already shown as a
@@ -3244,11 +4271,23 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 // thing
 const llmLogsLastLines = 8
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
+func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
 	if fe.claims.hasLog(row.Span.ID) {
 		return false
 	}
+	// Structural lazy fetch: this row renders its own logs (message/rollup
+	// spans), so request them when it renders -- the interactive path no longer
+	// pre-fetches. (Inline expanded-step logs go through LogsView instead.)
+	fe.requestLogsOnRender(row.Span.ID)
+	// A third of the screen, read off ScreenHeight (not the cached
+	// fe.window.Height) so this in-tree log window tracks a resize. See
+	// renderInlineLogs.
 	limit := fe.window.Height / 3
+	if !fe.finalRender {
+		if sh := ctx.ScreenHeight(); sh > 0 {
+			limit = sh / 3
+		}
+	}
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
 	}
@@ -3422,6 +4461,104 @@ func (fe *frontendPretty) renderProgressSpanRow(ctx tuist.Context, out TermOutpu
 	fmt.Fprintln(out)
 }
 
+// checkRootCauses returns the failing origin span(s) for a zoom target -- the
+// span-derived equivalent of the summary's "root cause". It prefers the
+// ErrorOrigins already propagated onto the span via causal links, and otherwise
+// walks the subtree for failed leaves (a failed span with no failed child).
+func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
+	var origins []*dagui.Span
+	seen := map[dagui.SpanID]bool{}
+	add := func(s *dagui.Span) {
+		if s == nil || seen[s.ID] {
+			return
+		}
+		seen[s.ID] = true
+		origins = append(origins, s)
+	}
+	for _, o := range root.ErrorOrigins.Order {
+		add(o)
+	}
+	if len(origins) > 0 {
+		return origins
+	}
+	var walk func(s *dagui.Span)
+	walk = func(s *dagui.Span) {
+		if s.IsFailed() {
+			for _, o := range s.ErrorOrigins.Order {
+				add(o)
+			}
+			failedChild := false
+			for _, c := range s.ChildSpans.Order {
+				if c.IsFailedOrCausedFailure() {
+					failedChild = true
+				}
+			}
+			if !failedChild && len(s.ErrorOrigins.Order) == 0 {
+				add(s)
+			}
+		}
+		for _, c := range s.ChildSpans.Order {
+			walk(c)
+		}
+	}
+	walk(root)
+	return origins
+}
+
+// renderRootCauseSection renders the zoom target's root-cause origin span(s)
+// with the same `› parent context › failed span` breadcrumb, logs, and error
+// the live tree uses. It reuses renderErrorCause, whose logs.View() preserves
+// the user program's own ANSI colour (UI chrome is handled by the agent/ASCII
+// profile elsewhere -- we must not strip the user's output here).
+//
+// afterTree marks the showRootCauseLast placement (below the tree): origins
+// the tree already told in full are skipped, so the section adds only the
+// detail the tree couldn't carry.
+func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer, afterTree bool) []string {
+	zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]
+	if zoomSpan == nil {
+		return nil
+	}
+	origins := fe.checkRootCauses(zoomSpan)
+	if len(origins) == 0 {
+		return nil
+	}
+	zoomRow := &dagui.TraceRow{Span: zoomSpan, Expanded: true}
+	buf := new(strings.Builder)
+	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	rendered := false
+	for _, origin := range origins {
+		if !origin.Received {
+			// Incremental --full may not have loaded the origin span (or its
+			// logs) yet; skip rather than render an empty stub.
+			continue
+		}
+		if afterTree {
+			if row := fe.rows.BySpan[origin.ID]; row != nil && row.Expanded {
+				// The origin rendered as its own expanded row in the tree
+				// above -- title, inline logs, and error all told in place.
+				continue
+			}
+		}
+		if fe.claims.hasError(origin.ID) {
+			// The tree already rendered this origin's error (an inline origin
+			// block, or the origin's own row). Only repeat it here if it has
+			// logs the tree didn't show -- a row that printed a bare error
+			// with its logs collapsed still needs its detail surfaced.
+			logs := fe.logs.Logs[origin.ID]
+			if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(origin.ID) {
+				continue
+			}
+		}
+		fe.renderErrorCause(ctx, out, r, zoomRow, "", origin, fe)
+		rendered = true
+	}
+	if !rendered {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+}
+
 func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span, statusHost statusIconHost) {
 	rootCauseTree := fe.rowsView.BySpan[rootCause.ID]
 	if rootCauseTree == nil {
@@ -3469,6 +4606,14 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		if p.Span.ID == row.Span.ID {
 			break
 		}
+		if !p.Span.Received {
+			// An ancestor we never fetched: the error origin is point-fetched by
+			// ID, but its parents aren't, so a synthetic-tree walk can reach an
+			// unreceived placeholder (no name, call, or message). renderStepTitle
+			// would render it blank, leaving a stray "› " breadcrumb segment with
+			// nothing before it. Skip it -- we have no data to show.
+			continue
+		}
 		parentRow := &dagui.TraceRow{
 			Span:     p.Span,
 			Chained:  p.Chained,
@@ -3513,6 +4658,7 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 	}
 	fe.renderStepTitle(ctx, out, r, rootCauseRow, prefix+indent, statusHost, false, false)
 	fmt.Fprintln(out)
+	fe.requestLogsOnRender(rootCauseRow.Span.ID)
 	if logs := fe.logs.Logs[rootCauseRow.Span.ID]; logs != nil && !fe.claims.hasLog(rootCauseRow.Span.ID) {
 		if row.Depth == 0 && fe.finalRender {
 			logs.SetPrefix("")
@@ -3523,9 +4669,17 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		if fe.finalRender {
 			logs.SetHeight(logs.UsedHeight())
 		} else {
-			logs.SetHeight(fe.window.Height / 3)
+			// Read ScreenHeight (not the cached fe.window.Height) so this row's
+			// render is height-dependent and the cause log window tracks a resize
+			// instead of sticking at its first-paint height. See renderInlineLogs.
+			height := fe.window.Height / 3
+			if sh := ctx.ScreenHeight(); sh > 0 {
+				height = sh / 3
+			}
+			logs.SetHeight(height)
 		}
 		fmt.Fprint(out, logs.View())
+		fe.claims.claimLog(rootCauseRow.Span)
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
 
@@ -3627,7 +4781,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// NOTE: arguably this should be opt-in, but it's not clear how the
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
-		if fe.renderStepLogs(out, r, row, prefix, focused) {
+		if fe.renderStepLogs(ctx, out, r, row, prefix, focused) {
 			if span.LLMRole == telemetry.LLMRoleUser {
 				// Bail early if we printed a user message span; these don't have any
 				// further information to show. Duration is always 0, metrics are empty,
@@ -3777,6 +4931,12 @@ var brailleDots = []rune{
 // renderRollUpDots renders a visual summary of child span states using pre-computed state
 func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row *dagui.TraceRow, prefix string, _ dagui.FrontendOpts) string {
 	if !span.RollUpSpans {
+		return ""
+	}
+
+	// The braille rollup is a visual density cue; an agent reading the output as
+	// text gets nothing from it but noise, so skip it entirely.
+	if RunningInAgent() {
 		return ""
 	}
 
@@ -4015,7 +5175,7 @@ func (fe *frontendPretty) statusIcon(ctx tuist.Context, host statusIconHost, spa
 
 func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
 	var icon termenv.Style
-	if row.HasChildren || row.Span.HasLogs {
+	if row.HasChildren || row.Span.ChildCount > 0 || row.Span.HasLogs {
 		if row.Expanded {
 			icon = out.String(CaretDownFilled).Foreground(termenv.ANSIBrightBlack)
 		} else {
@@ -4065,40 +5225,14 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 }
 
 func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.TraceRow, logs *Vterm, height int, prefix string, focused bool) bool {
-	span := row.Span
-	depth := row.Depth
-
-	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
-	dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
-	if focused {
-		pipe = hl(pipe)
-		dashed = hl(dashed)
-	}
-
-	if depth == -1 {
-		// clear prefix when zoomed
-		logs.SetPrefix(prefix)
-	} else {
-		pipeBuf := new(strings.Builder)
-		fmt.Fprint(pipeBuf, prefix)
-		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
-		r.fancyIndent(indentOut, row, false, false)
-		fmt.Fprint(indentOut, pipe)
-		fmt.Fprint(indentOut, out.String(" "))
-		logs.SetPrefix(pipeBuf.String())
-	}
+	logPrefix, trimPrefix := fe.logLinePrefixes(out, r, row, prefix, focused)
+	logs.SetPrefix(logPrefix)
 	if height <= 0 {
 		height = logs.UsedHeight()
 	}
 	trimmed := logs.UsedHeight() - height
 	if trimmed > 0 {
-		fmt.Fprint(out, prefix)
-		r.fancyIndent(out, row, false, false)
-		fmt.Fprint(out, dashed)
-		fmt.Fprint(out, out.String(" "))
-		fmt.Fprint(out, out.String("...").Foreground(termenv.ANSIBrightBlack))
-		fmt.Fprintf(out, out.String("%d").Foreground(termenv.ANSIBrightBlack).Bold().String(), trimmed)
-		fmt.Fprintln(out, out.String(" lines hidden...").Foreground(termenv.ANSIBrightBlack))
+		fe.writeLogTrimHeader(out, trimPrefix, trimmed)
 	}
 	logs.SetHeight(height)
 	view := logs.View()
@@ -4107,6 +5241,52 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	}
 	fmt.Fprint(out, view)
 	return true
+}
+
+// logLinePrefixes builds the per-line prefix applied to a row's inline log
+// Vterm (logPrefix) and the prefix for its "N lines hidden" trim header
+// (trimPrefix). Returned as plain strings so a LogsView can be cached on them:
+// the strings encode the row's indent, status colour, and focus, so any change
+// that would alter the rendered logs shows up as a different prefix.
+func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) (logPrefix, trimPrefix string) {
+	span := row.Span
+	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+	dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+	if focused {
+		pipe = hl(pipe)
+		dashed = hl(dashed)
+	}
+
+	if row.Depth == -1 {
+		// clear prefix when zoomed
+		logPrefix = prefix
+	} else {
+		pipeBuf := new(strings.Builder)
+		fmt.Fprint(pipeBuf, prefix)
+		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
+		r.fancyIndent(indentOut, row, false, false)
+		fmt.Fprint(indentOut, pipe)
+		fmt.Fprint(indentOut, out.String(" "))
+		logPrefix = pipeBuf.String()
+	}
+
+	trimBuf := new(strings.Builder)
+	fmt.Fprint(trimBuf, prefix)
+	trimOut := NewOutput(trimBuf, termenv.WithProfile(fe.profile))
+	r.fancyIndent(trimOut, row, false, false)
+	fmt.Fprint(trimOut, dashed)
+	fmt.Fprint(trimOut, out.String(" "))
+	trimPrefix = trimBuf.String()
+	return logPrefix, trimPrefix
+}
+
+// writeLogTrimHeader writes the "...N lines hidden..." marker shown above a
+// truncated inline log Vterm.
+func (fe *frontendPretty) writeLogTrimHeader(out TermOutput, trimPrefix string, trimmed int) {
+	fmt.Fprint(out, trimPrefix)
+	fmt.Fprint(out, out.String("...").Foreground(termenv.ANSIBrightBlack))
+	fmt.Fprintf(out, out.String("%d").Foreground(termenv.ANSIBrightBlack).Bold().String(), trimmed)
+	fmt.Fprintln(out, out.String(" lines hidden...").Foreground(termenv.ANSIBrightBlack))
 }
 
 // ---------- pretty logs (unchanged) -----------------------------------------

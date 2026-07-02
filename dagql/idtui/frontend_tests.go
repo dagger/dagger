@@ -2,6 +2,8 @@ package idtui
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -68,6 +70,10 @@ type TestView struct {
 	Logs         map[dagui.SpanID]*Vterm
 	SpanChildren func(*dagui.Span) tuist.Component
 
+	// TraceID, when set (by 'dagger trace'), lets a failing entry's capped log
+	// tail point at 'dagger cloud logs <trace> <span>' for the full output.
+	TraceID string
+
 	sidebar *testSidebarView
 
 	// MaxHeight caps the rendered height. A zero value means fullscreen mode:
@@ -86,8 +92,21 @@ type TestView struct {
 	// ShowTestViewerHint renders the pretty-live "T inspect" affordance next to
 	// the TESTS summary heading. Final/non-pretty reports leave it disabled.
 	ShowTestViewerHint bool
+	// SummaryTitle overrides the "TESTS" heading for ListOnly summaries, e.g.
+	// "ORPHANED TESTS" for the section of tests severed from their checks.
+	SummaryTitle string
+	// SummaryNote renders pre-styled lines directly beneath the heading, before
+	// the test rows -- used to explain why a section exists (e.g. the orphan
+	// warning). Subject to the same height budget as the rest of the summary.
+	SummaryNote []string
 
 	OnFocusSpan func(*dagui.Span)
+
+	// RequestLogs lazily fetches a span's logs when this view renders them, so a
+	// failing test case's rolled-up output is fetched only when its summary is
+	// actually on screen (the interactive lazy path) -- not eagerly for every
+	// failure in the trace. nil for live runs / when no provider is set.
+	RequestLogs func(dagui.SpanID)
 
 	// ForceInteractive keeps fullscreen tests interactive while Tuist focus is on
 	// a descendant in the detail pane. Embedded test views remain passive through
@@ -663,20 +682,84 @@ func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, se
 	return selector + " " + iconStyle.String() + " " + indent + nameStyle.String() + count
 }
 
+// testSummaryBlock is one non-passing entry: its name line and any inline log
+// lines beneath it. Splitting them lets the condenser shed logs before names.
+type testSummaryBlock struct {
+	name string
+	logs []string
+}
+
 func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView, width, height int) []string {
 	if tv.testSummaryFinal() {
 		width = 0
 	}
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
-	lines := []string{tv.renderTestSummaryHeader(out, prefix, width)}
+	header := tv.renderTestSummaryHeader(out, prefix, width)
 	if view == nil {
-		return cropLines(lines, height)
+		return []string{header}
 	}
+
 	entries := collectTestSummaryEntries(view)
+	var blocks []testSummaryBlock
+	addBlock := func(entry testSummaryEntry) {
+		entryLines := tv.renderTestSummaryEntry(out, entry, width)
+		blk := testSummaryBlock{name: entryLines[0]}
+		if len(entryLines) > 1 {
+			blk.logs = entryLines[1:]
+		}
+		blocks = append(blocks, blk)
+	}
+	for _, entry := range entries.failing {
+		addBlock(entry)
+	}
+	for _, entry := range entries.skipped {
+		addBlock(entry)
+	}
+	for _, entry := range entries.running {
+		addBlock(entry)
+	}
+	var passing []string
+	for _, entry := range entries.passing {
+		passing = append(passing, tv.renderTestSummaryPassingSuite(out, entry, width))
+	}
+	counts := renderTestSummaryCounts(out, view.Counts, tv.SummaryIndent, width)
+
+	full := tv.withSummaryNote(assembleTestSummary(header, blocks, passing, counts))
+	// height <= 0 means unbounded (the final report, or a size-unknown render):
+	// show everything. Otherwise, if it already fits, keep the spacious layout.
+	if height <= 0 || len(full) <= height {
+		return full
+	}
+	if height == 1 {
+		// Too tight for even heading+counts on separate rows: combine them so the
+		// outcome still shows.
+		return []string{tv.renderTestSummaryOneLine(out, view.Counts, width)}
+	}
+	compact := tv.renderTestSummaryCountsCompact(out, view.Counts, width)
+	return tv.condenseTestSummary(out, header, blocks, passing, compact, height)
+}
+
+// renderTestSummaryOneLine collapses the whole rollup onto one row -- the
+// heading followed by the tallies -- the floor used when a single line is all
+// there is room for.
+func (tv *TestView) renderTestSummaryOneLine(out TermOutput, counts dagui.TestCounts, width int) string {
+	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
+	line := prefix + reportHeadingLine(out, tv.summaryHeading())
+	if parts := renderTestCountParts(out, counts); len(parts) > 0 {
+		line += "  " + strings.Join(parts, "  ")
+	}
+	return clipTestSummaryLine(line, width)
+}
+
+// assembleTestSummary lays out the roomy summary: the heading, each non-passing
+// entry (with its logs), the passing-suite breakdown, then the counts, with a
+// blank line before multiline entries and the trailing sections.
+func assembleTestSummary(header string, blocks []testSummaryBlock, passing, counts []string) []string {
+	lines := []string{header}
 	addedContent := false
 	lastMultiline := false
-	appendEntry := func(entry testSummaryEntry) {
-		entryLines := tv.renderTestSummaryEntry(out, entry, width)
+	for _, blk := range blocks {
+		entryLines := append([]string{blk.name}, blk.logs...)
 		multiline := len(entryLines) > 1
 		if addedContent && (lastMultiline || multiline) {
 			lines = append(lines, "")
@@ -685,39 +768,114 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 		addedContent = true
 		lastMultiline = multiline
 	}
-	for _, entry := range entries.failing {
-		appendEntry(entry)
-	}
-	for _, entry := range entries.skipped {
-		appendEntry(entry)
-	}
-	for _, entry := range entries.running {
-		appendEntry(entry)
-	}
-	if len(entries.passing) > 0 {
+	if len(passing) > 0 {
 		if addedContent {
 			lines = append(lines, "")
 		}
-		for _, entry := range entries.passing {
-			lines = append(lines, tv.renderTestSummaryPassingSuite(out, entry, width))
-		}
+		lines = append(lines, passing...)
 		addedContent = true
 	}
-	if counts := renderTestSummaryCounts(out, view.Counts, tv.SummaryIndent, width); len(counts) > 0 {
+	if len(counts) > 0 {
 		if addedContent {
 			lines = append(lines, "")
 		}
 		lines = append(lines, counts...)
 	}
-	return cropLines(lines, height)
+	return lines
+}
+
+// condenseTestSummary fits the rollup into height rows when the roomy layout
+// won't. The heading and a one-line counts summary -- the at-a-glance outcome
+// -- are always kept (a 2-row floor); the space between is filled in priority
+// order: every failing/skipped/running test's name first, then their logs top
+// entry first, then the passing-suite breakdown. Blank separators are dropped.
+// When even the names overflow, as many as fit are shown with a "more" marker.
+func (tv *TestView) condenseTestSummary(out TermOutput, header string, blocks []testSummaryBlock, passing []string, compactCounts string, height int) []string {
+	if height <= 2 || len(blocks)+len(passing) == 0 {
+		return []string{header, compactCounts}
+	}
+	bodyBudget := height - 2 // heading + counts
+	if len(blocks) > bodyBudget {
+		// Not every name fits; show as many as we can and mark the remainder.
+		shown := max(bodyBudget-1, 0)
+		body := make([]string, 0, bodyBudget)
+		for _, blk := range blocks[:shown] {
+			body = append(body, blk.name)
+		}
+		body = append(body, tv.renderTestSummaryMore(out, len(blocks)-shown))
+		return append(append([]string{header}, body...), compactCounts)
+	}
+	// Every name fits; spend the remainder on logs (top entry first), then on
+	// the passing-suite breakdown.
+	leftover := bodyBudget - len(blocks)
+	body := make([]string, 0, bodyBudget)
+	for _, blk := range blocks {
+		body = append(body, blk.name)
+		for _, log := range blk.logs {
+			if leftover <= 0 {
+				break
+			}
+			body = append(body, log)
+			leftover--
+		}
+	}
+	for _, line := range passing {
+		if leftover <= 0 {
+			break
+		}
+		body = append(body, line)
+		leftover--
+	}
+	return append(append([]string{header}, body...), compactCounts)
+}
+
+// renderTestSummaryMore is the faint "… N more …" line shown when condensing
+// drops test rows that wouldn't fit.
+func (tv *TestView) renderTestSummaryMore(out TermOutput, hidden int) string {
+	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
+	return indent + out.String(fmt.Sprintf("… %d more …", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+}
+
+// renderTestSummaryCountsCompact renders the pass/fail tallies on a single line
+// (e.g. "✘ 2 failed  ✔ 644 passed") for the condensed rollup, where the roomy
+// one-per-line counts would cost rows the body needs.
+func (tv *TestView) renderTestSummaryCountsCompact(out TermOutput, counts dagui.TestCounts, width int) string {
+	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
+	parts := renderTestCountParts(out, counts)
+	if len(parts) == 0 {
+		return clipTestSummaryLine(indent+out.String("0 tests").Foreground(termenv.ANSIBrightBlack).Faint().String(), width)
+	}
+	return clipTestSummaryLine(indent+strings.Join(parts, "  "), width)
 }
 
 func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width int) string {
-	heading := prefix + out.String("TESTS").Bold().String()
+	heading := prefix + reportHeadingLine(out, tv.summaryHeading())
 	if tv.ShowTestViewerHint && !tv.testSummaryFinal() {
 		heading += " " + renderTestViewerHint(out)
 	}
 	return clipTestSummaryLine(heading, width)
+}
+
+// summaryHeading is the ListOnly summary's section title, "TESTS" unless
+// SummaryTitle overrides it.
+func (tv *TestView) summaryHeading() string {
+	if tv.SummaryTitle != "" {
+		return tv.SummaryTitle
+	}
+	return "TESTS"
+}
+
+// withSummaryNote inserts SummaryNote directly beneath the heading (lines[0]),
+// before the test rows. A no-op when there's no note or no heading to anchor to.
+func (tv *TestView) withSummaryNote(lines []string) []string {
+	if len(tv.SummaryNote) == 0 || len(lines) == 0 {
+		return lines
+	}
+	out := make([]string, 0, len(lines)+len(tv.SummaryNote))
+	out = append(out, lines[0])
+	out = append(out, tv.SummaryNote...)
+	out = append(out, lines[1:]...)
+	return out
 }
 
 func renderTestViewerHint(out TermOutput) string {
@@ -763,6 +921,12 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	if entry.category != dagui.TestCategoryFailing && entry.category != dagui.TestCategorySkipped {
 		return nil
 	}
+	// Structural lazy fetch: request as soon as we're rendering this entry's
+	// logs, even before they've arrived, so an off-screen failing case isn't
+	// fetched until its summary actually renders.
+	if tv.RequestLogs != nil {
+		tv.RequestLogs(entry.span.ID)
+	}
 	logs := tv.Logs[entry.span.ID]
 	if logs == nil {
 		return nil
@@ -791,26 +955,31 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 		return nil
 	}
 	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+	if final {
+		// Anchor on the failure rather than an arbitrary tail, and point at the
+		// full logs -- the same treatment the zoomed (--test) view uses.
+		return errorWindowLines(out, rawLines, indent, tv.TraceID, cloudLogsTarget(entry.span))
+	}
+
+	// Live (interactive) summary: a small tail with a "more lines" footer.
+	hidden := 0
 	if len(rawLines) > limit {
+		hidden = len(rawLines) - limit
 		rawLines = rawLines[len(rawLines)-limit:]
 	}
 	textWidth := max(width-lipgloss.Width(indent), 1)
 	lines := make([]string, 0, len(rawLines)+1)
 	for _, line := range rawLines {
-		if !final && strings.TrimSpace(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if final {
-			lines = append(lines, indent+line)
-		} else {
-			lines = append(lines, clipTestSummaryLine(indent+clipPlain(line, textWidth), width))
-		}
+		lines = append(lines, clipTestSummaryLine(indent+clipPlain(line, textWidth), width))
 	}
 	if len(lines) == 0 {
 		return nil
 	}
-	if usedHeight > limit {
-		marker := out.String(fmt.Sprintf("... %d more log lines ...", usedHeight-limit)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+	if hidden > 0 {
+		marker := out.String(fmt.Sprintf("... %d more log lines ...", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 		lines = append(lines, clipTestSummaryLine(indent+marker, width))
 	}
 	return lines
@@ -938,7 +1107,12 @@ func testSummarySuiteLabel(node *dagui.TestNode) string {
 func testSummarySpanHierarchyLabel(node *dagui.TestNode) string {
 	var parts []string
 	for current := node; current != nil; current = current.Parent {
-		if current.Kind == dagui.TestNodeVirtualSuite {
+		if current.Kind == dagui.TestNodeVirtualSuite && current.Name == "" {
+			// Skip unnamed synthetic groupings, but keep named ones: the
+			// orphan filter (FilterCases) downgrades real suites to virtual
+			// so their status re-derives from the retained cases, and their
+			// names must stay in the case's breadcrumb -- the global TESTS
+			// section would otherwise show bare, ambiguous case names.
 			continue
 		}
 		name := testNodeDisplayName(current)
@@ -1074,6 +1248,15 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		return []string{out.String("No test selected").Foreground(termenv.ANSIBrightBlack).String()}
 	}
 	span := node.Span
+	// Request the selected span's logs up front. detailLogLineCount returns 0
+	// until the logs are loaded, which would gate out renderDetailLogLines (the
+	// only other RequestLogs caller) and leave a failing test's detail pane
+	// permanently empty -- the fetch is never triggered because nothing renders,
+	// and nothing renders because the fetch never happened. Asking here breaks
+	// that cycle; the logs render on the next frame once they arrive.
+	if span != nil && tv.RequestLogs != nil {
+		tv.RequestLogs(span.ID)
+	}
 	representative := testTUISpan(node)
 	color := testCategoryColor(node.Category)
 	var lines []string
@@ -1239,6 +1422,9 @@ func (tv *TestView) renderDetailLogLines(out *termenv.Output, span *dagui.Span, 
 	if span == nil {
 		return nil
 	}
+	if tv.RequestLogs != nil {
+		tv.RequestLogs(span.ID)
+	}
 	logs := tv.Logs[span.ID]
 	if logs == nil || logs.UsedHeight() == 0 {
 		return nil
@@ -1370,8 +1556,10 @@ func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *Test
 	tv := &TestView{
 		Profile:      fe.profile,
 		Logs:         fe.logs.Logs,
+		RequestLogs:  fe.requestLogsOnRender,
 		ScopeName:    scopeName,
 		SpanChildren: fe.testSpanChildrenView,
+		TraceID:      fe.traceID,
 	}
 	if root.IsValid() {
 		tv.View = func() *dagui.TestView {
@@ -1518,6 +1706,18 @@ func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
 // finalRenderTestsWidth is used when report mode has no live terminal width.
 const finalRenderTestsWidth = 80
 
+const (
+	// inlineTestsChromeReserve is the height a focused check row's inline test
+	// rollup yields to surrounding chrome: the row's own title line, the pipe
+	// separator above the rollup, and the keymap bar. The rest of the viewport
+	// is the rollup's budget, which it condenses to fit.
+	inlineTestsChromeReserve = 3
+	// minInlineTestsRollupHeight is the condensed floor. At 1 the heading and
+	// counts share a single line, so the outcome survives even when the screen
+	// is too small for the usual two-row heading+counts.
+	minInlineTestsRollupHeight = 1
+)
+
 func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
 	if row == nil || row.Span == nil || row.Span.CheckName == "" {
 		return false
@@ -1542,6 +1742,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 			Logs:            s.fe.logs.Logs,
 			SummaryIndent:   2,
 			SummaryLogLines: -1,
+			TraceID:         s.fe.traceID,
 		}
 		width := ctx.Width
 		if width <= 0 {
@@ -1574,7 +1775,18 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.ShowTestViewerHint = showHint
 		tv.Update()
 	}
+	// Budget the rollup to the viewport so it condenses (renderTestSummaryLines)
+	// rather than rendering tall and getting tail-cropped -- which drops the
+	// counts and failing-test detail that matter most. The focused row's rollup
+	// is its main content, so give it the screen minus room for the row's own
+	// title, the pipe separator above the rollup, and the keymap bar. The final
+	// report (finalRender) and size-unknown renders stay unbounded.
 	limit := finalTestViewHeight(tv)
+	if !s.fe.finalRender {
+		if sh := ctx.ScreenHeight(); sh > 0 {
+			limit = max(sh-inlineTestsChromeReserve, minInlineTestsRollupHeight)
+		}
+	}
 	if tv.MaxHeight != limit {
 		tv.MaxHeight = limit
 		tv.Update()
@@ -1619,15 +1831,33 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	return lines
 }
 
+// claimInlineTestCases seeds case claims for the checks whose inline rollups
+// will render, so the global tests section's orphan filter can subtract them.
+// The interactive render emits the global section before the trace rows -- so
+// the section's log claims suppress duplicate logs in the rows above it -- but
+// that puts it ahead of the rollups that would otherwise claim these cases.
+// Seeding here closes that gap; the rollups re-claim idempotently when they
+// render. The report path renders progress first and needs no seeding.
+func (fe *frontendPretty) claimInlineTestCases() {
+	if fe.rows == nil {
+		return
+	}
+	for _, row := range fe.rows.Order {
+		if fe.shouldRenderInlineTests(row) {
+			fe.claims.claimTestCases(fe.db.TestViewForSpan(row.Span))
+		}
+	}
+}
+
 func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 	if fe.db == nil {
 		return nil
 	}
-	view := fe.db.TestView()
-	if !view.HasTests() || testViewAllReportEntriesUnderChecks(view) {
+	orphan := fe.orphanTestView()
+	if orphan == nil || !orphan.HasTests() {
 		return nil
 	}
-	tv := fe.inlineTestView(dagui.SpanID{})
+	tv := fe.orphanTestsComponent()
 	if tv.SummaryIndent != 0 {
 		tv.SummaryIndent = 0
 		tv.Update()
@@ -1649,10 +1879,12 @@ func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 	if width <= 0 {
 		width = finalRenderTestsWidth
 	}
+	fe.setOrphanSummary(tv, fe.orphanWarningLines(orphan))
 	lines := fe.RenderChildResult(ctx.Resize(max(width, 1), limit), tv).Lines
-	if len(lines) > 0 {
-		fe.claims.claimTestReport(nil, view)
+	if len(lines) == 0 {
+		return nil
 	}
+	fe.claims.claimTestReport(nil, orphan)
 	return lines
 }
 
@@ -1660,11 +1892,11 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 	if fe.db == nil {
 		return nil
 	}
-	view := fe.db.TestView()
-	if !view.HasTests() || testViewAllReportEntriesUnderChecks(view) {
+	orphan := fe.orphanTestView()
+	if orphan == nil || !orphan.HasTests() {
 		return nil
 	}
-	tv := fe.inlineTestView(dagui.SpanID{})
+	tv := fe.orphanTestsComponent()
 	if tv.SummaryIndent != 0 {
 		tv.SummaryIndent = 0
 		tv.Update()
@@ -1687,7 +1919,13 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 		width = finalRenderTestsWidth
 	}
 	width = max(width, finalRenderTestsWidth)
-	return fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
+	fe.setOrphanSummary(tv, fe.orphanWarningLines(orphan))
+	lines := fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
+	if len(lines) == 0 {
+		return nil
+	}
+	fe.claims.claimTestReport(nil, orphan)
+	return lines
 }
 
 func liveTestViewHeight(ctx tuist.Context) int {
@@ -1702,28 +1940,135 @@ func finalTestViewHeight(tv *TestView) int {
 	return 10000
 }
 
-func testViewAllReportEntriesUnderChecks(view *dagui.TestView) bool {
-	if view == nil {
+// orphanTestView is the global test view filtered to the cases no check's test
+// report claimed this render pass. When every case sits under a rendered check
+// the result is empty and the global section is skipped. The remainder are
+// tests run outside any check, plus orphans whose ancestor spans are missing
+// from the trace data (see orphanWarningLines). Checks render -- and claim --
+// before the global section, so claims are populated by the time this runs.
+func (fe *frontendPretty) orphanTestView() *dagui.TestView {
+	if fe.db == nil {
+		return nil
+	}
+	view := fe.db.TestView()
+	if !view.HasTests() {
+		return nil
+	}
+	return view.FilterCases(func(node *dagui.TestNode) bool {
+		return node.Span == nil || !fe.claims.hasTestCase(node.Span.ID)
+	})
+}
+
+func (fe *frontendPretty) orphanTestsComponent() *TestView {
+	if fe.orphanTests == nil {
+		tv := fe.newTestView(dagui.SpanID{}, "")
+		tv.ListOnly = true
+		tv.View = func() *dagui.TestView { return fe.orphanTestView() }
+		fe.orphanTests = tv
+	}
+	return fe.orphanTests
+}
+
+// setOrphanSummary titles the global test section and stashes the orphan
+// warning on the component. When missing-ancestor cases are present the section
+// becomes "ORPHANED TESTS" and the warning renders indented beneath that
+// heading, rather than floating, headerless, above the whole section.
+func (fe *frontendPretty) setOrphanSummary(tv *TestView, warn []string) {
+	title := "TESTS"
+	if len(warn) > 0 {
+		title = "ORPHANED TESTS"
+	}
+	if tv.SummaryTitle != title {
+		tv.SummaryTitle = title
+		tv.Update()
+	}
+	if !slices.Equal(tv.SummaryNote, warn) {
+		tv.SummaryNote = warn
+		tv.Update()
+	}
+}
+
+// orphanWarningLines flags cases that dangle because intermediate ancestor spans
+// were never exported to the trace (Span.FirstMissingAncestor), distinguishing
+// them from tests legitimately run outside any check (which warn-free). With
+// --debug each affected case is listed with its span ID and the missing parent.
+func (fe *frontendPretty) orphanWarningLines(orphan *dagui.TestView) []string {
+	if orphan == nil || !fe.claims.anyTestCases() {
+		// No check rendered tests this pass, so the global section is the whole
+		// test view -- missing-ancestor cases aren't displaced from anything.
+		return nil
+	}
+	type orphanInfo struct {
+		name   string
+		span   dagui.SpanID
+		parent dagui.SpanID
+	}
+	var missing []orphanInfo
+	for _, node := range orphan.BySpan {
+		if node == nil || node.Kind != dagui.TestNodeCase || node.Span == nil {
+			continue
+		}
+		if anc := node.Span.FirstMissingAncestor(); anc != nil {
+			name := node.FullName
+			if name == "" {
+				name = node.Name
+			}
+			missing = append(missing, orphanInfo{name: name, span: node.Span.ID, parent: anc.ID})
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Slice(missing, func(i, j int) bool { return missing[i].name < missing[j].name })
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
+	noun := "test"
+	if len(missing) != 1 {
+		noun = "tests"
+	}
+	// Indented to sit beneath the ORPHANED TESTS heading the caller sets, with
+	// the detail/--debug lines nested one step further under the warning.
+	lines := []string{
+		out.String(fmt.Sprintf("  ! %d %s could not be attributed to a check (ancestor spans missing from trace data)",
+			len(missing), noun)).Foreground(termenv.ANSIYellow).String(),
+	}
+	if fe.Debug {
+		for _, m := range missing {
+			lines = append(lines, out.String(fmt.Sprintf("    %s  span=%s  missing parent=%s",
+				m.name, m.span, m.parent)).Foreground(termenv.ANSIBrightBlack).String())
+		}
+	} else {
+		lines = append(lines, out.String("    (run with --debug to list them)").Foreground(termenv.ANSIBrightBlack).String())
+	}
+	return lines
+}
+
+// isFailingLeafTestCase reports whether node is a failing test case with no
+// failing descendant test case -- the leaf whose sub-operation logs carry the
+// real failure (a build/setup error, panic, etc.). A parent case is excluded
+// because rolling up its logs would just repeat its failing child's.
+func isFailingLeafTestCase(node *dagui.TestNode) bool {
+	if node == nil || node.Kind != dagui.TestNodeCase ||
+		node.SelfCategory != dagui.TestCategoryFailing {
 		return false
 	}
-	seenEntry := false
-	allUnderChecks := true
+	return !hasFailingDescendantCase(node)
+}
+
+// failingLeafTestCases collects the failing leaf test cases in a view -- the
+// nodes whose own sub-operation carries the real failure -- in document order.
+// These back the --test drill-in suggestions.
+func failingLeafTestCases(view *dagui.TestView) []*dagui.TestNode {
+	if view == nil {
+		return nil
+	}
+	var out []*dagui.TestNode
 	var walk func(*dagui.TestNode)
 	walk = func(node *dagui.TestNode) {
 		if node == nil {
 			return
 		}
-		switch {
-		case node.Kind == dagui.TestNodeCase:
-			seenEntry = true
-			if !testSpanUnderCheck(node.Span) {
-				allUnderChecks = false
-			}
-		case node.Counts.Total() == 0 && node.Category != dagui.TestCategoryPassing:
-			seenEntry = true
-			if !testSpanUnderCheck(testTUISpan(node)) {
-				allUnderChecks = false
-			}
+		if isFailingLeafTestCase(node) {
+			out = append(out, node)
 		}
 		for _, child := range node.Children {
 			walk(child)
@@ -1732,12 +2077,91 @@ func testViewAllReportEntriesUnderChecks(view *dagui.TestView) bool {
 	for _, root := range view.Roots {
 		walk(root)
 	}
-	return seenEntry && allUnderChecks
+	return out
 }
 
-func testSpanUnderCheck(span *dagui.Span) bool {
-	for cur := span; cur != nil; cur = cur.ParentSpan {
-		if cur.CheckName != "" {
+// errorTailStart returns the line index to start rendering a failed test's
+// rolled-up logs at: a few context lines before the trailing run of fail/error
+// lines (case-insensitive). It anchors on the last fail/error mention, then
+// walks up through nearby ones -- bridging gaps up to context lines -- to the
+// start of that trailing cluster, so the whole failure region shows, not just
+// its tail. Leading noise (dependency downloads, an incidental "errors" in a
+// package name) is trimmed: those matches sit far above the failure cluster and
+// the gap stops the walk. Returns 0 (render everything) when nothing matches.
+func errorTailStart(lines []string, context int) int {
+	match := func(s string) bool {
+		lower := strings.ToLower(s)
+		return strings.Contains(lower, "fail") || strings.Contains(lower, "error")
+	}
+	last := -1
+	for i, line := range lines {
+		if match(line) {
+			last = i
+		}
+	}
+	if last < 0 {
+		return 0
+	}
+	anchor := last
+	for i := last - 1; i >= 0; i-- {
+		if !match(lines[i]) {
+			continue
+		}
+		if anchor-i > context+1 {
+			// A match, but separated from the cluster by noise -- stop here.
+			break
+		}
+		anchor = i
+	}
+	return max(anchor-context, 0)
+}
+
+// cloudLogsTarget returns the 'dagger cloud logs' selector that addresses span
+// by name when possible (--test/--check), else by --span. Empty for a nil span.
+func cloudLogsTarget(span *dagui.Span) string {
+	switch {
+	case span == nil:
+		return ""
+	case span.TestCaseName != "":
+		return fmt.Sprintf("--test %q", span.TestCaseName)
+	case span.CheckName != "":
+		return fmt.Sprintf("--check %q", span.CheckName)
+	default:
+		return fmt.Sprintf("--span %s", span.ID)
+	}
+}
+
+// errorWindowLines renders a failed span's rolled-up logs for a final report:
+// the error-anchored window (errorTailStart) prefixed with a marker for any
+// trimmed lines, then a 'dagger cloud logs' hint for the full output when a
+// trace ID and selector target are known. Lines are prefixed with indent and
+// left unclipped -- the hint is a copy-paste command.
+func errorWindowLines(out TermOutput, rawLines []string, indent, traceID, target string) []string {
+	start := errorTailStart(rawLines, 5)
+	lines := make([]string, 0, len(rawLines)-start+2)
+	if start > 0 {
+		marker := out.String(fmt.Sprintf("... %d earlier log lines ...", start)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		lines = append(lines, indent+marker)
+	}
+	for _, line := range rawLines[start:] {
+		lines = append(lines, indent+line)
+	}
+	if traceID != "" && target != "" {
+		hint := out.String(fmt.Sprintf("full: dagger cloud logs %s %s", traceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		lines = append(lines, indent+hint)
+	}
+	return lines
+}
+
+func hasFailingDescendantCase(node *dagui.TestNode) bool {
+	for _, child := range node.Children {
+		if child == nil {
+			continue
+		}
+		if child.Kind == dagui.TestNodeCase && child.SelfCategory == dagui.TestCategoryFailing {
+			return true
+		}
+		if hasFailingDescendantCase(child) {
 			return true
 		}
 	}
@@ -2070,6 +2494,7 @@ func (tv *TestView) flattenTestRows(view *dagui.TestView) []testSidebarRow {
 }
 
 func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int, parentKey string) {
+	nodes = nonEmptyTestNodes(nodes)
 	partition := dagui.PartitionTests(nodes)
 	groups := [][]*dagui.TestNode{
 		partition.Failing,
@@ -2107,6 +2532,20 @@ func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNo
 		*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth})
 		tv.appendTestRows(rows, node.Children, depth+1, string(node.ID))
 	}
+}
+
+// nonEmptyTestNodes drops packages/suites that discovered no tests (0 total) so
+// they don't clutter the sidebar and push real results off-screen. A test case
+// always counts >=1 and counts roll up to parents, so this only removes
+// genuinely empty suites; a package with only skipped tests (Skipped > 0) stays.
+func nonEmptyTestNodes(nodes []*dagui.TestNode) []*dagui.TestNode {
+	out := make([]*dagui.TestNode, 0, len(nodes))
+	for _, n := range nodes {
+		if n != nil && n.Counts.Total() > 0 {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func testTUISpan(node *dagui.TestNode) *dagui.Span {

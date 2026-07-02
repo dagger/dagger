@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -23,12 +24,7 @@ import (
 // GraphQL operations for streaming trace data from Dagger Cloud.
 // These mirror the subscriptions used by the Cloud UI (dagger.io).
 
-const getSpanUpdatesOperation = `
-subscription GetSpanUpdates ($orgID: ID!, $traceID: ID!, $root: Boolean! = true, $before: Time, $after: Time, $listen: [ID!]) {
-	spansUpdated(org: $orgID, traceId: $traceID, root: $root, before: $before, after: $after, listen: $listen) {
-		... SpanProps
-	}
-}
+const spanPropsFragment = `
 fragment SpanProps on Span {
 	id
 	traceId
@@ -64,6 +60,26 @@ fragment SpanProps on Span {
 	partial
 }
 `
+
+const getSpanUpdatesOperation = `
+subscription GetSpanUpdates ($orgID: ID!, $traceID: ID!, $root: Boolean! = true, $before: Time, $after: Time, $listen: [ID!]) {
+	spansUpdated(org: $orgID, traceId: $traceID, root: $root, before: $before, after: $after, listen: $listen) {
+		... SpanProps
+	}
+}
+` + spanPropsFragment
+
+// getSpanUpdatesIncrementalOperation adds the incremental argument, which forces
+// the API to return only priority spans and listened subtrees regardless of
+// trace size. It's a separate operation so we can fall back to the plain one
+// against an API that predates the argument.
+const getSpanUpdatesIncrementalOperation = `
+subscription GetSpanUpdates ($orgID: ID!, $traceID: ID!, $root: Boolean! = true, $before: Time, $after: Time, $listen: [ID!], $incremental: Boolean! = false) {
+	spansUpdated(org: $orgID, traceId: $traceID, root: $root, before: $before, after: $after, listen: $listen, incremental: $incremental) {
+		... SpanProps
+	}
+}
+` + spanPropsFragment
 
 const getSpanLogsOperation = `
 subscription GetSpanLogs ($orgID: ID!, $traceID: ID!, $spanID: ID!, $after: Time, $descendants: Boolean!) {
@@ -142,6 +158,62 @@ type logsEmittedResponse struct {
 	LogsEmitted []LogMessage `json:"logsEmitted"`
 }
 
+// graphqlStatusError is returned when the GraphQL endpoint responds with a
+// non-200 status (e.g. 422 for a validation error). It carries the body so
+// callers can detect specific failures, such as an unsupported argument.
+type graphqlStatusError struct {
+	op     string
+	status int
+	body   string
+}
+
+func (e *graphqlStatusError) Error() string {
+	return fmt.Sprintf("%s: %d: %s", e.op, e.status, e.body)
+}
+
+// graphqlErrorsError carries GraphQL errors delivered in-band over the SSE
+// stream (a 200 response with a top-level "errors" array and null data).
+type graphqlErrorsError struct {
+	op   string
+	body string
+}
+
+func (e *graphqlErrorsError) Error() string {
+	return fmt.Sprintf("%s: %s", e.op, e.body)
+}
+
+// parseGraphQLErrors returns a graphqlErrorsError if the SSE payload carries
+// top-level GraphQL errors, or nil if it's a normal data payload.
+func parseGraphQLErrors(op string, data []byte) error {
+	var probe struct {
+		Errors []json.RawMessage `json:"errors"`
+	}
+	// Only a payload that parses and carries top-level errors is a GraphQL error;
+	// anything else -- a normal data payload, or one that doesn't parse as our
+	// probe -- is not.
+	if err := json.Unmarshal(data, &probe); err == nil && len(probe.Errors) > 0 {
+		return &graphqlErrorsError{op: op, body: string(data)}
+	}
+	return nil
+}
+
+// isUnsupportedArgError reports whether err is a GraphQL validation failure for
+// an unknown argument, which is how an older API rejects the incremental
+// argument -- whether returned as an HTTP 422 or in-band over the SSE stream.
+func isUnsupportedArgError(err error) bool {
+	var se *graphqlStatusError
+	if errors.As(err, &se) {
+		return se.status == http.StatusUnprocessableEntity &&
+			strings.Contains(se.body, "incremental")
+	}
+	var ge *graphqlErrorsError
+	if errors.As(err, &ge) {
+		return strings.Contains(ge.body, "GRAPHQL_VALIDATION_FAILED") &&
+			strings.Contains(ge.body, "incremental")
+	}
+	return false
+}
+
 // graphqlRequest is the JSON body sent to the GraphQL endpoint.
 type graphqlRequest struct {
 	OpName    string         `json:"operationName"`
@@ -149,45 +221,168 @@ type graphqlRequest struct {
 	Variables map[string]any `json:"variables"`
 }
 
-// StreamSpans streams span data for a trace from Dagger Cloud's GraphQL API.
-// It calls the handler for each batch of spans received.
+// SpanStreamOpts selects which spans the GetSpanUpdates subscription returns.
+// It mirrors the variables the Cloud web UI drives (cloud/app_server.go):
+//   - Root: stream the trace's priority spans (roots, revealed spans, checks,
+//     tests) plus their ancestors. The server marks spans Partial when the tree
+//     is incomplete, signalling that deeper spans must be fetched lazily.
+//   - Listen: also stream the subtrees of these span IDs (used to fetch a span's
+//     children on demand when the user expands it).
+//   - After/Before: restrict updates to a time window, used to resubscribe for
+//     live updates (After) or backfill historical children (Before).
+type SpanStreamOpts struct {
+	Root   bool
+	Listen []string
+	After  *time.Time
+	Before *time.Time
+	// Incremental forces priority-only + listened-subtree loading regardless of
+	// trace size. Falls back to a full fetch against an API that predates the
+	// argument.
+	Incremental bool
+}
+
+const getTraceMetadataOperation = `
+query GetTraceMetadata ($org: ID!, $traceID: ID!) {
+	trace(id: $traceID, org: $org) {
+		git {
+			ref
+			branch
+			tag
+		}
+		ci {
+			isNativeCI
+			repository
+			change {
+				id
+				headSHA
+				branch
+			}
+		}
+	}
+}
+`
+
+// TraceMetadata is the trace's source git/CI context: the commit it ran on and,
+// for native CI, the change (PR) and whether re-running via Dagger Cloud applies.
+type TraceMetadata struct {
+	Git *TraceGitMetadata `json:"git"`
+	CI  *TraceCIMetadata  `json:"ci"`
+}
+
+type TraceGitMetadata struct {
+	Ref    string `json:"ref"`
+	Branch string `json:"branch"`
+	Tag    string `json:"tag"`
+}
+
+type TraceCIMetadata struct {
+	IsNativeCI bool           `json:"isNativeCI"`
+	Repository string         `json:"repository"`
+	Change     *TraceCIChange `json:"change"`
+}
+
+type TraceCIChange struct {
+	ID      string `json:"id"` // change number, e.g. the PR number
+	HeadSHA string `json:"headSHA"`
+	Branch  string `json:"branch"`
+}
+
+// TraceMetadata fetches a trace's git/CI context. Returns nil (no error) when the
+// trace has no metadata recorded.
+func (c *Client) TraceMetadata(ctx context.Context, orgID, traceID string) (*TraceMetadata, error) {
+	var data struct {
+		Trace *TraceMetadata `json:"trace"`
+	}
+	if err := c.doGraphQL(ctx, "GetTraceMetadata", getTraceMetadataOperation, map[string]any{
+		"org":     orgID,
+		"traceID": traceID,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return data.Trace, nil
+}
+
+// StreamSpans streams a trace's priority (root) spans. It's a convenience
+// wrapper over StreamSpansWith and skips empty "caught up" batches.
 func (c *Client) StreamSpans(
 	ctx context.Context,
 	orgID string,
 	traceID string,
 	handler func([]SpanData),
 ) error {
-	return c.streamGraphQL(ctx, &graphqlRequest{
-		OpName: "GetSpanUpdates",
-		Query:  getSpanUpdatesOperation,
-		Variables: map[string]any{
-			"orgID":   orgID,
-			"traceID": traceID,
-			"root":    true,
-			"after":   nil,
-			"before":  nil,
-			"listen":  nil,
-		},
-	}, func(data []byte) error {
+	return c.StreamSpansWith(ctx, orgID, traceID, SpanStreamOpts{Root: true}, func(spans []SpanData) {
+		if len(spans) == 0 {
+			return
+		}
+		handler(spans)
+	})
+}
+
+// StreamSpansWith streams span data with explicit subscription options. Unlike
+// StreamSpans it passes through empty batches: the server emits an empty batch
+// once it has caught up to the trace's current state, which callers doing
+// incremental loading use as a "done with this pass" signal.
+func (c *Client) StreamSpansWith(
+	ctx context.Context,
+	orgID string,
+	traceID string,
+	opts SpanStreamOpts,
+	handler func([]SpanData),
+) error {
+	vars := map[string]any{
+		"orgID":   orgID,
+		"traceID": traceID,
+		"root":    opts.Root,
+		"after":   opts.After,
+		"before":  opts.Before,
+		"listen":  opts.Listen,
+	}
+	cb := func(data []byte) error {
 		var resp graphqlSSEResponse[spansUpdatedResponse]
 		if err := json.Unmarshal(data, &resp); err != nil {
 			return fmt.Errorf("unmarshal span updates: %w", err)
 		}
-		spans := resp.Data.SpansUpdated
-		if len(spans) == 0 {
-			return nil
-		}
-		handler(spans)
+		c.stats.addRecords("GetSpanUpdates", len(resp.Data.SpansUpdated))
+		handler(resp.Data.SpansUpdated)
 		return nil
-	})
+	}
+
+	query := getSpanUpdatesOperation
+	if opts.Incremental {
+		query = getSpanUpdatesIncrementalOperation
+		vars["incremental"] = true
+	}
+
+	err := c.streamGraphQL(ctx, &graphqlRequest{
+		OpName:    "GetSpanUpdates",
+		Query:     query,
+		Variables: vars,
+	}, cb)
+
+	// Fall back to a full (non-incremental) fetch against an API that predates
+	// the incremental argument. The validation error arrives before any data, so
+	// retrying can't double-deliver spans.
+	if err != nil && opts.Incremental && isUnsupportedArgError(err) {
+		slog.Warn("cloud API does not support incremental span loading; fetching full trace")
+		delete(vars, "incremental")
+		return c.streamGraphQL(ctx, &graphqlRequest{
+			OpName:    "GetSpanUpdates",
+			Query:     getSpanUpdatesOperation,
+			Variables: vars,
+		}, cb)
+	}
+	return err
 }
 
-// StreamLogs streams log messages for a trace from Dagger Cloud's GraphQL API.
+// StreamLogs streams log messages for a span from Dagger Cloud's GraphQL API.
+// When descendants is true, logs from the span's whole subtree are included;
+// when false, only the span's own logs are returned.
 func (c *Client) StreamLogs(
 	ctx context.Context,
 	orgID string,
 	traceID string,
 	spanID string,
+	descendants bool,
 	handler func([]LogMessage),
 ) error {
 	return c.streamGraphQL(ctx, &graphqlRequest{
@@ -197,7 +392,7 @@ func (c *Client) StreamLogs(
 			"orgID":       orgID,
 			"traceID":     traceID,
 			"spanID":      spanID,
-			"descendants": true,
+			"descendants": descendants,
 			"after":       nil,
 		},
 	}, func(data []byte) error {
@@ -209,6 +404,7 @@ func (c *Client) StreamLogs(
 		if len(logs) == 0 {
 			return nil
 		}
+		c.stats.addRecords("GetSpanLogs", len(logs))
 		handler(logs)
 		return nil
 	})
@@ -222,6 +418,8 @@ func (c *Client) streamGraphQL(ctx context.Context, gqlReq *graphqlRequest, cb f
 	if err != nil {
 		return fmt.Errorf("marshal graphql request: %w", err)
 	}
+
+	c.stats.addRequest(gqlReq.OpName)
 
 	endpoint := c.u.JoinPath("/query").String()
 	slog.Debug("connecting to cloud GraphQL SSE", "url", endpoint, "op", gqlReq.OpName)
@@ -241,7 +439,7 @@ func (c *Client) streamGraphQL(ctx context.Context, gqlReq *graphqlRequest, cb f
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s: %s: %s", gqlReq.OpName, resp.Status, string(respBody))
+		return &graphqlStatusError{op: gqlReq.OpName, status: resp.StatusCode, body: string(respBody)}
 	}
 
 	slog.Debug("connected to cloud GraphQL SSE", "op", gqlReq.OpName)
@@ -268,6 +466,13 @@ func (c *Client) streamGraphQL(ctx context.Context, gqlReq *graphqlRequest, cb f
 		case "next":
 			if len(event.Data) == 0 {
 				continue
+			}
+			c.stats.addEvent(gqlReq.OpName, len(event.Data))
+			// A subscription can deliver GraphQL errors (e.g. a validation error)
+			// in-band as a 200 "next" event with a top-level "errors" array and
+			// null data. Surface them instead of silently yielding no results.
+			if gqlErr := parseGraphQLErrors(gqlReq.OpName, event.Data); gqlErr != nil {
+				return gqlErr
 			}
 			if err := cb(event.Data); err != nil {
 				slog.Warn("error processing SSE event", "op", gqlReq.OpName, "err", err)

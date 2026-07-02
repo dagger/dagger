@@ -938,7 +938,9 @@ func (ShellSuite) TestNonExecChainBreak(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			_, err := daggerCliBase(t, c).With(daggerShell(tc)).Sync(ctx)
 
-			requireErrRegexp(t, err, `requires 2 positional argument.*\nusage: with-file <path> <source>`)
+			// The usage line's leading decoration varies by frontend: the raw
+			// error has none, the report frontend indents continuation lines.
+			requireErrRegexp(t, err, `requires 2 positional argument.*\n.*usage: with-file <path> <source>`)
 		})
 	}
 }

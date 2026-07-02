@@ -264,6 +264,69 @@ func (c *Client) UserChecks(
 	return data.User.Checks.Nodes, nil
 }
 
+const rerunChecksOperation = `
+mutation RerunChecks ($org: ID!, $checkIds: [ID!]!, $cleanSlate: Boolean) {
+	rerunChecks(org: $org, checkIds: $checkIds, cleanSlate: $cleanSlate) {
+		id
+		name
+		status
+		moduleRef
+		moduleVersion
+	}
+}
+`
+
+// RerunChecks re-runs the given checks (by ID) on Dagger Cloud, against the same
+// commit they originally ran on, and returns the newly queued check runs. Checks
+// that are already running or queued are skipped server-side and won't appear in
+// the result. cleanSlate requests a no-cache-reuse run; it's an experimental,
+// org-gated feature and is ignored when unavailable.
+func (c *Client) RerunChecks(ctx context.Context, orgID string, checkIDs []string, cleanSlate bool) ([]Check, error) {
+	vars := map[string]any{
+		"org":      orgID,
+		"checkIds": checkIDs,
+	}
+	if cleanSlate {
+		vars["cleanSlate"] = true
+	}
+	var data struct {
+		RerunChecks []Check `json:"rerunChecks"`
+	}
+	if err := c.doGraphQL(ctx, "RerunChecks", rerunChecksOperation, vars, &data); err != nil {
+		return nil, err
+	}
+	return data.RerunChecks, nil
+}
+
+const rerunLoadOperation = `
+mutation RerunLoad ($org: ID!, $checkId: ID!) {
+	rerunLoad(org: $org, checkId: $checkId) {
+		id
+		name
+		status
+		moduleRef
+		moduleVersion
+	}
+}
+`
+
+// RerunLoad re-runs a failed load check (the gate that discovers and runs a
+// commit's checks) by ID, returning the newly queued load check. Load checks are
+// internal and can't go through RerunChecks; the server requires the check to be
+// a failed load check.
+func (c *Client) RerunLoad(ctx context.Context, orgID, checkID string) (*Check, error) {
+	var data struct {
+		RerunLoad Check `json:"rerunLoad"`
+	}
+	if err := c.doGraphQL(ctx, "RerunLoad", rerunLoadOperation, map[string]any{
+		"org":     orgID,
+		"checkId": checkID,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.RerunLoad, nil
+}
+
 func (c *Client) ModuleChecks(
 	ctx context.Context,
 	org string,

@@ -874,7 +874,26 @@ func humanizeTokens(v int64) string {
 // }
 
 func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
+	return replayPrimaryOutput(w, db, true)
+}
+
+// replayPrimaryOutput replays the primary span's log records to the CLI's
+// stdout/stderr. With includeStderr false only the stdout stream is replayed:
+// report mode uses this for failed runs, whose stderr stream carries the
+// engine-wrapped failure output the rendered report already covers, while
+// stdout still carries the command's own results (e.g. a shell script's
+// output from before it failed).
+func replayPrimaryOutput(w io.Writer, db *dagui.DB, includeStderr bool) error {
 	logs := db.PrimaryLogs[db.PrimarySpan]
+	if !includeStderr {
+		var stdout []sdklog.Record
+		for _, l := range logs {
+			if primaryLogStream(l) == 1 {
+				stdout = append(stdout, l)
+			}
+		}
+		logs = stdout
+	}
 	if len(logs) == 0 {
 		return nil
 	}
@@ -883,15 +902,7 @@ func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
 
 	for _, l := range logs {
 		data := l.Body().AsString()
-		var stream int
-		l.WalkAttributes(func(attr log.KeyValue) bool {
-			if attr.Key == telemetry.StdioStreamAttr {
-				stream = int(attr.Value.AsInt64())
-				return false
-			}
-			return true
-		})
-		switch stream {
+		switch primaryLogStream(l) {
 		case 1: // stdout
 			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
 				return err
@@ -915,6 +926,20 @@ func renderPrimaryOutput(w io.Writer, db *dagui.DB) error {
 		fmt.Fprintln(os.Stdout)
 	}
 	return nil
+}
+
+// primaryLogStream returns the stdio stream a primary log record was written
+// to: 1 for stdout, 2 for stderr, 0 when unmarked.
+func primaryLogStream(l sdklog.Record) int {
+	var stream int
+	l.WalkAttributes(func(attr log.KeyValue) bool {
+		if attr.Key == telemetry.StdioStreamAttr {
+			stream = int(attr.Value.AsInt64())
+			return false
+		}
+		return true
+	})
+	return stream
 }
 
 func skipLoggedOutTraceMsg() bool {
