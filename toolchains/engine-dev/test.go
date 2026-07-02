@@ -57,11 +57,11 @@ func (dev *EngineDev) Test(
 	ebpfProgs []string,
 ) error {
 	// FIXME: use the damn standard Go toolchain
-	ctr, _, err := dev.testContainer(ctx, ebpfProgs)
+	ctr, _, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
 		return err
 	}
-	_, err = dev.test(ctx, ctr, &testOpts{
+	_, err = dev.test(ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           pkg,
@@ -73,6 +73,7 @@ func (dev *EngineDev) Test(
 		envs:          envFile,
 		testVerbose:   testVerbose,
 		update:        update,
+		ldflagValues:  ldflagValues,
 	},
 	).Sync(ctx)
 	return err
@@ -108,11 +109,11 @@ func (dev *EngineDev) TestTelemetry(
 	// +optional
 	ebpfProgs []string,
 ) (*dagger.Changeset, error) {
-	ctr, _, err := dev.testContainer(ctx, ebpfProgs)
+	ctr, _, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
 		return nil, err
 	}
-	ran, err := dev.test(ctx, ctr, &testOpts{
+	ran, err := dev.test(ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           "./dagql/idtui/",
@@ -124,6 +125,7 @@ func (dev *EngineDev) TestTelemetry(
 		update:        update,
 		envs:          envFile,
 		testVerbose:   testVerbose,
+		ldflagValues:  ldflagValues,
 	},
 	).Sync(ctx)
 	if err != nil {
@@ -145,10 +147,10 @@ type testOpts struct {
 	envs          *dagger.Secret
 	testVerbose   bool
 	bench         bool
+	ldflagValues  []string
 }
 
 func (dev *EngineDev) test(
-	ctx context.Context,
 	// The test container to run the tests in
 	container *dagger.Container,
 	// Various test options
@@ -168,21 +170,6 @@ func (dev *EngineDev) test(
 	if opts.testVerbose {
 		args = append(args, "-v")
 	}
-
-	// Add ldflags
-	version, err := dag.Version().Version(ctx)
-	if err != nil {
-		return dag.Container().WithError(err.Error())
-	}
-	tag, err := dag.Version().ImageTag(ctx)
-	if err != nil {
-		return dag.Container().WithError(err.Error())
-	}
-	ldflags := []string{
-		"-X", "github.com/dagger/dagger/engine.Version=" + version,
-		"-X", "github.com/dagger/dagger/engine.Tag=" + tag,
-	}
-	args = append(args, "-ldflags", strings.Join(ldflags, " "))
 
 	// All following are go test flags
 	if opts.failfast {
@@ -204,6 +191,9 @@ func (dev *EngineDev) test(
 	if opts.race {
 		args = append(args, "-race")
 		cgoEnabledEnv = "1"
+	}
+	if len(opts.ldflagValues) > 0 {
+		args = append(args, "-ldflags", testLdflags(opts.ldflagValues))
 	}
 
 	// when bench is true, disable normal tests and select benchmarks based on runTestRegex instead
@@ -239,7 +229,7 @@ func (dev *EngineDev) test(
 // Build an ephemeral test environment ready to run core engine tests
 // Also return the URL of a pprof debug endpoint, to dump profiling data from the tested engine
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
-func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*dagger.Container, string, error) {
+func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*dagger.Container, string, []string, error) {
 	devEngine, err := dev.
 		WithEBPFProgs(ebpfProgs).
 		WithEngineConfig(`registry."registry:5000"`, `http = true`).
@@ -250,10 +240,9 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 			"",    // platform
 			false, // gpuSupport
 			"",    // version
-			"",    // tag
 		)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	// TODO: mitigation for https://github.com/dagger/dagger/issues/8031
@@ -299,16 +288,21 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	// FIXME: just persist the dev engine into a field of the object... cleaner
 	devEngineSvc, err = devEngineSvc.Start(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	debugEndpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 6060, Scheme: "http"})
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	utilDirPath := "/dagger-dev"
-	tests := dag.Go(dagger.GoOpts{Source: dev.Source}).Env().
+	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source})
+	ldflagValues, err := goToolchain.Values(ctx)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	tests := goToolchain.Env().
 		WithExec([]string{"go", "install", "github.com/dagger/otel-go/cmd/otelgotest"}).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
@@ -318,9 +312,17 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 
 	tests, err = dev.InstallClient(ctx, tests, devEngineSvc, "")
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
-	return tests, debugEndpoint, nil
+	return tests, debugEndpoint, ldflagValues, nil
+}
+
+func testLdflags(values []string) string {
+	ldflags := make([]string, 0, len(values))
+	for _, val := range values {
+		ldflags = append(ldflags, "-X '"+val+"'")
+	}
+	return strings.Join(ldflags, " ")
 }
 
 func registry() *dagger.Service {

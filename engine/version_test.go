@@ -107,6 +107,7 @@ func TestNormalizeVersion(t *testing.T) {
 	}{
 		{version: "v0.2.0", result: "v0.2.0"},
 		{version: "0.2.0", result: "v0.2.0"},
+		{version: "v1.0.0-dev", result: "v1.0.0-dev"},
 		{version: "v0.2.0-123", result: "v0.2.0-123"},
 		{version: "", result: "v0.3.0"},
 		{version: "foobar", result: presemverModuleVersion},
@@ -145,6 +146,8 @@ func TestIsDevVersion(t *testing.T) {
 	}{
 		{version: "", isDev: true},
 		{version: "v0.19.9", isDev: false},
+		{version: "v1.0.0-dev", isDev: true},
+		{version: "v1.0.0-dev.1", isDev: true},
 		{version: "v0.19.9-241210-dev-abc123", isDev: true},
 		{version: "v0.19.9-241210123456-dev-abc123def456", isDev: true},
 		{version: "v0.19.9-123", isDev: false},
