@@ -54,7 +54,7 @@ var (
 
 func init() {
 	if Version == "" {
-		Version = iversion.Version
+		Version = iversion.Version(iversion.WithV())
 	}
 
 	// hack: dynamically populate version env vars

@@ -42,7 +42,7 @@ func versionCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			out := cmd.OutOrStdout()
 			if versionQuiet {
-				fmt.Fprintln(out, buildversion.Canonical())
+				fmt.Fprintln(out, buildversion.Version(buildversion.WithV(), buildversion.WithCommit()))
 				return
 			}
 			fmt.Fprintln(out, versionHuman())
