@@ -174,6 +174,125 @@ func TestPlanMigrationWritesMainModuleFirst(t *testing.T) {
 	require.Less(t, mainIdx, toolchainIdx)
 }
 
+// TestPlanMigrationWritesAsSDK verifies that the legacy `sdk` field on
+// dagger.json is surfaced as a workspace module installed as an SDK, keyed by
+// a "dagger-"-prefixed canonical basename (go -> dagger-go-sdk) so it cannot
+// collide with an unrelated module named "go", with the migrated module
+// recorded under [[modules.<name>.as-sdk.modules]].
+func TestPlanMigrationWritesAsSDK(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": "src",
+  "toolchains": [
+    {"name": "tools", "source": "./tools"}
+  ]
+}`)
+
+	configData := string(plan.WorkspaceConfigData)
+	require.Contains(t, configData, "[modules.dagger-go-sdk]")
+	require.Contains(t, configData, `source = "go"`)
+	require.Contains(t, configData, "[[modules.dagger-go-sdk.as-sdk.modules]]")
+	require.Contains(t, configData, `path = ".dagger/modules/myapp"`)
+}
+
+func TestMigrationSDKInstallName(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{"go", "dagger-go-sdk"},         // builtin short name -> prefixed basename
+		{"php", "dagger-php-sdk"},       // builtin short name -> prefixed basename
+		{"php@v0.18", "dagger-php-sdk"}, // versioned builtin
+		{"go-sdk", "go-sdk"},            // already a basename, not a builtin runtime
+		{"coolsdk", "coolsdk"},          // custom/local SDK kept as-is
+		{"github.com/dagger/go-sdk@v1.2.3", "go-sdk"},
+		{"github.com/acme/custom", "custom"},
+	} {
+		require.Equal(t, tc.want, migrationSDKInstallName(tc.in), "input %q", tc.in)
+	}
+}
+
+// TestPlanMigrationKeepsUnrelatedModuleNamedLikeSDK verifies the migrated SDK
+// install does not clobber an unrelated module that already carries the SDK's
+// prefixed install name; it is recorded under a distinct name instead.
+func TestPlanMigrationKeepsUnrelatedModuleNamedLikeSDK(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": "src",
+  "toolchains": [
+    {"name": "dagger-go-sdk", "source": "github.com/acme/go-sdk"}
+  ]
+}`)
+
+	cfg, err := ParseConfig(plan.WorkspaceConfigData)
+	require.NoError(t, err)
+
+	unrelated, ok := cfg.Modules["dagger-go-sdk"]
+	require.True(t, ok)
+	require.Equal(t, "github.com/acme/go-sdk", unrelated.Source)
+	require.Nil(t, unrelated.AsSDK, "unrelated module must not be marked as an SDK")
+
+	sdk, ok := cfg.Modules["dagger-go-sdk-2"]
+	require.True(t, ok)
+	require.Equal(t, "go", sdk.Source)
+	require.NotNil(t, sdk.AsSDK)
+}
+
+// TestPlanMigrationKeepsModuleSharingBuiltinSDKSource covers the subtle case
+// where an unrelated module shares both the SDK's prefixed install name and its
+// bare source string ("go"): the string means a runtime in SDK context but a
+// local path in module context, so it must not be treated as the same install.
+func TestPlanMigrationKeepsModuleSharingBuiltinSDKSource(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": "src",
+  "toolchains": [
+    {"name": "dagger-go-sdk", "source": "go"}
+  ]
+}`)
+
+	cfg, err := ParseConfig(plan.WorkspaceConfigData)
+	require.NoError(t, err)
+
+	unrelated, ok := cfg.Modules["dagger-go-sdk"]
+	require.True(t, ok)
+	require.Nil(t, unrelated.AsSDK, "unrelated module must not be marked as an SDK")
+
+	sdk, ok := cfg.Modules["dagger-go-sdk-2"]
+	require.True(t, ok)
+	require.NotNil(t, sdk.AsSDK)
+}
+
+// TestPlanMigrationExternalSDKShortName verifies the SDK short name is
+// derived from the canonical ref (basename, @version stripped).
+func TestPlanMigrationExternalSDKShortName(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "github.com/dagger/go-sdk@v1.2.3"},
+  "source": "src",
+  "toolchains": [
+    {"name": "tools", "source": "./tools"}
+  ]
+}`)
+
+	configData := string(plan.WorkspaceConfigData)
+	require.Contains(t, configData, "[modules.go-sdk]")
+	require.Contains(t, configData, `source = "github.com/dagger/go-sdk@v1.2.3"`)
+}
+
 func TestPlanMigrationAllowsDifferentPinnedWorkspaceRefs(t *testing.T) {
 	t.Parallel()
 

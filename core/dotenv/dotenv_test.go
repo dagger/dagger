@@ -346,6 +346,29 @@ func TestLookup(t *testing.T) {
 	require.Equal(t, "bar-baz", val)
 }
 
+func TestAllWithContext(t *testing.T) {
+	own := []string{
+		`SOURCE=${ROOT_DIR}/pepe`,
+	}
+	context := []string{
+		`ROOT_DIR=../..`,
+		`HELM_SOURCE=${UNDEFINED_THING}`,
+	}
+
+	all, err := AllWithContext(own, context, nil, true)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"SOURCE": "../../pepe"}, all)
+
+	val, ok, err := LookupWithContext(own, context, "SOURCE", nil)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "../../pepe", val)
+
+	_, ok, err = LookupWithContext(own, context, "ROOT_DIR", nil)
+	require.NoError(t, err)
+	require.False(t, ok, "context-only variable should not be found")
+}
+
 func TestNoSystemLookupWhenLiteral(t *testing.T) {
 	var called bool
 	lookup := func(name string) string {

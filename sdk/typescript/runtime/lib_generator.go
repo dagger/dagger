@@ -48,11 +48,15 @@ func NewLibGenerator(sdkSourceDir *dagger.Directory, opts *LibGeneratorOpts) *Li
 }
 
 // GenerateBindings generates the client bindings for the given module.
+//
+// It returns the directory of generated bindings rather than a single file:
+// dependency types are split into their own `<dep>.gen.ts` files alongside
+// `client.gen.ts`, so the whole directory must travel together.
 func (l *LibGenerator) GenerateBindings(
 	introspectionJSON *dagger.File,
 	libOrigin SDKLibOrigin,
 	outputDir string,
-) *dagger.File {
+) *dagger.Directory {
 	ctr := l.Ctr
 
 	codegenArgs := []string{codegenBinPath}
@@ -96,10 +100,10 @@ func (l *LibGenerator) GenerateBindings(
 	if l.Opts.modulePath != "" {
 		return ctr.
 			Directory(l.Opts.modulePath).
-			File("sdk/src/api/client.gen.ts")
+			Directory("sdk/src/api")
 	}
 
-	return ctr.Directory(outputDir).File("client.gen.ts")
+	return ctr.Directory(outputDir)
 }
 
 // Add the bundle library (code.js & core.d.ts) to the sdk directory.
@@ -111,8 +115,8 @@ func (l *LibGenerator) GenerateBundleLibrary(
 ) *dagger.Directory {
 	result := l.StaticBundleLib.
 		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS).
-		WithFile(
-			"client.gen.ts",
+		WithDirectory(
+			".",
 			l.GenerateBindings(
 				introspectionJSON,
 				Bundle,
@@ -139,8 +143,8 @@ func (l *LibGenerator) GenerateLocalLibrary(
 	outputDir string,
 ) *dagger.Directory {
 	return l.StaticLocalLib.
-		WithFile(
-			"src/api/client.gen.ts",
+		WithDirectory(
+			"src/api",
 			l.GenerateBindings(
 				introspectionJSON,
 				Local,
@@ -155,8 +159,5 @@ func (l *LibGenerator) GenerateRemoteLibrary(
 ) *dagger.Directory {
 	return dag.
 		Directory().
-		WithDirectory(outputDir,
-			dag.Directory().
-				WithFile("client.gen.ts", l.GenerateBindings(introspectionJSON, Remote, outputDir)),
-		)
+		WithDirectory(outputDir, l.GenerateBindings(introspectionJSON, Remote, outputDir))
 }

@@ -29,7 +29,7 @@ func (dev *EngineDev) LoadToDocker(
 	// +optional
 	gpuSupport bool,
 ) (*LoadedEngine, error) {
-	ctr, err := dev.Container(ctx, platform, gpuSupport, "", "")
+	ctr, err := dev.Container(ctx, platform, gpuSupport, "")
 	if err != nil {
 		return nil, err
 	}

@@ -11,15 +11,18 @@ import (
 )
 
 // Create a fake release a run checks to catch potential breaking changes.
-func (r *Release) TestLocalRelease(ctx context.Context) (*ReleaseTest, error) {
-	v, err := dag.Version().Version(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current engine version: %w", err)
+func (r *Release) TestLocalRelease(
+	ctx context.Context,
+	// Current engine version. The test runs the next patch (vX.Y.Z+1) on top.
+	version string,
+) (*ReleaseTest, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	return &ReleaseTest{
 		Container: dag.EngineDev().Playground(
-			dagger.EngineDevPlaygroundOpts{Version: bumpVersionByPatch(v)},
+			dagger.EngineDevPlaygroundOpts{Version: bumpVersionByPatch(version)},
 		),
 	}, nil
 }
@@ -30,14 +33,10 @@ type ReleaseTest struct {
 
 // Test scaffolding a new module via the Go SDK and executing basic commands.
 //
-// `dagger module init` was removed; scaffolding now lives in the installable
-// go-sdk workspace module. This installs github.com/dagger/go-sdk, uses its
-// `init` function (with the legacy template, i.e. the classic
-// ContainerEcho/GrepDir example) to scaffold a module, then calls the generated
-// module. `dagger install` and `dagger call` resolve the workspace root via a
-// .git boundary, so the working directory is initialized as a repo first. The
-// scaffolded module is not auto-registered in the workspace config, so it is
-// invoked by path with `-m`.
+// This installs the Go SDK, uses `dagger module init` with the legacy template
+// (the classic ContainerEcho/GrepDir example) to scaffold a module, then calls
+// the generated module. Workspace discovery resolves through a .git boundary,
+// so the working directory is initialized as a repo first.
 // +check
 func (r *ReleaseTest) NewModule(ctx context.Context) error {
 	ctr := r.Container.WithWorkdir("/work")
@@ -47,12 +46,12 @@ func (r *ReleaseTest) NewModule(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize workspace git repo: %w", err)
 	}
 
-	ctr, err = ctr.WithExec([]string{"dagger", "install", "github.com/dagger/go-sdk"}).Sync(ctx)
+	ctr, err = ctr.WithExec([]string{"dagger", "sdk", "install", "go"}).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to install go-sdk into workspace: %w", err)
 	}
 
-	ctr, err = ctr.WithExec([]string{"dagger", "-y", "call", "go-sdk", "init", "--name=my-module", "--template=legacy"}).Sync(ctx)
+	ctr, err = ctr.WithExec([]string{"dagger", "-y", "module", "init", "go", "my-module", "--template=legacy"}).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to scaffold a new module: %w", err)
 	}

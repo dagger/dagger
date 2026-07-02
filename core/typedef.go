@@ -2223,7 +2223,7 @@ func (enumValue *EnumMemberTypeDef) AttachDependencyResults(
 func NewEnumMemberTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
 	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
-		Name:         strcase.ToScreamingSnake(name),
+		Name:         gqlEnumMemberName(name),
 		Value:        value,
 		Description:  description,
 		Deprecated:   deprecated,
@@ -2252,9 +2252,12 @@ func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 	return &enumValue
 }
 
+// WithName renames the enum member to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
 func (enumValue *EnumMemberTypeDef) WithName(name string) *EnumMemberTypeDef {
 	enumValue = enumValue.Clone()
-	enumValue.Name = strcase.ToScreamingSnake(name)
+	enumValue.Name = name
 	return enumValue
 }
 

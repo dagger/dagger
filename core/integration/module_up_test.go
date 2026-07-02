@@ -198,7 +198,7 @@ func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) st
 	copyTestdataFixture(ctx, t, modDir, "modules", "go", "module-up-"+defaultPort)
 
 	// cache the module load itself so there's less to wait for below
-	_, err := hostDaggerExecRaw(ctx, t, modDir, "-m", ".", "functions")
+	_, err := hostDaggerExecRaw(ctx, t, modDir, "-m", ".", "api", "functions")
 	require.NoError(t, err)
 
 	return modDir

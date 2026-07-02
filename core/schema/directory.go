@@ -15,8 +15,10 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -284,8 +286,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc("Creates a synthetic workspace from this directory.").
 			Args(
 				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
-			).
-			Experimental("Synthetic workspaces currently support filesystem APIs only."),
+			),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
@@ -1316,6 +1317,15 @@ func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return "", err
 	}
+	// Applying a changeset that writes workspace config (e.g. a `dagger setup`
+	// migration creating dagger.toml / removing the legacy dagger.json) leaves
+	// the caller's per-client workspace detection stale. Drop it so the next
+	// access re-detects — best effort, never fail an already-applied export.
+	if changesetTouchesWorkspaceConfig(ctx, parent.Self()) {
+		if invErr := core.InvalidateCurrentWorkspace(ctx); invErr != nil {
+			slog.Warn("could not invalidate workspace after changeset export", "error", invErr)
+		}
+	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", err
@@ -1329,6 +1339,28 @@ func (s *directorySchema) changesetExport(ctx context.Context, parent dagql.Obje
 		return "", err
 	}
 	return dagql.String(stat.Path), err
+}
+
+// changesetTouchesWorkspaceConfig reports whether an exported changeset adds,
+// modifies, or removes a workspace config file (dagger.toml / legacy
+// dagger.json). Used to decide whether the caller's cached workspace detection
+// must be invalidated. Best effort: a path-computation error is treated as "no
+// touch" rather than failing the export.
+func changesetTouchesWorkspaceConfig(ctx context.Context, ch *core.Changeset) bool {
+	paths, err := ch.ComputePaths(ctx)
+	if err != nil {
+		slog.Warn("could not compute changeset paths for workspace invalidation", "error", err)
+		return false
+	}
+	for _, group := range [][]string{paths.Added, paths.Modified, paths.Removed} {
+		for _, p := range group {
+			switch path.Base(p) {
+			case workspace.ConfigFileName, workspace.LegacyModuleConfigFileName:
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct{}) (dagql.Boolean, error) {

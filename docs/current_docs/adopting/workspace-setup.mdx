@@ -10,39 +10,31 @@ You've seen Dagger work on [hello-dagger](../getting-started/quickstart.mdx). No
 
 ## Get started
 
-From the root of your repository:
+Search for modules that match the tools, frameworks, and languages you use:
 
 ```shell
-dagger mod recommend
+dagger search eslint
 ```
-
-`dagger mod recommend` scans your project and suggests modules for the tools, frameworks, and languages it detects.
 
 ## The feedback loop
 
-Install the modules you want from the recommendations, then run `dagger check`:
+Install a module, then run `dagger check`:
 
 ```shell
-dagger mod install github.com/dagger/eslint
+dagger install github.com/dagger/eslint
 dagger check
 ```
 
-`dagger mod install` creates a workspace configuration (`dagger.toml`) if needed and adds the selected module. `dagger check` runs checks from installed modules. Repeat until you're happy with your coverage - you don't have to install everything at once.
-
-You can also search for a specific module:
-
-```shell
-dagger mod search eslint
-```
+`dagger install` creates a workspace configuration (`dagger.toml`) if needed and adds the selected module. `dagger check` runs checks from installed modules. Repeat until you're happy with your coverage - you don't have to install everything at once.
 
 ## Manual setup
 
 If you already know which modules you want, install them directly:
 
 ```shell
-dagger mod install github.com/dagger/eslint
-dagger mod install github.com/dagger/vitest
-dagger mod install github.com/dagger/prettier
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
 ```
 
 The first install creates `dagger.toml` at the workspace root. To create the config in the current directory instead - for a workspace nested inside a larger repository - initialize it explicitly with `--here`:
@@ -67,6 +59,16 @@ dagger ws settings eslint packageManager yarn
 
 Settings are stored in `dagger.toml` alongside each module, so they're shared with everyone who uses the workspace.
 
+## Control generated-file checks
+
+By default, `dagger check` also runs generators as checks and fails when generated files are stale. That's useful in CI, but during day-to-day development you may not want a check run to fail just because generated files are out of date. New workspaces are created with this default in `dagger.toml`:
+
+```toml
+check-generated = true
+```
+
+Set it to `false` to make `dagger check` skip generate-as-checks by default (the same as passing `--no-generate`). The command-line flags always override the setting: `dagger check --generate` runs only the generators, and `dagger check --no-generate` skips them.
+
 ## Migrate an existing project
 
 If your project already uses a legacy `dagger.json`, convert it to the workspace format:
@@ -79,6 +81,6 @@ This writes `dagger.toml` from your existing configuration. See [Upgrade to Work
 
 ## What's next
 
-- **Add to CI** — `dagger ws autocheck on` enables [Cloud Checks](./triggers/index.mdx) for a GitHub repository, or `dagger check` can run in any existing CI provider
+- **Add to CI** — `dagger cloud check on` enables [Cloud Checks](./triggers/index.mdx) for a GitHub repository, or `dagger check` can run in any existing CI provider
 - **Vary config per environment** — use [Environments](../using-dagger/environments.mdx) when staging and production need different settings
 - **Manage secrets** — if your checks need credentials, see [Secrets](./secrets.mdx)

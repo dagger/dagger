@@ -331,7 +331,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 func (JavaSuite) TestGitRef(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	out, err := goGitBase(t, c).
-		With(daggerExec("functions", "-m", "github.com/dagger/dagger-test-modules/java-module")).
+		With(daggerExec("api", "functions", "-m", "github.com/dagger/dagger-test-modules/java-module")).
 		CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "container-echo")

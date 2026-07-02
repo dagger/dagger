@@ -1,6 +1,6 @@
 // Package installers contains e2e contract tests for installer scripts.
 //
-// workspace:include ../../install.sh
+//go:test:include ../../install.sh
 package installers
 
 import (
@@ -144,9 +144,16 @@ func checkDaggerVersion(ctx context.Context, ctr *dagger.Container, path string,
 
 func checkDaggerVersionOutput(out string, platform dagger.Platform, assertVersion func(string) error) error {
 	out = strings.TrimSpace(out)
+	if strings.HasPrefix(out, "version:") {
+		return checkDaggerVersionFields(out, platform, assertVersion)
+	}
+
+	// Installer tests exercise historical Dagger releases too. Those older
+	// binaries still print the previous one-line `dagger version` format, so
+	// keep this parser as compatibility coverage for installed old CLIs.
 	fields := strings.Fields(out)
-	if len(fields) < 3 {
-		return fmt.Errorf("malformed dagger version output %q: expected at least 3 fields", out)
+	if len(fields) < 4 {
+		return fmt.Errorf("malformed dagger version output %q: expected at least 4 fields", out)
 	}
 	if fields[0] != "dagger" {
 		return fmt.Errorf("malformed dagger version output %q: expected first field to be %q", out, "dagger")
@@ -162,19 +169,57 @@ func checkDaggerVersionOutput(out string, platform dagger.Platform, assertVersio
 		}
 	}
 
-	gotPlatform := fields[len(fields)-1]
+	gotPlatform := fields[3]
+	return checkVersionPlatform(out, gotPlatform, platform)
+}
+
+func checkDaggerVersionFields(out string, platform dagger.Platform, assertVersion func(string) error) error {
+	fields := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			return fmt.Errorf("malformed dagger version output %q: expected key-value line %q", out, line)
+		}
+		fields[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+
+	version := fields["version"]
+	if !semver.IsValid(version) {
+		return fmt.Errorf("malformed dagger version output %q: expected version field %q to be valid semver", out, version)
+	}
+	if assertVersion != nil {
+		if err := assertVersion(version); err != nil {
+			return err
+		}
+	}
+
+	if fields["runner-host"] == "" {
+		return fmt.Errorf("malformed dagger version output %q: expected runner-host field", out)
+	}
+
+	gotPlatform := fields["platform"]
+	if fields["commit"] == "" {
+		return fmt.Errorf("malformed dagger version output %q: expected commit field", out)
+	}
+	if fields["dirty"] == "" {
+		return fmt.Errorf("malformed dagger version output %q: expected dirty field", out)
+	}
+
+	return checkVersionPlatform(out, gotPlatform, platform)
+}
+
+func checkVersionPlatform(out, gotPlatform string, platform dagger.Platform) error {
 	parsedGotPlatform, err := platforms.Parse(gotPlatform)
 	if err != nil {
-		return fmt.Errorf("malformed dagger version output %q: expected final field %q to be a valid platform: %w", out, gotPlatform, err)
+		return fmt.Errorf("malformed dagger version output %q: expected platform field %q to be valid: %w", out, gotPlatform, err)
 	}
 	parsedPlatform, err := platforms.Parse(string(platform))
 	if err != nil {
 		return fmt.Errorf("invalid container platform %q: %w", platform, err)
 	}
 	if !platforms.OnlyStrict(parsedPlatform).Match(parsedGotPlatform) {
-		return fmt.Errorf("malformed dagger version output %q: expected final field to match container platform %q", out, platform)
+		return fmt.Errorf("malformed dagger version output %q: expected platform field to match container platform %q", out, platform)
 	}
-
 	return nil
 }
 
@@ -191,10 +236,34 @@ func TestCheckDaggerVersionOutputPlatformVariant(t *testing.T) {
 			platform: "linux/arm64",
 		},
 		{
+			name:     "with commit state",
+			out:      "dagger v0.20.6 (image://registry.dagger.io/engine:v0.20.6) linux/amd64 a33388f2+dirty",
+			platform: "linux/amd64",
+		},
+		{
+			name: "labeled output",
+			out: `version:     v1.0.0
+commit:      a33388f2
+dirty:       yes
+platform:    linux/amd64
+runner-host: image://registry.dagger.io/engine:v1.0.0`,
+			platform: "linux/amd64",
+		},
+		{
 			name:     "compatible arm is not equal",
 			out:      "dagger v0.20.6 (image://registry.dagger.io/engine:v0.20.6) linux/arm/v8",
 			platform: "linux/arm64",
-			wantErr:  "expected final field to match container platform",
+			wantErr:  "expected platform field to match container platform",
+		},
+		{
+			name: "labeled compatible arm is not equal",
+			out: `version:     v1.0.0
+commit:      a33388f2
+dirty:       no
+platform:    linux/arm/v8
+runner-host: image://registry.dagger.io/engine:v1.0.0`,
+			platform: "linux/arm64",
+			wantErr:  "expected platform field to match container platform",
 		},
 	}
 

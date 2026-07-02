@@ -183,7 +183,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	cliDevOpts := dagger.CliDevOpts{}
 	if version != "" {
 		cliDevOpts.Version = version
-		cliDevOpts.ImageTag = version
 	}
 	cliDev := dag.CliDev(cliDevOpts)
 	if !dryRun {

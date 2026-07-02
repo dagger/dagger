@@ -207,7 +207,7 @@ func (t *Test) Debug() *dagger.Terminal {
 		writeLegacyHostGoModule(ctx, t, modDir, "test", "v0.11.9", src)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err := hostDaggerExec(ctx, t, modDir, "functions")
+		_, err := hostDaggerExec(ctx, t, modDir, "api", "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -269,7 +269,7 @@ func (t *Test) Debug() *dagger.Terminal {
 		writeLegacyHostGoModule(ctx, t, modDir, "test", "v0.11.9", src)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err := hostDaggerExec(ctx, t, modDir, "functions")
+		_, err := hostDaggerExec(ctx, t, modDir, "api", "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something

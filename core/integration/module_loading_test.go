@@ -62,7 +62,7 @@ func moduleLoadingDaggerCallFail(args ...string) dagger.WithContainerFunc {
 
 func moduleLoadingDaggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report", "functions"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger", "--progress=report", "api", "functions"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -336,7 +336,7 @@ func (ModuleLoadingSuite) TestAmbientWorkspaceValidation(ctx context.Context, t 
 	c := connect(ctx, t)
 	ctr := workspaceFixture(t, c, "module-loading/multiple-entrypoints")
 
-	out, err := ctr.With(moduleLoadingDaggerExecFail("functions")).CombinedOutput(ctx)
+	out, err := ctr.With(moduleLoadingDaggerExecFail("api", "functions")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "multiple distinct ambient entrypoint modules")
 	require.Contains(t, out, "alpha")
@@ -429,7 +429,7 @@ func (ModuleLoadingSuite) TestModuleLoadingDedupeAndConflicts(ctx context.Contex
 		c := connect(ctx, t)
 		ctr := workspaceFixture(t, c, "module-loading/multiple-entrypoints")
 
-		out, err := ctr.With(moduleLoadingDaggerExecFail("functions")).CombinedOutput(ctx)
+		out, err := ctr.With(moduleLoadingDaggerExecFail("api", "functions")).CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "multiple distinct ambient entrypoint modules")
 		require.Contains(t, out, "alpha")

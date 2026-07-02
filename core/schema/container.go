@@ -379,6 +379,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`).
 					View(AfterVersion("v0.21.0")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
@@ -393,6 +394,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user or user:group to set for the mounted file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -428,6 +430,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					any effect if/when the cache has already been created.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -440,6 +443,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted secret.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("mode").Doc(`Permission given to the mounted secret (e.g., 0600).`,
 					`This option requires an owner to be set to be active.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
@@ -454,6 +458,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted socket.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -484,6 +489,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -516,6 +522,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the files.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
@@ -532,6 +539,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`A user:group to set for the file.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("expand").Doc(
 					`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 						`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
@@ -562,6 +570,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
+				dagql.Arg("inheritOwner").Doc(`Set the owner to the container's current user.`).View(AfterVersion("v0.21.8")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 				dagql.Arg("permissions").View(AfterVersion("v0.21.0")),
@@ -836,7 +845,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
 
 		dagql.NodeFunc("manifest", s.manifest).
-			View(AfterVersion("v1.0.0")).
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`Computes and returns the manifest for this container as a File.`).
 			Args(
 				dagql.Arg("forcedCompression").Doc(`Compression to use for image layers. Defaults to Gzip.`),
@@ -844,7 +853,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("layer", s.layer).
-			View(AfterVersion("v1.0.0")).
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`Returns the layer with the given digest as a File.`).
 			Args(
 				dagql.Arg("id").Doc(`Digest of the layer (e.g. "sha256:abc123...").`),
@@ -2329,11 +2338,12 @@ func (s *containerSchema) label(ctx context.Context, parent dagql.ObjectResult[*
 }
 
 type containerWithMountedDirectoryArgs struct {
-	Path     string
-	Source   core.DirectoryID
-	Owner    string `default:""`
-	ReadOnly bool   `default:"false"`
-	Expand   bool   `default:"false"`
+	Path         string
+	Source       core.DirectoryID
+	Owner        string `default:""`
+	InheritOwner bool   `default:"false"`
+	ReadOnly     bool   `default:"false"`
+	Expand       bool   `default:"false"`
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedDirectoryArgs) (*core.Container, error) {
@@ -2364,6 +2374,10 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 	if err != nil {
 		return nil, err
 	}
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return nil, err
+	}
 	ctr := &core.Container{
 		FS:                 clonedFS,
 		MetaSnapshot:       clonedMeta,
@@ -2386,7 +2400,7 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 			Parent:    parent,
 			Target:    absPath(parent.Self().Config.WorkingDir, path),
 			Source:    dir,
-			Owner:     args.Owner,
+			Owner:     owner,
 			Readonly:  args.ReadOnly,
 		},
 	}
@@ -2560,10 +2574,11 @@ func (s *containerSchema) publish(ctx context.Context, parent dagql.ObjectResult
 }
 
 type containerWithMountedFileArgs struct {
-	Path   string
-	Source core.FileID
-	Owner  string `default:""`
-	Expand bool   `default:"false"`
+	Path         string
+	Source       core.FileID
+	Owner        string `default:""`
+	InheritOwner bool   `default:"false"`
+	Expand       bool   `default:"false"`
 }
 
 func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedFileArgs) (*core.Container, error) {
@@ -2586,13 +2601,17 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return nil, err
 	}
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return nil, err
+	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
 	ctr.Lazy = &core.ContainerWithMountedFileLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Target:    target,
 		Source:    file,
-		Owner:     args.Owner,
+		Owner:     owner,
 		Readonly:  false,
 	}
 	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
@@ -2644,12 +2663,13 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 }
 
 type containerWithMountedCacheArgs struct {
-	Path    string
-	Cache   core.CacheVolumeID
-	Source  dagql.Optional[core.DirectoryID]
-	Sharing core.CacheSharingMode `default:"SHARED"`
-	Owner   string                `default:""`
-	Expand  bool                  `default:"false"`
+	Path         string
+	Cache        core.CacheVolumeID
+	Source       dagql.Optional[core.DirectoryID]
+	Sharing      core.CacheSharingMode `default:"SHARED"`
+	Owner        string                `default:""`
+	InheritOwner bool                  `default:"false"`
+	Expand       bool                  `default:"false"`
 }
 
 func (s *containerSchema) withMountedCacheDynamicInputs(
@@ -2661,6 +2681,7 @@ func (s *containerSchema) withMountedCacheDynamicInputs(
 	hasSourceArg := req.HasArg("source")
 	hasSharingArg := req.HasArg("sharing")
 	hasOwnerArg := req.HasArg("owner")
+	hasInheritOwnerArg := req.HasArg("inheritOwner")
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return err
@@ -2687,6 +2708,15 @@ func (s *containerSchema) withMountedCacheDynamicInputs(
 	owner := cacheSelf.Owner
 	if hasOwnerArg {
 		owner = args.Owner
+	}
+	if args.InheritOwner {
+		if hasOwnerArg && args.Owner != "" {
+			return errors.New("cannot set both owner and inheritOwner")
+		}
+		owner = parent.Self().Config.User
+	}
+	if hasInheritOwnerArg {
+		needsRewrite = true
 	}
 	if ownerNeedsLookup(owner) {
 		cache, err := dagql.EngineCache(ctx)
@@ -3143,6 +3173,16 @@ func ownerNeedsLookup(owner string) bool {
 	return false
 }
 
+func inheritedOwner(parent dagql.ObjectResult[*core.Container], owner string, inheritOwner bool) (string, error) {
+	if !inheritOwner {
+		return owner, nil
+	}
+	if owner != "" {
+		return "", errors.New("cannot set both owner and inheritOwner")
+	}
+	return parent.Self().Config.User, nil
+}
+
 func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult[*core.Container]) (*core.Container, bool, error) {
 	parentPendingLazy := dagql.HasPendingLazyEvaluation(parent)
 
@@ -3279,11 +3319,12 @@ func (s *containerSchema) withoutSecretVariable(ctx context.Context, parent dagq
 }
 
 type containerWithMountedSecretArgs struct {
-	Path   string
-	Source core.SecretID
-	Owner  string `default:""`
-	Mode   int    `default:"0400"` // FIXME(vito): verify octal
-	Expand bool   `default:"false"`
+	Path         string
+	Source       core.SecretID
+	Owner        string `default:""`
+	InheritOwner bool   `default:"false"`
+	Mode         int    `default:"0400"` // FIXME(vito): verify octal
+	Expand       bool   `default:"false"`
 }
 
 func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedSecretArgs) (*core.Container, error) {
@@ -3307,9 +3348,13 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return nil, err
+	}
 	var secretOwner *core.Ownership
-	if args.Owner != "" {
-		ownership, err := ctr.ResolveOwnership(ctx, parent, args.Owner)
+	if owner != "" {
+		ownership, err := ctr.ResolveOwnership(ctx, parent, owner)
 		if err != nil {
 			return nil, err
 		}
@@ -3335,7 +3380,7 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 		Parent:    parent,
 		Target:    target,
 		Source:    secret,
-		Owner:     args.Owner,
+		Owner:     owner,
 		Mode:      fs.FileMode(args.Mode),
 	}
 	return ctr, nil
@@ -3343,8 +3388,9 @@ func (s *containerSchema) withMountedSecret(ctx context.Context, parent dagql.Ob
 
 type containerWithDirectoryArgs struct {
 	WithDirectoryArgs
-	Owner  string `default:""`
-	Expand bool   `default:"false"`
+	Owner        string `default:""`
+	InheritOwner bool   `default:"false"`
+	Expand       bool   `default:"false"`
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (*core.Container, error) {
@@ -3367,21 +3413,26 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return nil, err
 	}
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return nil, err
+	}
 	ctr.Lazy = &core.ContainerWithDirectoryLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Path:      path,
 		Source:    dir,
 		Filter:    args.CopyFilter,
-		Owner:     args.Owner,
+		Owner:     owner,
 	}
 	return ctr, nil
 }
 
 type containerWithFileArgs struct {
 	WithFileArgs
-	Owner  string `default:""`
-	Expand bool   `default:"false"`
+	Owner        string `default:""`
+	InheritOwner bool   `default:"false"`
+	Expand       bool   `default:"false"`
 }
 
 func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
@@ -3410,13 +3461,17 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return inst, err
+	}
 	ctr.Lazy = &core.ContainerWithFileLazy{
 		LazyState:   core.NewLazyState(),
 		Parent:      parent,
 		Path:        path,
 		Source:      file,
 		Permissions: perms,
-		Owner:       args.Owner,
+		Owner:       owner,
 	}
 
 	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -3425,8 +3480,9 @@ func (s *containerSchema) withFile(ctx context.Context, parent dagql.ObjectResul
 
 type containerWithFilesArgs struct {
 	WithFilesArgs
-	Owner  string `default:""`
-	Expand bool   `default:"false"`
+	Owner        string `default:""`
+	InheritOwner bool   `default:"false"`
+	Expand       bool   `default:"false"`
 }
 
 func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithFilesArgs) (inst dagql.ObjectResult[*core.Container], err error) {
@@ -3462,6 +3518,10 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		p := int(args.Permissions.Value)
 		perms = &p
 	}
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return inst, err
+	}
 	current := parent
 	for _, file := range files {
 		filePath, err := file.Self().File.GetOrEval(ctx, file.Result)
@@ -3480,8 +3540,8 @@ func (s *containerSchema) withFiles(ctx context.Context, parent dagql.ObjectResu
 		if perms != nil {
 			selectArgs = append(selectArgs, dagql.NamedInput{Name: "permissions", Value: dagql.Opt(dagql.Int(*perms))})
 		}
-		if args.Owner != "" {
-			selectArgs = append(selectArgs, dagql.NamedInput{Name: "owner", Value: dagql.String(args.Owner)})
+		if owner != "" {
+			selectArgs = append(selectArgs, dagql.NamedInput{Name: "owner", Value: dagql.String(owner)})
 		}
 		var next dagql.ObjectResult[*core.Container]
 		if err := srv.Select(ctx, current, &next, dagql.Selector{
@@ -3587,11 +3647,12 @@ func (s *containerSchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 }
 
 type containerWithNewFileArgs struct {
-	Path        string
-	Contents    string
-	Permissions int    `default:"0644"`
-	Owner       string `default:""`
-	Expand      bool   `default:"false"`
+	Path         string
+	Contents     string
+	Permissions  int    `default:"0644"`
+	Owner        string `default:""`
+	InheritOwner bool   `default:"false"`
+	Expand       bool   `default:"false"`
 }
 
 func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithNewFileArgs) (inst dagql.ObjectResult[*core.Container], err error) {
@@ -3628,12 +3689,16 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent dagql.ObjectRe
 	if err != nil {
 		return inst, err
 	}
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return inst, err
+	}
 	ctr.Lazy = &core.ContainerWithFileLazy{
 		LazyState: core.NewLazyState(),
 		Parent:    parent,
 		Path:      path,
 		Source:    newFile,
-		Owner:     args.Owner,
+		Owner:     owner,
 	}
 
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
@@ -3687,10 +3752,11 @@ func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent dagql.Ob
 }
 
 type containerWithUnixSocketArgs struct {
-	Path   string
-	Source core.SocketID
-	Owner  string `default:""`
-	Expand bool   `default:"false"`
+	Path         string
+	Source       core.SocketID
+	Owner        string `default:""`
+	InheritOwner bool   `default:"false"`
+	Expand       bool   `default:"false"`
 }
 
 func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithUnixSocketArgs) (*core.Container, error) {
@@ -3714,9 +3780,13 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 		return nil, err
 	}
 	target := absPath(parent.Self().Config.WorkingDir, path)
+	owner, err := inheritedOwner(parent, args.Owner, args.InheritOwner)
+	if err != nil {
+		return nil, err
+	}
 	var socketOwner *core.Ownership
-	if args.Owner != "" {
-		ownership, err := ctr.ResolveOwnership(ctx, parent, args.Owner)
+	if owner != "" {
+		ownership, err := ctr.ResolveOwnership(ctx, parent, owner)
 		if err != nil {
 			return nil, err
 		}
@@ -3756,7 +3826,7 @@ func (s *containerSchema) withUnixSocket(ctx context.Context, parent dagql.Objec
 		Parent:    parent,
 		Target:    target,
 		Source:    socket,
-		Owner:     args.Owner,
+		Owner:     owner,
 	}
 	return ctr, nil
 }

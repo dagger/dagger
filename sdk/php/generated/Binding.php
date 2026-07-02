@@ -74,6 +74,33 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type CurrentModuleAsSDK
+     */
+    public function asCurrentModuleAsSDK(): CurrentModuleAsSDK
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCurrentModuleAsSDK');
+        return new \Dagger\CurrentModuleAsSDK($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type CurrentModuleAsSDKClient
+     */
+    public function asCurrentModuleAsSDKClient(): CurrentModuleAsSDKClient
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCurrentModuleAsSDKClient');
+        return new \Dagger\CurrentModuleAsSDKClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type CurrentModuleAsSDKModule
+     */
+    public function asCurrentModuleAsSDKModule(): CurrentModuleAsSDKModule
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCurrentModuleAsSDKModule');
+        return new \Dagger\CurrentModuleAsSDKModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type DiffStat
      */
     public function asDiffStat(): DiffStat
@@ -206,6 +233,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asPhpSdk');
         return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type Schema
+     */
+    public function asSchema(): Schema
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSchema');
+        return new \Dagger\Schema($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

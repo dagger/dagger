@@ -12,4 +12,9 @@ type DotBlock {
     let info = Dagger.directory.withNewFile("hello.txt", "new syntax").file("hello.txt").{{contents, size}}
     info.contents
   }
+
+  pub size: Int! {
+    let info = Dagger.directory.withNewFile("hello.txt", "new syntax").file("hello.txt").{{contents, size}}
+    info.size
+  }
 }

@@ -72,6 +72,16 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		assertEntries(t, out, "keep.log", "keep.txt")
 	})
+
+	t.Run("cache directive with enum argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-directives").
+			With(daggerCall("with-never-cache")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "never", strings.TrimSpace(out))
+	})
 }
 
 func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
@@ -113,6 +123,16 @@ func (DangSuite) TestEnums(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "3", strings.TrimSpace(out))
+	})
+
+	t.Run("dependency enum member with digits", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "enum-dependency").
+			With(daggerCall("call-foo")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "P256", strings.TrimSpace(out))
 	})
 }
 
@@ -337,6 +357,12 @@ func (DangSuite) TestVersionedSyntax(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "new syntax", strings.TrimSpace(out))
+
+		out, err = dangModule(t, c, "dot-block").
+			With(daggerCall("size")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "10", strings.TrimSpace(out))
 	})
 }
 

@@ -433,11 +433,14 @@ type persistedDirModuleSourcePayload struct {
 }
 
 type persistedModuleSourceSDKCapabilities struct {
-	Runtime         bool `json:"runtime,omitempty"`
-	ModuleTypes     bool `json:"moduleTypes,omitempty"`
-	CodeGenerator   bool `json:"codeGenerator,omitempty"`
-	ClientGenerator bool `json:"clientGenerator,omitempty"`
-	SelfCallsAlways bool `json:"selfCallsAlways,omitempty"`
+	Runtime           bool `json:"runtime,omitempty"`
+	ModuleTypes       bool `json:"moduleTypes,omitempty"`
+	CodeGenerator     bool `json:"codeGenerator,omitempty"`
+	ClientGenerator   bool `json:"clientGenerator,omitempty"`
+	SelfCallsAlways   bool `json:"selfCallsAlways,omitempty"`
+	ModuleInitializer bool `json:"moduleInitializer,omitempty"`
+	ClientInitializer bool `json:"clientInitializer,omitempty"`
+	RuntimeTarget     bool `json:"runtimeTarget,omitempty"`
 }
 
 type persistedModuleSourcePayload struct {
@@ -552,6 +555,27 @@ func (sdk *persistedModuleSourceLazySDK) AsClientGenerator() (ClientGenerator, b
 	return persistedModuleSourceLazyClientGenerator{sdk: sdk}, true
 }
 
+func (sdk *persistedModuleSourceLazySDK) AsModuleInitializer() (ModuleInitializer, bool) {
+	if sdk == nil || !sdk.capabilities.ModuleInitializer {
+		return nil, false
+	}
+	return persistedModuleSourceLazyModuleInitializer{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsClientInitializer() (ClientInitializer, bool) {
+	if sdk == nil || !sdk.capabilities.ClientInitializer {
+		return nil, false
+	}
+	return persistedModuleSourceLazyClientInitializer{sdk: sdk}, true
+}
+
+func (sdk *persistedModuleSourceLazySDK) AsRuntimeTarget() (RuntimeTarget, bool) {
+	if sdk == nil || !sdk.capabilities.RuntimeTarget {
+		return nil, false
+	}
+	return persistedModuleSourceLazyRuntimeTarget{sdk: sdk}, true
+}
+
 type persistedModuleSourceLazyRuntime struct {
 	sdk *persistedModuleSourceLazySDK
 }
@@ -656,6 +680,72 @@ func (sdk persistedModuleSourceLazyClientGenerator) GenerateClient(
 	return clientSDK.GenerateClient(ctx, modSource, schemaJSONFile, outputDir)
 }
 
+type persistedModuleSourceLazyModuleInitializer struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ ModuleInitializer = persistedModuleSourceLazyModuleInitializer{}
+
+func (sdk persistedModuleSourceLazyModuleInitializer) InitModule(
+	ctx context.Context,
+	workspace dagql.ObjectResult[*Workspace],
+	name string,
+	path string,
+	args map[string]any,
+) (dagql.ObjectResult[*Changeset], error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Changeset]{}, err
+	}
+	initSDK, ok := loaded.AsModuleInitializer()
+	if !ok {
+		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("persisted module source sdk does not implement module init")
+	}
+	return initSDK.InitModule(ctx, workspace, name, path, args)
+}
+
+type persistedModuleSourceLazyClientInitializer struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ ClientInitializer = persistedModuleSourceLazyClientInitializer{}
+
+func (sdk persistedModuleSourceLazyClientInitializer) InitClient(
+	ctx context.Context,
+	workspace dagql.ObjectResult[*Workspace],
+	path string,
+	module string,
+	args map[string]any,
+) (dagql.ObjectResult[*Changeset], error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Changeset]{}, err
+	}
+	initSDK, ok := loaded.AsClientInitializer()
+	if !ok {
+		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("persisted module source sdk does not implement client init")
+	}
+	return initSDK.InitClient(ctx, workspace, path, module, args)
+}
+
+type persistedModuleSourceLazyRuntimeTarget struct {
+	sdk *persistedModuleSourceLazySDK
+}
+
+var _ RuntimeTarget = persistedModuleSourceLazyRuntimeTarget{}
+
+func (sdk persistedModuleSourceLazyRuntimeTarget) TargetRuntime(ctx context.Context) (string, error) {
+	loaded, err := sdk.sdk.load(ctx)
+	if err != nil {
+		return "", err
+	}
+	targetSDK, ok := loaded.AsRuntimeTarget()
+	if !ok {
+		return "", fmt.Errorf("persisted module source sdk does not implement runtime target")
+	}
+	return targetSDK.TargetRuntime(ctx)
+}
+
 func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if src == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: nil module source")
@@ -695,12 +785,18 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		if sc, ok := src.SDKImpl.(selfCallsAlwaysEnabler); ok && sc.AlwaysEnablesSelfCalls() {
 			selfCallsAlways = true
 		}
+		_, hasModuleInitializer := src.SDKImpl.AsModuleInitializer()
+		_, hasClientInitializer := src.SDKImpl.AsClientInitializer()
+		_, hasRuntimeTarget := src.SDKImpl.AsRuntimeTarget()
 		payload.SDKCapabilities = &persistedModuleSourceSDKCapabilities{
-			Runtime:         hasRuntime,
-			ModuleTypes:     hasModuleTypes,
-			CodeGenerator:   hasCodeGenerator,
-			ClientGenerator: hasClientGenerator,
-			SelfCallsAlways: selfCallsAlways,
+			Runtime:           hasRuntime,
+			ModuleTypes:       hasModuleTypes,
+			CodeGenerator:     hasCodeGenerator,
+			ClientGenerator:   hasClientGenerator,
+			SelfCallsAlways:   selfCallsAlways,
+			ModuleInitializer: hasModuleInitializer,
+			ClientInitializer: hasClientInitializer,
+			RuntimeTarget:     hasRuntimeTarget,
 		}
 	}
 	if src.ContextDirectory.Self() != nil {
@@ -968,7 +1064,7 @@ func (src *ModuleSource) NestedLegacyWorkspaceLoadError() error {
 	ref := src.AsString()
 	if src.Kind == ModuleSourceKindLocal {
 		return fmt.Errorf(
-			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger migrate` in %q, then update this source to point at one of the migrated modules under %q",
+			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger setup` in %q, then update this source to point at one of the migrated modules under %q",
 			ref,
 			fields,
 			ref,

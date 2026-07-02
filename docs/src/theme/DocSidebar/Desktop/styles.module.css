@@ -44,7 +44,7 @@
     height: 36px;
     border: 1px solid var(--ifm-color-emphasis-300);
     border-radius: 4px;
-    background: transparent;
+    background: var(--color-transparent);
     color: var(--ifm-navbar-link-color);
     font: inherit;
     font-size: 0.8175rem;
@@ -53,7 +53,7 @@
   }
 
   :global(html[data-theme="dark"]) .versionSelect {
-    border-color: rgba(255, 255, 255, 0.35);
+    border-color: var(--color-gray-800);
   }
 
   .versionSelect:focus-visible {

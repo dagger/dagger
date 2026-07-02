@@ -1,13 +1,14 @@
 import React from "react";
 import Link from "@docusaurus/Link";
 import type { FieldRef } from "./data";
-import { useApiModel, typeHref } from "./data";
+import { useApiModel, useTypeHref } from "./data";
 import styles from "./styles.module.scss";
 
 // A single "Type.field" reference, linked to that field's anchor when the
 // source type is itself a published reference page.
 function Ref({ r, core }: { r: FieldRef; core: Set<string> }): JSX.Element {
   const label = `${r.type}.${r.field}`;
+  const typeHref = useTypeHref();
   const body = (
     <code>
       {r.type}.<span className={styles.refField}>{r.field}</span>

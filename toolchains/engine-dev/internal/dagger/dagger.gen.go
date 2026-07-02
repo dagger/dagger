@@ -354,9 +354,6 @@ type UpGroupID string
 // A unique identifier for an object.
 type UpID string
 
-// A unique identifier for an object.
-type VersionID string
-
 // The absence of a value.
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
@@ -12283,6 +12280,7 @@ type Query struct {
 
 	defaultPlatform *Platform
 	id              *ID
+	version         *string
 }
 
 func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
@@ -13448,16 +13446,6 @@ func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
 	}
 }
 
-// Load a Version from its ID.
-func (r *Query) LoadVersionFromID(id VersionID) *Version {
-	q := r.query.Select("loadVersionFromID")
-	q = q.Arg("id", id)
-
-	return &Version{
-		query: q,
-	}
-}
-
 // Load a Wolfi from its ID.
 func (r *Query) LoadWolfiFromID(id WolfiID) *Wolfi {
 	q := r.query.Select("loadWolfiFromID")
@@ -13594,6 +13582,16 @@ func (r *Query) TypeDef() *TypeDef {
 	return &TypeDef{
 		query: q,
 	}
+}
+
+// Get the current Dagger Engine version.
+func (r *Query) Version(ctx context.Context) (string, error) {
+	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // AsNode returns this Query as a Node.
