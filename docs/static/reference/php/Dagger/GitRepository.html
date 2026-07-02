@@ -206,6 +206,16 @@
                     <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_latest">latest</a>(bool|null $includeSubreleases = false)
+
+                                            <p><p>Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_latestVersion">latestVersion</a>()
         
                                             <p><p>Returns details for the latest semver tag.</p></p>                </div>
@@ -589,8 +599,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_latestVersion">
+                    <h3 id="method_latest">
         <div class="location">at line 81</div>
+        <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+    <strong>latest</strong>(bool|null $includeSubreleases = false)
+        </code>
+    </h3>
+    <div class="details">
+
+
+
+        <div class="method-description">
+                            <p><p>Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.</p></p>
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$includeSubreleases</td>
+                <td></td>
+            </tr>
+            </table>
+
+
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+
+
+
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_latestVersion">
+        <div class="location">at line 93</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>latestVersion</strong>()
         </code>
@@ -622,7 +674,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_ref">
-        <div class="location">at line 90</div>
+        <div class="location">at line 102</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>ref</strong>(string $name)
         </code>
@@ -664,7 +716,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tag">
-        <div class="location">at line 100</div>
+        <div class="location">at line 112</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>tag</strong>(string $name)
         </code>
@@ -706,7 +758,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tags">
-        <div class="location">at line 110</div>
+        <div class="location">at line 122</div>
         <code>                    array
     <strong>tags</strong>(array|null $patterns = null)
         </code>
@@ -748,7 +800,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_uncommitted">
-        <div class="location">at line 122</div>
+        <div class="location">at line 134</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>uncommitted</strong>()
         </code>
@@ -780,7 +832,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_url">
-        <div class="location">at line 131</div>
+        <div class="location">at line 143</div>
         <code>                    string
     <strong>url</strong>()
         </code>

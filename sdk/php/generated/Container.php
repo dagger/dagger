@@ -285,12 +285,16 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
      */
     public function from(
         string $address,
+        ?bool $latestIncludeSubreleases = false,
         ?Service $registryService = null,
         ?RegistryProtocol $protocol = null,
         ?bool $insecureSkipTLSVerify = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('from');
         $innerQueryBuilder->setArgument('address', $address);
+        if (null !== $latestIncludeSubreleases) {
+        $innerQueryBuilder->setArgument('latestIncludeSubreleases', $latestIncludeSubreleases);
+        }
         if (null !== $registryService) {
         $innerQueryBuilder->setArgument('registryService', $registryService);
         }

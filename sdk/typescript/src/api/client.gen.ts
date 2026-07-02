@@ -382,6 +382,11 @@ export type ContainerFileOpts = {
 
 export type ContainerFromOpts = {
   /**
+   * Include prerelease tags when selecting the latest release for an untagged image address.
+   */
+  latestIncludeSubreleases?: boolean
+
+  /**
    * Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
@@ -1746,6 +1751,13 @@ export type GitRepositoryBranchesOpts = {
    * Glob patterns (e.g., "refs/tags/v*").
    */
   patterns?: string[]
+}
+
+export type GitRepositoryLatestOpts = {
+  /**
+   * Include prerelease tags when selecting the latest release.
+   */
+  includeSubreleases?: boolean
 }
 
 export type GitRepositoryTagsOpts = {
@@ -4457,6 +4469,7 @@ export class Container extends BaseClient {
   /**
    * Download a container image, and apply it to the container state. All previous state will be lost.
    * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+   * @param opts.latestIncludeSubreleases Include prerelease tags when selecting the latest release for an untagged image address.
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
@@ -10370,6 +10383,15 @@ export class GitRepository extends BaseClient {
    */
   head = (): GitRef => {
     const ctx = this._ctx.select("head")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+   * @param opts.includeSubreleases Include prerelease tags when selecting the latest release.
+   */
+  latest = (opts?: GitRepositoryLatestOpts): GitRef => {
+    const ctx = this._ctx.select("latest", { ...opts })
     return new GitRef(ctx)
   }
 

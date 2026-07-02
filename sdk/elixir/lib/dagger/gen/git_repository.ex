@@ -98,6 +98,22 @@ defmodule Dagger.GitRepository do
   end
 
   @doc """
+  Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+  """
+  @spec latest(t(), [{:include_subreleases, boolean() | nil}]) :: Dagger.GitRef.t()
+  def latest(%__MODULE__{} = git_repository, optional_args \\ []) do
+    query_builder =
+      git_repository.query_builder
+      |> QB.select("latest")
+      |> QB.maybe_put_arg("includeSubreleases", optional_args[:include_subreleases])
+
+    %Dagger.GitRef{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
   Returns details for the latest semver tag.
   """
   @spec latest_version(t()) :: Dagger.GitRef.t()

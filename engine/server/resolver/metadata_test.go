@@ -70,6 +70,48 @@ func TestResolveImageConfigFallsBackWhenLocalMetadataIncomplete(t *testing.T) {
 	require.JSONEq(t, string(image.configBytes), string(configBytes))
 }
 
+func TestListTags(t *testing.T) {
+	ctx := context.Background()
+
+	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v2/dagger/test/tags/list", r.URL.Path)
+		require.Equal(t, "1000", r.URL.Query().Get("n"))
+
+		switch r.URL.Query().Get("last") {
+		case "":
+			w.Header().Set("Link", `</v2/dagger/test/tags/list?n=1000&last=0.9.0>; rel="next"`)
+			_, _ = w.Write([]byte(`{"name":"dagger/test","tags":["0.9.0"]}`))
+		case "0.9.0":
+			_, _ = w.Write([]byte(`{"name":"dagger/test","tags":["1.0.0"]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(registry.Close)
+	registryHost := strings.TrimPrefix(registry.URL, "http://")
+
+	rslvr := New(Opts{
+		Hosts: func(domain string) ([]docker.RegistryHost, error) {
+			require.Equal(t, registryHost, domain)
+			return []docker.RegistryHost{
+				{
+					Scheme:       "http",
+					Host:         registryHost,
+					Path:         "/v2",
+					Capabilities: docker.HostCapabilityResolve,
+				},
+			}, nil
+		},
+	})
+	t.Cleanup(func() {
+		require.NoError(t, rslvr.Close())
+	})
+
+	tags, err := rslvr.ListTags(ctx, registryHost+"/dagger/test", ListTagsOpts{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"0.9.0", "1.0.0"}, tags)
+}
+
 type testOCIIndexImage struct {
 	rootDesc     ocispecs.Descriptor
 	manifestDesc ocispecs.Descriptor

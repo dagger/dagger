@@ -102,6 +102,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				// TODO: id is normally a reserved word; we should probably rename this
 				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
 			),
+		dagql.NodeFunc("latest", s.latest).
+			View(AfterVersion("v1.0.0")).
+			Doc(`Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.`).
+			Args(
+				dagql.Arg("includeSubreleases").Doc(`Include prerelease tags when selecting the latest release.`),
+			),
 		dagql.NodeFunc("latestVersion", s.latestVersion).
 			Doc(`Returns details for the latest semver tag.`),
 
@@ -879,6 +885,7 @@ const (
 	lockGitRefOperation    = "git.ref"
 	lockGitBranchOperation = "git.branch"
 	lockGitTagOperation    = "git.tag"
+	lockGitLatestOperation = "git.latest"
 )
 
 func gitLockInputs(repo *core.GitRepository, operation, name string) ([]any, error) {
@@ -895,6 +902,14 @@ func gitLockInputs(repo *core.GitRepository, operation, name string) ([]any, err
 	default:
 		return nil, fmt.Errorf("unsupported git lock operation %q", operation)
 	}
+}
+
+func gitLatestLockInputs(repo *core.GitRepository, includeSubreleases bool) ([]any, error) {
+	remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository)
+	if !ok {
+		return nil, fmt.Errorf("git locking only supports remote repositories")
+	}
+	return []any{remoteRepo.URL.Remote(), includeSubreleases}, nil
 }
 
 func gitRefLockPolicy(ref *gitutil.Ref) workspace.LockPolicy {
@@ -1049,6 +1064,10 @@ func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	})
 }
 
+type latestArgs struct {
+	IncludeSubreleases bool `name:"includeSubreleases" default:"false"`
+}
+
 func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
 	remote := parent.Self().Remote
 	tags := remote.Tags().Filter([]string{"refs/tags/v*"}).ShortNames()
@@ -1061,6 +1080,77 @@ func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult
 	semver.Sort(tags)
 	tag := tags[len(tags)-1]
 	return s.ref(ctx, parent, refArgs{Name: "refs/tags/" + tag})
+}
+
+func (s *gitSchema) latest(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args latestArgs) (inst dagql.Result[*core.GitRef], _ error) {
+	repo := parent.Self()
+
+	var (
+		lockResolution lookupLockResolution
+		lookupLock     *workspaceLookupLock
+		lockInputs     []any
+	)
+	if _, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, err
+		}
+		lockMode, loadedLookupLock, err := lookupLockForMode(ctx, query, lockGitLatestOperation)
+		if err != nil {
+			return inst, err
+		}
+		lookupLock = loadedLookupLock
+		if lockMode != workspace.LockModeDisabled {
+			lockInputs, err = gitLatestLockInputs(repo, args.IncludeSubreleases)
+			if err != nil {
+				return inst, fmt.Errorf("%s lock inputs: %w", lockGitLatestOperation, err)
+			}
+			lockResolution, err = resolveLookupFromLock(
+				lockMode,
+				lookupLock.lock,
+				lockGitLatestOperation,
+				lockInputs,
+				workspace.PolicyPin,
+			)
+			if err != nil {
+				return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
+			}
+			if lockResolution.Pin != "" {
+				ref, err := core.ParseGitLatestLockPin(lockResolution.Pin, args.IncludeSubreleases)
+				if err != nil {
+					return inst, err
+				}
+				return s.gitRefResult(ctx, parent, ref)
+			}
+		}
+	}
+
+	ref, err := core.SelectLatestGitReleaseRef(repo.Remote, args.IncludeSubreleases)
+	if err != nil {
+		return inst, err
+	}
+
+	if lockResolution.ShouldWrite && lookupLock != nil {
+		if len(lockInputs) == 0 {
+			lockInputs, err = gitLatestLockInputs(repo, args.IncludeSubreleases)
+			if err != nil {
+				return inst, fmt.Errorf("%s lock inputs: %w", lockGitLatestOperation, err)
+			}
+		}
+		if err := lookupLock.SetLookup(
+			lockCoreNamespace,
+			lockGitLatestOperation,
+			lockInputs,
+			workspace.LookupResult{
+				Value:  core.FormatGitRefLockPin(ref),
+				Policy: workspace.PolicyPin,
+			},
+		); err != nil {
+			return inst, fmt.Errorf("set lock entry for %s: %w", lockGitLatestOperation, err)
+		}
+	}
+
+	return s.gitRefResult(ctx, parent, ref)
 }
 
 type commitArgs struct {

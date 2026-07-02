@@ -1,0 +1,6 @@
+kind: Fixed
+body: Make `dagger update` advance bare container image and Git latest-release pins instead of only refreshing existing mutable refs.
+time: 2026-06-16T00:00:00.000000000Z
+custom:
+  PR: 13465
+  Author: dagger-codex[bot]

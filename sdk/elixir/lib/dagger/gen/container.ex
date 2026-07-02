@@ -356,6 +356,7 @@ defmodule Dagger.Container do
   Download a container image, and apply it to the container state. All previous state will be lost.
   """
   @spec from(t(), String.t(), [
+          {:latest_include_subreleases, boolean() | nil},
           {:registry_service, Dagger.Service.t() | nil},
           {:protocol, Dagger.RegistryProtocol.t() | nil},
           {:insecure_skip_tls_verify, boolean() | nil}
@@ -365,6 +366,7 @@ defmodule Dagger.Container do
       container.query_builder
       |> QB.select("from")
       |> QB.put_arg("address", address)
+      |> QB.maybe_put_arg("latestIncludeSubreleases", optional_args[:latest_include_subreleases])
       |> QB.maybe_put_arg(
         "registryService",
         if(optional_args[:registry_service],
