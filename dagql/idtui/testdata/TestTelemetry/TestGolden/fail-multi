@@ -1,14 +1,5 @@
 Expected stderr:
 
-┇ .failMulti › roll-up pseudo-check span › sub-thing 1 ›
-✘ withExec sh -c 'echo this is a failing effect; exit 1' X.Xs ERROR
-this is a failing effect
-! exit code: 1
-┇ .failMulti › roll-up pseudo-check span › sub-thing 2 ›
-✘ withExec sh -c 'echo this is another failing effect; exit 1' X.Xs ERROR
-this is another failing effect
-! exit code: 1
-
 ✔ connect X.Xs
 ├╴✔ starting engine X.Xs
 ├╴✔ connecting to engine X.Xs
@@ -23,5 +14,15 @@ this is another failing effect
 $ viztest: Viztest! X.Xs CACHED
 ✘ .failMulti: Void X.Xs ERROR
 ╰╴✘ roll-up pseudo-check span X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ ERROR
+
+  ┇ sub-thing 1 ›
+  ✘ withExec sh -c 'echo this is a failing effect; exit 1' X.Xs ERROR
+  ┃ this is a failing effect
+  ! exit code: 1
+
+  ┇ sub-thing 2 ›
+  ✘ withExec sh -c 'echo this is another failing effect; exit 1' X.Xs ERROR
+  ┃ this is another failing effect
+  ! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -1,10 +1,5 @@
 Expected stderr:
 
-✘ Viztest.failLogNative: Void X.Xs ERROR
-im doing a lot of work
-and then failing
-! i failed
-
 ✔ connect X.Xs
 ├╴✔ starting engine X.Xs
 ├╴✔ connecting to engine X.Xs

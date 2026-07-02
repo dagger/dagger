@@ -1,25 +1,5 @@
 Expected stderr:
 
-┇ load workspace: . › loading type definitions › load extra module: ./viztest/broken-dep-sdk › moduleSource(refString: "./viztest/broken-dep-sdk") › moduleSource(refString: "/app/dagql/idtui/viztest/broken-dep-sdk/invalid", disableFindUp: true) ›
-✘ load SDK: unknown X.Xs ERROR
-Could not load SDK "unknown".
-
-Errors:
-- unknown built-in sdk
-- local path "/app/dagql/idtui/viztest/broken-dep-sdk/invalid/unknown" does not exist
-
-The available SDKs are:
-- go
-- dang
-- python
-- typescript
-- php
-- elixir
-- java
-- any git module ref, e.g. github.com/dagger/dagger/sdk/elixir@main
-- any local module path, e.g. ./my-sdk
-! invalid SDK: "unknown"
-
 ✔ connect X.Xs
 ├╴✔ starting engine X.Xs
 ├╴✔ connecting to engine X.Xs
