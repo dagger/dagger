@@ -119,6 +119,23 @@ type Myapp {
 	})
 }
 
+// TestSetupEmptyWorkspaceHint verifies that `dagger setup` on an empty workspace
+// (nothing to migrate, no existing config) writes no dagger.toml and instead
+// prints a hint pointing the user at `dagger install`.
+func (WorkspaceMigrationSuite) TestSetupEmptyWorkspaceHint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).With(daggerExec("setup", "--auto-apply"))
+
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "No workspace has been loaded")
+	require.Contains(t, out, "dagger install <module>")
+
+	_, err = ctr.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
+	require.Error(t, err, "setup should not create dagger.toml on an empty workspace")
+}
+
 // TestWorkspaceMigrateOutcomes should cover the main result classes of a
 // migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateOutcomes(ctx context.Context, t *testctx.T) {

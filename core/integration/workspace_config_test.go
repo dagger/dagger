@@ -554,7 +554,9 @@ func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t
 		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
 		require.NoError(t, err)
 		require.Contains(t, string(configContents), "[modules]")
-		require.Contains(t, string(configContents), "check-generated = true")
+		// check-generated is not written by default; an absent setting already
+		// behaves as check-generated = true.
+		require.NotContains(t, string(configContents), "check-generated")
 	})
 
 	t.Run("workspace config detects the nearest config", func(ctx context.Context, t *testctx.T) {

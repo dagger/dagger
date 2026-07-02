@@ -23,6 +23,22 @@ func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	}
 }
 
+// TestInitialWorkspaceConfigOmitsCheckGenerated verifies the default dagger.toml
+// (written by dagger install / workspace init) does not set check-generated: the
+// engine never writes it by default, and an absent setting already behaves as
+// check-generated = true.
+func TestInitialWorkspaceConfigOmitsCheckGenerated(t *testing.T) {
+	t.Parallel()
+
+	require.Contains(t, initialWorkspaceConfig, "# Dagger workspace configuration")
+	require.Contains(t, initialWorkspaceConfig, "[modules]")
+	require.NotContains(t, initialWorkspaceConfig, "check-generated")
+
+	cfg, err := workspace.ParseConfig([]byte(initialWorkspaceConfig))
+	require.NoError(t, err)
+	require.Nil(t, cfg.CheckGenerated)
+}
+
 func TestMatchWorkspaceInclude(t *testing.T) {
 	ctx := context.Background()
 	node := modTreeNode("go", "lint")
