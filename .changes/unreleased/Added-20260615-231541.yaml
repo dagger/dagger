@@ -1,0 +1,6 @@
+kind: Added
+body: Add support for `_EXPERIMENTAL_DAGGER_RUNNER_HOST=image+kubectl://...`.
+time: 2026-06-15T23:15:41.689516216-04:00
+custom:
+    Author: frantjc
+    PR: "13443"
