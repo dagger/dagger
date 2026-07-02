@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/spf13/cobra"
 )
 
@@ -189,7 +190,13 @@ func runSDKInstall(cmd *cobra.Command, args []string) error {
 // `dagger module init` and `dagger api client init`. A probe error other than
 // "capability absent" is returned, so callers can skip guidance rather than
 // wrongly imply the SDK does nothing.
-func sdkAuthoringCapabilities(ctx context.Context, dag *dagger.Client, sdkRef string) (module, client bool, _ error) {
+func sdkAuthoringCapabilities(ctx context.Context, dag *dagger.Client, sdkRef string) (module, client bool, rerr error) {
+	// Probing reloads the SDK module (serve + type defs); keep that plumbing out
+	// of the command's progress output — otherwise the install appears to reload
+	// the module after it already finished.
+	ctx, span := Tracer().Start(ctx, "inspect SDK capabilities", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
 	_, errModule := inspectSDKInitFunction(ctx, dag, sdkRef, sdkInitKindModule)
 	if errModule != nil && !errors.Is(errModule, errSDKInitFunctionNotFound) {
 		return false, false, errModule

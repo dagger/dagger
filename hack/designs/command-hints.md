@@ -217,7 +217,10 @@ gating and no `base_schema.json` / `TestBaseSchemaAllowlist` churn.
 **Cost.** Each probe initializes the SDK module (with `skipDependencies:
 true`), so Hint 2 pays two initializations. That's the same per-probe cost the
 dynamic-command registration already pays, run once at install time — an
-acceptable one-off. The alternative (below) would avoid it.
+acceptable one-off. The alternative (below) would avoid it. The probe runs under
+an `Internal()` + `Encapsulate()` span so its module-loading plumbing stays out
+of the install's progress output (otherwise the install appears to reload the
+SDK module after it already finished).
 
 **Alternative — expose capability flags over GraphQL.** The engine already
 computes `ModuleInitializer` / `ClientInitializer` booleans when it loads a
