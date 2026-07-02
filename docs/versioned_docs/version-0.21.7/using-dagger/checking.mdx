@@ -1,0 +1,61 @@
+---
+title: "Checking Your Code"
+slug: /using-dagger/checking
+description: "Run automated checks to validate code quality, security, and standards"
+---
+
+# Checking Your Code
+
+```shell
+dagger check
+```
+
+Runs all checks in your workspace in parallel. Exits non-zero if any check fails. Results are identical on your laptop, in CI, and in the cloud.
+
+## List checks
+
+```shell
+dagger check -l
+```
+
+## Filter checks
+
+```shell
+dagger check eslint:*          # all checks from a module
+dagger check vitest:test       # a single check
+dagger check *:lint            # pattern across modules
+```
+
+## Stop on first failure
+
+By default every check runs so you see all failures at once. To cancel the rest as soon as one fails:
+
+```shell
+dagger check --failfast
+```
+
+## Checks and generators
+
+A generator can be run as a check to confirm its output is up to date. To control which kind runs:
+
+```shell
+dagger check --no-generate     # only annotated check functions
+dagger check --generate        # only generators-run-as-checks
+```
+
+## Per-environment checks
+
+Run checks with a named [environment](./environments.mdx) overlay applied:
+
+```shell
+dagger --env staging check
+```
+
+## In CI
+
+```yaml
+# GitHub Actions
+- run: dagger check
+```
+
+To automate checks on every push without configuring runners, see [Triggers](../adopting/triggers/index.mdx).
