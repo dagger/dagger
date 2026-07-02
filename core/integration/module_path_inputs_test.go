@@ -1266,6 +1266,56 @@ public class Test {
 	}
 }
 
+func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T) {
+	// Submodule and git-worktree checkouts have a .git pointer *file* whose
+	// target lives outside the synced context, so the context can't be used
+	// as a git repository. An *optional* contextual GitRepository/GitRef arg
+	// resolves to null in that case, letting the function proceed without
+	// git info; a required arg still fails.
+
+	// Simulate a submodule checkout: worktree files present, .git is a
+	// pointer file whose target isn't part of the context.
+	brokenGit := func(c *dagger.Client) *dagger.Container {
+		return moduleFixture(t, c, "go/path-context-git-optional").
+			WithExec([]string{"sh", "-c", "rm -rf .git && echo 'gitdir: ../../.git/modules/work' > .git"})
+	}
+
+	t.Run("optional repo resolves to null", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := brokenGit(c).With(daggerCall("optional-repo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "no repo", out)
+	})
+
+	t.Run("optional ref resolves to null", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := brokenGit(c).With(daggerCall("optional-ref")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "no ref", out)
+	})
+
+	t.Run("required repo still fails", func(ctx context.Context, t *testctx.T) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+		_, err := brokenGit(c).With(daggerCall("required-repo")).Sync(ctx)
+		require.Error(t, err)
+		require.NoError(t, c.Close())
+		require.Contains(t, logs.String(), "not a git repository")
+	})
+
+	t.Run("optional repo resolves in a real repo", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		modGen := moduleFixture(t, c, "go/path-context-git-optional").
+			WithExec([]string{"sh", "-c", `git add . && git commit -m "initial commit"`})
+		headCommit, err := modGen.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+		require.NoError(t, err)
+
+		out, err := modGen.With(daggerCall("optional-repo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "repo@"+strings.TrimSpace(headCommit), out)
+	})
+}
+
 func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 	// pretty much exactly the same test as above, but calling a remote git repo instead
 

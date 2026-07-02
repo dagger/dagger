@@ -693,6 +693,11 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 				if err != nil {
 					return fmt.Errorf("load contextual arg %q: %w", arg.Name, err)
 				}
+				if ctxVal == nil {
+					// The contextual value is unavailable and the arg is
+					// optional: leave it unset.
+					return nil
+				}
 
 				ctxArgVals[i] = &argInput{
 					argName: arg.Name,
@@ -1063,7 +1068,21 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*File](fileID), nil
 
 	case "GitRepository", "GitRef":
-		return fn.loadContextualGitArg(ctx, dag, arg)
+		id, err := fn.loadContextualGitArg(ctx, dag, arg)
+		if err != nil && arg.TypeDef.Self().Optional && errors.Is(err, gitutil.ErrGitNoRepo) {
+			// The context isn't a usable git repository: submodule and
+			// worktree checkouts sync only a .git pointer file whose target
+			// lives outside the context, and exported trees have no .git at
+			// all. For an optional arg that's an environmental condition, not
+			// a configuration error, so resolve to null and let the function
+			// proceed without git info.
+			slog.Warn("skipping contextual git argument: context is not a usable git repository",
+				"function", fn.metadata.Name,
+				"arg", arg.OriginalName,
+				"defaultPath", arg.DefaultPath)
+			return nil, nil
+		}
+		return id, err
 	}
 
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.Self().AsObject.Value.Self().Name)

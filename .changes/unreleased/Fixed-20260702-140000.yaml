@@ -1,0 +1,11 @@
+kind: Fixed
+body: |
+  An optional `GitRepository`/`GitRef` argument with a `defaultPath` no longer
+  fails the call when the context isn't a usable git repository — submodule and
+  git-worktree checkouts sync only a `.git` pointer file whose target lives
+  outside the context. The argument now resolves to null (with a warning) so the
+  function proceeds without git info; required arguments still fail.
+time: 2026-07-02T14:00:00Z
+custom:
+  Author: vito
+  PR: ""
