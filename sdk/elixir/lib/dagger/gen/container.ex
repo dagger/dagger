@@ -455,6 +455,47 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Returns the layer with the given digest as a File.
+  """
+  @spec layer(t(), String.t(), [
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: Dagger.File.t()
+  def layer(%__MODULE__{} = container, id, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("layer")
+      |> QB.put_arg("id", id)
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Computes and returns the manifest for this container as a File.
+  """
+  @spec manifest(t(), [
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: Dagger.File.t()
+  def manifest(%__MODULE__{} = container, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("manifest")
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Retrieves the list of paths where a directory is mounted.
   """
   @spec mounts(t()) :: {:ok, [String.t()]} | {:error, term()}
