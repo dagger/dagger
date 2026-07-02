@@ -1107,7 +1107,12 @@ func testSummarySuiteLabel(node *dagui.TestNode) string {
 func testSummarySpanHierarchyLabel(node *dagui.TestNode) string {
 	var parts []string
 	for current := node; current != nil; current = current.Parent {
-		if current.Kind == dagui.TestNodeVirtualSuite {
+		if current.Kind == dagui.TestNodeVirtualSuite && current.Name == "" {
+			// Skip unnamed synthetic groupings, but keep named ones: the
+			// orphan filter (FilterCases) downgrades real suites to virtual
+			// so their status re-derives from the retained cases, and their
+			// names must stay in the case's breadcrumb -- the global TESTS
+			// section would otherwise show bare, ambiguous case names.
 			continue
 		}
 		name := testNodeDisplayName(current)
