@@ -2174,7 +2174,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		//     dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
 		//   without it (tests carry the cause):
 		//     DAGGER_TRACE_RENDER=root dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
-		if rcLines := fe.renderRootCauseSection(ctx, r); len(rcLines) > 0 {
+		if rcLines := fe.renderRootCauseSection(ctx, r, false); len(rcLines) > 0 {
 			ctx.Lines(rcLines...)
 			ctx.Line("")
 			rootCauseRendered = true
@@ -2225,6 +2225,17 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 				ctx.Line("")
 			}
 			ctx.Lines(testLines...)
+		}
+	}
+
+	if pol.showRootCauseLast {
+		// After the tree, so claims are populated: only origins the tree didn't
+		// already tell in full (error AND logs) render here.
+		if rcLines := fe.renderRootCauseSection(ctx, r, true); len(rcLines) > 0 {
+			if renderedRows {
+				ctx.Line("")
+			}
+			ctx.Lines(rcLines...)
 		}
 	}
 
@@ -2728,7 +2739,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					}
 				}
 			}
-			if fe.renderPolicy().showRootCause {
+			if pol := fe.renderPolicy(); pol.showRootCause || pol.showRootCauseLast {
 				if zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]; zoomSpan != nil {
 					for _, origin := range fe.checkRootCauses(zoomSpan) {
 						fe.requestLogs(origin.ID)
@@ -4499,7 +4510,11 @@ func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
 // the live tree uses. It reuses renderErrorCause, whose logs.View() preserves
 // the user program's own ANSI colour (UI chrome is handled by the agent/ASCII
 // profile elsewhere -- we must not strip the user's output here).
-func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer) []string {
+//
+// afterTree marks the showRootCauseLast placement (below the tree): origins
+// the tree already told in full are skipped, so the section adds only the
+// detail the tree couldn't carry.
+func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer, afterTree bool) []string {
 	zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]
 	if zoomSpan == nil {
 		return nil
@@ -4517,6 +4532,23 @@ func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer)
 			// Incremental --full may not have loaded the origin span (or its
 			// logs) yet; skip rather than render an empty stub.
 			continue
+		}
+		if afterTree {
+			if row := fe.rows.BySpan[origin.ID]; row != nil && row.Expanded {
+				// The origin rendered as its own expanded row in the tree
+				// above -- title, inline logs, and error all told in place.
+				continue
+			}
+		}
+		if fe.claims.hasError(origin.ID) {
+			// The tree already rendered this origin's error (an inline origin
+			// block, or the origin's own row). Only repeat it here if it has
+			// logs the tree didn't show -- a row that printed a bare error
+			// with its logs collapsed still needs its detail surfaced.
+			logs := fe.logs.Logs[origin.ID]
+			if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(origin.ID) {
+				continue
+			}
 		}
 		fe.renderErrorCause(ctx, out, r, zoomRow, "", origin, fe)
 		rendered = true
@@ -4647,6 +4679,7 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 			logs.SetHeight(height)
 		}
 		fmt.Fprint(out, logs.View())
+		fe.claims.claimLog(rootCauseRow.Span)
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
 

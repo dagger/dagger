@@ -20,8 +20,16 @@ type traceRenderPolicy struct {
 	// carries the logs, to avoid showing them twice.
 	showOwnDescendantLogs bool
 	// showRootCause surfaces the zoom target's root-cause origin span(s) and
-	// their logs, derived from ErrorOrigins.
+	// their logs, derived from ErrorOrigins, ABOVE the tree. The section
+	// renders first, claiming the origins, so the tree below stays terse.
 	showRootCause bool
+	// showRootCauseLast surfaces the same root-cause origins BELOW the tree,
+	// skipping any the tree already rendered (claims). The tree renders first
+	// and keeps the failure attributed in place -- inline origins under the
+	// failing row, with logs -- and this section appends only the detail the
+	// tree couldn't carry (e.g. an origin whose row printed a bare error with
+	// its logs collapsed).
+	showRootCauseLast bool
 	// showSuggestions prints a "next steps" block of drill-in commands.
 	showSuggestions bool
 }
@@ -94,22 +102,26 @@ func (fe *frontendPretty) renderPolicy() traceRenderPolicy {
 		return policyForZoom(zoomSpan)
 	}
 	// A plain trace -- no checks and no tests, e.g. a bare `dagger call` -- has no
-	// checks section or test rollup to carry the failure, so the whole-trace view
-	// would fall back to the bootstrap progress tree and never show why it failed.
-	// Surface the root span's root cause directly instead: the same span-derived
-	// origin (an `error_origin` link / traceparent marker on the root) the
-	// summary's ROOT CAUSE uses. Only at the root zoom; a check/test/span zoom has
-	// its own tier. Only when the root actually failed (mirroring the drill-in
-	// suggestions guard): a passing run can still carry error origins -- tolerated
-	// probes (docker-build's .dockerignore stats) or encapsulated failures -- and
-	// leading a PASSED report with their ERROR blocks would be misleading.
-	// Anchored on the primary span (what the section itself renders from), not
-	// db.RootSpan: a nested run -- a propagated traceparent, e.g. dagger-in-dagger
-	// -- has no parentless root span at all.
+	// checks section or test rollup to carry the failure. The tree itself
+	// attributes it (the failing call renders as a row, often with its origin
+	// inline), so let the tree lead, then append the root span's root-cause
+	// origins BELOW it for whatever the tree couldn't show -- typically the
+	// origin's logs, which a stored trace only has because this policy also
+	// drives their fetch. Hoisting the cause ABOVE the tree instead (the
+	// showRootCause treatment) claimed the origins and stripped them from the
+	// tree, orphaning the failure from the call that owns it. Only at the root
+	// zoom; a check/test/span zoom has its own tier. Only when the root
+	// actually failed (mirroring the drill-in suggestions guard): a passing
+	// run can still carry error origins -- tolerated probes (docker-build's
+	// .dockerignore stats) or encapsulated failures -- and appending their
+	// ERROR blocks to a PASSED report would be misleading. Anchored on the
+	// primary span (what the section itself renders from), not db.RootSpan: a
+	// nested run -- a propagated traceparent, e.g. dagger-in-dagger -- has no
+	// parentless root span at all.
 	if k == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
 		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailed() {
 			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
-				pol.showRootCause = true
+				pol.showRootCauseLast = true
 			}
 		}
 	}
