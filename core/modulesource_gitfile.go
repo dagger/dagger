@@ -13,6 +13,13 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 )
 
+// ErrNoGitContext reports that the module context has no git checkout at
+// all: no .git entry at its root. Unlike a .git that exists but is unusable
+// (which is a broken environment and fails the call), absence is a
+// legitimate state -- `dagger init` before `git init`, an exported source
+// tree -- so contextual GitRepository/GitRef args degrade to null on it.
+var ErrNoGitContext = errors.New("module context has no git checkout")
+
 // Checkouts created by `git submodule` and `git worktree` don't have a .git
 // *directory* at the tree root: they have a .git pointer file (a "gitfile")
 // whose `gitdir:` target lives outside the tree, typically inside the
@@ -27,9 +34,9 @@ import (
 // operations behave as if the context were a plain clone.
 //
 // Only local module sources are handled: they're the only kind with a client
-// host to resolve the pointer against. Anything unresolvable is reported as
-// gitutil.ErrGitNoRepo, the same class as a plain non-repository context, so
-// callers that degrade gracefully on missing git info treat both alike.
+// host to resolve the pointer against. A missing .git reports
+// ErrNoGitContext (degradable); a .git that exists but can't be used as a
+// git repository is a hard error.
 func (src *ModuleSource) resolveGitPointer(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -38,8 +45,7 @@ func (src *ModuleSource) resolveGitPointer(
 	st, err := dir.Self().Stat(ctx, dir, dag, ".git", true)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			// No .git at all; let asGit report the plain failure.
-			return dir, nil
+			return dir, ErrNoGitContext
 		}
 		return dir, err
 	}

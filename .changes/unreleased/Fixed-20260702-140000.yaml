@@ -1,10 +1,10 @@
 kind: Fixed
 body: |
-  An optional `GitRepository`/`GitRef` argument with a `defaultPath` no longer
-  fails the call when the context isn't a usable git repository — submodule and
-  git-worktree checkouts sync only a `.git` pointer file whose target lives
-  outside the context. The argument now resolves to null (with a warning) so the
-  function proceeds without git info; required arguments still fail.
+  A `GitRepository`/`GitRef` argument with a `defaultPath` no longer fails the
+  call when the context has no git checkout at all (e.g. `dagger init` before
+  `git init`, or an exported source tree): it resolves to null so the function
+  proceeds without git info. A `.git` that exists but is unusable still fails,
+  with a clear error.
 time: 2026-07-02T14:00:00Z
 custom:
   Author: vito

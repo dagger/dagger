@@ -1267,59 +1267,60 @@ public class Test {
 }
 
 func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T) {
-	// When the context can't be used as a git repository at all — no .git,
-	// or a .git pointer file whose target doesn't exist — a contextual
-	// GitRepository/GitRef arg resolves to null, letting the function
-	// proceed without git info. (Resolvable pointer files are covered by
-	// TestContextGitSubmodule/TestContextGitWorktree.)
+	// A context with no git checkout at all degrades contextual git args to
+	// null: absence is a legitimate environment (`dagger init` before `git
+	// init`, exported source trees). A .git that exists but is unusable — a
+	// dead submodule/worktree pointer — is a broken environment and fails
+	// loudly instead of silently stripping git info. (Resolvable pointer
+	// files are covered by TestContextGitSubmodule/TestContextGitWorktree.)
 
-	// Simulate a submodule checkout whose real git dir is gone: worktree
-	// files present, .git is a pointer file at a dead path.
+	// A module in a plain directory: no git checkout anywhere.
+	noGit := func(c *dagger.Client) *dagger.Container {
+		return c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(withModuleFixture(t, c, ".", "go/path-context-git-optional"))
+	}
+	// A submodule-shaped checkout whose real git dir is gone: worktree files
+	// present, .git is a pointer file at a dead path.
 	brokenGit := func(c *dagger.Client) *dagger.Container {
 		return moduleFixture(t, c, "go/path-context-git-optional").
 			WithExec([]string{"sh", "-c", "rm -rf .git && echo 'gitdir: ../../.git/modules/work' > .git"})
 	}
 
-	t.Run("optional repo resolves to null", func(ctx context.Context, t *testctx.T) {
+	t.Run("no git: optional repo resolves to null", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := brokenGit(c).With(daggerCall("optional-repo")).Stdout(ctx)
+		out, err := noGit(c).With(daggerCall("optional-repo")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "no repo", out)
 	})
 
-	t.Run("no git repository at all", func(ctx context.Context, t *testctx.T) {
-		// The `dagger init` before `git init` flow: a module in a plain
-		// directory. Modules with contextual git args must still be callable.
+	t.Run("no git: optional ref resolves to null", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(withModuleFixture(t, c, ".", "go/path-context-git-optional")).
-			With(daggerCall("optional-repo")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "no repo", out)
-	})
-
-	t.Run("optional ref resolves to null", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		out, err := brokenGit(c).With(daggerCall("optional-ref")).Stdout(ctx)
+		out, err := noGit(c).With(daggerCall("optional-ref")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "no ref", out)
 	})
 
-	t.Run("defaultPath without optional degrades too", func(ctx context.Context, t *testctx.T) {
+	t.Run("no git: module-level required guard fires", func(ctx context.Context, t *testctx.T) {
 		// The SDK marks every +defaultPath arg optional in the schema, so
 		// there is no schema-level "required" contextual git arg: the arg
 		// degrades to null and the module's own guard reports the failure.
-		// (The engine also logs a warning breadcrumb, but engine warnings
-		// only surface in the trace, not in session logs.)
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
-		_, err := brokenGit(c).With(daggerCall("required-repo")).Sync(ctx)
+		_, err := noGit(c).With(daggerCall("required-repo")).Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		require.Contains(t, logs.String(), "no usable git repository in context")
+	})
+
+	t.Run("dead git pointer fails loudly", func(ctx context.Context, t *testctx.T) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+		_, err := brokenGit(c).With(daggerCall("optional-repo")).Sync(ctx)
+		require.Error(t, err)
+		require.NoError(t, c.Close())
+		require.Contains(t, logs.String(), ".git pointer target")
 	})
 
 	t.Run("optional repo resolves in a real repo", func(ctx context.Context, t *testctx.T) {
