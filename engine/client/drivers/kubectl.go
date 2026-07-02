@@ -41,8 +41,15 @@ func (k kubectl) Available(ctx context.Context) (bool, error) {
 		return false, nil //nolint:nilerr
 	}
 
-	// check cluster is running
-	cmd := exec.CommandContext(ctx, "kubectl", "cluster-info")
+	// Ideally we'd check that the cluster is actually usable via `kubectl cluster-info` or
+	// similar,  but since the default cluster targeted by `kubectl` could be overridden by
+	// `_EXPERIMENTAL_DAGGER_RUNNER_HOST=image+kubectl://foo?context=bar`, we cannot do that
+	// because the interface that we are implementing does not give us access to that query
+	// parameter, and I am aiming to avoid changing the interface for this feature. That
+	// edge case aside, this driver is registered last amongst the image drivers, so it
+	// should be OK to fall into this driver if none of the others are available and kubectl
+	// is installed.
+	cmd := exec.CommandContext(ctx, "kubectl", "version", "--client")
 	if err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated()); err != nil {
 		return false, err
 	}
@@ -74,14 +81,6 @@ func (k kubectl) Provision(ctx context.Context, u *url.URL, opts *DriverOpts) (C
 				})
 			}
 		}
-	}
-
-	// Add DAGGER_CLOUD_TOKEN if present in opts
-	if opts.DaggerCloudToken != "" {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  EnvDaggerCloudToken,
-			Value: opts.DaggerCloudToken,
-		})
 	}
 
 	// Determine cleanup behavior
@@ -185,18 +184,36 @@ func (k kubectl) createPod(ctx context.Context, kctx, namespace, podName, image 
 		},
 	}
 
+	secret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+		},
+		Data: map[string][]byte{},
+	}
+
+	// Add DAGGER_CLOUD_TOKEN if present in opts
+	if opts.DaggerCloudToken != "" {
+		cloudTokenKey := "cloudToken"
+		secret.Data[cloudTokenKey] = []byte(opts.DaggerCloudToken)
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  EnvDaggerCloudToken,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: secret.GetName(),
+					},
+					Key: cloudTokenKey,
+				},
+			},
+		})
+	}
+
 	if _, err := os.Stat(engineCertificatesPath); err == nil {
-		secret := corev1.Secret{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "v1",
-				Kind:       "Secret",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      podName,
-				Namespace: namespace,
-			},
-			Data: map[string][]byte{},
-		}
 		i := 0
 		if err := filepath.WalkDir(engineCertificatesPath, func(path string, de fs.DirEntry, err error) error {
 			if de.IsDir() || err != nil {
@@ -249,12 +266,14 @@ func (k kubectl) createPod(ctx context.Context, kctx, namespace, podName, image 
 		}); err != nil {
 			return err
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("could not stat certificates", "path", engineCertificatesPath, "error", err)
+	}
 
+	if len(secret.Data) > 0 {
 		if err := k.apply(ctx, kctx, secret); err != nil {
 			return err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		slog.Warn("could not stat certificates", "path", engineCertificatesPath, "error", err)
 	}
 
 	if _, err := os.Stat(engineConfigPath); err == nil {
