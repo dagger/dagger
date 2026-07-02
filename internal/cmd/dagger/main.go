@@ -806,6 +806,14 @@ func Main() {
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
+		} else if len(os.Args) > 1 && os.Args[1] == "session" {
+			// SDKs spawn `dagger session` and pipe its stderr to the user's
+			// log output as the live progress stream. The report frontend
+			// renders only once at exit -- for a long-lived session that
+			// leaves the stream empty the whole run -- so keep the streaming
+			// plain frontend. Checked before RunningInAgent: an agent-driven
+			// SDK program needs the stream just as much.
+			progress = "plain"
 		} else if idtui.RunningInAgent() {
 			// An AI agent consumes the output as text; the report frontend's
 			// single final render suits it better than the live TUI.
