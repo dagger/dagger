@@ -357,6 +357,12 @@ func (DangSuite) TestVersionedSyntax(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "new syntax", strings.TrimSpace(out))
+
+		out, err = dangModule(t, c, "dot-block").
+			With(daggerCall("size")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "10", strings.TrimSpace(out))
 	})
 }
 
