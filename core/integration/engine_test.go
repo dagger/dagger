@@ -223,7 +223,12 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
-	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "version"})
+	// The engine name reaches the user via the client's "connected" INFO log,
+	// which only the streaming plain frontend prints (the report frontend, the
+	// non-TTY default, doesn't render passing-span logs).
+	clientCtr = clientCtr.
+		WithEnvVariable("DAGGER_PROGRESS", "plain").
+		WithExec([]string{"dagger", "core", "version"})
 
 	// version call
 	stdout, err := clientCtr.Stdout(ctx)
@@ -273,6 +278,11 @@ func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 			)
 
 			clientCtr = clientCtr.
+				// The stderr assertion below checks the plain frontend's live
+				// span stream ("Container.from"); the report frontend (the
+				// non-TTY default) renders the tree once at exit with
+				// call-chain naming instead.
+				WithEnvVariable("DAGGER_PROGRESS", "plain").
 				WithExec([]string{"apk", "add", "jq", "curl"}).
 				WithExec([]string{"sh", "-c", command})
 
