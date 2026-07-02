@@ -1,5 +1,9 @@
 Expected stderr:
 
+┇ .callBubblingDep › .bubblingFunction ›
+✘ NestedDep.failingFunction: Void X.Xs ERROR
+! im a failing nested function
+
 ✔ connect X.Xs
 ├╴✔ starting engine X.Xs
 ├╴✔ connecting to engine X.Xs

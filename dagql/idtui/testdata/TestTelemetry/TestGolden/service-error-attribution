@@ -1,5 +1,11 @@
 Expected stderr:
 
+┇ .serviceErrorAttribution ›
+$ Container.asService(args: ["sh", "-c", "echo service is starting; sleep 1; echo service is crashing >&2; exit 42"]): Service! X.Xs ERROR
+service is starting
+service is crashing
+! exit code: 42
+
 ✔ connect X.Xs
 ├╴✔ starting engine X.Xs
 ├╴✔ connecting to engine X.Xs

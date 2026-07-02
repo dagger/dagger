@@ -1,5 +1,10 @@
 Expected stderr:
 
+✘ go SDK: load runtime X.Xs ERROR
+# dagger/broken
+./main.go:6:6: undefined: ctx
+! exit code: 1
+
 ✔ connect X.Xs
 ├╴✔ starting engine X.Xs
 ├╴✔ connecting to engine X.Xs
@@ -13,9 +18,5 @@ Expected stderr:
 
 $ broken: Broken! X.Xs CACHED
 ✘ .broken: Void X.Xs ERROR
-✘ go SDK: load runtime X.Xs ERROR
-# dagger/broken
-./main.go:6:6: undefined: ctx
-! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

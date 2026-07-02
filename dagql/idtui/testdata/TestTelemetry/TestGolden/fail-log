@@ -1,5 +1,11 @@
 Expected stderr:
 
+┇ .failLog ›
+✘ withExec sh -c 'echo im doing a lot of work; echo and then failing; exit 1' X.Xs ERROR
+im doing a lot of work
+and then failing
+! exit code: 1
+
 ✔ connect X.Xs
 ├╴✔ starting engine X.Xs
 ├╴✔ connecting to engine X.Xs
