@@ -1583,9 +1583,24 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 			// If we've already shown the root cause error for the command, we can
 			// skip displaying the primary output and error, since it's just a poorer
 			// representation of the same error (`Error: input: ...`)
+			if fe.reportOnly {
+				// Only the error re-print is redundant, though: the stdout
+				// stream is the command's own result (e.g. a shell script's
+				// output from before it failed), so still replay it.
+				if err := replayPrimaryOutput(w, fe.db, false); err != nil {
+					return err
+				}
+			}
 			var exitErr ExitError
 			if errors.As(fe.err, &exitErr) {
 				return exitErr
+			}
+			// Keep the failed command's exit code (e.g. a shell script's failed
+			// exec must exit with the exec's own code) instead of flattening
+			// every rendered error to 1.
+			var execErr *dagger.ExecError
+			if errors.As(fe.err, &execErr) {
+				return ExitError{OriginalCode: execErr.ExitCode, Original: fe.err}
 			}
 			return ExitError{OriginalCode: 1, Original: fe.err}
 		}
