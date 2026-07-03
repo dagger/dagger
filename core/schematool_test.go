@@ -242,6 +242,25 @@ func TestSchemaMergeInterfaceAndEnum(t *testing.T) {
 	})
 }
 
+// TestSchemaMergeScalar verifies module-contributed scalars merge: legacy
+// schema views need the per-type <T>ID aliases emitted alongside module
+// objects, and Merge must not filter them out.
+func TestSchemaMergeScalar(t *testing.T) {
+	const modJSON = `{
+  "__schema": {
+    "types": [
+      {"kind":"SCALAR","name":"ZooID","description":"A unique identifier for an object.","directives":[]}
+    ],
+    "directives": []
+  }
+}`
+	merged, err := mustSchema(t, baseSchemaJSON).Merge(JSON(modJSON), "zoo")
+	require.NoError(t, err)
+	id := schemaType(merged, "ZooID")
+	require.NotNil(t, id)
+	require.Equal(t, codegenintrospection.TypeKindScalar, id.Kind)
+}
+
 func TestSchemaContentsRoundTrip(t *testing.T) {
 	s := mustSchema(t, baseSchemaJSON)
 	data, err := s.Contents()

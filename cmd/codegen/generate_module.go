@@ -32,7 +32,10 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 	ctx = telemetry.InitEmbedded(ctx, nil)
 	defer telemetry.Close()
 
-	cfg, err := getGlobalConfig(ctx, false)
+	// Go merges the module's own types into the schema via the engine's
+	// schema-merge tool, so it needs an engine connection; other languages
+	// keep working offline with pre-baked introspection JSON.
+	cfg, err := getGlobalConfig(ctx, generator.SDKLang(lang) == generator.SDKLangGo)
 	if err != nil {
 		return fmt.Errorf("failed to get global configuration: %w", err)
 	}

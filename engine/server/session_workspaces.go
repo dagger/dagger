@@ -664,7 +664,14 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			compatWorkspace, _ = workspace.ParseRuntimeCompatWorkspaceAt(data, cfgPath)
 		}
 		if compatWorkspace != nil {
-			if clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning {
+			// Only module-consuming clients get the user-facing migration
+			// warning: those loading workspace modules, and those loading an
+			// explicit module (`dagger call` resolves the cwd module as an
+			// extra module). Clients that opted out of module loading (SDK
+			// codegen, client generators, internal tooling) would leak it
+			// into the calling session's output.
+			warnCompat := loadModules || (clientMD != nil && len(clientMD.ExtraModules) > 0)
+			if warnCompat && (clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning) {
 				msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
 				console(ctx, msg)
 				slog.Warn(msg,

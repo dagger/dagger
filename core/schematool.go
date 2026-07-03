@@ -113,13 +113,16 @@ func (s *Schema) Merge(moduleTypes JSON, moduleName string) (*Schema, error) {
 }
 
 // isModuleDefinedType reports whether t is a type a module can contribute to a
-// schema: a named object, interface or enum that is not a root operation type
-// or a built-in introspection type.
+// schema: a named object, interface, enum or scalar that is not a root
+// operation type or a built-in introspection type. Scalars are needed for the
+// per-type <T>ID aliases that legacy schema views carry alongside module
+// objects and interfaces.
 func isModuleDefinedType(t *codegenintrospection.Type) bool {
 	switch t.Kind {
 	case codegenintrospection.TypeKindObject,
 		codegenintrospection.TypeKindInterface,
-		codegenintrospection.TypeKindEnum:
+		codegenintrospection.TypeKindEnum,
+		codegenintrospection.TypeKindScalar:
 	default:
 		return false
 	}
