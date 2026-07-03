@@ -17,7 +17,6 @@ use Dagger\ValueObject\ListOfType;
 use Dagger\ValueObject\Type;
 use GraphQL\Exception\QueryError;
 use ReflectionClass;
-use ReflectionMethod;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -79,6 +78,10 @@ class EntrypointCommand extends Command
 
                 if ($daggerFunction->description !== null) {
                     $func = $func->withDescription($daggerFunction->description);
+                }
+
+                if ($daggerFunction->withCheck) {
+                    $func = $func->withCheck();
                 }
 
                 foreach ($daggerFunction->arguments as $argument) {
