@@ -1,5 +1,7 @@
 package hashutil
 
+// test
+
 import (
 	"encoding/binary"
 	"encoding/hex"
