@@ -40,8 +40,20 @@ func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
 	}
 }
 
+func daggerNonNestedExecFail(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("XDG_STATE_HOME", "/tmp").
+			WithMountedTemp("/tmp").
+			WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: false,
+				Expect:                        dagger.ReturnTypeFailure,
+			})
+	}
+}
+
 func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
-	args = append([]string{"run"}, args...)
+	args = append([]string{"api", "exec"}, args...)
 	return daggerNonNestedExec(args...)
 }
 

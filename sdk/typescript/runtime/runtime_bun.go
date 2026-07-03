@@ -44,10 +44,21 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 	var tsConfig *dagger.File
 	var sdkLibrary *dagger.Directory
 	var runtimeWithDep *BunRuntime
+	var generatedEntrypoint *dagger.File
 
-	eg, ctx := errgroup.WithContext(ctx)
+	// Build the SDK library lazy ref once so both the lib-sync and entrypoint
+	// goroutines below can reference its `client.gen.ts` without re-invoking
+	// the codegen container. The actual exec runs once under the engine's
+	// content-addressed cache.
+	sdkLibraryDir := NewLibGenerator(b.sdkSourceDir, b.cfg.libGeneratorOpts()).
+		GenerateBundleLibrary(b.introspectionJSON, ModSourceDirPath)
+	// Pass the whole library directory (client.gen.ts + any per-dep
+	// <dep>.gen.ts files) so the introspector can resolve dep types.
+	clientBindings := sdkLibraryDir
+
+	eg, gctx := errgroup.WithContext(ctx)
 	eg.Go(func() (err error) {
-		ctx, span := Tracer().Start(ctx, "update tsconfig.json")
+		ctx, span := Tracer().Start(gctx, "update tsconfig.json")
 		defer span.End()
 
 		tsConfig, err = CreateOrUpdateTSConfigForModule(ctx, b.cfg.source)
@@ -55,17 +66,30 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 	})
 
 	eg.Go(func() (err error) {
-		ctx, span := Tracer().Start(ctx, "generate SDK library")
+		ctx, span := Tracer().Start(gctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(b.sdkSourceDir, b.cfg.libGeneratorOpts()).
-			GenerateBundleLibrary(b.introspectionJSON, ModSourceDirPath).
+		sdkLibrary, err = sdkLibraryDir.Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() (err error) {
+		ctx, span := Tracer().Start(gctx, "generate dispatch entrypoint")
+		defer span.End()
+
+		generatedEntrypoint, err = NewIntrospector(b.sdkSourceDir).
+			EmitEntrypoint(
+				b.cfg.name,
+				b.cfg.source.Directory(SrcDir),
+				clientBindings,
+				b.sdkSourceDir,
+			).
 			Sync(ctx)
 		return err
 	})
 
 	eg.Go(func() (err error) {
-		ctx, span := Tracer().Start(ctx, "install dependencies")
+		ctx, span := Tracer().Start(gctx, "install dependencies")
 		defer span.End()
 
 		runtimeWithDep, err = b.WithPackageJSON(ctx)
@@ -83,7 +107,7 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 		return nil, err
 	}
 
-	entrypointPath := filepath.Join(b.cfg.modulePath(), SrcDir, EntrypointExecutableFile)
+	entrypointPath := filepath.Join(b.cfg.modulePath(), EntrypointExecutableFile)
 
 	// Merge all the generated files together and setup an entrypoint command.
 	ctr := runtimeWithDep.ctr.
@@ -93,7 +117,7 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 		WithMountedFile("tsconfig.json", tsConfig).
 		// Merge source code directory with current directory
 		WithDirectory(".", b.cfg.wrappedSourceCodeDirectory()).
-		WithMountedFile(entrypointPath, entrypointFile()).
+		WithMountedFile(entrypointPath, generatedEntrypoint).
 		WithEntrypoint([]string{
 			"bun", "run", entrypointPath,
 		})

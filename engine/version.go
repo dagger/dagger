@@ -5,27 +5,21 @@ import (
 	"strings"
 
 	"golang.org/x/mod/semver"
+
+	iversion "github.com/dagger/dagger/internal/version"
 )
 
 var (
-	// Version holds the complete version number.
+	// Version is the engine/CLI semver, derived from internal/version.Version
+	// (which embeds VERSION at build time) with a "v" prefix.
 	//
-	// Note: this is filled at link-time.
-	//
-	// - For official tagged releases, this is simple semver like vX.Y.Z
-	// - For builds off our repo's main branch, this is a pre-release of the
-	//   form vX.Y.Z-<timestamp>-<commit>
-	// - For local dev builds with no other specified version, this is a
-	//   pre-release of the form vX.Y.Z-<timestamp>-dev-<dirhash>
+	// DAGGER_VERSION overrides at init for tests.
 	Version string
 
-	// Tag holds the tag that the respective engine version is tagged with.
+	// Tag is the default engine image tag. It defaults to Version for release
+	// builds and Commit for dev builds.
 	//
-	// Note: this is filled at link-time.
-	//
-	// - For official tagged releases, this is simple semver like vX.Y.Z
-	// - For untagged builds, this is a commit sha for the last known commit from main
-	// - For dev builds, this is the last known commit from main (or maybe empty)
+	// DAGGER_TAG overrides at init for tests.
 	Tag string
 
 	// MinimumEngineVersion is used by the client to determine the minimum
@@ -47,6 +41,11 @@ var (
 	// MinimumDefaultFunctionCachingModuleVersion is the minimum module version at which
 	// we will enable default function caching behavior.
 	MinimumDefaultFunctionCachingModuleVersion = "v0.19.4"
+
+	// MinimumDangV2ModuleVersion is the minimum module engine version that gets
+	// Dang v2 semantics (`.{ }` is dot-block application, `.{{ }}` is
+	// selection); older modules keep Dang v1 semantics (`.{ }` is selection).
+	MinimumDangV2ModuleVersion = "v0.21.5"
 )
 
 var (
@@ -54,6 +53,23 @@ var (
 )
 
 func init() {
+	if Version == "" {
+		Version = iversion.Version
+	}
+
+	// hack: dynamically populate version env vars
+	// we use these during tests, but not really for anything else - this is
+	// why it's okay to skip the previous validation
+	if v, ok := os.LookupEnv(DaggerVersionEnv); ok {
+		Version = cleanVersion(v)
+	}
+	if Tag == "" {
+		Tag = defaultTag(Version, iversion.Commit)
+	}
+	if v, ok := os.LookupEnv(DaggerTagEnv); ok {
+		Tag = v
+	}
+
 	// The minimum version is greater than our current version this is weird,
 	// and shouldn't generally be intentional - but can happen if we set it to
 	// vX.Y.Z in anticipation of the next release being vX.Y.Z.
@@ -71,20 +87,21 @@ func init() {
 		MinimumModuleVersion = Version
 	}
 
-	// hack: dynamically populate version env vars
-	// we use these during tests, but not really for anything else - this is
-	// why it's okay to skip the previous validation
-	if v, ok := os.LookupEnv(DaggerVersionEnv); ok {
-		Version = cleanVersion(v)
-	}
-	if v, ok := os.LookupEnv(DaggerTagEnv); ok {
-		Tag = v
-	}
 	if v, ok := os.LookupEnv(DaggerMinimumVersionEnv); ok {
 		MinimumClientVersion = cleanVersion(v)
 		MinimumEngineVersion = cleanVersion(v)
 		MinimumModuleVersion = cleanVersion(v)
 	}
+}
+
+func defaultTag(version, commit string) string {
+	if IsDevVersion(version) {
+		if commit == "" {
+			return "main"
+		}
+		return commit
+	}
+	return version
 }
 
 func cleanVersion(v string) string {
@@ -140,8 +157,8 @@ func IsDevVersion(version string) bool {
 	if version == "" {
 		return true
 	}
-	// dev versions have -dev- in their prerelease (e.g. v0.19.9-241210-dev-abc123)
-	if strings.Contains(semver.Prerelease(version), "-dev-") {
+	prerelease := semver.Prerelease(version)
+	if prerelease == "-dev" || strings.Contains(prerelease, "-dev.") || strings.Contains(prerelease, "-dev-") {
 		return true
 	}
 	return false

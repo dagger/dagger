@@ -31,6 +31,10 @@ type Config struct {
 
 	// ClientConfig is the specific config to generate standalone client.
 	ClientConfig *ClientGeneratorConfig
+
+	// EntrypointConfig is the specific config to generate the static dispatch
+	// entrypoint file (currently TypeScript only).
+	EntrypointConfig *EntrypointGeneratorConfig
 }
 
 // Close existing dagger client if it exists.
@@ -69,6 +73,31 @@ type ModuleSourceDependency struct {
 	Name   string `json:"moduleOriginalName"`
 	Pin    string
 	Source string `json:"asString"`
+}
+
+// Specific configuration for entrypoint generation.
+type EntrypointGeneratorConfig struct {
+	// TypedefJSONPath is the path to the JSON-serialized DaggerModule typedef
+	// produced by the SDK introspector (e.g. ts-introspector with
+	// EMIT_TYPEDEF_JSON_FILE).
+	TypedefJSONPath string
+
+	// OutputFile is the filename (relative to OutputDir) where the generated
+	// entrypoint source is written. Defaults to "__dagger.entrypoint.ts" for
+	// the TypeScript SDK.
+	OutputFile string
+
+	// ModuleRoot is the absolute path of the user's module root, used to
+	// resolve relative source-import paths for each registered @object class.
+	ModuleRoot string
+
+	// SDKImportPath is the bare specifier the entrypoint uses to import
+	// runtime helpers (defaults to "@dagger.io/dagger" for TypeScript).
+	SDKImportPath string
+
+	// SourceDir is the user's source directory name relative to ModuleRoot
+	// (defaults to "src" for TypeScript).
+	SourceDir string
 }
 
 // Specific configuration for client generation.

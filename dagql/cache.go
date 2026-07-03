@@ -28,6 +28,8 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
+	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -494,59 +496,82 @@ func (c *Cache) captureSessionResultInstallSpan(ctx context.Context, sessionID s
 		return
 	}
 
-	// Direct install: this call returned this result.
-	c.recordSessionResultInstallSpanLocked(sessionID, shared.id, spanCtx)
-
-	// If this is a module API call return, propagate the install span to the
-	// entire transitive liveness closure. Module-returned values are typically
-	// constructed by inner SDK calls whose own install spans aren't visible to
-	// the user; attributing failures anywhere in the construction chain back to
-	// the module API span is the right thing.
+	// Module API call returns own their result's entire transitive dep
+	// closure: module-returned values are typically constructed by inner SDK
+	// calls whose own install spans aren't visible to the user, so failures
+	// anywhere in the construction chain attribute back to the module API
+	// span. Closure ownership is recorded once on the returned result and
+	// resolved on demand by walking dep edges upward from the result being
+	// evaluated (installAncestorIDsLocked), rather than eagerly fanning the
+	// span out across every result in the closure.
 	call := CurrentCall(ctx)
-	if call == nil || call.Module == nil {
-		return
-	}
-
-	c.egraphMu.RLock()
-	depIDs := c.transitiveDepIDsLocked(shared.id)
-	c.egraphMu.RUnlock()
-
-	for _, depID := range depIDs {
-		c.recordSessionResultInstallSpanLocked(sessionID, depID, spanCtx)
-	}
+	ownsClosure := call != nil && call.Module != nil
+	c.recordSessionResultInstallSpanLocked(sessionID, shared.id, spanCtx, ownsClosure)
 }
 
-func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext) {
+// sessionResultInstallSpan is one recorded install site for a result in a
+// session: the span context of the API call that returned/owns the result,
+// plus whether that ownership extends over the result's transitive dep
+// closure (module API call returns).
+type sessionResultInstallSpan struct {
+	spanCtx     trace.SpanContext
+	ownsClosure bool
+}
+
+func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext, ownsClosure bool) {
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
 	if c.sessionResultInstallSpans == nil {
-		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]trace.SpanContext)
+		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]sessionResultInstallSpan)
 	}
 	bySession := c.sessionResultInstallSpans[sessionID]
 	if bySession == nil {
-		bySession = make(map[sharedResultID]map[string]trace.SpanContext)
+		bySession = make(map[sharedResultID]map[string]sessionResultInstallSpan)
 		c.sessionResultInstallSpans[sessionID] = bySession
 	}
 	byResult := bySession[resultID]
 	if byResult == nil {
-		byResult = make(map[string]trace.SpanContext)
+		byResult = make(map[string]sessionResultInstallSpan)
 		bySession[resultID] = byResult
 	}
-	byResult[spanContextKey(spanCtx)] = spanCtx
+	key := spanContextKey(spanCtx)
+	install := byResult[key]
+	install.spanCtx = spanCtx
+	install.ownsClosure = install.ownsClosure || ownsClosure
+	byResult[key] = install
 }
 
-// transitiveDepIDsLocked returns the cached liveness closure of rootID via
-// parent.deps, excluding rootID itself. Caller must hold egraphMu at least for
-// read. The returned IDs are sorted for deterministic install-span recording.
-func (c *Cache) transitiveDepIDsLocked(rootID sharedResultID) []sharedResultID {
+// installAncestorIDsLocked returns the IDs of results that transitively
+// depend on rootID, found by walking direct dep edges upward via depParents.
+// rootID itself is excluded. Caller must hold egraphMu at least for read.
+func (c *Cache) installAncestorIDsLocked(rootID sharedResultID) []sharedResultID {
 	if rootID == 0 {
 		return nil
 	}
-	res := c.resultsByID[rootID]
-	if res == nil || res.transitiveDeps == nil || res.transitiveDeps.Empty() {
+	root := c.resultsByID[rootID]
+	if root == nil || root.depParents == nil || root.depParents.Empty() {
 		return nil
 	}
-	return res.transitiveDeps.Slice()
+	seen := map[sharedResultID]struct{}{rootID: {}}
+	queue := []sharedResultID{rootID}
+	var out []sharedResultID
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		res := c.resultsByID[id]
+		if res == nil || res.depParents == nil {
+			continue
+		}
+		for parentID := range res.depParents.Items() {
+			if _, ok := seen[parentID]; ok {
+				continue
+			}
+			seen[parentID] = struct{}{}
+			out = append(out, parentID)
+			queue = append(queue, parentID)
+		}
+	}
+	return out
 }
 
 // ResultInstallSpans returns install span contexts recorded for res in the
@@ -565,11 +590,18 @@ func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.Span
 }
 
 // sessionResultInstallSpanContexts returns the install span contexts for
-// resultID in the given session. Direct map lookup — no graph walk.
+// resultID in the given session: the spans recorded directly for the result,
+// plus closure-owning install spans (module API call returns) recorded for
+// any result that transitively depends on it. The upward walk happens here,
+// on demand, instead of eagerly materializing the closure at install time.
 func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID sharedResultID) []trace.SpanContext {
 	if c == nil || sessionID == "" || resultID == 0 {
 		return nil
 	}
+
+	c.egraphMu.RLock()
+	ancestorIDs := c.installAncestorIDsLocked(resultID)
+	c.egraphMu.RUnlock()
 
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
@@ -577,15 +609,29 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 	if byResult == nil {
 		return nil
 	}
-	spans := byResult[resultID]
-	if len(spans) == 0 {
-		return nil
-	}
-	out := make([]trace.SpanContext, 0, len(spans))
-	for _, spanCtx := range spans {
-		if spanCtx.IsValid() {
-			out = append(out, spanCtx)
+	seen := make(map[string]struct{})
+	var out []trace.SpanContext
+	appendInstalls := func(id sharedResultID, closureOwnersOnly bool) {
+		for key, install := range byResult[id] {
+			if closureOwnersOnly && !install.ownsClosure {
+				continue
+			}
+			if !install.spanCtx.IsValid() {
+				continue
+			}
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, install.spanCtx)
 		}
+	}
+	appendInstalls(resultID, false)
+	for _, ancestorID := range ancestorIDs {
+		appendInstalls(ancestorID, true)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	slices.SortFunc(out, compareSpanContexts)
 	return out
@@ -900,7 +946,6 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 		}
 		res.deps = nil
 		res.depParents = nil
-		res.transitiveDeps = nil
 
 		for _, depID := range depIDs {
 			c.forgetDependencyEdgeLocked(res.id, depID)
@@ -1272,13 +1317,14 @@ type Cache struct {
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
 	// sessionResultInstallSpans records which API spans returned/own which
-	// results in a session. On lazy failure, the resume span cause-links the
-	// install spans of the failed result so dagui marks them caused-failed.
-	// Membership is expanded eagerly at install time over the owned-dependency
-	// closure (HasDependencyResults / HasDependencyResultsKinds with Owned=true),
-	// and over the cached transitive parent.deps closure for module API call
-	// returns — no graph walk at install or failure time.
-	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]trace.SpanContext
+	// results in a session. Lazy resume spans cause-link the install spans of
+	// the result being evaluated so dagui can resolve pending state and mark
+	// owners caused-failed. Direct installs are recorded per result (owned
+	// dependency edges copy the owning span onto the dep at attach time);
+	// module API call returns are recorded once on the returned result with
+	// ownsClosure set, and lookups resolve closure ownership on demand by
+	// walking dep edges upward via depParents.
+	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]sessionResultInstallSpan
 	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
 	sessionVolatileVarsBySession map[string]map[string]string
@@ -1415,11 +1461,10 @@ type sharedResult struct {
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
 	// during materialization.
 	deps map[sharedResultID]struct{}
-	// depParents is the reverse index for direct deps. transitiveDeps caches the
-	// full parent.deps closure so module-return install-span propagation can copy
-	// a sorted set instead of re-walking the egraph under lock on every return.
-	depParents     *set.TreeSet[sharedResultID]
-	transitiveDeps *set.TreeSet[sharedResultID]
+	// depParents is the reverse index for direct deps. It lets install-span
+	// lookups walk dep edges upward on demand to find closure-owning installs
+	// (module API call returns) for the result being evaluated.
+	depParents *set.TreeSet[sharedResultID]
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened
 	// transitive set of handle requirements for cache-hit validation.
@@ -1466,6 +1511,10 @@ type sharedResult struct {
 	lazyEvalCancel   context.CancelCauseFunc
 	lazyEvalWaiters  int
 	lazyEvalErr      error
+	// lazyEvalProfOpID is the wcprof op for the in-flight lazy evaluation
+	// (guarded by lazyMu alongside lazyEvalWaitCh). Waiters record wait
+	// events against it.
+	lazyEvalProfOpID uint64
 }
 
 type sharedResultPayloadState struct {
@@ -1716,6 +1765,10 @@ type ongoingCall struct {
 	sharedWorkCtx              context.Context
 	releaseSharedWorkLeaseFn   func(context.Context) error
 	releaseSharedWorkLeaseOnce sync.Once
+
+	// profOpID is the wcprof op for the shared execution of this call, when
+	// profiling is enabled. Waiters record wait events against it.
+	profOpID uint64
 
 	res *sharedResult
 }
@@ -2039,41 +2092,6 @@ func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sh
 		depRes.depParents = newSharedResultIDSet()
 	}
 	depRes.depParents.Insert(parentRes.id)
-
-	delta := newSharedResultIDSet()
-	delta.Insert(depRes.id)
-	if depRes.transitiveDeps != nil {
-		delta.InsertSet(depRes.transitiveDeps)
-	}
-	c.propagateTransitiveDepDeltaLocked(parentRes, delta)
-}
-
-func (c *Cache) propagateTransitiveDepDeltaLocked(res *sharedResult, delta *set.TreeSet[sharedResultID]) {
-	if res == nil || delta == nil || delta.Empty() {
-		return
-	}
-	if res.transitiveDeps == nil {
-		res.transitiveDeps = newSharedResultIDSet()
-	}
-	inserted := newSharedResultIDSet()
-	for depID := range delta.Items() {
-		if depID == 0 || depID == res.id {
-			continue
-		}
-		if res.transitiveDeps.Insert(depID) {
-			inserted.Insert(depID)
-		}
-	}
-	if inserted.Empty() || res.depParents == nil || res.depParents.Empty() {
-		return
-	}
-	for parentID := range res.depParents.Items() {
-		parent := c.resultsByID[parentID]
-		if parent == nil {
-			continue
-		}
-		c.propagateTransitiveDepDeltaLocked(parent, inserted)
-	}
 }
 
 func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
@@ -2803,6 +2821,12 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 			shared.lazyEvalErr = nil
 		}
 		shared.lazyMu.Unlock()
+		// Tag the failure with the result it belongs to so that an enclosing
+		// lazy callback's resume span can tell "a prerequisite failed" apart
+		// from "my own deferred work failed". See blockedOnPrerequisite.
+		if waitErr != nil {
+			waitErr = &prerequisiteEvalError{err: waitErr, resultID: shared.id}
+		}
 	case <-ctx.Done():
 		waitErr = context.Cause(ctx)
 		shared.lazyMu.Lock()
@@ -2817,37 +2841,27 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 	return waitErr
 }
 
-// evaluateLivenessDeps forces all of resultID's parent.deps before its own
-// lazy callback fires. This keeps chained downstream calls pending instead
-// of firing redundant resume spans when an upstream prerequisite fails:
-// the failing dep's resume span attributes via its install_spans, and our
-// own resume span never starts to forward the cascaded error.
-func (c *Cache) evaluateLivenessDeps(ctx context.Context, resultID sharedResultID) error {
-	if c == nil || resultID == 0 {
-		return nil
+// prerequisiteEvalError wraps a lazy-evaluation failure with the identity of
+// the result whose evaluation failed. It does not change the error message;
+// it only carries provenance so enclosing evaluations can classify cascaded
+// failures without forcing prerequisite evaluation order.
+type prerequisiteEvalError struct {
+	err      error
+	resultID sharedResultID
+}
+
+func (e *prerequisiteEvalError) Error() string { return e.err.Error() }
+func (e *prerequisiteEvalError) Unwrap() error { return e.err }
+
+// blockedOnPrerequisite reports whether err originated from evaluating a
+// result other than selfID — i.e. the current result's lazy callback was
+// blocked by a failing prerequisite rather than failing its own work.
+func blockedOnPrerequisite(err error, selfID sharedResultID) bool {
+	var prereq *prerequisiteEvalError
+	if !errors.As(err, &prereq) {
+		return false
 	}
-	c.egraphMu.RLock()
-	res := c.resultsByID[resultID]
-	if res == nil || len(res.deps) == 0 {
-		c.egraphMu.RUnlock()
-		return nil
-	}
-	deps := make([]AnyResult, 0, len(res.deps))
-	for depID := range res.deps {
-		dep := c.resultsByID[depID]
-		if dep == nil {
-			c.egraphMu.RUnlock()
-			return fmt.Errorf("evaluate liveness dep: result %d depends on missing result %d", resultID, depID)
-		}
-		deps = append(deps, Result[Typed]{shared: dep})
-	}
-	c.egraphMu.RUnlock()
-	for _, dep := range deps {
-		if err := c.evaluateOne(ctx, dep); err != nil {
-			return err
-		}
-	}
-	return nil
+	return prereq.resultID != selfID
 }
 
 func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
@@ -2901,16 +2915,6 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	}
 	shared.lazyMu.Unlock()
 
-	// Preflight liveness deps before claiming the lazy state. Each parent.deps
-	// edge is a prerequisite: if it fails, our lazy callback shouldn't fire
-	// (and shouldn't create a resume span that mis-attributes the cascade).
-	// Attribution is direct lookup against install_spans, so the failing dep
-	// is responsible for cause-linking its own owners — no need to fire a
-	// resume span here just to forward the same error.
-	if err := c.evaluateLivenessDeps(stackCtx, shared.id); err != nil {
-		return err
-	}
-
 	shared.lazyMu.Lock()
 	currentLazyEval := lazyEvalFuncOfResult(res)
 	if currentLazyEval == nil {
@@ -2930,9 +2934,13 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	}
 	if shared.lazyEvalWaitCh != nil {
 		waitCh := shared.lazyEvalWaitCh
+		lazyOpID := shared.lazyEvalProfOpID
 		shared.lazyEvalWaiters++
 		shared.lazyMu.Unlock()
-		return c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+		profWait := wcprof.BeginWait(stackCtx, lazyOpID, wcprof.WaitReasonLazy)
+		waitErr := c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+		profWait.End()
+		return waitErr
 	}
 
 	waitCh := make(chan struct{})
@@ -2941,6 +2949,15 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 	resultCall := shared.loadResultCall()
 	if resultCall != nil {
 		evalCtx = ContextWithCall(evalCtx, resultCall)
+	}
+	var lazyOp *wcprof.Op
+	if wcprof.Enabled(evalCtx) {
+		// the run of this result's lazy evaluation callback; the class ties
+		// the cost back to the call that created the lazy value
+		evalCtx, lazyOp = wcprof.BeginOp(evalCtx, wcprof.OpKindLazy, profCallClass(resultCall), wcprof.OpOpts{
+			ClientID: profClientID(stackCtx),
+		})
+		shared.lazyEvalProfOpID = lazyOp.ID()
 	}
 	shared.lazyEvalWaitCh = waitCh
 	shared.lazyEvalCancel = cancel
@@ -2985,7 +3002,19 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		// race with the caller's flush/read of exported spans.
 		runEval := func() {
 			if resumeSpan != nil {
-				defer telemetry.EndWithCause(resumeSpan, &err)
+				defer func() {
+					// If the callback failed only because a prerequisite
+					// result's evaluation failed, this result's own deferred
+					// work never ran. Mark the resume span blocked so the UI
+					// returns the owning API spans to pending instead of
+					// marking them caused-failed with the cascaded error. The
+					// failing prerequisite's own resume span carries the real
+					// failure and its install-span cause links.
+					if err != nil && blockedOnPrerequisite(err, shared.id) {
+						resumeSpan.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
+					}
+					telemetry.EndWithCause(resumeSpan, &err)
+				}()
 			}
 
 			leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
@@ -3004,6 +3033,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 		}
 		runEval()
+		lazyOp.EndWithResult(profErrOutcome(err), uint64(shared.id))
 
 		shared.lazyMu.Lock()
 		shared.lazyEvalErr = err
@@ -3022,7 +3052,10 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		close(waitCh)
 	}()
 
-	return c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+	profWait := wcprof.BeginWait(stackCtx, lazyOp.ID(), wcprof.WaitReasonLazy)
+	waitErr := c.waitForLazyEvaluation(stackCtx, shared, waitCh)
+	profWait.End()
+	return waitErr
 }
 
 func (c *Cache) Close(ctx context.Context) error {
@@ -3469,13 +3502,43 @@ func (c *Cache) GetOrInitCall(
 	return c.getOrInitCall(ctx, sessionID, resolver, req, fn)
 }
 
-//nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
 func (c *Cache) getOrInitCall(
 	ctx context.Context,
 	sessionID string,
 	resolver TypeResolver,
 	req *CallRequest,
 	fn func(context.Context) (AnyResult, error),
+) (AnyResult, error) {
+	if !wcprof.Enabled(ctx) || req == nil || req.ResultCall == nil {
+		return c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, nil)
+	}
+	ctx, profOp := wcprof.BeginOp(ctx, wcprof.OpKindCall, profCallClass(req.ResultCall), wcprof.OpOpts{
+		ClientID: profClientID(ctx),
+	})
+	res, err := c.getOrInitCallInner(ctx, sessionID, resolver, req, fn, profOp)
+	outcome := profOp.OutcomeHint()
+	switch {
+	case err != nil:
+		outcome = profErrOutcome(err)
+	case req.DoNotCache:
+		outcome = wcprof.OutcomeDoNotCache
+	case res != nil && res.HitCache():
+		outcome = wcprof.OutcomeHit
+	case outcome == wcprof.OutcomeNone:
+		outcome = wcprof.OutcomeOK
+	}
+	profOp.EndWithResult(outcome, profResultID(res))
+	return res, err
+}
+
+//nolint:gocyclo // Core cache lookup/insert flow is intentionally centralized here.
+func (c *Cache) getOrInitCallInner(
+	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
+	req *CallRequest,
+	fn func(context.Context) (AnyResult, error),
+	profOp *wcprof.Op,
 ) (AnyResult, error) {
 	if sessionID == "" {
 		return nil, errors.New("get or init call: empty session ID")
@@ -3557,6 +3620,7 @@ func (c *Cache) getOrInitCall(
 		requestInputs = append(requestInputs, dig)
 	}
 	callKey := callDigest.String()
+	profOp.SetIdent(callKey)
 	if ctx.Value(cacheContextKey{callKey}) != nil {
 		return nil, ErrCacheRecursiveCall
 	}
@@ -3588,7 +3652,8 @@ func (c *Cache) getOrInitCall(
 			// already an ongoing call
 			oc.waiters++
 			c.callsMu.Unlock()
-			return c.wait(ctx, sessionID, resolver, oc, req)
+			profOp.SetOutcomeHint(wcprof.OutcomeJoined)
+			return c.wait(ctx, sessionID, resolver, oc, req, true)
 		}
 	}
 
@@ -3601,9 +3666,19 @@ func (c *Cache) getOrInitCall(
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
 	callCtx := context.WithValue(ctx, cacheContextKey{callKey}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	var execOp *wcprof.Op
+	if wcprof.Enabled(ctx) {
+		// the shared execution of this call's resolver; all singleflighted
+		// callers wait on this op
+		callCtx, execOp = wcprof.BeginOp(callCtx, wcprof.OpKindCallExec, profCallClass(req.ResultCall), wcprof.OpOpts{
+			Ident:    callKey,
+			ClientID: profClientID(ctx),
+		})
+	}
 	sharedWorkCtx, releaseSharedWorkLease, err := withOperationLease(withoutOperationLease(callCtx))
 	if err != nil {
 		c.callsMu.Unlock()
+		execOp.End(wcprof.OutcomeError)
 		return nil, fmt.Errorf("acquire shared operation lease: %w", err)
 	}
 	oc := &ongoingCall{
@@ -3615,6 +3690,7 @@ func (c *Cache) getOrInitCall(
 		waiters:                  1,
 		sharedWorkCtx:            sharedWorkCtx,
 		releaseSharedWorkLeaseFn: releaseSharedWorkLease,
+		profOpID:                 execOp.ID(),
 	}
 
 	if req.ConcurrencyKey != "" {
@@ -3626,6 +3702,7 @@ func (c *Cache) getOrInitCall(
 		val, err := fn(oc.sharedWorkCtx)
 		oc.err = err
 		oc.val = val
+		execOp.EndWithResult(profErrOutcome(err), profResultID(val))
 
 		c.callsMu.Lock()
 		noWaiters := oc.waiters == 0
@@ -3636,7 +3713,8 @@ func (c *Cache) getOrInitCall(
 	}()
 
 	c.callsMu.Unlock()
-	return c.wait(ctx, sessionID, resolver, oc, req)
+	profOp.SetOutcomeHint(wcprof.OutcomeExecuted)
+	return c.wait(ctx, sessionID, resolver, oc, req, false)
 }
 
 func (c *Cache) lookupCallRequest(
@@ -3778,6 +3856,7 @@ func (c *Cache) wait(
 	resolver TypeResolver,
 	oc *ongoingCall,
 	req *CallRequest,
+	joined bool,
 ) (AnyResult, error) {
 	var (
 		completionErr error
@@ -3785,12 +3864,21 @@ func (c *Cache) wait(
 		completed     bool
 	)
 
+	var profWait *wcprof.Wait
+	if wcprof.Enabled(ctx) {
+		reason := wcprof.WaitReasonCallExec
+		if joined {
+			reason = wcprof.WaitReasonSingleflight
+		}
+		profWait = wcprof.BeginWait(ctx, oc.profOpID, reason)
+	}
 	select {
 	case <-oc.waitCh:
 		completed = true
 	case <-ctx.Done():
 		canceledErr = context.Cause(ctx)
 	}
+	profWait.End()
 
 	if completed {
 		completionErr = oc.err
@@ -3835,7 +3923,24 @@ func (c *Cache) wait(
 		defer func() {
 			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
 		}()
+		var pubOp *wcprof.Op
+		if oc.profOpID != 0 {
+			// result publication (indexing, dependency attachment) parented
+			// under the shared execution op; recorded iff the execution was
+			// (the op ID carried by the context opts this into recording)
+			_, pubOp = wcprof.BeginOp(
+				wcprof.ContextWithOpID(context.Background(), oc.profOpID),
+				wcprof.OpKindInternal, "dagql.publishResult", wcprof.OpOpts{},
+			)
+		}
 		oc.initCompletedResultErr = c.initCompletedResult(context.WithoutCancel(oc.sharedWorkCtx), resolver, oc, req, sessionID)
+		if pubOp != nil {
+			var resID uint64
+			if oc.res != nil {
+				resID = uint64(oc.res.id)
+			}
+			pubOp.EndWithResult(profErrOutcome(oc.initCompletedResultErr), resID)
+		}
 		c.callsMu.Lock()
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 		c.callsMu.Unlock()
@@ -3939,6 +4044,14 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		if existingRes := oc.val.cacheSharedResult(); existingRes != nil && existingRes.id != 0 {
 			c.egraphMu.Lock()
 			oc.res = c.canonicalEquivalentSharedResultLocked(sessionID, existingRes, time.Now().Unix())
+			// Take the publication handoff hold inside the same critical
+			// section as the canonical pick: the adopted result may be owned
+			// only by another session, and a concurrent session release must
+			// not be able to collect it (running its OnRelease) before this
+			// call re-acquires the lock and its waiters claim session
+			// ownership.
+			c.incrementIncomingOwnershipLocked(ctx, oc.res)
+			oc.handoffHoldActive = true
 			c.egraphMu.Unlock()
 			if objVal, ok := oc.val.(AnyObjectResult); ok {
 				oc.res.setObjClass(objVal.ObjectType())
@@ -4213,8 +4326,12 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 	if oc.isPersistable {
 		c.upsertPersistedEdgeLocked(ctx, oc.res, candidateSharedResultExpiryUnix(now.Unix(), oc.ttlSeconds), false)
 	}
-	c.incrementIncomingOwnershipLocked(ctx, oc.res)
-	oc.handoffHoldActive = true
+	// The cache-backed path already took the handoff hold when it adopted the
+	// canonical result above; only fresh results take it here.
+	if !oc.handoffHoldActive {
+		c.incrementIncomingOwnershipLocked(ctx, oc.res)
+		oc.handoffHoldActive = true
+	}
 	if !resWasCacheBacked {
 		oc.res.attachDepsMu.Lock()
 		oc.res.attachDepsWaitCh = make(chan struct{})

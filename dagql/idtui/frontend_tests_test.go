@@ -403,6 +403,81 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 	}
 }
 
+func TestTestViewPrettyReportSkippedSuites(t *testing.T) {
+	spanID := func(id byte) dagui.SpanID {
+		return dagui.SpanID{SpanID: trace.SpanID{id}}
+	}
+	skippedSpan := func(id byte, name string) *dagui.Span {
+		return &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{
+			ID:         spanID(id),
+			Name:       name,
+			TestStatus: dagui.TestStatusSkipped,
+		}}
+	}
+	// Skipped packages with no test cases should be hidden entirely.
+	emptyA := &dagui.TestNode{
+		ID:           "empty-a",
+		Kind:         dagui.TestNodeSuite,
+		Name:         "empty a",
+		FullName:     "github.com/acme/project/empty-a",
+		Span:         skippedSpan(1, "empty a"),
+		SelfCategory: dagui.TestCategorySkipped,
+		Category:     dagui.TestCategorySkipped,
+	}
+	emptyB := &dagui.TestNode{
+		ID:           "empty-b",
+		Kind:         dagui.TestNodeSuite,
+		Name:         "empty b",
+		FullName:     "github.com/acme/project/empty-b",
+		Span:         skippedSpan(2, "empty b"),
+		SelfCategory: dagui.TestCategorySkipped,
+		Category:     dagui.TestCategorySkipped,
+	}
+	// Skipped test cases without logs should pack without blank separators.
+	suite := &dagui.TestNode{
+		ID:           "suite",
+		Kind:         dagui.TestNodeSuite,
+		Name:         "suite",
+		Span:         skippedSpan(3, "suite"),
+		SelfCategory: dagui.TestCategorySkipped,
+		Category:     dagui.TestCategorySkipped,
+		Counts:       dagui.TestCounts{Skipped: 2},
+	}
+	skipCase := func(id byte, name string) *dagui.TestNode {
+		return &dagui.TestNode{
+			ID:           dagui.TestNodeID(name),
+			Kind:         dagui.TestNodeCase,
+			Name:         name,
+			Span:         skippedSpan(id, name),
+			Parent:       suite,
+			SelfCategory: dagui.TestCategorySkipped,
+			Category:     dagui.TestCategorySkipped,
+			Counts:       dagui.TestCounts{Skipped: 1},
+		}
+	}
+	suite.Children = []*dagui.TestNode{skipCase(4, "first"), skipCase(5, "second")}
+	view := &dagui.TestView{
+		Roots:  []*dagui.TestNode{emptyA, emptyB, suite},
+		Counts: dagui.TestCounts{Skipped: 2},
+	}
+	tv := &TestView{SummaryIndent: 2, SummaryLogLines: -1}
+
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	got := strings.Join(tv.renderTestSummaryLines(out, view, 80, 80), "\n")
+	want := strings.Join([]string{
+		"  TESTS",
+		"    ∅ suite SKIP",
+		"    ∅ suite › first SKIP",
+		"    ∅ suite › second SKIP",
+		"",
+		"    ∅ 2 skipped",
+	}, "\n")
+	if got != want {
+		t.Fatalf("unexpected skipped summary:\n%s", got)
+	}
+}
+
 func TestTestViewPrettyReportIncludesSuiteFailure(t *testing.T) {
 	spanID := func(id byte) dagui.SpanID {
 		return dagui.SpanID{SpanID: trace.SpanID{id}}

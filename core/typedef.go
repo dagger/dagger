@@ -1313,9 +1313,16 @@ func (obj *ObjectTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]
 	return obj
 }
 
+// WithName renames the object to an already-final GraphQL name. This is an
+// internal rename (the `__withName` field), only ever given a name that has
+// already been normalized — the module-namespaced name from namespaceObject,
+// or an SDK-internal marker. Raw SDK names are normalized once at creation
+// (NewObjectTypeDef); re-running strcase.ToCamel here would corrupt
+// already-cased multi-word names (e.g. "ModuleAOverlay" -> "ModuleAoverlay"),
+// since ToCamel is not idempotent.
 func (obj *ObjectTypeDef) WithName(name string) *ObjectTypeDef {
 	obj = obj.Clone()
-	obj.Name = strcase.ToCamel(name)
+	obj.Name = name
 	return obj
 }
 
@@ -1675,9 +1682,12 @@ func (iface *InterfaceTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*Sourc
 	return iface
 }
 
+// WithName renames the interface to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
 func (iface *InterfaceTypeDef) WithName(name string) *InterfaceTypeDef {
 	iface = iface.Clone()
-	iface.Name = strcase.ToCamel(name)
+	iface.Name = name
 	return iface
 }
 
@@ -1783,6 +1793,15 @@ func (*ScalarTypeDef) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 
 func (typeDef ScalarTypeDef) Clone() *ScalarTypeDef {
 	return &typeDef
+}
+
+// WithName renames the scalar to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
+func (typeDef *ScalarTypeDef) WithName(name string) *ScalarTypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Name = name
+	return typeDef
 }
 
 type ListTypeDef struct {
@@ -2060,9 +2079,12 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 	return &cp
 }
 
+// WithName renames the enum to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
 func (enum *EnumTypeDef) WithName(name string) *EnumTypeDef {
 	enum = enum.Clone()
-	enum.Name = strcase.ToCamel(name)
+	enum.Name = name
 	return enum
 }
 
@@ -2201,7 +2223,7 @@ func (enumValue *EnumMemberTypeDef) AttachDependencyResults(
 func NewEnumMemberTypeDef(name, value, description string, deprecated *string, sourceMap dagql.ObjectResult[*SourceMap]) *EnumMemberTypeDef {
 	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
-		Name:         strcase.ToScreamingSnake(name),
+		Name:         gqlEnumMemberName(name),
 		Value:        value,
 		Description:  description,
 		Deprecated:   deprecated,
@@ -2230,9 +2252,12 @@ func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 	return &enumValue
 }
 
+// WithName renames the enum member to an already-final GraphQL name. See
+// (*ObjectTypeDef).WithName for why the name is stored verbatim rather than
+// re-normalized.
 func (enumValue *EnumMemberTypeDef) WithName(name string) *EnumMemberTypeDef {
 	enumValue = enumValue.Clone()
-	enumValue.Name = strcase.ToScreamingSnake(name)
+	enumValue.Name = name
 	return enumValue
 }
 

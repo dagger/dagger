@@ -23,10 +23,11 @@ const (
 )
 
 type PhpSdkDev struct {
-	OriginalWorkspace *dagger.Directory // +private
-	Workspace         *dagger.Directory // +private
-	DoctumConfigPath  string            // +private
-	SourcePath        string            // +private
+	OriginalWorkspace  *dagger.Directory // +private
+	Workspace          *dagger.Directory // +private
+	DoctumConfigPath   string            // +private
+	SourcePath         string            // +private
+	ClientDockerConfig *dagger.Secret    // +private
 }
 
 // Develop the Dagger PHP SDK (experimental)
@@ -34,19 +35,23 @@ func New(
 	// A directory with all the files needed to develop the SDK
 	// +defaultPath="/"
 	// +ignore=["*", "!sdk/php", "!docs/doctum-config.php", "!docs/static/reference/php", "sdk/php/.changes"]
-	workspace *dagger.Directory,
+	workspaceDir *dagger.Directory,
 	// The path of the SDK source in the workspace
 	// +default="sdk/php"
 	sourcePath string,
 	// The path of the doctum config in the workspace
 	// +default="docs/doctum-config.php"
 	doctumConfigPath string,
+	// A docker config file with credentials to install on clients.
+	// +optional
+	clientDockerConfig *dagger.Secret,
 ) *PhpSdkDev {
 	return &PhpSdkDev{
-		Workspace:         workspace,
-		OriginalWorkspace: workspace,
-		SourcePath:        sourcePath,
-		DoctumConfigPath:  doctumConfigPath,
+		Workspace:          workspaceDir,
+		OriginalWorkspace:  workspaceDir,
+		SourcePath:         sourcePath,
+		DoctumConfigPath:   doctumConfigPath,
+		ClientDockerConfig: clientDockerConfig,
 	}
 }
 
@@ -69,7 +74,9 @@ func (t PhpSdkDev) BaseContainer() *dagger.Container {
 		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1").
 		WithWorkdir("/src").
 		With(func(c *dagger.Container) *dagger.Container {
-			return dag.DaggerEngine().InstallClient(c)
+			return dag.DaggerEngine(dagger.DaggerEngineOpts{
+				ClientDockerConfig: t.ClientDockerConfig,
+			}).InstallClient(c)
 		})
 }
 
@@ -154,7 +161,7 @@ func (t *PhpSdkDev) Changes() *dagger.Changeset {
 
 func (t *PhpSdkDev) WithGeneratedClient() *PhpSdkDev {
 	relLayer := t.DevContainer(true).
-		WithExec([]string{"dagger", "run", "--load-workspace-modules", "./scripts/codegen.php"}).
+		WithExec([]string{"dagger", "api", "exec", "--load-workspace-modules", "./scripts/codegen.php"}).
 		Directory(".").
 		Filter(dagger.DirectoryFilterOpts{
 			Exclude: []string{

@@ -20,7 +20,7 @@ type TestEnum {
   Returns the status value
   """
   pub getStatus(status: Status!): String! {
-    toJSON(status)
+    JSON.encode(status)
   }
 
   """

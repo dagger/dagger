@@ -42,21 +42,45 @@ func NewDenoRuntime(
 func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, error) {
 	var sdkLibrary *dagger.Directory
 	var denoRuntimeWithDep *DenoRuntime
+	var generatedEntrypoint *dagger.File
 
-	eg, ctx := errgroup.WithContext(ctx)
+	// Build the SDK library lazy ref once so both the lib-sync and entrypoint
+	// goroutines below can reference its `client.gen.ts` without re-invoking
+	// the codegen container. The actual exec runs once under the engine's
+	// content-addressed cache.
+	sdkLibraryDir := NewLibGenerator(d.sdkSourceDir, d.cfg.libGeneratorOpts()).
+		GenerateBundleLibrary(d.introspectionJSON, ModSourceDirPath)
+	// Pass the whole library directory (client.gen.ts + any per-dep
+	// <dep>.gen.ts files) so the introspector can resolve dep types.
+	clientBindings := sdkLibraryDir
+
+	eg, gctx := errgroup.WithContext(ctx)
 
 	eg.Go(func() (err error) {
-		ctx, span := Tracer().Start(ctx, "generate SDK library")
+		ctx, span := Tracer().Start(gctx, "generate SDK library")
 		defer span.End()
 
-		sdkLibrary, err = NewLibGenerator(d.sdkSourceDir, d.cfg.libGeneratorOpts()).
-			GenerateBundleLibrary(d.introspectionJSON, ModSourceDirPath).
+		sdkLibrary, err = sdkLibraryDir.Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() (err error) {
+		ctx, span := Tracer().Start(gctx, "generate dispatch entrypoint")
+		defer span.End()
+
+		generatedEntrypoint, err = NewIntrospector(d.sdkSourceDir).
+			EmitEntrypoint(
+				d.cfg.name,
+				d.cfg.source.Directory(SrcDir),
+				clientBindings,
+				d.sdkSourceDir,
+			).
 			Sync(ctx)
 		return err
 	})
 
 	eg.Go(func() (err error) {
-		ctx, span := Tracer().Start(ctx, "setup deno container with installed dependencies")
+		ctx, span := Tracer().Start(gctx, "setup deno container with installed dependencies")
 		defer span.End()
 
 		denoRuntimeWithDep, err = d.withDenoJSON(ctx)
@@ -72,7 +96,7 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		return nil, err
 	}
 
-	entrypointPath := filepath.Join(d.cfg.modulePath(), SrcDir, EntrypointExecutableFile)
+	entrypointPath := filepath.Join(d.cfg.modulePath(), EntrypointExecutableFile)
 
 	ctr := denoRuntimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
@@ -80,7 +104,7 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		WithMountedDirectory("node_modules/@dagger.io/dagger", sdkLibrary).
 		// Merge source code directory with current directory
 		WithDirectory(".", d.cfg.wrappedSourceCodeDirectory()).
-		WithMountedFile(entrypointPath, entrypointFile()).
+		WithMountedFile(entrypointPath, generatedEntrypoint).
 		WithEntrypoint([]string{
 			"deno", "run", "-q", "-A", entrypointPath,
 		})

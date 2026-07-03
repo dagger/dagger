@@ -181,6 +181,16 @@ func (c *Copier) copyEntry(
 		return err
 	}
 
+	if ent.Info == nil {
+		if !include {
+			return nil
+		}
+		if ent.StatErr != nil {
+			return fmt.Errorf("failed to stat source path %s: %w", ent.ViewPath, ent.StatErr)
+		}
+		return fmt.Errorf("source path %q missing file info", ent.ViewPath)
+	}
+
 	if ent.Info.IsDir() {
 		childPending := pending
 		var realDirPath string

@@ -19,6 +19,10 @@ const initialWorkspaceConfig = `# Dagger workspace configuration
 # Example:
 #   dagger mod install github.com/dagger/dagger/modules/wolfi
 
+# Run generators as part of 'dagger check' and fail when generated files are
+# stale. Set to false to skip them by default (like 'dagger check --no-generate').
+check-generated = true
+
 [modules]
 `
 
@@ -29,11 +33,11 @@ func (s *workspaceSchema) workspaceInit(
 		Here bool `default:"false"`
 	},
 ) (dagql.String, error) {
-	if parent.HostPath() == "" {
-		return "", fmt.Errorf("workspace init is local-only")
+	if err := requireLocalWorkspace(parent, "workspace init"); err != nil {
+		return "", err
 	}
 	if parent.CompatWorkspace() != nil {
-		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
 	}
 
 	configDirRel := workspaceConfigDirectoryForWrite(parent, args.Here)
@@ -90,13 +94,16 @@ func loadWorkspaceConfigForMutation(
 	if err := unsupportedSyntheticWorkspaceFeature(ws, "config mutations"); err != nil {
 		return nil, false, err
 	}
+	if err := requireLocalWorkspace(ws, "workspace config mutation"); err != nil {
+		return nil, false, err
+	}
 	if ws.ConfigFile != "" && (!here || workspaceSameConfigDirectory(ws, workspaceConfigDirectoryForWrite(ws, true))) {
 		cfg, err := readWorkspaceConfig(ctx, ws)
 		return cfg, false, err
 	}
 
 	if ws.CompatWorkspace() != nil {
-		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
 	}
 	if policy == workspaceConfigMustExist {
 		return nil, false, fmt.Errorf("no dagger.toml found in workspace")
@@ -110,7 +117,14 @@ func loadWorkspaceConfigForMutation(
 		return nil, false, fmt.Errorf("initialize workspace: %w", err)
 	}
 
-	return &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}, true, nil
+	// Keep this consistent with initialWorkspaceConfig: the freshly written file
+	// already carries `check-generated = true`, so the returned config must too,
+	// otherwise the next write would prune it as a removed key.
+	checkGenerated := true
+	return &workspace.Config{
+		Modules:        map[string]workspace.ModuleEntry{},
+		CheckGenerated: &checkGenerated,
+	}, true, nil
 }
 
 func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *core.Workspace, here bool) error {
@@ -190,8 +204,8 @@ func workspaceHostPath(ws *core.Workspace, rel ...string) (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
 	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace has no host path")
+	if err := requireLocalWorkspace(ws, "workspace host access"); err != nil {
+		return "", err
 	}
 
 	parts := append([]string{ws.HostPath()}, rel...)
@@ -216,6 +230,10 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	}
 
 	if ws.HostPath() != "" {
+		ctx, err = withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
 		configPath, err := workspaceHostPath(ws, configFile)
 		if err != nil {
 			return nil, err

@@ -390,6 +390,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 		minFreeBytes        = 900 * 1024 * 1024
 		seedMB              = 192
 		pressureMB          = 512
+		pressureBytes       = pressureMB * 1024 * 1024
 		seedSignalBytes     = 96 * 1024 * 1024
 	)
 
@@ -508,7 +509,7 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 	activeClient := newNestedClient()
 	t.Cleanup(func() { _ = activeClient.Close() })
 
-	pressureSvc, err := activeClient.
+	activePressure, err := activeClient.
 		Container().
 		From(alpineImage).
 		WithEnvVariable("GC_PRESSURE_ACTIVE", identity.NewID()).
@@ -516,19 +517,26 @@ func (LocalCacheSuite) TestLocalCacheGCRunsDuringDiskPressureWithActiveSession(c
 			"sh", "-ec",
 			fmt.Sprintf("dd if=/dev/zero of=/pressure bs=1M count=%d status=none", pressureMB),
 		}).
-		WithDefaultArgs([]string{"sh", "-ec", "sleep 300"}).
-		AsService().
-		Start(ctx)
+		Sync(ctx)
 	require.NoError(t, err)
-	t.Cleanup(func() { _, _ = pressureSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+	require.NotNil(t, activePressure)
 
-	usedWithPressure := waitForUsageAtLeast("active pressure cache", usedAfterNoPressureGC+seedSignalBytes, 30*time.Second)
+	waitForUsageAtLeast("active pressure cache", usedAfterNoPressureGC+seedSignalBytes, 30*time.Second)
+
+	// Disk-pressure GC may prune the inactive seed before we observe the
+	// post-pressure high-water mark, so use the known pressure size as the
+	// target instead of deriving it from usedWithPressure.
+	prunedSeedTarget := usedAfterNoPressureGC + pressureBytes - seedSignalBytes
 
 	waitForUsageBelow(
 		"disk-pressure gc with active session",
-		usedWithPressure-seedSignalBytes,
+		prunedSeedTarget,
 		45*time.Second,
 	)
+
+	pressureSize, err := activePressure.File("/pressure").Size(ctx)
+	require.NoError(t, err)
+	require.Equal(t, pressureBytes, pressureSize)
 }
 
 func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {

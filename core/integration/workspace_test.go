@@ -41,7 +41,11 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 // `dagger workspace init`: a dagger.toml inside the git root.
 func nativeWorkspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
-	return workspaceBase(t, c).With(daggerExec("workspace", "init"))
+	// The `dagger workspace init` verb was removed in CLI 1.0 (workspace
+	// creation is implicit on first install). Seed the workspace config
+	// directly so this helper still yields a native workspace with config
+	// present, matching what `workspace init` used to write.
+	return workspaceBase(t, c).WithNewFile("dagger.toml", "[modules]\n")
 }
 
 func workspaceFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Container {

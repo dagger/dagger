@@ -1,0 +1,179 @@
+/* Command-palette search, modeled on github.com/vito/dang, themed with the
+   site's Infima variables so it tracks light/dark automatically. */
+
+/* ---- navbar trigger ---------------------------------------------------- */
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--ifm-color-emphasis-100);
+  color: var(--ifm-color-content-secondary);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.trigger:hover {
+  color: var(--ifm-color-content);
+  border-color: var(--ifm-color-primary);
+}
+
+.triggerLabel {
+  margin-right: 0.25rem;
+}
+
+.kbd {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.7rem;
+  color: var(--ifm-color-content-secondary);
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 5px;
+  padding: 0.1rem 0.35rem;
+}
+
+@media (max-width: 996px) {
+  .triggerLabel,
+  .kbd {
+    display: none;
+  }
+
+  .trigger {
+    gap: 0;
+    padding: 0.4rem;
+  }
+}
+
+/* Full-width, surface-colored trigger when rendered inside the desktop sidebar
+   (white in light mode) so it reads as a search input. */
+:global(.docs-sidebar-search) .trigger {
+  width: 100%;
+  background: var(--ifm-background-surface-color);
+}
+
+:global(.docs-sidebar-search) .kbd {
+  margin-left: auto;
+}
+
+/* ---- overlay ----------------------------------------------------------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ifm-z-index-overlay, 400);
+  background: rgba(13, 12, 27, 0.55);
+  padding: 10vh 1rem 1rem;
+  overflow: hidden;
+  animation: fade 0.12s ease-out;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.box {
+  display: flex;
+  flex-direction: column;
+  max-width: 640px;
+  max-height: 70vh;
+  margin: 0 auto;
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(13, 12, 27, 0.4);
+}
+
+.input {
+  width: 100%;
+  padding: 0.95rem 1.1rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  color: var(--ifm-font-color-base);
+  font: inherit;
+  font-size: 1rem;
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--ifm-color-content-secondary);
+}
+
+/* ---- results ----------------------------------------------------------- */
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+  overflow-y: auto;
+}
+
+/* Before anything is typed the list renders with no items; collapse it so it
+   doesn't sit below the input as an empty, padded sliver. */
+.results:empty {
+  display: none;
+}
+
+.results li {
+  margin: 0;
+}
+
+.results a {
+  display: block;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  color: var(--ifm-font-color-base);
+  text-decoration: none;
+}
+
+.results a:hover,
+.active a {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.crumb {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--ifm-color-primary);
+  margin-bottom: 0.15rem;
+}
+
+.title {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ifm-font-color-base);
+}
+
+.snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--ifm-color-content-secondary);
+}
+
+.results mark {
+  background: transparent;
+  color: var(--ifm-color-primary);
+  font-weight: 700;
+  padding: 0;
+}
+
+.message {
+  padding: 1.25rem;
+  text-align: center;
+  color: var(--ifm-color-content-secondary);
+  font-size: 0.85rem;
+}

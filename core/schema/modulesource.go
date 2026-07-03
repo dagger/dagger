@@ -211,6 +211,11 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
+		dagql.NodeFunc("updatedConfigDirectory", s.moduleSourceUpdatedConfigDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.`,
+				`Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.`),
+
 		dagql.NodeFunc("generatedContextChangeset", s.moduleSourceGeneratedContextChangeset).
 			Doc(`The generated files and directories made on top of the module source's context directory, returned as a Changeset.`),
 
@@ -1001,9 +1006,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
 			Source:       modCfg.SDK.Source,
-			Debug:        modCfg.SDK.Debug,
-			Config:       modCfg.SDK.Config,
-			Experimental: modCfg.SDK.Experimental,
+			Debug:        modCfg.SDK.Debug,        //nolint:staticcheck // deprecated; read for legacy JSON config compat
+			Config:       modCfg.SDK.Config,       //nolint:staticcheck // deprecated; read for legacy JSON config compat
+			Experimental: modCfg.SDK.Experimental, //nolint:staticcheck // deprecated; read for legacy JSON config compat
 		}
 	}
 
@@ -2345,7 +2350,37 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 	return s.moduleSourceRemoveItems(ctx, parentSrc, args.Dependencies, accessor)
 }
 
+// loadModuleSourceConfig builds the module config from the in-memory
+// ModuleSource and validates that the resulting engine version is loadable by
+// the running engine. Use buildModuleConfig directly to obtain the config
+// without that gate (e.g. when only persisting a declared engine version
+// requirement via updatedConfigDirectory).
 func (s *moduleSourceSchema) loadModuleSourceConfig(
+	src *core.ModuleSource,
+) (*modules.ModuleConfigWithUserFields, error) {
+	modCfg, err := s.buildModuleConfig(src)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check version compatibility.
+	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
+		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
+	}
+	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
+	}
+
+	return modCfg, nil
+}
+
+// buildModuleConfig converts the in-memory ModuleSource into a serializable
+// ModuleConfigWithUserFields. It does NOT validate the engine version against
+// the running engine — callers that need to write the config without loading
+// the module (e.g. declaring a required engine version newer than what they
+// currently run) use this directly. loadModuleSourceConfig is the validating
+// wrapper used by runGeneratedContext and other load/serve paths.
+func (s *moduleSourceSchema) buildModuleConfig(
 	src *core.ModuleSource,
 ) (*modules.ModuleConfigWithUserFields, error) {
 	// construct the module config based on any config read during load and any settings changed via with* APIs
@@ -2381,14 +2416,6 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		modCfg.Toolchains = src.ConfigToolchains
 	}
 
-	// Check version compatibility.
-	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
-		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
-	}
-	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
-		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
-	}
-
 	// Load the module config source based on sourcePath.
 	switch src.SourceSubpath {
 	case "":
@@ -2422,7 +2449,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 }
 
 func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
-	return src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
+	return src.Self().SelfCallsEnabled()
 }
 
 func (s *moduleSourceSchema) runCodegen(
@@ -2449,10 +2476,18 @@ func (s *moduleSourceSchema) runCodegen(
 	// part of the code generation.
 	// This is not really a dependency as it's the module itself, but that will allow to generate
 	// the types.
+	//
+	// This is gated on the explicit SELF_CALLS flag rather than SelfCallsEnabled:
+	// it transforms the source into a module (eagerly type-checking it) purely to
+	// feed code generation, so it only applies to SDKs that opt in for codegen.
+	// SDKs that always enable self calls only for their runtime (e.g. Dang, whose
+	// codegen is a no-op) must not pay this cost — doing so would fail when the
+	// source is uninitialized or references not-yet-installed dependencies.
 	if srcInst.Self().SDK != nil {
 		// Only if the SDK implements a specific function to get module type definitions.
 		// If not, we will have circular dependency issues.
-		if _, ok := srcInst.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(srcInst) {
+		if _, ok := srcInst.Self().SDKImpl.AsModuleTypes(); ok &&
+			srcInst.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls) {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
@@ -2744,13 +2779,37 @@ func (s *moduleSourceSchema) runGeneratedContext(
 	}
 
 	// write the module config to the generated context directory
-	configFilename := moduleSourceConfigFilename(srcInst.Self())
+	genDirInst, err = writeModuleConfigToContextDir(ctx, dag, srcInst.Self(), genDirInst, modCfg)
+	if err != nil {
+		return originalCtxDir, genDirInst, fmt.Errorf("failed to add updated module config to context dir: %w", err)
+	}
+
+	return originalCtxDir, genDirInst, nil
+}
+
+// writeModuleConfigToContextDir adds the module's config file to ctxDir, using
+// the source's declared on-disk filename (dagger-module.toml or legacy
+// dagger.json) and the matching encoding. Single helper so both the codegen
+// and updated-config write paths agree on filename + format and route through
+// the same marshaller (modules.MarshalModuleConfigForFilename). When format
+// preservation is added for module configs, hook it in here — the same way
+// workspace.UpdateConfigBytes layers neontoml-based preservation on top of a
+// plain marshal in the workspace path.
+func writeModuleConfigToContextDir(
+	ctx context.Context,
+	dag *dagql.Server,
+	src *core.ModuleSource,
+	ctxDir dagql.ObjectResult[*core.Directory],
+	modCfg *modules.ModuleConfigWithUserFields,
+) (dagql.ObjectResult[*core.Directory], error) {
+	configFilename := moduleSourceConfigFilename(src)
 	modCfgBytes, err := modules.MarshalModuleConfigForFilename(modCfg, configFilename)
 	if err != nil {
-		return originalCtxDir, genDirInst, fmt.Errorf("failed to encode module config: %w", err)
+		return ctxDir, fmt.Errorf("encode module config: %w", err)
 	}
-	modCfgPath := filepath.Join(srcInst.Self().SourceRootSubpath, configFilename)
-	err = dag.Select(ctx, genDirInst, &genDirInst,
+	modCfgPath := filepath.Join(src.SourceRootSubpath, configFilename)
+	var updated dagql.ObjectResult[*core.Directory]
+	err = dag.Select(ctx, ctxDir, &updated,
 		dagql.Selector{
 			Field: "withNewFile",
 			Args: []dagql.NamedInput{
@@ -2761,10 +2820,9 @@ func (s *moduleSourceSchema) runGeneratedContext(
 		},
 	)
 	if err != nil {
-		return originalCtxDir, genDirInst, fmt.Errorf("failed to add updated module config to context dir: %w", err)
+		return ctxDir, fmt.Errorf("write module config %q: %w", modCfgPath, err)
 	}
-
-	return originalCtxDir, genDirInst, nil
+	return updated, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
@@ -2792,6 +2850,55 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 			Field: "diff",
 			Args: []dagql.NamedInput{
 				{Name: "other", Value: dagql.NewID[*core.Directory](genDirInstID)},
+			},
+		},
+	)
+	if err != nil {
+		return res, fmt.Errorf("failed to get context dir diff: %w", err)
+	}
+
+	return res, nil
+}
+
+// moduleSourceUpdatedConfigDirectory returns the source's context directory
+// with an updated dagger.json reflecting any in-memory edits applied via with*
+// APIs, as a diff relative to the original context directory. Unlike
+// generatedContextDirectory it does NOT run codegen and does NOT validate the
+// engine version against the running engine, so it can be used to declare an
+// engine version newer than the running engine (the load/serve check at
+// moduleSourceAsModule still gates actually using such a module).
+func (s *moduleSourceSchema) moduleSourceUpdatedConfigDirectory(
+	ctx context.Context,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (res dagql.ObjectResult[*core.Directory], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	modCfg, err := s.buildModuleConfig(srcInst.Self())
+	if err != nil {
+		return res, fmt.Errorf("failed to build module source config: %w", err)
+	}
+
+	originalCtxDir := srcInst.Self().ContextDirectory
+	updatedCtxDir, err := writeModuleConfigToContextDir(ctx, dag, srcInst.Self(), originalCtxDir, modCfg)
+	if err != nil {
+		return res, fmt.Errorf("failed to apply updated module config: %w", err)
+	}
+
+	updatedCtxDirID, err := updatedCtxDir.ID()
+	if err != nil {
+		return res, fmt.Errorf("failed to get updated context directory ID: %w", err)
+	}
+
+	// Return just the diff so the caller's Export only writes dagger.json.
+	err = dag.Select(ctx, originalCtxDir, &res,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*core.Directory](updatedCtxDirID)},
 			},
 		},
 	)
@@ -3037,7 +3144,7 @@ func (s *moduleSourceSchema) moduleSourceImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, src.Self())
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, src.Self().Clone())
 	if err != nil {
 		return inst, err
 	}

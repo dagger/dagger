@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/schema"
+	coresdk "github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -25,6 +26,30 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 )
+
+// invalidateClientWorkspace drops the calling client's cached workspace
+// detection so the next ensureWorkspaceLoaded re-detects it from the host.
+//
+// Registered as core.SetWorkspaceInvalidator and triggered after a changeset
+// export writes workspace config files (e.g. a `dagger setup` migration that
+// creates dagger.toml / removes the legacy dagger.json). The per-client cache
+// would otherwise serve the pre-migration view for the client's whole lifetime;
+// under nested execution that lifetime spans multiple sessions in one process
+// (the client ID is pinned by DAGGER_SESSION_CLIENT_ID), so the post-migrate
+// recommended-module install would still see the legacy dagger.json and fail.
+func (srv *Server) invalidateClientWorkspace(ctx context.Context) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	client.workspaceMu.Lock()
+	defer client.workspaceMu.Unlock()
+	client.workspaceLoaded = false
+	client.workspaceErr = nil
+	client.workspace = nil
+	client.pendingModules = nil
+	return nil
+}
 
 // CurrentWorkspace returns the cached workspace for the current client.
 func (srv *Server) CurrentWorkspace(ctx context.Context) (*core.Workspace, error) {
@@ -298,7 +323,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		return fmt.Errorf("remote workspace %q: parsing git ref: %w", remoteRef, err)
 	}
 
-	tree, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
+	tree, gitRef, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
 	if err != nil {
 		return fmt.Errorf("remote workspace %q: %w", remoteRef, err)
 	}
@@ -320,6 +345,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
+		core.NewWorkspaceSourceGitRef(gitRef.Result),
 	)
 }
 
@@ -337,7 +363,7 @@ func (srv *Server) detectAndLoadWorkspace(
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 ) error {
-	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{}, nil)
 }
 
 // pendingModule represents a module to be loaded from workspace discovery,
@@ -464,6 +490,14 @@ func workspaceConfigPendingModules(
 	pending := make([]pendingModule, 0, len(names))
 	for _, name := range names {
 		entry := cfg.Modules[name]
+		// A built-in SDK install entry (e.g. dang/go written by migration) has a
+		// bare runtime name as its source, not a loadable module ref. It exists
+		// only to carry the [modules.<sdk>.as-sdk] authoring metadata; the runtime
+		// itself resolves in-engine when a consuming module loads. Skip it here so
+		// the loader doesn't try to resolve the bare name as a local path.
+		if entry.AsSDK != nil && coresdk.IsBuiltinSDKName(entry.Source) {
+			continue
+		}
 		mod := pendingModule{
 			Kind:               moduleLoadKindAmbient,
 			Ref:                entry.Source,
@@ -577,6 +611,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+	prebuiltSource core.WorkspaceSource,
 ) error {
 	clientMD := client.clientMetadata
 	loadModules := client.pendingWorkspaceLoad &&
@@ -663,7 +698,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if workspaceAddress != nil {
 		address = workspaceAddress(ws)
 	}
-	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, address)
+	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, prebuiltSource, address)
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
@@ -754,7 +789,7 @@ func legacyWorkspaceCompatMessage(cwd, cfgPath string) string {
 	if rel, err := filepath.Rel(cwd, cfgPath); err == nil {
 		relPath = rel
 	}
-	return fmt.Sprintf("No workspace config found, inferring from %s.\nRun 'dagger migrate' when ready. More info: https://docs.dagger.io/reference/upgrade-to-workspaces", relPath)
+	return fmt.Sprintf("No workspace config found, inferring from %s.\nRun 'dagger setup' when ready. More info: https://docs.dagger.io/reference/upgrade-to-workspaces", relPath)
 }
 
 // buildCoreWorkspace converts the internal workspace detection result into
@@ -766,6 +801,7 @@ func (srv *Server) buildCoreWorkspace(
 	detected *workspace.Workspace,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+	prebuiltSource core.WorkspaceSource,
 	address string,
 ) (*core.Workspace, error) {
 	// Capture the current client ID for routing host filesystem operations.
@@ -788,9 +824,15 @@ func (srv *Server) buildCoreWorkspace(
 		// Local: store host path only. Directories are resolved lazily
 		// via per-call host.directory() in resolveRootfs.
 		coreWS.SetHostPath(detected.Root)
+		coreWS.SetSource(core.NewWorkspaceSourceClientLocal(detected.Root, clientMetadata.ClientID))
 	} else {
 		// Remote: store the cloned git tree.
 		coreWS.SetRootfs(prebuiltRootfs)
+		if prebuiltSource != nil {
+			coreWS.SetSource(prebuiltSource)
+		} else {
+			coreWS.SetSource(core.NewWorkspaceSourceDirectory(prebuiltRootfs))
+		}
 	}
 
 	return coreWS, nil
@@ -808,8 +850,8 @@ func remoteWorkspaceAddress(cloneRef, workspaceCwd, version string) string {
 	return core.GitRefString(cloneRef, workspaceCwd, version)
 }
 
-// cloneGitTree clones a git repository and returns its directory tree.
-func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], error) {
+// cloneGitTree clones a git repository and returns its selected ref and tree.
+func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], dagql.ObjectResult[*core.GitRef], error) {
 	// Build the ref selector — use "head" if no version specified.
 	refSelector := dagql.Selector{Field: "head"}
 	if version != "" {
@@ -819,8 +861,8 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 		}
 	}
 
-	var tree dagql.ObjectResult[*core.Directory]
-	err := dag.Select(ctx, dag.Root(), &tree,
+	var gitRef dagql.ObjectResult[*core.GitRef]
+	err := dag.Select(ctx, dag.Root(), &gitRef,
 		dagql.Selector{
 			Field: "git",
 			Args: []dagql.NamedInput{
@@ -828,41 +870,164 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 			},
 		},
 		refSelector,
-		dagql.Selector{Field: "tree"},
 	)
 	if err != nil {
-		return tree, fmt.Errorf("cloning repo: %w", err)
+		return dagql.ObjectResult[*core.Directory]{}, gitRef, fmt.Errorf("resolving repo ref: %w", err)
 	}
-	return tree, nil
+
+	var tree dagql.ObjectResult[*core.Directory]
+	err = dag.Select(ctx, gitRef, &tree,
+		dagql.Selector{
+			Field: "tree",
+			Args: []dagql.NamedInput{
+				{Name: "discardGitDir", Value: dagql.NewBoolean(true)},
+			},
+		},
+	)
+	if err != nil {
+		return tree, gitRef, fmt.Errorf("cloning repo: %w", err)
+	}
+	return tree, gitRef, nil
 }
 
-// ensureModulesLoaded loads all pending modules (from workspace discovery,
-// compat parsing, and -m flags). Called from serveQuery after
-// ensureWorkspaceLoaded. Uses a mutex+flag instead of sync.Once so that
-// transient failures (e.g. session not yet registered) can be retried.
-func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient) error {
-	if len(client.pendingModules) == 0 && len(client.pendingExtraModules) == 0 {
-		return nil
-	}
-
+// ensureModulesLoaded loads pending modules (workspace, compat, and -m) on
+// demand. filter picks which pending workspace modules this request needs (nil
+// = all); the rest stay pending for a later request or resolver. Loading is
+// additive, so narrowing is deferral, not exclusion. Mutex+flags (not
+// sync.Once) keep transient failures retriable.
+func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule) error {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
 
-	if client.modulesLoaded {
-		return client.modulesErr
+	if err := srv.ensureExtraModulesLoadedLocked(ctx, client); err != nil {
+		return err
+	}
+
+	if len(client.pendingModules) == 0 {
+		return nil
+	}
+
+	demand := client.pendingModules
+	if filter != nil {
+		demand = filter(client.pendingModules)
+	}
+	// Multiple ambient entrypoint declarations may dedupe to one module; load
+	// everything so the existing conflict detection still runs.
+	if len(demand) > 0 && len(pendingWorkspaceEntrypointIndexes(client.pendingModules)) > 1 {
+		demand = client.pendingModules
+	}
+	if len(demand) == 0 {
+		return nil
+	}
+
+	// A failed module stays pending; surface its recorded error rather than
+	// reloading it.
+	for _, mod := range demand {
+		if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
+			return err
+		}
 	}
 
 	// Wait for the client's session attachables to be available.
-	// Don't mark as loaded on failure — allow retry on next request.
+	// Transient failure — allow retry on next request.
 	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
 		return fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
-	loads := gatherModuleLoadRequests(client.pendingModules, client.pendingExtraModules)
+	loads := gatherModuleLoadRequests(demand, nil)
+	resolvedLoads, resolveErrs, err := srv.resolveModuleLoadBatch(ctx, client, loads)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for i, load := range loads {
+		if resolveErrs[i] != nil {
+			loadErr := moduleLoadErr(load, resolveErrs[i])
+			client.recordFailedModule(load.mod, loadErr)
+			if firstErr == nil {
+				firstErr = loadErr
+			}
+		}
+	}
+	if firstErr != nil {
+		return firstErr
+	}
+
+	loads, resolvedLoads = dedupeResolvedModuleLoads(loads, resolvedLoads)
+	if err := client.arbitrateAmbientEntrypoints(loads, resolvedLoads); err != nil {
+		return err
+	}
+
+	client.stateMu.Lock()
+	defer client.stateMu.Unlock()
+	if err := srv.serveResolvedModuleLoadsLocked(client, loads, resolvedLoads); err != nil {
+		return err
+	}
+	client.markEntrypointServed(resolvedLoads)
+	client.removePendingModules(demand)
+	return nil
+}
+
+// ensureExtraModulesLoadedLocked loads -m modules. They are explicitly
+// requested, so they load eagerly with sticky failures (unlike on-demand
+// workspace modules). client.modulesMu must be held.
+func (srv *Server) ensureExtraModulesLoadedLocked(ctx context.Context, client *daggerClient) error {
+	if client.extraModulesLoaded {
+		return client.extraModulesErr
+	}
+	if len(client.pendingExtraModules) == 0 {
+		return nil
+	}
+
+	// Wait for the client's session attachables to be available.
+	// Transient failure — allow retry on next request.
+	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+		return fmt.Errorf("waiting for client session attachables: %w", err)
+	}
+
+	stick := func(err error) error {
+		client.extraModulesErr = err
+		client.extraModulesLoaded = true
+		return err
+	}
+
+	loads := gatherModuleLoadRequests(nil, client.pendingExtraModules)
+	resolvedLoads, resolveErrs, err := srv.resolveModuleLoadBatch(ctx, client, loads)
+	if err != nil {
+		return stick(err)
+	}
+	for i, load := range loads {
+		if resolveErrs[i] != nil {
+			return stick(moduleLoadErr(load, resolveErrs[i]))
+		}
+	}
+
+	loads, resolvedLoads = dedupeResolvedModuleLoads(loads, resolvedLoads)
+	if err := arbitrateResolvedModuleLoads(loads, resolvedLoads); err != nil {
+		return stick(err)
+	}
+
+	client.stateMu.Lock()
+	defer client.stateMu.Unlock()
+	if err := srv.serveResolvedModuleLoadsLocked(client, loads, resolvedLoads); err != nil {
+		return stick(err)
+	}
+	client.markEntrypointServed(resolvedLoads)
+
+	client.extraModulesLoaded = true
+	return nil
+}
+
+// resolveModuleLoadBatch resolves a batch of module loads in parallel,
+// collecting per-load errors in deterministic order.
+func (srv *Server) resolveModuleLoadBatch(
+	ctx context.Context,
+	client *daggerClient,
+	loads []moduleLoadRequest,
+) ([]resolvedModuleLoad, []error, error) {
 	resolvedLoads := make([]resolvedModuleLoad, len(loads))
 	resolveErrs := make([]error, len(loads))
 
-	// Load modules in parallel, then apply to client state in deterministic order.
 	jobs := parallel.New().
 		WithContextualTracer(true).
 		WithLimit(moduleLoadParallelism(len(loads)))
@@ -880,57 +1045,189 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 		})
 	}
 	if err := jobs.Run(ctx); err != nil {
-		client.modulesErr = fmt.Errorf("resolving modules: %w", err)
-		client.modulesLoaded = true
-		return client.modulesErr
+		return nil, nil, fmt.Errorf("resolving modules: %w", err)
 	}
+	return resolvedLoads, resolveErrs, nil
+}
 
-	for i, load := range loads {
-		if resolveErrs[i] != nil {
-			client.modulesErr = moduleLoadErr(load, resolveErrs[i])
-			client.modulesLoaded = true
-			return client.modulesErr
+// arbitrateAmbientEntrypoints picks whether this ambient batch's entrypoint
+// candidate wins: only when none is served yet (extras outrank ambient).
+// Multiple candidates in one batch are a workspace configuration error.
+func (client *daggerClient) arbitrateAmbientEntrypoints(loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
+	var candidates []int
+	for i := range resolved {
+		if resolved[i].primaryEntrypoint {
+			candidates = append(candidates, i)
 		}
 	}
-
-	loads, resolvedLoads = dedupeResolvedModuleLoads(loads, resolvedLoads)
-	if err := arbitrateResolvedModuleLoads(loads, resolvedLoads); err != nil {
-		client.modulesErr = err
-		client.modulesLoaded = true
-		return client.modulesErr
+	if len(candidates) > 1 {
+		return entrypointConflictError(moduleLoadKindAmbient, candidates, loads)
 	}
-
-	client.stateMu.Lock()
-	defer client.stateMu.Unlock()
-	if err := srv.serveAllResolvedModuleLoads(client, loads, resolvedLoads); err != nil {
-		client.modulesErr = err
-		client.modulesLoaded = true
-		return client.modulesErr
+	if client.entrypointServed {
+		for _, i := range candidates {
+			resolved[i].primaryEntrypoint = false
+		}
 	}
-
-	client.modulesLoaded = true
 	return nil
 }
 
-func (client *daggerClient) narrowPendingWorkspaceModulesForSingleQuery(rootFields []string) {
-	client.modulesMu.Lock()
-	defer client.modulesMu.Unlock()
-
-	if client.modulesLoaded || len(client.pendingModules) == 0 {
-		return
+// markEntrypointServed flags that an entrypoint (primary or blueprint) was
+// served, so later ambient candidates are demoted. client.modulesMu must be held.
+func (client *daggerClient) markEntrypointServed(resolved []resolvedModuleLoad) {
+	for i := range resolved {
+		if resolved[i].primaryEntrypoint {
+			client.entrypointServed = true
+			return
+		}
+		for _, related := range resolved[i].related {
+			if related.entrypoint {
+				client.entrypointServed = true
+				return
+			}
+		}
 	}
-	client.pendingModules = filterPendingWorkspaceModulesForRootFields(client.pendingModules, rootFields)
 }
 
-func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, rootFields []string) []pendingModule {
+func (client *daggerClient) recordFailedModule(mod pendingModule, err error) {
+	// Cancellation/deadline is the request's fault, not the module's; keep it
+	// retriable.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	if client.failedModules == nil {
+		client.failedModules = make(map[string]error)
+	}
+	client.failedModules[moduleProgressName(mod)] = err
+}
+
+// removePendingModules drops served modules from the pending set and records
+// their names so demand filters still recognize them. Failed modules stay
+// pending to keep reporting their error. client.modulesMu must be held.
+func (client *daggerClient) removePendingModules(served []pendingModule) {
+	names := make(map[string]struct{}, len(served))
+	for _, mod := range served {
+		names[moduleProgressName(mod)] = struct{}{}
+	}
+	remaining := client.pendingModules[:0]
+	for _, mod := range client.pendingModules {
+		if _, ok := names[moduleProgressName(mod)]; ok {
+			if client.servedWorkspaceModuleNames == nil {
+				client.servedWorkspaceModuleNames = make(map[string]struct{})
+			}
+			client.servedWorkspaceModuleNames[moduleProgressName(mod)] = struct{}{}
+			continue
+		}
+		remaining = append(remaining, mod)
+	}
+	client.pendingModules = remaining
+}
+
+// EnsureWorkspaceModules loads the pending workspace modules a selector
+// resolver (checks/generators/services) demands. Those fields validate against
+// the core schema, so loading waits until resolution where include is native.
+func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string) error {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return srv.ensureModulesLoaded(ctx, client, func(mods []pendingModule) []pendingModule {
+		// runs under client.modulesMu, which also guards servedWorkspaceModuleNames
+		return filterPendingWorkspaceModulesBySelectorInclude(mods, client.servedWorkspaceModuleNames, include)
+	})
+}
+
+// canonicalWorkspaceModuleName kebab-normalizes a name or pattern segment for
+// comparison, matching the include matchers (ModTreePath.Glob/CliCase) and CLI
+// command names: "myMod", "my-mod", "MyMod" are the same module. Glob
+// metacharacters survive, so a glob never equals a module name.
+func canonicalWorkspaceModuleName(name string) string {
+	return strcase.ToKebab(name)
+}
+
+// pendingModuleCliName is the canonical name an include pattern matches against.
+func pendingModuleCliName(mod pendingModule) string {
+	if mod.Name != "" {
+		return canonicalWorkspaceModuleName(mod.Name)
+	}
+	return canonicalWorkspaceModuleName(moduleProgressName(mod))
+}
+
+// knownWorkspaceModuleNames is the canonical-name set of all pending and
+// already-served workspace modules.
+func knownWorkspaceModuleNames(mods []pendingModule, served map[string]struct{}) map[string]struct{} {
+	known := make(map[string]struct{}, len(mods)+len(served))
+	for _, mod := range mods {
+		known[pendingModuleCliName(mod)] = struct{}{}
+	}
+	for name := range served {
+		known[canonicalWorkspaceModuleName(name)] = struct{}{}
+	}
+	return known
+}
+
+// resolveIncludePatternModules maps each pattern's leading segment (before ':')
+// to a known module name. It returns the demanded names and whether any pattern
+// matched nothing known; the caller decides the fallback.
+func resolveIncludePatternModules(mods []pendingModule, served map[string]struct{}, include []string) (wanted map[string]struct{}, unknown bool) {
+	known := knownWorkspaceModuleNames(mods, served)
+	wanted = make(map[string]struct{}, len(include))
+	for _, pattern := range include {
+		modName, _, _ := strings.Cut(pattern, ":")
+		modName = canonicalWorkspaceModuleName(modName)
+		if _, ok := known[modName]; !ok {
+			unknown = true
+			continue
+		}
+		wanted[modName] = struct{}{}
+	}
+	return wanted, unknown
+}
+
+// filterPendingWorkspaceModulesBySelectorInclude selects the modules named by
+// `dagger generate`/`check`/`up` patterns ("module" or "module:item"). A
+// pattern naming no known module (an entrypoint-proxied item, or a typo)
+// selects all, so the usual error surfaces. served modules are recognized but
+// contribute nothing to load.
+func filterPendingWorkspaceModulesBySelectorInclude(mods []pendingModule, served map[string]struct{}, include []string) []pendingModule {
+	if len(mods) == 0 || len(include) == 0 {
+		return mods
+	}
+
+	wanted, unknown := resolveIncludePatternModules(mods, served, include)
+	if unknown {
+		return mods
+	}
+
+	// Already-served wanted modules contribute nothing; result may be empty.
+	filtered := make([]pendingModule, 0, len(mods))
+	for _, mod := range mods {
+		if _, ok := wanted[pendingModuleCliName(mod)]; ok {
+			filtered = append(filtered, mod)
+		}
+	}
+	return filtered
+}
+
+// filterPendingWorkspaceModulesForRootFields selects the pending modules a
+// request's root fields reference. served modules are recognized without
+// loading.
+func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string) []pendingModule {
 	if len(mods) == 0 || rootFieldsRequireFullWorkspaceSchema(rootFields) {
 		return mods
+	}
+
+	servedFields := make(map[string]struct{}, len(served))
+	for name := range served {
+		servedFields[strcase.ToLowerCamel(name)] = struct{}{}
 	}
 
 	selected := make([]bool, len(mods))
 	unknownRootField := false
 	for _, field := range rootFields {
 		if isCoreRootField(field) {
+			continue
+		}
+		if _, ok := servedFields[field]; ok {
 			continue
 		}
 		matched := false
@@ -941,6 +1238,11 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, rootFields
 			}
 		}
 		if !matched {
+			// load<Type>FromID can reference a module type without naming the
+			// module, so load everything to be safe.
+			if strings.HasPrefix(field, "load") && strings.HasSuffix(field, "FromID") {
+				return mods
+			}
 			unknownRootField = true
 		}
 	}
@@ -977,8 +1279,12 @@ func rootFieldsRequireFullWorkspaceSchema(fields []string) bool {
 			"__workspaceModule",
 			"currentEnv",
 			"currentModule",
+			// currentTypeDefs returns the full served schema (bare `dagger
+			// functions`, the in-engine MCP/LLM tool builder), so it needs
+			// every workspace module.
 			"currentTypeDefs",
-			"currentWorkspace":
+			// env's resolver snapshots the served deps, so it needs every module
+			"env":
 			return true
 		}
 	}
@@ -1033,10 +1339,14 @@ func isCoreRootField(field string) bool {
 		"currentEnv",
 		"currentFunctionCall",
 		"currentModule",
+		// currentWorkspace's selector resolvers load on demand from their
+		// include argument, so the root field demands nothing here
+		"currentWorkspace",
 		"defaultPlatform",
 		"directory",
 		"engine",
-		"env",
+		// NOTE: "env" is intentionally absent — it needs the full workspace
+		// (see rootFieldsRequireFullWorkspaceSchema)
 		"envFile",
 		"error",
 		"file",
@@ -1123,8 +1433,10 @@ func (srv *Server) resolveModuleLoad(
 	return resolved, nil
 }
 
-// serveAllResolvedModuleLoads serves all resolved primary modules and their
-// related modules (blueprints, toolchains-of-toolchains).
+// serveResolvedModuleLoadsLocked serves resolved primary modules and their
+// related modules (blueprints, toolchains-of-toolchains), skipping any whose
+// identity an earlier batch already served. client.stateMu and client.modulesMu
+// must be held.
 //
 // Transitive dependencies are only served for the entrypoint module — the one
 // the user is interacting with via `dagger call` or `dagger shell`. This is
@@ -1132,9 +1444,13 @@ func (srv *Server) resolveModuleLoad(
 // (e.g. a Mallard backing a Duck). Toolchain deps are NOT served globally;
 // each module's deps are available in its own internal schema (mod.Deps) for
 // type resolution during function calls.
-func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
+func (srv *Server) serveResolvedModuleLoadsLocked(client *daggerClient, loads []moduleLoadRequest, resolved []resolvedModuleLoad) error {
 	for i := range loads {
 		load := resolved[i]
+		key := resolvedModuleLoadIdentity(load.primary)
+		if _, ok := client.servedModuleKeys[key]; ok {
+			continue
+		}
 		for _, related := range load.related {
 			if err := srv.serveModule(client, core.NewUserMod(related.mod), core.InstallOpts{Entrypoint: related.entrypoint}); err != nil {
 				return fmt.Errorf("error serving related module %s: %w", related.mod.Self().Name(), err)
@@ -1154,6 +1470,10 @@ func (srv *Server) serveAllResolvedModuleLoads(client *daggerClient, loads []mod
 				}
 			}
 		}
+		if client.servedModuleKeys == nil {
+			client.servedModuleKeys = make(map[string]struct{})
+		}
+		client.servedModuleKeys[key] = struct{}{}
 	}
 
 	return nil

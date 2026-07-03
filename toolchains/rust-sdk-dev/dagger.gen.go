@@ -349,7 +349,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg sourcePath", err))
 				}
 			}
-			return New(workspace, sourcePath), nil
+			var clientDockerConfig *dagger.Secret
+			if inputArgs["clientDockerConfig"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["clientDockerConfig"]), &clientDockerConfig)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg clientDockerConfig", err))
+				}
+			}
+			return New(workspace, sourcePath, clientDockerConfig), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

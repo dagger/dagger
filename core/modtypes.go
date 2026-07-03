@@ -419,6 +419,13 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 	if value == nil {
 		return nil, nil
 	}
+	if res, ok := value.(dagql.AnyResult); ok {
+		val, present := res.DerefValue()
+		if !present || val == nil {
+			return nil, nil
+		}
+		return t.Inner.ConvertToSDKInput(ctx, val)
+	}
 	opt, ok := value.(dagql.Derefable)
 	if !ok {
 		return nil, fmt.Errorf("%T.ConvertToSDKInput: expected Derefable, got %T: %#v", t, value, value)

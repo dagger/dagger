@@ -3,7 +3,7 @@ module github.com/dagger/dagger/e2e/helm
 go 1.26.1
 
 require (
-	dagger.io/dagger v0.21.4 // indirect
+	dagger.io/dagger v0.21.7 // indirect
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59 // indirect
 )
 

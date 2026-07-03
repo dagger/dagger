@@ -1,3 +1,41 @@
+const path = require("path");
+const { orderedTypeNames } = require(
+  "./plugins/dagger-api-reference/schema.js"
+);
+const promotedApiTypes: string[] = require(
+  "./plugins/dagger-api-reference/coreTypes.js"
+);
+
+const promotedApiTypeLabels: Record<string, string> = {
+  Query: "Query (top-level)",
+};
+
+// Keep in sync with typeSlug in src/components/api/data.ts and
+// plugins/dagger-api-reference/generate-stubs.js.
+function typeSlug(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
+    .toLowerCase();
+}
+
+function apiTypeSidebarItem(name: string) {
+  const id = `extending/types/${typeSlug(name)}`;
+  const label = promotedApiTypeLabels[name];
+  return label ? { type: "doc", id, label } : id;
+}
+
+const allApiTypes: string[] = orderedTypeNames(
+  path.resolve(__dirname, "docs-graphql/schema.graphqls"),
+  promotedApiTypes
+);
+const promotedApiTypeSet = new Set(promotedApiTypes);
+const promotedApiTypeItems = promotedApiTypes.map(apiTypeSidebarItem);
+const otherApiTypeItems = allApiTypes
+  .filter((name) => !promotedApiTypeSet.has(name))
+  .sort((a, b) => a.localeCompare(b))
+  .map(apiTypeSidebarItem);
+
 module.exports = {
   current: [
     // ========================================
@@ -179,15 +217,15 @@ module.exports = {
           collapsed: true,
           items: [
             "extending/types/index",
-            "extending/types/container",
-            "extending/types/directory",
-            "extending/types/file",
-            "extending/types/secret",
-            "extending/types/service",
-            "extending/types/cache-volume",
-            "extending/types/git-repository",
-            "extending/types/env",
-            "extending/types/llm",
+            ...promotedApiTypeItems,
+            {
+              type: "category",
+              label: "Other types",
+              collapsible: true,
+              collapsed: true,
+              items: otherApiTypeItems,
+            },
+            "extending/types/all",
           ],
         },
       ],

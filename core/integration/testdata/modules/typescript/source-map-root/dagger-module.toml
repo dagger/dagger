@@ -1,0 +1,10 @@
+name = "test"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "typescript"
+
+[[dependencies]]
+name = "dep"
+source = "dep"

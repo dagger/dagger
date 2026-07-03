@@ -15,8 +15,9 @@ export { connect, connection } from "./connect.js"
 export type { ConnectOpts } from "./connectOpts.js"
 
 // Export dagger connection context
-export { Context } from "./common/context.js"
+export { Context, BaseClient } from "./common/context.js"
 
 // Module library
 export * from "./module/decorators.js"
 export { entrypoint } from "./module/entrypoint/entrypoint.js"
+export { getRegisteredClass } from "./module/registry.js"

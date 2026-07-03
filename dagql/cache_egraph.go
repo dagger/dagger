@@ -1414,6 +1414,14 @@ func (c *Cache) indexWaitResultInEgraphLocked(
 ) error {
 	c.initEgraphLocked()
 
+	// A result that carries an ID but is no longer registered was collected
+	// after its last owner released it: its OnRelease already ran, so its
+	// payload may reference released resources. Refuse to resurrect it rather
+	// than re-publish a dead payload into the cache.
+	if res.id != 0 && c.resultsByID[res.id] != res {
+		return fmt.Errorf("index result %d: result was already collected", res.id)
+	}
+
 	digestSet := make(map[string]struct{}, 6)
 	addDigest := func(dig string) {
 		if dig == "" {

@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
@@ -345,7 +346,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 	})
 }
 
-func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) error {
+func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) (rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -355,6 +356,15 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		// Nothing requested: avoid an implicit broad fetch from origin.
 		return nil
 	}
+
+	// Encapsulated like the resolver's "pulling" span: hidden unless it
+	// fails, surfacing as a labeled progress row only when objects actually
+	// transfer (an up-to-date repo skips fetching entirely).
+	span, ctx := tracing.StartSpan(ctx, "fetching "+repo.URL.Remote(), telemetry.Encapsulated(), telemetry.Encapsulate())
+	defer func() {
+		tracing.FinishWithError(span, rerr)
+	}()
+	git = git.New(gitutil.WithStreams(gitFetchProgressStreams(ctx)))
 
 	// Fetch by object SHA in the hot path (`--no-tags`), and only retry by named refs for SHA-incompatible remotes.
 	logger := slog.SpanLogger(ctx, InstrumentationLibrary)
@@ -373,6 +383,9 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	runFetch := func(refSpecs []string) error {
 		args := []string{
 			"fetch",
+			// stderr is not a tty, so sideband transfer progress (parsed by
+			// gitProgressWriter) needs asking for
+			"--progress",
 			"--no-tags",
 			"--update-head-ok",
 			"--force",

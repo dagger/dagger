@@ -16,6 +16,22 @@ defmodule Dagger.GitRef do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Creates a synthetic workspace from this git ref.
+  """
+  @spec as_workspace(t(), [{:cwd, String.t() | nil}]) :: Dagger.Workspace.t()
+  def as_workspace(%__MODULE__{} = git_ref, optional_args \\ []) do
+    query_builder =
+      git_ref.query_builder
+      |> QB.select("asWorkspace")
+      |> QB.maybe_put_arg("cwd", optional_args[:cwd])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
+  end
+
+  @doc """
   The resolved commit id at this ref.
   """
   @spec commit(t()) :: {:ok, String.t()} | {:error, term()}

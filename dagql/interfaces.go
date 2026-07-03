@@ -29,6 +29,7 @@ type Interface struct {
 	// register implementations concurrently for dependency-aware schemas.
 	relationsL *sync.RWMutex
 	directives []*ast.Directive
+	view       ViewFilter
 
 	// implementors tracks which object types implement this interface.
 	// Keys are type names.
@@ -73,6 +74,15 @@ func (iface *Interface) Typed() Typed {
 // TypeDescription returns the description of the interface type.
 func (iface *Interface) TypeDescription() string {
 	return iface.description
+}
+
+func (iface *Interface) View(view ViewFilter) *Interface {
+	iface.view = view
+	return iface
+}
+
+func (iface *Interface) ViewFilter() ViewFilter {
+	return iface.view
 }
 
 // AddField adds a field spec to the interface.
@@ -190,7 +200,10 @@ func (iface *Interface) Definition(view call.View) *ast.Definition {
 
 	// Declare which other interfaces this interface implements.
 	iface.relationsL.RLock()
-	for ifaceName := range iface.interfaces {
+	for ifaceName, implemented := range iface.interfaces {
+		if !typeVisibleInView(implemented, view) {
+			continue
+		}
 		def.Interfaces = append(def.Interfaces, ifaceName)
 	}
 	if len(iface.directives) > 0 {

@@ -20,7 +20,7 @@ Module development tooling lives in the SDK module, not the `dagger` CLI: **the 
 
 ```shell
 # Install the Go SDK into your workspace (once)
-dagger mod install github.com/dagger/go-sdk
+dagger install github.com/dagger/go-sdk
 
 # Then call its functions
 dagger call go-sdk <function> ...
@@ -35,7 +35,7 @@ Run these commands from inside a Git repository — that's where the new module 
 Install the Go SDK into your workspace, then create a new module with its `init` function. The only required argument is `--name`:
 
 ```shell
-dagger mod install github.com/dagger/go-sdk
+dagger install github.com/dagger/go-sdk
 dagger call go-sdk init --name my-module
 ```
 
@@ -670,7 +670,7 @@ source = "go"
 
 [[dependencies]]
 name = "go"
-source = "../../toolchains/go"
+source = "../../modules/go"
 
 [[dependencies]]
 name = "wolfi"
@@ -995,14 +995,14 @@ A Go SDK module is distributed as a Git repository. There is no build artifact t
 Consumers add your module as a dependency with the user-facing workspace command:
 
 ```shell
-dagger mod install github.com/you/your-module@v1.2.0
+dagger install github.com/you/your-module@v1.2.0
 ```
 
 or by adding it to their `dagger-module.toml` `dependencies` and regenerating. A module reference follows `[proto://]host/repo[/subpath][@version]`; the version may be a tag, branch, or commit, and is resolved over HTTPS or SSH depending on available authentication.
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** Module development tooling lives in the Go SDK module, not the CLI. Install it with `dagger mod install github.com/dagger/go-sdk`, then use `dagger call go-sdk init ...` to scaffold and `dagger call go-sdk mod generate` to regenerate.
+**`dagger init` / `dagger develop` not found.** Module development tooling lives in the Go SDK module, not the CLI. Install it with `dagger install github.com/dagger/go-sdk`, then use `dagger call go-sdk init ...` to scaffold and `dagger call go-sdk mod generate` to regenerate.
 
 **Nothing was written after `init`.** `init` returns a changeset; it doesn't write files on its own. Review and apply it to write the files into your workspace.
 

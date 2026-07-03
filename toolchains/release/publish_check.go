@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"toolchains/release/internal/dagger"
+
+	"golang.org/x/mod/semver"
+	"sigs.k8s.io/yaml"
 )
 
 const (
-	publishCheckReleaseTag      = "v0.21.4"
 	publishCheckRegistryUser    = "dagger"
 	publishCheckRegistryPass    = "xFlejaPdjrt25Dvr" // #nosec G101 -- fake password for the local test registry.
 	publishCheckRegistryAddress = "registry:5000"
@@ -182,11 +184,15 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory) (*publish
 	if err != nil {
 		return nil, err
 	}
+	releaseTag, releaseVersion, err := publishCheckRelease(ctx, source)
+	if err != nil {
+		return nil, err
+	}
 
 	env := &publishCheckEnv{
 		source:          source,
-		releaseTag:      publishCheckReleaseTag,
-		releaseVersion:  strings.TrimPrefix(publishCheckReleaseTag, "v"),
+		releaseTag:      releaseTag,
+		releaseVersion:  releaseVersion,
 		awsBucket:       "dagger-release-test-" + strings.ToLower(randomID()),
 		platform:        platform,
 		platformArchive: platformArchive,
@@ -276,12 +282,39 @@ git rev-parse HEAD
 		WithMountedFile("/certs/github.test.key", githubKey).
 		WithMountedCache("/records", env.mockRecords).
 		WithNewFile("/server.py", releaseMockServerScript).
+		WithEnvVariable("PUBLISH_CHECK_TAG", env.releaseTag).
 		WithExposedPort(443, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithExposedPort(8080, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithEntrypoint([]string{"python", "/server.py"}).
 		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	return env, nil
+}
+
+func publishCheckRelease(ctx context.Context, source *dagger.Directory) (tag, version string, rerr error) {
+	chartYaml, err := source.File("helm/dagger/Chart.yaml").Contents(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("read Helm chart metadata: %w", err)
+	}
+	var chart struct {
+		Version string `json:"version"`
+	}
+	if err := yaml.Unmarshal([]byte(chartYaml), &chart); err != nil {
+		return "", "", fmt.Errorf("parse Helm chart metadata: %w", err)
+	}
+
+	version = strings.TrimSpace(chart.Version)
+	if version == "" {
+		return "", "", fmt.Errorf("helm chart version is empty")
+	}
+	tag = version
+	if !strings.HasPrefix(tag, "v") {
+		tag = "v" + tag
+	}
+	if !semver.IsValid(tag) {
+		return "", "", fmt.Errorf("helm chart version %q does not produce a valid release tag", version)
+	}
+	return tag, strings.TrimPrefix(tag, "v"), nil
 }
 
 func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service, error) {
@@ -934,8 +967,13 @@ if release.get("draft") is not True:
     fail(f"new release should be created as a draft before asset uploads: {release.get('draft')}")
 if release.get("prerelease") not in (None, False):
     fail(f"stable release should not be marked prerelease: {release.get('prerelease')}")
-if "Fix a regression in the 1Password secret provider where secrets with spaces could not be resolved" not in release.get("release_body", ""):
-    fail("root release body did not include expected changelog entry")
+body = release.get("release_body", "")
+if tag not in body:
+    fail("root release body should mention its release tag")
+if "What to do next" not in body:
+    fail("root release body should include standard follow-up section")
+if not any(section in body for section in ("### Added", "### Changed", "### Fixed")):
+    fail("root release body should include release note sections")
 
 expected_assets = sorted(line.strip() for line in open("/tmp/expected-assets", encoding="utf-8") if line.strip())
 
@@ -1910,7 +1948,7 @@ deleted_github_assets = set()
 state_lock = threading.Lock()
 existing_content_sha = "9999999999999999999999999999999999999999"
 
-publish_check_tag = "` + publishCheckReleaseTag + `"
+publish_check_tag = os.environ["PUBLISH_CHECK_TAG"]
 publish_check_assets = [
     "dagger_" + publish_check_tag + "_darwin_amd64.tar.gz",
     "dagger_" + publish_check_tag + "_darwin_arm64.tar.gz",

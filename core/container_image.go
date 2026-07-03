@@ -32,13 +32,14 @@ type LoadedImportedImage struct {
 
 type ContainerFromImageRefLazy struct {
 	LazyState
-	Parent           dagql.ObjectResult[*Container]
-	CanonicalRef     string
-	Config           dockerspec.DockerOCIImageConfig
-	ImageRef         string
-	Platform         Platform
-	ResolveMode      serverresolver.ResolveMode
-	RegistryServices ServiceBindings
+	Parent            dagql.ObjectResult[*Container]
+	CanonicalRef      string
+	Config            dockerspec.DockerOCIImageConfig
+	ImageRef          string
+	Platform          Platform
+	ResolveMode       serverresolver.ResolveMode
+	RegistryServices  ServiceBindings
+	RegistryTransport serverresolver.RegistryTransport
 }
 
 type dockerfileImageMetaResolver struct {
@@ -94,9 +95,10 @@ func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *
 		defer detach()
 
 		pulled, err := rslvr.Pull(ctx, lazy.CanonicalRef, serverresolver.PullOpts{
-			Platform:    lazy.Platform.Spec(),
-			ResolveMode: lazy.ResolveMode,
-			Network:     network,
+			Platform:          lazy.Platform.Spec(),
+			ResolveMode:       lazy.ResolveMode,
+			Network:           network,
+			RegistryTransport: lazy.RegistryTransport,
 		})
 		if err != nil {
 			return fmt.Errorf("pull image %q: %w", lazy.CanonicalRef, err)
@@ -163,12 +165,13 @@ func (lazy *ContainerFromImageRefLazy) EncodePersisted(ctx context.Context, cach
 		return nil, err
 	}
 	return json.Marshal(persistedContainerFromLazy{
-		ParentResultID:   parentID,
-		CanonicalRef:     lazy.CanonicalRef,
-		Config:           CloneContainerImageConfig(lazy.Config),
-		ImageRef:         lazy.ImageRef,
-		Platform:         lazy.Platform,
-		RegistryServices: services,
+		ParentResultID:    parentID,
+		CanonicalRef:      lazy.CanonicalRef,
+		Config:            CloneContainerImageConfig(lazy.Config),
+		ImageRef:          lazy.ImageRef,
+		Platform:          lazy.Platform,
+		RegistryServices:  services,
+		RegistryTransport: lazy.RegistryTransport,
 	})
 }
 

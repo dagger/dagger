@@ -15,4 +15,6 @@ extra breaking line.
 	{{- template "objects" . }}
 {{""}}
     {{- template "default" . }}
+{{""}}
+    {{- template "footer" . }}
 {{ end }}

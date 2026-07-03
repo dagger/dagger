@@ -2121,6 +2121,8 @@ type ContainerExistsOpts struct {
 	ExpectedType ExistsType
 	// If specified, do not follow symlinks.
 	DoNotFollowSymlinks bool
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	Expand bool
 }
 
 // check if a file or directory exists
@@ -2137,6 +2139,10 @@ func (r *Container) Exists(ctx context.Context, path string, opts ...ContainerEx
 		// `doNotFollowSymlinks` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DoNotFollowSymlinks) {
 			q = q.Arg("doNotFollowSymlinks", opts[i].DoNotFollowSymlinks)
+		}
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
 		}
 	}
 	q = q.Arg("path", path)
@@ -2345,9 +2351,23 @@ func (r *Container) File(path string, opts ...ContainerFileOpts) *File {
 	}
 }
 
+// ContainerFromOpts contains options for Container.From
+type ContainerFromOpts struct {
+	// Service to use as the registry endpoint for the image address.
+	//
+	// The service will be started only for this pull.
+	RegistryService *Service
+}
+
 // Download a container image, and apply it to the container state. All previous state will be lost.
-func (r *Container) From(address string) *Container {
+func (r *Container) From(address string, opts ...ContainerFromOpts) *Container {
 	q := r.query.Select("from")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `registryService` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
+			q = q.Arg("registryService", opts[i].RegistryService)
+		}
+	}
 	q = q.Arg("address", address)
 
 	return &Container{
@@ -2526,6 +2546,10 @@ type ContainerPublishOpts struct {
 	//
 	// Default: OCIMediaTypes
 	MediaTypes ImageMediaTypes
+	// Service to use as the registry endpoint for the image address.
+	//
+	// The service will be started only for this push.
+	RegistryService *Service
 }
 
 // Package the container state as an OCI image, and publish it to a registry
@@ -2548,6 +2572,10 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		// `mediaTypes` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
 			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+		// `registryService` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RegistryService) {
+			q = q.Arg("registryService", opts[i].RegistryService)
 		}
 	}
 	q = q.Arg("address", address)

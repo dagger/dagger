@@ -1,6 +1,10 @@
 package sdk
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
+)
 
 // WorkspaceModule describes the SDK module a workspace should install for a
 // child module runtime.
@@ -22,6 +26,12 @@ func WorkspaceModuleForRuntime(runtime string) (WorkspaceModule, bool, error) {
 	}
 
 	mod, ok := workspaceModuleForBuiltinSDK(sdkName, suffix)
+	if ok {
+		// Prefix the install name to match `dagger sdk install` (e.g.
+		// "go-sdk" -> "dagger-go-sdk"), reducing collisions with unrelated
+		// modules. Source and runtime resolution are unaffected.
+		mod.Name = sdkmeta.InstallNamePrefix + mod.Name
+	}
 	return mod, ok, nil
 }
 

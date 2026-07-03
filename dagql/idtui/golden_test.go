@@ -135,11 +135,17 @@ entrypoint = true
 			"stdout",
 		}, Fail: true},
 		{Function: "module-type-return-fail", Args: []string{"container", "sync"}, Fail: true, FuzzyTest: func(t *testctx.T, out string) {
-			require.Contains(t, out, ".moduleTypeReturnFail")
+			// The module API span owns the returned object's whole construction
+			// closure, so the inner container failure must attribute to it.
+			require.Contains(t, out, "✘ .moduleTypeReturnFail")
 			require.Contains(t, out, "module type container failing")
-			require.Contains(t, out, "withExec sh -c 'echo module type container failing; exit 1'")
+			require.Contains(t, out, "✘ withExec sh -c 'echo module type container failing; exit 1'")
+			// Chained calls downstream of the failure never ran; they must stay
+			// pending rather than rendering the cascaded error.
+			require.Contains(t, out, "○ withEnvVariable AFTER=should stay pending")
 		}},
 		{Function: "revealed-spans"},
+		{Function: "partial-progress"},
 
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",

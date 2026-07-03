@@ -23,7 +23,7 @@ Module development tooling for Dang lives in a Dagger module of its own — **`g
 
 ```shell
 # Install the Dang SDK into your workspace (once)
-dagger mod install github.com/dagger/dang-sdk
+dagger install github.com/dagger/dang-sdk
 
 # Then call its functions
 dagger call dang-sdk <function> [args]
@@ -55,7 +55,7 @@ Install the Dang SDK into your workspace, then create a new module with its `ini
 ```
 
 ```shell
-dagger mod install github.com/dagger/dang-sdk
+dagger install github.com/dagger/dang-sdk
 dagger call dang-sdk init --name my-ci
 ```
 
@@ -790,8 +790,7 @@ pub generateProto: Changeset @generate {
 A service function returns a long-running `Service!`. Mark it with `@up` and `dagger up` will start it. Build the service from a container with `.asService`, exposing the ports it should listen on:
 
 ```dang
-@up
-pub web: Service! {
+pub web: Service! @up {
   container
     .from("nginx:alpine")
     .withExposedPort(80)
@@ -865,7 +864,7 @@ To release:
 Consumers install your module into their workspace with the `dagger` CLI:
 
 ```shell
-dagger mod install github.com/yourorg/yourrepo/path@v0.1.0
+dagger install github.com/yourorg/yourrepo/path@v0.1.0
 ```
 
 They can then call its functions (`dagger call ...`) and run its checks (`dagger check`).

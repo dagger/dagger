@@ -1,0 +1,34 @@
+---
+title: "Type Design Clinics"
+slug: /extending/type-system/type-design-clinics
+description: "Practice improving weak module APIs into typed Dagger APIs."
+---
+
+# Type Design Clinics
+
+This chapter should teach type design through prose-only API reviews. It should not use SDK syntax.
+
+## Clinic Format
+
+Each clinic should follow the same pattern:
+
+1. Start with a weak API surface.
+2. Explain why callers will struggle.
+3. Identify hidden state, weak strings, broad inputs, or dead-end outputs.
+4. Redesign the API using stronger Dagger types.
+5. Explain what improved for discovery, caching, composition, errors, and tests.
+
+## Clinics to Write
+
+TODO: Add clinics for:
+
+- Replacing string paths with `Directory` and `File`.
+- Replacing token strings with `Secret`.
+- Replacing localhost strings with `Service`.
+- Replacing JSON output with a user-defined object.
+- Replacing a mode string with an enum.
+- Replacing silent file writes with `Changeset`.
+
+## Review Checklist
+
+TODO: End this chapter with a type-design checklist maintainers can use during module API review.

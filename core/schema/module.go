@@ -275,7 +275,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
-				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks").
+					View(AfterVersion("v0.21.0")),
 			),
 
 		dagql.NodeFunc("check", s.moduleCheck).
@@ -388,7 +389,31 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
+
+		dagql.Func("asSDK", s.currentModuleAsSDK).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("Reads live workspace config to resolve the current module's SDK-role data.").
+			Doc(`Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.`,
+				`Errors if the current module is not installed as an SDK in this workspace.`),
 	}.Install(dag)
+
+	// Gate the as-sdk object types to the cli-1.0+ view so they (and their
+	// auto-generated Binding.as* accessors) stay out of the base/older module
+	// schema, matching the gating on CurrentModule.asSDK above.
+	dag.InstallObject(dagql.NewClass[*core.CurrentModuleAsSDK](dag).View(AfterVersion("v1.0.0-0")))
+	dag.InstallObject(dagql.NewClass[*core.CurrentModuleAsSDKModule](dag).View(AfterVersion("v1.0.0-0")))
+	dag.InstallObject(dagql.NewClass[*core.CurrentModuleAsSDKClient](dag).View(AfterVersion("v1.0.0-0")))
+
+	dagql.Fields[*core.CurrentModuleAsSDK]{
+		dagql.Func("modules", s.currentModuleAsSDKModules).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The workspace-local modules this SDK authors and manages.`),
+		dagql.Func("clients", s.currentModuleAsSDKClients).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The generated clients this SDK produces in the workspace.`),
+	}.Install(dag)
+	dagql.Fields[*core.CurrentModuleAsSDKModule]{}.Install(dag)
+	dagql.Fields[*core.CurrentModuleAsSDKClient]{}.Install(dag)
 
 	dagql.Fields[*core.Function]{
 		dagql.Func("withDescription", s.functionWithDescription).
@@ -606,7 +631,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`The type of the elements in the list.`),
 		dagql.Func("__withElementTypeDef", s.listTypeDefWithElementTypeDef),
 	}.Install(dag)
-	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ScalarTypeDef]{
+		dagql.Func("__withName", s.scalarTypeDefWithName),
+	}.Install(dag)
 	dagql.Fields[*core.EnumTypeDef]{
 		dagql.Func("values", s.enumTypeDefValues).
 			Deprecated("use members instead").
@@ -1955,6 +1982,12 @@ func (s *moduleSchema) enumTypeDefWithName(ctx context.Context, enum *core.EnumT
 	return enum.WithName(args.Name), nil
 }
 
+func (s *moduleSchema) scalarTypeDefWithName(ctx context.Context, scalar *core.ScalarTypeDef, args struct {
+	Name string
+}) (*core.ScalarTypeDef, error) {
+	return scalar.WithName(args.Name), nil
+}
+
 func (s *moduleSchema) enumTypeDefWithSourceMap(ctx context.Context, enum *core.EnumTypeDef, args struct {
 	SourceMap dagql.Optional[core.SourceMapID]
 }) (*core.EnumTypeDef, error) {
@@ -3026,7 +3059,7 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, parentMod.Self())
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, dag, parentMod.Self().Clone())
 	if err != nil {
 		return inst, err
 	}

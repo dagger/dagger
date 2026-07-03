@@ -16,7 +16,7 @@ Module development tooling lives in the **Python SDK module itself**: `github.co
 
 ```shell
 # Install the Python SDK into your workspace (once)
-dagger mod install github.com/dagger/python-sdk
+dagger install github.com/dagger/python-sdk
 
 # Then call its functions
 dagger call python-sdk <function> ...
@@ -51,7 +51,7 @@ Run these commands from inside a Git repository — that's where the new module 
 Install the Python SDK into your workspace, then create a new module with its `init` function:
 
 ```shell
-dagger mod install github.com/dagger/python-sdk
+dagger install github.com/dagger/python-sdk
 dagger call python-sdk init --name=my-module
 ```
 
@@ -379,7 +379,7 @@ class MyModule:
         return (
             dag.container()
             .from_("aquasec/trivy:0.50.4")
-            .with_exec(["trivy", "image", "--severity=" + severity.name, ref])
+            .with_exec(["trivy", "image", "--severity=" + severity.value, ref])
             .stdout()
         )
 ```
@@ -954,7 +954,7 @@ git add -A && git commit -m "release" && git tag v0.1.0 && git push --tags
 Consumers install your module as a dependency with the workspace tooling:
 
 ```shell
-dagger mod install github.com/you/your-module@v0.1.0
+dagger install github.com/you/your-module@v0.1.0
 ```
 
 or call it ad hoc:
@@ -965,7 +965,7 @@ dagger -m github.com/you/your-module@v0.1.0 call <function> ...
 
 ## Troubleshooting
 
-- **`dagger init` / `dagger develop` not found.** Module development tooling lives in the Python SDK module, not the CLI. Install it with `dagger mod install github.com/dagger/python-sdk`, then use `dagger call python-sdk init …` and `dagger call python-sdk mod generate`.
+- **`dagger init` / `dagger develop` not found.** Module development tooling lives in the Python SDK module, not the CLI. Install it with `dagger install github.com/dagger/python-sdk`, then use `dagger call python-sdk init …` and `dagger call python-sdk mod generate`.
 - **`init` "didn't write any files."** `init` returns a changeset; review and apply it to write the files into your workspace.
 - **Target already contains a module.** `init` refuses to overwrite an existing module. Choose a different `--path` or `--name`.
 - **IDE has no autocompletion / `import dagger` unresolved.** The `sdk/` client must be generated and installed into an active `.venv`. Run `mod generate` (if gitignored) and `uv sync` / `uv pip install -e ./sdk -e .`.

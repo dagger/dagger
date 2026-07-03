@@ -13,7 +13,7 @@ type Changelog {
   """
   pub generate: Changeset @generate {
     let changieVersion = "1.21.0"
-    container
+    container(platform: "linux/amd64")
       .from("ghcr.io/miniscruff/changie:v" + changieVersion)
       .withWorkdir("/src")
       .withMountedDirectory(".", source)

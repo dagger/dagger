@@ -147,6 +147,9 @@ type Params struct {
 
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
+
+	// Profile enables engine wall-clock profiling (wcprof) for this session.
+	Profile bool
 }
 
 type Client struct {
@@ -1447,6 +1450,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
 		LockMode:                       c.LockMode,
+		Profile:                        c.Profile,
 	}
 
 	if c.Module != "" {

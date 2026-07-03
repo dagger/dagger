@@ -114,6 +114,48 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type CurrentModuleAsSDK
+  """
+  @spec as_current_module_as_sdk(t()) :: Dagger.CurrentModuleAsSDK.t()
+  def as_current_module_as_sdk(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCurrentModuleAsSDK")
+
+    %Dagger.CurrentModuleAsSDK{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type CurrentModuleAsSDKClient
+  """
+  @spec as_current_module_as_sdk_client(t()) :: Dagger.CurrentModuleAsSDKClient.t()
+  def as_current_module_as_sdk_client(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCurrentModuleAsSDKClient")
+
+    %Dagger.CurrentModuleAsSDKClient{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type CurrentModuleAsSDKModule
+  """
+  @spec as_current_module_as_sdk_module(t()) :: Dagger.CurrentModuleAsSDKModule.t()
+  def as_current_module_as_sdk_module(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCurrentModuleAsSDKModule")
+
+    %Dagger.CurrentModuleAsSDKModule{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type DiffStat
   """
   @spec as_diff_stat(t()) :: Dagger.DiffStat.t()
@@ -304,6 +346,20 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asModuleSource")
 
     %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Schema
+  """
+  @spec as_schema(t()) :: Dagger.Schema.t()
+  def as_schema(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSchema")
+
+    %Dagger.Schema{
       query_builder: query_builder,
       client: binding.client
     }

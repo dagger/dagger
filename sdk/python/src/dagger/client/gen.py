@@ -12,204 +12,8 @@ from dagger.client._guards import typecheck
 from dagger.client.base import Enum, Input, Root, Scalar, Type
 
 
-class AddressID(Scalar):
-    """A unique identifier for an object."""
-
-
-class BindingID(Scalar):
-    """A unique identifier for an object."""
-
-
-class CacheVolumeID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ChangesetID(Scalar):
-    """A unique identifier for an object."""
-
-
-class CheckGroupID(Scalar):
-    """A unique identifier for an object."""
-
-
-class CheckID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ClientFilesyncMirrorID(Scalar):
-    """A unique identifier for an object."""
-
-
-class CloudID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ContainerID(Scalar):
-    """A unique identifier for an object."""
-
-
-class CurrentModuleID(Scalar):
-    """A unique identifier for an object."""
-
-
-class DiffStatID(Scalar):
-    """A unique identifier for an object."""
-
-
-class DirectoryID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EngineCacheEntryID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EngineCacheEntrySetID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EngineCacheID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EngineID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EnumTypeDefID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EnumValueTypeDefID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EnvFileID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EnvID(Scalar):
-    """A unique identifier for an object."""
-
-
-class EnvVariableID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ErrorID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ErrorValueID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ExportableID(Scalar):
-    """A unique identifier for an object."""
-
-
-class FieldTypeDefID(Scalar):
-    """A unique identifier for an object."""
-
-
-class FileID(Scalar):
-    """A unique identifier for an object."""
-
-
-class FunctionArgID(Scalar):
-    """A unique identifier for an object."""
-
-
-class FunctionCallArgValueID(Scalar):
-    """A unique identifier for an object."""
-
-
-class FunctionCallID(Scalar):
-    """A unique identifier for an object."""
-
-
-class FunctionID(Scalar):
-    """A unique identifier for an object."""
-
-
-class GeneratedCodeID(Scalar):
-    """A unique identifier for an object."""
-
-
-class GeneratorGroupID(Scalar):
-    """A unique identifier for an object."""
-
-
-class GeneratorID(Scalar):
-    """A unique identifier for an object."""
-
-
-class GitRefID(Scalar):
-    """A unique identifier for an object."""
-
-
-class GitRepositoryID(Scalar):
-    """A unique identifier for an object."""
-
-
-class HTTPStateID(Scalar):
-    """A unique identifier for an object."""
-
-
-class HealthcheckConfigID(Scalar):
-    """A unique identifier for an object."""
-
-
-class HostID(Scalar):
-    """A unique identifier for an object."""
-
-
-class InputTypeDefID(Scalar):
-    """A unique identifier for an object."""
-
-
-class InterfaceTypeDefID(Scalar):
-    """A unique identifier for an object."""
-
-
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
-
-
-class JSONValueID(Scalar):
-    """A unique identifier for an object."""
-
-
-class LLMID(Scalar):
-    """A unique identifier for an object."""
-
-
-class LLMTokenUsageID(Scalar):
-    """A unique identifier for an object."""
-
-
-class LabelID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ListTypeDefID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ModuleConfigClientID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ModuleID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ModuleSourceID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ObjectTypeDefID(Scalar):
-    """A unique identifier for an object."""
 
 
 class Platform(Scalar):
@@ -218,97 +22,9 @@ class Platform(Scalar):
     "windows/amd64", "linux/arm64")."""
 
 
-class PortID(Scalar):
-    """A unique identifier for an object."""
-
-
-class RemoteGitMirrorID(Scalar):
-    """A unique identifier for an object."""
-
-
-class SDKConfigID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ScalarTypeDefID(Scalar):
-    """A unique identifier for an object."""
-
-
-class SearchResultID(Scalar):
-    """A unique identifier for an object."""
-
-
-class SearchSubmatchID(Scalar):
-    """A unique identifier for an object."""
-
-
-class SecretID(Scalar):
-    """A unique identifier for an object."""
-
-
-class ServiceID(Scalar):
-    """A unique identifier for an object."""
-
-
-class SocketID(Scalar):
-    """A unique identifier for an object."""
-
-
-class SourceMapID(Scalar):
-    """A unique identifier for an object."""
-
-
-class StatID(Scalar):
-    """A unique identifier for an object."""
-
-
-class SyncerID(Scalar):
-    """A unique identifier for an object."""
-
-
-class TerminalID(Scalar):
-    """A unique identifier for an object."""
-
-
-class TypeDefID(Scalar):
-    """A unique identifier for an object."""
-
-
-class UpGroupID(Scalar):
-    """A unique identifier for an object."""
-
-
-class UpID(Scalar):
-    """A unique identifier for an object."""
-
-
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
     resolvers that do not return anything."""
-
-
-class WorkspaceGitID(Scalar):
-    """A unique identifier for an object."""
-
-
-class WorkspaceID(Scalar):
-    """A unique identifier for an object."""
-
-
-class WorkspaceMigrationID(Scalar):
-    """A unique identifier for an object."""
-
-
-class WorkspaceMigrationStepID(Scalar):
-    """A unique identifier for an object."""
-
-
-class WorkspaceModuleID(Scalar):
-    """A unique identifier for an object."""
-
-
-class WorkspaceModuleSettingID(Scalar):
-    """A unique identifier for an object."""
 
 
 class CacheSharingMode(Enum):
@@ -468,6 +184,14 @@ class NetworkProtocol(Enum):
     TCP = "TCP"
 
     UDP = "UDP"
+
+
+class RegistryProtocol(Enum):
+    """Transport protocol to use for registry operations."""
+
+    HTTP = "HTTP"
+
+    HTTPS = "HTTPS"
 
 
 class ReturnType(Enum):
@@ -946,6 +670,24 @@ class Binding(Type):
         _ctx = self._select("asContainer", _args)
         return Container(_ctx)
 
+    def as_current_module_as_sdk(self) -> "CurrentModuleAsSDK":
+        """Retrieve the binding value, as type CurrentModuleAsSDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCurrentModuleAsSDK", _args)
+        return CurrentModuleAsSDK(_ctx)
+
+    def as_current_module_as_sdk_client(self) -> "CurrentModuleAsSDKClient":
+        """Retrieve the binding value, as type CurrentModuleAsSDKClient"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCurrentModuleAsSDKClient", _args)
+        return CurrentModuleAsSDKClient(_ctx)
+
+    def as_current_module_as_sdk_module(self) -> "CurrentModuleAsSDKModule":
+        """Retrieve the binding value, as type CurrentModuleAsSDKModule"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCurrentModuleAsSDKModule", _args)
+        return CurrentModuleAsSDKModule(_ctx)
+
     def as_diff_stat(self) -> "DiffStat":
         """Retrieve the binding value, as type DiffStat"""
         _args: list[Arg] = []
@@ -1029,6 +771,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
+
+    def as_schema(self) -> "Schema":
+        """Retrieve the binding value, as type Schema"""
+        _args: list[Arg] = []
+        _ctx = self._select("asSchema", _args)
+        return Schema(_ctx)
 
     def as_search_result(self) -> "SearchResult":
         """Retrieve the binding value, as type SearchResult"""
@@ -2382,6 +2130,8 @@ class Container(Type):
         address: str,
         *,
         registry_service: "Service | None" = None,
+        protocol: RegistryProtocol | None = None,
+        insecure_skip_tls_verify: bool | None = False,
     ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
@@ -2394,10 +2144,18 @@ class Container(Type):
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this pull.
+        protocol:
+            Protocol to use for registry communication.
+            Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+        insecure_skip_tls_verify:
+            Allow HTTPS registry communication without verifying the server
+            certificate.
         """
         _args = [
             Arg("address", address),
             Arg("registryService", registry_service, None),
+            Arg("protocol", protocol, None),
+            Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -2560,6 +2318,8 @@ class Container(Type):
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         registry_service: "Service | None" = None,
+        protocol: RegistryProtocol | None = None,
+        insecure_skip_tls_verify: bool | None = False,
     ) -> str:
         """Package the container state as an OCI image, and publish it to a
         registry
@@ -2592,6 +2352,12 @@ class Container(Type):
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this push.
+        protocol:
+            Protocol to use for registry communication.
+            Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
+        insecure_skip_tls_verify:
+            Allow HTTPS registry communication without verifying the server
+            certificate.
 
         Returns
         -------
@@ -2617,6 +2383,8 @@ class Container(Type):
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("registryService", registry_service, None),
+            Arg("protocol", protocol, None),
+            Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -2923,6 +2691,7 @@ class Container(Type):
         include: list[str] | None = None,
         gitignore: bool | None = False,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
         permissions: int | None = None,
     ) -> Self:
@@ -2948,6 +2717,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -2961,6 +2732,7 @@ class Container(Type):
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
             Arg("permissions", permissions, None),
         ]
@@ -3221,6 +2993,7 @@ class Container(Type):
         *,
         permissions: int | None = None,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Return a container snapshot with a file added
@@ -3238,6 +3011,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3248,6 +3023,7 @@ class Container(Type):
             Arg("source", source),
             Arg("permissions", permissions, None),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withFile", _args)
@@ -3260,6 +3036,7 @@ class Container(Type):
         *,
         permissions: int | None = None,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus the contents of the given files copied
@@ -3278,6 +3055,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3288,6 +3067,7 @@ class Container(Type):
             Arg("sources", sources),
             Arg("permissions", permissions, None),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withFiles", _args)
@@ -3319,6 +3099,7 @@ class Container(Type):
         source: "Directory | None" = None,
         sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a cache volume mounted at the given
@@ -3342,6 +3123,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3353,6 +3136,7 @@ class Container(Type):
             Arg("source", source, None),
             Arg("sharing", sharing, CacheSharingMode.SHARED),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedCache", _args)
@@ -3364,6 +3148,7 @@ class Container(Type):
         source: "Directory",
         *,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         read_only: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
@@ -3380,6 +3165,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         read_only:
             Mount the directory read-only.
         expand:
@@ -3391,6 +3178,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("readOnly", read_only, False),
             Arg("expand", expand, False),
         ]
@@ -3403,6 +3191,7 @@ class Container(Type):
         source: "File",
         *,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a file mounted at the given path.
@@ -3418,6 +3207,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3427,6 +3218,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedFile", _args)
@@ -3438,6 +3230,7 @@ class Container(Type):
         source: "Secret",
         *,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         mode: int | None = 256,
         expand: bool | None = False,
     ) -> Self:
@@ -3455,6 +3248,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         mode:
             Permission given to the mounted secret (e.g., 0600).
             This option requires an owner to be set to be active.
@@ -3467,6 +3262,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("mode", mode, 256),
             Arg("expand", expand, False),
         ]
@@ -3510,6 +3306,7 @@ class Container(Type):
         *,
         permissions: int | None = 420,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Return a new container snapshot, with a file added to its filesystem
@@ -3529,6 +3326,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3539,6 +3338,7 @@ class Container(Type):
             Arg("contents", contents),
             Arg("permissions", permissions, 420),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withNewFile", _args)
@@ -3667,6 +3467,7 @@ class Container(Type):
         source: "Socket",
         *,
         owner: str | None = "",
+        inherit_owner: bool | None = False,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a socket forwarded to the given Unix
@@ -3683,6 +3484,8 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        inherit_owner:
+            Set the owner to the container's current user.
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3692,6 +3495,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("inheritOwner", inherit_owner, False),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withUnixSocket", _args)
@@ -4074,6 +3878,17 @@ class Container(Type):
 class CurrentModule(Type):
     """Reflective module API provided to functions at runtime."""
 
+    def as_sdk(self) -> "CurrentModuleAsSDK":
+        """Treat the currently executing module as an SDK installed in the active
+        workspace, exposing the modules and clients it manages.
+
+        Errors if the current module is not installed as an SDK in this
+        workspace.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asSDK", _args)
+        return CurrentModuleAsSDK(_ctx)
+
     async def dependencies(self) -> list["Module"]:
         """The dependencies of the module."""
         _args: list[Arg] = []
@@ -4218,6 +4033,224 @@ class CurrentModule(Type):
         ]
         _ctx = self._select("workdirFile", _args)
         return File(_ctx)
+
+
+@typecheck
+class CurrentModuleAsSDK(Type):
+    """The SDK-role data for the currently executing module, as installed
+    in the active workspace."""
+
+    async def clients(self) -> list["CurrentModuleAsSDKClient"]:
+        """The generated clients this SDK produces in the workspace."""
+        _args: list[Arg] = []
+        _ctx = self._select("clients", _args)
+        return await _ctx.execute_object_list(CurrentModuleAsSDKClient)
+
+    async def id(self) -> str:
+        """A unique identifier for this CurrentModuleAsSDK.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def modules(self) -> list["CurrentModuleAsSDKModule"]:
+        """The workspace-local modules this SDK authors and manages."""
+        _args: list[Arg] = []
+        _ctx = self._select("modules", _args)
+        return await _ctx.execute_object_list(CurrentModuleAsSDKModule)
+
+    async def name(self) -> str:
+        """The user-facing name of this SDK in the workspace.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class CurrentModuleAsSDKClient(Type):
+    """A generated client the current SDK produces in the workspace."""
+
+    async def id(self) -> str:
+        """A unique identifier for this CurrentModuleAsSDKClient.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def module(self) -> str:
+        """The module the client is bound to (workspace-relative path or
+        canonical ref).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("module", _args)
+        return await _ctx.execute(str)
+
+    async def path(self) -> str:
+        """Workspace-root-relative path of the generated client.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
+
+    async def pin(self) -> str:
+        """The pinned version of the bound module, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("pin", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class CurrentModuleAsSDKModule(Type):
+    """A workspace-local module managed by the current SDK."""
+
+    async def id(self) -> str:
+        """A unique identifier for this CurrentModuleAsSDKModule.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def path(self) -> str:
+        """Workspace-root-relative path to the managed module.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -4408,10 +4441,6 @@ class Directory(Type):
 
     def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
         """Creates a synthetic workspace from this directory.
-
-        .. caution::
-            Experimental: Synthetic workspaces currently support filesystem
-            APIs only.
 
         Parameters
         ----------
@@ -6496,6 +6525,142 @@ class Env(Type):
         _ctx = self._select("withCurrentModule", _args)
         return Env(_ctx)
 
+    def with_current_module_as_sdk_client_input(
+        self,
+        name: str,
+        value: CurrentModuleAsSDKClient,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type CurrentModuleAsSDKClient in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The CurrentModuleAsSDKClient value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKClientInput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_client_output(
+        self, name: str, description: str
+    ) -> Self:
+        """Declare a desired CurrentModuleAsSDKClient output to be assigned in
+        the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKClientOutput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_input(
+        self,
+        name: str,
+        value: CurrentModuleAsSDK,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type CurrentModuleAsSDK in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The CurrentModuleAsSDK value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKInput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_module_input(
+        self,
+        name: str,
+        value: CurrentModuleAsSDKModule,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type CurrentModuleAsSDKModule in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The CurrentModuleAsSDKModule value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKModuleInput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_module_output(
+        self, name: str, description: str
+    ) -> Self:
+        """Declare a desired CurrentModuleAsSDKModule output to be assigned in
+        the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKModuleOutput", _args)
+        return Env(_ctx)
+
+    def with_current_module_as_sdk_output(self, name: str, description: str) -> Self:
+        """Declare a desired CurrentModuleAsSDK output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCurrentModuleAsSDKOutput", _args)
+        return Env(_ctx)
+
     def with_diff_stat_input(
         self,
         name: str,
@@ -7121,6 +7286,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withModuleSourceOutput", _args)
+        return Env(_ctx)
+
+    def with_schema_input(
+        self,
+        name: str,
+        value: "Schema",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Schema in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Schema value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSchemaInput", _args)
+        return Env(_ctx)
+
+    def with_schema_output(self, name: str, description: str) -> Self:
+        """Declare a desired Schema output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSchemaOutput", _args)
         return Env(_ctx)
 
     def with_search_result_input(
@@ -9762,6 +9969,21 @@ class GeneratorGroup(Type):
 class GitRef(Type):
     """A git ref (tag, branch, or commit)."""
 
+    def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
+        """Creates a synthetic workspace from this git ref.
+
+        Parameters
+        ----------
+        cwd:
+            Current working directory inside the workspace root. Defaults to
+            the workspace root.
+        """
+        _args = [
+            Arg("cwd", cwd, "/"),
+        ]
+        _ctx = self._select("asWorkspace", _args)
+        return Workspace(_ctx)
+
     async def commit(self) -> str:
         """The resolved commit id at this ref.
 
@@ -9886,10 +10108,6 @@ class GitRepository(Type):
 
     def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
         """Creates a synthetic workspace from this git repository.
-
-        .. caution::
-            Experimental: Synthetic workspaces currently support filesystem
-            APIs only.
 
         Parameters
         ----------
@@ -12514,6 +12732,20 @@ class ModuleSource(Type):
         _ctx = self._select("toolchains", _args)
         return await _ctx.execute_object_list(ModuleSource)
 
+    def updated_config_directory(self) -> Directory:
+        """The module's dagger.json with any in-memory edits from with* APIs
+        applied, as a diff relative to the source's context directory.
+
+        Unlike generatedContextDirectory, this does not run codegen and does
+        not validate the engine version against the running engine, so it can
+        be used to declare an engine requirement newer than the running
+        engine. Loading or serving such a module still fails at
+        moduleSource.asModule.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("updatedConfigDirectory", _args)
+        return Directory(_ctx)
+
     def user_defaults(self) -> EnvFile:
         """User-defined defaults read from local .env files"""
         _args: list[Arg] = []
@@ -13578,598 +13810,6 @@ class Query(Root):
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
 
-    def load_address_from_id(self, id: AddressID) -> Address:
-        """Load a Address from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadAddressFromID", _args)
-        return Address(_ctx)
-
-    def load_binding_from_id(self, id: BindingID) -> Binding:
-        """Load a Binding from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadBindingFromID", _args)
-        return Binding(_ctx)
-
-    def load_cache_volume_from_id(self, id: CacheVolumeID) -> CacheVolume:
-        """Load a CacheVolume from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCacheVolumeFromID", _args)
-        return CacheVolume(_ctx)
-
-    def load_changeset_from_id(self, id: ChangesetID) -> Changeset:
-        """Load a Changeset from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadChangesetFromID", _args)
-        return Changeset(_ctx)
-
-    def load_check_from_id(self, id: CheckID) -> Check:
-        """Load a Check from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCheckFromID", _args)
-        return Check(_ctx)
-
-    def load_check_group_from_id(self, id: CheckGroupID) -> CheckGroup:
-        """Load a CheckGroup from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCheckGroupFromID", _args)
-        return CheckGroup(_ctx)
-
-    def load_client_filesync_mirror_from_id(
-        self, id: ClientFilesyncMirrorID
-    ) -> ClientFilesyncMirror:
-        """Load a ClientFilesyncMirror from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadClientFilesyncMirrorFromID", _args)
-        return ClientFilesyncMirror(_ctx)
-
-    def load_cloud_from_id(self, id: CloudID) -> Cloud:
-        """Load a Cloud from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCloudFromID", _args)
-        return Cloud(_ctx)
-
-    def load_container_from_id(self, id: ContainerID) -> Container:
-        """Load a Container from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadContainerFromID", _args)
-        return Container(_ctx)
-
-    def load_current_module_from_id(self, id: CurrentModuleID) -> CurrentModule:
-        """Load a CurrentModule from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCurrentModuleFromID", _args)
-        return CurrentModule(_ctx)
-
-    def load_diff_stat_from_id(self, id: DiffStatID) -> DiffStat:
-        """Load a DiffStat from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadDiffStatFromID", _args)
-        return DiffStat(_ctx)
-
-    def load_directory_from_id(self, id: DirectoryID) -> Directory:
-        """Load a Directory from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadDirectoryFromID", _args)
-        return Directory(_ctx)
-
-    def load_engine_cache_entry_from_id(
-        self, id: EngineCacheEntryID
-    ) -> EngineCacheEntry:
-        """Load a EngineCacheEntry from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheEntryFromID", _args)
-        return EngineCacheEntry(_ctx)
-
-    def load_engine_cache_entry_set_from_id(
-        self, id: EngineCacheEntrySetID
-    ) -> EngineCacheEntrySet:
-        """Load a EngineCacheEntrySet from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheEntrySetFromID", _args)
-        return EngineCacheEntrySet(_ctx)
-
-    def load_engine_cache_from_id(self, id: EngineCacheID) -> EngineCache:
-        """Load a EngineCache from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheFromID", _args)
-        return EngineCache(_ctx)
-
-    def load_engine_from_id(self, id: EngineID) -> Engine:
-        """Load a Engine from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineFromID", _args)
-        return Engine(_ctx)
-
-    def load_enum_type_def_from_id(self, id: EnumTypeDefID) -> EnumTypeDef:
-        """Load a EnumTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumTypeDefFromID", _args)
-        return EnumTypeDef(_ctx)
-
-    def load_enum_value_type_def_from_id(
-        self, id: EnumValueTypeDefID
-    ) -> EnumValueTypeDef:
-        """Load a EnumValueTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumValueTypeDefFromID", _args)
-        return EnumValueTypeDef(_ctx)
-
-    def load_env_file_from_id(self, id: EnvFileID) -> EnvFile:
-        """Load a EnvFile from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvFileFromID", _args)
-        return EnvFile(_ctx)
-
-    def load_env_from_id(self, id: EnvID) -> Env:
-        """Load a Env from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvFromID", _args)
-        return Env(_ctx)
-
-    def load_env_variable_from_id(self, id: EnvVariableID) -> EnvVariable:
-        """Load a EnvVariable from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvVariableFromID", _args)
-        return EnvVariable(_ctx)
-
-    def load_error_from_id(self, id: ErrorID) -> Error:
-        """Load a Error from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadErrorFromID", _args)
-        return Error(_ctx)
-
-    def load_error_value_from_id(self, id: ErrorValueID) -> ErrorValue:
-        """Load a ErrorValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadErrorValueFromID", _args)
-        return ErrorValue(_ctx)
-
-    def load_exportable_from_id(self, id: ExportableID) -> Exportable:
-        """Load a Exportable from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadExportableFromID", _args)
-        return _ExportableClient(_ctx)
-
-    def load_field_type_def_from_id(self, id: FieldTypeDefID) -> FieldTypeDef:
-        """Load a FieldTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFieldTypeDefFromID", _args)
-        return FieldTypeDef(_ctx)
-
-    def load_file_from_id(self, id: FileID) -> File:
-        """Load a File from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFileFromID", _args)
-        return File(_ctx)
-
-    def load_function_arg_from_id(self, id: FunctionArgID) -> FunctionArg:
-        """Load a FunctionArg from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionArgFromID", _args)
-        return FunctionArg(_ctx)
-
-    def load_function_call_arg_value_from_id(
-        self, id: FunctionCallArgValueID
-    ) -> FunctionCallArgValue:
-        """Load a FunctionCallArgValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionCallArgValueFromID", _args)
-        return FunctionCallArgValue(_ctx)
-
-    def load_function_call_from_id(self, id: FunctionCallID) -> FunctionCall:
-        """Load a FunctionCall from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionCallFromID", _args)
-        return FunctionCall(_ctx)
-
-    def load_function_from_id(self, id: FunctionID) -> Function:
-        """Load a Function from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionFromID", _args)
-        return Function(_ctx)
-
-    def load_generated_code_from_id(self, id: GeneratedCodeID) -> GeneratedCode:
-        """Load a GeneratedCode from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratedCodeFromID", _args)
-        return GeneratedCode(_ctx)
-
-    def load_generator_from_id(self, id: GeneratorID) -> Generator:
-        """Load a Generator from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratorFromID", _args)
-        return Generator(_ctx)
-
-    def load_generator_group_from_id(self, id: GeneratorGroupID) -> GeneratorGroup:
-        """Load a GeneratorGroup from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratorGroupFromID", _args)
-        return GeneratorGroup(_ctx)
-
-    def load_git_ref_from_id(self, id: GitRefID) -> GitRef:
-        """Load a GitRef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitRefFromID", _args)
-        return GitRef(_ctx)
-
-    def load_git_repository_from_id(self, id: GitRepositoryID) -> GitRepository:
-        """Load a GitRepository from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitRepositoryFromID", _args)
-        return GitRepository(_ctx)
-
-    def load_http_state_from_id(self, id: HTTPStateID) -> HTTPState:
-        """Load a HTTPState from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHTTPStateFromID", _args)
-        return HTTPState(_ctx)
-
-    def load_healthcheck_config_from_id(
-        self, id: HealthcheckConfigID
-    ) -> HealthcheckConfig:
-        """Load a HealthcheckConfig from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHealthcheckConfigFromID", _args)
-        return HealthcheckConfig(_ctx)
-
-    def load_host_from_id(self, id: HostID) -> Host:
-        """Load a Host from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHostFromID", _args)
-        return Host(_ctx)
-
-    def load_input_type_def_from_id(self, id: InputTypeDefID) -> InputTypeDef:
-        """Load a InputTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadInputTypeDefFromID", _args)
-        return InputTypeDef(_ctx)
-
-    def load_interface_type_def_from_id(
-        self, id: InterfaceTypeDefID
-    ) -> InterfaceTypeDef:
-        """Load a InterfaceTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadInterfaceTypeDefFromID", _args)
-        return InterfaceTypeDef(_ctx)
-
-    def load_json_value_from_id(self, id: JSONValueID) -> JSONValue:
-        """Load a JSONValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadJSONValueFromID", _args)
-        return JSONValue(_ctx)
-
-    def load_llm_from_id(self, id: LLMID) -> LLM:
-        """Load a LLM from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMFromID", _args)
-        return LLM(_ctx)
-
-    def load_llm_token_usage_from_id(self, id: LLMTokenUsageID) -> LLMTokenUsage:
-        """Load a LLMTokenUsage from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMTokenUsageFromID", _args)
-        return LLMTokenUsage(_ctx)
-
-    def load_label_from_id(self, id: LabelID) -> Label:
-        """Load a Label from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLabelFromID", _args)
-        return Label(_ctx)
-
-    def load_list_type_def_from_id(self, id: ListTypeDefID) -> ListTypeDef:
-        """Load a ListTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadListTypeDefFromID", _args)
-        return ListTypeDef(_ctx)
-
-    def load_module_config_client_from_id(
-        self, id: ModuleConfigClientID
-    ) -> ModuleConfigClient:
-        """Load a ModuleConfigClient from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleConfigClientFromID", _args)
-        return ModuleConfigClient(_ctx)
-
-    def load_module_from_id(self, id: ModuleID) -> Module:
-        """Load a Module from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleFromID", _args)
-        return Module(_ctx)
-
-    def load_module_source_from_id(self, id: ModuleSourceID) -> ModuleSource:
-        """Load a ModuleSource from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleSourceFromID", _args)
-        return ModuleSource(_ctx)
-
-    def load_object_type_def_from_id(self, id: ObjectTypeDefID) -> ObjectTypeDef:
-        """Load a ObjectTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadObjectTypeDefFromID", _args)
-        return ObjectTypeDef(_ctx)
-
-    def load_port_from_id(self, id: PortID) -> Port:
-        """Load a Port from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadPortFromID", _args)
-        return Port(_ctx)
-
-    def load_remote_git_mirror_from_id(
-        self, id: RemoteGitMirrorID
-    ) -> "RemoteGitMirror":
-        """Load a RemoteGitMirror from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadRemoteGitMirrorFromID", _args)
-        return RemoteGitMirror(_ctx)
-
-    def load_sdk_config_from_id(self, id: SDKConfigID) -> "SDKConfig":
-        """Load a SDKConfig from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSDKConfigFromID", _args)
-        return SDKConfig(_ctx)
-
-    def load_scalar_type_def_from_id(self, id: ScalarTypeDefID) -> "ScalarTypeDef":
-        """Load a ScalarTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadScalarTypeDefFromID", _args)
-        return ScalarTypeDef(_ctx)
-
-    def load_search_result_from_id(self, id: SearchResultID) -> "SearchResult":
-        """Load a SearchResult from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSearchResultFromID", _args)
-        return SearchResult(_ctx)
-
-    def load_search_submatch_from_id(self, id: SearchSubmatchID) -> "SearchSubmatch":
-        """Load a SearchSubmatch from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSearchSubmatchFromID", _args)
-        return SearchSubmatch(_ctx)
-
-    def load_secret_from_id(self, id: SecretID) -> "Secret":
-        """Load a Secret from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSecretFromID", _args)
-        return Secret(_ctx)
-
-    def load_service_from_id(self, id: ServiceID) -> "Service":
-        """Load a Service from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadServiceFromID", _args)
-        return Service(_ctx)
-
-    def load_socket_from_id(self, id: SocketID) -> "Socket":
-        """Load a Socket from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSocketFromID", _args)
-        return Socket(_ctx)
-
-    def load_source_map_from_id(self, id: SourceMapID) -> "SourceMap":
-        """Load a SourceMap from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSourceMapFromID", _args)
-        return SourceMap(_ctx)
-
-    def load_stat_from_id(self, id: StatID) -> "Stat":
-        """Load a Stat from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadStatFromID", _args)
-        return Stat(_ctx)
-
-    def load_syncer_from_id(self, id: SyncerID) -> Syncer:
-        """Load a Syncer from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSyncerFromID", _args)
-        return _SyncerClient(_ctx)
-
-    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
-        """Load a Terminal from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTerminalFromID", _args)
-        return Terminal(_ctx)
-
-    def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
-        """Load a TypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTypeDefFromID", _args)
-        return TypeDef(_ctx)
-
-    def load_up_from_id(self, id: UpID) -> "Up":
-        """Load a Up from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadUpFromID", _args)
-        return Up(_ctx)
-
-    def load_up_group_from_id(self, id: UpGroupID) -> "UpGroup":
-        """Load a UpGroup from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadUpGroupFromID", _args)
-        return UpGroup(_ctx)
-
-    def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
-        """Load a Workspace from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadWorkspaceFromID", _args)
-        return Workspace(_ctx)
-
-    def load_workspace_git_from_id(self, id: WorkspaceGitID) -> "WorkspaceGit":
-        """Load a WorkspaceGit from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadWorkspaceGitFromID", _args)
-        return WorkspaceGit(_ctx)
-
-    def load_workspace_migration_from_id(
-        self, id: WorkspaceMigrationID
-    ) -> "WorkspaceMigration":
-        """Load a WorkspaceMigration from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadWorkspaceMigrationFromID", _args)
-        return WorkspaceMigration(_ctx)
-
-    def load_workspace_migration_step_from_id(
-        self, id: WorkspaceMigrationStepID
-    ) -> "WorkspaceMigrationStep":
-        """Load a WorkspaceMigrationStep from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadWorkspaceMigrationStepFromID", _args)
-        return WorkspaceMigrationStep(_ctx)
-
-    def load_workspace_module_from_id(self, id: WorkspaceModuleID) -> "WorkspaceModule":
-        """Load a WorkspaceModule from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadWorkspaceModuleFromID", _args)
-        return WorkspaceModule(_ctx)
-
-    def load_workspace_module_setting_from_id(
-        self, id: WorkspaceModuleSettingID
-    ) -> "WorkspaceModuleSetting":
-        """Load a WorkspaceModuleSetting from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadWorkspaceModuleSettingFromID", _args)
-        return WorkspaceModuleSetting(_ctx)
-
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []
@@ -14222,6 +13862,20 @@ class Query(Root):
         ]
         _ctx = self._select("node", _args)
         return _NodeClient(_ctx)
+
+    def schema(self, json: JSON) -> "Schema":
+        """Load a GraphQL introspection schema for merging.
+
+        Parameters
+        ----------
+        json:
+            The introspection schema JSON to load.
+        """
+        _args = [
+            Arg("json", json),
+        ]
+        _ctx = self._select("schema", _args)
+        return Schema(_ctx)
 
     def secret(
         self,
@@ -14529,6 +14183,91 @@ class ScalarTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
+
+
+@typecheck
+class Schema(Type):
+    """A GraphQL introspection schema that can be inspected and merged."""
+
+    async def contents(self) -> JSON:
+        """Serialize the schema back to introspection JSON.
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contents", _args)
+        return await _ctx.execute(JSON)
+
+    async def id(self) -> str:
+        """A unique identifier for this Schema.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def merge(
+        self,
+        module_types: JSON,
+        module_name: str,
+    ) -> Self:
+        """Merge a module's introspection-shaped type definitions into the
+        schema, returning the combined schema.
+
+        Parameters
+        ----------
+        module_types:
+            Introspection JSON describing the types the module defines.
+            Object, interface and enum types are appended to the schema, and a
+            constructor field for the module is added to the Query type.
+        module_name:
+            The name of the module whose types are being merged. Used to stamp
+            the @sourceMap directive and to derive the module's constructor
+            field.
+        """
+        _args = [
+            Arg("moduleTypes", module_types),
+            Arg("moduleName", module_name),
+        ]
+        _ctx = self._select("merge", _args)
+        return Schema(_ctx)
+
+    def with_(self, cb: Callable[["Schema"], "Schema"]) -> "Schema":
+        """Call the provided callable with current Schema.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -15977,10 +15716,25 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
+    def changes(self, other: Self) -> Changeset:
+        """Return the changes from another workspace to this workspace.
+
+        Parameters
+        ----------
+        other:
+            Workspace to compare from.
+        """
+        _args = [
+            Arg("other", other),
+        ]
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
     def checks(
         self,
         *,
         include: list[str] | None = None,
+        skip: list[str] | None = None,
         no_generate: bool | None = None,
         only_generate: bool | None = None,
     ) -> CheckGroup:
@@ -15990,6 +15744,8 @@ class Workspace(Type):
         ----------
         include:
             Only include checks matching the specified patterns
+        skip:
+            Skip checks matching the specified patterns
         no_generate:
             When true, only return annotated check functions; exclude
             generate-as-checks
@@ -15999,32 +15755,57 @@ class Workspace(Type):
         """
         _args = [
             Arg("include", include, None),
+            Arg("skip", skip, None),
             Arg("noGenerate", no_generate, None),
             Arg("onlyGenerate", only_generate, None),
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
-    async def client_id(self) -> str:
-        """The client ID that owns this workspace's host filesystem.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+    def client_generate(self) -> Changeset:
+        """Regenerate all generated API clients registered in workspace config
+        and return the resulting Changeset.
         """
         _args: list[Arg] = []
-        _ctx = self._select("clientId", _args)
-        return await _ctx.execute(str)
+        _ctx = self._select("clientGenerate", _args)
+        return Changeset(_ctx)
+
+    def client_init(
+        self,
+        path: str,
+        sdk: str,
+        module: str,
+        *,
+        here: bool | None = False,
+        args: JSON | None = None,
+    ) -> Changeset:
+        """Plan the workspace changes for initializing a generated API client:
+        generated client files at `path` plus a [[modules.<sdk-name>.as-
+        sdk.clients]] entry in dagger.toml. Returns the resulting Changeset
+        for the caller to preview and apply.
+
+        Parameters
+        ----------
+        path:
+            Workspace-relative output directory for the generated client.
+        sdk:
+            Workspace SDK name or module entry name to use.
+        module:
+            Workspace-relative path or canonical ref for the module the client
+            binds to.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        args:
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sdk", sdk),
+            Arg("module", module),
+            Arg("here", here, False),
+            Arg("args", args, None),
+        ]
+        _ctx = self._select("clientInit", _args)
+        return Changeset(_ctx)
 
     async def config_file(self) -> str:
         """Selected native workspace config file relative to the workspace root,
@@ -16431,6 +16212,8 @@ class Workspace(Type):
         *,
         name: str | None = "",
         here: bool | None = False,
+        as_sdk: bool | None = False,
+        as_sdk_name: str | None = "",
     ) -> str:
         """Install a module into the workspace, writing dagger.toml to the host.
 
@@ -16442,6 +16225,13 @@ class Workspace(Type):
             Override name for the installed module entry.
         here:
             Write to the workspace config directory at the workspace cwd.
+        as_sdk:
+            Mark the install as an SDK (writes the `[modules.<name>.as-sdk]`
+            marker that dispatches `dagger module init <sdk>` and `dagger api
+            client init <sdk>`).
+        as_sdk_name:
+            User-facing SDK name to persist under `[modules.<name>.as-sdk]
+            name = ...`.
 
         Returns
         -------
@@ -16461,74 +16251,68 @@ class Workspace(Type):
             Arg("ref", ref),
             Arg("name", name, ""),
             Arg("here", here, False),
+            Arg("asSdk", as_sdk, False),
+            Arg("asSdkName", as_sdk_name, ""),
         ]
         _ctx = self._select("install", _args)
         return await _ctx.execute(str)
 
-    def migrate(self, *, force: bool | None = False) -> "WorkspaceMigration":
+    def migrate(self) -> "WorkspaceMigration":
         """Plan the explicit migration needed for the current workspace.
 
         The returned plan has an empty changeset and no steps when no
         migration is needed.
         """
-        _args = [
-            Arg("force", force, False),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("migrate", _args)
         return WorkspaceMigration(_ctx)
 
-    async def module_init(
+    def module_init(
         self,
         name: str,
         *,
         sdk: str | None = "",
+        path: str | None = "",
         source: str | None = "",
         include: list[str] | None = None,
-        self_calls: bool | None = False,
         here: bool | None = False,
-    ) -> str:
-        """Create a new module owned by the workspace and auto-install it in
-        dagger.toml.
+        args: JSON | None = None,
+    ) -> Changeset:
+        """Plan the workspace changes for initializing a new module: dagger-
+        module.toml + SDK codegen output at `path`, the authoring entry under
+        [[modules.<sdk>.as-sdk.modules]], and (when path defaults)
+        [modules.<name>]. The SDK must already be installed as an SDK. Returns
+        the resulting Changeset for the caller to preview and apply.
 
         Parameters
         ----------
         name:
             Name of the new module.
         sdk:
-            SDK to use for the new module.
+            Workspace SDK name or module entry name to use.
+        path:
+            Workspace-relative path for the new module. Defaults to
+            ".dagger/modules/<name>"; using the default also installs the
+            module in [modules.<name>].
         source:
             Source subpath within the new module.
         include:
             Additional include patterns for the module.
-        self_calls:
-            Enable the self-calls experimental feature for the new module.
         here:
             Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        args:
         """
         _args = [
             Arg("name", name),
             Arg("sdk", sdk, ""),
+            Arg("path", path, ""),
             Arg("source", source, ""),
             Arg("include", [] if include is None else include, []),
-            Arg("selfCalls", self_calls, False),
             Arg("here", here, False),
+            Arg("args", args, None),
         ]
         _ctx = self._select("moduleInit", _args)
-        return await _ctx.execute(str)
+        return Changeset(_ctx)
 
     async def module_list(self, *, module: str | None = "") -> list["WorkspaceModule"]:
         """List modules defined in the workspace configuration.
@@ -16611,6 +16395,75 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("update", _args)
         return Changeset(_ctx)
+
+    def with_changes(self, changes: Changeset) -> Self:
+        """Return this workspace with a changeset applied, without mutating the
+        source.
+
+        Parameters
+        ----------
+        changes:
+            Changes to apply.
+        """
+        _args = [
+            Arg("changes", changes),
+        ]
+        _ctx = self._select("withChanges", _args)
+        return Workspace(_ctx)
+
+    def with_new_directory(self, path: str, source: Directory) -> Self:
+        """Return this workspace with a directory added, without mutating the
+        source.
+
+        Parameters
+        ----------
+        path:
+            Path of the added directory. Relative paths resolve from the
+            workspace cwd.
+        source:
+            Directory to add.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withNewDirectory", _args)
+        return Workspace(_ctx)
+
+    def with_new_file(
+        self,
+        path: str,
+        contents: str,
+        *,
+        permissions: int | None = 420,
+    ) -> Self:
+        """Return this workspace with a new or replaced file, without mutating
+        the source.
+
+        Parameters
+        ----------
+        path:
+            Path of the new file. Relative paths resolve from the workspace
+            cwd.
+        contents:
+            Contents of the new file.
+        permissions:
+            Permissions of the new file.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("contents", contents),
+            Arg("permissions", permissions, 420),
+        ]
+        _ctx = self._select("withNewFile", _args)
+        return Workspace(_ctx)
+
+    def with_(self, cb: Callable[["Workspace"], "Workspace"]) -> "Workspace":
+        """Call the provided callable with current Workspace.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -17018,168 +16871,102 @@ dag = Client()
 __all__ = [
     "JSON",
     "LLM",
-    "LLMID",
     "Address",
-    "AddressID",
     "Binding",
-    "BindingID",
     "BuildArg",
     "CacheSharingMode",
     "CacheVolume",
-    "CacheVolumeID",
     "Changeset",
-    "ChangesetID",
     "ChangesetMergeConflict",
     "ChangesetsMergeConflict",
     "Check",
     "CheckGroup",
-    "CheckGroupID",
-    "CheckID",
     "Client",
     "ClientFilesyncMirror",
-    "ClientFilesyncMirrorID",
     "Cloud",
-    "CloudID",
     "Container",
-    "ContainerID",
     "CurrentModule",
-    "CurrentModuleID",
+    "CurrentModuleAsSDK",
+    "CurrentModuleAsSDKClient",
+    "CurrentModuleAsSDKModule",
     "DiffStat",
-    "DiffStatID",
     "DiffStatKind",
     "Directory",
-    "DirectoryID",
     "Engine",
     "EngineCache",
     "EngineCacheEntry",
-    "EngineCacheEntryID",
     "EngineCacheEntrySet",
-    "EngineCacheEntrySetID",
-    "EngineCacheID",
-    "EngineID",
     "EnumTypeDef",
-    "EnumTypeDefID",
     "EnumValueTypeDef",
-    "EnumValueTypeDefID",
     "Env",
     "EnvFile",
-    "EnvFileID",
-    "EnvID",
     "EnvVariable",
-    "EnvVariableID",
     "Error",
-    "ErrorID",
     "ErrorValue",
-    "ErrorValueID",
     "ExistsType",
     "Exportable",
-    "ExportableID",
     "FieldTypeDef",
-    "FieldTypeDefID",
     "File",
-    "FileID",
     "FileType",
     "Function",
     "FunctionArg",
-    "FunctionArgID",
     "FunctionCachePolicy",
     "FunctionCall",
     "FunctionCallArgValue",
-    "FunctionCallArgValueID",
-    "FunctionCallID",
-    "FunctionID",
     "GeneratedCode",
-    "GeneratedCodeID",
     "Generator",
     "GeneratorGroup",
-    "GeneratorGroupID",
-    "GeneratorID",
     "GitRef",
-    "GitRefID",
     "GitRepository",
-    "GitRepositoryID",
     "HTTPState",
-    "HTTPStateID",
     "HealthcheckConfig",
-    "HealthcheckConfigID",
     "Host",
-    "HostID",
     "ImageLayerCompression",
     "ImageMediaTypes",
     "InputTypeDef",
-    "InputTypeDefID",
     "InterfaceTypeDef",
-    "InterfaceTypeDefID",
     "JSONValue",
-    "JSONValueID",
     "LLMTokenUsage",
-    "LLMTokenUsageID",
     "Label",
-    "LabelID",
     "ListTypeDef",
-    "ListTypeDefID",
     "Module",
     "ModuleConfigClient",
-    "ModuleConfigClientID",
-    "ModuleID",
     "ModuleSource",
     "ModuleSourceExperimentalFeature",
-    "ModuleSourceID",
     "ModuleSourceKind",
     "NetworkProtocol",
     "Node",
     "ObjectTypeDef",
-    "ObjectTypeDefID",
     "PipelineLabel",
     "Platform",
     "Port",
     "PortForward",
-    "PortID",
     "Query",
+    "RegistryProtocol",
     "RemoteGitMirror",
-    "RemoteGitMirrorID",
     "ReturnType",
     "SDKConfig",
-    "SDKConfigID",
     "ScalarTypeDef",
-    "ScalarTypeDefID",
+    "Schema",
     "SearchResult",
-    "SearchResultID",
     "SearchSubmatch",
-    "SearchSubmatchID",
     "Secret",
-    "SecretID",
     "Service",
-    "ServiceID",
     "Socket",
-    "SocketID",
     "SourceMap",
-    "SourceMapID",
     "Stat",
-    "StatID",
     "Syncer",
-    "SyncerID",
     "Terminal",
-    "TerminalID",
     "TypeDef",
-    "TypeDefID",
     "TypeDefKind",
     "Up",
     "UpGroup",
-    "UpGroupID",
-    "UpID",
     "Void",
     "Workspace",
     "WorkspaceGit",
-    "WorkspaceGitID",
-    "WorkspaceID",
     "WorkspaceMigration",
-    "WorkspaceMigrationID",
     "WorkspaceMigrationStep",
-    "WorkspaceMigrationStepID",
     "WorkspaceModule",
-    "WorkspaceModuleID",
     "WorkspaceModuleSetting",
-    "WorkspaceModuleSettingID",
     "dag",
 ]

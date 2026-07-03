@@ -1,0 +1,17 @@
+enum EcCurve {
+  P256
+  P384
+  P521
+}
+
+type Foo {
+  pub curve(curve: EcCurve!): String! {
+    if (curve == EcCurve.P256) {
+      "P256"
+    } else if (curve == EcCurve.P384) {
+      "P384"
+    } else {
+      "P521"
+    }
+  }
+}

@@ -3,7 +3,7 @@ module github.com/dagger/dagger/e2e/installers
 go 1.26.1
 
 require (
-	dagger.io/dagger v0.21.4
+	dagger.io/dagger v0.21.7
 	github.com/containerd/platforms v1.0.0-rc.2
 	golang.org/x/mod v0.34.0
 )

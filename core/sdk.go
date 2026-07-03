@@ -82,6 +82,87 @@ type ClientGenerator interface {
 }
 
 /*
+ModuleInitializer is an interface that an SDK may implement to add
+SDK-specific workspace edits during `dagger module init`.
+*/
+type ModuleInitializer interface {
+	/*
+		Initialize a module and return the SDK-owned Changeset to merge with the
+		engine-owned workspace edits.
+
+		SDK must implement the `initModule` function with this signature shape:
+
+		```gql
+		  initModule(
+		    ws: Workspace!
+		    name: String!
+		    path: String!
+		    # SDK-specific args...
+		  ): Changeset!
+		```
+	*/
+	InitModule(
+		context.Context,
+		dagql.ObjectResult[*Workspace],
+		string,
+		string,
+		map[string]any,
+	) (dagql.ObjectResult[*Changeset], error)
+}
+
+/*
+ClientInitializer is an interface that an SDK may implement to add
+SDK-specific workspace edits during `dagger api client init`.
+*/
+type ClientInitializer interface {
+	/*
+		Initialize a generated client and return the SDK-owned Changeset to merge
+		with the engine-owned workspace edits.
+
+		SDK must implement the `initClient` function with this signature shape:
+
+		```gql
+		  initClient(
+		    ws: Workspace!
+		    path: String!
+		    module: String!
+		    # SDK-specific args...
+		  ): Changeset!
+		```
+	*/
+	InitClient(
+		context.Context,
+		dagql.ObjectResult[*Workspace],
+		string,
+		string,
+		map[string]any,
+	) (dagql.ObjectResult[*Changeset], error)
+}
+
+/*
+RuntimeTarget is an interface that an SDK may implement to delegate runtime
+execution to a different module than the SDK itself. By default the SDK
+module IS the runtime — its own installed ref is recorded as `[runtime]
+source` in the new module's dagger-module.toml. When an SDK implements this
+interface, the engine calls `targetRuntime` at `dagger module init` time
+and records the returned value instead. The split lets a thin codegen-only
+SDK target a separate, canonical runtime module.
+*/
+type RuntimeTarget interface {
+	/*
+		Return the canonical engine runtime ref that should be recorded in the
+		new module's dagger-module.toml `[runtime] source` field.
+
+		SDK must implement the `targetRuntime` field with this signature shape:
+
+		```gql
+		  targetRuntime: String!
+		```
+	*/
+	TargetRuntime(context.Context) (string, error)
+}
+
+/*
 CodeGenerator is an interface that a SDK may implements to generate code
 for a module.
 
@@ -336,6 +417,21 @@ type SDK interface {
 
 	// Transform the SDK into a ClientGenerator if it implements it.
 	AsClientGenerator() (ClientGenerator, bool)
+
+	// CloneForModuleSource returns an SDK implementation copy owned by the cloned
+	// ModuleSource. SDK implementations may hold cache-backed result wrappers and
+	// rewrite them during AttachDependencyResults, so ModuleSource clones must not
+	// share mutable SDK implementation state.
+	CloneForModuleSource(*ModuleSource) SDK
+
+	// Transform the SDK into a ModuleInitializer if it implements it.
+	AsModuleInitializer() (ModuleInitializer, bool)
+
+	// Transform the SDK into a ClientInitializer if it implements it.
+	AsClientInitializer() (ClientInitializer, bool)
+
+	// Transform the SDK into a RuntimeTarget if it implements it.
+	AsRuntimeTarget() (RuntimeTarget, bool)
 
 	// AttachDependencyResults attaches any cache-backed results embedded in the
 	// SDK implementation and returns the results the owning ModuleSource must

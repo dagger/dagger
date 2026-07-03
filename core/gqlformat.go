@@ -26,6 +26,13 @@ func gqlObjectName(name string) string {
 	return strcase.ToCamel(name)
 }
 
+// NamespaceObject maps a module-local type name to its namespaced schema name.
+// It is the exported entry point for SDK runtimes (e.g. the Dang interpreter)
+// that need to resolve a local type reference to the name the engine installed.
+func NamespaceObject(objOriginalName, modFinalName, modOriginalName string) string {
+	return namespaceObject(objOriginalName, modFinalName, modOriginalName)
+}
+
 func namespaceObject(
 	objOriginalName string,
 	modFinalName string,
@@ -61,4 +68,28 @@ func gqlFieldName(name string) string {
 func gqlArgName(name string) string {
 	// gql arg name is uncapitalized camel case
 	return strcase.ToLowerCamel(name)
+}
+
+func gqlEnumMemberName(name string) string {
+	if isConventionalGraphQLEnumMemberName(name) {
+		return name
+	}
+	return strcase.ToScreamingSnake(name)
+}
+
+func isConventionalGraphQLEnumMemberName(name string) bool {
+	if name == "" || strings.HasPrefix(name, "__") {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c >= 'A' && c <= 'Z' {
+			continue
+		}
+		if i > 0 && ((c >= '0' && c <= '9') || c == '_') {
+			continue
+		}
+		return false
+	}
+	return true
 }

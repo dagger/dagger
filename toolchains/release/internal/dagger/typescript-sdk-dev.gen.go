@@ -50,7 +50,7 @@ type TypescriptSDKDevOpts struct {
 
 	BunVersion string // typescript-sdk-dev (../../../../:0:0)
 
-	Workspace *Directory // typescript-sdk-dev (../../../../:0:0)
+	WorkspaceDir *Directory // typescript-sdk-dev (../../../../:0:0)
 
 	SourcePath string // typescript-sdk-dev (../../../../:0:0)
 }
@@ -70,9 +70,9 @@ func (r *Query) TypescriptSDKDev(opts ...TypescriptSDKDevOpts) *TypescriptSDKDev
 		if !querybuilder.IsZeroValue(opts[i].BunVersion) {
 			q = q.Arg("bunVersion", opts[i].BunVersion)
 		}
-		// `workspace` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Workspace) {
-			q = q.Arg("workspace", opts[i].Workspace)
+		// `workspaceDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].WorkspaceDir) {
+			q = q.Arg("workspaceDir", opts[i].WorkspaceDir)
 		}
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
@@ -431,8 +431,8 @@ func (r *TypescriptSDKDev) TestNodejsPrevLts(ctx context.Context) error { // typ
 	return q.Execute(ctx)
 }
 
-func (r *TypescriptSDKDev) Workspace() *Directory { // typescript-sdk-dev (../../../../:0:0)
-	q := r.query.Select("workspace")
+func (r *TypescriptSDKDev) WorkspaceDir() *Directory { // typescript-sdk-dev (../../../../:0:0)
+	q := r.query.Select("workspaceDir")
 
 	return &Directory{
 		query: q,

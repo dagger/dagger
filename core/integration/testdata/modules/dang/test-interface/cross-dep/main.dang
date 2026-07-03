@@ -1,0 +1,8 @@
+type CrossDep {
+  pub run: String! {
+    moduleA.use(
+      Dagger.container.from("alpine:3.20"),
+      moduleB.fileOverlay("/marker", "ok"),
+    )
+  }
+}
