@@ -51,7 +51,7 @@ func New(
 
 	// Git repository for VCS info injection.
 	// +optional
-	// +defaultPath="/"
+	// Pass explicitly when VCS stamping is required.
 	repo *dagger.GitRepository,
 ) (*CliDev, error) {
 	if err := ctx.Err(); err != nil {

@@ -94,7 +94,7 @@ func New(
 	// upload), supports nested workspaces, and will expose commit time.
 	//
 	// +optional
-	// +defaultPath="/"
+	// Pass explicitly when VCS stamping is required.
 	repo *dagger.GitRepository,
 ) *Go {
 	if source == nil {
