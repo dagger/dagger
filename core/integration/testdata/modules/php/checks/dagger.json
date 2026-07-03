@@ -1,0 +1,7 @@
+{
+  "name": "checks",
+  "engineVersion": "v0.21.7",
+  "sdk": {
+    "source": "../../sdk/php"
+  }
+}

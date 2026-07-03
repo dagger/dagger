@@ -1,0 +1,6 @@
+kind: Added
+body: 'Support [Dagger Check](https://docs.dagger.io/core-concepts/checks/)'
+time: 2026-07-06T09:24:01.831964302Z
+custom:
+    Author: charjr
+    PR: "13584"
