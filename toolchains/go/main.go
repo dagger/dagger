@@ -94,7 +94,6 @@ func New(
 	// upload), supports nested workspaces, and will expose commit time.
 	//
 	// +optional
-	// +defaultPath="/"
 	repo *dagger.GitRepository,
 ) *Go {
 	if source == nil {

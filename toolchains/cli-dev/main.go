@@ -51,7 +51,6 @@ func New(
 
 	// Git repository for VCS info injection.
 	// +optional
-	// +defaultPath="/"
 	repo *dagger.GitRepository,
 ) (*CliDev, error) {
 	if err := ctx.Err(); err != nil {
