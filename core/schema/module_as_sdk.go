@@ -50,11 +50,10 @@ func (s *moduleSchema) currentModuleAsSDK(
 		sdkName = name
 	}
 
-	// as-sdk module paths are stored relative to the config file's directory
-	// (like module sources), while API consumers expect workspace-root-relative
-	// paths; resolve before exposing them. Client paths are still stored and
-	// consumed workspace-root-relative (see workspace_client.go), so they pass
-	// through unchanged.
+	// as-sdk paths are stored relative to the config file's directory (like
+	// module sources), while API consumers expect workspace-root-relative
+	// paths; resolve before exposing them. Client module refs resolve the
+	// same way when local, and pass through verbatim otherwise.
 	configDir, err := workspaceConfigDirectory(ws)
 	if err != nil {
 		return nil, err
@@ -68,8 +67,8 @@ func (s *moduleSchema) currentModuleAsSDK(
 	}
 	for _, client := range entry.AsSDK.Clients {
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
-			Path:   client.Path,
-			Module: client.Module,
+			Path:   filepath.Clean(filepath.Join(configDir, client.Path)),
+			Module: workspace.ResolveModuleEntrySource(configDir, client.Module),
 			Pin:    client.Pin,
 		})
 	}

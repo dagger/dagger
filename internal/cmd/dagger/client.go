@@ -35,6 +35,9 @@ var apiClientInitCmd = &cobra.Command{
 <sdk> is an SDK installed in this workspace. Run ` + "`dagger sdk install <sdk>`" + `
 to add more choices.
 
+<path> and a local <module> resolve from the current directory; absolute
+paths resolve from the workspace root.
+
 The engine resolves <sdk> from dagger.toml, validates that it is installed as an
 SDK, plans the generated files and workspace config change, then returns a
 Changeset that the CLI previews and applies through the standard preview/apply

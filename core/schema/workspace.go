@@ -159,9 +159,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			DoNotCache("Plans workspace changes against live host filesystem").
 			Doc("Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.").
 			Args(
-				dagql.Arg("path").Doc("Workspace-relative output directory for the generated client."),
+				dagql.Arg("path").Doc("Output directory for the generated client: relative paths resolve from the caller cwd, absolute paths from the workspace root."),
 				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use."),
-				dagql.Arg("module").Doc("Workspace-relative path or canonical ref for the module the client binds to."),
+				dagql.Arg("module").Doc("Module the client binds to: a canonical ref, or a local path resolved from the caller cwd."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("clientGenerate", s.clientGenerate).

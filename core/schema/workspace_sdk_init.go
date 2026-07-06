@@ -88,6 +88,16 @@ func rerootChangesetAtWorkspaceRoot(ctx context.Context, changes dagql.ObjectRes
 		seen[p] = struct{}{}
 		include = append(include, dagql.String(p))
 	}
+	// No changed paths: return an empty changeset instead of nesting with an
+	// empty include list, which withDirectory treats as "no filter" and would
+	// reintroduce the full snapshots (and their .git) into the merge.
+	if len(include) == 0 {
+		var empty dagql.ObjectResult[*core.Changeset]
+		if err := srv.Select(ctx, srv.Root(), &empty, dagql.Selector{Field: "changeset"}); err != nil {
+			return changes, fmt.Errorf("empty changeset: %w", err)
+		}
+		return empty, nil
+	}
 
 	nest := func(dir dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		dirID, err := dir.ID()

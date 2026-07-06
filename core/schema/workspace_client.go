@@ -41,11 +41,18 @@ func (s *workspaceSchema) clientInit(
 		return res, fmt.Errorf("module ref is required")
 	}
 
-	clientPath, err := cleanWorkspaceClientPath(args.Path)
+	// Resolve the client path per the workspace path contract: relative paths
+	// resolve from the caller cwd, absolute paths from the workspace root.
+	// clientPath is workspace-root-relative from here on, and so is the local
+	// form of moduleRef.
+	clientPath, err := resolveWorkspacePath(args.Path, parent.Cwd)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("client path %q: %w", args.Path, err)
 	}
-	moduleRef, moduleLoadRef, err := resolveWorkspaceClientModuleRef(parent, args.Module)
+	if clientPath == "." {
+		return res, fmt.Errorf("client path must point to a directory below the workspace root")
+	}
+	moduleRef, moduleLoadRef, err := resolveWorkspaceClientModuleRef(parent, args.Module, parent.Cwd)
 	if err != nil {
 		return res, err
 	}
@@ -61,6 +68,28 @@ func (s *workspaceSchema) clientInit(
 	if err != nil {
 		return res, err
 	}
+	configRelPath, err := workspaceConfigFile(parent)
+	if err != nil {
+		return res, err
+	}
+	// Paths recorded in dagger.toml are relative to the config file's
+	// directory (see workspace.ResolveModuleEntrySource); clientPath and
+	// local moduleRef are workspace-root-relative, so convert before writing
+	// entries.
+	configDir := filepath.Dir(configRelPath)
+	entryPath, err := filepath.Rel(configDir, clientPath)
+	if err != nil {
+		return res, fmt.Errorf("client path %q relative to config directory %q: %w", clientPath, configDir, err)
+	}
+	entryPath = filepath.Clean(entryPath)
+	entryModule := moduleRef
+	if workspace.IsLocalRef(moduleRef, "") {
+		entryModule, err = filepath.Rel(configDir, moduleRef)
+		if err != nil {
+			return res, fmt.Errorf("module ref %q relative to config directory %q: %w", moduleRef, configDir, err)
+		}
+		entryModule = filepath.Clean(entryModule)
+	}
 
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, parent)
 	if err != nil {
@@ -74,11 +103,11 @@ func (s *workspaceSchema) clientInit(
 	}
 	modulePin := targetModule.Self().Pin()
 
-	removeClientEntryAtPath(cfg, clientPath)
+	removeClientEntryAtPath(cfg, configDir, clientPath)
 	sdkEntry = cfg.Modules[sdkName]
 	sdkEntry.AsSDK.Clients = append(sdkEntry.AsSDK.Clients, workspace.SDKManagedClient{
-		Path:   clientPath,
-		Module: moduleRef,
+		Path:   entryPath,
+		Module: entryModule,
 		Pin:    modulePin,
 	})
 	cfg.Modules[sdkName] = sdkEntry
@@ -90,11 +119,6 @@ func (s *workspaceSchema) clientInit(
 	newConfigBytes, err := workspace.UpdateConfigBytes(existingConfigBytes, cfg)
 	if err != nil {
 		return res, fmt.Errorf("update workspace config: %w", err)
-	}
-
-	configRelPath, err := workspaceConfigFile(parent)
-	if err != nil {
-		return res, err
 	}
 
 	baseDir, err := s.resolveRootfs(ctx, parent, ".", core.CopyFilter{}, false)
@@ -135,6 +159,14 @@ func (s *workspaceSchema) clientInit(
 		return res, err
 	}
 	sdkChanges, err := clientInitializer.InitClient(ctx, workspaceObj, clientPath, moduleRef, sdkArgs)
+	if err != nil {
+		return res, fmt.Errorf("sdk client init: %w", err)
+	}
+	// SDK initClient implementations return changesets in caller-cwd
+	// coordinates (standalone clients apply changesets relative to their
+	// cwd), while engineChanges and the final export target are rooted at
+	// the workspace root. Re-root before merging.
+	sdkChanges, err = rerootChangesetAtWorkspaceRoot(ctx, sdkChanges, parent.Cwd)
 	if err != nil {
 		return res, fmt.Errorf("sdk client init: %w", err)
 	}
@@ -180,6 +212,15 @@ func (s *workspaceSchema) clientGenerate(
 		return res, fmt.Errorf("dagql server: %w", err)
 	}
 
+	// Client entries in dagger.toml are stored relative to the config file's
+	// directory; resolve them to workspace-root coordinates before use.
+	// Compat workspaces have no native config file; their fallback config
+	// reads as rooted at the workspace root.
+	configDir := "."
+	if parent.ConfigFile != "" {
+		configDir = filepath.Dir(cleanWorkspaceRelPath(parent.ConfigFile))
+	}
+
 	for sdkName, entry := range cfg.Modules {
 		if entry.AsSDK == nil || len(entry.AsSDK.Clients) == 0 {
 			continue
@@ -189,7 +230,8 @@ func (s *workspaceSchema) clientGenerate(
 			return res, fmt.Errorf("SDK module %q has no source", sdkName)
 		}
 		for _, client := range entry.AsSDK.Clients {
-			moduleRef, moduleLoadRef, err := resolveWorkspaceClientModuleRef(parent, client.Module)
+			clientPath := filepath.Clean(filepath.Join(configDir, client.Path))
+			moduleRef, moduleLoadRef, err := resolveWorkspaceClientModuleRef(parent, client.Module, configDir)
 			if err != nil {
 				return res, err
 			}
@@ -197,7 +239,7 @@ func (s *workspaceSchema) clientGenerate(
 			if err != nil {
 				return res, fmt.Errorf("generate client %q for module %q: %w", client.Path, moduleRef, err)
 			}
-			sdkOutputPath, err := workspaceClientSDKOutputPath(client.Path, moduleRef)
+			sdkOutputPath, err := workspaceClientSDKOutputPath(clientPath, moduleRef)
 			if err != nil {
 				return res, fmt.Errorf("resolve client output path %q for module %q: %w", client.Path, moduleRef, err)
 			}
@@ -258,21 +300,13 @@ func (s *workspaceSchema) workspaceClientInitGeneratedDiff(
 	})
 }
 
-func cleanWorkspaceClientPath(path string) (string, error) {
-	cleaned := filepath.Clean(path)
-	if cleaned == "." || cleaned == string(filepath.Separator) {
-		return "", fmt.Errorf("client path must point to a directory below the workspace root")
-	}
-	if filepath.IsAbs(cleaned) {
-		return "", fmt.Errorf("client path %q must be workspace-relative, not absolute", path)
-	}
-	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("client path %q must not escape the workspace root", path)
-	}
-	return cleaned, nil
-}
-
-func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref string) (configRef string, loadRef string, _ error) {
+// resolveWorkspaceClientModuleRef resolves a client module ref into a
+// workspace-root-relative form plus the absolute host path used to load it.
+// base is where relative local refs resolve from: the caller cwd for user
+// input, the config directory for refs stored in dagger.toml. Host-absolute
+// paths keep their historical meaning and are converted from the workspace
+// host path.
+func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref, base string) (rootRef string, loadRef string, _ error) {
 	if !workspace.IsLocalRef(ref, "") {
 		return ref, ref, nil
 	}
@@ -283,12 +317,15 @@ func resolveWorkspaceClientModuleRef(ws *core.Workspace, ref string) (configRef 
 			return "", "", fmt.Errorf("compute workspace-relative module path: %w", err)
 		}
 		cleaned = rel
-	}
-	if cleaned == "." || cleaned == "" {
-		cleaned = "."
-	}
-	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("module ref %q must not escape the workspace root", ref)
+		if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+			return "", "", fmt.Errorf("module ref %q must not escape the workspace root", ref)
+		}
+	} else {
+		var err error
+		cleaned, err = resolveWorkspacePath(cleaned, base)
+		if err != nil {
+			return "", "", fmt.Errorf("module ref %q: %w", ref, err)
+		}
 	}
 	loadPath, err := workspaceHostPath(ws, cleaned)
 	if err != nil {
@@ -311,7 +348,10 @@ func workspaceClientModuleSourceSelector(ref string, pin string) dagql.Selector 
 	}
 }
 
-func removeClientEntryAtPath(cfg *workspace.Config, clientPath string) {
+// removeClientEntryAtPath drops any client entry that resolves to the given
+// workspace-root-relative path. Stored client paths are config-dir-relative,
+// so both sides are resolved before comparing.
+func removeClientEntryAtPath(cfg *workspace.Config, configDir, clientPath string) {
 	if cfg == nil {
 		return
 	}
@@ -321,7 +361,7 @@ func removeClientEntryAtPath(cfg *workspace.Config, clientPath string) {
 			continue
 		}
 		entry.AsSDK.Clients = slices.DeleteFunc(entry.AsSDK.Clients, func(client workspace.SDKManagedClient) bool {
-			return filepath.Clean(client.Path) == cleanPath
+			return filepath.Clean(filepath.Join(configDir, client.Path)) == cleanPath
 		})
 		cfg.Modules[moduleName] = entry
 	}

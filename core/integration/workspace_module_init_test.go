@@ -14,6 +14,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -167,5 +168,63 @@ func (WorkspaceModuleInitSuite) TestModuleInitFromSubdirectory(ctx context.Conte
 		config, err := changes.After().File("dagger.toml").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, config, `path = ".dagger"`)
+	})
+}
+
+func (WorkspaceModuleInitSuite) TestClientInitFromSubdirectory(ctx context.Context, t *testctx.T) {
+	t.Run("relative client path and local module resolve from cwd", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		subdir := filepath.Join(workdir, "subdir")
+		require.NoError(t, os.MkdirAll(subdir, 0o755))
+		initGitRepo(ctx, t, workdir)
+		copyTestdataFixture(ctx, t, filepath.Join(subdir, "mymod"), "modules", "go", "minimal-dep")
+		require.NoError(t, os.WriteFile(filepath.Join(subdir, "dagger.toml"), []byte(goSDKWorkspaceConfig), 0o644))
+
+		c := connect(ctx, t, dagger.WithWorkdir(subdir))
+
+		changes := c.CurrentWorkspace().ClientInit("lib/client", "go", "./mymod")
+
+		modified, err := changes.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Contains(t, modified, "subdir/dagger.toml")
+
+		config, err := changes.After().File("subdir/dagger.toml").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, config, `path = "lib/client"`)
+		require.Contains(t, config, `module = "mymod"`)
+	})
+
+	t.Run("clientGenerate materializes clients relative to the config directory", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		subdir := filepath.Join(workdir, "subdir")
+		require.NoError(t, os.MkdirAll(subdir, 0o755))
+		initGitRepo(ctx, t, workdir)
+		copyTestdataFixture(ctx, t, filepath.Join(subdir, "mymod"), "modules", "go", "minimal-dep")
+		// The builtin go SDK implements generateClient; module-based SDKs
+		// don't yet, so generation dispatches on a builtin source ref. The
+		// client lives inside the module directory because the go generator
+		// rejects output paths above the module root.
+		require.NoError(t, os.WriteFile(filepath.Join(subdir, "dagger.toml"), []byte(`[modules.go-sdk]
+source = "go"
+
+[modules.go-sdk.as-sdk]
+name = "go"
+
+[[modules.go-sdk.as-sdk.clients]]
+path = "mymod/client"
+module = "mymod"
+`), 0o644))
+
+		c := connect(ctx, t, dagger.WithWorkdir(subdir))
+
+		changes := c.CurrentWorkspace().ClientGenerate()
+
+		added, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, added)
+		for _, p := range added {
+			require.Truef(t, strings.HasPrefix(p, "subdir/mymod/"),
+				"generated client path %q should live under subdir/mymod/", p)
+		}
 	})
 }
