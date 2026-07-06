@@ -1804,6 +1804,29 @@ func (srv *Server) resolveModuleSourceAsModule(
 		return dagql.ObjectResult[*core.Module]{}, err
 	}
 
+	// Runtime settings (e.g. goprivate) from the workspace settings namespace
+	// apply to the module source before the SDK runs. The extraction is keyed
+	// by SDK: a setting is only routed to the SDK config of the SDK that
+	// consumes it, so other SDKs keep the same name free for constructor args.
+	var sdkSource string
+	if src.Self() != nil && src.Self().SDK != nil {
+		sdkSource = src.Self().SDK.Source
+	}
+	runtimeSettingsJSON, err := workspace.RuntimeSettingsJSON(sdkSource, mod.ConfigDefaults)
+	if err != nil {
+		return dagql.ObjectResult[*core.Module]{}, err
+	}
+	if runtimeSettingsJSON != "" {
+		if err := dag.Select(ctx, src, &src, dagql.Selector{
+			Field: "_withRuntimeSettings",
+			Args: []dagql.NamedInput{
+				{Name: "settingsJson", Value: dagql.String(runtimeSettingsJSON)},
+			},
+		}); err != nil {
+			return dagql.ObjectResult[*core.Module]{}, fmt.Errorf("applying runtime settings for %q: %w", mod.Ref, err)
+		}
+	}
+
 	var resolved dagql.ObjectResult[*core.Module]
 	err = dag.Select(ctx, src, &resolved,
 		dagql.Selector{Field: "asModule", Args: asModuleArgs},

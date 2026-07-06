@@ -136,6 +136,12 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("source").Doc(`The SDK source to set.`),
 			),
 
+		dagql.Func("_withRuntimeSettings", s.moduleSourceWithRuntimeSettings).
+			Doc(`Apply engine-consumed runtime settings (e.g. goprivate) from the workspace settings namespace to this module source.`).
+			Args(
+				dagql.Arg("settingsJson").Doc(`JSON-encoded map of runtime setting keys to values.`),
+			),
+
 		dagql.Func("withEngineVersion", s.moduleSourceWithEngineVersion).
 			Doc(`Upgrade the engine version of the module to the given value.`).
 			Args(
@@ -1333,6 +1339,45 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	// New SDK means new exposed functions and types. Different .env entries might match.
 	if err := src.LoadUserDefaults(ctx); err != nil {
 		return nil, fmt.Errorf("load user defaults: %w", err)
+	}
+	return src, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithRuntimeSettings(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		SettingsJson string //nolint:staticcheck // JSON casing matches sibling internal args
+	},
+) (*core.ModuleSource, error) {
+	if args.SettingsJson == "" {
+		return src, nil
+	}
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(args.SettingsJson), &settings); err != nil {
+		return nil, fmt.Errorf("decoding runtime settings: %w", err)
+	}
+	if len(settings) == 0 {
+		return src, nil
+	}
+
+	src = src.Clone()
+	if src.SDK == nil {
+		src.SDK = &core.SDKConfig{}
+	}
+	config := make(map[string]any, len(src.SDK.Config)+len(settings))
+	maps.Copy(config, src.SDK.Config)
+	maps.Copy(config, settings)
+	src.SDK.Config = config
+
+	// reload the sdk implementation so the new config reaches the runtime
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	src.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query, src.SDK, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
 	return src, nil
 }
