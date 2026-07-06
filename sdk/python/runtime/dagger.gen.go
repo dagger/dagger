@@ -74,6 +74,7 @@ func (r PythonSdk) MarshalJSON() ([]byte, error) {
 		SubPath        string
 		VendorPath     string
 		IsInit         bool
+		GitCredentials *dagger.Socket
 		Discovery      *Discovery
 	}
 	concrete.SdkSourceDir = r.SdkSourceDir
@@ -89,6 +90,7 @@ func (r PythonSdk) MarshalJSON() ([]byte, error) {
 	concrete.SubPath = r.SubPath
 	concrete.VendorPath = r.VendorPath
 	concrete.IsInit = r.IsInit
+	concrete.GitCredentials = r.GitCredentials
 	concrete.Discovery = r.Discovery
 	return json.Marshal(&concrete)
 }
@@ -108,6 +110,7 @@ func (r *PythonSdk) UnmarshalJSON(bs []byte) error {
 		SubPath        string
 		VendorPath     string
 		IsInit         bool
+		GitCredentials *dagger.Socket
 		Discovery      *Discovery
 	}
 	err := json.Unmarshal(bs, &concrete)
@@ -127,6 +130,7 @@ func (r *PythonSdk) UnmarshalJSON(bs []byte) error {
 	r.SubPath = concrete.SubPath
 	r.VendorPath = concrete.VendorPath
 	r.IsInit = concrete.IsInit
+	r.GitCredentials = concrete.GitCredentials
 	r.Discovery = concrete.Discovery
 	return nil
 }
@@ -343,7 +347,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
 				}
 			}
-			return (*PythonSdk).Codegen(&parent, ctx, modSource, introspectionJson)
+			var gitCredentials *dagger.Socket
+			if inputArgs["gitCredentials"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitCredentials"]), &gitCredentials)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitCredentials", err))
+				}
+			}
+			return (*PythonSdk).Codegen(&parent, ctx, modSource, introspectionJson, gitCredentials)
 		case "Common":
 			var parent PythonSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -427,7 +438,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
 				}
 			}
-			return (*PythonSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson)
+			var gitCredentials *dagger.Socket
+			if inputArgs["gitCredentials"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitCredentials"]), &gitCredentials)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitCredentials", err))
+				}
+			}
+			return (*PythonSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson, gitCredentials)
 		case "ModuleTypesExp":
 			var parent PythonSdk
 			err = json.Unmarshal(parentJSON, &parent)

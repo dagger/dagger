@@ -138,6 +138,13 @@ type PythonSdk struct {
 	// It's assumed that this is the case if there's no pyproject.toml file.
 	IsInit bool
 
+	// Socket answering git's credential-helper protocol, provided by the
+	// engine during trusted dependency installs so private git+https
+	// dependencies resolve with the host's credentials. Mounted only around
+	// the install execs, never in the returned container.
+	// +private
+	GitCredentials *dagger.Socket
+
 	// Discovery holds the logic for getting more information from the target module.
 	// +private
 	Discovery *Discovery
@@ -148,7 +155,11 @@ func (m *PythonSdk) Codegen(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
+	// Engine-provided git-credential socket for private git+https dependencies
+	// +optional
+	gitCredentials *dagger.Socket,
 ) (*dagger.GeneratedCode, error) {
+	m.GitCredentials = gitCredentials
 	m, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
@@ -178,7 +189,11 @@ func (m *PythonSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
+	// Engine-provided git-credential socket for private git+https dependencies
+	// +optional
+	gitCredentials *dagger.Socket,
 ) (*dagger.Container, error) {
+	m.GitCredentials = gitCredentials
 	runtime, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
@@ -461,7 +476,7 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 		return m
 	}
 
-	ctr := m.Container
+	ctr := m.withGitCredentials(m.Container)
 	d := m.Discovery
 
 	// Update lock file but without upgrading dependencies.
@@ -487,7 +502,7 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 		ctr = ctr.WithExec(args)
 	}
 
-	m.Container = ctr
+	m.Container = m.withoutGitCredentials(ctr)
 
 	return m
 }
@@ -505,8 +520,8 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 		// uv.lock, user projects can have more required files for a minimally successful
 		// `uv sync --no-install-project --no-dev`.
 		// Besides, uv is fast enough that's not too bad to skip this optimization.
-		m.Container = ctr.
-			WithExec([]string{"uv", "sync", "--no-dev"}).
+		m.Container = m.withoutGitCredentials(
+			m.withGitCredentials(ctr).WithExec([]string{"uv", "sync", "--no-dev"})).
 			// Activate virtualenv to avoid having to prepend `uv run` to the entrypoint.
 			WithEnvVariable("VIRTUAL_ENV", "$UV_PROJECT_ENVIRONMENT", dagger.ContainerWithEnvVariableOpts{
 				Expand: true,
@@ -535,9 +550,52 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 		check = append([]string{"uv"}, check...)
 	}
 
-	m.Container = ctr.
-		WithExec(install).
-		WithExec(check)
+	m.Container = m.withoutGitCredentials(
+		m.withGitCredentials(ctr).
+			WithExec(install).
+			WithExec(check))
 
 	return m
+}
+
+const (
+	gitCredentialSockPath = "/tmp/dagger-git-credential.sock"
+	// where the engine bind-mounts its credential helper into execs that
+	// mount a git-credential socket
+	gitCredentialHelperPath = "/.git-credential"
+)
+
+// Mount the engine-provided git-credential socket and point git at its
+// helper, so package managers shelling out to git can authenticate against
+// private hosts. Must be paired with withoutGitCredentials before user code
+// runs. Known limitation: any GIT_CONFIG_* env a base image sets is masked
+// during the install and dropped by the scrub (file-based git config is
+// untouched).
+func (m *PythonSdk) withGitCredentials(ctr *dagger.Container) *dagger.Container {
+	if m.GitCredentials == nil {
+		return ctr
+	}
+	return ctr.
+		// uv shells out to the git CLI for git dependencies, but the default
+		// python:*-slim base image doesn't ship it
+		WithExec([]string{"sh", "-c", ensureGitCmd}).
+		WithUnixSocket(gitCredentialSockPath, m.GitCredentials).
+		WithEnvVariable("GIT_CONFIG_COUNT", "1").
+		WithEnvVariable("GIT_CONFIG_KEY_0", "credential.helper").
+		WithEnvVariable("GIT_CONFIG_VALUE_0", gitCredentialHelperPath+" "+gitCredentialSockPath)
+}
+
+// ensureGitCmd installs git if missing, covering the debian (default) and
+// alpine flavors a base-image override may use.
+const ensureGitCmd = "command -v git >/dev/null || { apt-get update -qq && apt-get install -qqy --no-install-recommends git; } || apk add --no-cache git"
+
+func (m *PythonSdk) withoutGitCredentials(ctr *dagger.Container) *dagger.Container {
+	if m.GitCredentials == nil {
+		return ctr
+	}
+	return ctr.
+		WithoutUnixSocket(gitCredentialSockPath).
+		WithoutEnvVariable("GIT_CONFIG_COUNT").
+		WithoutEnvVariable("GIT_CONFIG_KEY_0").
+		WithoutEnvVariable("GIT_CONFIG_VALUE_0")
 }
