@@ -15,12 +15,14 @@ type BunRuntime struct {
 	introspectionJSON *dagger.File
 	cfg               *moduleConfig
 	ctr               *dagger.Container
+	gitCredentials    *dagger.Socket
 }
 
 func NewBunRuntime(
 	cfg *moduleConfig,
 	sdkSourceDir *dagger.Directory,
 	introspectionJSON *dagger.File,
+	gitCredentials *dagger.Socket,
 ) *BunRuntime {
 	// Q: Should the cacheVolumeName depends on the cfg.image version
 	cacheVolumeName := fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)
@@ -37,6 +39,7 @@ func NewBunRuntime(
 		introspectionJSON: introspectionJSON,
 		cfg:               cfg,
 		ctr:               ctr,
+		gitCredentials:    gitCredentials,
 	}
 }
 
@@ -96,11 +99,18 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 		if err != nil {
 			return err
 		}
+		runtimeWithDep.ctr = withGitCredentials(runtimeWithDep.ctr, b.gitCredentials)
 
 		runtimeWithDep, err = runtimeWithDep.
 			withInstalledDependencies().
 			sync(ctx)
-		return err
+		if err != nil {
+			return err
+		}
+		// user code runs in this container: scrub the credential socket
+		runtimeWithDep.ctr = withoutGitCredentials(runtimeWithDep.ctr, b.gitCredentials)
+
+		return nil
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -138,6 +148,9 @@ func (b *BunRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error)
 	if err != nil {
 		return nil, err
 	}
+	// lock file generation resolves git dependencies too; only files are
+	// extracted from this container, so no scrub is needed
+	runtime.ctr = withGitCredentials(runtime.ctr, b.gitCredentials)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() (err error) {

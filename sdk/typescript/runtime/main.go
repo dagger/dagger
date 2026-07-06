@@ -48,6 +48,9 @@ func (t *TypescriptSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
+	// Engine-provided git-credential socket for private git+https dependencies
+	// +optional
+	gitCredentials *dagger.Socket,
 ) (*dagger.Container, error) {
 	cfg, err := analyzeModuleConfig(ctx, modSource)
 	if err != nil {
@@ -56,11 +59,11 @@ func (t *TypescriptSdk) ModuleRuntime(
 
 	switch cfg.runtime {
 	case Bun:
-		return NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON).SetupContainer(ctx)
+		return NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON, gitCredentials).SetupContainer(ctx)
 	case Deno:
 		return NewDenoRuntime(cfg, t.SDKSourceDir, introspectionJSON).SetupContainer(ctx)
 	case Node:
-		return NewNodeRuntime(cfg, t.SDKSourceDir, introspectionJSON).SetupContainer(ctx)
+		return NewNodeRuntime(cfg, t.SDKSourceDir, introspectionJSON, gitCredentials).SetupContainer(ctx)
 	default:
 		return nil, fmt.Errorf("unknown runtime %s", cfg.runtime)
 	}
@@ -98,6 +101,9 @@ func (t *TypescriptSdk) Codegen(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
+	// Engine-provided git-credential socket for private git+https dependencies
+	// +optional
+	gitCredentials *dagger.Socket,
 ) (*dagger.GeneratedCode, error) {
 	cfg, err := analyzeModuleConfig(ctx, modSource)
 	if err != nil {
@@ -107,11 +113,11 @@ func (t *TypescriptSdk) Codegen(
 	var codegen *dagger.Directory
 	switch cfg.runtime {
 	case Bun:
-		codegen, err = NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
+		codegen, err = NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON, gitCredentials).GenerateDir(ctx)
 	case Deno:
 		codegen, err = NewDenoRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
 	case Node:
-		codegen, err = NewNodeRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
+		codegen, err = NewNodeRuntime(cfg, t.SDKSourceDir, introspectionJSON, gitCredentials).GenerateDir(ctx)
 	default:
 		return nil, fmt.Errorf("unknown runtime %s", cfg.runtime)
 	}
