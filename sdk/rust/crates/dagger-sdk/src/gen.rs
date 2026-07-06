@@ -16175,7 +16175,7 @@ pub struct WorkspaceModuleInitOpts<'a> {
     /// Additional include patterns for the module.
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-    /// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+    /// Path for the new module: relative paths resolve from the caller cwd, absolute paths from the workspace root. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
     #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
     /// Workspace SDK name or module entry name to use.
@@ -16309,9 +16309,9 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `path` - Workspace-relative output directory for the generated client.
+    /// * `path` - Output directory for the generated client: relative paths resolve from the caller cwd, absolute paths from the workspace root.
     /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    /// * `module` - Module the client binds to: a canonical ref, or a local path resolved from the caller cwd.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn client_init(
         &self,
@@ -16333,9 +16333,9 @@ impl Workspace {
     ///
     /// # Arguments
     ///
-    /// * `path` - Workspace-relative output directory for the generated client.
+    /// * `path` - Output directory for the generated client: relative paths resolve from the caller cwd, absolute paths from the workspace root.
     /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    /// * `module` - Module the client binds to: a canonical ref, or a local path resolved from the caller cwd.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn client_init_opts(
         &self,

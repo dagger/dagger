@@ -16514,7 +16514,7 @@ func (r *Workspace) Migrate() *WorkspaceMigration {
 type WorkspaceModuleInitOpts struct {
 	// Workspace SDK name or module entry name to use.
 	SDK string
-	// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+	// Path for the new module: relative paths resolve from the caller cwd, absolute paths from the workspace root. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
 	Path string
 	// Source subpath within the new module.
 	Source string

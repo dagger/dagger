@@ -2846,7 +2846,7 @@ export type WorkspaceModuleInitOpts = {
   sdk?: string
 
   /**
-   * Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+   * Path for the new module: relative paths resolve from the caller cwd, absolute paths from the workspace root. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
    */
   path?: string
 
@@ -15080,9 +15080,9 @@ export class Workspace extends BaseClient {
 
   /**
    * Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
-   * @param path Workspace-relative output directory for the generated client.
+   * @param path Output directory for the generated client: relative paths resolve from the caller cwd, absolute paths from the workspace root.
    * @param sdk Workspace SDK name or module entry name to use.
-   * @param module Workspace-relative path or canonical ref for the module the client binds to.
+   * @param module Module the client binds to: a canonical ref, or a local path resolved from the caller cwd.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
   clientInit = (
@@ -15350,7 +15350,7 @@ export class Workspace extends BaseClient {
    * Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
    * @param name Name of the new module.
    * @param opts.sdk Workspace SDK name or module entry name to use.
-   * @param opts.path Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+   * @param opts.path Path for the new module: relative paths resolve from the caller cwd, absolute paths from the workspace root. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
    * @param opts.source Source subpath within the new module.
    * @param opts.include Additional include patterns for the module.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
