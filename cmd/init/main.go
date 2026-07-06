@@ -21,6 +21,7 @@ import (
 
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
 )
@@ -32,6 +33,8 @@ func main() {
 		err = mainInit()
 	case "/proc/self/exe":
 		err = mainSession()
+	case distconsts.GitCredentialHelperInContainerPath:
+		err = mainGitCredential()
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -247,6 +250,54 @@ func startSessionSubprocess() error {
 	case <-time.After(5 * time.Minute):
 		return fmt.Errorf("timed out waiting for session subprocess to start")
 	}
+}
+
+// mainGitCredential is a git credential helper that relays requests to the
+// engine's git-credential socket mounted into the container. Invoked by git
+// as `<argv0> <socket-path> <operation>` (git appends the operation to the
+// helper command configured as `credential.helper = <argv0> <socket-path>`).
+func mainGitCredential() error {
+	if len(os.Args) < 3 {
+		return fmt.Errorf("usage: %s <socket-path> <operation>", os.Args[0])
+	}
+	sockPath, operation := os.Args[1], os.Args[2]
+	if operation != "get" {
+		// store/erase are no-ops
+		return nil
+	}
+
+	// matches the engine-side request size cap and exchange timeout
+	// (core/git_credential_socket.go), so a dead socket fails the install
+	// instead of hanging git forever
+	request, err := io.ReadAll(io.LimitReader(os.Stdin, 64<<10))
+	if err != nil {
+		return fmt.Errorf("failed to read credential request: %w", err)
+	}
+
+	conn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		return fmt.Errorf("failed to connect to git credential socket: %w", err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(60 * time.Second)); err != nil {
+		return fmt.Errorf("failed to set socket deadline: %w", err)
+	}
+
+	if _, err := conn.Write(request); err != nil {
+		return fmt.Errorf("failed to send credential request: %w", err)
+	}
+	if unixConn, ok := conn.(*net.UnixConn); ok {
+		_ = unixConn.CloseWrite()
+	}
+
+	response, err := io.ReadAll(conn)
+	if err != nil {
+		return fmt.Errorf("failed to read credential response: %w", err)
+	}
+	if _, err := os.Stdout.Write(response); err != nil {
+		return fmt.Errorf("failed to write credential response: %w", err)
+	}
+	return nil
 }
 
 func mainSession() error {
