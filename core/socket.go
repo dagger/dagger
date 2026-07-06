@@ -26,9 +26,10 @@ import (
 type SocketKind string
 
 const (
-	SocketKindSSHHandle  SocketKind = "ssh_handle"
-	SocketKindUnixOpaque SocketKind = "unix_opaque"
-	SocketKindHostIP     SocketKind = "host_ip"
+	SocketKindSSHHandle     SocketKind = "ssh_handle"
+	SocketKindUnixOpaque    SocketKind = "unix_opaque"
+	SocketKindHostIP        SocketKind = "host_ip"
+	SocketKindGitCredential SocketKind = "git_credential"
 )
 
 type Socket struct {
@@ -37,6 +38,11 @@ type Socket struct {
 	URLVal         string
 	PortForwardVal PortForward
 	SourceClientID string
+
+	// GitCredentialHosts is the exact-host allowlist a git-credential socket
+	// serves. Only set on the concrete (session-bound) value of a
+	// SocketKindGitCredential socket.
+	GitCredentialHosts []string
 }
 
 func (*Socket) Type() *ast.Type {
