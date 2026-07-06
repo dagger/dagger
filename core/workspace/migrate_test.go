@@ -339,3 +339,48 @@ func testCompatWorkspace(t *testing.T, projectRoot, cfg string) *CompatWorkspace
 	require.NotNil(t, compat)
 	return compat
 }
+
+func TestPlanMigrationMovesRuntimeSettingsToWorkspaceConfig(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {
+    "source": "go",
+    "config": {"goprivate": "gitlab.example.com/acme"}
+  },
+  "source": "src"
+}`)
+
+	// goprivate moves into the module's workspace settings namespace...
+	configData := string(plan.WorkspaceConfigData)
+	require.Contains(t, configData, `goprivate = "gitlab.example.com/acme"`)
+	// ...and does not survive in the migrated dagger-module.toml
+	require.NotContains(t, string(plan.MigratedModuleConfigData), "goprivate")
+}
+
+func TestRuntimeSettingsJSON(t *testing.T) {
+	t.Parallel()
+
+	settings := map[string]any{
+		"goprivate": "gitlab.example.com/acme",
+		"someArg":   "constructor-owned",
+	}
+
+	out, err := RuntimeSettingsJSON("go", settings)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"goprivate": "gitlab.example.com/acme"}`, out)
+
+	// goprivate is only reserved for the go SDK: for any other SDK it stays a
+	// plain constructor setting and must not leak into the SDK config, where
+	// an unknown key fails module load.
+	for _, sdkSource := range []string{"python", "typescript", "github.com/acme/custom-sdk", ""} {
+		out, err = RuntimeSettingsJSON(sdkSource, settings)
+		require.NoError(t, err)
+		require.Empty(t, out)
+	}
+
+	out, err = RuntimeSettingsJSON("go", map[string]any{"someArg": "x"})
+	require.NoError(t, err)
+	require.Empty(t, out)
+}
