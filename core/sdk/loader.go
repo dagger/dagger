@@ -119,7 +119,7 @@ func (l *Loader) externalSDKForModule(
 		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
 	}
 
-	return newModuleSDK(ctx, query, sdkMod, dagql.ObjectResult[*core.Directory]{}, sdk.Config)
+	return newModuleSDK(ctx, query, sdkMod, dagql.ObjectResult[*core.Directory]{}, sdk.Config, false)
 }
 
 func (l *Loader) namedSDK(
@@ -213,7 +213,7 @@ func (l *Loader) loadBuiltinSDK(
 		return nil, fmt.Errorf("failed to import module sdk %s: %w", sdk.Source, err)
 	}
 
-	return newModuleSDK(ctx, root, sdkMod, fullSDKDir, sdk.Config)
+	return newModuleSDK(ctx, root, sdkMod, fullSDKDir, sdk.Config, true)
 }
 
 // parse and validate the name and version from sdkName

@@ -46,19 +46,28 @@ func (sdk *codeGeneratorModule) Codegen(
 		return nil, fmt.Errorf("failed to get schema introspection json ID during %s module sdk codegen: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
+	codegenArgs := []dagql.NamedInput{
+		{
+			Name:  "modSource",
+			Value: dagql.NewID[*core.ModuleSource](sourceID),
+		},
+		{
+			Name:  "introspectionJson",
+			Value: dagql.NewID[*core.File](schemaJSONFileID),
+		},
+	}
+	gitCredInput, err := sdk.mod.gitCredentialsInput(ctx, dag, "codegen", source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare git credentials for sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	if gitCredInput != nil {
+		codegenArgs = append(codegenArgs, *gitCredInput)
+	}
+
 	var inst dagql.Result[*core.GeneratedCode]
 	err = dag.Select(ctx, sdkInst.sdk, &inst, dagql.Selector{
 		Field: "codegen",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "modSource",
-				Value: dagql.NewID[*core.ModuleSource](sourceID),
-			},
-			{
-				Name:  "introspectionJson",
-				Value: dagql.NewID[*core.File](schemaJSONFileID),
-			},
-		},
+		Args:  codegenArgs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module codegen: %w", err)
