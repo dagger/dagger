@@ -1,6 +1,6 @@
 kind: Added
 body: |
-  Private HTTPS git dependencies in Go modules now resolve with the host's git credential helper. When the Go SDK's `goprivate` setting names a host, the engine relays git credential requests from the dependency install to the host over a session-scoped socket — no `.netrc`, hardcoded URLs, or SSH setup required. Credentials are fetched on demand, scoped to the declared hosts, never written into the container, and removed before module code runs.
+  Private git+https dependencies now install using the host's git credentials in Go, Python and TypeScript modules. The engine relays git credential requests from the dependency install to the host's credential helper over a session-scoped socket — no `.netrc`, hardcoded URLs, or SSH setup required. Go modules opt in via the `goprivate` setting (`[modules.<name>.settings]` in `dagger.toml`); Python and TypeScript need no configuration: the allowed hosts come from the module's own manifests. Credentials are fetched on demand, scoped to those hosts, never written into the container, and removed before module code runs. Note: bun fetches `github.com` dependencies through GitHub's API without credentials (oven-sh/bun#19618), so private GitHub dependencies with bun need the Node runtime.
 time: 2026-07-03T22:16:37Z
 custom:
   Author: grouville
