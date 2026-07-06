@@ -377,6 +377,21 @@ func (c *Client) injectInit(_ context.Context, state *execState) error {
 	return nil
 }
 
+func (c *Client) injectGitCredentialHelper(_ context.Context, state *execState) error {
+	if state.execMD == nil || !state.execMD.InjectGitCredentialHelper {
+		return nil
+	}
+
+	// same binary as dagger-init; it dispatches on argv[0]
+	state.mounts = append(state.mounts, executor.Mount{
+		Src:      hostBindMount{srcPath: distconsts.DaggerInitPath},
+		Dest:     distconsts.GitCredentialHelperInContainerPath,
+		Readonly: true,
+	})
+
+	return nil
+}
+
 func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	var extraOpts []ctdoci.SpecOpts
 	if state.procInfo.Meta.ReadonlyRootFS {

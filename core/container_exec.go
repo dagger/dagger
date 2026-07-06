@@ -310,6 +310,15 @@ func (container *Container) execMeta(
 		}
 	}
 
+	for _, socket := range container.Sockets {
+		if socket.Source.Self() != nil && socket.Source.Self().Kind == SocketKindGitCredential {
+			// git in the container needs the engine's credential helper binary
+			// to talk to the mounted git-credential socket
+			execMD.InjectGitCredentialHelper = true
+			break
+		}
+	}
+
 	return &execMD, nil
 }
 
@@ -1112,7 +1121,14 @@ type execSSHMount struct {
 }
 
 func (ssh *execSSHMount) Mount(ctx context.Context, _ bool) (bkcache.MountableRef, error) {
-	sock, cleanup, err := ssh.socket.Self().MountSSHAgent(ctx)
+	var sock string
+	var cleanup func() error
+	var err error
+	if ssh.socket.Self().Kind == SocketKindGitCredential {
+		sock, cleanup, err = ssh.socket.Self().MountGitCredentialSocket(ctx)
+	} else {
+		sock, cleanup, err = ssh.socket.Self().MountSSHAgent(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
