@@ -24,7 +24,7 @@ dagger [options] [subcommand | file...]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -m, --load-module string           Use a one-off module (local path or git ref)
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
       --model string                 LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
   -E, --no-exit                      Leave the TUI running after completion
   -M, --no-load-module               Don't load any module for this command
@@ -80,7 +80,7 @@ dagger activity
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -118,7 +118,7 @@ See https://docs.dagger.io/api for the full overview.
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -166,7 +166,7 @@ dagger api call [options] [function]...
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -202,7 +202,7 @@ module that generates it.
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -254,7 +254,7 @@ dagger api client init typescript ./lib/cli .dagger/modules/api
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -292,7 +292,7 @@ dagger api client list
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -357,7 +357,7 @@ dagger api exec python main.py
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -412,7 +412,7 @@ dagger api functions [options] [function]...
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -483,7 +483,7 @@ EOF
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -540,7 +540,7 @@ dagger check [options] [pattern...]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -568,7 +568,7 @@ Manage Dagger Cloud
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -612,7 +612,7 @@ dagger cloud billing
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -653,7 +653,7 @@ dagger cloud billing manage [org]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -686,7 +686,7 @@ dagger cloud billing plans
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -718,7 +718,7 @@ dagger cloud check
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -754,7 +754,7 @@ dagger cloud check list
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -786,7 +786,7 @@ dagger cloud check off [name]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -818,7 +818,7 @@ dagger cloud check on [name]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -850,7 +850,7 @@ dagger cloud check status [name]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -888,7 +888,7 @@ dagger cloud integration
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -936,7 +936,7 @@ dagger cloud integration create github
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -969,7 +969,7 @@ dagger cloud integration list [type]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1002,7 +1002,7 @@ dagger cloud integration rm <id>
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1040,7 +1040,7 @@ dagger cloud login [options] [org]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1072,7 +1072,7 @@ dagger cloud logout
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1110,7 +1110,7 @@ dagger cloud org [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1146,7 +1146,7 @@ dagger cloud org info [org] [flags]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1179,7 +1179,7 @@ dagger cloud org list [flags]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1212,7 +1212,7 @@ dagger cloud org use <org> [flags]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --json                         Print JSON output
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1261,7 +1261,7 @@ dagger generate [options] [pattern...]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1313,7 +1313,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1345,7 +1345,7 @@ dagger installed
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1379,7 +1379,7 @@ Operates on the dagger-module.toml reachable from the current directory.
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1411,7 +1411,7 @@ Manage this module's dependencies
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1452,7 +1452,7 @@ dagger module deps add github.com/dagger/dagger/modules/wolfi
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1484,7 +1484,7 @@ dagger module deps list [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1522,7 +1522,7 @@ dagger module deps rm wolfi
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1550,7 +1550,7 @@ Manage this module's required engine version
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1592,7 +1592,7 @@ dagger module engine require v0.21.0
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1624,7 +1624,7 @@ dagger module engine require-current [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1656,7 +1656,7 @@ dagger module engine require-latest [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1688,7 +1688,7 @@ dagger module engine required [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1760,7 +1760,7 @@ dagger module init go myapp
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1807,7 +1807,7 @@ dagger module sdk <subcommand> [args...] [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1847,7 +1847,7 @@ dispatch through that SDK.
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1892,7 +1892,7 @@ dagger sdk client-options <sdk> [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1953,7 +1953,7 @@ dagger sdk install go
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -1994,7 +1994,7 @@ dagger sdk list [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2033,7 +2033,7 @@ dagger sdk module-options <sdk> [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2072,7 +2072,7 @@ dagger sdk search [query] [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2126,7 +2126,7 @@ dagger sdk uninstall go
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2170,7 +2170,7 @@ dagger search wolfi
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2208,7 +2208,7 @@ dagger settings [module] [key] [value]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2257,7 +2257,7 @@ dagger setup
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2305,7 +2305,7 @@ dagger uninstall hello
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2353,7 +2353,7 @@ dagger up [options] [pattern...]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2397,7 +2397,7 @@ dagger update
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2436,7 +2436,7 @@ dagger version
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2481,7 +2481,7 @@ dagger workspace
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2538,7 +2538,7 @@ dagger workspace config [key] [value] [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2570,7 +2570,7 @@ dagger workspace config-file [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2602,7 +2602,7 @@ dagger workspace cwd [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2634,7 +2634,7 @@ dagger workspace remote [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2666,7 +2666,7 @@ dagger workspace remotes [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
@@ -2698,7 +2698,7 @@ dagger workspace root [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
