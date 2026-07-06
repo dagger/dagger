@@ -149,7 +149,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc("Name of the new module."),
 				dagql.Arg("sdk").Doc("Workspace SDK name or module entry name to use."),
-				dagql.Arg("path").Doc(`Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].`),
+				dagql.Arg("path").Doc(`Path for the new module: relative paths resolve from the caller cwd, absolute paths from the workspace root. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].`),
 				dagql.Arg("source").Doc("Source subpath within the new module."),
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),

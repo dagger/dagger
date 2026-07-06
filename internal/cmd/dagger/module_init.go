@@ -148,9 +148,10 @@ What the engine does (atomically, in one Changeset):
   4. When --path is the default (.dagger/modules/<name>), also installs
      the new module as [modules.<name>] so it's callable here.
 
---path defaults to .dagger/modules/<name>. Custom paths skip the
-[modules.<name>] install (the user is managing workspace layout
-explicitly).`,
+--path defaults to .dagger/modules/<name>. Relative paths resolve from the
+current directory; absolute paths resolve from the workspace root. Custom
+paths skip the [modules.<name>] install (the user is managing workspace
+layout explicitly).`,
 	Example: "dagger module init go myapp",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -159,7 +160,7 @@ explicitly).`,
 }
 
 func init() {
-	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path relative to the workspace root (default: .dagger/modules/<name>)")
+	moduleInitCmd.PersistentFlags().StringVar(&moduleInitPath, "path", "", "Module path relative to the current directory; absolute paths resolve from the workspace root (default: .dagger/modules/<name>)")
 	moduleCmd.AddCommand(moduleInitCmd)
 }
 
