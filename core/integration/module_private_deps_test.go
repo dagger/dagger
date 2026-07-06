@@ -23,6 +23,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// gitlabTestPAT returns the read-only PAT for the private gitlab fixture
+// repo, base64-encoded in source to dodge token scanners.
+func gitlabTestPAT(t *testctx.T) string {
+	t.Helper()
+	token, err := base64.StdEncoding.DecodeString("Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx")
+	require.NoError(t, err)
+	return strings.TrimSpace(string(token))
+}
+
 func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("ConcurrentSetupAndCleanup", func(ctx context.Context, t *testctx.T) {
@@ -271,9 +280,7 @@ func (m *Foo) HowCoolIsDagger() string {
 	t.Run("golang transitive existing go.mod https", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		encodedPAT := "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx"
-		token, err := base64.StdEncoding.DecodeString(encodedPAT)
-		require.NoError(t, err)
+		token := gitlabTestPAT(t)
 
 		const (
 			privateDep        = "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git/privatewrapper"
@@ -281,21 +288,22 @@ func (m *Foo) HowCoolIsDagger() string {
 		)
 
 		modGen := goGitBase(t, c).
-			WithNewFile("/root/.gitconfig", makeGitCredentials("https://gitlab.com", "git", strings.TrimSpace(string(token)))).
+			WithNewFile("/root/.gitconfig", makeGitCredentials("https://gitlab.com", "git", token)).
+			// goprivate through the workspace settings namespace; the legacy
+			// dagger.json sdk.config form is covered by TestSDKConfig
 			WithNewFile("/work/dagger.toml", `[modules.foo]
 source = ".dagger/modules/foo"
 entrypoint = true
+
+[modules.foo.settings]
+goprivate = "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git"
 `).
-			WithNewFile("/work/.dagger/modules/foo/dagger.json", `{
-  "name": "foo",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go",
-    "config": {
-      "goprivate": "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git"
-    }
-  }
-}`).
+			WithNewFile("/work/.dagger/modules/foo/dagger-module.toml", `name = "foo"
+engineVersion = "latest"
+
+[runtime]
+source = "go"
+`).
 			WithNewFile("/work/.dagger/modules/foo/go.mod", fmt.Sprintf(`module dagger/foo
 
 go 1.21.3
@@ -343,5 +351,210 @@ func (m *Foo) Leaks() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "clean", leaks)
+	})
+}
+
+// Public git+https dependencies in Python/TypeScript modules exercise the
+// full git-credential plumbing (manifest scan, socket mint, mount and helper
+// injection inside the runtime module's install execs, scrub before user
+// code) without needing private-repo credentials: git only consults the
+// helper on an auth challenge, so the install succeeds with an empty scope.
+func (ModuleSuite) TestGitDepInstall(ctx context.Context, t *testctx.T) {
+	t.Run("python", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
+			// the [tool.uv.sources] sub-table form is what `uv add git+https://...` writes
+			With(pyprojectExtra([]string{"packaging"}, `
+[tool.uv.sources.packaging]
+git = "https://github.com/pypa/packaging"
+tag = "25.0"
+`)).
+			With(pythonSource(`
+import os
+import importlib.metadata
+
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def check(self) -> str:
+        version = importlib.metadata.version("packaging")
+        leaks = []
+        if os.environ.get("GIT_CONFIG_COUNT"):
+            leaks.append("env")
+        if os.path.exists("/.git-credential"):
+            leaks.append("helper")
+        if os.path.exists("/tmp/dagger-git-credential.sock"):
+            leaks.append("socket")
+        return version + ":" + (",".join(leaks) or "clean")
+`)).
+			With(daggerCallAt(".", "check")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "25.0:clean", out)
+	})
+
+	t.Run("python private", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		token := gitlabTestPAT(t)
+
+		const privateDep = "coolpy @ git+https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git@92ee0a59a10856b61ed9a18f0ff921cc31fb8f7d#subdirectory=privatepy"
+
+		out, err := daggerCliBase(t, c).
+			// the nested dagger session serves `git credential fill` from this container
+			WithExec([]string{"apk", "add", "git"}).
+			WithNewFile("/root/.gitconfig", makeGitCredentials("https://gitlab.com", "git", token)).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(pyprojectExtra([]string{privateDep}, "")).
+			With(pythonSource(`
+import os
+
+import coolpy
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def check(self) -> str:
+        leaks = []
+        if os.environ.get("GIT_CONFIG_COUNT"):
+            leaks.append("env")
+        if os.path.exists("/.git-credential"):
+            leaks.append("helper")
+        if os.path.exists("/tmp/dagger-git-credential.sock"):
+            leaks.append("socket")
+        return coolpy.how_cool() + ":" + (",".join(leaks) or "clean")
+`)).
+			With(daggerCallAt(".", "check")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "private-python-git-dep:ubercool:clean", out)
+	})
+
+	t.Run("typescript", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(withModuleFixture(t, c, ".", "typescript/base-test")).
+			WithNewFile("package.json", `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "^5.5.4",
+    "ms": "git+https://github.com/vercel/ms.git#2.1.3"
+  }
+}`).
+			With(sdkSource("typescript", `
+import * as fs from "fs"
+import ms from "ms"
+import { object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  check(): string {
+    const leaks = []
+    if (process.env.GIT_CONFIG_COUNT) leaks.push("env")
+    if (fs.existsSync("/.git-credential")) leaks.push("helper")
+    if (fs.existsSync("/tmp/dagger-git-credential.sock")) leaks.push("socket")
+    return ms(60000) + ":" + (leaks.join(",") || "clean")
+  }
+}
+`)).
+			With(daggerCallAt(".", "check")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "1m:clean", out)
+	})
+
+	t.Run("typescript private", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		token := gitlabTestPAT(t)
+
+		out, err := daggerCliBase(t, c).
+			// the nested dagger session serves `git credential fill` from this container
+			WithExec([]string{"apk", "add", "git"}).
+			WithNewFile("/root/.gitconfig", makeGitCredentials("https://gitlab.com", "git", token)).
+			With(withModuleFixture(t, c, ".", "typescript/base-test")).
+			WithNewFile("package.json", `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "^5.5.4",
+    "cooljs": "git+https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git#d62b69ec32be39bf3c8b7386a066732a40d9f632"
+  }
+}`).
+			With(sdkSource("typescript", `
+import * as fs from "fs"
+import cooljs from "cooljs"
+import { object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  check(): string {
+    const leaks = []
+    if (process.env.GIT_CONFIG_COUNT) leaks.push("env")
+    if (fs.existsSync("/.git-credential")) leaks.push("helper")
+    if (fs.existsSync("/tmp/dagger-git-credential.sock")) leaks.push("socket")
+    return cooljs + ":" + (leaks.join(",") || "clean")
+  }
+}
+`)).
+			With(daggerCallAt(".", "check")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "private-js-git-dep:ubercool:clean", out)
+	})
+
+	// bun never runs git for github.com dependencies (it downloads tarballs
+	// from the github API instead, currently without applying credentials:
+	// https://github.com/oven-sh/bun/issues/19618), so a github URL would
+	// bypass the credential helper entirely and prove nothing; a non-github
+	// host is what makes bun fall back to a real `git clone`
+	t.Run("typescript private bun", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		token := gitlabTestPAT(t)
+
+		out, err := daggerCliBase(t, c).
+			// the nested dagger session serves `git credential fill` from this container
+			WithExec([]string{"apk", "add", "git"}).
+			WithNewFile("/root/.gitconfig", makeGitCredentials("https://gitlab.com", "git", token)).
+			With(withModuleFixture(t, c, ".", "typescript/base-test")).
+			WithNewFile("package.json", `{
+  "type": "module",
+  "dagger": {
+    "runtime": "bun"
+  },
+  "dependencies": {
+    "typescript": "^5.5.4",
+    "cooljs": "git+https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git#d62b69ec32be39bf3c8b7386a066732a40d9f632"
+  }
+}`).
+			With(sdkSource("typescript", `
+import * as fs from "fs"
+import cooljs from "cooljs"
+import { object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  check(): string {
+    const leaks = []
+    if (process.env.GIT_CONFIG_COUNT) leaks.push("env")
+    if (fs.existsSync("/.git-credential")) leaks.push("helper")
+    if (fs.existsSync("/tmp/dagger-git-credential.sock")) leaks.push("socket")
+    return cooljs + ":" + (leaks.join(",") || "clean")
+  }
+}
+`)).
+			With(daggerCallAt(".", "check")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "private-js-git-dep:ubercool:clean", out)
 	})
 }
