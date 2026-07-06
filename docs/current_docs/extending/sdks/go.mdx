@@ -954,6 +954,17 @@ jobs:
           verb: check
 ```
 
+## Private Go module dependencies
+
+Private modules in `go.mod` need [`GOPRIVATE`](https://go.dev/ref/mod#private-modules) so `go` skips the public module proxy for them. Set it as a module setting in your workspace's `dagger.toml`:
+
+```toml
+[modules.my-module.settings]
+goprivate = "gitlab.example.com/acme"
+```
+
+With that set, the dependency install authenticates over HTTPS with your own git credentials — if `git clone` works on your machine, so does the dependency. Credentials are used on demand during the install and are never stored in the container or its cache. SSH keeps working as before: add a `url.insteadOf` rewrite to your `.gitconfig` and run an SSH agent.
+
 ## IDE setup, `go.mod` and `go.work`
 
 `init` generates a `go.mod` (and `go.sum`) scoped to your module so the generated client resolves. If the module lives in a sub-directory of a larger Go project, this separate module can confuse IDE tooling.
