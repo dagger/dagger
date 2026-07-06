@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Private HTTPS git dependencies in Go modules now resolve with the host's git credential helper. When the Go SDK's `goprivate` setting names a host, the engine relays git credential requests from the dependency install to the host over a session-scoped socket — no `.netrc`, hardcoded URLs, or SSH setup required. Credentials are fetched on demand, scoped to the declared hosts, never written into the container, and removed before module code runs.
+time: 2026-07-03T22:16:37Z
+custom:
+  Author: grouville
+  PR: 13586

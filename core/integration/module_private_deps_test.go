@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -262,5 +263,85 @@ func (m *Foo) HowCoolIsDagger() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "private-transitive-go-dep:ubercool", howCoolIsDagger)
+	})
+
+	// same private go.mod dependency, but over HTTPS: the install resolves it
+	// through the host's git credential helper via the engine's git-credential
+	// socket, which must be gone by the time user code runs
+	t.Run("golang transitive existing go.mod https", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		encodedPAT := "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx"
+		token, err := base64.StdEncoding.DecodeString(encodedPAT)
+		require.NoError(t, err)
+
+		const (
+			privateDep        = "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git/privatewrapper"
+			privateDepVersion = "v0.0.1"
+		)
+
+		modGen := goGitBase(t, c).
+			WithNewFile("/root/.gitconfig", makeGitCredentials("https://gitlab.com", "git", strings.TrimSpace(string(token)))).
+			WithNewFile("/work/dagger.toml", `[modules.foo]
+source = ".dagger/modules/foo"
+entrypoint = true
+`).
+			WithNewFile("/work/.dagger/modules/foo/dagger.json", `{
+  "name": "foo",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git"
+    }
+  }
+}`).
+			WithNewFile("/work/.dagger/modules/foo/go.mod", fmt.Sprintf(`module dagger/foo
+
+go 1.21.3
+
+require %s %s
+`, privateDep, privateDepVersion)).
+			WithNewFile("/work/.dagger/modules/foo/main.go", fmt.Sprintf(`package main
+
+import (
+	"os"
+
+	"%s/pkg/coolwrapper"
+)
+
+type Foo struct{}
+
+func (m *Foo) HowCoolIsDagger() string {
+	return coolwrapper.HowCoolIsThat()
+}
+
+// Leaks reports any git credential plumbing still visible to user code.
+func (m *Foo) Leaks() string {
+	if os.Getenv("GIT_CONFIG_COUNT") != "" {
+		return "env leaked"
+	}
+	if _, err := os.Stat("/.git-credential"); err == nil {
+		return "helper leaked"
+	}
+	if _, err := os.Stat("/tmp/dagger-git-credential.sock"); err == nil {
+		return "socket leaked"
+	}
+	return "clean"
+}
+`, privateDep)).
+			WithWorkdir("/work")
+
+		howCoolIsDagger, err := modGen.
+			With(daggerExec("call", "how-cool-is-dagger")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "private-transitive-go-dep:ubercool", howCoolIsDagger)
+
+		leaks, err := modGen.
+			With(daggerExec("call", "leaks")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "clean", leaks)
 	})
 }
