@@ -11,7 +11,8 @@ import (
 
 var (
 	// Version is the engine/CLI semver, derived from internal/version.Version
-	// (which embeds VERSION at build time) with a "v" prefix.
+	// (which embeds VERSION at build time). Dev builds include the canonical
+	// build identifier from internal/version.Canonical.
 	//
 	// DAGGER_VERSION overrides at init for tests.
 	Version string
@@ -55,6 +56,9 @@ var (
 func init() {
 	if Version == "" {
 		Version = iversion.Version
+		if IsDevVersion(Version) {
+			Version = iversion.Canonical()
+		}
 	}
 
 	// hack: dynamically populate version env vars
