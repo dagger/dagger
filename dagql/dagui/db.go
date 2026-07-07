@@ -126,8 +126,10 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// don't send along any stubs; let the client-side create its own stubs
 			return false
 		}
-		if filter == nil || filter[span.ParentID] {
-			// include subscribed (or all) spans
+		if filter == nil || filter[span.ParentID] || filter[span.ID] {
+			// include subscribed (or all) spans, and updates to spans that
+			// were explicitly subscribed themselves (e.g. time-breakdown support
+			// spans whose parents aren't subscribed)
 			return true
 		}
 		if span.IsFailedOrCausedFailure() {

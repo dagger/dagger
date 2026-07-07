@@ -542,6 +542,68 @@ func (hb *TimeBreakdown) BlockedNow(now time.Time) (TimeSegment, bool) {
 	return TimeSegment{}, false
 }
 
+// TimeBreakdownSpans visits the spans a row's time breakdown draws on
+// beyond the row itself: execution twins and their children, deferred-work
+// markers (effects) and theirs, wait-edge targets, the cause chain that
+// resolves markers to their ops, and the exec children that carry argv
+// labels. Frontends that stream a filtered subset of spans (the Cloud
+// websocket) must include these for visible rows or the live decomposition
+// silently degrades to the wall-clock lie.
+func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
+	if span == nil || span.db == nil {
+		return
+	}
+	seen := map[*Span]bool{span: true}
+	var walk func(s *Span, depth int)
+	emit := func(c *Span, depth int) {
+		if c == nil || seen[c] {
+			return
+		}
+		seen[c] = true
+		visit(c)
+		// the cause chain resolves markers to their ops
+		for _, cause := range c.causesViaLinks.Order {
+			if !seen[cause] {
+				seen[cause] = true
+				visit(cause)
+			}
+		}
+		// blockers' exec children carry the argv labels
+		for _, child := range c.ChildSpans.Order {
+			if !seen[child] {
+				seen[child] = true
+				visit(child)
+			}
+		}
+		walk(c, depth+1)
+	}
+	walk = func(s *Span, depth int) {
+		if depth > waitChainMaxDepth {
+			return
+		}
+		for i := range s.Links {
+			if s.Links[i].IsWait() {
+				emit(s.db.Spans.Map[s.Links[i].SpanContext.SpanID], depth)
+			}
+		}
+		for _, child := range s.ChildSpans.Order {
+			if child.Name == s.Name {
+				emit(child, depth)
+				for _, gc := range child.ChildSpans.Order {
+					emit(gc, depth)
+				}
+			}
+		}
+		for _, effect := range s.effectsViaLinks.Order {
+			emit(effect, depth)
+			for _, child := range effect.ChildSpans.Order {
+				emit(child, depth)
+			}
+		}
+	}
+	walk(span, 0)
+}
+
 // resolveBlocker maps internal plumbing spans (lazy "resume" markers)
 // to the user-meaningful op whose deferred work they represent: the resume's
 // causal source, falling back to its parent.
