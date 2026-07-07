@@ -1414,6 +1414,22 @@ func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls [
 	return toolCallsPool.Wait()
 }
 
+// stableIDDigest returns a stable identity digest for an ID in either form.
+// Recipe IDs use their recipe digest (unchanged behavior); handle-form IDs
+// (post-evaluation cache handles) have no recipe digest, so derive one from
+// their engine result ID — the same identity the engine uses to compare handle
+// objects. Both the store (WithObject) and the lookup (Binding.Digest) use this,
+// so object dedup stays consistent.
+func stableIDDigest(id *call.ID) digest.Digest {
+	if id == nil {
+		return digest.FromString("")
+	}
+	if id.IsHandle() {
+		return digest.FromString(fmt.Sprintf("engine-result:%d", id.EngineResultID()))
+	}
+	return id.Digest()
+}
+
 // sync this with idtui.llmLogsLastLines to ensure user and LLM sees the same
 // thing
 const llmLogsLastLines = 8
@@ -2546,7 +2562,7 @@ func (m *MCP) WithObject(llmID string, anyID dagql.AnyID) *MCP {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	typeName := id.Type().NamedType()
-	hash := id.Digest()
+	hash := stableIDDigest(id)
 	if _, ok := m.idByHash[hash]; !ok {
 		m.typeCounts[typeName]++
 	}

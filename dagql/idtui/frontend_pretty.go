@@ -194,8 +194,9 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 
 	// Add prompt field
-	formWrap  *teav1.Wrap // bubbletea v1 adapter for huh.Form
-	formModel *huh.Form   // direct reference for KeyBinds()
+	formWrap   *teav1.Wrap // bubbletea v1 adapter for huh.Form
+	formModel  *huh.Form   // direct reference for KeyBinds()
+	formSpacer *blankLine  // spacer beneath the form, removed alongside it
 
 	// track whether we've already spawned the run function
 	spawned bool
@@ -1056,9 +1057,10 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string
 
 func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
 	done := make(chan struct{}, 1)
+	wrapCh := make(chan *teav1.Wrap, 1)
 
 	fe.dispatch(func() {
-		fe.handlePromptForm(form, func(f *huh.Form) {
+		wrapCh <- fe.handlePromptForm(form, func(f *huh.Form) {
 			close(done)
 		})
 		fe.Update()
@@ -1066,10 +1068,52 @@ func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error 
 
 	select {
 	case <-ctx.Done():
+		// The caller gave up on the form (e.g. an OAuth browser callback
+		// delivered the code first). Dismiss it so it doesn't linger in the TUI.
+		wrap := <-wrapCh
+		fe.dispatch(func() {
+			fe.removeForm(wrap)
+		})
 		return ctx.Err()
 	case <-done:
 		return nil
 	}
+}
+
+// removeForm tears the given prompt form out of the TUI. It no-ops unless wrap
+// is still the active form, so a late dismissal (e.g. from a cancelled context)
+// can't remove a form that has since been replaced. Must run on the UI goroutine.
+func (fe *frontendPretty) removeForm(wrap *teav1.Wrap) {
+	if fe.formWrap == nil || fe.formWrap != wrap {
+		return
+	}
+	fe.tui.RemoveChild(fe.formWrap)
+	if fe.formSpacer != nil {
+		fe.tui.RemoveChild(fe.formSpacer)
+		fe.formSpacer = nil
+	}
+	fe.formWrap = nil
+	fe.formModel = nil
+	fe.applyTuistFocus() // restore focus to the correct SpanTreeView
+	fe.Update()
+}
+
+// PrintAbove satisfies llmconfig.AbovePrinter: it writes text into the terminal
+// scrollback above the live TUI, so long content like OAuth URLs isn't
+// word-wrapped by the form renderer and stays selectable / Ctrl+Clickable. It
+// runs on the UI goroutine (serialized with rendering) because setup calls it
+// from a background goroutine.
+func (fe *frontendPretty) PrintAbove(text string) {
+	fe.dispatch(func() {
+		fe.tui.PrintAbove(text)
+	})
+}
+
+// OpenBrowser satisfies llmconfig.BrowserOpener, opening url in the user's
+// browser (e.g. for OAuth). runWithTUI already redirects browser.Stdout/Stderr
+// into a buffer, so a failed or noisy opener can't corrupt the TUI.
+func (fe *frontendPretty) OpenBrowser(url string) error {
+	return browser.OpenURL(url)
 }
 
 // blankLine is a trivial component that renders a single empty line.
@@ -1079,27 +1123,24 @@ func (*blankLine) Render(ctx tuist.Context) {
 	ctx.Line("")
 }
 
-func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) {
+func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form)) *teav1.Wrap {
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
 	fe.formModel = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
 	fe.formWrap = teav1.New(fe.formModel)
-	formSpacer := &blankLine{}
+	fe.formSpacer = &blankLine{}
+	wrap := fe.formWrap
 	fe.formWrap.OnQuit(func() {
 		result(fe.formModel)
-		fe.tui.RemoveChild(fe.formWrap)
-		fe.tui.RemoveChild(formSpacer)
-		fe.formWrap = nil
-		fe.formModel = nil
-		fe.applyTuistFocus() // restore focus to the correct SpanTreeView
-		fe.Update()
+		fe.removeForm(wrap)
 	})
 	// Insert before keymapBar
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.formWrap)
-	fe.tui.AddChild(formSpacer)
+	fe.tui.AddChild(fe.formSpacer)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetFocus(fe.formWrap)
+	return wrap
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
