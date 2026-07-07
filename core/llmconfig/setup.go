@@ -39,6 +39,15 @@ type AbovePrinter interface {
 	PrintAbove(text string)
 }
 
+// BrowserOpener is an optional interface that PromptHandlers may implement to
+// open a URL in the user's browser. OAuth flows use it to launch the
+// authorization page automatically; the printed URL stays the fallback. It is
+// client-side (the Frontend implements it), so core/llmconfig does not depend
+// on a browser package.
+type BrowserOpener interface {
+	OpenBrowser(url string) error
+}
+
 // providerSummary returns a short description of an already-configured provider.
 func providerSummary(p Provider) string {
 	if p.IsOAuth() {
@@ -498,14 +507,28 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (string, *Provi
 	// Print the URL above the TUI if supported, so it's not word-wrapped
 	// and can be Ctrl+Clicked. Otherwise include it inline in the form.
 	var authCode string
-	var description string
+	printedAbove := false
 	if printer, ok := ph.(AbovePrinter); ok {
 		printer.PrintAbove(fmt.Sprintf(
 			"Claude Code OAuth — visit this URL to authorize:\n\n%s\n\n",
 			authURL,
 		))
+		printedAbove = true
+	}
+
+	// Try to open the browser automatically; the printed URL is the fallback.
+	browserOpened := false
+	if opener, ok := ph.(BrowserOpener); ok {
+		browserOpened = opener.OpenBrowser(authURL) == nil
+	}
+
+	var description string
+	switch {
+	case browserOpened:
+		description = "A browser window should open. After authorizing, paste the code below."
+	case printedAbove:
 		description = "After authorizing, paste the code below."
-	} else {
+	default:
 		description = fmt.Sprintf(
 			"Visit this URL to authorize:\n\n%s\n\nAfter authorizing, paste the code below.",
 			authURL,
@@ -566,6 +589,12 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (string, *Prov
 		))
 	}
 
+	// Try to open the browser automatically; the printed URL and the local
+	// callback server are the fallbacks.
+	if opener, ok := ph.(BrowserOpener); ok {
+		_ = opener.OpenBrowser(authURL)
+	}
+
 	var code string
 
 	if serverErr == nil {
@@ -595,9 +624,14 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (string, *Prov
 			),
 		)
 
+		// Run the manual-paste form as a fallback while we wait for the browser
+		// callback. formCtx lets us dismiss the form once the callback wins the
+		// race, so it doesn't linger in the TUI.
+		formCtx, cancelForm := context.WithCancel(ctx)
+		defer cancelForm()
 		formDone := make(chan error, 1)
 		go func() {
-			formDone <- ph.HandleForm(ctx, form)
+			formDone <- ph.HandleForm(formCtx, form)
 		}()
 
 		select {
@@ -605,6 +639,7 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (string, *Prov
 			if browserCode != "" {
 				code = browserCode
 			}
+			cancelForm() // dismiss the fallback form
 		case err := <-formDone:
 			if err != nil {
 				return "", nil, "", err

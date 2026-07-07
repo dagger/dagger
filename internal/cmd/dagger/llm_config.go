@@ -194,7 +194,16 @@ var llmSetupCmd = &cobra.Command{
 		var configured bool
 		var aborted bool
 		err := Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
-			// Frontend teardown is handled by Run when this fn returns.
+			// Shut the frontend's telemetry exporters down when setup returns so
+			// the TUI sees EOF and exits. Unlike engine-backed commands, llm
+			// setup has no telemetry stream to signal completion on its own, so
+			// without this the TUI hangs after setup finishes. (Mirrors dagger
+			// trace, which is likewise engine-less.)
+			spanExp := Frontend.SpanExporter()
+			defer spanExp.Shutdown(ctx)
+			logExp := Frontend.LogExporter()
+			defer logExp.Shutdown(ctx)
+
 			var err error
 			configured, err = llmconfig.InteractiveSetup(ctx, Frontend)
 			if errors.Is(err, llmconfig.ErrAborted) {

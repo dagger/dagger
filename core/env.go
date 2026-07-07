@@ -295,7 +295,9 @@ func (b *Binding) Digest() digest.Digest {
 		if err != nil {
 			return digest.FromString("")
 		}
-		return id.Digest()
+		// stableIDDigest handles handle-form IDs (which have no recipe digest)
+		// so this matches WithObject's idByHash keys and never panics.
+		return stableIDDigest(id)
 	}
 	jsonBytes, err := json.Marshal(b.Value)
 	if err != nil {

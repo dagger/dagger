@@ -1226,9 +1226,11 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 
 	// Compute the LLM call digest for prompt/response span metadata. inst.ID()
 	// is the LLM state entering step() (typically ends in withPrompt). Its
-	// digest lets the TUI identify and branch from this point.
+	// digest lets the TUI identify and branch from this point. Handle-form IDs
+	// (post-evaluation cache handles) have no recipe digest, so skip the branch
+	// attribute for them rather than panicking in Digest().
 	var llmCallDigest string
-	if id, idErr := inst.ID(); idErr == nil {
+	if id, idErr := inst.ID(); idErr == nil && !id.IsHandle() {
 		llmCallDigest = id.Digest().String()
 	}
 
@@ -1492,7 +1494,7 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 		return self, false, err
 	}
 	var selfDigest string
-	if id, idErr := self.ID(); idErr == nil {
+	if id, idErr := self.ID(); idErr == nil && !id.IsHandle() {
 		selfDigest = id.Digest().String()
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
