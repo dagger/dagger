@@ -5,6 +5,7 @@ export {
   func,
   check,
   generate,
+  up,
   argument,
   object,
   field,

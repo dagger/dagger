@@ -523,6 +523,39 @@ func (c *moduleConfig) hasFile(name string) bool {
 	return ok
 }
 
+// requireGeneratedFiles verifies the module's committed generated files are
+// present. Called only on the no-codegen runtime path (introspectionJSON not
+// passed); the codegen path regenerates them so the check would be redundant.
+// Mirrors the Go SDK's requireGeneratedFiles.
+func (c *moduleConfig) requireGeneratedFiles(ctx context.Context) error {
+	required := []string{
+		filepath.Join(GenDir, "client.gen.ts"),
+		EntrypointExecutableFile,
+	}
+	// Node & Bun run `tsx --tsconfig tsconfig.json`; a missing committed
+	// tsconfig.json would otherwise surface as an opaque tsx error instead of
+	// this actionable one. Deno resolves through deno.json (checked by the
+	// caller), so it needs no tsconfig.json.
+	if c.runtime == Node || c.runtime == Bun {
+		required = append(required, "tsconfig.json")
+	}
+	for _, rel := range required {
+		exists, err := c.source.Exists(ctx, rel)
+		if err != nil {
+			return fmt.Errorf("check committed generated file %q: %w", rel, err)
+		}
+		if exists {
+			continue
+		}
+		return fmt.Errorf(
+			"module %q has runtime codegen disabled but committed generated file %q is missing; "+
+				"run `dagger generate` and commit every generated file: the whole %s/ directory "+
+				"and %s",
+			c.name, rel, GenDir, EntrypointExecutableFile)
+	}
+	return nil
+}
+
 // Return the path to the module source.
 func (c *moduleConfig) modulePath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath)

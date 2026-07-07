@@ -3,6 +3,7 @@ import * as path from "path"
 
 import { connection } from "../../connect.js"
 import { scan } from "../introspector/index.js"
+import { serializeIntrospection } from "../introspector/introspection_json.js"
 import { serializeModule } from "../introspector/typedef_json.js"
 import { Register } from "./register.js"
 
@@ -94,9 +95,28 @@ async function main() {
   if (typedefJsonPath) {
     const json = serializeModule(result)
     await fs.promises.writeFile(typedefJsonPath, JSON.stringify(json))
-    if (!process.env.TYPEDEF_OUTPUT_FILE) {
-      return
-    }
+  }
+
+  // When EMIT_INTROSPECTION_JSON_FILE is set, write the module's own types as
+  // an introspection-shaped JSON. The Go-side Codegen merges it into the deps
+  // schema (dag.Schema().Merge) before generating the client bindings, so the
+  // bindings include the module's own types and self calls resolve without a
+  // runtime codegen pass. LEGACY_SHARED_ID_TYPES asks for per-type <T>ID
+  // scalars, needed by pre-cutover schema views.
+  const introspectionJsonPath = process.env.EMIT_INTROSPECTION_JSON_FILE
+  if (introspectionJsonPath) {
+    const legacySharedIDTypes = process.env.LEGACY_SHARED_ID_TYPES !== undefined
+    const json = serializeIntrospection(result, { legacySharedIDTypes })
+    await fs.promises.writeFile(introspectionJsonPath, JSON.stringify(json))
+  }
+
+  // The EMIT_* modes are file-only; only the legacy TYPEDEF_OUTPUT_FILE path
+  // needs an engine connection to register the module.
+  if (
+    (typedefJsonPath || introspectionJsonPath) &&
+    !process.env.TYPEDEF_OUTPUT_FILE
+  ) {
+    return
   }
 
   // TODO(TomChv): move that logic inside the engine at some point
