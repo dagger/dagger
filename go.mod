@@ -39,6 +39,7 @@ require (
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/ultraviolet v0.0.0-20260309091805-903bfd0cf188
+	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/cilium/ebpf v0.21.0
 	github.com/containerd/console v1.0.5
@@ -158,7 +159,7 @@ require (
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea
-	github.com/vito/tuist v0.0.7-0.20260617202722-ed3f1d64aee6
+	github.com/vito/tuist v0.0.8
 	github.com/vito/tuist/teav1 v0.0.0-20260330150345-de388bf31342
 	github.com/zeebo/xxh3 v1.1.0
 	go.etcd.io/bbolt v1.4.3
@@ -240,7 +241,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
-	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
@@ -386,8 +386,3 @@ tool github.com/matryer/moq
 // containerd v2.2.x requires bbolt v1.4.3, which is semver-higher than
 // the main-branch pseudo-version containing the freelist merge fix.
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.4.0-beta.0.0.20260422092123-cd4bafc17e45
-
-// TODO(headless-harness): local tuist provides the headless synchronous
-// driver (HeadlessTerminal, TUI.Step/Inject/Frame) used by the idtui test
-// harness. Replace with a tagged release (≥ v0.0.7) and drop this before merge.
-replace github.com/vito/tuist => /home/vito/src/tuist

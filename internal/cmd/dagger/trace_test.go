@@ -39,7 +39,7 @@ func TestTraceUsesGlobalFrontendOpts(t *testing.T) {
 		},
 	}
 
-	err := traceFullRender(&cobra.Command{}, []string{"2f123ba77bf7bd2d4db2f70ed20613e8"})
+	err := traceRun(&cobra.Command{}, []string{"2f123ba77bf7bd2d4db2f70ed20613e8"})
 	require.NoError(t, err)
 
 	require.Equal(t, opts, gotOpts)

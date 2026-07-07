@@ -54,12 +54,21 @@ curl -s --data 'down down' localhost:7777/key  # navigate (keys: tuist.ParseKey 
 curl -s --data 'TestFoo'   localhost:7777/type # type a literal string (e.g. into / search)
 curl -s 'localhost:7777/spans?q=TestFoo'       # list loaded spans matching a name
 curl -s --data '<spanHex>' localhost:7777/zoom # jump straight to a span
+curl -s --data '120x12'    localhost:7777/resize # resize the terminal (cols x rows)
 curl -s localhost:7777/help                    # endpoints + keymap
 ```
 
 State accumulates across requests like a real session. Each request settles
 briefly so background lazy fetches land; if a screen still looks mid-load, just
 GET `/screen` again.
+
+The screen is **viewport-clipped to the current terminal size**, exactly like a
+real tty: when the rendered frame is taller than `rows`, only the bottom `rows`
+lines are shown and the top scrolls offscreen (tuist's alt-screen behaviour). So
+`/resize` to a small height is how you reproduce overflow-only rendering bugs —
+e.g. a focused row whose own promoted tests/logs are taller than the viewport,
+pushing its own header off the top. Either dimension may be 0/omitted to keep
+the current value (`x12` changes only rows).
 
 ### Keymap (for `/key`)
 

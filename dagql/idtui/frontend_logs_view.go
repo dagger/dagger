@@ -112,7 +112,18 @@ func (s *SpanTreeView) renderInlineLogs(ctx tuist.Context, r *renderer, row *dag
 	if s.fe.claims.hasLog(span.ID) {
 		return nil
 	}
+	// Size the inline log window to a third of the screen. Read it from
+	// ctx.ScreenHeight() (not the imperatively-cached fe.window.Height) so the
+	// owning SpanTreeView's render is marked height-dependent in tuist's cache --
+	// otherwise a height-only resize cache-hits this row and the window sticks at
+	// the height it first saw. The final report and size-unknown renders fall
+	// back to fe.window.Height (0 => unbounded).
 	limit := s.fe.window.Height / 3
+	if !s.fe.finalRender {
+		if sh := ctx.ScreenHeight(); sh > 0 {
+			limit = sh / 3
+		}
+	}
 	if span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
 	}

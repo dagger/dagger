@@ -23,6 +23,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
@@ -80,6 +81,9 @@ type frontendPretty struct {
 	// console, when set (DAGGER_TUI_CONSOLE=<addr>), serves the TUI over HTTP on
 	// a headless terminal instead of attaching to a real one (frontend_console.go).
 	console string
+	// consoleTerm is the headless terminal backing console mode, kept so the
+	// /resize endpoint can change its dimensions live.
+	consoleTerm *tuist.HeadlessTerminal
 
 	// updated by Run
 	tui         *tuist.TUI
@@ -395,6 +399,11 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		ctx.Lines(inlineTests...)
 	}
 
+	if inlineChecks := s.renderInlineChecks(ctx, r, row); len(inlineChecks) > 0 {
+		s.selfLineCount += len(inlineChecks)
+		ctx.Lines(inlineChecks...)
+	}
+
 	// Render this row's own inline logs via its memoized LogsView child, so the
 	// expensive Vterm.View() is skipped on unrelated parent repaints.
 	if inlineLogs := s.renderInlineLogs(ctx, r, row, visualFocused); len(inlineLogs) > 0 {
@@ -622,8 +631,10 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	if addr := os.Getenv("DAGGER_TUI_CONSOLE"); addr != "" {
 		// Console mode: drive the TUI headlessly over HTTP (frontend_console.go)
 		// instead of a real terminal, so it works without a tty.
-		fe := newWithTerminal(w, db, tuist.NewHeadlessTerminal(consoleWidth, consoleHeight))
+		term := tuist.NewHeadlessTerminal(consoleWidth, consoleHeight)
+		fe := newWithTerminal(w, db, term)
 		fe.console = addr
+		fe.consoleTerm = term
 		return fe
 	}
 	return newWithTerminal(w, db, tuist.NewStdTerminal())
@@ -2082,8 +2093,15 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		return
 	}
 
-	// Zoom header: split the zoomed span off as a header above its (unindented)
-	// content, separated by a blank line.
+	// Zoom header: the zoomed span shown above its (unindented) content as a
+	// title bar -- a full-width background bar, the same style the log pager
+	// gives its title (frontend_log_pager.go). Captured rather than emitted
+	// directly so its height can be reserved out of the body crop below --
+	// otherwise it pushes the body down until the focused row's header, or the
+	// zoom header itself, scrolls off the top. The rich row's own colours are
+	// flattened to plain text so the bar reads uniformly and stays legible on the
+	// background (the caret, for one, is the same bright black as the bar).
+	var zoomHeader []string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
 		zoomBuf := new(strings.Builder)
 		zoomOut := NewOutput(zoomBuf, termenv.WithProfile(fe.profile))
@@ -2091,49 +2109,80 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
 		}, "", fe, false)
-		linesFromView(ctx, zoomBuf.String())
-		ctx.Line("")
+		titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+		for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
+			if ctx.Width > 0 {
+				line = titleOut.String(padANSI(clipPlain(ansi.Strip(line), ctx.Width), ctx.Width)).
+					Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
+			}
+			zoomHeader = append(zoomHeader, line)
+		}
+		zoomHeader = append(zoomHeader, "") // blank line separating the bar from the content
 	}
 
-	// Pre-render chrome below progress to measure its height for truncation.
-	// Global tests are rendered before progress so their claims can suppress
-	// duplicate test logs in the trace rows above them.
+	// Seed test-case claims for the checks whose inline rollups render below, so
+	// the global tests section (rendered first, just below) subtracts them
+	// instead of repeating every check's tests. See claimInlineTestCases.
+	fe.claimInlineTestCases()
+
+	// Pre-render chrome below progress. Global tests are rendered before
+	// progress so their claims can suppress duplicate test logs in the trace
+	// rows above them.
 	globalTestLines := fe.renderLiveGlobalTests(ctx)
 	logsLines := fe.renderLogsLines("")
 
-	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
-	if len(logsLines) > 0 {
-		chromeHeight += len(logsLines) + 1
-	}
-	if len(globalTestLines) > 0 {
-		chromeHeight += len(globalTestLines) + 1
-	}
-	chromeHeight += fe.errorLabelHeight() // promptErrLabel is a sibling, not rendered here
-	chromeHeight += fe.editlineHeight()   // textInput is a sibling, not rendered here
-	chromeHeight += fe.formHeight()       // formWrap is a sibling, not rendered here
+	// Lines the TUI renders as siblings outside this component, which are
+	// always shown and so must be reserved out of the screen height: the keymap
+	// bar, error label, text input, form, and search input.
+	reserved := 1 // keymap bar
+	reserved += fe.errorLabelHeight()
+	reserved += fe.editlineHeight()
+	reserved += fe.formHeight()
 	if fe.searchInput != nil {
-		chromeHeight += 1 // searchInput is a sibling, 1 line
+		reserved++
 	}
 
-	// Render progress rows via tree-based components
-	progressLines := fe.renderProgressLines(r, ctx, chromeHeight)
+	// Assemble progress + chrome, then crop the bottom to what fits. The focused
+	// progress rows are anchored at the focused row's header by
+	// renderProgressLines (passed the reserved + zoom-header height so they get
+	// exactly the body area), and the chrome below (logs, then the global tests
+	// summary) sits beneath them -- so cropping the bottom makes the chrome, not
+	// the focused header, what scrolls offscreen. This is the "main content wins"
+	// rule: reserving chrome space up front -- the old behaviour -- let a tall
+	// global TESTS block squeeze progress until the focused row's own header
+	// scrolled off the top.
+	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader))
+	var body []string
 	if len(progressLines) > 0 {
-		ctx.Lines(progressLines...)
-		ctx.Line("") // gap line after progress
+		body = append(body, progressLines...)
+		body = append(body, "") // gap line after progress
 	}
-
-	// Append chrome
 	if len(logsLines) > 0 {
-		ctx.Lines(logsLines...)
-		ctx.Line("") // trailing gap
+		body = append(body, logsLines...)
+		body = append(body, "") // trailing gap
 	}
 	if len(globalTestLines) > 0 {
-		ctx.Lines(globalTestLines...)
-		ctx.Line("") // trailing gap
+		body = append(body, globalTestLines...)
+		body = append(body, "") // trailing gap
 	}
-	// NOTE: textInput and formWrap are rendered as siblings in the TUI
-	// container, not here. Their cursors propagate through tuist automatically.
-	// NOTE: keymapBar is rendered as a sibling in the TUI container.
+
+	// Crop the bottom to the rows available for the body: the screen minus the
+	// always-shown siblings and the pinned zoom header. A non-positive
+	// ScreenHeight means the height is unknown (RenderLines / the report discovery
+	// render, before a frame sizes the terminal) -- render everything, like the
+	// old behaviour.
+	if h := ctx.ScreenHeight(); h > 0 {
+		if avail := h - reserved - len(zoomHeader); avail > 0 && len(body) > avail {
+			body = body[:avail]
+		}
+	}
+
+	// The zoom header is pinned above the body so the zoomed span stays in view.
+	ctx.Lines(zoomHeader...)
+	ctx.Lines(body...)
+	// NOTE: textInput, formWrap, and keymapBar are rendered as siblings in the
+	// TUI container, not here (accounted for in reserved above). Their cursors
+	// propagate through tuist automatically.
 }
 
 // linesFromView splits a string view into lines and emits them via ctx.
@@ -2209,7 +2258,7 @@ func stripTraceparent(s string) string {
 
 // renderZoomedFinalLogs renders the zoomed span's rolled-up logs for the final
 // report -- the same error-anchored window and 'dagger cloud logs' hint the test
-// summary uses -- so 'dagger trace --full --test X' surfaces X's failure output
+// summary uses -- so 'dagger trace --test X' surfaces X's failure output
 // (its descendants having been fetched and re-keyed onto it).
 func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) []string {
 	span, ok := fe.db.Spans.Map[fe.ZoomedSpan]
@@ -2293,7 +2342,7 @@ func reportSectionLines(out TermOutput, title string, body []string) []string {
 	return lines
 }
 
-// renderSuggestionsSection prints copy-paste 'dagger trace --full' commands that
+// renderSuggestionsSection prints copy-paste 'dagger trace' commands that
 // scope the report to a single failure, so the reader learns how to drill in
 // with --check/--test. At the root it points at failed checks (and any failed
 // tests not under a check); zoomed to a check it points at that check's failed
@@ -2364,28 +2413,50 @@ func (fe *frontendPretty) renderSuggestionsSection(zoomed *dagui.Span) []string 
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 	body := make([]string, 0, len(targets))
 	for _, sel := range targets {
-		body = append(body, fmt.Sprintf("dagger trace %s --full %s", fe.traceID, sel))
+		body = append(body, fmt.Sprintf("dagger trace %s %s", fe.traceID, sel))
 	}
 	return reportSectionLines(out, "MORE DETAILS", body)
 }
 
-// renderChecksHeader renders a "CHECKS" heading with the pass/fail tallies
-// joined onto the same line (mirroring the TESTS inspector header), to sit above
-// the root-level check rows (which carry their own tree indentation, so they're
-// left unwrapped).
+// renderChecksHeader renders the top-level "CHECKS" heading -- the tally of the
+// trace's root checks -- to sit above the root-level check rows (which carry
+// their own tree indentation, so they're left unwrapped). Each parent check
+// nests its own CHECKS header for its sub-checks (see renderChecksSection), the
+// way a check nests a TESTS header for its tests, so this top tally counts the
+// roots only; the per-level tallies live on the nested headers.
 func (fe *frontendPretty) renderChecksHeader() []string {
 	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-	line := reportHeadingLine(out, "CHECKS")
-	for _, part := range fe.checkBreakdownParts(out) {
-		line += "  " + part
-	}
-	return []string{line}
+	return []string{checksHeaderLine(out, fe.db.SurfacedChecks())}
 }
 
-// checkBreakdownParts renders the failed/passed check tallies as "✘ N failed" /
-// "✔ N passed" parts, in the same icon+color style as the test summary.
-func (fe *frontendPretty) checkBreakdownParts(out TermOutput) []string {
-	failed, passed := fe.checkStatusCounts()
+// checksHeaderLine renders a "CHECKS" heading with the failed/passed tally for
+// the given checks joined onto the same line (mirroring the TESTS header). The
+// nodes are the checks listed directly beneath this header -- a level -- so the
+// tally agrees with what's rendered right under it.
+func checksHeaderLine(out TermOutput, nodes []*dagui.CheckNode) string {
+	line := reportHeadingLine(out, "CHECKS")
+	for _, part := range checkBreakdownPartsFor(out, nodes) {
+		line += "  " + part
+	}
+	return line
+}
+
+// checkBreakdownPartsFor renders the failed/passed tallies as "✘ N failed" /
+// "✔ N passed" parts (same icon+color style as the test summary) for the given
+// checks, counted directly rather than recursively: each CHECKS header tallies
+// the checks listed directly beneath it. Boundaries are already honored by
+// SurfacedChecks, so checks a test intentionally runs aren't among the nodes.
+// NB: with incremental --full loading the passed tally only covers checks
+// already fetched.
+func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
+	var failed, passed int
+	for _, n := range nodes {
+		if n.Failed {
+			failed++
+		} else {
+			passed++
+		}
+	}
 	var parts []string
 	add := func(count int, icon string, color termenv.Color, label string) {
 		if count == 0 {
@@ -2396,27 +2467,6 @@ func (fe *frontendPretty) checkBreakdownParts(out TermOutput) []string {
 	add(failed, IconFailure, termenv.ANSIRed, "failed")
 	add(passed, IconSuccess, termenv.ANSIGreen, "passed")
 	return parts
-}
-
-// checkStatusCounts tallies the surfaced checks into failed vs passed, so the
-// CHECKS heading agrees with the rendered list -- both honor boundaries, so
-// checks a test intentionally runs aren't counted. A check counts as failed if
-// any of its spans failed (directly or via a failed link). NB: with incremental
-// --full loading the passed tally only covers checks already fetched.
-func (fe *frontendPretty) checkStatusCounts() (failed, passed int) {
-	var walk func(ns []*dagui.CheckNode)
-	walk = func(ns []*dagui.CheckNode) {
-		for _, n := range ns {
-			if n.Failed {
-				failed++
-			} else {
-				passed++
-			}
-			walk(n.Children)
-		}
-	}
-	walk(fe.db.SurfacedChecks())
-	return failed, passed
 }
 
 // renderLogsLines returns the zoomed span's log output as lines.
@@ -2836,51 +2886,61 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 		return allLines
 	}
 
-	// Crop the bottom so the focused span stays within the visible
-	// screen area. Content above scrolls into terminal scrollback
-	// naturally — we never crop the top.
+	// Crop to the visible window so the focused span stays onscreen. The
+	// caller composes progress + chrome and the result must fit the screen
+	// exactly: returning more than the viewport (relying on the terminal to
+	// clip the overflow) scrolls the top — including the focused row's own
+	// header — offscreen when the focused content is tall.
+	// A non-positive ScreenHeight means the height is unknown (RenderLines / the
+	// report discovery render, before a frame sizes the terminal) -- don't crop.
+	if ctx.ScreenHeight() <= 0 {
+		return allLines
+	}
 	viewportHeight := max(ctx.ScreenHeight()-chromeHeight, 1)
-
-	end := len(allLines)
-	if focusLine >= 0 && len(allLines) > viewportHeight {
-		// Use the root span's own rendered height (selfLineCount), not
-		// the entire tree height. Children may extend below the viewport,
-		// but the root's own content must stay in view.
-		focusHeight := 1
-		if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
-			focusHeight = focused.selfLineCount
-		}
-		end = cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	if focusLine < 0 || len(allLines) <= viewportHeight {
+		return allLines
 	}
 
-	return allLines[:end]
+	// Use the root span's own rendered height (selfLineCount), not the entire
+	// tree height. Children may extend below the viewport, but the root's own
+	// content must stay in view.
+	focusHeight := 1
+	if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+		focusHeight = focused.selfLineCount
+	}
+	end := cropEnd(len(allLines), viewportHeight, focusLine, focusHeight)
+	return allLines[max(0, end-viewportHeight):end]
 }
 
-// cropEnd computes the end index for slicing rendered lines so that the
-// focused span's own content [focusLine, focusLine+focusHeight) is always
-// visible within [end-viewportHeight, end). Remaining viewport space is
-// split evenly above and below the focused span's root content.
-//
-// Content above the visible window scrolls into terminal scrollback naturally.
+// cropEnd computes the end index for the visible window [end-viewportHeight,
+// end) so that the focused span's own content [focusLine, focusLine+focusHeight)
+// stays visible. When the focus root fits, remaining viewport space is split
+// evenly above and below it; when it is taller than the viewport, its top is
+// anchored so the header survives and its tail is cropped. The caller slices
+// allLines[end-viewportHeight:end].
 func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
 	focusEnd := min(focusLine+focusHeight, totalLines)
 
+	// When the focus root's own content is taller than the viewport, anchor
+	// its TOP: the visible window is [end-viewportHeight, end), so end =
+	// focusLine+viewportHeight makes the focus root's header the first visible
+	// line and crops its overflowing tail. Anchoring the bottom (focusEnd)
+	// instead would scroll the header offscreen, so the row you are focused on
+	// loses its header — its identity, status, and duration.
+	if focusHeight >= viewportHeight {
+		return min(focusLine+viewportHeight, totalLines)
+	}
+
 	// Split remaining viewport space evenly above and below the focus root.
-	remaining := max(viewportHeight-focusHeight, 0)
+	remaining := viewportHeight - focusHeight
 	below := remaining / 2
 
 	end := focusEnd + below
 
 	// Ensure the focus root stays fully visible: the visible window is
 	// [end-viewportHeight, end), so cap end so focusLine >= end-viewportHeight.
-	if focusHeight <= viewportHeight && end > focusLine+viewportHeight {
+	if end > focusLine+viewportHeight {
 		end = focusLine + viewportHeight
-	}
-
-	// When the focus root is taller than the viewport, at least show up
-	// to its end.
-	if end < focusEnd {
-		end = focusEnd
 	}
 
 	// Never crop to less than a full viewport when there's enough content.
@@ -3897,7 +3957,8 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	// precedence (it only fired when that case didn't).
 	inlineLogsCase := span.Message == "" && (row.Expanded || row.Span.LLMTool != "")
 	if !inlineLogsCase &&
-		(row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded && !fe.shouldRenderInlineTests(row) {
+		(row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded &&
+		!fe.shouldRenderInlineTests(row) && !fe.shouldRenderInlineChecks(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
@@ -3907,14 +3968,18 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
 			} else if row.Span.RollUpLogs && row.IsRunningOrChildRunning {
 				// Only show rolled-up logs while the span is running.
-				fe.renderStepLogs(out, r, row, prefix, focused)
+				fe.renderStepLogs(ctx, out, r, row, prefix, focused)
 			}
 		}
 	}
 	if len(span.ProgressSpans.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		fe.renderProgressRollup(ctx, out, r, row, prefix, statusHost)
 	}
-	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
+	if fe.shouldRenderInlineChecks(row) {
+		// A check deferring to its inline CHECKS rollup: the failure is explained
+		// by the failed sub-checks rendered in the rollup above, so don't also dump
+		// this check's own orchestrating command error here.
+	} else if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
 		// Filter self-references and causes already rendered elsewhere in this
 		// trace: a span propagated as its own error origin should never be
 		// rendered as the cause of itself, and a cause already shown as a
@@ -4041,7 +4106,7 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 // thing
 const llmLogsLastLines = 8
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
+func (fe *frontendPretty) renderStepLogs(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
 	if fe.claims.hasLog(row.Span.ID) {
 		return false
 	}
@@ -4049,7 +4114,15 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	// spans), so request them when it renders -- the interactive path no longer
 	// pre-fetches. (Inline expanded-step logs go through LogsView instead.)
 	fe.requestLogsOnRender(row.Span.ID)
+	// A third of the screen, read off ScreenHeight (not the cached
+	// fe.window.Height) so this in-tree log window tracks a resize. See
+	// renderInlineLogs.
 	limit := fe.window.Height / 3
+	if !fe.finalRender {
+		if sh := ctx.ScreenHeight(); sh > 0 {
+			limit = sh / 3
+		}
+	}
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
 	}
@@ -4410,7 +4483,14 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		if fe.finalRender {
 			logs.SetHeight(logs.UsedHeight())
 		} else {
-			logs.SetHeight(fe.window.Height / 3)
+			// Read ScreenHeight (not the cached fe.window.Height) so this row's
+			// render is height-dependent and the cause log window tracks a resize
+			// instead of sticking at its first-paint height. See renderInlineLogs.
+			height := fe.window.Height / 3
+			if sh := ctx.ScreenHeight(); sh > 0 {
+				height = sh / 3
+			}
+			logs.SetHeight(height)
 		}
 		fmt.Fprint(out, logs.View())
 	}
@@ -4514,7 +4594,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// NOTE: arguably this should be opt-in, but it's not clear how the
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
-		if fe.renderStepLogs(out, r, row, prefix, focused) {
+		if fe.renderStepLogs(ctx, out, r, row, prefix, focused) {
 			if span.LLMRole == telemetry.LLMRoleUser {
 				// Bail early if we printed a user message span; these don't have any
 				// further information to show. Duration is always 0, metrics are empty,

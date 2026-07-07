@@ -122,11 +122,23 @@ func (claims *renderClaims) claimTestReport(span *dagui.Span, view *dagui.TestVi
 	// Claim every case the report covers -- including passing ones -- so the
 	// global tests section can subtract them and surface only cases no check
 	// represented (e.g. orphans whose ancestor spans are missing from the data).
-	if view != nil {
-		for id, node := range view.BySpan {
-			if node != nil && node.Kind == dagui.TestNodeCase {
-				claims.claimTestCase(id)
-			}
+	claims.claimTestCases(view)
+}
+
+// claimTestCases marks every test-case span a view covers as represented,
+// without touching the log/error claims claimTestReport also records. The
+// interactive render emits the global tests section before the trace rows (so
+// the section's log claims suppress duplicate logs in the rows above it), yet
+// the section's orphan filter must already know which cases the checks below it
+// own. Seeding just the case claims up front satisfies that without disturbing
+// the log/error claim ordering; the later rollup render re-claims idempotently.
+func (claims *renderClaims) claimTestCases(view *dagui.TestView) {
+	if claims == nil || view == nil {
+		return
+	}
+	for id, node := range view.BySpan {
+		if node != nil && node.Kind == dagui.TestNodeCase {
+			claims.claimTestCase(id)
 		}
 	}
 }
