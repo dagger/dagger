@@ -63,7 +63,8 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		log.String("llm.provider", t.provider),
 	)
 
-	// Capture and log request body.
+	// Capture and log request body. Retain it to detect streaming intent below.
+	var reqBody []byte
 	if req.Body != nil && req.Body != http.NoBody {
 		captured, fullBody, err := captureBody(req.Body)
 		if err != nil {
@@ -72,6 +73,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			stdio.Close()
 			return nil, err
 		}
+		reqBody = fullBody
 		req.Body = io.NopCloser(bytes.NewReader(fullBody))
 		req.ContentLength = int64(len(fullBody))
 		fmt.Fprintf(stdio.Stdout, ">>> %s %s\n%s\n", req.Method, req.URL.Path, captured)
@@ -89,8 +91,8 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 
-	ct := resp.Header.Get("Content-Type")
-	isStreaming := strings.HasPrefix(ct, "text/event-stream")
+	isStreaming := isStreamingResponse(req.Header.Get("Accept"), reqBody,
+		resp.Header.Get("Content-Type"), resp.StatusCode)
 
 	if isStreaming && resp.Body != nil {
 		// For streaming responses, tee the body through to span stdio as it's
@@ -147,6 +149,31 @@ func (t *teeReadCloser) Close() error {
 		t.onClose = nil // only run once
 	}
 	return err
+}
+
+// isStreamingResponse reports whether an LLM HTTP response should be teed
+// through live rather than buffered whole. It keys off the request's streaming
+// intent — "stream":true in the request body (OpenAI, Anthropic) or an
+// Accept: text/event-stream header (Anthropic) — because the response
+// Content-Type is unreliable: OpenAI and the ChatGPT Codex backend stream SSE
+// bodies under a non-event-stream Content-Type, and their SDK decodes them
+// regardless (ssestream.NewDecoder falls back to the SSE decoder for any
+// Content-Type). Keying off the response CT alone would buffer those with
+// io.ReadAll and collapse the stream into a single burst. The response CT is
+// kept only as a fallback for providers that don't set stream:true in the body
+// (e.g. Google's streamGenerateContent). Errors (>= 400) are always buffered so
+// their JSON body can be captured and parsed.
+func isStreamingResponse(reqAccept string, reqBody []byte, respContentType string, statusCode int) bool {
+	if statusCode >= 400 {
+		return false
+	}
+	if strings.Contains(reqAccept, "text/event-stream") {
+		return true
+	}
+	if bytes.Contains(reqBody, []byte(`"stream":true`)) {
+		return true
+	}
+	return strings.HasPrefix(respContentType, "text/event-stream")
 }
 
 // httpErrorStatus builds a concise span error message for a failed LLM HTTP

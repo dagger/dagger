@@ -151,6 +151,44 @@ func TestCodexModelRouting(t *testing.T) {
 	assert.Equal(t, "gpt-5.3-codex", epNamed.Model)
 }
 
+func TestContentBlockInputRoundTrip(t *testing.T) {
+	// Regression: content block InputObjects must be built via the decoder so
+	// their fields are populated. A bare struct literal leaves fields nil and
+	// panics ("missing decoded fields") when the withResponse selector is
+	// serialized to a call literal — which broke every assistant turn.
+	blocks := []*LLMContentBlock{
+		{Kind: LLMContentText, Text: "hi"},
+		{Kind: LLMContentToolCall, CallID: "call_1", ToolName: "read", Arguments: JSON(`{"path":"/x"}`)},
+	}
+	arr := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(blocks))
+	for i, block := range blocks {
+		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
+			"kind":      string(block.Kind),
+			"text":      block.Text,
+			"callId":    block.CallID,
+			"toolName":  block.ToolName,
+			"arguments": string(block.Arguments),
+			"errored":   block.Errored,
+			"signature": block.Signature,
+		})
+		assert.NoError(t, err)
+		input, ok := decoded.(dagql.InputObject[LLMContentBlockInput])
+		assert.True(t, ok)
+		arr[i] = input
+	}
+
+	// The bug manifested here: ToLiteral panicked when fields were nil.
+	assert.NotPanics(t, func() { _ = arr.ToLiteral() })
+
+	// Fields decode onto Value, including the JSON arguments.
+	assert.Equal(t, LLMContentText, arr[0].Value.Kind)
+	assert.Equal(t, "hi", arr[0].Value.Text)
+	assert.Equal(t, LLMContentToolCall, arr[1].Value.Kind)
+	assert.Equal(t, "call_1", arr[1].Value.CallID)
+	assert.Equal(t, "read", arr[1].Value.ToolName)
+	assert.Equal(t, JSON(`{"path":"/x"}`), arr[1].Value.Arguments)
+}
+
 func TestLLMErrorMessage(t *testing.T) {
 	for _, tc := range []struct {
 		name string
