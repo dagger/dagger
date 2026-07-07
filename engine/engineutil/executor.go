@@ -71,6 +71,20 @@ type ExecutionMetadata struct {
 
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
+
+	// ProfArgs is the fully-resolved user command (entrypoint + args), captured
+	// in core at exec-run time BEFORE any engine shim (the QEMU emulator, the
+	// executor's /.init) wraps it, so wall-clock profiling can headline the user's
+	// real program (e.g. "go build") instead of a shim. It is read at the executor
+	// emit site (executor_spec.go) by both the native recorder and the OTel source.
+	//
+	// json:"-" is load-bearing: ExecutionMetadata is JSON-serialized into exec
+	// cache keys (dagql.SerializedString/DigestedSerializedString), and ProfArgs
+	// must never perturb a cache key. It is excluded structurally here; it is also
+	// set only at run time (after every execMD digest is computed), and the
+	// core->executor hand-off is an in-process pointer (never re-serialized), so
+	// excluding it from JSON cannot drop it before the emit.
+	ProfArgs []string `json:"-"`
 }
 
 func (c *Client) Run(
@@ -113,14 +127,15 @@ func (c *Client) Run(
 		nestedClientEnv,
 	)
 
+	execIdent := state.id
+	if execMD != nil && execMD.CallDigest != "" {
+		execIdent = execMD.CallDigest.String()
+	}
+
 	var execOp *wcprof.Op
 	if wcprof.Enabled(ctx) {
-		ident := state.id
-		if execMD != nil && execMD.CallDigest != "" {
-			ident = execMD.CallDigest.String()
-		}
 		ctx, execOp = wcprof.BeginOp(ctx, wcprof.OpKindExec, "exec.run", wcprof.OpOpts{
-			Ident:    ident,
+			Ident:    execIdent,
 			ClientID: callerClientID,
 		})
 		if nestedClientMetadata != nil && nestedClientMetadata.ClientID != "" {
@@ -128,6 +143,16 @@ func (c *Client) Run(
 			// analyzer stitches its ops under this exec via this link
 			wcprof.Link(ctx, wcprof.LinkKindNestedClient, 0, 0, nestedClientMetadata.ClientID, 0)
 		}
+	}
+	// OTel analog of execOp: exec.run nests the container run under
+	// the withExec call_exec span (or the service exec span) via the propagated
+	// ctx, so the offline loader reconstructs the same exec shape from a Cloud
+	// trace. Gated only on telemetry being active, independent of wcprof. OTel
+	// gets nested-client parentage for free via traceparent, so unlike native it
+	// needs no nested-client link.
+	var execRunSpan trace.Span
+	if dagql.OTelProfActive(ctx) {
+		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent)
 	}
 	err := c.run(ctx, state,
 		namedSetupFunc{"setupNetwork", c.setupNetwork},
@@ -148,6 +173,9 @@ func (c *Client) Run(
 		namedSetupFunc{"runContainer", c.runContainer},
 	)
 	execOp.EndErr(err)
+	if execRunSpan != nil {
+		endOTelExecRun(execRunSpan, &err)
+	}
 	return err
 }
 

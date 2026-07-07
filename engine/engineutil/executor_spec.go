@@ -109,6 +109,10 @@ type execState struct {
 	exitCodePath     string
 	metaMountDirPath string
 	origEnvMap       map[string]string
+	// profSecretFilePaths is the resolved, stat-filtered secret file path list
+	// stashed by setupSecretScrubbing, so the profile-argv scrubber at the emit
+	// site reuses the exact same secret set as the stdout/stderr scrubbers.
+	profSecretFilePaths []string
 
 	startedOnce *sync.Once
 	startedCh   chan<- struct{}
@@ -871,6 +875,8 @@ func (c *Client) setupSecretScrubbing(ctx context.Context, state *execState) err
 			bklog.G(ctx).Warnf("failed to stat secret file path %s: %v", filePath, err)
 		}
 	}
+	// Stash the resolved set so the profile-argv scrubber (emit site) reuses it.
+	state.profSecretFilePaths = secretFilePaths
 
 	stdoutR, stdoutW := io.Pipe()
 	stdoutScrubReader, err := NewSecretScrubReader(stdoutR, state.spec.Process.Env, state.execMD.SecretEnvNames, secretFilePaths)
@@ -1268,13 +1274,20 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 
 	profStartNS := wcprof.NowNS()
+	profStartWall := time.Now()
 	var profStartedNS atomic.Int64
+	// wall-clock counterpart of profStartedNS for the OTel exec split: the OTel
+	// spans carry absolute wall-clock intervals, captured at the
+	// same started-callback boundary native records. Stored unconditionally (one
+	// cheap atomic per container run); only read when OTel emit is active.
+	var profStartedWall atomic.Int64
 	startedCallback := func() {
 		state.startedOnce.Do(func() {
 			trace.SpanFromContext(ctx).AddEvent("Container started")
 			if wcprof.Enabled(ctx) {
 				profStartedNS.Store(wcprof.NowNS())
 			}
+			profStartedWall.Store(time.Now().UnixNano())
 			if state.startedCh != nil {
 				close(state.startedCh)
 			}
@@ -1396,6 +1409,15 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 
 	runErr := c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall)
+	endWall := time.Now()
+	// Scrub + bound the captured user command ONCE, only when a profile source is
+	// active, and feed the SAME slice to both sinks below so native and OTel carry
+	// a byte-identical argv. It rides only on the user processRun phase (where the
+	// scalable self-time lives); a never-started exec emits no processRun and no argv.
+	var profArgv []string
+	if wcprof.Enabled(ctx) || dagql.OTelProfActive(ctx) {
+		profArgv = execProfArgv(state)
+	}
 	if wcprof.Enabled(ctx) {
 		// split engine overhead (creating/starting the container) from the
 		// user's process runtime
@@ -1406,10 +1428,19 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 		}
 		if startedNS := profStartedNS.Load(); startedNS > 0 {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, startedNS, wcprof.OutcomeOK)
-			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser}, startedNS, endNS, outcome)
+			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.processRun", wcprof.OpOpts{Ident: state.id, WorkType: wcprof.WorkTypeUser, Argv: profArgv}, startedNS, endNS, outcome)
 		} else {
 			wcprof.RecordOp(ctx, wcprof.OpKindExecPhase, "exec.containerStart", wcprof.OpOpts{Ident: state.id}, profStartNS, endNS, outcome)
 		}
 	}
+	// OTel exec split: the same containerStart/processRun boundary,
+	// emitted as backdated children of the exec.run span so a slow user process
+	// headlines as user work (work_type=user) rather than engine overhead.
+	// emitOTelExecSplit self-gates on telemetry being active.
+	var profStartedWallTime time.Time
+	if ns := profStartedWall.Load(); ns > 0 {
+		profStartedWallTime = time.Unix(0, ns)
+	}
+	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, endWall, runErr, profArgv)
 	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
 }

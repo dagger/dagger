@@ -2039,6 +2039,19 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return err
 		}
+		// Capture the resolved user command for wall-clock profiling here, BEFORE
+		// any engine shim wraps it: the QEMU emulator prepended just below for
+		// emulated execs, and the executor's /.init prepended later. A capture below
+		// either shim would headline the shim instead of the user's real program
+		// (e.g. "go build"), exactly backwards on the slowest, highest-value
+		// (emulated) execs. This is unconditional and must stay OUTSIDE the
+		// `if emu != nil` block so the common non-emulated withExec is captured too.
+		// metaSpec.Args is the fully-resolved command (entrypoint + args); execMD is
+		// the same in-process pointer the executor reads, so both profile sources see
+		// one identical value. ProfArgs is json:"-", so this cannot perturb a cache key.
+		if execMD != nil {
+			execMD.ProfArgs = slices.Clone(metaSpec.Args)
+		}
 		if emu != nil {
 			metaSpec.Args = append([]string{engineutil.DaggerQemuEmulatorMountPoint}, metaSpec.Args...)
 			execMounts = append(execMounts, executor.Mount{
