@@ -182,12 +182,15 @@ func (c *Client) StreamSpans(
 	})
 }
 
-// StreamLogs streams log messages for a trace from Dagger Cloud's GraphQL API.
+// StreamLogs streams log messages for a span from Dagger Cloud's GraphQL API.
+// When descendants is true, logs from the span's whole subtree are included;
+// when false, only the span's own logs are returned.
 func (c *Client) StreamLogs(
 	ctx context.Context,
 	orgID string,
 	traceID string,
 	spanID string,
+	descendants bool,
 	handler func([]LogMessage),
 ) error {
 	return c.streamGraphQL(ctx, &graphqlRequest{
@@ -197,7 +200,7 @@ func (c *Client) StreamLogs(
 			"orgID":       orgID,
 			"traceID":     traceID,
 			"spanID":      spanID,
-			"descendants": true,
+			"descendants": descendants,
 			"after":       nil,
 		},
 	}, func(data []byte) error {
