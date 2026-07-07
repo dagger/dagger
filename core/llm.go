@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 )
@@ -39,6 +41,11 @@ const (
 	modelDefaultOpenAI    = "gpt-4.1"
 	modelDefaultMeta      = "llama-3.2"
 	modelDefaultMistral   = "mistral-7b-instruct"
+
+	// LLMCallDigestAttr is set on LLM prompt/response telemetry spans. Its
+	// value is the DAG digest of the corresponding withPrompt or withResponse
+	// call, enabling the TUI to branch from that point in the conversation.
+	LLMCallDigestAttr = "dagger.io/llm.call.digest"
 )
 
 func resolveModelAlias(maybeAlias string) string {
@@ -61,26 +68,24 @@ func resolveModelAlias(maybeAlias string) string {
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
+	// The full message history, exposed over the API as first-class content
+	// blocks so that conversations can be queried and branched.
+	Messages []*LLMMessage `field:"true" doc:"The full message history."`
+
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
-
-	maxAPICalls int
-	apiCalls    int
 
 	model string
 
 	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
 
-	syncOneStep bool
-	once        *sync.Once
-	err         error
-
-	// History of messages
-	messages []*ModelMessage
-
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
+
+	// maxTokens limits the number of output tokens the model may generate
+	// per API call. Zero means use provider defaults.
+	maxTokens int
 }
 
 type LLMEndpoint struct {
@@ -101,14 +106,45 @@ type LLMProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
-	SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (*LLMResponse, error)
+	SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (*LLMResponse, error)
 	IsRetryable(err error) bool
 }
 
+// LLMCallOpts carries per-call options from the LLM state to the provider.
+type LLMCallOpts struct {
+	// MaxTokens limits the number of output/completion tokens. Zero means
+	// the provider should use its own default.
+	MaxTokens int
+}
+
+// LLMResponse is the internal result returned by a provider's SendQuery.
+// It carries content blocks and token usage but is not exposed in the API;
+// the evaluation loop converts it into LLMMessage history entries.
 type LLMResponse struct {
-	Content    string
-	ToolCalls  []LLMToolCall
+	Content    []*LLMContentBlock
 	TokenUsage LLMTokenUsage
+}
+
+// TextContent returns the concatenation of all text blocks.
+func (r *LLMResponse) TextContent() string {
+	var sb strings.Builder
+	for _, b := range r.Content {
+		if b.Kind == LLMContentText {
+			sb.WriteString(b.Text)
+		}
+	}
+	return sb.String()
+}
+
+// ToolCalls returns just the tool-call content blocks.
+func (r *LLMResponse) ToolCalls() []*LLMContentBlock {
+	var calls []*LLMContentBlock
+	for _, b := range r.Content {
+		if b.Kind == LLMContentToolCall {
+			calls = append(calls, b)
+		}
+	}
+	return calls
 }
 
 type LLMTokenUsage struct {
@@ -148,25 +184,236 @@ func (*LLMTokenUsage) DecodePersistedObject(ctx context.Context, dag *dagql.Serv
 	return &usage, nil
 }
 
-// ModelMessage represents a generic message in the LLM conversation
-type ModelMessage struct {
-	Role        string        `json:"role"`
-	Content     string        `json:"content"`
-	ToolCalls   []LLMToolCall `json:"tool_calls,omitempty"`
-	ToolCallID  string        `json:"tool_call_id,omitempty"`
-	ToolErrored bool          `json:"tool_errored,omitempty"`
-	TokenUsage  LLMTokenUsage `json:"token_usage,omitzero"`
+// LLMContentBlockKind identifies the kind of content in an LLMContentBlock.
+type LLMContentBlockKind string
+
+var LLMContentBlockKinds = dagql.NewEnum[LLMContentBlockKind]()
+
+var (
+	LLMContentText       = LLMContentBlockKinds.Register("TEXT", "Plain text content.")
+	LLMContentThinking   = LLMContentBlockKinds.Register("THINKING", "Model thinking/reasoning content (e.g. Anthropic extended thinking).")
+	LLMContentToolCall   = LLMContentBlockKinds.Register("TOOL_CALL", "A tool/function call from the model.")
+	LLMContentToolResult = LLMContentBlockKinds.Register("TOOL_RESULT", "A tool/function result.")
+	// Future: IMAGE, AUDIO, etc.
+)
+
+func (LLMContentBlockKind) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMContentBlockKind",
+		NonNull:   true,
+	}
 }
 
+func (t LLMContentBlockKind) TypeDescription() string {
+	return "The kind of content in a message block."
+}
+
+func (t LLMContentBlockKind) Decoder() dagql.InputDecoder {
+	return LLMContentBlockKinds
+}
+
+func (t LLMContentBlockKind) ToLiteral() call.Literal {
+	return LLMContentBlockKinds.Literal(t)
+}
+
+// LLMContentBlock is a single piece of content within an LLMMessage.
+// The Kind field determines which other fields are populated.
+type LLMContentBlock struct {
+	Kind LLMContentBlockKind `field:"true" json:"kind"`
+
+	// Text content (Kind=TEXT, THINKING, or TOOL_RESULT)
+	Text string `field:"true" json:"text,omitempty"`
+
+	// Tool call fields (Kind=TOOL_CALL)
+	CallID    string `field:"true" json:"call_id,omitempty"`
+	ToolName  string `field:"true" json:"tool_name,omitempty"`
+	Arguments JSON   `field:"true" json:"arguments,omitempty"`
+
+	// Tool result fields (Kind=TOOL_RESULT)
+	// CallID is reused from above.
+	Errored bool `field:"true" json:"errored,omitempty"`
+
+	// Provider-specific opaque data (e.g. Anthropic thinking signature).
+	// Not exposed as a field — must be preserved in history but is
+	// meaningless to users.
+	Signature string `json:"signature,omitempty"`
+}
+
+func (*LLMContentBlock) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMContentBlock",
+		NonNull:   true,
+	}
+}
+
+// LLMContentBlockInput is the input object type for creating content blocks.
+type LLMContentBlockInput struct {
+	Kind      LLMContentBlockKind `doc:"The kind of content block."`
+	Text      string              `doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)." default:""`
+	CallID    string              `doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
+	ToolName  string              `doc:"The name of the tool to call (for TOOL_CALL kind)." default:""`
+	Arguments JSON                `doc:"The arguments to pass to the tool (for TOOL_CALL kind)."`
+	Errored   bool                `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
+	Signature string              `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
+}
+
+func (LLMContentBlockInput) TypeName() string {
+	return "LLMContentBlockInput"
+}
+
+func (LLMContentBlockInput) TypeDescription() string {
+	return "A content block within an LLM message."
+}
+
+// ToLLMContentBlock converts the input object to an LLMContentBlock.
+func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
+	return &LLMContentBlock{
+		Kind:      in.Kind,
+		Text:      in.Text,
+		CallID:    in.CallID,
+		ToolName:  in.ToolName,
+		Arguments: in.Arguments,
+		Errored:   in.Errored,
+		Signature: in.Signature,
+	}
+}
+
+// LLMMessage represents a single message in the LLM conversation history.
+// Content is a list of typed content blocks, supporting multi-modal and
+// multi-part messages (e.g. thinking + text + tool calls in one turn).
+type LLMMessage struct {
+	Role    LLMMessageRole     `field:"true" json:"role"`
+	Content []*LLMContentBlock `field:"true" json:"content"`
+
+	// Token usage for this message (only set on assistant responses).
+	TokenUsage LLMTokenUsage `json:"token_usage,omitzero"`
+}
+
+func (*LLMMessage) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMMessage",
+		NonNull:   true,
+	}
+}
+
+// TextContent returns the concatenation of all text blocks in this message.
+func (m *LLMMessage) TextContent() string {
+	var sb strings.Builder
+	for _, b := range m.Content {
+		if b.Kind == LLMContentText {
+			sb.WriteString(b.Text)
+		}
+	}
+	return sb.String()
+}
+
+// ToolCalls returns the tool-call content blocks.
+func (m *LLMMessage) ToolCalls() []*LLMContentBlock {
+	var calls []*LLMContentBlock
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolCall {
+			calls = append(calls, b)
+		}
+	}
+	return calls
+}
+
+// IsToolResult returns true if this message is a tool result (has a TOOL_RESULT block).
+func (m *LLMMessage) IsToolResult() bool {
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolResult {
+			return true
+		}
+	}
+	return false
+}
+
+// ToolResultContent returns the text from the first TOOL_RESULT block, if any.
+func (m *LLMMessage) ToolResultContent() string {
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolResult {
+			return b.Text
+		}
+	}
+	return ""
+}
+
+// ToolResultCallID returns the call ID from the first TOOL_RESULT block, if any.
+func (m *LLMMessage) ToolResultCallID() string {
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolResult {
+			return b.CallID
+		}
+	}
+	return ""
+}
+
+// ToolResultErrored returns whether the first TOOL_RESULT block is an error.
+func (m *LLMMessage) ToolResultErrored() bool {
+	for _, b := range m.Content {
+		if b.Kind == LLMContentToolResult {
+			return b.Errored
+		}
+	}
+	return false
+}
+
+type LLMMessageRole string
+
+var LLMMessageRoles = dagql.NewEnum[LLMMessageRole]()
+
+var (
+	LLMMessageRoleUser      = LLMMessageRoles.Register("USER", "A user prompt or tool response.")
+	LLMMessageRoleAssistant = LLMMessageRoles.Register("ASSISTANT", "A reply from the model.")
+	LLMMessageRoleSystem    = LLMMessageRoles.Register("SYSTEM", "A system prompt.")
+)
+
+func (LLMMessageRole) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMMessageRole",
+		NonNull:   true,
+	}
+}
+
+func (mode LLMMessageRole) TypeDescription() string {
+	return "The role that generated a message."
+}
+
+func (mode LLMMessageRole) Decoder() dagql.InputDecoder {
+	return LLMMessageRoles
+}
+
+func (mode LLMMessageRole) ToLiteral() call.Literal {
+	return LLMMessageRoles.Literal(mode)
+}
+
+func (role LLMMessageRole) String() string {
+	return string(role)
+}
+
+// LLMToolCall is kept as a convenience type for the MCP layer and provider
+// interfaces that work with tool calls as a flat list.
 type LLMToolCall struct {
-	ID       string   `json:"id"`
-	Function FuncCall `json:"function"`
-	Type     string   `json:"type"`
+	CallID    string `json:"id"`
+	Name      string `json:"name"`
+	Arguments JSON   `json:"arguments"`
 }
 
-type FuncCall struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
+// ToContentBlock converts to the canonical content block representation.
+func (tc *LLMToolCall) ToContentBlock() *LLMContentBlock {
+	return &LLMContentBlock{
+		Kind:      LLMContentToolCall,
+		CallID:    tc.CallID,
+		ToolName:  tc.Name,
+		Arguments: tc.Arguments,
+	}
+}
+
+func (*LLMToolCall) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMToolCall",
+		NonNull:   true,
+	}
 }
 
 const (
@@ -218,7 +465,7 @@ func (r *LLMRouter) isReplay(model string) bool {
 	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
 }
 
-func (r *LLMRouter) getReplay(model string) (messages []*ModelMessage, _ error) {
+func (r *LLMRouter) getReplay(model string) (messages []*LLMMessage, _ error) {
 	model, ok := strings.CutPrefix(model, "replay-")
 	if !ok {
 		model, ok = strings.CutPrefix(model, "replay/")
@@ -485,7 +732,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func (q *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
+func (q *Query) NewLLM(ctx context.Context, model string) (*LLM, error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -498,9 +745,7 @@ func (q *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM
 	}
 	return &LLM{
 		model:       model,
-		maxAPICalls: maxAPICalls,
 		mcp:         newMCP(env),
-		once:        &sync.Once{},
 		endpointMtx: &sync.Mutex{},
 	}, nil
 }
@@ -534,12 +779,10 @@ func (*LLM) Type() *ast.Type {
 
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
-	cp.messages = slices.Clone(cp.messages)
+	cp.Messages = slices.Clone(cp.Messages)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpoint = llm.endpoint
 	cp.endpointMtx = &sync.Mutex{}
-	cp.once = &sync.Once{}
-	cp.err = nil
 	return &cp
 }
 
@@ -613,9 +856,12 @@ func (llm *LLM) WithPrompt(
 		return fmt.Sprintf("$%s", key)
 	})
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, &ModelMessage{
-		Role:    "user",
-		Content: prompt,
+	llm.Messages = append(llm.Messages, &LLMMessage{
+		Role: LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{
+			Kind: LLMContentText,
+			Text: prompt,
+		}},
 	})
 	return llm
 }
@@ -640,8 +886,8 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
 // WithoutMessageHistory removes all messages, leaving only the system prompts
 func (llm *LLM) WithoutMessageHistory() *LLM {
 	llm = llm.Clone()
-	llm.messages = slices.DeleteFunc(llm.messages, func(msg *ModelMessage) bool {
-		return msg.Role != "system"
+	llm.Messages = slices.DeleteFunc(llm.Messages, func(msg *LLMMessage) bool {
+		return msg.Role != LLMMessageRoleSystem
 	})
 	return llm
 }
@@ -650,8 +896,8 @@ func (llm *LLM) WithoutMessageHistory() *LLM {
 // only the default system prompt
 func (llm *LLM) WithoutSystemPrompts() *LLM {
 	llm = llm.Clone()
-	llm.messages = slices.DeleteFunc(llm.messages, func(msg *ModelMessage) bool {
-		return msg.Role == "system"
+	llm.Messages = slices.DeleteFunc(llm.Messages, func(msg *LLMMessage) bool {
+		return msg.Role == LLMMessageRoleSystem
 	})
 	return llm
 }
@@ -659,10 +905,74 @@ func (llm *LLM) WithoutSystemPrompts() *LLM {
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, &ModelMessage{
-		Role:    "system",
-		Content: prompt,
+	llm.Messages = append(llm.Messages, &LLMMessage{
+		Role: LLMMessageRoleSystem,
+		Content: []*LLMContentBlock{{
+			Kind: LLMContentText,
+			Text: prompt,
+		}},
 	})
+	return llm
+}
+
+// WithResponse appends an assistant response to the message history.
+// The content blocks come directly from the LLMResponse.
+func (llm *LLM) WithResponse(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) *LLM {
+	llm = llm.Clone()
+	llm.Messages = append(llm.Messages, &LLMMessage{
+		Role:       LLMMessageRoleAssistant,
+		Content:    blocks,
+		TokenUsage: tokenUsage,
+	})
+	return llm
+}
+
+// WithToolCall appends a tool call to the last assistant message in the history.
+func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
+	llm = llm.Clone()
+	// Find the last assistant message and append the tool call block to it
+	for i := len(llm.Messages) - 1; i >= 0; i-- {
+		if llm.Messages[i].Role == LLMMessageRoleAssistant {
+			llm.Messages[i].Content = append(llm.Messages[i].Content, &LLMContentBlock{
+				Kind:      LLMContentToolCall,
+				CallID:    callID,
+				ToolName:  tool,
+				Arguments: arguments,
+			})
+			break
+		}
+	}
+	return llm
+}
+
+// WithToolResponse appends a tool response (user) message to the history.
+func (llm *LLM) WithToolResponse(callID, content string, errored bool) *LLM {
+	llm = llm.Clone()
+	llm.Messages = append(llm.Messages, &LLMMessage{
+		Role: LLMMessageRoleUser,
+		Content: []*LLMContentBlock{{
+			Kind:    LLMContentToolResult,
+			Text:    content,
+			CallID:  callID,
+			Errored: errored,
+		}},
+	})
+	return llm
+}
+
+// WithObject tracks an object so the LLM can reference it in subsequent tool
+// calls, re-registering it under the given tag after a history rebuild.
+func (llm *LLM) WithObject(objectID string, id dagql.AnyID) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithObject(objectID, id)
+	return llm
+}
+
+// WithMaxTokens returns a new LLM with the maximum output tokens set.
+// Zero means use provider defaults.
+func (llm *LLM) WithMaxTokens(tokens int) *LLM {
+	llm = llm.Clone()
+	llm.maxTokens = tokens
 	return llm
 }
 
@@ -693,25 +1003,24 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 }
 
 // Return the last message sent by the agent
-func (llm *LLM) LastReply(ctx context.Context) (string, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return "", err
-	}
-	reply := "(no reply)"
-	for _, msg := range llm.messages {
-		if msg.Role != "assistant" {
+func (llm *LLM) LastReply() (string, bool) {
+	var reply string = "(no reply)"
+	var foundReply bool
+	for _, msg := range llm.Messages {
+		if msg.Role != LLMMessageRoleAssistant {
 			continue
 		}
-		txt := msg.Content
+		txt := msg.TextContent()
 		if len(txt) == 0 {
 			continue
 		}
+		foundReply = true
 		reply = txt
 	}
-	return reply, nil
+	return reply, foundReply
 }
 
-func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*ModelMessage, error) {
+func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*LLMMessage, error) {
 	var systemPrompt string
 	if !llm.disableDefaultSystemPrompt {
 		var err error
@@ -721,12 +1030,15 @@ func (llm *LLM) messagesWithSystemPrompt(ctx context.Context) ([]*ModelMessage, 
 		}
 	}
 	if systemPrompt != "" {
-		return append([]*ModelMessage{{
-			Role:    "system",
-			Content: systemPrompt,
-		}}, llm.messages...), nil
+		return append([]*LLMMessage{{
+			Role: LLMMessageRoleSystem,
+			Content: []*LLMContentBlock{{
+				Kind: LLMContentText,
+				Text: systemPrompt,
+			}},
+		}}, llm.Messages...), nil
 	}
-	return llm.messages, nil
+	return llm.Messages, nil
 }
 
 type ModelFinishedError struct {
@@ -737,76 +1049,337 @@ func (err *ModelFinishedError) Error() string {
 	return fmt.Sprintf("model finished: %s", err.Reason)
 }
 
-// Send configures the LLM to only evaluate one step when syncing.
-func (llm *LLM) Step() *LLM {
-	llm = llm.Clone()
-	llm.syncOneStep = true
-	return llm
-}
-
-// send the context to the LLM endpoint, process replies and tool calls; continue in a loop
-// Synchronize LLM state:
-// 1. Send context to LLM endpoint
-// 2. Process replies and tool calls
-// 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Sync(ctx context.Context) error {
+// Step submits the queued prompt or tool-call results, evaluates any tool
+// calls, and materializes the resulting message history through the API as a
+// new LLM DAG node (via withResponse/withToolResponse/withObject selectors).
+func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
-		return err
+		return inst, err
 	}
-	llm.once.Do(func() {
-		err := llm.loop(ctx)
-		if err != nil && ctx.Err() == nil {
-			// Consider an interrupt to be successful, so we can still use the result
-			// of a partially completed sequence (e.g. accessing its Env). The user
-			// must append another prompt to interject and continue. (This matches the
-			// behavior of Claude Code and presumably other chat agents.)
-			llm.err = err
-		}
-	})
-	return llm.err
+	return llm.step(ctx, inst)
 }
 
-func (llm *LLM) Interject(ctx context.Context) error {
+func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+	llm = llm.Clone()
+
+	b := backoff.NewExponentialBackOff()
+	// Sane defaults (ideally not worth extra knobs)
+	b.InitialInterval = 1 * time.Second
+	b.MaxInterval = 30 * time.Second
+	b.MaxElapsedTime = 2 * time.Minute
+
+	tools, err := llm.mcp.Tools(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	messagesToSend, err := llm.messagesWithSystemPrompt(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	var newMessages []*LLMMessage
+	for _, msg := range slices.Backward(messagesToSend) {
+		if msg.Role == LLMMessageRoleAssistant || msg.IsToolResult() {
+			// only display messages appended since the last response
+			break
+		}
+		newMessages = append(newMessages, msg)
+	}
+	slices.Reverse(newMessages)
+
+	// Compute the LLM call digest for prompt/response span metadata. inst.ID()
+	// is the LLM state entering step() (typically ends in withPrompt). Its
+	// digest lets the TUI identify and branch from this point.
+	var llmCallDigest string
+	if id, idErr := inst.ID(); idErr == nil {
+		llmCallDigest = id.Digest().String()
+	}
+
+	for _, msg := range newMessages {
+		emitMessageSpan(ctx, msg, llmCallDigest)
+	}
+
+	var res *LLMResponse
+
+	ep, err := llm.Endpoint(ctx)
+	if err != nil {
+		return inst, err
+	}
+	client := ep.Client
+	err = backoff.Retry(func() error {
+		var sendErr error
+		ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
+			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+			attribute.String(LLMCallDigestAttr, llmCallDigest),
+		))
+		res, sendErr = client.SendQuery(ctx, messagesToSend, tools, &LLMCallOpts{
+			MaxTokens: llm.maxTokens,
+		})
+		telemetry.EndWithCause(span, &sendErr)
+		if sendErr != nil {
+			var finished *ModelFinishedError
+			if errors.As(sendErr, &finished) {
+				// Don't retry if the model finished explicitly, treat as permanent.
+				return backoff.Permanent(sendErr)
+			}
+			if !client.IsRetryable(sendErr) {
+				// Maybe an invalid request - give up.
+				return backoff.Permanent(sendErr)
+			}
+			// Log retry attempts? Maybe with increasing severity?
+			// For now, just return the error to signal backoff to retry.
+			return sendErr
+		}
+		// Success, stop retrying
+		return nil
+	}, backoff.WithContext(b, ctx))
+	if err != nil {
+		return inst, err
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	var sels []dagql.Selector
+	{
+		// Build content block input objects for the withResponse selector.
+		contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
+		for i, block := range res.Content {
+			contentInputs[i] = dagql.InputObject[LLMContentBlockInput]{
+				Value: LLMContentBlockInput{
+					Kind:      block.Kind,
+					Text:      block.Text,
+					CallID:    block.CallID,
+					ToolName:  block.ToolName,
+					Arguments: block.Arguments,
+					Errored:   block.Errored,
+					Signature: block.Signature,
+				},
+			}
+		}
+		args := []dagql.NamedInput{
+			{
+				Name:  "content",
+				Value: contentInputs,
+			},
+		}
+		if res.TokenUsage.InputTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "inputTokens",
+				Value: dagql.NewInt(res.TokenUsage.InputTokens),
+			})
+		}
+		if res.TokenUsage.OutputTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "outputTokens",
+				Value: dagql.NewInt(res.TokenUsage.OutputTokens),
+			})
+		}
+		if res.TokenUsage.CachedTokenReads != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "cachedTokenReads",
+				Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
+			})
+		}
+		if res.TokenUsage.CachedTokenWrites != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "cachedTokenWrites",
+				Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
+			})
+		}
+		if res.TokenUsage.TotalTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "totalTokens",
+				Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+			})
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withResponse",
+			Args:  args,
+		})
+	}
+	// Extract tool calls from response content blocks for the MCP layer.
+	var toolCalls []*LLMToolCall
+	for _, block := range res.Content {
+		if block.Kind == LLMContentToolCall {
+			toolCalls = append(toolCalls, &LLMToolCall{
+				CallID:    block.CallID,
+				Name:      block.ToolName,
+				Arguments: block.Arguments,
+			})
+		}
+	}
+	snapshot := llm.mcp.Snapshot()
+	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls) {
+		sels = append(sels, dagql.Selector{
+			Field: "withToolResponse",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "call",
+					Value: dagql.NewString(msg.ToolResultCallID()),
+				},
+				{
+					Name:  "content",
+					Value: dagql.NewString(msg.ToolResultContent()),
+				},
+				{
+					Name:  "errored",
+					Value: dagql.NewBoolean(msg.ToolResultErrored()),
+				},
+			},
+		})
+	}
+	newObjs := llm.mcp.NewObjects(snapshot)
+	sort.Strings(newObjs)
+	for _, objID := range newObjs {
+		id, ok := llm.mcp.IDForLLMID(objID)
+		if !ok {
+			continue
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withObject",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "tag",
+					Value: dagql.NewString(objID),
+				},
+				{
+					Name:  "object",
+					Value: dagql.NewAnyID(id),
+				},
+			},
+		})
+	}
+
+	var stepped dagql.ObjectResult[*LLM]
+	if err := srv.Select(ctx, inst, &stepped, sels...); err != nil {
+		return inst, err
+	}
+
+	return stepped, nil
+}
+
+// Loop sends the context to the LLM endpoint, processes replies and tool calls,
+// and continues in a loop until the model ends its turn (no more prompts) or
+// the API call cap is reached.
+func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls int) (dagql.ObjectResult[*LLM], error) {
+	if err := llm.allowed(ctx); err != nil {
+		return inst, err
+	}
+
+	var apiCalls int
+	for {
+		llm := inst.Self()
+
+		if !llm.HasPrompt() {
+			if llm.HasMissingOutputs() {
+				// There's no prompt, and yet there are outputs unfulfilled. This means
+				// future calls to Env.Output may fail, so we should interject to help
+				// the LLM along.
+				if newLLM, interjected, interjectErr := llm.Interject(ctx, inst); interjectErr != nil {
+					if ctx.Err() != nil {
+						return inst, nil
+					}
+					return inst, interjectErr
+				} else if interjected {
+					inst = newLLM
+					// interjected - continue
+					continue
+				} else {
+					// no interjection - user gave up?
+					break
+				}
+			}
+
+			// nothing to do - either never prompted, or naturally reached the end of
+			// the loop (e.g. LLM reply with no additional tool calls)
+			return inst, nil
+		}
+
+		if maxAPICalls > 0 && apiCalls >= maxAPICalls {
+			return inst, fmt.Errorf("reached API call limit: %d", apiCalls)
+		}
+
+		apiCalls++
+
+		var err error
+		inst, err = inst.Self().Step(ctx, inst)
+		if err != nil {
+			if ctx.Err() != nil {
+				// Context was cancelled (user interrupt). Return the last
+				// successfully recorded state so that the prompt and any prior
+				// progress are preserved in history.
+				return inst, nil
+			}
+			// Handle persistent error after all retries failed.
+			return inst, err
+		}
+	}
+
+	return inst, nil
+}
+
+func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], bool, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return self, false, err
 	}
 	bk, err := query.Engine(ctx)
 	if err != nil {
-		return err
+		return self, false, err
+	}
+	if !bk.Opts.Interactive {
+		return self, false, nil
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return self, false, err
+	}
+	var selfDigest string
+	if id, idErr := self.ID(); idErr == nil {
+		selfDigest = id.Digest().String()
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
+		attribute.String(LLMCallDigestAttr, selfDigest),
 	))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
-	var lastAssistantMessage string
-	for i := len(llm.messages) - 1; i >= 0; i-- {
-		if llm.messages[i].Role == "assistant" {
-			lastAssistantMessage = llm.messages[i].Content
-			break
-		}
-	}
-	if lastAssistantMessage == "" {
-		return fmt.Errorf("no message from assistant")
+	lastAssistantMessage, foundReply := llm.LastReply()
+	if !foundReply {
+		return self, false, fmt.Errorf("no message from assistant")
 	}
 	msg, err := bk.PromptHumanHelp(ctx, "LLM needs help!", fmt.Sprintf("The LLM was unable to complete its task and needs a prompt to continue. Here is its last message:\n%s", mdQuote(lastAssistantMessage)))
 	if err != nil {
-		return err
+		return self, false, err
 	}
 	if msg == "" {
-		return errors.New("no interjection provided; giving up")
+		return self, false, nil
 	}
 	fmt.Fprint(stdio.Stdout, msg)
-	llm.messages = append(llm.messages, &ModelMessage{
-		Role:    "user",
-		Content: msg,
-	})
-	return nil
+
+	var inst dagql.ObjectResult[*LLM]
+	if err := srv.Select(ctx, self, &inst, dagql.Selector{
+		Field: "withPrompt",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "prompt",
+				Value: dagql.NewString(msg),
+			},
+		},
+	}); err != nil {
+		return self, false, err
+	}
+	return inst, true, nil
 }
 
 func mdQuote(msg string) string {
@@ -817,192 +1390,20 @@ func mdQuote(msg string) string {
 	return strings.Join(lines, "\n")
 }
 
-// autoInterject keeps the loop going if necessary, by prompting for a new
-// input, adding it to the message history, and returning true
-func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
-	if llm.mcp.IsDone() {
-		// we either didn't expect a return value, or got one - done!
-		return false, nil
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return false, err
-	}
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return false, err
-	}
-	if !bk.Opts.Interactive {
-		return false, nil
-	}
-	if err := llm.Interject(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (llm *LLM) loop(ctx context.Context) error {
-	var hasUserMessage bool
-	for _, message := range llm.messages {
-		if message.Role == "user" {
-			hasUserMessage = true
-			break
-		}
-	}
-	if !hasUserMessage {
-		// dirty but no messages, possibly just a state change, nothing to do
-		// until a prompt is given
-		return nil
-	}
-
-	b := backoff.NewExponentialBackOff()
-	// Sane defaults (ideally not worth extra knobs)
-	b.InitialInterval = 1 * time.Second
-	b.MaxInterval = 30 * time.Second
-	b.MaxElapsedTime = 2 * time.Minute
-
-	for {
-		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
-			return fmt.Errorf("reached API call limit: %d", llm.apiCalls)
-		}
-		llm.apiCalls++
-
-		tools, err := llm.mcp.Tools(ctx)
-		if err != nil {
-			return err
-		}
-
-		messagesToSend, err := llm.messagesWithSystemPrompt(ctx)
-		if err != nil {
-			return err
-		}
-
-		var newMessages []*ModelMessage
-		for _, msg := range slices.Backward(messagesToSend) {
-			if msg.Role == "assistant" || msg.ToolCallID != "" {
-				// only display messages appended since the last response
-				break
-			}
-			newMessages = append(newMessages, msg)
-		}
-		slices.Reverse(newMessages)
-		for _, msg := range newMessages {
-			func() {
-				var emoji string
-				switch msg.Role {
-				case "user":
-					emoji = "🧑"
-				case "system":
-					emoji = "⚙️"
-				}
-				ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
-					telemetry.Reveal(),
-					trace.WithAttributes(
-						attribute.String(telemetry.UIActorEmojiAttr, emoji),
-						attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
-						attribute.String(telemetry.LLMRoleAttr, msg.Role),
-						attribute.Bool(telemetry.UIInternalAttr, msg.Role == "system"),
-					))
-				defer span.End()
-				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-					log.String(telemetry.ContentTypeAttr, "text/markdown"))
-				defer stdio.Close()
-				fmt.Fprint(stdio.Stdout, msg.Content)
-			}()
-		}
-
-		var res *LLMResponse
-
-		// Retry operation
-		ep, err := llm.Endpoint(ctx)
-		if err != nil {
-			return err
-		}
-		client := ep.Client
-		err = backoff.Retry(func() error {
-			var sendErr error
-			ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
-				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-			))
-			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
-			telemetry.EndWithCause(span, &sendErr)
-			if sendErr != nil {
-				var finished *ModelFinishedError
-				if errors.As(sendErr, &finished) {
-					// Don't retry if the model finished explicitly, treat as permanent.
-					return backoff.Permanent(sendErr)
-				}
-				if !client.IsRetryable(sendErr) {
-					// Maybe an invalid request - give up.
-					return backoff.Permanent(sendErr)
-				}
-				// Log retry attempts? Maybe with increasing severity?
-				// For now, just return the error to signal backoff to retry.
-				return sendErr
-			}
-			// Success, stop retrying
-			return nil
-		}, backoff.WithContext(b, ctx))
-
-		// Check the final error after retries (if any)
-		if err != nil {
-			var finished *ModelFinishedError
-			if errors.As(err, &finished) {
-				if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
-					// interjecting failed or was interrupted
-					return errors.Join(err, interjectErr)
-				} else if interjected {
-					// interjected - continue
-					continue
-				} else {
-					// no interjection and none needed - we're just done
-					break
-				}
-			}
-			// Handle persistent error after all retries failed.
-			return fmt.Errorf("not retrying: %w", err)
-		}
-
-		// Add the model reply to the history
-		llm.messages = append(llm.messages, &ModelMessage{
-			Role:       "assistant",
-			Content:    res.Content,
-			ToolCalls:  res.ToolCalls,
-			TokenUsage: res.TokenUsage,
-		})
-
-		// Handle tool calls
-		if len(res.ToolCalls) == 0 {
-			if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
-				// interjecting failed or was interrupted
-				return interjectErr
-			} else if interjected {
-				// interjected - continue
-				continue
-			}
-			// no interjection and none needed - we're just done
-			break
-		}
-
-		// Run tool calls in batch with efficient MCP syncing
-		llm.messages = append(llm.messages, llm.mcp.CallBatch(ctx, tools, res.ToolCalls)...)
-
-		if llm.mcp.Returned() {
-			// we returned; exit the loop, since some models just keep going
-			break
-		}
-		if llm.syncOneStep {
-			// we're configured to only do one step; return early
-			return nil
-		}
-	}
-	return nil
-}
-
 func (llm *LLM) HasPrompt() bool {
-	return len(llm.messages) > 0 && llm.messages[len(llm.messages)-1].Role == "user"
+	return len(llm.Messages) > 0 && llm.Messages[len(llm.Messages)-1].Role == LLMMessageRoleUser
+}
+
+func (llm *LLM) HasMissingOutputs() bool {
+	if id, err := llm.Env().ID(); err != nil || id == nil {
+		return false
+	}
+	for _, out := range llm.Env().Self().outputsByName {
+		if out.Value == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -1044,47 +1445,174 @@ func (llm *LLM) allowed(ctx context.Context) error {
 	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
+// emitMessageSpan creates a telemetry span for a single LLM message. This is
+// used both during live step() execution and during replay. callDigest is the
+// DAG digest enabling TUI branching from that point.
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+	switch msg.Role {
+	case LLMMessageRoleUser, LLMMessageRoleSystem:
+		emitUserMessageSpan(ctx, msg, callDigest)
+	case LLMMessageRoleAssistant:
+		emitAssistantMessageSpan(ctx, msg, callDigest)
+	}
+}
+
+func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+	var emoji string
+	switch msg.Role {
+	case LLMMessageRoleUser:
+		emoji = "🧑"
+	case LLMMessageRoleSystem:
+		emoji = "⚙️"
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.UIActorEmojiAttr, emoji),
+		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
+		attribute.String(telemetry.LLMRoleAttr, msg.Role.String()),
+		attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
+	}
+	if callDigest != "" {
+		attrs = append(attrs, attribute.String(LLMCallDigestAttr, callDigest))
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
+		telemetry.Reveal(),
+		trace.WithAttributes(attrs...))
+	defer span.End()
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+	fmt.Fprint(stdio.Stdout, msg.TextContent())
+}
+
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+	// Each content block gets its own span, matching the provider streaming
+	// behavior: thinking, text (LLM response), and tool calls each appear
+	// separately. Contiguous runs of the same non-tool-call type are grouped.
+	type spanGroup struct {
+		kind   LLMContentBlockKind
+		blocks []*LLMContentBlock
+	}
+	var groups []spanGroup
+	for _, block := range msg.Content {
+		// Tool calls always get their own span (one per call).
+		if block.Kind == LLMContentToolCall {
+			groups = append(groups, spanGroup{kind: block.Kind, blocks: []*LLMContentBlock{block}})
+			continue
+		}
+		// Group contiguous thinking or text blocks together.
+		if len(groups) > 0 && groups[len(groups)-1].kind == block.Kind {
+			groups[len(groups)-1].blocks = append(groups[len(groups)-1].blocks, block)
+		} else {
+			groups = append(groups, spanGroup{kind: block.Kind, blocks: []*LLMContentBlock{block}})
+		}
+	}
+
+	for _, g := range groups {
+		func() {
+			var name string
+			var extraAttrs []attribute.KeyValue
+			var contentType string
+			switch g.kind {
+			case LLMContentThinking:
+				name = "thinking"
+				contentType = "text/markdown"
+				extraAttrs = append(extraAttrs,
+					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+					attribute.Bool("llm.thinking", true),
+				)
+			case LLMContentToolCall:
+				block := g.blocks[0]
+				name = block.ToolName
+				contentType = "application/json"
+				extraAttrs = append(extraAttrs,
+					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.String(telemetry.LLMToolAttr, block.ToolName),
+				)
+			default:
+				name = "LLM response"
+				contentType = "text/markdown"
+				extraAttrs = append(extraAttrs,
+					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				)
+			}
+			attrs := []attribute.KeyValue{
+				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+			}
+			attrs = append(attrs, extraAttrs...)
+			if callDigest != "" {
+				attrs = append(attrs, attribute.String(LLMCallDigestAttr, callDigest))
+			}
+			ctx, span := Tracer(ctx).Start(ctx, name,
+				telemetry.Reveal(),
+				trace.WithAttributes(attrs...))
+			defer span.End()
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+				log.String(telemetry.ContentTypeAttr, contentType))
+			defer stdio.Close()
+			for _, block := range g.blocks {
+				switch block.Kind {
+				case LLMContentText, LLMContentThinking:
+					fmt.Fprint(stdio.Stdout, block.Text)
+				case LLMContentToolCall:
+					fmt.Fprint(stdio.Stdout, string(block.Arguments))
+				}
+			}
+		}()
+	}
+}
+
+// Replay re-emits telemetry spans for all messages in the conversation history.
+// This allows the TUI to display the conversation after loading a saved session.
+func (llm *LLM) Replay(ctx context.Context) {
+	for _, msg := range llm.Messages {
+		// We don't have per-message call digests for replay, so pass empty.
+		// The TUI will still display the messages, just without branch support.
+		emitMessageSpan(ctx, msg, "")
+	}
+}
+
 func squash(str string) string {
 	return strings.ReplaceAll(str, "\n", `\n`)
 }
 
 func (llm *LLM) History(ctx context.Context) ([]string, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
 	var history []string
-	var lastRole string
-	for _, msg := range llm.messages {
+	var lastRole LLMMessageRole
+	for _, msg := range llm.Messages {
 		if len(history) > 0 && lastRole != msg.Role {
 			// add a blank line when roles change
 			history = append(history, "")
 			lastRole = msg.Role
 		}
-		content := squash(msg.Content)
 		switch msg.Role {
-		case "user":
-			var item string
-			if msg.ToolCallID != "" {
-				item += "🛠️ 💬 "
-			} else {
-				item += "🧑 💬 "
-			}
-			if msg.ToolErrored {
-				item += "ERROR: "
-			}
-			item += content
-			history = append(history, item)
-		case "assistant":
-			if len(content) > 0 {
-				history = append(history, "🤖 💬 "+content)
-			}
-			for _, call := range msg.ToolCalls {
-				args, err := json.Marshal(call.Function.Arguments)
-				if err != nil {
-					return nil, err
+		case LLMMessageRoleUser:
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					item := "🛠️ 💬 "
+					if block.Errored {
+						item += "ERROR: "
+					}
+					item += squash(block.Text)
+					history = append(history, item)
+				case LLMContentText:
+					history = append(history, "🧑 💬 "+squash(block.Text))
 				}
-				item := fmt.Sprintf("🤖 🛠️ %s %s", call.Function.Name, args)
-				history = append(history, item)
+			}
+		case LLMMessageRoleAssistant:
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentThinking:
+					history = append(history, "💭 "+squash(block.Text))
+				case LLMContentText:
+					if len(block.Text) > 0 {
+						history = append(history, "🤖 💬 "+squash(block.Text))
+					}
+				case LLMContentToolCall:
+					item := fmt.Sprintf("🤖 🛠️ %s %s", block.ToolName, block.Arguments)
+					history = append(history, item)
+				}
 			}
 		}
 		if msg.TokenUsage.InputTokens > 0 || msg.TokenUsage.OutputTokens > 0 {
@@ -1098,14 +1626,69 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 }
 
 func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
-	result, err := json.MarshalIndent(llm.messages, "", "  ")
+	result, err := json.MarshalIndent(llm.Messages, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 	return JSON(result), nil
+}
+
+// SerializeHistory returns the message history as plain text suitable for LLM
+// consumption (e.g. for summarization). Role-tagged lines with no emojis, tool
+// calls shown as function signatures, and tool results included inline.
+func (llm *LLM) SerializeHistory() string {
+	var parts []string
+	for _, msg := range llm.Messages {
+		switch msg.Role {
+		case LLMMessageRoleUser:
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					prefix := "[Tool result]"
+					if block.Errored {
+						prefix = "[Tool result ERROR]"
+					}
+					if block.Text != "" {
+						parts = append(parts, prefix+": "+block.Text)
+					}
+				case LLMContentText:
+					if block.Text != "" {
+						parts = append(parts, "[User]: "+block.Text)
+					}
+				}
+			}
+		case LLMMessageRoleAssistant:
+			var thinkingParts, textParts []string
+			var toolCalls []string
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentThinking:
+					if block.Text != "" {
+						thinkingParts = append(thinkingParts, block.Text)
+					}
+				case LLMContentText:
+					if block.Text != "" {
+						textParts = append(textParts, block.Text)
+					}
+				case LLMContentToolCall:
+					toolCalls = append(toolCalls,
+						fmt.Sprintf("%s(%s)", block.ToolName, string(block.Arguments)))
+				}
+			}
+			if len(thinkingParts) > 0 {
+				parts = append(parts, "[Assistant thinking]: "+strings.Join(thinkingParts, "\n"))
+			}
+			if len(textParts) > 0 {
+				parts = append(parts, "[Assistant]: "+strings.Join(textParts, "\n"))
+			}
+			if len(toolCalls) > 0 {
+				parts = append(parts, "[Assistant tool calls]: "+strings.Join(toolCalls, "; "))
+			}
+		case LLMMessageRoleSystem:
+			// System prompts are omitted from serialization
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {
@@ -1160,9 +1743,6 @@ func (*LLMVariable) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
 	var res dagql.Nullable[*Binding]
-	if err := llm.Sync(ctx); err != nil {
-		return res, err
-	}
 	if llm.mcp.LastResult() == nil {
 		return res, nil
 	}
@@ -1176,11 +1756,8 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
 	var res LLMTokenUsage
-	for _, msg := range llm.messages {
+	for _, msg := range llm.Messages {
 		res.InputTokens += msg.TokenUsage.InputTokens
 		res.OutputTokens += msg.TokenUsage.OutputTokens
 		res.CachedTokenReads += msg.TokenUsage.CachedTokenReads

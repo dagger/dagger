@@ -91,6 +91,16 @@ pub struct BuildArg {
     pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct LlmContentBlockInput {
+    pub arguments: Json,
+    pub call_id: String,
+    pub errored: bool,
+    pub kind: LlmContentBlockKind,
+    pub signature: String,
+    pub text: String,
+    pub tool_name: String,
+}
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
     pub name: String,
     pub value: String,
@@ -683,6 +693,33 @@ impl Binding {
     pub fn as_json_value(&self) -> JsonValue {
         let query = self.selection.select("asJSONValue");
         JsonValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type LLMContentBlock
+    pub fn as_llm_content_block(&self) -> LlmContentBlock {
+        let query = self.selection.select("asLLMContentBlock");
+        LlmContentBlock {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type LLMMessage
+    pub fn as_llm_message(&self) -> LlmMessage {
+        let query = self.selection.select("asLLMMessage");
+        LlmMessage {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type LLMToolCall
+    pub fn as_llm_tool_call(&self) -> LlmToolCall {
+        let query = self.selection.select("asLLMToolCall");
+        LlmToolCall {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -7829,6 +7866,153 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type LLMContentBlock in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The LLMContentBlock value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_llm_content_block_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMContentBlockInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired LLMContentBlock output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_llm_content_block_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMContentBlockOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type LLMMessage in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The LLMMessage value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_llm_message_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMMessageInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired LLMMessage output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_llm_message_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMMessageOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type LLMToolCall in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The LLMToolCall value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_llm_tool_call_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMToolCallInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired LLMToolCall output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_llm_tool_call_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMToolCallOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Sets the main module for this environment (the project being worked on)
     /// Contextual path arguments will be populated using the environment's workspace.
     pub fn with_main_module(&self, module: impl IntoID<Id>) -> Env {
@@ -11863,6 +12047,30 @@ pub struct Llm {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmLoopOpts {
+    /// Cap the number of API calls
+    #[builder(setter(into, strip_option), default)]
+    pub max_api_calls: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmWithResponseOpts {
+    /// Cached input tokens read
+    #[builder(setter(into, strip_option), default)]
+    pub cached_token_reads: Option<isize>,
+    /// Cached input tokens written
+    #[builder(setter(into, strip_option), default)]
+    pub cached_token_writes: Option<isize>,
+    /// Uncached input tokens sent
+    #[builder(setter(into, strip_option), default)]
+    pub input_tokens: Option<isize>,
+    /// Tokens received from the model, including text and tool calls
+    #[builder(setter(into, strip_option), default)]
+    pub output_tokens: Option<isize>,
+    /// Total tokens consumed by this response
+    #[builder(setter(into, strip_option), default)]
+    pub total_tokens: Option<isize>,
+}
 impl IntoID<Id> for Llm {
     fn into_id(
         self,
@@ -11942,6 +12150,10 @@ impl Llm {
         query.execute(self.graphql_client.clone()).await
     }
     /// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#loop(&self) -> Llm {
         let query = self.selection.select("loop");
         Llm {
@@ -11949,6 +12161,39 @@ impl Llm {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn r#loop_opts(&self, opts: LlmLoopOpts) -> Llm {
+        let mut query = self.selection.select("loop");
+        if let Some(max_api_calls) = opts.max_api_calls {
+            query = query.arg("maxAPICalls", max_api_calls);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The full message history.
+    pub async fn messages(&self) -> Result<Vec<LlmMessage>, DaggerError> {
+        let query = self.selection.select("messages");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| LlmMessage {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("LLMMessage"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// return the model used by the llm
     pub async fn model(&self) -> Result<String, DaggerError> {
@@ -11958,6 +12203,25 @@ impl Llm {
     /// return the provider used by the llm
     pub async fn provider(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("provider");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+    pub async fn replay(&self) -> Result<Llm, DaggerError> {
+        let query = self.selection.select("replay");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Llm {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("LLM"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+    pub async fn serialize_history(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("serializeHistory");
         query.execute(self.graphql_client.clone()).await
     }
     /// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
@@ -12062,6 +12326,20 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Set the maximum number of output tokens the model may generate per API call
+    ///
+    /// # Arguments
+    ///
+    /// * `tokens` - The maximum number of output tokens (0 to use provider defaults)
+    pub fn with_max_tokens(&self, tokens: isize) -> Llm {
+        let mut query = self.selection.select("withMaxTokens");
+        query = query.arg("tokens", tokens);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// swap out the llm model
     ///
     /// # Arguments
@@ -12070,6 +12348,28 @@ impl Llm {
     pub fn with_model(&self, model: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withModel");
         query = query.arg("model", model.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Track an object so the LLM can reference it in subsequent tool calls.
+    ///
+    /// # Arguments
+    ///
+    /// * `tag` - Arbitrary string tag for the object, typically in TypeName#Number format
+    /// * `object` - The object to track, as a generic ID
+    pub fn with_object(&self, tag: impl Into<String>, object: impl IntoID<Id>) -> Llm {
+        let mut query = self.selection.select("withObject");
+        query = query.arg("tag", tag.into());
+        query = query.arg_lazy(
+            "object",
+            Box::new(move || {
+                let object = object.clone();
+                Box::pin(async move { object.into_id().await.unwrap().quote() })
+            }),
+        );
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -12110,6 +12410,55 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Append an assistant response to the message history
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The response content
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_response(&self, content: Vec<LlmContentBlockInput>) -> Llm {
+        let mut query = self.selection.select("withResponse");
+        query = query.arg("content", content);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append an assistant response to the message history
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The response content
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_response_opts(
+        &self,
+        content: Vec<LlmContentBlockInput>,
+        opts: LlmWithResponseOpts,
+    ) -> Llm {
+        let mut query = self.selection.select("withResponse");
+        query = query.arg("content", content);
+        if let Some(input_tokens) = opts.input_tokens {
+            query = query.arg("inputTokens", input_tokens);
+        }
+        if let Some(output_tokens) = opts.output_tokens {
+            query = query.arg("outputTokens", output_tokens);
+        }
+        if let Some(cached_token_reads) = opts.cached_token_reads {
+            query = query.arg("cachedTokenReads", cached_token_reads);
+        }
+        if let Some(cached_token_writes) = opts.cached_token_writes {
+            query = query.arg("cachedTokenWrites", cached_token_writes);
+        }
+        if let Some(total_tokens) = opts.total_tokens {
+            query = query.arg("totalTokens", total_tokens);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
     pub fn with_static_tools(&self) -> Llm {
         let query = self.selection.select("withStaticTools");
@@ -12127,6 +12476,52 @@ impl Llm {
     pub fn with_system_prompt(&self, prompt: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withSystemPrompt");
         query = query.arg("prompt", prompt.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append a tool call to the last assistant message
+    ///
+    /// # Arguments
+    ///
+    /// * `call` - The unique ID for this tool call
+    /// * `tool` - The name of the tool to call
+    /// * `arguments` - The arguments to pass to the tool
+    pub fn with_tool_call(
+        &self,
+        call: impl Into<String>,
+        tool: impl Into<String>,
+        arguments: Json,
+    ) -> Llm {
+        let mut query = self.selection.select("withToolCall");
+        query = query.arg("call", call.into());
+        query = query.arg("tool", tool.into());
+        query = query.arg("arguments", arguments);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append a tool response to the message history
+    ///
+    /// # Arguments
+    ///
+    /// * `call` - The ID of the tool call this is responding to
+    /// * `content` - The response content from the tool
+    /// * `errored` - Whether the tool call resulted in an error
+    pub fn with_tool_response(
+        &self,
+        call: impl Into<String>,
+        content: impl Into<String>,
+        errored: bool,
+    ) -> Llm {
+        let mut query = self.selection.select("withToolResponse");
+        query = query.arg("call", call.into());
+        query = query.arg("content", content.into());
+        query = query.arg("errored", errored);
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -12176,6 +12571,136 @@ impl Syncer for Llm {
     }
     fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct LlmContentBlock {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for LlmContentBlock {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmContentBlock {
+    fn graphql_type() -> &'static str {
+        "LLMContentBlock"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmContentBlock {
+    pub async fn arguments(&self) -> Result<Json, DaggerError> {
+        let query = self.selection.select("arguments");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn call_id(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("callId");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn errored(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("errored");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this LLMContentBlock.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn kind(&self) -> Result<LlmContentBlockKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn text(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("text");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn tool_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("toolName");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for LlmContentBlock {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct LlmMessage {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for LlmMessage {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmMessage {
+    fn graphql_type() -> &'static str {
+        "LLMMessage"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmMessage {
+    pub async fn content(&self) -> Result<Vec<LlmContentBlock>, DaggerError> {
+        let query = self.selection.select("content");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| LlmContentBlock {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("LLMContentBlock"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// A unique identifier for this LLMMessage.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn role(&self) -> Result<LlmMessageRole, DaggerError> {
+        let query = self.selection.select("role");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for LlmMessage {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
@@ -12237,6 +12762,49 @@ impl LlmTokenUsage {
     }
 }
 impl Node for LlmTokenUsage {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct LlmToolCall {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for LlmToolCall {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmToolCall {
+    fn graphql_type() -> &'static str {
+        "LLMToolCall"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmToolCall {
+    /// A unique identifier for this LLMToolCall.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for LlmToolCall {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -13737,9 +14305,6 @@ pub struct QueryHttpOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryLlmOpts<'a> {
-    /// Cap the number of API calls for this LLM
-    #[builder(setter(into, strip_option), default)]
-    pub max_api_calls: Option<isize>,
     /// Model to use
     #[builder(setter(into, strip_option), default)]
     pub model: Option<&'a str>,
@@ -14310,9 +14875,6 @@ impl Query {
         let mut query = self.selection.select("llm");
         if let Some(model) = opts.model {
             query = query.arg("model", model);
-        }
-        if let Some(max_api_calls) = opts.max_api_calls {
-            query = query.arg("maxAPICalls", max_api_calls);
         }
         Llm {
             proc: self.proc.clone(),
@@ -17635,6 +18197,26 @@ pub enum ImageMediaTypes {
     Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum LlmContentBlockKind {
+    #[serde(rename = "TEXT")]
+    Text,
+    #[serde(rename = "THINKING")]
+    Thinking,
+    #[serde(rename = "TOOL_CALL")]
+    ToolCall,
+    #[serde(rename = "TOOL_RESULT")]
+    ToolResult,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum LlmMessageRole {
+    #[serde(rename = "ASSISTANT")]
+    Assistant,
+    #[serde(rename = "SYSTEM")]
+    System,
+    #[serde(rename = "USER")]
+    User,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceExperimentalFeature {

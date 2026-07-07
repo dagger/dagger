@@ -87,10 +87,22 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
      */
-    public function loop(): LLM
+    public function loop(?int $maxAPICalls = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loop');
+        if (null !== $maxAPICalls) {
+        $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
+        }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The full message history.
+     */
+    public function messages(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('messages');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'messages');
     }
 
     /**
@@ -109,6 +121,25 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('provider');
         return (string)$this->queryLeaf($leafQueryBuilder, 'provider');
+    }
+
+    /**
+     * Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+     */
+    public function replay(): LLM
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('replay');
+        $this->queryLeaf($leafQueryBuilder, 'replay');
+        return $this;
+    }
+
+    /**
+     * return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+     */
+    public function serializeHistory(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('serializeHistory');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'serializeHistory');
     }
 
     /**
@@ -182,12 +213,33 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Set the maximum number of output tokens the model may generate per API call
+     */
+    public function withMaxTokens(int $tokens): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMaxTokens');
+        $innerQueryBuilder->setArgument('tokens', $tokens);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * swap out the llm model
      */
     public function withModel(string $model): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModel');
         $innerQueryBuilder->setArgument('model', $model);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Track an object so the LLM can reference it in subsequent tool calls.
+     */
+    public function withObject(string $tag, Id $object): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
+        $innerQueryBuilder->setArgument('tag', $tag);
+        $innerQueryBuilder->setArgument('object', $object);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -212,6 +264,37 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Append an assistant response to the message history
+     */
+    public function withResponse(
+        array $content,
+        ?int $inputTokens = 0,
+        ?int $outputTokens = 0,
+        ?int $cachedTokenReads = 0,
+        ?int $cachedTokenWrites = 0,
+        ?int $totalTokens = 0,
+    ): LLM {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withResponse');
+        $innerQueryBuilder->setArgument('content', $content);
+        if (null !== $inputTokens) {
+        $innerQueryBuilder->setArgument('inputTokens', $inputTokens);
+        }
+        if (null !== $outputTokens) {
+        $innerQueryBuilder->setArgument('outputTokens', $outputTokens);
+        }
+        if (null !== $cachedTokenReads) {
+        $innerQueryBuilder->setArgument('cachedTokenReads', $cachedTokenReads);
+        }
+        if (null !== $cachedTokenWrites) {
+        $innerQueryBuilder->setArgument('cachedTokenWrites', $cachedTokenWrites);
+        }
+        if (null !== $totalTokens) {
+        $innerQueryBuilder->setArgument('totalTokens', $totalTokens);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
      */
     public function withStaticTools(): LLM
@@ -227,6 +310,30 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSystemPrompt');
         $innerQueryBuilder->setArgument('prompt', $prompt);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Append a tool call to the last assistant message
+     */
+    public function withToolCall(string $call, string $tool, Json $arguments): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolCall');
+        $innerQueryBuilder->setArgument('call', $call);
+        $innerQueryBuilder->setArgument('tool', $tool);
+        $innerQueryBuilder->setArgument('arguments', $arguments);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Append a tool response to the message history
+     */
+    public function withToolResponse(string $call, string $content, bool $errored): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolResponse');
+        $innerQueryBuilder->setArgument('call', $call);
+        $innerQueryBuilder->setArgument('content', $content);
+        $innerQueryBuilder->setArgument('errored', $errored);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

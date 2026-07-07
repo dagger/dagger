@@ -159,6 +159,30 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
+// A content block within an LLM message.
+type LLMContentBlockInput struct {
+	// The arguments to pass to the tool (for TOOL_CALL kind).
+	Arguments JSON `json:"arguments"`
+
+	// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+	CallID string `json:"callId,omitempty"`
+
+	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+	Errored bool `json:"errored,omitempty"`
+
+	// The kind of content block.
+	Kind LLMContentBlockKind `json:"kind"`
+
+	// Provider-specific opaque data (e.g. Anthropic thinking signature).
+	Signature string `json:"signature,omitempty"`
+
+	// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+	Text string `json:"text,omitempty"`
+
+	// The name of the tool to call (for TOOL_CALL kind).
+	ToolName string `json:"toolName,omitempty"`
+}
+
 // Key value object that represents a pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -587,6 +611,33 @@ func (r *Binding) AsJSONValue() *JSONValue {
 	q := r.query.Select("asJSONValue")
 
 	return &JSONValue{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMContentBlock
+func (r *Binding) AsLLMContentBlock() *LLMContentBlock {
+	q := r.query.Select("asLLMContentBlock")
+
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMMessage
+func (r *Binding) AsLLMMessage() *LLMMessage {
+	q := r.query.Select("asLLMMessage")
+
+	return &LLMMessage{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMToolCall
+func (r *Binding) AsLLMToolCall() *LLMToolCall {
+	q := r.query.Select("asLLMToolCall")
+
+	return &LLMToolCall{
 		query: q,
 	}
 }
@@ -6930,6 +6981,78 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type LLMContentBlock in the environment
+func (r *Env) WithLLMContentBlockInput(name string, value *LLMContentBlock, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMContentBlockInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMContentBlock output to be assigned in the environment
+func (r *Env) WithLLMContentBlockOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMContentBlockOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMMessage in the environment
+func (r *Env) WithLLMMessageInput(name string, value *LLMMessage, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMMessageInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMMessage output to be assigned in the environment
+func (r *Env) WithLLMMessageOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMMessageOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMToolCall in the environment
+func (r *Env) WithLLMToolCallInput(name string, value *LLMToolCall, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMToolCallInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMToolCall output to be assigned in the environment
+func (r *Env) WithLLMToolCallOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMToolCallOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Sets the main module for this environment (the project being worked on)
 //
 // Contextual path arguments will be populated using the environment's workspace.
@@ -11029,15 +11152,17 @@ func (r *JSONValue) AsNode() Node {
 type LLM struct {
 	query *querybuilder.Selection
 
-	hasPrompt   *bool
-	historyJSON *JSON
-	id          *ID
-	lastReply   *string
-	model       *string
-	provider    *string
-	step        *ID
-	sync        *ID
-	tools       *string
+	hasPrompt        *bool
+	historyJSON      *JSON
+	id               *ID
+	lastReply        *string
+	model            *string
+	provider         *string
+	replay           *ID
+	serializeHistory *string
+	step             *ID
+	sync             *ID
+	tools            *string
 }
 type WithLLMFunc func(r *LLM) *LLM
 
@@ -11172,13 +11297,58 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// LLMLoopOpts contains options for LLM.Loop
+type LLMLoopOpts struct {
+	// Cap the number of API calls
+	MaxAPICalls int
+}
+
 // Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-func (r *LLM) Loop() *LLM {
+func (r *LLM) Loop(opts ...LLMLoopOpts) *LLM {
 	q := r.query.Select("loop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `maxAPICalls` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
+			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
+		}
+	}
 
 	return &LLM{
 		query: q,
 	}
+}
+
+// The full message history.
+func (r *LLM) Messages(ctx context.Context) ([]LLMMessage, error) {
+	q := r.query.Select("messages")
+
+	q = q.Select("id")
+
+	type messages struct {
+		Id ID
+	}
+
+	convert := func(fields []messages) []LLMMessage {
+		out := []LLMMessage{}
+
+		for i := range fields {
+			val := LLMMessage{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMMessage")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []messages
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // return the model used by the llm
@@ -11200,6 +11370,32 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 		return *r.provider, nil
 	}
 	q := r.query.Select("provider")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+func (r *LLM) Replay(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("replay")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: selectNode(q.Root(), id, "LLM"),
+	}, nil
+}
+
+// return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+func (r *LLM) SerializeHistory(ctx context.Context) (string, error) {
+	if r.serializeHistory != nil {
+		return *r.serializeHistory, nil
+	}
+	q := r.query.Select("serializeHistory")
 
 	var response string
 
@@ -11289,10 +11485,31 @@ func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	}
 }
 
+// Set the maximum number of output tokens the model may generate per API call
+func (r *LLM) WithMaxTokens(tokens int) *LLM {
+	q := r.query.Select("withMaxTokens")
+	q = q.Arg("tokens", tokens)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // swap out the llm model
 func (r *LLM) WithModel(model string) *LLM {
 	q := r.query.Select("withModel")
 	q = q.Arg("model", model)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Track an object so the LLM can reference it in subsequent tool calls.
+func (r *LLM) WithObject(tag string, object ID) *LLM {
+	q := r.query.Select("withObject")
+	q = q.Arg("tag", tag)
+	q = q.Arg("object", object)
 
 	return &LLM{
 		query: q,
@@ -11320,6 +11537,52 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	}
 }
 
+// LLMWithResponseOpts contains options for LLM.WithResponse
+type LLMWithResponseOpts struct {
+	// Uncached input tokens sent
+	InputTokens int
+	// Tokens received from the model, including text and tool calls
+	OutputTokens int
+	// Cached input tokens read
+	CachedTokenReads int
+	// Cached input tokens written
+	CachedTokenWrites int
+	// Total tokens consumed by this response
+	TotalTokens int
+}
+
+// Append an assistant response to the message history
+func (r *LLM) WithResponse(content []LLMContentBlockInput, opts ...LLMWithResponseOpts) *LLM {
+	q := r.query.Select("withResponse")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `inputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InputTokens) {
+			q = q.Arg("inputTokens", opts[i].InputTokens)
+		}
+		// `outputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OutputTokens) {
+			q = q.Arg("outputTokens", opts[i].OutputTokens)
+		}
+		// `cachedTokenReads` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenReads) {
+			q = q.Arg("cachedTokenReads", opts[i].CachedTokenReads)
+		}
+		// `cachedTokenWrites` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenWrites) {
+			q = q.Arg("cachedTokenWrites", opts[i].CachedTokenWrites)
+		}
+		// `totalTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TotalTokens) {
+			q = q.Arg("totalTokens", opts[i].TotalTokens)
+		}
+	}
+	q = q.Arg("content", content)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
 func (r *LLM) WithStaticTools() *LLM {
 	q := r.query.Select("withStaticTools")
@@ -11333,6 +11596,30 @@ func (r *LLM) WithStaticTools() *LLM {
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")
 	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Append a tool call to the last assistant message
+func (r *LLM) WithToolCall(call string, tool string, arguments JSON) *LLM {
+	q := r.query.Select("withToolCall")
+	q = q.Arg("call", call)
+	q = q.Arg("tool", tool)
+	q = q.Arg("arguments", arguments)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Append a tool response to the message history
+func (r *LLM) WithToolResponse(call string, content string, errored bool) *LLM {
+	q := r.query.Select("withToolResponse")
+	q = q.Arg("call", call)
+	q = q.Arg("content", content)
+	q = q.Arg("errored", errored)
 
 	return &LLM{
 		query: q,
@@ -11378,6 +11665,249 @@ func (r *LLM) AsNode() Node {
 // This is a local type conversion — no GraphQL call.
 func (r *LLM) AsSyncer() Syncer {
 	return &SyncerClient{
+		query: r.query,
+	}
+}
+
+type LLMContentBlock struct {
+	query *querybuilder.Selection
+
+	arguments *JSON
+	callId    *string
+	errored   *bool
+	id        *ID
+	kind      *LLMContentBlockKind
+	text      *string
+	toolName  *string
+}
+
+func (r *LLMContentBlock) WithGraphQLQuery(q *querybuilder.Selection) *LLMContentBlock {
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
+func (r *LLMContentBlock) Arguments(ctx context.Context) (JSON, error) {
+	if r.arguments != nil {
+		return *r.arguments, nil
+	}
+	q := r.query.Select("arguments")
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) CallID(ctx context.Context) (string, error) {
+	if r.callId != nil {
+		return *r.callId, nil
+	}
+	q := r.query.Select("callId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) Errored(ctx context.Context) (bool, error) {
+	if r.errored != nil {
+		return *r.errored, nil
+	}
+	q := r.query.Select("errored")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMContentBlock.
+func (r *LLMContentBlock) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMContentBlock) XXX_GraphQLType() string {
+	return "LLMContentBlock"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMContentBlock) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMContentBlock) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMContentBlock) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMContentBlock) Kind(ctx context.Context) (LLMContentBlockKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response LLMContentBlockKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) Text(ctx context.Context) (string, error) {
+	if r.text != nil {
+		return *r.text, nil
+	}
+	q := r.query.Select("text")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMContentBlock) ToolName(ctx context.Context) (string, error) {
+	if r.toolName != nil {
+		return *r.toolName, nil
+	}
+	q := r.query.Select("toolName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this LLMContentBlock as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMContentBlock) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type LLMMessage struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	role *LLMMessageRole
+}
+
+func (r *LLMMessage) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessage {
+	return &LLMMessage{
+		query: q,
+	}
+}
+
+func (r *LLMMessage) Content(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("content")
+
+	q = q.Select("id")
+
+	type content struct {
+		Id ID
+	}
+
+	convert := func(fields []content) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMContentBlock")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []content
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this LLMMessage.
+func (r *LLMMessage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMMessage) XXX_GraphQLType() string {
+	return "LLMMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMMessage) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMMessage) Role(ctx context.Context) (LLMMessageRole, error) {
+	if r.role != nil {
+		return *r.role, nil
+	}
+	q := r.query.Select("role")
+
+	var response LLMMessageRole
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this LLMMessage as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMMessage) AsNode() Node {
+	return &NodeClient{
 		query: r.query,
 	}
 }
@@ -11502,6 +12032,66 @@ func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 // AsNode returns this LLMTokenUsage as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *LLMTokenUsage) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type LLMToolCall struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *LLMToolCall) WithGraphQLQuery(q *querybuilder.Selection) *LLMToolCall {
+	return &LLMToolCall{
+		query: q,
+	}
+}
+
+// A unique identifier for this LLMToolCall.
+func (r *LLMToolCall) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMToolCall) XXX_GraphQLType() string {
+	return "LLMToolCall"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMToolCall) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMToolCall) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMToolCall) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this LLMToolCall as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMToolCall) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -13808,8 +14398,6 @@ func (r *Query) JSON() *JSONValue {
 type LLMOpts struct {
 	// Model to use
 	Model string
-	// Cap the number of API calls for this LLM
-	MaxAPICalls int
 }
 
 // Initialize a Large Language Model (LLM)
@@ -13821,10 +14409,6 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 		// `model` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Model) {
 			q = q.Arg("model", opts[i].Model)
-		}
-		// `maxAPICalls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
-			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
 		}
 	}
 
@@ -18356,6 +18940,141 @@ const (
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+)
+
+// The kind of content in a message block.
+type LLMContentBlockKind string
+
+func (LLMContentBlockKind) IsEnum() {}
+
+func (v LLMContentBlockKind) Name() string {
+	switch v {
+	case LLMContentBlockKindText:
+		return "TEXT"
+	case LLMContentBlockKindThinking:
+		return "THINKING"
+	case LLMContentBlockKindToolCall:
+		return "TOOL_CALL"
+	case LLMContentBlockKindToolResult:
+		return "TOOL_RESULT"
+	default:
+		return ""
+	}
+}
+
+func (v LLMContentBlockKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMContentBlockKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMContentBlockKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "TEXT":
+		*v = LLMContentBlockKindText
+	case "THINKING":
+		*v = LLMContentBlockKindThinking
+	case "TOOL_CALL":
+		*v = LLMContentBlockKindToolCall
+	case "TOOL_RESULT":
+		*v = LLMContentBlockKindToolResult
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Plain text content.
+	LLMContentBlockKindText LLMContentBlockKind = "TEXT"
+
+	// Model thinking/reasoning content (e.g. Anthropic extended thinking).
+	LLMContentBlockKindThinking LLMContentBlockKind = "THINKING"
+
+	// A tool/function call from the model.
+	LLMContentBlockKindToolCall LLMContentBlockKind = "TOOL_CALL"
+
+	// A tool/function result.
+	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+)
+
+// The role that generated a message.
+type LLMMessageRole string
+
+func (LLMMessageRole) IsEnum() {}
+
+func (v LLMMessageRole) Name() string {
+	switch v {
+	case LLMMessageRoleUser:
+		return "USER"
+	case LLMMessageRoleAssistant:
+		return "ASSISTANT"
+	case LLMMessageRoleSystem:
+		return "SYSTEM"
+	default:
+		return ""
+	}
+}
+
+func (v LLMMessageRole) Value() string {
+	return string(v)
+}
+
+func (v *LLMMessageRole) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMMessageRole) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ASSISTANT":
+		*v = LLMMessageRoleAssistant
+	case "SYSTEM":
+		*v = LLMMessageRoleSystem
+	case "USER":
+		*v = LLMMessageRoleUser
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A user prompt or tool response.
+	LLMMessageRoleUser LLMMessageRole = "USER"
+
+	// A reply from the model.
+	LLMMessageRoleAssistant LLMMessageRole = "ASSISTANT"
+
+	// A system prompt.
+	LLMMessageRoleSystem LLMMessageRole = "SYSTEM"
 )
 
 // Experimental features of a module

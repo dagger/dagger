@@ -158,6 +158,35 @@ class ImageMediaTypes(Enum):
     OCI = "OCIMediaTypes"
 
 
+class LLMContentBlockKind(Enum):
+    """The kind of content in a message block."""
+
+    TEXT = "TEXT"
+    """Plain text content."""
+
+    THINKING = "THINKING"
+    """Model thinking/reasoning content (e.g. Anthropic extended thinking)."""
+
+    TOOL_CALL = "TOOL_CALL"
+    """A tool/function call from the model."""
+
+    TOOL_RESULT = "TOOL_RESULT"
+    """A tool/function result."""
+
+
+class LLMMessageRole(Enum):
+    """The role that generated a message."""
+
+    ASSISTANT = "ASSISTANT"
+    """A reply from the model."""
+
+    SYSTEM = "SYSTEM"
+    """A system prompt."""
+
+    USER = "USER"
+    """A user prompt or tool response."""
+
+
 class ModuleSourceExperimentalFeature(Enum):
     """Experimental features of a module"""
 
@@ -306,6 +335,33 @@ class BuildArg(Input):
 
     value: str
     """The build argument value."""
+
+
+@typecheck
+@dataclass(slots=True)
+class LLMContentBlockInput(Input):
+    """A content block within an LLM message."""
+
+    arguments: JSON
+    """The arguments to pass to the tool (for TOOL_CALL kind)."""
+
+    kind: LLMContentBlockKind
+    """The kind of content block."""
+
+    call_id: str | None = ""
+    """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
+
+    errored: bool | None = False
+    """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
+
+    signature: str | None = ""
+    """Provider-specific opaque data (e.g. Anthropic thinking signature)."""
+
+    text: str | None = ""
+    """Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."""
+
+    tool_name: str | None = ""
+    """The name of the tool to call (for TOOL_CALL kind)."""
 
 
 @typecheck
@@ -753,6 +809,24 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asJSONValue", _args)
         return JSONValue(_ctx)
+
+    def as_llm_content_block(self) -> "LLMContentBlock":
+        """Retrieve the binding value, as type LLMContentBlock"""
+        _args: list[Arg] = []
+        _ctx = self._select("asLLMContentBlock", _args)
+        return LLMContentBlock(_ctx)
+
+    def as_llm_message(self) -> "LLMMessage":
+        """Retrieve the binding value, as type LLMMessage"""
+        _args: list[Arg] = []
+        _ctx = self._select("asLLMMessage", _args)
+        return LLMMessage(_ctx)
+
+    def as_llm_tool_call(self) -> "LLMToolCall":
+        """Retrieve the binding value, as type LLMToolCall"""
+        _args: list[Arg] = []
+        _ctx = self._select("asLLMToolCall", _args)
+        return LLMToolCall(_ctx)
 
     def as_module(self) -> "Module":
         """Retrieve the binding value, as type Module"""
@@ -7131,6 +7205,133 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
+    def with_llm_content_block_input(
+        self,
+        name: str,
+        value: "LLMContentBlock",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type LLMContentBlock in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The LLMContentBlock value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMContentBlockInput", _args)
+        return Env(_ctx)
+
+    def with_llm_content_block_output(self, name: str, description: str) -> Self:
+        """Declare a desired LLMContentBlock output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMContentBlockOutput", _args)
+        return Env(_ctx)
+
+    def with_llm_message_input(
+        self,
+        name: str,
+        value: "LLMMessage",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type LLMMessage in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The LLMMessage value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMMessageInput", _args)
+        return Env(_ctx)
+
+    def with_llm_message_output(self, name: str, description: str) -> Self:
+        """Declare a desired LLMMessage output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMMessageOutput", _args)
+        return Env(_ctx)
+
+    def with_llm_tool_call_input(
+        self,
+        name: str,
+        value: "LLMToolCall",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type LLMToolCall in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The LLMToolCall value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMToolCallInput", _args)
+        return Env(_ctx)
+
+    def with_llm_tool_call_output(self, name: str, description: str) -> Self:
+        """Declare a desired LLMToolCall output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMToolCallOutput", _args)
+        return Env(_ctx)
+
     def with_main_module(self, module: "Module") -> Self:
         """Sets the main module for this environment (the project being worked
         on)
@@ -11344,13 +11545,30 @@ class LLM(Type):
         _ctx = self._select("lastReply", _args)
         return await _ctx.execute(str)
 
-    def loop(self) -> Self:
+    def loop(
+        self,
+        *,
+        max_api_calls: int | None = None,
+    ) -> Self:
         """Submit the queued prompt, evaluate any tool calls, queue their
         results, and keep going until the model ends its turn
+
+        Parameters
+        ----------
+        max_api_calls:
+            Cap the number of API calls
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("maxAPICalls", max_api_calls, None),
+        ]
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
+
+    async def messages(self) -> list["LLMMessage"]:
+        """The full message history."""
+        _args: list[Arg] = []
+        _ctx = self._select("messages", _args)
+        return await _ctx.execute_object_list(LLMMessage)
 
     async def model(self) -> str:
         """return the model used by the llm
@@ -11392,6 +11610,42 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("provider", _args)
+        return await _ctx.execute(str)
+
+    async def replay(self) -> Self:
+        """Re-emit telemetry spans for the full message history, allowing the TUI
+        to display a loaded conversation
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "replay", _args)
+
+    async def serialize_history(self) -> str:
+        """return the message history serialized as text, suitable for LLM
+        consumption (e.g. for summarization)
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("serializeHistory", _args)
         return await _ctx.execute(str)
 
     async def step(self) -> Self:
@@ -11495,6 +11749,21 @@ class LLM(Type):
         _ctx = self._select("withMCPServer", _args)
         return LLM(_ctx)
 
+    def with_max_tokens(self, tokens: int) -> Self:
+        """Set the maximum number of output tokens the model may generate per API
+        call
+
+        Parameters
+        ----------
+        tokens:
+            The maximum number of output tokens (0 to use provider defaults)
+        """
+        _args = [
+            Arg("tokens", tokens),
+        ]
+        _ctx = self._select("withMaxTokens", _args)
+        return LLM(_ctx)
+
     def with_model(self, model: str) -> Self:
         """swap out the llm model
 
@@ -11507,6 +11776,24 @@ class LLM(Type):
             Arg("model", model),
         ]
         _ctx = self._select("withModel", _args)
+        return LLM(_ctx)
+
+    def with_object(self, tag: str, object: Type) -> Self:
+        """Track an object so the LLM can reference it in subsequent tool calls.
+
+        Parameters
+        ----------
+        tag:
+            Arbitrary string tag for the object, typically in TypeName#Number
+            format
+        object:
+            The object to track, as a generic ID
+        """
+        _args = [
+            Arg("tag", tag),
+            Arg("object", object),
+        ]
+        _ctx = self._select("withObject", _args)
         return LLM(_ctx)
 
     def with_prompt(self, prompt: str) -> Self:
@@ -11537,6 +11824,44 @@ class LLM(Type):
         _ctx = self._select("withPromptFile", _args)
         return LLM(_ctx)
 
+    def with_response(
+        self,
+        content: list[LLMContentBlockInput],
+        *,
+        input_tokens: int | None = 0,
+        output_tokens: int | None = 0,
+        cached_token_reads: int | None = 0,
+        cached_token_writes: int | None = 0,
+        total_tokens: int | None = 0,
+    ) -> Self:
+        """Append an assistant response to the message history
+
+        Parameters
+        ----------
+        content:
+            The response content
+        input_tokens:
+            Uncached input tokens sent
+        output_tokens:
+            Tokens received from the model, including text and tool calls
+        cached_token_reads:
+            Cached input tokens read
+        cached_token_writes:
+            Cached input tokens written
+        total_tokens:
+            Total tokens consumed by this response
+        """
+        _args = [
+            Arg("content", content),
+            Arg("inputTokens", input_tokens, 0),
+            Arg("outputTokens", output_tokens, 0),
+            Arg("cachedTokenReads", cached_token_reads, 0),
+            Arg("cachedTokenWrites", cached_token_writes, 0),
+            Arg("totalTokens", total_tokens, 0),
+        ]
+        _ctx = self._select("withResponse", _args)
+        return LLM(_ctx)
+
     def with_static_tools(self) -> Self:
         """Use a static set of tools for method calls, e.g. for MCP clients that
         do not support dynamic tool registration
@@ -11557,6 +11882,56 @@ class LLM(Type):
             Arg("prompt", prompt),
         ]
         _ctx = self._select("withSystemPrompt", _args)
+        return LLM(_ctx)
+
+    def with_tool_call(
+        self,
+        call: str,
+        tool: str,
+        arguments: JSON,
+    ) -> Self:
+        """Append a tool call to the last assistant message
+
+        Parameters
+        ----------
+        call:
+            The unique ID for this tool call
+        tool:
+            The name of the tool to call
+        arguments:
+            The arguments to pass to the tool
+        """
+        _args = [
+            Arg("call", call),
+            Arg("tool", tool),
+            Arg("arguments", arguments),
+        ]
+        _ctx = self._select("withToolCall", _args)
+        return LLM(_ctx)
+
+    def with_tool_response(
+        self,
+        call: str,
+        content: str,
+        errored: bool,
+    ) -> Self:
+        """Append a tool response to the message history
+
+        Parameters
+        ----------
+        call:
+            The ID of the tool call this is responding to
+        content:
+            The response content from the tool
+        errored:
+            Whether the tool call resulted in an error
+        """
+        _args = [
+            Arg("call", call),
+            Arg("content", content),
+            Arg("errored", errored),
+        ]
+        _ctx = self._select("withToolResponse", _args)
         return LLM(_ctx)
 
     def without_default_system_prompt(self) -> Self:
@@ -11583,6 +11958,198 @@ class LLM(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class LLMContentBlock(Type):
+    async def arguments(self) -> JSON:
+        """Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("arguments", _args)
+        return await _ctx.execute(JSON)
+
+    async def call_id(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("callId", _args)
+        return await _ctx.execute(str)
+
+    async def errored(self) -> bool:
+        """Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("errored", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMContentBlock.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def kind(self) -> LLMContentBlockKind:
+        """Returns
+        -------
+        LLMContentBlockKind
+            The kind of content in a message block.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(LLMContentBlockKind)
+
+    async def text(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("text", _args)
+        return await _ctx.execute(str)
+
+    async def tool_name(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("toolName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class LLMMessage(Type):
+    async def content(self) -> list[LLMContentBlock]:
+        _args: list[Arg] = []
+        _ctx = self._select("content", _args)
+        return await _ctx.execute_object_list(LLMContentBlock)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMMessage.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def role(self) -> LLMMessageRole:
+        """Returns
+        -------
+        LLMMessageRole
+            The role that generated a message.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("role", _args)
+        return await _ctx.execute(LLMMessageRole)
 
 
 @typecheck
@@ -11709,6 +12276,37 @@ class LLMTokenUsage(Type):
         _args: list[Arg] = []
         _ctx = self._select("totalTokens", _args)
         return await _ctx.execute(int)
+
+
+@typecheck
+class LLMToolCall(Type):
+    async def id(self) -> str:
+        """A unique identifier for this LLMToolCall.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -13834,12 +14432,7 @@ class Query(Root):
         _ctx = self._select("json", _args)
         return JSONValue(_ctx)
 
-    def llm(
-        self,
-        *,
-        model: str | None = None,
-        max_api_calls: int | None = None,
-    ) -> LLM:
+    def llm(self, *, model: str | None = None) -> LLM:
         """Initialize a Large Language Model (LLM)
 
         .. caution::
@@ -13849,12 +14442,9 @@ class Query(Root):
         ----------
         model:
             Model to use
-        max_api_calls:
-            Cap the number of API calls for this LLM
         """
         _args = [
             Arg("model", model, None),
-            Arg("maxAPICalls", max_api_calls, None),
         ]
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
@@ -17020,7 +17610,13 @@ __all__ = [
     "InputTypeDef",
     "InterfaceTypeDef",
     "JSONValue",
+    "LLMContentBlock",
+    "LLMContentBlockInput",
+    "LLMContentBlockKind",
+    "LLMMessage",
+    "LLMMessageRole",
     "LLMTokenUsage",
+    "LLMToolCall",
     "Label",
     "ListTypeDef",
     "Module",
