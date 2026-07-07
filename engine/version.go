@@ -11,7 +11,8 @@ import (
 
 var (
 	// Version is the engine/CLI semver, derived from internal/version.Version
-	// (which embeds VERSION at build time) with a "v" prefix.
+	// (which embeds the VERSION file at build time) with a "v" prefix. It is no
+	// longer injected via -ldflags: the binary self-reports from embedded VERSION.
 	//
 	// DAGGER_VERSION overrides at init for tests.
 	Version string
