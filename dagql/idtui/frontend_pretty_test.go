@@ -3,11 +3,13 @@ package idtui
 import (
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -84,6 +86,153 @@ func TestRenderShowsLiveGlobalTestsForPlainCall(t *testing.T) {
 	}
 	if testsLine != "TESTS T inspect" {
 		t.Fatalf("global live TESTS line = %q, want hint with no indentation", testsLine)
+	}
+}
+
+func TestInlineLogsViewFetchesOnMountAndRenders(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	childID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "root call",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:        childID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "child op",
+			StartTime: start.Add(time.Second),
+			EndTime:   start.Add(2 * time.Second),
+			ParentID:  rootID,
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	// Force the child expanded directly, NOT via setExpanded -- whose own
+	// requestLogs would mask the LogsView's mount-driven fetch we're testing.
+	fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{rootID: true, childID: true}
+
+	var mu sync.Mutex
+	fetched := map[dagui.SpanID]bool{}
+	fe.logProvider = func(id dagui.SpanID, _ bool) {
+		mu.Lock()
+		fetched[id] = true
+		mu.Unlock()
+	}
+
+	fe.recalculateViewLocked()
+	_ = fe.tui.RenderLines()
+
+	mu.Lock()
+	gotChild := fetched[childID]
+	mu.Unlock()
+	if !gotChild {
+		t.Fatalf("expanded child's logs were not requested on LogsView mount; fetched=%v", fetched)
+	}
+	if fe.logsViews[childID] == nil {
+		t.Fatal("no LogsView created for expanded child")
+	}
+
+	// Deliver the logs and re-render: they should surface via the LogsView.
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(80)
+	_, _ = logs.Write([]byte("hello from child\n"))
+	fe.logs.Logs[childID] = logs
+	fe.updateSpanTreesForLogs(childID)
+
+	got := strings.Join(fe.tui.RenderLines(), "\n")
+	if !strings.Contains(got, "hello from child") {
+		t.Fatalf("LogsView did not render delivered logs:\n%s", got)
+	}
+
+	// Memoization: writing to the Vterm and repainting the owning tree -- WITHOUT
+	// notifying the LogsView -- must not change its output. The expensive
+	// Vterm.View() is served from cache until an explicit Update. This is the
+	// whole point of the component: unrelated parent repaints (spinner ticks,
+	// focus moves) don't re-render logs.
+	_, _ = logs.Write([]byte("NOT_YET_VISIBLE\n"))
+	fe.spanTrees[childID].Update()
+	if got2 := strings.Join(fe.tui.RenderLines(), "\n"); strings.Contains(got2, "NOT_YET_VISIBLE") {
+		t.Fatal("LogsView re-rendered on an unrelated repaint -- not memoized")
+	}
+
+	// The push-Update on log arrival invalidates the cache.
+	fe.updateSpanTreesForLogs(childID)
+	if got3 := strings.Join(fe.tui.RenderLines(), "\n"); !strings.Contains(got3, "NOT_YET_VISIBLE") {
+		t.Fatalf("LogsView did not refresh after updateSpanTreesForLogs:\n%s", got3)
+	}
+}
+
+func TestInteractiveDoesNotEagerlyFetchFailureLogs(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	rootID := prettyTestSpanID(1)
+	testID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	mkDB := func() *dagui.DB {
+		db := dagui.NewDB()
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			{
+				ID:        rootID,
+				TraceID:   prettyTestTraceID(),
+				Name:      "run tests",
+				StartTime: start,
+				EndTime:   start.Add(2 * time.Second),
+				Final:     true,
+			},
+			{
+				ID:           testID,
+				TraceID:      prettyTestTraceID(),
+				Name:         "unit failure",
+				StartTime:    start.Add(time.Second),
+				EndTime:      start.Add(2 * time.Second),
+				ParentID:     rootID,
+				TestCaseName: "unit failure",
+				TestStatus:   dagui.TestStatusFailure,
+				Final:        true,
+			},
+		})
+		db.SetPrimarySpan(rootID)
+		return db
+	}
+
+	recorder := func(fe *frontendPretty) *map[dagui.SpanID]bool {
+		fetched := map[dagui.SpanID]bool{}
+		fe.logProvider = func(id dagui.SpanID, _ bool) { fetched[id] = true }
+		return &fetched
+	}
+
+	// Interactive: recalculateViewLocked must NOT eagerly fetch the failing test
+	// case's logs. They are fetched lazily when the TestView actually renders
+	// them (re-render on arrival), so a collapsed/off-screen failure costs no
+	// fetch -- the over-fetch this change eliminates.
+	feI := NewWithDB(io.Discard, mkDB())
+	feI.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fetchedI := recorder(feI)
+	feI.recalculateViewLocked()
+	if (*fetchedI)[testID] {
+		t.Fatalf("interactive recalc eagerly fetched failing test case logs; fetched=%v", *fetchedI)
+	}
+
+	// Report: the single final render can't wait for a lazy fetch, so it still
+	// pre-fetches the failing test case eagerly.
+	feR := NewWithDB(io.Discard, mkDB())
+	feR.reportOnly = true
+	feR.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fetchedR := recorder(feR)
+	feR.recalculateViewLocked()
+	if !(*fetchedR)[testID] {
+		t.Fatalf("report recalc did not eagerly fetch failing test case logs; fetched=%v", *fetchedR)
 	}
 }
 

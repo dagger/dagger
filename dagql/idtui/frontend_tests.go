@@ -94,6 +94,12 @@ type TestView struct {
 
 	OnFocusSpan func(*dagui.Span)
 
+	// RequestLogs lazily fetches a span's logs when this view renders them, so a
+	// failing test case's rolled-up output is fetched only when its summary is
+	// actually on screen (the interactive lazy path) -- not eagerly for every
+	// failure in the trace. nil for live runs / when no provider is set.
+	RequestLogs func(dagui.SpanID)
+
 	// ForceInteractive keeps fullscreen tests interactive while Tuist focus is on
 	// a descendant in the detail pane. Embedded test views remain passive through
 	// ListOnly.
@@ -768,6 +774,12 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	if entry.category != dagui.TestCategoryFailing && entry.category != dagui.TestCategorySkipped {
 		return nil
 	}
+	// Structural lazy fetch: request as soon as we're rendering this entry's
+	// logs, even before they've arrived, so an off-screen failing case isn't
+	// fetched until its summary actually renders.
+	if tv.RequestLogs != nil {
+		tv.RequestLogs(entry.span.ID)
+	}
 	logs := tv.Logs[entry.span.ID]
 	if logs == nil {
 		return nil
@@ -1084,6 +1096,15 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		return []string{out.String("No test selected").Foreground(termenv.ANSIBrightBlack).String()}
 	}
 	span := node.Span
+	// Request the selected span's logs up front. detailLogLineCount returns 0
+	// until the logs are loaded, which would gate out renderDetailLogLines (the
+	// only other RequestLogs caller) and leave a failing test's detail pane
+	// permanently empty -- the fetch is never triggered because nothing renders,
+	// and nothing renders because the fetch never happened. Asking here breaks
+	// that cycle; the logs render on the next frame once they arrive.
+	if span != nil && tv.RequestLogs != nil {
+		tv.RequestLogs(span.ID)
+	}
 	representative := testTUISpan(node)
 	color := testCategoryColor(node.Category)
 	var lines []string
@@ -1249,6 +1270,9 @@ func (tv *TestView) renderDetailLogLines(out *termenv.Output, span *dagui.Span, 
 	if span == nil {
 		return nil
 	}
+	if tv.RequestLogs != nil {
+		tv.RequestLogs(span.ID)
+	}
 	logs := tv.Logs[span.ID]
 	if logs == nil || logs.UsedHeight() == 0 {
 		return nil
@@ -1380,6 +1404,7 @@ func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *Test
 	tv := &TestView{
 		Profile:      fe.profile,
 		Logs:         fe.logs.Logs,
+		RequestLogs:  fe.requestLogsOnRender,
 		ScopeName:    scopeName,
 		SpanChildren: fe.testSpanChildrenView,
 		TraceID:      fe.traceID,
@@ -2255,6 +2280,7 @@ func (tv *TestView) flattenTestRows(view *dagui.TestView) []testSidebarRow {
 }
 
 func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int, parentKey string) {
+	nodes = nonEmptyTestNodes(nodes)
 	partition := dagui.PartitionTests(nodes)
 	groups := [][]*dagui.TestNode{
 		partition.Failing,
@@ -2292,6 +2318,20 @@ func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNo
 		*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth})
 		tv.appendTestRows(rows, node.Children, depth+1, string(node.ID))
 	}
+}
+
+// nonEmptyTestNodes drops packages/suites that discovered no tests (0 total) so
+// they don't clutter the sidebar and push real results off-screen. A test case
+// always counts >=1 and counts roll up to parents, so this only removes
+// genuinely empty suites; a package with only skipped tests (Skipped > 0) stays.
+func nonEmptyTestNodes(nodes []*dagui.TestNode) []*dagui.TestNode {
+	out := make([]*dagui.TestNode, 0, len(nodes))
+	for _, n := range nodes {
+		if n != nil && n.Counts.Total() > 0 {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func testTUISpan(node *dagui.TestNode) *dagui.Span {

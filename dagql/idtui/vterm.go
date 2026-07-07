@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
 )
@@ -356,6 +357,16 @@ func (term *Vterm) redraw() {
 
 	// Then render regular terminal content
 	term.Render(term.viewBuf, term.Offset, term.Height)
+
+	// In agent / NO_COLOR mode (Ascii profile), escape codes are pure noise to a
+	// text consumer. midterm still emits SGR resets even with colour disabled, so
+	// strip them from the rendered view. ansi.Strip only removes escape
+	// sequences; the log text itself is left untouched.
+	if term.Profile == termenv.Ascii {
+		stripped := ansi.Strip(term.viewBuf.String())
+		term.viewBuf.Reset()
+		term.viewBuf.WriteString(stripped)
+	}
 }
 
 type Markdown struct {
@@ -499,6 +510,12 @@ func (term *Vterm) Print(w io.Writer) error {
 func (term *Vterm) PrintRaw(w io.Writer) error {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.Profile == termenv.Ascii {
+		// Agent / NO_COLOR mode: drop the user stream's own escape codes so the
+		// report is clean text. Only escape sequences are removed.
+		_, err := io.WriteString(w, ansi.Strip(term.rawBuf.String()))
+		return err
+	}
 	_, err := w.Write(term.rawBuf.Bytes())
 	return err
 }
