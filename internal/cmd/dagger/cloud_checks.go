@@ -165,67 +165,22 @@ func cloudRepoOwner(repo string) string {
 	return ""
 }
 
+// loadCloudCheckRowsForWorkspace is the rows-only form of
+// loadCloudCheckQueryForWorkspace, for the workspace commands that don't need
+// the owning org/client or the matched selectors.
 func (cli *CloudCLI) loadCloudCheckRowsForWorkspace(ctx context.Context, address string, checks []string, login bool) ([]cloudCheckRow, error) {
-	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+	res, _, err := cli.loadCloudCheckQueryForWorkspace(ctx, address, checks, login)
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
-		return nil, fmt.Errorf("workspace %q is not remote", address)
-	}
-
-	client, _, err := cli.cloudClientWithLogin(ctx, login)
-	if err != nil {
-		return nil, err
-	}
-
-	commits, err := client.UserChecks(ctx, []string{remote.CloneRef}, cloudCheckFetchLimit)
-	if err != nil {
-		return nil, fmt.Errorf("fetch Cloud checks for %s: %w", remote.CloneRef, err)
-	}
-
-	commitsByOrg := map[string][]cloudapi.CheckCommit{}
-	orgs := make([]cloudauth.Org, 0)
-	for _, commit := range commits {
-		org := commit.Org
-		if _, ok := commitsByOrg[org.ID]; !ok {
-			orgs = append(orgs, cloudauth.Org{ID: org.ID, Name: org.Name})
-		}
-		commitsByOrg[org.ID] = append(commitsByOrg[org.ID], commit)
-	}
-
-	ordered, _ := orderCloudOrgsForRepos(orgs, []string{remote.CloneRef})
-	for _, org := range ordered {
-		rows, err := cloudRowsForWorkspaceAddress(ctx, cloudCheckRows(org.Name, commitsByOrg[org.ID]), address, checks)
-		if err != nil {
-			return nil, err
-		}
-		if len(rows) > 0 {
-			return rows, nil
-		}
-	}
-	return nil, nil
+	return res.Rows, nil
 }
 
+// cloudRowsForWorkspaceAddress is the rows-only form of
+// cloudRowsAndSelectorsForAddress.
 func cloudRowsForWorkspaceAddress(ctx context.Context, rows []cloudCheckRow, address string, checks []string) ([]cloudCheckRow, error) {
-	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, nil
-	}
-	baseSelectors := cloudCheckSelectorFlags{
-		GitHubRepo: []string{remote.CloneRef},
-		Workspace:  []string{remote.BaseAddress},
-		Check:      checks,
-	}
-	selectors := cloudWorkspaceSelectors(baseSelectors, remote.Version)
-	var out []cloudCheckRow
-	for _, selector := range selectors {
-		out = append(out, filterCloudCheckRows(rows, selector)...)
-	}
-	return dedupeCloudCheckRows(out), nil
+	out, _, err := cloudRowsAndSelectorsForAddress(ctx, rows, address, checks)
+	return out, err
 }
 
 func cloudWorkspaceSelectors(base cloudCheckSelectorFlags, version string) []cloudCheckSelectorFlags {

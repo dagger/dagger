@@ -407,13 +407,23 @@ type Myapp {
 
 // TestWorkspaceMigrateUserFeedback should cover the user-facing output of
 // explicit migration.
+//
+// The migration feedback is telemetry spans streamed by the progress frontend,
+// so these tests pin plain progress: setup is a human-facing wizard (TTY), but
+// non-TTY auto resolves to the report frontend, which renders nothing for a
+// passing run.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Context, t *testctx.T) {
+	withPlainProgress := func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithEnvVariable("DAGGER_PROGRESS", "plain")
+	}
+
 	withFreshMigrationProgress := func(ctr *dagger.Container) *dagger.Container {
 		workdir := "/work-" + identity.NewID()
 		return ctr.
 			WithExec([]string{"mv", "/work", workdir}).
 			WithWorkdir(workdir).
-			WithEnvVariable("OTEL_BAGGAGE", "repeat-telemetry=true")
+			WithEnvVariable("OTEL_BAGGAGE", "repeat-telemetry=true").
+			With(withPlainProgress)
 	}
 
 	t.Run("summary is printed for applied migrations", func(ctx context.Context, t *testctx.T) {
@@ -559,7 +569,9 @@ type Myapp {
 `)
 		})
 
-		migrate := ctr.With(daggerExec("setup", "--auto-apply"))
+		migrate := ctr.
+			With(withPlainProgress).
+			With(daggerExec("setup", "--auto-apply"))
 		stdout, err := migrate.Stdout(ctx)
 		require.NoError(t, err)
 		stderr, err := migrate.Stderr(ctx)

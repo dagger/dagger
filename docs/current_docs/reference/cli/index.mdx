@@ -29,7 +29,7 @@ dagger [options] [subcommand | file...]
   -E, --no-exit                      Leave the TUI running after completion
   -M, --no-load-module               Don't load any module for this command
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -83,7 +83,7 @@ dagger activity
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -121,7 +121,7 @@ See https://docs.dagger.io/api for the full overview.
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -169,7 +169,7 @@ dagger api call [options] [function]...
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -205,7 +205,7 @@ module that generates it.
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -257,7 +257,7 @@ dagger api client init typescript ./lib/cli .dagger/modules/api
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -295,7 +295,7 @@ dagger api client list
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -360,7 +360,7 @@ dagger api exec python main.py
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -415,7 +415,7 @@ dagger api functions [options] [function]...
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -486,7 +486,7 @@ EOF
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -543,7 +543,7 @@ dagger check [options] [pattern...]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -571,7 +571,7 @@ Manage Dagger Cloud
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -588,7 +588,9 @@ Manage Dagger Cloud
 * [dagger cloud integration](#dagger-cloud-integration)	 - Manage Dagger Cloud integration providers
 * [dagger cloud login](#dagger-cloud-login)	 - Log in to Dagger Cloud
 * [dagger cloud logout](#dagger-cloud-logout)	 - Log out from Dagger Cloud
+* [dagger cloud logs](#dagger-cloud-logs)	 - Print the full logs for a Dagger Cloud trace, or a check/test/span within it
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
+* [dagger cloud rerun](#dagger-cloud-rerun)	 - Re-run checks on Dagger Cloud for the current commit
 
 ## dagger cloud billing
 
@@ -615,7 +617,7 @@ dagger cloud billing
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -656,7 +658,7 @@ dagger cloud billing manage [org]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -689,7 +691,7 @@ dagger cloud billing plans
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -721,7 +723,7 @@ dagger cloud check
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -757,7 +759,7 @@ dagger cloud check list
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -789,7 +791,7 @@ dagger cloud check off [name]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -821,7 +823,7 @@ dagger cloud check on [name]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -853,7 +855,7 @@ dagger cloud check status [name]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -891,7 +893,7 @@ dagger cloud integration
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -939,7 +941,7 @@ dagger cloud integration create github
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -972,7 +974,7 @@ dagger cloud integration list [type]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1005,7 +1007,7 @@ dagger cloud integration rm <id>
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1043,7 +1045,7 @@ dagger cloud login [options] [org]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1075,7 +1077,63 @@ dagger cloud logout
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
+
+## dagger cloud logs
+
+Print the full logs for a Dagger Cloud trace, or a check/test/span within it
+
+### Synopsis
+
+Stream the full logs for a trace. Use this as a follow-up to
+'dagger trace' to inspect a failure in detail, addressing it by name rather than
+an opaque span ID. Redirect to a file to grep large logs in a controlled way:
+
+    dagger cloud logs &lt;trace-id&gt; --check build:lint -o span.log
+    grep -i error span.log
+
+With no --span/--check/--test, the whole trace's logs are streamed. --check and
+--test roll up their subtree; --span is just that span (add --descendants to
+roll up its subtree too).
+
+```
+dagger cloud logs <trace-id> [--span <id> | --check <name> | --test <name>]
+```
+
+### Options
+
+```
+      --check string       Read a check's logs, by name (rolls up its subtree)
+      --descendants        With --span, roll up the span's subtree logs too
+  -o, --output string      Write logs to a file instead of stdout
+      --span string        Read just this span's logs, by span ID
+      --test string        Read a test's logs, by name (rolls up its subtree)
+      --timeout duration   Max time to spend streaming logs (default 2m0s)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1113,7 +1171,7 @@ dagger cloud org [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1149,7 +1207,7 @@ dagger cloud org info [org] [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1182,7 +1240,7 @@ dagger cloud org list [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1215,7 +1273,7 @@ dagger cloud org use <org> [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1227,6 +1285,67 @@ dagger cloud org use <org> [flags]
 ### SEE ALSO
 
 * [dagger cloud org](#dagger-cloud-org)	 - Manage Dagger Cloud organizations
+
+## dagger cloud rerun
+
+Re-run checks on Dagger Cloud for the current commit
+
+### Synopsis
+
+Re-run checks on Dagger Cloud, against the commit CI already ran on.
+
+By default this targets the commit at the current HEAD (matched by SHA, falling
+back to the branch or PR it belongs to) and re-runs the checks that failed. Pass
+--check to pick specific checks by name, --all to re-run everything, or
+--commit/--pr to target a different commit.
+
+Only outermost checks can be re-run; sub-checks run as part of their parent
+check, so name the parent (e.g. "ci:bootstrap", not "ci:bootstrap:lint").
+
+This re-runs a check that already exists in Cloud for the commit. If CI hasn't
+run on the commit yet there's nothing to re-run -- use 'dagger check' to run
+checks locally against your working tree.
+
+```
+dagger cloud rerun [--check NAME ...] [--failed | --all]
+```
+
+### Options
+
+```
+      --all                 Re-run every check, including ones that passed
+      --check stringArray   Re-run a specific check by name (repeatable; outermost checks only)
+      --clean-slate         Re-run without reusing cache (experimental; requires an org feature)
+      --commit string       Target a specific commit SHA instead of the current HEAD
+      --dry-run             Show which checks would be re-run without triggering anything
+      --failed              Re-run the failed checks (the default when no --check is given)
+      --json                Print JSON output
+      --pr string           Target a specific pull request number
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger cloud](#dagger-cloud)	 - Manage Dagger Cloud
 
 ## dagger generate
 
@@ -1264,7 +1383,7 @@ dagger generate [options] [pattern...]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1316,7 +1435,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1348,7 +1467,7 @@ dagger installed
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1382,7 +1501,7 @@ Operates on the dagger-module.toml reachable from the current directory.
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1414,7 +1533,7 @@ Manage this module's dependencies
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1455,7 +1574,7 @@ dagger module deps add github.com/dagger/dagger/modules/wolfi
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1487,7 +1606,7 @@ dagger module deps list [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1525,7 +1644,7 @@ dagger module deps rm wolfi
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1553,7 +1672,7 @@ Manage this module's required engine version
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1595,7 +1714,7 @@ dagger module engine require v0.21.0
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1627,7 +1746,7 @@ dagger module engine require-current [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1659,7 +1778,7 @@ dagger module engine require-latest [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1691,7 +1810,7 @@ dagger module engine required [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1763,7 +1882,7 @@ dagger module init go myapp
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1810,7 +1929,7 @@ dagger module sdk <subcommand> [args...] [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1850,7 +1969,7 @@ dispatch through that SDK.
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1895,7 +2014,7 @@ dagger sdk client-options <sdk> [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1956,7 +2075,7 @@ dagger sdk install go
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -1997,7 +2116,7 @@ dagger sdk list [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2036,7 +2155,7 @@ dagger sdk module-options <sdk> [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2075,7 +2194,7 @@ dagger sdk search [query] [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2129,7 +2248,7 @@ dagger sdk uninstall go
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2173,7 +2292,7 @@ dagger search wolfi
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2211,7 +2330,7 @@ dagger settings [module] [key] [value]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2260,7 +2379,7 @@ dagger setup
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2308,7 +2427,7 @@ dagger uninstall hello
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2356,7 +2475,7 @@ dagger up [options] [pattern...]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2400,7 +2519,7 @@ dagger update
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2439,7 +2558,7 @@ dagger version
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
@@ -2484,7 +2603,7 @@ dagger workspace
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2541,7 +2660,7 @@ dagger workspace config [key] [value] [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2573,7 +2692,7 @@ dagger workspace config-file [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2605,7 +2724,7 @@ dagger workspace cwd [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2637,7 +2756,7 @@ dagger workspace remote [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2669,7 +2788,7 @@ dagger workspace remotes [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -2701,7 +2820,7 @@ dagger workspace root [flags]
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)

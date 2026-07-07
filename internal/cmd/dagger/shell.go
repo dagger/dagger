@@ -52,7 +52,10 @@ var shellCmd = &cobra.Command{
 			err := handler.RunAll(ctx, args)
 
 			// Wrap exit status in ExitError so the TUI preserves the exit code
-			// and doesn't print a redundant error message.
+			// and doesn't print a redundant error message. Non-TTY runs keep
+			// the raw error: main prints it (and derives the exit code from
+			// interp.ExitStatus) unless the frontend already rendered it, in
+			// which case FinalRender preserves the code (see hasShownRootError).
 			var es interp.ExitStatus
 			if handler.tty && errors.As(err, &es) {
 				return idtui.ExitError{OriginalCode: int(es), Original: err}

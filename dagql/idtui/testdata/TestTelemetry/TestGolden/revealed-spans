@@ -21,7 +21,7 @@ $ viztest: Viztest! X.Xs CACHED
 ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
   ✔ revealed span X.Xs
 
-  ✔ sometimes you gotta be [1mbold
+  ✔ sometimes you gotta be bold
   ┃ X.Xs
 
 

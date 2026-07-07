@@ -44,6 +44,12 @@ func newSessionCmd(hidden bool) *cobra.Command {
 		SilenceUsage: true,
 		Annotations: map[string]string{
 			showFinalProgressKey: "true",
+			// SDKs spawn `dagger session` and pipe its stderr to the user's
+			// log output as the live progress stream. The report frontend
+			// renders only once at exit -- for a long-lived session that
+			// leaves the stream empty the whole run -- so keep the streaming
+			// plain frontend.
+			progressDefaultKey: "plain",
 		},
 	}
 	cmd.Flags().StringVar(&sessionVersion, "version", "", "")
