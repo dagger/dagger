@@ -116,9 +116,15 @@ type LLMEndpoint struct {
 	AuthToken string
 	IsOAuth   bool
 
-	// ThinkingMode carries the reasoning effort (e.g. "low"/"medium"/"high")
-	// for providers that support extended thinking / reasoning (e.g. Codex).
+	// ThinkingMode carries the reasoning effort (e.g. "low"/"medium"/"high",
+	// or "adaptive") for providers that support extended thinking / reasoning
+	// (e.g. Anthropic, Google, Codex). Empty means thinking is disabled.
 	ThinkingMode string
+
+	// ThinkingBudget is the maximum number of thinking tokens the model may
+	// spend per turn, for providers that accept an explicit budget (Anthropic,
+	// Google). Zero means use a provider-specific default.
+	ThinkingBudget int64
 }
 
 type LLMProvider string
@@ -448,11 +454,13 @@ const (
 
 // A LLM routing configuration
 type LLMRouter struct {
-	AnthropicAPIKey    string
-	AnthropicAuthToken string
-	AnthropicIsOAuth   bool
-	AnthropicBaseURL   string
-	AnthropicModel     string
+	AnthropicAPIKey         string
+	AnthropicAuthToken      string
+	AnthropicIsOAuth        bool
+	AnthropicBaseURL        string
+	AnthropicModel          string
+	AnthropicThinkingMode   string
+	AnthropicThinkingBudget int64
 
 	OpenAIAPIKey           string
 	OpenAIAzureVersion     string
@@ -466,9 +474,11 @@ type LLMRouter struct {
 	OpenAICodexModel        string
 	OpenAICodexThinkingMode string
 
-	GeminiAPIKey  string
-	GeminiBaseURL string
-	GeminiModel   string
+	GeminiAPIKey         string
+	GeminiBaseURL        string
+	GeminiModel          string
+	GeminiThinkingMode   string
+	GeminiThinkingBudget int64
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -516,11 +526,13 @@ func (r *LLMRouter) getReplay(model string) (messages []*LLMMessage, _ error) {
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 	endpoint := &LLMEndpoint{
-		BaseURL:   r.AnthropicBaseURL,
-		Key:       r.AnthropicAPIKey,
-		Provider:  Anthropic,
-		AuthToken: r.AnthropicAuthToken,
-		IsOAuth:   r.AnthropicIsOAuth,
+		BaseURL:        r.AnthropicBaseURL,
+		Key:            r.AnthropicAPIKey,
+		Provider:       Anthropic,
+		AuthToken:      r.AnthropicAuthToken,
+		IsOAuth:        r.AnthropicIsOAuth,
+		ThinkingMode:   r.AnthropicThinkingMode,
+		ThinkingBudget: r.AnthropicThinkingBudget,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 
@@ -554,9 +566,11 @@ func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
 
 func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
 	endpoint := &LLMEndpoint{
-		BaseURL:  r.GeminiBaseURL,
-		Key:      r.GeminiAPIKey,
-		Provider: Google,
+		BaseURL:        r.GeminiBaseURL,
+		Key:            r.GeminiAPIKey,
+		Provider:       Google,
+		ThinkingMode:   r.GeminiThinkingMode,
+		ThinkingBudget: r.GeminiThinkingBudget,
 	}
 	client, err := newGenaiClient(endpoint)
 	if err != nil {
@@ -697,6 +711,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		// from the persisted llmconfig by `dagger llm`.
 		return save("ANTHROPIC_AUTH_TOKEN", &r.AnthropicAuthToken)
 	})
+	eg.Go(func() error {
+		return save("ANTHROPIC_THINKING_MODE", &r.AnthropicThinkingMode)
+	})
 
 	eg.Go(func() error {
 		return save("OPENAI_API_KEY", &r.OpenAIAPIKey)
@@ -732,13 +749,28 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	eg.Go(func() error {
 		return save("GEMINI_MODEL", &r.GeminiModel)
 	})
+	eg.Go(func() error {
+		return save("GEMINI_THINKING_MODE", &r.GeminiThinkingMode)
+	})
 
 	var (
-		openAIDisableStreaming string
+		openAIDisableStreaming  string
+		anthropicThinkingBudget string
+		geminiThinkingBudget    string
 	)
 	eg.Go(func() error {
 		var err error
 		openAIDisableStreaming, err = getenv(ctx, "OPENAI_DISABLE_STREAMING")
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		anthropicThinkingBudget, err = getenv(ctx, "ANTHROPIC_THINKING_BUDGET")
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		geminiThinkingBudget, err = getenv(ctx, "GEMINI_THINKING_BUDGET")
 		return err
 	})
 
@@ -752,6 +784,21 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 			return err
 		}
 		r.OpenAIDisableStreaming = v
+	}
+
+	if anthropicThinkingBudget != "" {
+		v, err := strconv.ParseInt(anthropicThinkingBudget, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse ANTHROPIC_THINKING_BUDGET: %w", err)
+		}
+		r.AnthropicThinkingBudget = v
+	}
+	if geminiThinkingBudget != "" {
+		v, err := strconv.ParseInt(geminiThinkingBudget, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse GEMINI_THINKING_BUDGET: %w", err)
+		}
+		r.GeminiThinkingBudget = v
 	}
 
 	// A bearer token implies OAuth (Claude Code) auth for Anthropic.

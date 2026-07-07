@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -161,14 +162,27 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 						return nil, nil, err
 					}
 				}
-				content.Parts = append(content.Parts, &genai.Part{
+				part := &genai.Part{
 					FunctionCall: &genai.FunctionCall{
 						Name: block.ToolName,
 						Args: args,
 					},
-				})
+				}
+				// Gemini attaches a thought signature to the function-call part
+				// when reasoning; it must be replayed so the model can continue
+				// the reasoning chain across tool calls.
+				if sig := decodeThoughtSignature(block.Signature); sig != nil {
+					part.ThoughtSignature = sig
+				}
+				content.Parts = append(content.Parts, part)
 			case LLMContentThinking:
-				// Extended thinking round-trip is deferred to a later phase.
+				// Round-trip thinking: replay the thought summary and its opaque
+				// signature so Gemini can resume the reasoning it started.
+				content.Parts = append(content.Parts, &genai.Part{
+					Text:             block.Text,
+					Thought:          true,
+					ThoughtSignature: decodeThoughtSignature(block.Signature),
+				})
 			}
 		}
 
@@ -194,6 +208,8 @@ func (c *GenaiClient) processStreamResponse(
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
 ) (contentBlocks []*LLMContentBlock, tokenUsage LLMTokenUsage, err error) {
 	var textContent strings.Builder
+	var thinkingContent strings.Builder
+	var thinkingSig string
 	for res, err := range stream {
 		if err != nil {
 			if apiErr, ok := err.(*apierror.APIError); ok {
@@ -217,10 +233,22 @@ func (c *GenaiClient) processStreamResponse(
 		}
 
 		for _, part := range candidate.Content.Parts {
-			if x := part.Text; x != "" {
-				fmt.Fprint(stdout, x)
-				textContent.WriteString(x)
-			} else if x := part.FunctionCall; x != nil {
+			sig := ""
+			if len(part.ThoughtSignature) > 0 {
+				sig = base64.StdEncoding.EncodeToString(part.ThoughtSignature)
+			}
+			switch {
+			case part.Thought:
+				// Thought summary text. Accumulate it (and its signature)
+				// separately from the reply so it round-trips but doesn't
+				// pollute the visible response. Checked before part.Text
+				// because thought parts carry text too.
+				thinkingContent.WriteString(part.Text)
+				if sig != "" {
+					thinkingSig = sig
+				}
+			case part.FunctionCall != nil:
+				x := part.FunctionCall
 				args, err := json.Marshal(x.Args)
 				if err != nil {
 					return contentBlocks, tokenUsage, fmt.Errorf("failed to marshal tool call arguments: %w", err)
@@ -230,8 +258,12 @@ func (c *GenaiClient) processStreamResponse(
 					CallID:    x.Name,
 					ToolName:  x.Name,
 					Arguments: JSON(args),
+					Signature: sig,
 				})
-			} else {
+			case part.Text != "":
+				fmt.Fprint(stdout, part.Text)
+				textContent.WriteString(part.Text)
+			default:
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
 			}
 		}
@@ -243,7 +275,48 @@ func (c *GenaiClient) processStreamResponse(
 			Text: textContent.String(),
 		}}, contentBlocks...)
 	}
+	// Prepend accumulated thinking ahead of everything else, matching the order
+	// the model produced it (thinking precedes the reply and tool calls).
+	if thinkingContent.Len() > 0 || thinkingSig != "" {
+		contentBlocks = append([]*LLMContentBlock{{
+			Kind:      LLMContentThinking,
+			Text:      thinkingContent.String(),
+			Signature: thinkingSig,
+		}}, contentBlocks...)
+	}
 	return contentBlocks, tokenUsage, nil
+}
+
+// decodeThoughtSignature turns a base64-encoded thought signature (as stored on
+// an LLMContentBlock) back into the raw bytes Gemini expects. It returns nil for
+// an empty or malformed signature, so the part is sent without one.
+func decodeThoughtSignature(signature string) []byte {
+	if signature == "" {
+		return nil
+	}
+	sig, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return nil
+	}
+	return sig
+}
+
+// thinkingConfig maps the endpoint's ThinkingMode/ThinkingBudget onto Gemini's
+// thinking configuration. It returns nil (thinking disabled) unless a mode is
+// set. When enabled, thought summaries are requested so they can be captured
+// and round-tripped; a positive budget caps the thinking tokens (otherwise the
+// model thinks dynamically).
+func (c *GenaiClient) thinkingConfig() *genai.ThinkingConfig {
+	switch c.endpoint.ThinkingMode {
+	case "", "disabled", "none":
+		return nil
+	}
+	cfg := &genai.ThinkingConfig{IncludeThoughts: true}
+	if c.endpoint.ThinkingBudget > 0 {
+		budget := int32(c.endpoint.ThinkingBudget)
+		cfg.ThinkingBudget = &budget
+	}
+	return cfg
 }
 
 var _ LLMClient = (*GenaiClient)(nil)
@@ -317,6 +390,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, &genai.GenerateContentConfig{
 		SystemInstruction: systemInstruction,
 		Tools:             genaiTools,
+		ThinkingConfig:    c.thinkingConfig(),
 	}, chatHistoryForGenai)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat: %w", err)
