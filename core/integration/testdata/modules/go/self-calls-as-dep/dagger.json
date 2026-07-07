@@ -1,9 +1,15 @@
 {
-  "name": "test",
+  "name": "caller",
   "engineVersion": "v0.20.6",
   "sdk": {
     "source": "go"
   },
+  "dependencies": [
+    {
+      "name": "dep",
+      "source": "dep"
+    }
+  ],
   "codegen": {
     "automaticGitignore": false
   },

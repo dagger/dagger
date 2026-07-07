@@ -433,6 +433,9 @@ type ModuleConfigView struct {
 
 type ModuleCodegenConfig struct {
 	// Whether to automatically generate a .gitignore file for this module.
+	//
+	// When explicitly false, the module commits its generated files rather
+	// than ignoring them, and they might be used by an SDK at runtime.
 	AutomaticGitignore *bool `json:"automaticGitignore,omitempty" toml:"automaticGitignore,omitempty"`
 }
 

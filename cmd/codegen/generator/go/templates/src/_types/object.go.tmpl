@@ -5,7 +5,7 @@ type {{ .Name | FormatName }} struct {
 
     {{ range $field := .Fields }}
         {{- if $field.TypeRef.IsScalar }}
-        {{ $field.Name }} *{{ FormatFieldOutputType $field }}
+        {{ $field.Name | FormatParamName }} *{{ FormatFieldOutputType $field }}
         {{- end }}
 	{{- end }}
 }
@@ -75,16 +75,16 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- range $arg := $field.Args }}
 	    {{- if and (IsPointer $arg) (not (IsArgOptional $arg)) }}
-        assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
+        assertNotNil("{{ $arg.Name}}", {{ $arg.Name | FormatParamName }})
         {{- end }}
     {{- end }}
 
     {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
-    if r.{{ $field.Name }} != nil {
+    if r.{{ $field.Name | FormatParamName }} != nil {
         {{- if and $supportsVoid $field.TypeRef.IsVoid }}
         return nil
         {{- else }}
-        return *r.{{ $field.Name }}, nil
+        return *r.{{ $field.Name | FormatParamName }}, nil
         {{- end }}
     }
     {{- end }}
@@ -106,7 +106,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 
 	{{- range $arg := $field.Args }}
 	{{- if not (IsArgOptional $arg) }}
-	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name | FormatParamName }})
 	{{- end }}
 	{{- end }}
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
@@ -157,14 +157,14 @@ type {{ $field | FieldOptionsStructName }} struct {
 		{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
     q = q.Select("{{ range $i, $v := $field | GetArrayField }}{{ if $i }} {{ end }}{{ $v.Name }}{{ end }}")
 
-    type {{ $field.Name | ToLowerCase }} struct {
+    type {{ $field.Name | ToLowerCase | FormatParamName }} struct {
       {{ range $v := $field | GetArrayField }}
       {{ $v.Name | ToUpperCase }} {{ FormatFieldOutputType $v }}
       {{- end }}
     }
 
     {{$eleType := $field.TypeRef | InnerType}}
-    convert := func(fields []{{ $field.Name | ToLowerCase }}) {{ $field.TypeRef | FormatOutputType }} {
+    convert := func(fields []{{ $field.Name | ToLowerCase | FormatParamName }}) {{ $field.TypeRef | FormatOutputType }} {
         out := {{ $field.TypeRef | FormatOutputType }}{}
 
         for i := range fields {
@@ -180,7 +180,7 @@ type {{ $field | FieldOptionsStructName }} struct {
     {{- end }}
 
     {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
-	var response []{{ $field.Name | ToLowerCase }}
+	var response []{{ $field.Name | ToLowerCase | FormatParamName }}
     {{- else }}
 	var response {{ FormatFieldOutputType $field }}
     {{- end  }}

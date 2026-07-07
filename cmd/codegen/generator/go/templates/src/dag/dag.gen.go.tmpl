@@ -83,7 +83,7 @@ func Close() error {
 		{{- end -}}
 		{{- range $arg := $field.Args -}}
 		{{- if not (IsArgOptional $arg) -}}
-		{{ $arg.Name }},
+		{{ $arg.Name | FormatParamName }},
 		{{- end -}}
 		{{- end -}}
 		{{- if HasOptionals $field.Args -}}

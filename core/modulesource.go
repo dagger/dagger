@@ -604,6 +604,12 @@ type persistedModuleSourceLazyModuleTypes struct {
 
 var _ ModuleTypes = persistedModuleSourceLazyModuleTypes{}
 
+// ErrStaleSDKCapability signals that a persisted module source recorded an SDK
+// capability the freshly loaded SDK no longer implements — e.g. sources
+// persisted before the Go SDK dropped moduleTypes. Callers should fall back to
+// the path they would take had the capability never been recorded.
+var ErrStaleSDKCapability = errors.New("persisted sdk capability no longer implemented")
+
 func (sdk persistedModuleSourceLazyModuleTypes) ModuleTypes(
 	ctx context.Context,
 	deps *SchemaBuilder,
@@ -616,7 +622,7 @@ func (sdk persistedModuleSourceLazyModuleTypes) ModuleTypes(
 	}
 	moduleTypesSDK, ok := loaded.AsModuleTypes()
 	if !ok {
-		return dagql.ObjectResult[*Module]{}, fmt.Errorf("persisted module source sdk does not implement module types")
+		return dagql.ObjectResult[*Module]{}, fmt.Errorf("persisted module source sdk does not implement module types: %w", ErrStaleSDKCapability)
 	}
 	return moduleTypesSDK.ModuleTypes(ctx, deps, src, mod)
 }

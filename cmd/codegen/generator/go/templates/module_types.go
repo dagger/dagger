@@ -6,24 +6,19 @@ import (
 	"go/types"
 	"path/filepath"
 
-	"dagger.io/dagger"
+	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
 // A Go type that has been parsed and can be registered with the dagger API
 type ParsedType interface {
+	// Generated code for registering the type with the dagger API
+	TypeDefCode() (*Statement, error)
+
 	// The underlying go type that ParsedType wraps
 	GoType() types.Type
 
 	// Go types referred to by this type
 	GoSubTypes() []types.Type
-
-	// TypeDef representation of the type
-	TypeDef(*dagger.Client) (*dagger.TypeDef, error)
-}
-
-type FuncParsedType interface {
-	ParsedType
-	TypeDefFunc(*dagger.Client) (*dagger.Function, error)
 }
 
 type NamedParsedType interface {
@@ -155,35 +150,35 @@ type parsedPrimitiveType struct {
 
 var _ ParsedType = &parsedPrimitiveType{}
 
-func (spec *parsedPrimitiveType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
-	var kind dagger.TypeDefKind
+func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
+	var kind Code
 	if spec.goType.Kind() == types.Invalid {
 		// NOTE: this is odd, but it doesn't matter, because the module won't
 		// pass the compilation step if there are invalid types - we just want
 		// to not error out horribly in codegen
-		kind = dagger.TypeDefKindVoidKind
+		kind = Id("dagger").Dot("TypeDefKindVoidKind")
 	} else {
 		switch spec.goType.Info() {
 		case types.IsString:
-			kind = dagger.TypeDefKindStringKind
+			kind = Id("dagger").Dot("TypeDefKindStringKind")
 		case types.IsInteger:
-			kind = dagger.TypeDefKindIntegerKind
+			kind = Id("dagger").Dot("TypeDefKindIntegerKind")
 		case types.IsBoolean:
-			kind = dagger.TypeDefKindBooleanKind
+			kind = Id("dagger").Dot("TypeDefKindBooleanKind")
 		case types.IsFloat:
-			kind = dagger.TypeDefKindFloatKind
+			kind = Id("dagger").Dot("TypeDefKindFloatKind")
 		default:
 			return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
 		}
 	}
-	var def *dagger.TypeDef
+	var def *Statement
 	if spec.scalarType != nil {
-		def = dag.TypeDef().WithScalar(spec.scalarType.Obj().Name())
+		def = Qual("dag", "TypeDef").Call().Dot("WithScalar").Call(Lit(spec.scalarType.Obj().Name()))
 	} else {
-		def = dag.TypeDef().WithKind(kind)
+		def = Qual("dag", "TypeDef").Call().Dot("WithKind").Call(kind)
 	}
 	if spec.isPtr {
-		def = def.WithOptional(true)
+		def = def.Dot("WithOptional").Call(Lit(true))
 	}
 	return def, nil
 }
@@ -208,12 +203,12 @@ type parsedSliceType struct {
 
 var _ ParsedType = &parsedSliceType{}
 
-func (spec *parsedSliceType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
-	underlyingTypeDef, err := spec.underlying.TypeDef(dag)
+func (spec *parsedSliceType) TypeDefCode() (*Statement, error) {
+	underlyingCode, err := spec.underlying.TypeDefCode()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate underlying typedef: %w", err)
+		return nil, fmt.Errorf("failed to generate underlying type code: %w", err)
 	}
-	return dag.TypeDef().WithListOf(underlyingTypeDef), nil
+	return Qual("dag", "TypeDef").Call().Dot("WithListOf").Call(underlyingCode), nil
 }
 
 func (spec *parsedSliceType) GoType() types.Type {
@@ -236,8 +231,10 @@ type parsedObjectTypeReference struct {
 
 var _ NamedParsedType = &parsedObjectTypeReference{}
 
-func (spec *parsedObjectTypeReference) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
-	return dag.TypeDef().WithObject(spec.name), nil
+func (spec *parsedObjectTypeReference) TypeDefCode() (*Statement, error) {
+	return Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
+		Lit(spec.name),
+	), nil
 }
 
 func (spec *parsedObjectTypeReference) GoType() types.Type {
@@ -267,8 +264,10 @@ type parsedIfaceTypeReference struct {
 
 var _ NamedParsedType = &parsedIfaceTypeReference{}
 
-func (spec *parsedIfaceTypeReference) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
-	return dag.TypeDef().WithInterface(spec.name), nil
+func (spec *parsedIfaceTypeReference) TypeDefCode() (*Statement, error) {
+	return Qual("dag", "TypeDef").Call().Dot("WithInterface").Call(
+		Lit(spec.name),
+	), nil
 }
 
 func (spec *parsedIfaceTypeReference) GoType() types.Type {
@@ -310,6 +309,6 @@ func (ps *parseState) sourceMap(item interface{ Pos() token.Pos }) *sourceMap {
 	}
 }
 
-func (spec *sourceMap) TypeDef(dag *dagger.Client) *dagger.SourceMap {
-	return dag.SourceMap(spec.filename, spec.line, spec.column)
+func (spec *sourceMap) TypeDefCode() *Statement {
+	return Qual("dag", "SourceMap").Call(Lit(spec.filename), Lit(spec.line), Lit(spec.column))
 }

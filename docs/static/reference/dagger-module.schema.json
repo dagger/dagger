@@ -96,7 +96,7 @@
       "properties": {
         "automaticGitignore": {
           "type": "boolean",
-          "description": "Whether to automatically generate a .gitignore file for this module."
+          "description": "Whether to automatically generate a .gitignore file for this module.\n\nWhen explicitly false, the module commits its generated files rather than ignoring them, and they might be used by an SDK at runtime."
         }
       },
       "additionalProperties": false,

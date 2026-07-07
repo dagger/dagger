@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/iancoleman/strcase"
 )
@@ -116,25 +115,32 @@ type parsedIfaceType struct {
 
 var _ NamedParsedType = &parsedIfaceType{}
 
-func (spec *parsedIfaceType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
-	opts := dagger.TypeDefWithInterfaceOpts{}
+func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
+	withIfaceArgsCode := []Code{
+		Lit(spec.name),
+	}
+	withIfaceOptsCode := []Code{}
 	if spec.doc != "" {
-		opts.Description = strings.TrimSpace(spec.doc)
+		withIfaceOptsCode = append(withIfaceOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
 	}
 	if spec.sourceMap != nil {
-		opts.SourceMap = spec.sourceMap.TypeDef(dag)
+		withIfaceOptsCode = append(withIfaceOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
 	}
-	typeDefObject := dag.TypeDef().WithInterface(spec.name, opts)
+	if len(withIfaceOptsCode) > 0 {
+		withIfaceArgsCode = append(withIfaceArgsCode, Id("dagger").Dot("TypeDefWithInterfaceOpts").Values(withIfaceOptsCode...))
+	}
 
-	for _, m := range spec.methods {
-		fnTypeDefObj, err := m.TypeDefFunc(dag)
+	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithInterface").Call(withIfaceArgsCode...)
+
+	for _, method := range spec.methods {
+		fnTypeDefCode, err := method.TypeDefCode()
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
+			return nil, fmt.Errorf("failed to convert method %s to function def: %w", method.name, err)
 		}
-		typeDefObject = typeDefObject.WithFunction(fnTypeDefObj)
+		typeDefCode = dotLine(typeDefCode, "WithFunction").Call(Add(Line(), fnTypeDefCode))
 	}
 
-	return typeDefObject, nil
+	return typeDefCode, nil
 }
 
 func (spec *parsedIfaceType) GoType() types.Type {
