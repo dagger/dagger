@@ -113,15 +113,18 @@ func (fe *frontendPretty) renderCheckNode(ctx tuist.Context, out TermOutput, r *
 // name, and faint duration, at the given indent.
 func (fe *frontendPretty) checkStatusLine(out TermOutput, r *renderer, node *dagui.CheckNode, indent string) string {
 	icon, color := IconSuccess, termenv.ANSIGreen
+	status := "OK"
 	if node.Failed {
 		icon, color = IconFailure, termenv.ANSIRed
+		status = "ERROR"
 	}
 	dur := dagui.FormatDuration(node.Span.Activity.Duration(r.now))
-	return fmt.Sprintf("%s%s %s %s",
+	return fmt.Sprintf("%s%s %s %s %s",
 		indent,
 		out.String(icon).Foreground(color).String(),
 		node.Name,
 		out.String(dur).Faint().String(),
+		out.String(status).Foreground(color).String(),
 	)
 }
 

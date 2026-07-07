@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -91,6 +92,13 @@ type TestView struct {
 	// ShowTestViewerHint renders the pretty-live "T inspect" affordance next to
 	// the TESTS summary heading. Final/non-pretty reports leave it disabled.
 	ShowTestViewerHint bool
+	// SummaryTitle overrides the "TESTS" heading for ListOnly summaries, e.g.
+	// "ORPHANED TESTS" for the section of tests severed from their checks.
+	SummaryTitle string
+	// SummaryNote renders pre-styled lines directly beneath the heading, before
+	// the test rows -- used to explain why a section exists (e.g. the orphan
+	// warning). Subject to the same height budget as the rest of the summary.
+	SummaryNote []string
 
 	OnFocusSpan func(*dagui.Span)
 
@@ -716,7 +724,7 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 	}
 	counts := renderTestSummaryCounts(out, view.Counts, tv.SummaryIndent, width)
 
-	full := assembleTestSummary(header, blocks, passing, counts)
+	full := tv.withSummaryNote(assembleTestSummary(header, blocks, passing, counts))
 	// height <= 0 means unbounded (the final report, or a size-unknown render):
 	// show everything. Otherwise, if it already fits, keep the spacious layout.
 	if height <= 0 || len(full) <= height {
@@ -736,7 +744,7 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 // there is room for.
 func (tv *TestView) renderTestSummaryOneLine(out TermOutput, counts dagui.TestCounts, width int) string {
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
-	line := prefix + reportHeadingLine(out, "TESTS")
+	line := prefix + reportHeadingLine(out, tv.summaryHeading())
 	if parts := renderTestCountParts(out, counts); len(parts) > 0 {
 		line += "  " + strings.Join(parts, "  ")
 	}
@@ -841,11 +849,33 @@ func (tv *TestView) renderTestSummaryCountsCompact(out TermOutput, counts dagui.
 }
 
 func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width int) string {
-	heading := prefix + reportHeadingLine(out, "TESTS")
+	heading := prefix + reportHeadingLine(out, tv.summaryHeading())
 	if tv.ShowTestViewerHint && !tv.testSummaryFinal() {
 		heading += " " + renderTestViewerHint(out)
 	}
 	return clipTestSummaryLine(heading, width)
+}
+
+// summaryHeading is the ListOnly summary's section title, "TESTS" unless
+// SummaryTitle overrides it.
+func (tv *TestView) summaryHeading() string {
+	if tv.SummaryTitle != "" {
+		return tv.SummaryTitle
+	}
+	return "TESTS"
+}
+
+// withSummaryNote inserts SummaryNote directly beneath the heading (lines[0]),
+// before the test rows. A no-op when there's no note or no heading to anchor to.
+func (tv *TestView) withSummaryNote(lines []string) []string {
+	if len(tv.SummaryNote) == 0 || len(lines) == 0 {
+		return lines
+	}
+	out := make([]string, 0, len(lines)+len(tv.SummaryNote))
+	out = append(out, lines[0])
+	out = append(out, tv.SummaryNote...)
+	out = append(out, lines[1:]...)
+	return out
 }
 
 func renderTestViewerHint(out TermOutput) string {
@@ -1844,13 +1874,13 @@ func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 	if width <= 0 {
 		width = finalRenderTestsWidth
 	}
+	fe.setOrphanSummary(tv, fe.orphanWarningLines(orphan))
 	lines := fe.RenderChildResult(ctx.Resize(max(width, 1), limit), tv).Lines
 	if len(lines) == 0 {
 		return nil
 	}
-	warn := fe.orphanWarningLines(orphan)
 	fe.claims.claimTestReport(nil, orphan)
-	return append(warn, lines...)
+	return lines
 }
 
 func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
@@ -1884,13 +1914,13 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 		width = finalRenderTestsWidth
 	}
 	width = max(width, finalRenderTestsWidth)
+	fe.setOrphanSummary(tv, fe.orphanWarningLines(orphan))
 	lines := fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
 	if len(lines) == 0 {
 		return nil
 	}
-	warn := fe.orphanWarningLines(orphan)
 	fe.claims.claimTestReport(nil, orphan)
-	return append(warn, lines...)
+	return lines
 }
 
 func liveTestViewHeight(ctx tuist.Context) int {
@@ -1934,6 +1964,25 @@ func (fe *frontendPretty) orphanTestsComponent() *TestView {
 	return fe.orphanTests
 }
 
+// setOrphanSummary titles the global test section and stashes the orphan
+// warning on the component. When missing-ancestor cases are present the section
+// becomes "ORPHANED TESTS" and the warning renders indented beneath that
+// heading, rather than floating, headerless, above the whole section.
+func (fe *frontendPretty) setOrphanSummary(tv *TestView, warn []string) {
+	title := "TESTS"
+	if len(warn) > 0 {
+		title = "ORPHANED TESTS"
+	}
+	if tv.SummaryTitle != title {
+		tv.SummaryTitle = title
+		tv.Update()
+	}
+	if !slices.Equal(tv.SummaryNote, warn) {
+		tv.SummaryNote = warn
+		tv.Update()
+	}
+}
+
 // orphanWarningLines flags cases that dangle because intermediate ancestor spans
 // were never exported to the trace (Span.FirstMissingAncestor), distinguishing
 // them from tests legitimately run outside any check (which warn-free). With
@@ -1971,17 +2020,19 @@ func (fe *frontendPretty) orphanWarningLines(orphan *dagui.TestView) []string {
 	if len(missing) != 1 {
 		noun = "tests"
 	}
+	// Indented to sit beneath the ORPHANED TESTS heading the caller sets, with
+	// the detail/--debug lines nested one step further under the warning.
 	lines := []string{
-		out.String(fmt.Sprintf("! %d %s could not be attributed to a check (ancestor spans missing from trace data)",
+		out.String(fmt.Sprintf("  ! %d %s could not be attributed to a check (ancestor spans missing from trace data)",
 			len(missing), noun)).Foreground(termenv.ANSIYellow).String(),
 	}
 	if fe.Debug {
 		for _, m := range missing {
-			lines = append(lines, out.String(fmt.Sprintf("  %s  span=%s  missing parent=%s",
+			lines = append(lines, out.String(fmt.Sprintf("    %s  span=%s  missing parent=%s",
 				m.name, m.span, m.parent)).Foreground(termenv.ANSIBrightBlack).String())
 		}
 	} else {
-		lines = append(lines, out.String("  (run with --debug to list them)").Foreground(termenv.ANSIBrightBlack).String())
+		lines = append(lines, out.String("    (run with --debug to list them)").Foreground(termenv.ANSIBrightBlack).String())
 	}
 	return lines
 }

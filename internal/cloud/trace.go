@@ -188,13 +188,13 @@ func parseGraphQLErrors(op string, data []byte) error {
 	var probe struct {
 		Errors []json.RawMessage `json:"errors"`
 	}
-	if err := json.Unmarshal(data, &probe); err != nil {
-		return nil
+	// Only a payload that parses and carries top-level errors is a GraphQL error;
+	// anything else -- a normal data payload, or one that doesn't parse as our
+	// probe -- is not.
+	if err := json.Unmarshal(data, &probe); err == nil && len(probe.Errors) > 0 {
+		return &graphqlErrorsError{op: op, body: string(data)}
 	}
-	if len(probe.Errors) == 0 {
-		return nil
-	}
-	return &graphqlErrorsError{op: op, body: string(data)}
+	return nil
 }
 
 // isUnsupportedArgError reports whether err is a GraphQL validation failure for

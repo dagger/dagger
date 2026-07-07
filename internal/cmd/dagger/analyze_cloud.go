@@ -9,9 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/dagql/idtui"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 )
 
@@ -53,36 +51,6 @@ With no --span/--check/--test, the whole trace's logs are streamed. --check and
 	return cmd
 }
 
-// section renders a titled block. For humans the title is a bold, all-caps
-// heading with the body indented two spaces -- the style used elsewhere in the
-// CLI. For agents it's a flat, greppable "== TITLE ==" marker with the body
-// left at the margin. body is pre-rendered and may already contain styling.
-func section(o *termenv.Output, title, body string) {
-	body = strings.TrimRight(body, "\n")
-	if idtui.RunningInAgent() {
-		fmt.Fprintf(o, "\n== %s ==\n", title)
-		if body != "" {
-			fmt.Fprintln(o, body)
-		}
-		return
-	}
-	fmt.Fprintf(o, "\n%s\n", bold(o, title))
-	if body != "" {
-		fmt.Fprintln(o, indentLines(body, "  "))
-	}
-}
-
-// indentLines prefixes every non-empty line of s with prefix.
-func indentLines(s, prefix string) string {
-	lines := strings.Split(s, "\n")
-	for i, ln := range lines {
-		if ln != "" {
-			lines[i] = prefix + ln
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
 func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	traceID := args[0]
@@ -101,7 +69,7 @@ func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var w io.Writer = cmd.OutOrStdout()
+	w := cmd.OutOrStdout()
 	if logsOutput != "" {
 		f, err := os.Create(logsOutput)
 		if err != nil {
@@ -138,43 +106,3 @@ func (cli *CloudCLI) CloudLogs(cmd *cobra.Command, args []string) error {
 	}
 	return nil
 }
-
-// marker is the leading status indicator for a check or test line. For humans
-// it's a colored glyph matching the report frontend's vocabulary (green ✔ /
-// red ✘); for agents it's a greppable ASCII token like "[FAILED]", so a single
-// `grep '\[FAILED\]'` surfaces every failure across the summary.
-func marker(o *termenv.Output, status string) string {
-	if idtui.RunningInAgent() {
-		return statusToken(status)
-	}
-	switch status {
-	case "passed":
-		return o.String("✔").Foreground(termenv.ANSIGreen).String()
-	case "failed":
-		return o.String("✘").Foreground(termenv.ANSIRed).String()
-	case "running":
-		return o.String("…").Foreground(termenv.ANSIYellow).String()
-	default:
-		return o.String("?").Foreground(termenv.ANSIBrightBlack).String()
-	}
-}
-
-// statusToken is the ASCII status tag shown to agents, e.g. "[FAILED]".
-func statusToken(status string) string {
-	w := strings.ToUpper(status)
-	if w == "" {
-		w = "UNKNOWN"
-	}
-	return "[" + w + "]"
-}
-
-// bold styles headings and labels.
-func bold(o *termenv.Output, s string) string {
-	return o.String(s).Bold().String()
-}
-
-// dim styles de-emphasized decoration, like the log line gutter.
-func dim(o *termenv.Output, s string) string {
-	return o.String(s).Foreground(termenv.ANSIBrightBlack).String()
-}
-

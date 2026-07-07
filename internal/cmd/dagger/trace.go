@@ -91,29 +91,7 @@ func traceRun(cmd *cobra.Command, args []string) error {
 		// Fetch the trace's source commit / CI change so the report can suggest
 		// commit-scoped re-run commands. Best-effort: a missing metadata query just
 		// means the report falls back to a local 'dagger check' suggestion.
-		if t, ok := Frontend.(interface {
-			SetCIContext(commit, prNumber string, isNativeCI bool)
-		}); ok {
-			if meta, err := client.TraceMetadata(ctx, orgID, traceID); err != nil {
-				slog.Warn("failed to fetch trace metadata for re-run suggestions", "err", err)
-			} else if meta != nil {
-				var commit, prNumber string
-				var isNativeCI bool
-				if meta.Git != nil {
-					commit = meta.Git.Ref
-				}
-				if meta.CI != nil {
-					isNativeCI = meta.CI.IsNativeCI
-					if meta.CI.Change != nil {
-						prNumber = meta.CI.Change.ID
-						if commit == "" {
-							commit = meta.CI.Change.HeadSHA
-						}
-					}
-				}
-				t.SetCIContext(commit, prNumber, isNativeCI)
-			}
-		}
+		setTraceCIContext(ctx, client, orgID, traceID)
 
 		logExp := Frontend.LogExporter()
 		defer logExp.Shutdown(ctx)
@@ -204,22 +182,8 @@ func traceRun(cmd *cobra.Command, args []string) error {
 		// --span/--check/--test: fetch the target span's subtree and zoom the view
 		// to it, mirroring the web UI's ?span= deep link. --check/--test resolve a
 		// name against the priority spans just loaded.
-		if sel.isSet() {
-			spanHex, _, err := sel.resolveSpan(ctx, client, orgID, traceID)
-			if err != nil {
-				return noop, err
-			}
-			sid, err := trace.SpanIDFromHex(spanHex)
-			if err != nil {
-				return noop, fmt.Errorf("invalid span %q: %w", spanHex, err)
-			}
-			spanID := dagui.SpanID{SpanID: sid}
-			loader.listen(spanID)
-			if z, ok := Frontend.(interface {
-				ZoomToSpan(dagui.SpanID)
-			}); ok {
-				z.ZoomToSpan(spanID)
-			}
+		if err := loader.zoomToSelection(ctx, sel); err != nil {
+			return noop, err
 		}
 
 		// Fetch the subtrees of surfaced failed checks so their cause and logs are
@@ -281,6 +245,43 @@ func traceRun(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(cmd.ErrOrStderr(), client.StatsSummary())
 	}
 	return runErr
+}
+
+// setTraceCIContext fetches the trace's source commit / CI change and feeds it
+// to the frontend so the report can suggest commit-scoped re-run commands.
+// Best-effort: a frontend that doesn't accept CI context, or a failed/empty
+// metadata query, just means the report falls back to a local 'dagger check'
+// suggestion.
+func setTraceCIContext(ctx context.Context, client *cloud.Client, orgID, traceID string) {
+	t, ok := Frontend.(interface {
+		SetCIContext(commit, prNumber string, isNativeCI bool)
+	})
+	if !ok {
+		return
+	}
+	meta, err := client.TraceMetadata(ctx, orgID, traceID)
+	if err != nil {
+		slog.Warn("failed to fetch trace metadata for re-run suggestions", "err", err)
+		return
+	}
+	if meta == nil {
+		return
+	}
+	var commit, prNumber string
+	var isNativeCI bool
+	if meta.Git != nil {
+		commit = meta.Git.Ref
+	}
+	if meta.CI != nil {
+		isNativeCI = meta.CI.IsNativeCI
+		if meta.CI.Change != nil {
+			prNumber = meta.CI.Change.ID
+			if commit == "" {
+				commit = meta.CI.Change.HeadSHA
+			}
+		}
+	}
+	t.SetCIContext(commit, prNumber, isNativeCI)
 }
 
 // traceLoader fetches a trace's spans incrementally from Dagger Cloud, mirroring
@@ -386,6 +387,31 @@ func (l *traceLoader) listen(id dagui.SpanID) {
 		}
 		return nil
 	})
+}
+
+// zoomToSelection resolves a --span/--check/--test selection against the loaded
+// priority spans, fetches the target's subtree, and zooms the view to it,
+// mirroring the web UI's ?span= deep link. It's a no-op when no selection is set.
+func (l *traceLoader) zoomToSelection(ctx context.Context, sel spanSelector) error {
+	if !sel.isSet() {
+		return nil
+	}
+	spanHex, _, err := sel.resolveSpan(ctx, l.client, l.orgID, l.traceID)
+	if err != nil {
+		return err
+	}
+	sid, err := trace.SpanIDFromHex(spanHex)
+	if err != nil {
+		return fmt.Errorf("invalid span %q: %w", spanHex, err)
+	}
+	spanID := dagui.SpanID{SpanID: sid}
+	l.listen(spanID)
+	if z, ok := Frontend.(interface {
+		ZoomToSpan(dagui.SpanID)
+	}); ok {
+		z.ZoomToSpan(spanID)
+	}
+	return nil
 }
 
 // wait blocks for the in-flight backfills to finish. Used by report mode to
