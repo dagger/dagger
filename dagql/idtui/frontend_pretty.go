@@ -84,6 +84,10 @@ type frontendPretty struct {
 	// consoleTerm is the headless terminal backing console mode, kept so the
 	// /resize endpoint can change its dimensions live.
 	consoleTerm *tuist.HeadlessTerminal
+	// consoleMu serializes all TUI access in console mode: the frontend is
+	// single-goroutine (no event loop), so HTTP handlers and the background
+	// dispatch pump must hold it while they Step and render.
+	consoleMu sync.Mutex
 
 	// updated by Run
 	tui         *tuist.TUI
@@ -1112,10 +1116,95 @@ func (fe *frontendPretty) SetLogProvider(provider func(dagui.SpanID, bool)) {
 // waits for the fetches it triggers, then the final render includes the
 // surfaced failures' detail. Interactive mode surfaces these during its normal
 // recalc loop, but calling this is harmless (requestLogs dedups).
+//
+// Blocks until the recalculation (and so the provider calls it makes) has
+// actually run: in TTY mode dispatch only enqueues onto the event loop, and
+// returning before the fetches were even issued would let the caller's
+// subsequent drain observe an idle fetch group and skip them.
 func (fe *frontendPretty) RequestSurfacedLogs() {
+	done := make(chan struct{})
 	fe.dispatch(func() {
+		defer close(done)
 		fe.recalculateViewLocked()
 	})
+	<-done
+}
+
+// RequestZoomLogs eagerly requests the zoom target's logs, honoring the
+// roll-up decision the zoom selector resolved (--check/--test roll up their
+// subtree). Unlike setExpanded's lazy request it fires even when the span
+// hasn't been loaded yet: a --span target outside the priority window is
+// fetched asynchronously, and report mode renders only once with no later
+// chance to request. Call before ZoomToSpan so this request wins the
+// requestedLogs dedup over setExpanded's own-logs-only request.
+func (fe *frontendPretty) RequestZoomLogs(id dagui.SpanID, descendants bool) {
+	fe.dispatch(func() {
+		if !descendants {
+			descendants = fe.logDescendants(id)
+		}
+		fe.requestLogsWith(id, descendants)
+	})
+}
+
+// ResolveSpanTarget resolves a --check/--test name against the loaded trace
+// using the selection rules the report itself renders with -- SurfacedChecks'
+// failed representative for a check, the (failing-preferred) case for a test
+// -- so the drill-in commands the report suggests land on the span it
+// described, rather than an arbitrary same-named span (a passing retry, a
+// boundary-contained fixture). Returns false when the name isn't in the
+// loaded view, letting the caller fall back to a raw span lookup.
+func (fe *frontendPretty) ResolveSpanTarget(check, test string) (dagui.SpanID, bool) {
+	var id dagui.SpanID
+	var found bool
+	done := make(chan struct{})
+	fe.dispatch(func() {
+		defer close(done)
+		switch {
+		case check != "":
+			var find func(ns []*dagui.CheckNode) *dagui.CheckNode
+			find = func(ns []*dagui.CheckNode) *dagui.CheckNode {
+				for _, n := range ns {
+					if n.Name == check {
+						return n
+					}
+					if c := find(n.Children); c != nil {
+						return c
+					}
+				}
+				return nil
+			}
+			if node := find(fe.db.SurfacedChecks()); node != nil && node.Span != nil {
+				id = node.Span.ID
+				found = true
+			}
+		case test != "":
+			tv := fe.db.TestView()
+			if tv == nil {
+				return
+			}
+			var candidate *dagui.TestNode
+			for _, node := range tv.CasesByName[test] {
+				if node == nil || node.Span == nil {
+					continue
+				}
+				// Prefer a failing case, so the hint a failing report prints
+				// resolves to the failure the user is chasing.
+				if node.Category == dagui.TestCategoryFailing {
+					candidate = node
+					break
+				}
+				if candidate == nil {
+					candidate = node
+				}
+			}
+			if candidate != nil {
+				id = candidate.Span.ID
+				found = true
+			}
+		}
+	})
+	<-done
+	return id, found
 }
 
 // setupFinalRenderLocked puts the frontend into final-render state: mark the
@@ -2374,7 +2463,7 @@ func (fe *frontendPretty) renderZoomedFinalLogs(out TermOutput, indent string) [
 		return nil
 	}
 	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-	return errorWindowLines(out, rawLines, indent, fe.traceID, cloudLogsTarget(span))
+	return errorWindowLines(out, rawLines, indent, fe.traceID, cloudLogsHintTarget(span))
 }
 
 // renderZoomedCheckTests renders the tests beneath a zoomed check as inline

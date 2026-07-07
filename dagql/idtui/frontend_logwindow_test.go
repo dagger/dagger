@@ -17,10 +17,24 @@ func TestErrorTailStart(t *testing.T) {
 		want    int
 	}{
 		{
-			name:    "no matches renders everything",
+			name:    "no matches renders a short log in full",
 			context: context,
 			lines:   []string{"a", "b", "c", "d"},
 			want:    0,
+		},
+		{
+			name:    "no matches bounds a long log to the tail",
+			context: context,
+			// A keyword-free failure (panic text, goroutine dump) must not dump
+			// the whole log into the report.
+			lines: func() []string {
+				ls := make([]string, 100)
+				for i := range ls {
+					ls[i] = "goroutine noise"
+				}
+				return ls
+			}(),
+			want: 60, // 100 - errorTailFallbackLines
 		},
 		{
 			name:    "single match keeps context lines before it",

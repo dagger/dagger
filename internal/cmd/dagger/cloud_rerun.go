@@ -18,6 +18,14 @@ import (
 // than rerunChecks. Mirrors checks.LoadStatusName in the Cloud API.
 const cloudLoadCheckName = "load"
 
+// isCloudLoadCheck reports whether c is the internal load gate. Match on the
+// Internal flag as well as the name so a user-defined check that happens to
+// be named "load" (module check names are normally namespaced, but the server
+// owns the naming) is never misrouted through rerunLoad.
+func isCloudLoadCheck(c cloudapi.Check) bool {
+	return c.Internal && c.Name == cloudLoadCheckName
+}
+
 // errNoCloudRerunTargets signals the benign "nothing failed" case so the command
 // can report it without a non-zero exit.
 var errNoCloudRerunTargets = errors.New("no failed checks to re-run")
@@ -124,7 +132,7 @@ func (cli *CloudCLI) Rerun(cmd *cobra.Command, _ []string) error {
 func cloudRerunPlan(targets []cloudapi.Check) (checkTargets, loadTargets []cloudapi.Check, skipped map[string]string) {
 	skipped = map[string]string{}
 	for _, c := range targets {
-		if c.Name == cloudLoadCheckName {
+		if isCloudLoadCheck(c) {
 			if cloudResultForStatus(c.Status) == "red" {
 				loadTargets = append(loadTargets, c)
 			} else {
@@ -283,6 +291,31 @@ func renderCloudRerun(cmd *cobra.Command, orgName string, commit cloudapi.CheckC
 // anything.
 func renderCloudRerunDryRun(cmd *cobra.Command, commit cloudapi.CheckCommit, targets []cloudapi.Check) error {
 	_, _, skipped := cloudRerunPlan(targets)
+	if cloudJSON {
+		type outCheck struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Status  string `json:"status"`
+			Via     string `json:"via,omitempty"`
+			Skipped string `json:"skipped,omitempty"`
+		}
+		items := make([]outCheck, 0, len(targets))
+		for _, c := range targets {
+			oc := outCheck{ID: c.ID, Name: c.Name, Status: c.Status}
+			switch {
+			case skipped[c.Name] != "":
+				oc.Skipped = skipped[c.Name]
+			case isCloudLoadCheck(c):
+				oc.Via = "rerunLoad"
+			default:
+				oc.Via = "rerunChecks"
+			}
+			items = append(items, oc)
+		}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(items)
+	}
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "Would re-run %d of %d check(s) on %s:\n", len(targets)-len(skipped), len(targets), cloudRerunRefLabel(commit))
 	for _, c := range targets {
@@ -291,7 +324,7 @@ func renderCloudRerunDryRun(cmd *cobra.Command, commit cloudapi.CheckCommit, tar
 			continue
 		}
 		via := "rerunChecks"
-		if c.Name == cloudLoadCheckName {
+		if isCloudLoadCheck(c) {
 			via = "rerunLoad"
 		}
 		fmt.Fprintf(out, "  %s  [%s] via %s\n", c.Name, strings.ToLower(c.Status), via)

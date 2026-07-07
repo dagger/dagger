@@ -1104,7 +1104,8 @@ an opaque span ID. Redirect to a file to grep large logs in a controlled way:
     grep -i error span.log
 
 With no --span/--check/--test, the whole trace's logs are streamed. --check and
---test roll up their subtree; --span is just that span.
+--test roll up their subtree; --span is just that span (add --descendants to
+roll up its subtree too).
 
 ```
 dagger cloud logs <trace-id> [--span <id> | --check <name> | --test <name>]
@@ -1114,6 +1115,7 @@ dagger cloud logs <trace-id> [--span <id> | --check <name> | --test <name>]
 
 ```
       --check string       Read a check's logs, by name (rolls up its subtree)
+      --descendants        With --span, roll up the span's subtree logs too
   -o, --output string      Write logs to a file instead of stdout
       --span string        Read just this span's logs, by span ID
       --test string        Read a test's logs, by name (rolls up its subtree)

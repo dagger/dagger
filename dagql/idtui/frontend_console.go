@@ -25,9 +25,9 @@ import (
 // keystroke — the way a person at the terminal would, just pty-less and
 // curl-able (handy for debugging, scripting, or an LLM operating the UI). It
 // runs the command's real work in the background; telemetry arrives through the
-// usual exporters and each request drains it with Step before rendering. It's a
-// dev/debug affordance: off by default, and the server should be bound to
-// localhost.
+// usual exporters onto the dispatch queue, which a background pump (and each
+// request, before rendering) drains with Step. It's a dev/debug affordance: off
+// by default, and the server should be bound to localhost.
 
 const (
 	consoleWidth  = 120
@@ -42,6 +42,9 @@ const (
 // to a terminal event loop.
 func (fe *frontendPretty) runWithConsole(ctx context.Context, run func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.runCtx, fe.interrupt = context.WithCancelCause(ctx)
+	// doQuit closes fe.quit (e.g. a second quit keypress injected via /key);
+	// without this it would close a nil channel and panic mid-Step.
+	fe.quit = make(chan struct{})
 	fe.setupTUI() // focus + keymap, no event loop
 
 	var (
@@ -58,13 +61,40 @@ func (fe *frontendPretty) runWithConsole(ctx context.Context, run func(context.C
 		runErr = err
 	}()
 
+	// Pump the dispatch queue in the background so dispatched work makes
+	// progress between HTTP requests. The run goroutine blocks on dispatched
+	// closures (SurfacedFailedCheckSpans, RequestSurfacedLogs) that otherwise
+	// only run inside a request's Step -- without the pump, `dagger trace`
+	// parks in its surfacing phase until someone curls the console, and a
+	// SIGINT before the first request hangs forever in runWg.Wait below.
+	pumpStop := make(chan struct{})
+	var pumpWg sync.WaitGroup
+	pumpWg.Go(func() {
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pumpStop:
+				return
+			case <-ticker.C:
+				fe.consoleMu.Lock()
+				fe.tui.Step()
+				fe.consoleMu.Unlock()
+			}
+		}
+	})
+
 	fmt.Fprintf(os.Stderr, "dagger TUI console on http://%s (GET /screen, POST /key, GET /help)\n", fe.console)
 	serveErr := fe.serveConsole(fe.runCtx)
 
 	// Stop the background work and report its error (the console itself just
-	// returning ErrServerClosed on shutdown isn't interesting).
+	// returning ErrServerClosed on shutdown isn't interesting). The pump keeps
+	// draining until the run goroutine has exited: it may be parked on a
+	// dispatched closure that still needs to execute.
 	fe.interrupt(context.Canceled)
 	runWg.Wait()
+	close(pumpStop)
+	pumpWg.Wait()
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		return serveErr
 	}
@@ -72,11 +102,9 @@ func (fe *frontendPretty) runWithConsole(ctx context.Context, run func(context.C
 }
 
 // serveConsole serves the console endpoints until ctx is cancelled. All session
-// access is serialized: the frontend is single-goroutine (no event loop), so a
-// handler must hold the lock while it Steps and renders.
+// access is serialized via fe.consoleMu: the frontend is single-goroutine (no
+// event loop), so a handler must hold the lock while it Steps and renders.
 func (fe *frontendPretty) serveConsole(ctx context.Context) error {
-	var mu sync.Mutex
-
 	writeScreen := func(w http.ResponseWriter, r *http.Request, frame string) {
 		if r.URL.Query().Get("raw") == "" {
 			frame = ansi.Strip(frame)
@@ -91,21 +119,21 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/screen", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
 		writeScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/key", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
 		for _, k := range parseConsoleKeys(reqBody(r)) {
 			fe.tui.Inject(tuist.ParseKey(k))
 		}
 		writeScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/type", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
 		// Type a literal string one rune at a time, as if entered at the
 		// keyboard — for driving the search prompt ("/") and any other text
 		// input. Unlike /key, the body is NOT tokenized: spaces and commas are
@@ -123,25 +151,39 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 			http.Error(w, fmt.Sprintf("bad span hex %q: %v", hex, err), http.StatusBadRequest)
 			return
 		}
-		mu.Lock()
-		defer mu.Unlock()
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
 		fe.ZoomToSpan(dagui.SpanID{SpanID: sid})
 		writeScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/resize", func(w http.ResponseWriter, r *http.Request) {
 		// Body is "<cols>x<rows>" or "<cols> <rows>"; either dimension may be
 		// omitted (or 0) to keep the current value, so "x12" just changes rows.
-		fields := strings.FieldsFunc(reqBody(r), func(c rune) bool {
+		body := reqBody(r)
+		isSep := func(c rune) bool {
 			return c == 'x' || c == 'X' || c == ' ' || c == ',' || c == '\t'
-		})
-		if len(fields) != 2 {
+		}
+		fields := strings.FieldsFunc(body, isSep)
+		var colStr, rowStr string
+		switch {
+		case len(fields) == 2:
+			colStr, rowStr = fields[0], fields[1]
+		case len(fields) == 1 && strings.IndexFunc(body, isSep) >= 0:
+			// One dimension omitted: FieldsFunc drops the empty side, so tell
+			// them apart by which side of the separator the field sits on.
+			if isSep(rune(body[0])) {
+				rowStr = fields[0]
+			} else {
+				colStr = fields[0]
+			}
+		default:
 			http.Error(w, "want <cols>x<rows>", http.StatusBadRequest)
 			return
 		}
-		cols, _ := strconv.Atoi(fields[0])
-		rows, _ := strconv.Atoi(fields[1])
-		mu.Lock()
-		defer mu.Unlock()
+		cols, _ := strconv.Atoi(colStr)
+		rows, _ := strconv.Atoi(rowStr)
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
 		if cols <= 0 {
 			cols = fe.consoleTerm.Columns()
 		}
@@ -155,8 +197,8 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 		writeScreen(w, r, fe.consoleSettle())
 	})
 	mux.HandleFunc("/spans", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
+		fe.consoleMu.Lock()
+		defer fe.consoleMu.Unlock()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, fe.consoleSpans(r.URL.Query().Get("q")))
 	})
@@ -164,15 +206,25 @@ func (fe *frontendPretty) serveConsole(ctx context.Context) error {
 	mux.HandleFunc("/", fe.consoleHelp)
 
 	srv := &http.Server{Addr: fe.console, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		// Give in-flight handlers a bit more than a full settle to finish.
+		shutCtx, cancel := context.WithTimeout(context.Background(), consoleSettleTimeout+3*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutCtx); err != nil {
 			slog.Warn("console shutdown", "err", err)
 		}
 	}()
-	return srv.ListenAndServe()
+	err := srv.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		// ListenAndServe returns the moment Shutdown closes the listener, but
+		// handlers may still be mid-Step. Wait for Shutdown to finish draining
+		// them so the caller's final render doesn't race a handler's TUI access.
+		<-shutdownDone
+	}
+	return err
 }
 
 // consoleSettle Steps the TUI (draining dispatched telemetry and injected keys,
@@ -191,9 +243,7 @@ func (fe *frontendPretty) consoleSettle() string {
 		// ~80ms before a network round-trip returns, so a zoom/expand looks
 		// like it surfaced nothing. The fetched spans are imported onto the
 		// dispatch queue, which the next Step applies.
-		if fe.fetchWaiter != nil {
-			fe.fetchWaiter()
-		}
+		fe.waitFetches(deadline)
 		time.Sleep(40 * time.Millisecond)
 		next := fe.tui.Step()
 		joined := strings.Join(next, "\n")
@@ -209,6 +259,26 @@ func (fe *frontendPretty) consoleSettle() string {
 		frame = joined
 	}
 	return strings.Join(fe.consoleViewport(lines), "\n")
+}
+
+// waitFetches runs the fetch waiter but gives up at the deadline: the caller
+// holds consoleMu, so an unbounded wait on a stalled fetch would wedge every
+// console endpoint, not just this request. On timeout the spawned goroutine
+// keeps waiting harmlessly in the background (fetches are bound to the run
+// context and unwind on interrupt).
+func (fe *frontendPretty) waitFetches(deadline time.Time) {
+	if fe.fetchWaiter == nil {
+		return
+	}
+	waited := make(chan struct{})
+	go func() {
+		defer close(waited)
+		fe.fetchWaiter()
+	}()
+	select {
+	case <-waited:
+	case <-time.After(time.Until(deadline)):
+	}
 }
 
 // consoleViewport mirrors what a real terminal actually shows: when the

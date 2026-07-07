@@ -742,6 +742,11 @@ const (
 	workspaceFlagPolicyLocalOnly  = "local-only"
 
 	showFinalProgressKey = "showFinalProgress"
+
+	// progressDefaultKey annotates a command with the progress mode it should
+	// default to when none is chosen explicitly (flag or DAGGER_PROGRESS),
+	// letting commands with machine consumers opt out of the report default.
+	progressDefaultKey = "progressDefault"
 )
 
 func commandShowsFinalProgress(cmd *cobra.Command) bool {
@@ -751,6 +756,24 @@ func commandShowsFinalProgress(cmd *cobra.Command) bool {
 		}
 	}
 	return false
+}
+
+// commandProgressDefault returns the progressDefault annotation of the
+// command os.Args points at, resolving it the way cobra will (global flags
+// may appear before the subcommand, and the command may be nested, e.g.
+// `dagger api session`). Empty when unresolvable or unannotated; a resolution
+// error just means cobra will reject the command line later anyway.
+func commandProgressDefault(args []string) string {
+	cmd, _, err := rootCmd.Traverse(args)
+	if err != nil || cmd == nil {
+		return ""
+	}
+	for c := cmd; c != nil; c = c.Parent() {
+		if v := c.Annotations[progressDefaultKey]; v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func applyCommandProgressDefaults(cmd *cobra.Command) {
@@ -806,14 +829,12 @@ func Main() {
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
-		} else if len(os.Args) > 1 && os.Args[1] == "session" {
-			// SDKs spawn `dagger session` and pipe its stderr to the user's
-			// log output as the live progress stream. The report frontend
-			// renders only once at exit -- for a long-lived session that
-			// leaves the stream empty the whole run -- so keep the streaming
-			// plain frontend. Checked before RunningInAgent: an agent-driven
-			// SDK program needs the stream just as much.
-			progress = "plain"
+		} else if def := commandProgressDefault(os.Args[1:]); def != "" {
+			// The command declares its own default (e.g. `dagger session`
+			// keeps plain progress for its SDK consumers). Checked before
+			// RunningInAgent: an agent-driven SDK program needs the stream
+			// just as much.
+			progress = def
 		} else if idtui.RunningInAgent() {
 			// An AI agent consumes the output as text; the report frontend's
 			// single final render suits it better than the live TUI.

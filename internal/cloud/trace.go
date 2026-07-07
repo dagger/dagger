@@ -183,18 +183,25 @@ func (e *graphqlErrorsError) Error() string {
 }
 
 // parseGraphQLErrors returns a graphqlErrorsError if the SSE payload carries
-// top-level GraphQL errors, or nil if it's a normal data payload.
+// top-level GraphQL errors with no usable data, or nil if it's a data payload.
 func parseGraphQLErrors(op string, data []byte) error {
 	var probe struct {
+		Data   json.RawMessage   `json:"data"`
 		Errors []json.RawMessage `json:"errors"`
 	}
 	// Only a payload that parses and carries top-level errors is a GraphQL error;
 	// anything else -- a normal data payload, or one that doesn't parse as our
 	// probe -- is not.
-	if err := json.Unmarshal(data, &probe); err == nil && len(probe.Errors) > 0 {
-		return &graphqlErrorsError{op: op, body: string(data)}
+	if err := json.Unmarshal(data, &probe); err != nil || len(probe.Errors) == 0 {
+		return nil
 	}
-	return nil
+	if len(probe.Data) > 0 && string(probe.Data) != "null" {
+		// Partial success: field errors alongside usable data is legal GraphQL.
+		// Let the data flow rather than aborting the whole stream over fields
+		// we may not even consume.
+		return nil
+	}
+	return &graphqlErrorsError{op: op, body: string(data)}
 }
 
 // isUnsupportedArgError reports whether err is a GraphQL validation failure for

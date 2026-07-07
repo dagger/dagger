@@ -958,7 +958,7 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	if final {
 		// Anchor on the failure rather than an arbitrary tail, and point at the
 		// full logs -- the same treatment the zoomed (--test) view uses.
-		return errorWindowLines(out, rawLines, indent, tv.TraceID, cloudLogsTarget(entry.span))
+		return errorWindowLines(out, rawLines, indent, tv.TraceID, cloudLogsHintTarget(entry.span))
 	}
 
 	// Live (interactive) summary: a small tail with a "more lines" footer.
@@ -2025,7 +2025,15 @@ func (fe *frontendPretty) orphanWarningLines(orphan *dagui.TestView) []string {
 	if len(missing) == 0 {
 		return nil
 	}
-	sort.Slice(missing, func(i, j int) bool { return missing[i].name < missing[j].name })
+	// missing comes from map iteration; break name ties by span ID so the
+	// --debug listing is stable across renders (e.g. a retried case yields two
+	// same-named orphans).
+	sort.Slice(missing, func(i, j int) bool {
+		if missing[i].name != missing[j].name {
+			return missing[i].name < missing[j].name
+		}
+		return missing[i].span.String() < missing[j].span.String()
+	})
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(fe.profile))
 	noun := "test"
 	if len(missing) != 1 {
@@ -2086,6 +2094,12 @@ func failingLeafTestCases(view *dagui.TestView) []*dagui.TestNode {
 	return out
 }
 
+// errorTailFallbackLines bounds the window when no fail/error keyword matches
+// (a panic, a timeout's goroutine dump, a non-English tool): show the last N
+// lines rather than dumping the entire log into the report. The trimmed-lines
+// marker and the 'dagger cloud logs' hint point at the rest.
+const errorTailFallbackLines = 40
+
 // errorTailStart returns the line index to start rendering a failed test's
 // rolled-up logs at: a few context lines before the trailing run of fail/error
 // lines (case-insensitive). It anchors on the last fail/error mention, then
@@ -2093,7 +2107,7 @@ func failingLeafTestCases(view *dagui.TestView) []*dagui.TestNode {
 // start of that trailing cluster, so the whole failure region shows, not just
 // its tail. Leading noise (dependency downloads, an incidental "errors" in a
 // package name) is trimmed: those matches sit far above the failure cluster and
-// the gap stops the walk. Returns 0 (render everything) when nothing matches.
+// the gap stops the walk. Falls back to a bounded tail when nothing matches.
 func errorTailStart(lines []string, context int) int {
 	match := func(s string) bool {
 		lower := strings.ToLower(s)
@@ -2106,7 +2120,7 @@ func errorTailStart(lines []string, context int) int {
 		}
 	}
 	if last < 0 {
-		return 0
+		return max(len(lines)-errorTailFallbackLines, 0)
 	}
 	anchor := last
 	for i := last - 1; i >= 0; i-- {
@@ -2124,6 +2138,8 @@ func errorTailStart(lines []string, context int) int {
 
 // cloudLogsTarget returns the 'dagger cloud logs' selector that addresses span
 // by name when possible (--test/--check), else by --span. Empty for a nil span.
+// Also used verbatim in 'dagger trace' drill-in suggestions, so it must only
+// emit selectors both commands accept.
 func cloudLogsTarget(span *dagui.Span) string {
 	switch {
 	case span == nil:
@@ -2135,6 +2151,19 @@ func cloudLogsTarget(span *dagui.Span) string {
 	default:
 		return fmt.Sprintf("--span %s", span.ID)
 	}
+}
+
+// cloudLogsHintTarget is cloudLogsTarget plus --descendants when the span
+// rolls up its subtree's logs, so the "full:" hint fetches at least the scope
+// the window above it rendered ('dagger cloud logs --span' is otherwise just
+// that span). Only for cloud-logs hints -- 'dagger trace' resolves roll-up on
+// its own and has no such flag.
+func cloudLogsHintTarget(span *dagui.Span) string {
+	target := cloudLogsTarget(span)
+	if span != nil && span.RollUpLogs && span.TestCaseName == "" && span.CheckName == "" {
+		target += " --descendants"
+	}
+	return target
 }
 
 // errorWindowLines renders a failed span's rolled-up logs for a final report:

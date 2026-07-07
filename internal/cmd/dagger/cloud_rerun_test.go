@@ -63,7 +63,7 @@ func TestCloudRerunTargetsNoFailuresErrors(t *testing.T) {
 func TestCloudRerunTargetsIncludesFailedLoad(t *testing.T) {
 	setCloudRerunFlags(t, nil, false)
 	targets, err := cloudRerunTargets([]cloudapi.Check{
-		{ID: "1", Name: cloudLoadCheckName, Status: "FAILURE"},
+		{ID: "1", Name: cloudLoadCheckName, Status: "FAILURE", Internal: true},
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{cloudLoadCheckName}, cloudCheckNames(targets))
@@ -72,16 +72,27 @@ func TestCloudRerunTargetsIncludesFailedLoad(t *testing.T) {
 func TestCloudRerunPlanRoutesAndSkips(t *testing.T) {
 	checkTargets, loadTargets, skipped := cloudRerunPlan([]cloudapi.Check{
 		{ID: "1", Name: "ci:bootstrap", Status: "FAILURE"},
-		{ID: "2", Name: cloudLoadCheckName, Status: "FAILURE"},
+		{ID: "2", Name: cloudLoadCheckName, Status: "FAILURE", Internal: true},
 	})
 	require.Equal(t, []string{"ci:bootstrap"}, cloudCheckNames(checkTargets))
 	require.Equal(t, []string{cloudLoadCheckName}, cloudCheckNames(loadTargets))
 	require.Empty(t, skipped)
 }
 
+func TestCloudRerunPlanIgnoresUserLoadName(t *testing.T) {
+	// A non-internal check that happens to be named "load" is a regular check,
+	// not the load gate: it must route through rerunChecks, never rerunLoad.
+	checkTargets, loadTargets, skipped := cloudRerunPlan([]cloudapi.Check{
+		{ID: "1", Name: cloudLoadCheckName, Status: "FAILURE"},
+	})
+	require.Equal(t, []string{cloudLoadCheckName}, cloudCheckNames(checkTargets))
+	require.Empty(t, loadTargets)
+	require.Empty(t, skipped)
+}
+
 func TestCloudRerunPlanSkipsPassedLoad(t *testing.T) {
 	checkTargets, loadTargets, skipped := cloudRerunPlan([]cloudapi.Check{
-		{ID: "1", Name: cloudLoadCheckName, Status: "SUCCESS"},
+		{ID: "1", Name: cloudLoadCheckName, Status: "SUCCESS", Internal: true},
 	})
 	require.Empty(t, checkTargets)
 	require.Empty(t, loadTargets)

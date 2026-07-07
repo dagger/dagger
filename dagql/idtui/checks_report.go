@@ -156,6 +156,11 @@ func (fe *frontendPretty) checkNodeForSpan(span *dagui.Span) *dagui.CheckNode {
 // breadcrumb: at this level the check name is enough context, so we show just
 // the failed command and the logs under it.
 func (fe *frontendPretty) renderCauseDetail(ctx tuist.Context, out TermOutput, r *renderer, origin *dagui.Span, depth int) {
+	if fe.claims.hasError(origin.ID) {
+		// Already rendered in full -- e.g. a shared dependency whose failure
+		// is the origin for several checks. Don't repeat the whole block.
+		return
+	}
 	indent := strings.Repeat("  ", depth)
 	row := &dagui.TraceRow{Span: origin, Expanded: true, Depth: depth}
 
@@ -169,6 +174,7 @@ func (fe *frontendPretty) renderCauseDetail(ctx tuist.Context, out TermOutput, r
 		logs.SetPrefix(indent + pipe + " ")
 		logs.SetHeight(logs.UsedHeight())
 		fmt.Fprint(out, logs.View())
+		fe.claims.claimLog(origin)
 	}
 	fe.renderStepError(out, r, row, indent)
 	fe.claims.claimError(origin)
