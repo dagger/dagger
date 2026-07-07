@@ -68,6 +68,10 @@ type TestView struct {
 	Logs         map[dagui.SpanID]*Vterm
 	SpanChildren func(*dagui.Span) tuist.Component
 
+	// TraceID, when set (by 'dagger trace'), lets a failing entry's capped log
+	// tail point at 'dagger cloud logs <trace> <span>' for the full output.
+	TraceID string
+
 	sidebar *testSidebarView
 
 	// MaxHeight caps the rendered height. A zero value means fullscreen mode:
@@ -791,11 +795,25 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 		return nil
 	}
 	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-	if len(rawLines) > limit {
+	hidden := 0
+	if final {
+		// Anchor on the failure rather than an arbitrary tail: render from a few
+		// lines before the last fail/error mention through the end, so a rolled-up
+		// test shows its real cause without the full (often huge) log.
+		start := errorTailStart(rawLines, 5)
+		hidden = start
+		rawLines = rawLines[start:]
+	} else if len(rawLines) > limit {
+		hidden = len(rawLines) - limit
 		rawLines = rawLines[len(rawLines)-limit:]
 	}
 	textWidth := max(width-lipgloss.Width(indent), 1)
-	lines := make([]string, 0, len(rawLines)+1)
+	lines := make([]string, 0, len(rawLines)+2)
+	if final && hidden > 0 {
+		// The trimmed lines are above the window, so note them at the top.
+		marker := out.String(fmt.Sprintf("... %d earlier log lines ...", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		lines = append(lines, clipTestSummaryLine(indent+marker, width))
+	}
 	for _, line := range rawLines {
 		if !final && strings.TrimSpace(line) == "" {
 			continue
@@ -809,9 +827,17 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 	if len(lines) == 0 {
 		return nil
 	}
-	if usedHeight > limit {
-		marker := out.String(fmt.Sprintf("... %d more log lines ...", usedHeight-limit)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+	if !final && hidden > 0 {
+		marker := out.String(fmt.Sprintf("... %d more log lines ...", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 		lines = append(lines, clipTestSummaryLine(indent+marker, width))
+	}
+	if final && tv.TraceID != "" && entry.span != nil {
+		target := fmt.Sprintf("--span %s", entry.span.ID)
+		if entry.span.TestCaseName != "" {
+			target = fmt.Sprintf("--test %q", entry.span.TestCaseName)
+		}
+		hint := out.String(fmt.Sprintf("full: dagger cloud logs %s %s", tv.TraceID, target)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		lines = append(lines, clipTestSummaryLine(indent+hint, width))
 	}
 	return lines
 }
@@ -1372,6 +1398,7 @@ func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *Test
 		Logs:         fe.logs.Logs,
 		ScopeName:    scopeName,
 		SpanChildren: fe.testSpanChildrenView,
+		TraceID:      fe.traceID,
 	}
 	if root.IsValid() {
 		tv.View = func() *dagui.TestView {
@@ -1542,6 +1569,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 			Logs:            s.fe.logs.Logs,
 			SummaryIndent:   2,
 			SummaryLogLines: -1,
+			TraceID:         s.fe.traceID,
 		}
 		width := ctx.Width
 		if width <= 0 {
@@ -1738,6 +1766,69 @@ func testViewAllReportEntriesUnderChecks(view *dagui.TestView) bool {
 func testSpanUnderCheck(span *dagui.Span) bool {
 	for cur := span; cur != nil; cur = cur.ParentSpan {
 		if cur.CheckName != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// isFailingLeafTestCase reports whether node is a failing test case with no
+// failing descendant test case -- the leaf whose sub-operation logs carry the
+// real failure (a build/setup error, panic, etc.). A parent case is excluded
+// because rolling up its logs would just repeat its failing child's.
+func isFailingLeafTestCase(node *dagui.TestNode) bool {
+	if node == nil || node.Kind != dagui.TestNodeCase ||
+		node.SelfCategory != dagui.TestCategoryFailing {
+		return false
+	}
+	return !hasFailingDescendantCase(node)
+}
+
+// errorTailStart returns the line index to start rendering a failed test's
+// rolled-up logs at: a few context lines before the trailing run of fail/error
+// lines (case-insensitive). It anchors on the last fail/error mention, then
+// walks up through nearby ones -- bridging gaps up to context lines -- to the
+// start of that trailing cluster, so the whole failure region shows, not just
+// its tail. Leading noise (dependency downloads, an incidental "errors" in a
+// package name) is trimmed: those matches sit far above the failure cluster and
+// the gap stops the walk. Returns 0 (render everything) when nothing matches.
+func errorTailStart(lines []string, context int) int {
+	match := func(s string) bool {
+		lower := strings.ToLower(s)
+		return strings.Contains(lower, "fail") || strings.Contains(lower, "error")
+	}
+	last := -1
+	for i, line := range lines {
+		if match(line) {
+			last = i
+		}
+	}
+	if last < 0 {
+		return 0
+	}
+	anchor := last
+	for i := last - 1; i >= 0; i-- {
+		if !match(lines[i]) {
+			continue
+		}
+		if anchor-i > context+1 {
+			// A match, but separated from the cluster by noise -- stop here.
+			break
+		}
+		anchor = i
+	}
+	return max(anchor-context, 0)
+}
+
+func hasFailingDescendantCase(node *dagui.TestNode) bool {
+	for _, child := range node.Children {
+		if child == nil {
+			continue
+		}
+		if child.Kind == dagui.TestNodeCase && child.SelfCategory == dagui.TestCategoryFailing {
+			return true
+		}
+		if hasFailingDescendantCase(child) {
 			return true
 		}
 	}

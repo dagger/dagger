@@ -72,7 +72,7 @@ func TestAnalyzeRender(t *testing.T) {
 		"caused by: go test -c -o ./test ./core/integration",
 		"== MORE CONTEXT ==",
 		"Full call tree, arguments, and timing:  dagger trace --full a0d14706",
-		"dagger cloud logs a0d14706 <span-id> -o span.log",
+		"dagger cloud logs a0d14706 --span <span-id> -o span.log",
 	} {
 		if !bytes.Contains(buf.Bytes(), []byte(want)) {
 			t.Errorf("output missing %q", want)
