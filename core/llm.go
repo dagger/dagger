@@ -29,6 +29,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 )
 
 func init() {
@@ -42,11 +43,6 @@ const (
 	modelDefaultCodex     = "gpt-5.5"
 	modelDefaultMeta      = "llama-3.2"
 	modelDefaultMistral   = "mistral-7b-instruct"
-
-	// LLMCallDigestAttr is set on LLM prompt/response telemetry spans. Its
-	// value is the DAG digest of the corresponding withPrompt or withResponse
-	// call, enabling the TUI to branch from that point in the conversation.
-	LLMCallDigestAttr = "dagger.io/llm.call.digest"
 )
 
 // codexModelPrefix pins a model to the Codex (ChatGPT subscription) backend.
@@ -1192,7 +1188,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-			attribute.String(LLMCallDigestAttr, llmCallDigest),
+			attribute.String(telemetryattrs.LLMCallDigestAttr, llmCallDigest),
 		))
 		res, sendErr = client.SendQuery(ctx, messagesToSend, tools, &LLMCallOpts{
 			MaxTokens: llm.maxTokens,
@@ -1427,7 +1423,7 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
-		attribute.String(LLMCallDigestAttr, selfDigest),
+		attribute.String(telemetryattrs.LLMCallDigestAttr, selfDigest),
 	))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
@@ -1551,7 +1547,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 		attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
 	}
 	if callDigest != "" {
-		attrs = append(attrs, attribute.String(LLMCallDigestAttr, callDigest))
+		attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
 		telemetry.Reveal(),
@@ -1620,7 +1616,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 			}
 			attrs = append(attrs, extraAttrs...)
 			if callDigest != "" {
-				attrs = append(attrs, attribute.String(LLMCallDigestAttr, callDigest))
+				attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 			}
 			ctx, span := Tracer(ctx).Start(ctx, name,
 				telemetry.Reveal(),

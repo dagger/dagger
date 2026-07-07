@@ -164,6 +164,55 @@ func (h *shellCallHandler) DequeueMessage() string {
 	return msg
 }
 
+// BranchFromID branches the LLM conversation to the state identified by the
+// encoded DAG ID (an LLM.withPrompt/withResponse call, located by the TUI from
+// a span's LLMCallDigest). When summary.Summarize is set, the conversation
+// being abandoned is summarized first and the summary injected into the branch
+// target so context carries forward.
+func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, summary idtui.BranchSummary) func() {
+	return func() {
+		s, err := h.llm(ctx)
+		if err != nil {
+			slog.Error("failed to initialize LLM for branch", "error", err)
+			return
+		}
+
+		// Load the target LLM state (the point we're branching to).
+		loadedLLM := dagger.Ref[*dagger.LLM](h.dag, dagger.ID(encodedID))
+
+		// If the user requested summarization, summarize the OLD branch (the
+		// current conversation being abandoned) and inject the summary into the
+		// branch target, providing context when continuing from the earlier
+		// point.
+		if summary.Summarize {
+			summaryText, err := s.BranchSummary(ctx, summary.CustomPrompt)
+			if err != nil {
+				slog.Error("failed to summarize old branch", "error", err)
+				// Fall through to branch without summary.
+			} else {
+				loadedLLM = loadedLLM.WithPrompt(fmt.Sprintf(
+					"The user explored a different conversation branch before returning here. Summary of that exploration:\n\n%s",
+					summaryText,
+				))
+			}
+		}
+
+		if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+			slog.Error("failed to update LLM for branch", "error", err)
+			return
+		}
+		if err := s.updateSidebar(loadedLLM); err != nil {
+			slog.Error("failed to update sidebar for branch", "error", err)
+		}
+		// Branching creates a new session; clear the save identity so the next
+		// prompt generates a fresh save file rather than overwriting the
+		// original, and switch to prompt mode for a new prompt.
+		h.sessionUUID = ""
+		h.initialPrompt = ""
+		h.mode = modePrompt
+	}
+}
+
 func newShellCallHandler(dag *dagger.Client, fe idtui.Frontend) *shellCallHandler {
 	ref, _ := getExplicitModuleSourceRef()
 	coreMode := isCoreModuleRef(ref)

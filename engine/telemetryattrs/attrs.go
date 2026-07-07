@@ -10,6 +10,12 @@ const (
 	// of being marked caused-failed.
 	DagBlockedAttr = "dagger.io/dag.blocked"
 
+	// LLMCallDigestAttr is set on LLM prompt/response telemetry spans. Its
+	// value is the DAG digest of the corresponding withPrompt or withResponse
+	// call, enabling the TUI to branch from that point in the conversation.
+	// (string)
+	LLMCallDigestAttr = "dagger.io/llm.call.digest"
+
 	// Streaming progress over OTel logs.
 	//
 	// A log record carrying ProgressItemAttr is progress data, not log text:

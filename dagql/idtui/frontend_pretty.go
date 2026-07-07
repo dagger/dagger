@@ -111,6 +111,8 @@ type frontendPretty struct {
 	promptFg        termenv.Color
 	promptErr       error
 	promptErrLabel  *ErrorLabel
+	queuedMsgLabel  *QueuedMessageLabel
+	statusLine      *StatusLine
 	textInput       *tuist.TextInput
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
@@ -720,6 +722,22 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	})
 }
 
+// SetStatusLine updates the compact status line with LLM token/cost/context
+// data. No-op if there is no active shell/status line.
+func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
+	fe.dispatch(func() {
+		if fe.statusLine != nil {
+			fe.statusLine.SetData(data)
+			fe.Update()
+		}
+	})
+}
+
+// GetLLMTokenMetrics returns the DB's aggregated LLM token metrics.
+func (fe *frontendPretty) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	return fe.db.LLMTokenMetrics
+}
+
 func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	fe.dispatch(func() {
 		fe.startShell(ctx, handler)
@@ -753,11 +771,16 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// Intercept special keys before TextInput processes them.
 	fe.textInput.KeyInterceptor = fe.interceptEditlineKey
 
-	// Insert errorLabel + textInput before keymapBar: output → error → prompt → keymap
+	// Insert errorLabel + queuedMsg + textInput + statusLine before keymapBar:
+	// output → error → queued → prompt → statusLine → keymap
 	fe.promptErrLabel = NewErrorLabel()
+	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
+	fe.statusLine = &StatusLine{profile: fe.profile}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.promptErrLabel)
+	fe.tui.AddChild(fe.queuedMsgLabel)
 	fe.tui.AddChild(fe.textInput)
+	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
 
@@ -775,6 +798,14 @@ func (fe *frontendPretty) stopShell() {
 	if fe.promptErrLabel != nil {
 		fe.tui.RemoveChild(fe.promptErrLabel)
 		fe.promptErrLabel = nil
+	}
+	if fe.queuedMsgLabel != nil {
+		fe.tui.RemoveChild(fe.queuedMsgLabel)
+		fe.queuedMsgLabel = nil
+	}
+	if fe.statusLine != nil {
+		fe.tui.RemoveChild(fe.statusLine)
+		fe.statusLine = nil
 	}
 	if fe.textInput != nil {
 		fe.tui.RemoveChild(fe.textInput)
@@ -1904,6 +1935,11 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
 		}
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
+			bnds = append(bnds,
+				key.NewBinding(key.WithKeys("alt+up"), key.WithHelp("alt+↑", "edit queued")),
+			)
+		}
 		if fe.shell != nil {
 			bnds = append(bnds, fe.shell.KeyBindings(out)...)
 		}
@@ -2041,6 +2077,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
 		),
+		key.NewBinding(key.WithKeys("b"),
+			key.WithHelp("b", "branch"),
+			KeyEnabled(focused != nil && spanLLMCallDigest(focused) != "" && fe.shell != nil),
+		),
 		key.NewBinding(key.WithKeys("L"),
 			key.WithHelp("L", "logs"),
 			KeyEnabled(fe.spanHasLogs(focused)),
@@ -2172,6 +2212,8 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// bar, error label, text input, form, and search input.
 	reserved := 1 // keymap bar
 	reserved += fe.errorLabelHeight()
+	reserved += fe.queuedMessageHeight() // queuedMsgLabel is a sibling, not rendered here
+	reserved += fe.statusLineHeight()    // statusLine is a sibling, not rendered here
 	reserved += fe.editlineHeight()
 	reserved += fe.formHeight()
 	if fe.searchInput != nil {
@@ -2739,6 +2781,24 @@ func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 // errorLabelHeight returns the line count of the error label for chrome-height budgeting.
 func (fe *frontendPretty) errorLabelHeight() int {
 	if fe.promptErrLabel == nil || fe.promptErr == nil {
+		return 0
+	}
+	return 1
+}
+
+// queuedMessageHeight returns the line count of the queued message label. The
+// label always renders as a single line (see QueuedMessageLabel.Render).
+func (fe *frontendPretty) queuedMessageHeight() int {
+	if fe.queuedMsgLabel == nil || fe.queuedMsgLabel.Message() == "" {
+		return 0
+	}
+	return 1
+}
+
+// statusLineHeight returns the line count of the status line. It renders a
+// single line while a model is set, and nothing otherwise.
+func (fe *frontendPretty) statusLineHeight() int {
+	if fe.statusLine == nil || fe.statusLine.data.Model == "" {
 		return 0
 	}
 	return 1
@@ -3414,6 +3474,21 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.recalculateViewLocked()
 		fe.syncPrompt()
 		return true
+	case "alt+up":
+		// Pull a queued interject message back into the input for editing.
+		// Inherently racy: if the prompt loop already consumed the message
+		// mid-turn, the shell's dequeue returns empty, so fall back to the
+		// text the label was showing.
+		if fe.queuedMsgLabel != nil && fe.queuedMsgLabel.Message() != "" {
+			shown := fe.queuedMsgLabel.Message()
+			if msg := fe.clearQueuedMessage(); msg != "" {
+				shown = msg
+			}
+			fe.textInput.SetValue(shown)
+			fe.syncPrompt()
+			return true
+		}
+		return false
 	case "up":
 		if fe.historyUp() {
 			return true
@@ -3629,6 +3704,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	case "t":
 		fe.terminal()
 		return
+	case "b":
+		fe.branch()
+		return
 	case "L":
 		fe.openFocusedLogs()
 		return
@@ -3699,25 +3777,68 @@ func (fe *frontendPretty) handleInputComplete() {
 
 	// reset now that we've accepted input
 	fe.textInput.SetValue("")
-	if fe.shell != nil {
-		ctx, cancel := context.WithCancelCause(fe.shellCtx)
-		fe.shellInterrupt = cancel
-		fe.shellRunning = true
 
-		// switch back to following the bottom and re-enter nav mode
-		fe.goEnd()
-		fe.enterNavMode(true)
-
-		go func() {
-			fe.shellLock.Lock()
-			defer fe.shellLock.Unlock()
-			err := fe.shell.Handle(ctx, value)
-			fe.dispatch(func() {
-				fe.handleShellDone(err)
-				fe.Update()
-			})
-		}()
+	// If a turn is already running, queue this as an interject message for the
+	// current turn (picked up by the prompt loop) instead of blocking on a new
+	// one.
+	if fe.shellRunning {
+		if _, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
+			fe.setQueuedMessage(value)
+			return
+		}
 	}
+
+	fe.startShellHandle(value)
+}
+
+// setQueuedMessage stores an interject message on the shell handler and shows
+// the pending indicator above the prompt.
+func (fe *frontendPretty) setQueuedMessage(msg string) {
+	if qh, ok := fe.shell.(interface{ QueueMessage(string) }); ok {
+		qh.QueueMessage(msg)
+	}
+	if fe.queuedMsgLabel != nil {
+		fe.queuedMsgLabel.SetMessage(msg)
+	}
+}
+
+// clearQueuedMessage removes the queued interject message from the shell
+// handler and the indicator, returning whatever was still pending.
+func (fe *frontendPretty) clearQueuedMessage() string {
+	var msg string
+	if qh, ok := fe.shell.(interface{ DequeueMessage() string }); ok {
+		msg = qh.DequeueMessage()
+	}
+	if fe.queuedMsgLabel != nil {
+		fe.queuedMsgLabel.SetMessage("")
+	}
+	return msg
+}
+
+// startShellHandle runs a shell turn for value in the background. It is used
+// both for freshly submitted input and to drain a message that was queued
+// after the previous turn's prompt loop finished consuming interjects.
+func (fe *frontendPretty) startShellHandle(value string) {
+	if fe.shell == nil {
+		return
+	}
+	ctx, cancel := context.WithCancelCause(fe.shellCtx)
+	fe.shellInterrupt = cancel
+	fe.shellRunning = true
+
+	// switch back to following the bottom and re-enter nav mode
+	fe.goEnd()
+	fe.enterNavMode(true)
+
+	go func() {
+		fe.shellLock.Lock()
+		defer fe.shellLock.Unlock()
+		err := fe.shell.Handle(ctx, value)
+		fe.dispatch(func() {
+			fe.handleShellDone(err)
+			fe.Update()
+		})
+	}()
 }
 
 func (fe *frontendPretty) handleShellDone(err error) {
@@ -3735,6 +3856,13 @@ func (fe *frontendPretty) handleShellDone(err error) {
 	}
 	fe.syncPrompt()
 	fe.shellRunning = false
+
+	// The turn is done: clear the pending indicator (the message was either
+	// consumed mid-turn by the prompt loop, or is still queued). If one is
+	// still queued, run it now as a new turn so it is not left stale.
+	if queued := fe.clearQueuedMessage(); queued != "" {
+		fe.startShellHandle(queued)
+	}
 }
 
 // ---------- mode switching --------------------------------------------------
@@ -3819,6 +3947,99 @@ func (fe *frontendPretty) enterInsertMode(auto bool) {
 	}
 }
 
+// branch prompts the user for a summarization choice, then branches the LLM
+// conversation from the focused span's LLM call. Available in nav mode when the
+// focused span (or an ancestor) carries an LLMCallDigest.
+func (fe *frontendPretty) branch() {
+	if !fe.FocusedSpan.IsValid() || fe.shell == nil {
+		return
+	}
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil || spanLLMCallDigest(focused) == "" {
+		return
+	}
+
+	encodedID := fe.llmBranchID(focused)
+	if encodedID == "" {
+		slog.Warn("could not find LLM call for branching", "digest", focused.LLMCallDigest)
+		return
+	}
+
+	// Offer a summary choice: no summary, summarize, or summarize with a
+	// custom prompt.
+	const (
+		choiceNoSummary    = "No summary"
+		choiceSummarize    = "Summarize"
+		choiceCustomPrompt = "Summarize with custom prompt"
+	)
+	var choice string
+	fe.handlePromptForm(
+		NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Branch from this point").
+					Options(
+						huh.NewOption(choiceNoSummary, choiceNoSummary),
+						huh.NewOption(choiceSummarize, choiceSummarize),
+						huh.NewOption(choiceCustomPrompt, choiceCustomPrompt),
+					).
+					Value(&choice),
+			),
+		),
+		func(f *huh.Form) {
+			if f.State == huh.StateAborted || choice == "" {
+				return
+			}
+			switch choice {
+			case choiceCustomPrompt:
+				// Follow up with a form for the custom prompt.
+				var customPrompt string
+				fe.handlePromptForm(
+					NewForm(
+						huh.NewGroup(
+							huh.NewText().
+								Title("Custom summarization instructions").
+								Value(&customPrompt),
+						),
+					),
+					func(f *huh.Form) {
+						if f.State == huh.StateAborted {
+							return
+						}
+						fe.doBranch(encodedID, BranchSummary{
+							Summarize:    true,
+							CustomPrompt: customPrompt,
+						})
+					},
+				)
+			case choiceSummarize:
+				fe.doBranch(encodedID, BranchSummary{Summarize: true})
+			default:
+				fe.doBranch(encodedID, BranchSummary{})
+			}
+		},
+	)
+	fe.Update()
+}
+
+// doBranch performs the actual branch operation asynchronously.
+func (fe *frontendPretty) doBranch(encodedID string, summary BranchSummary) {
+	work := fe.shell.BranchFromID(fe.shellCtx, encodedID, summary)
+	if work != nil {
+		fe.runShellAsync(func() {
+			work()
+			fe.dispatch(func() {
+				// After branching, follow the bottom and switch to insert mode
+				// so the user can immediately see new spans and type a prompt.
+				fe.goEnd()
+				fe.enterInsertMode(false)
+				fe.syncPrompt()
+				fe.Update()
+			})
+		})
+	}
+}
+
 func (fe *frontendPretty) terminal() {
 	if !fe.FocusedSpan.IsValid() {
 		return
@@ -3890,6 +4111,43 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 	}
 
 	return nil
+}
+
+// spanLLMCallDigest returns the LLMCallDigest for the given span, walking up
+// the parent chain if the span itself doesn't have one. This allows branching
+// from tool result spans, tool execution spans, and other children of LLM
+// conversation spans.
+func spanLLMCallDigest(span *dagui.Span) string {
+	for s := span; s != nil; s = s.ParentSpan {
+		if s.LLMCallDigest != "" {
+			return s.LLMCallDigest
+		}
+	}
+	return ""
+}
+
+// llmBranchID returns the encoded DAG ID for branching from the focused span's
+// LLMCallDigest. Returns "" if the span (or its ancestors) don't have a call
+// digest or the call can't be found/encoded.
+func (fe *frontendPretty) llmBranchID(span *dagui.Span) string {
+	digest := spanLLMCallDigest(span)
+	if digest == "" {
+		return ""
+	}
+	// Find a span in the DB whose CallDigest matches the LLMCallDigest. This is
+	// the dagql call span (e.g. LLM.withPrompt) that produced the LLM state we
+	// want to branch from.
+	for _, s := range fe.db.Spans.Map {
+		if s.CallDigest == digest {
+			id, err := loadIDFromSpan(s)
+			if err != nil {
+				slog.Debug("failed to load ID from LLM call span", "err", err)
+				continue
+			}
+			return id
+		}
+	}
+	return ""
 }
 
 func loadIDFromSpan(span *dagui.Span) (string, error) {
@@ -3994,7 +4252,16 @@ func (fe *frontendPretty) initTextInput() {
 func (fe *frontendPretty) syncPrompt() {
 	if fe.shell != nil && fe.textInput != nil {
 		promptOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
-		prompt, init := fe.shell.Prompt(fe.runCtx, promptOut, fe.promptFg)
+		// Use the shell span's context, not the frontend run loop's, so that a
+		// lazy LLM session init (which allocates the long-lived "LLM plumbing"
+		// span) parents under the shell trace instead of starting an orphaned
+		// root trace. fe.runCtx is an ancestor of the whole render loop and
+		// carries no shell/command span. Matches ReactToInput's use of shellCtx.
+		ctx := fe.shellCtx
+		if ctx == nil {
+			ctx = fe.runCtx
+		}
+		prompt, init := fe.shell.Prompt(ctx, promptOut, fe.promptFg)
 		fe.textInput.Prompt = prompt
 		fe.textInput.Update()
 		if init != nil {
@@ -4201,6 +4468,12 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 // its own highlighting via Vterm.SearchQuery).
 func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) {
 	span := row.Span
+
+	if row.Span.LLMTool != "" {
+		// For edit tools, render a unified diff below the title. No-op for all
+		// other tools and incomplete/missing edit args.
+		fe.renderToolArgs(out, r, row, prefix)
+	}
 
 	// The expanded-step-logs case (span.Message == "" && (Expanded || LLMTool))
 	// is now rendered by SpanTreeView.renderInlineLogs via the memoized

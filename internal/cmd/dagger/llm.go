@@ -23,6 +23,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -90,6 +91,10 @@ type LLMSession struct {
 
 	autoCompact  bool
 	autoCompactL *sync.Mutex
+
+	// subscriptionLabelCache caches the OAuth subscription label for the status
+	// line, resolved lazily on first use.
+	subscriptionLabelCache string
 }
 
 func NewLLMSession(
@@ -306,6 +311,29 @@ func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 	return nil
 }
 
+// subscriptionLabel returns a display label for the OAuth subscription type of
+// the currently active default provider, or empty string if not using OAuth.
+// Cached after first lookup.
+func (s *LLMSession) subscriptionLabel() string {
+	if s.subscriptionLabelCache != "" {
+		return s.subscriptionLabelCache
+	}
+	cfg, err := llmconfig.Load()
+	if err != nil || cfg == nil {
+		return ""
+	}
+	defaultProvider := cfg.LLM.DefaultProvider
+	if defaultProvider == "" {
+		return ""
+	}
+	provider, ok := cfg.LLM.Providers[defaultProvider]
+	if !ok || !provider.IsOAuth() || provider.SubscriptionType == "" {
+		return ""
+	}
+	s.subscriptionLabelCache = llmconfig.SubscriptionLabel(provider.SubscriptionType)
+	return s.subscriptionLabelCache
+}
+
 func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 	inputTokens, err := llm.TokenUsage().InputTokens(s.plumbingCtx)
 	if err != nil {
@@ -385,6 +413,38 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		Title:   "LLM",
 		Content: strings.Join(lines, "\n"),
 	})
+
+	// Drive the compact status line: session token counts for the display and
+	// context %, aggregated cost across all models/sub-agents from the DB.
+	statusData := idtui.StatusLineData{
+		Model:             s.model,
+		SubscriptionLabel: s.subscriptionLabel(),
+		InputTokens:       inputTokens,
+		OutputTokens:      outputTokens,
+		CacheReads:        cacheReads,
+		CacheWrites:       cacheWrites,
+		ContextPercent:    -1, // unknown by default
+		AutoCompact:       s.ShouldAutocompact(),
+	}
+	if llmMetrics := s.frontend.GetLLMTokenMetrics(); llmMetrics != nil {
+		for _, metrics := range llmMetrics.Snapshot() {
+			m := s.models.Lookup(metrics.Model)
+			if m == nil {
+				continue
+			}
+			statusData.TotalCost += m.Pricing.Prompt.Cost(int(metrics.InputTokens))
+			statusData.TotalCost += m.Pricing.Completion.Cost(int(metrics.OutputTokens))
+			statusData.TotalCost += m.Pricing.InputCacheRead.Cost(int(metrics.CachedTokenReads))
+			statusData.TotalCost += m.Pricing.InputCacheWrite.Cost(int(metrics.CachedTokenWrites))
+		}
+	}
+	if m := s.models.Lookup(s.model); m != nil {
+		statusData.ContextWindow = int(m.ContextLength)
+		if inputTokens > 0 && m.ContextLength > 0 {
+			statusData.ContextPercent = float64(inputTokens) / float64(m.ContextLength) * 100
+		}
+	}
+	s.frontend.SetStatusLine(statusData)
 
 	s.afterFS = llm.Env().Workspace()
 

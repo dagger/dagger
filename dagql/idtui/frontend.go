@@ -113,6 +113,13 @@ type Frontend interface {
 	// Populate the sidebar with content.
 	SetSidebarContent(SidebarSection)
 
+	// SetStatusLine updates the compact status line with LLM
+	// token/cost/context data.
+	SetStatusLine(StatusLineData)
+
+	// GetLLMTokenMetrics returns aggregated LLM token metrics across all spans.
+	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
+
 	prompt.PromptHandler
 }
 
@@ -241,6 +248,16 @@ func (sec SidebarSection) Body(width int) string {
 
 // ShellHandler defines the interface for handling shell interactions.
 // All methods are called on the UI goroutine unless noted otherwise.
+// BranchSummary controls how the conversation is summarized when branching.
+type BranchSummary struct {
+	// Summarize indicates whether to summarize the old conversation.
+	Summarize bool
+	// CustomPrompt is an optional custom summarization prompt. Only used
+	// when Summarize is true. If empty, the default summarization prompt
+	// is used.
+	CustomPrompt string
+}
+
 type ShellHandler interface {
 	// Handle processes submitted shell input.
 	Handle(ctx context.Context, input string) error
@@ -280,6 +297,12 @@ type ShellHandler interface {
 	SaveBeforeHistory()
 	// RestoreAfterHistory restores the mode saved before history navigation.
 	RestoreAfterHistory()
+
+	// BranchFromID branches the LLM conversation from the state identified by
+	// the encoded DAG ID, optionally summarizing the abandoned branch first.
+	// It returns an async function that performs the branch (may be nil), to
+	// be run by the caller in a goroutine.
+	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
 }
 
 type Dump struct {
