@@ -721,7 +721,14 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) 
 	// the time it actually spent executing, not the wall-clock it was
 	// blocked or dormant for.
 	hb := span.TimeBreakdown(r.now)
-	blocked, blockedNow := hb.BlockedNow(r.now)
+	// "Blocked right now" only means something while the run is still going:
+	// a final render has no "now", and a failed or canceled row's story is
+	// its error, not whatever it was waiting on when things went wrong.
+	var blocked dagui.TimeSegment
+	var blockedNow bool
+	if !r.final && !span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		blocked, blockedNow = hb.BlockedNow(r.now)
+	}
 	shown := span.Activity.Duration(r.now)
 	if hb.Material || blockedNow {
 		shown = hb.Self

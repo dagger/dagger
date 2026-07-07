@@ -155,6 +155,12 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 		if w.blocker != nil && spanInSubtree(w.blocker, span) {
 			continue
 		}
+		if w.blocker != nil && spanInSubtree(span, w.blocker) {
+			// The blocker contains this row (an ancestor, ultimately the
+			// session root): "waiting on" something that encloses you says
+			// nothing. Chains that dead-end there carry no usable signal.
+			continue
+		}
 		genuine = append(genuine, w)
 	}
 	resolved = genuine
@@ -521,6 +527,10 @@ func (span *Span) collectInferredWaits(dst *[]waitWindow, now time.Time) {
 // blocked now iff its breakdown ends in a waiting segment that reaches now.
 func (span *Span) WaitingNow(now time.Time) (*Span, bool) {
 	if span == nil || span.db == nil || !span.IsRunningOrEffectsRunning() {
+		return nil, false
+	}
+	if span.IsFailedOrCausedFailure() || span.IsCanceled() {
+		// a failed or canceled row's story is its error, not its waits
 		return nil, false
 	}
 	seg, ok := span.TimeBreakdown(now).BlockedNow(now)

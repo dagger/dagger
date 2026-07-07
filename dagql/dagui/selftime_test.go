@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
@@ -476,5 +478,69 @@ func TestLiveChainResolvesToWorkingOp(t *testing.T) {
 	bBlocker, ok := b.WaitingNow(now)
 	if !ok || bBlocker == nil || bBlocker.ID != cRow {
 		t.Fatalf("b should be blocked-now on c, got %+v ok=%v", bBlocker, ok)
+	}
+}
+
+// A blocker that contains the row (an ancestor, ultimately the session root)
+// is never a meaningful "waiting on X": chains that dead-end there must yield
+// no waiting rather than labeling rows "waiting on <the root query>". This is
+// the failure-scenario regression: left-open spans after a failed run made
+// the live descent walk up to the root.
+func TestBlockerNeverResolvesToAncestor(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	f := testID(2)
+	x := testID(3)
+	r := testID(4)
+	db.ImportSnapshots([]SpanSnapshot{
+		// everything left open, as after a failed run
+		{ID: q, Name: "POST /query", StartTime: at(0)},
+		{ID: f, ParentID: q, Name: "Container.failEffect", StartTime: at(1)},
+		{ID: x, ParentID: f, Name: "Container.failEffect", StartTime: at(1),
+			Links: []SpanLink{waitLink(r, "lazy", at(1), at(5))}},
+		// the marker's cause chain dead-ends at the session root
+		{ID: r, ParentID: x, Name: "resume failEffect", StartTime: at(1),
+			Links: []SpanLink{causeLink(q)}},
+	})
+	span := db.Spans.Map[f]
+	hb := span.TimeBreakdown(at(5))
+	for _, seg := range hb.Segments {
+		if seg.Waiting {
+			t.Fatalf("no waiting segment may survive an ancestor-blocker chain, got %+v", seg)
+		}
+	}
+	if _, ok := span.WaitingNow(at(5)); ok {
+		t.Fatal("row must not report blocked-now on an ancestor blocker")
+	}
+}
+
+// A failed row's story is its error, not its waits: even while live and
+// provably blocked, a failed row must not report blocked-now.
+func TestWaitingNowFailedRow(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	w1 := testID(2)
+	s := testID(3)
+	x := testID(4)
+	r := testID(5)
+	db.ImportSnapshots([]SpanSnapshot{
+		// live run: root, the forcing op, and its eval marker all open
+		{ID: q, Name: "POST /query", StartTime: at(0)},
+		{ID: w1, ParentID: q, Name: "Container.withExec", StartTime: at(1), EndTime: at(1.5)},
+		{ID: s, ParentID: q, Name: "Container.stdout", StartTime: at(3)},
+		{ID: x, ParentID: s, Name: "Container.stdout", StartTime: at(3),
+			Links: []SpanLink{waitLink(r, "lazy", at(3), at(10))}},
+		{ID: r, ParentID: x, Name: "resume withExec", StartTime: at(3),
+			Links: []SpanLink{causeLink(w1)}},
+	})
+	span := db.Spans.Map[s]
+	if _, ok := span.WaitingNow(at(10)); !ok {
+		t.Fatal("precondition: the live forcing op should report blocked-now")
+	}
+	snap := span.Snapshot()
+	snap.Status.Code = codes.Error
+	db.ImportSnapshots([]SpanSnapshot{snap})
+	if _, ok := span.WaitingNow(at(10)); ok {
+		t.Fatal("failed row must not report blocked-now")
 	}
 }
