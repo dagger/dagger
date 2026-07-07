@@ -1284,19 +1284,32 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	var sels []dagql.Selector
 	{
 		// Build content block input objects for the withResponse selector.
+		// An InputObject's fields are only populated by decoding a map through
+		// its Decoder; a bare struct literal leaves them nil and panics when the
+		// selector is serialized to a call literal. Decode from a map, mirroring
+		// the pattern in core/schema/address.go. Field keys are the GraphQL arg
+		// names (lowerCamel), and values must be types each field's decoder
+		// accepts (enum → name string, JSON → string). "arguments" is always
+		// present (empty decodes to nil and is skipped) since JSON is non-null.
 		contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
 		for i, block := range res.Content {
-			contentInputs[i] = dagql.InputObject[LLMContentBlockInput]{
-				Value: LLMContentBlockInput{
-					Kind:      block.Kind,
-					Text:      block.Text,
-					CallID:    block.CallID,
-					ToolName:  block.ToolName,
-					Arguments: block.Arguments,
-					Errored:   block.Errored,
-					Signature: block.Signature,
-				},
+			decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
+				"kind":      string(block.Kind),
+				"text":      block.Text,
+				"callId":    block.CallID,
+				"toolName":  block.ToolName,
+				"arguments": string(block.Arguments),
+				"errored":   block.Errored,
+				"signature": block.Signature,
+			})
+			if err != nil {
+				return inst, fmt.Errorf("decode content block %d input: %w", i, err)
 			}
+			input, ok := decoded.(dagql.InputObject[LLMContentBlockInput])
+			if !ok {
+				return inst, fmt.Errorf("decode content block %d input: unexpected type %T", i, decoded)
+			}
+			contentInputs[i] = input
 		}
 		args := []dagql.NamedInput{
 			{
