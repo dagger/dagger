@@ -25,10 +25,17 @@ import (
 var ErrNoOrg = errors.New("no org associated with this Engine")
 
 type Client struct {
-	u  *url.URL
-	g  *graphql.Client
-	h  *http.Client
-	ca *auth.Cloud
+	u     *url.URL
+	g     *graphql.Client
+	h     *http.Client
+	ca    *auth.Cloud
+	stats *clientStats
+}
+
+// StatsSummary returns a human-readable breakdown of data fetched from Cloud,
+// for --debug diagnostics.
+func (c *Client) StatsSummary() string {
+	return c.stats.Summary()
 }
 
 func NewClient(
@@ -69,10 +76,11 @@ func NewClient(
 
 	httpClient := oauth2.NewClient(ctx, ts)
 	return &Client{
-		u:  u,
-		g:  graphql.NewClient(u.JoinPath("/query").String(), httpClient),
-		h:  httpClient,
-		ca: cloudAuth,
+		u:     u,
+		g:     graphql.NewClient(u.JoinPath("/query").String(), httpClient),
+		h:     httpClient,
+		ca:    cloudAuth,
+		stats: newClientStats(),
 	}, nil
 }
 

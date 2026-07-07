@@ -806,7 +806,9 @@ func Main() {
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
-		} else if os.Getenv("CLAUDECODE") == "1" {
+		} else if idtui.RunningInAgent() {
+			// An AI agent consumes the output as text; the report frontend's
+			// single final render suits it better than the live TUI.
 			progress = "report"
 		} else if hasTTY {
 			progress = "tty"

@@ -120,6 +120,10 @@ func TestFinalGlobalTestsUnindented(t *testing.T) {
 	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) == 0 {
 		t.Fatal("live global tests did not render")
 	}
+	// Claims are per-render-pass state; the real frontend resets them before each
+	// pass. Reset here so the final render isn't suppressed by the live render
+	// having claimed these same orphan cases.
+	fe.claims = newRenderClaims()
 	fe.finalRender = true
 	lines := fe.renderFinalGlobalTests(tuist.Context{Width: 80})
 	testsLine, ok := findPrettyTestLine(lines, "TESTS")
@@ -210,6 +214,9 @@ func TestLiveGlobalTestsSkipCheckScopedTests(t *testing.T) {
 	db.SetPrimarySpan(checkID)
 
 	fe := NewWithDB(io.Discard, db)
+	// In the real render the check renders (and claims) its tests before the
+	// global section runs; simulate that so the case is recognised as covered.
+	fe.claims.claimTestCase(testID)
 	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) != 0 {
 		t.Fatalf("expected no global live report for check-scoped tests, got:\n%s", strings.Join(lines, "\n"))
 	}

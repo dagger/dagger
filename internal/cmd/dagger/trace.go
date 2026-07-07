@@ -78,7 +78,8 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+	var client *cloud.Client
+	runErr := Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cloudAuth, err := auth.GetCloudAuth(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cloud auth: %w", err)
@@ -87,7 +88,7 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 			return nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
 		}
 
-		client, err := cloud.NewClient(ctx, cloudAuth)
+		client, err = cloud.NewClient(ctx, cloudAuth)
 		if err != nil {
 			return nil, fmt.Errorf("cloud client: %w", err)
 		}
@@ -211,28 +212,52 @@ func traceFullRender(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Now that the priority spans are loaded, ask the frontend to surface its
-		// failures and request their logs. This matters most for non-interactive
-		// 'report' mode, which renders only once: we trigger the requests here,
-		// then drain them below, so the single final render includes the failure
-		// detail.
+		// Fetch the subtrees of surfaced failed checks so their cause and logs are
+		// loaded for the report's inline detail. A failed check's cause is often a
+		// deep descendant the priority window doesn't include (e.g. the withExec a
+		// check links to), so neither loadInitial nor the link CTE reaches it.
+		// Bounded to the failed leaf checks -- unlike the web UI, which keeps
+		// fetching until the whole trace is loaded.
+		if sf, ok := Frontend.(interface {
+			SurfacedFailedCheckSpans() []dagui.SpanID
+		}); ok {
+			for _, id := range sf.SurfacedFailedCheckSpans() {
+				loader.listen(id)
+			}
+		}
+
+		// Drain the span fetches (--span + failed-check subtrees) before surfacing
+		// logs, so the newly-loaded cause spans are present when the frontend picks
+		// its failures and requests their logs.
+		if err := loader.wait(); err != nil {
+			return noop, err
+		}
+
+		// Now that the priority spans (and surfaced failures' subtrees) are loaded,
+		// ask the frontend to surface its failures and request their logs. This
+		// matters most for non-interactive 'report' mode, which renders only once:
+		// we trigger the requests here, then drain them below, so the single final
+		// render includes the failure detail.
 		if r, ok := Frontend.(interface{ RequestSurfacedLogs() }); ok {
 			r.RequestSurfacedLogs()
 		}
 
-		// Drain the lazy span fetches triggered by --span / surfaced failures, then
-		// the eager log fetches, so the final report isn't missing detail it
+		// Drain the eager log fetches, so the final report isn't missing detail it
 		// surfaced. In interactive (-E) mode further expands keep fetching on the
 		// outer ctx after this returns.
-		if err := loader.wait(); err != nil {
-			return noop, err
-		}
 		if err := logEg.Wait(); err != nil {
 			return noop, err
 		}
 
 		return noop, nil
 	})
+
+	// With --debug, report how much data the run pulled from Cloud so expensive
+	// fetches are visible.
+	if opts.Debug && client != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), client.StatsSummary())
+	}
+	return runErr
 }
 
 // traceLoader fetches a trace's spans incrementally from Dagger Cloud, mirroring
