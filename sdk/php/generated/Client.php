@@ -350,14 +350,11 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     /**
      * Initialize a Large Language Model (LLM)
      */
-    public function llm(?string $model = null, ?int $maxAPICalls = null): LLM
+    public function llm(?string $model = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
         if (null !== $model) {
         $innerQueryBuilder->setArgument('model', $model);
-        }
-        if (null !== $maxAPICalls) {
-        $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

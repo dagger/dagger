@@ -115,15 +115,40 @@ defmodule Dagger.LLM do
   @doc """
   Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
   """
-  @spec loop(t()) :: Dagger.LLM.t()
-  def loop(%__MODULE__{} = llm) do
+  @spec loop(t(), [{:max_api_calls, integer() | nil}]) :: Dagger.LLM.t()
+  def loop(%__MODULE__{} = llm, optional_args \\ []) do
     query_builder =
-      llm.query_builder |> QB.select("loop")
+      llm.query_builder
+      |> QB.select("loop")
+      |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
 
     %Dagger.LLM{
       query_builder: query_builder,
       client: llm.client
     }
+  end
+
+  @doc """
+  The full message history.
+  """
+  @spec messages(t()) :: {:ok, [Dagger.LLMMessage.t()]} | {:error, term()}
+  def messages(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("messages") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(llm.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.LLMMessage{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("LLMMessage"),
+           client: llm.client
+         }
+       end}
+    end
   end
 
   @doc """
@@ -144,6 +169,38 @@ defmodule Dagger.LLM do
   def provider(%__MODULE__{} = llm) do
     query_builder =
       llm.query_builder |> QB.select("provider")
+
+    Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
+  Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+  """
+  @spec replay(t()) :: {:ok, Dagger.LLM.t()} | {:error, term()}
+  def replay(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("replay")
+
+    with {:ok, id} <- Client.execute(llm.client, query_builder) do
+      {:ok,
+       %Dagger.LLM{
+         query_builder:
+           QB.query()
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("LLM"),
+         client: llm.client
+       }}
+    end
+  end
+
+  @doc """
+  return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+  """
+  @spec serialize_history(t()) :: {:ok, String.t()} | {:error, term()}
+  def serialize_history(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("serializeHistory")
 
     Client.execute(llm.client, query_builder)
   end
@@ -264,12 +321,43 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Set the maximum number of output tokens the model may generate per API call
+  """
+  @spec with_max_tokens(t(), integer()) :: Dagger.LLM.t()
+  def with_max_tokens(%__MODULE__{} = llm, tokens) do
+    query_builder =
+      llm.query_builder |> QB.select("withMaxTokens") |> QB.put_arg("tokens", tokens)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   swap out the llm model
   """
   @spec with_model(t(), String.t()) :: Dagger.LLM.t()
   def with_model(%__MODULE__{} = llm, model) do
     query_builder =
       llm.query_builder |> QB.select("withModel") |> QB.put_arg("model", model)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Track an object so the LLM can reference it in subsequent tool calls.
+  """
+  @spec with_object(t(), String.t(), String.t()) :: Dagger.LLM.t()
+  def with_object(%__MODULE__{} = llm, tag, object) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withObject")
+      |> QB.put_arg("tag", tag)
+      |> QB.put_arg("object", object)
 
     %Dagger.LLM{
       query_builder: query_builder,
@@ -306,6 +394,33 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Append an assistant response to the message history
+  """
+  @spec with_response(t(), [Dagger.LLMContentBlockInput.t()], [
+          {:input_tokens, integer() | nil},
+          {:output_tokens, integer() | nil},
+          {:cached_token_reads, integer() | nil},
+          {:cached_token_writes, integer() | nil},
+          {:total_tokens, integer() | nil}
+        ]) :: Dagger.LLM.t()
+  def with_response(%__MODULE__{} = llm, content, optional_args \\ []) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withResponse")
+      |> QB.put_arg("content", content)
+      |> QB.maybe_put_arg("inputTokens", optional_args[:input_tokens])
+      |> QB.maybe_put_arg("outputTokens", optional_args[:output_tokens])
+      |> QB.maybe_put_arg("cachedTokenReads", optional_args[:cached_token_reads])
+      |> QB.maybe_put_arg("cachedTokenWrites", optional_args[:cached_token_writes])
+      |> QB.maybe_put_arg("totalTokens", optional_args[:total_tokens])
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
   """
   @spec with_static_tools(t()) :: Dagger.LLM.t()
@@ -326,6 +441,42 @@ defmodule Dagger.LLM do
   def with_system_prompt(%__MODULE__{} = llm, prompt) do
     query_builder =
       llm.query_builder |> QB.select("withSystemPrompt") |> QB.put_arg("prompt", prompt)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Append a tool call to the last assistant message
+  """
+  @spec with_tool_call(t(), String.t(), String.t(), Dagger.JSON.t()) :: Dagger.LLM.t()
+  def with_tool_call(%__MODULE__{} = llm, call, tool, arguments) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withToolCall")
+      |> QB.put_arg("call", call)
+      |> QB.put_arg("tool", tool)
+      |> QB.put_arg("arguments", arguments)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Append a tool response to the message history
+  """
+  @spec with_tool_response(t(), String.t(), String.t(), boolean()) :: Dagger.LLM.t()
+  def with_tool_response(%__MODULE__{} = llm, call, content, errored) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withToolResponse")
+      |> QB.put_arg("call", call)
+      |> QB.put_arg("content", content)
+      |> QB.put_arg("errored", errored)
 
     %Dagger.LLM{
       query_builder: query_builder,

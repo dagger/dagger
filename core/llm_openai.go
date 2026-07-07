@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -52,7 +51,7 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
@@ -76,45 +75,54 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, t
 		return nil, err
 	}
 
-	// Convert generic Message to OpenAI specific format
+	// Convert content-block messages to OpenAI specific format
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
 
 	for _, msg := range history {
-		if msg.ToolCallID != "" {
-			content := msg.Content
-			if msg.ToolErrored {
-				content = "error: " + content
-			}
-			openAIMessages = append(openAIMessages, openai.ToolMessage(content, msg.ToolCallID))
-			continue
-		}
-		var blocks []openai.ChatCompletionContentPartUnionParam
 		switch msg.Role {
-		case "user":
-			blocks = append(blocks, openai.TextContentPart(msg.Content))
-			openAIMessages = append(openAIMessages, openai.UserMessage(blocks))
-		case "assistant":
-			assistantMsg := openai.AssistantMessage(msg.Content)
-			calls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
-			for i, call := range msg.ToolCalls {
-				args, err := json.Marshal(call.Function.Arguments)
-				if err != nil {
-					return nil, fmt.Errorf("failed to marshal tool call arguments: %w", err)
+		case LLMMessageRoleSystem:
+			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.TextContent()))
+		case LLMMessageRoleUser:
+			// A user message may carry tool results and/or text content.
+			var textParts []openai.ChatCompletionContentPartUnionParam
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					content := block.Text
+					if block.Errored {
+						content = "error: " + content
+					}
+					openAIMessages = append(openAIMessages, openai.ToolMessage(content, block.CallID))
+				case LLMContentText:
+					textParts = append(textParts, openai.TextContentPart(block.Text))
 				}
-				calls[i] = openai.ChatCompletionMessageToolCallParam{
-					ID: call.ID,
+			}
+			if len(textParts) > 0 {
+				openAIMessages = append(openAIMessages, openai.UserMessage(textParts))
+			}
+		case LLMMessageRoleAssistant:
+			assistantMsg := openai.AssistantMessage(msg.TextContent())
+			var calls []openai.ChatCompletionMessageToolCallParam
+			for _, block := range msg.Content {
+				if block.Kind != LLMContentToolCall {
+					continue
+				}
+				args := string(block.Arguments)
+				if args == "" {
+					args = "{}"
+				}
+				calls = append(calls, openai.ChatCompletionMessageToolCallParam{
+					ID: block.CallID,
 					Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name:      call.Function.Name,
-						Arguments: string(args),
+						Name:      block.ToolName,
+						Arguments: args,
 					},
-				}
+				})
 			}
 			if len(calls) > 0 {
 				assistantMsg.OfAssistant.ToolCalls = calls
 			}
 			openAIMessages = append(openAIMessages, assistantMsg)
-		case "system":
-			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content))
 		}
 	}
 
@@ -159,12 +167,32 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, t
 
 	choice := chatCompletion.Choices[0]
 
-	toolCalls, err := convertOpenAIToolCalls(choice.Message.ToolCalls)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert tool calls: %w", err)
+	// Convert the OpenAI response into content blocks.
+	var contentBlocks []*LLMContentBlock
+	if choice.Message.Content != "" {
+		contentBlocks = append(contentBlocks, &LLMContentBlock{
+			Kind: LLMContentText,
+			Text: choice.Message.Content,
+		})
+	}
+	for _, call := range choice.Message.ToolCalls {
+		if call.Function.Name == "" {
+			slog.Warn("skipping tool call with empty name", "toolCall", call)
+			continue
+		}
+		args := call.Function.Arguments
+		if args == "" {
+			args = "{}"
+		}
+		contentBlocks = append(contentBlocks, &LLMContentBlock{
+			Kind:      LLMContentToolCall,
+			CallID:    call.ID,
+			ToolName:  call.Function.Name,
+			Arguments: JSON(args),
+		})
 	}
 
-	if choice.Message.Content == "" && len(toolCalls) == 0 {
+	if len(contentBlocks) == 0 {
 		return nil, &ModelFinishedError{
 			Reason: choice.FinishReason,
 		}
@@ -172,8 +200,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, t
 
 	// Convert OpenAI response to generic LLMResponse
 	return &LLMResponse{
-		Content:   choice.Message.Content,
-		ToolCalls: toolCalls,
+		Content: contentBlocks,
 		TokenUsage: LLMTokenUsage{
 			InputTokens:      chatCompletion.Usage.PromptTokens,
 			OutputTokens:     chatCompletion.Usage.CompletionTokens,
@@ -262,29 +289,4 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	}
 
 	return compl, nil
-}
-
-func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]LLMToolCall, error) {
-	var toolCalls []LLMToolCall
-	for _, call := range calls {
-		if call.Function.Name == "" {
-			slog.Warn("skipping tool call with empty name", "toolCall", call)
-			continue
-		}
-		args := map[string]any{}
-		if call.Function.Arguments != "" {
-			if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tool call arguments: %w", err)
-			}
-		}
-		toolCalls = append(toolCalls, LLMToolCall{
-			ID: call.ID,
-			Function: FuncCall{
-				Name:      call.Function.Name,
-				Arguments: args,
-			},
-			Type: string(call.Type),
-		})
-	}
-	return toolCalls, nil
 }
