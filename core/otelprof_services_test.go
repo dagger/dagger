@@ -49,13 +49,13 @@ func otelprofSpanByName(t *testing.T, ended []sdktrace.ReadOnlySpan, name string
 	return nil
 }
 
-func otelprofAttrStr(s sdktrace.ReadOnlySpan, key string) (string, bool) {
+func otelprofAttrStr(s sdktrace.ReadOnlySpan, key string) string {
 	for _, kv := range s.Attributes() {
 		if string(kv.Key) == key {
-			return kv.Value.AsString(), true
+			return kv.Value.AsString()
 		}
 	}
-	return "", false
+	return ""
 }
 
 func otelprofAttrBool(s sdktrace.ReadOnlySpan, key string) bool {
@@ -101,10 +101,10 @@ func TestEmitServiceStartProducesLoaderShape(t *testing.T) {
 
 	// (1) service.start span shape.
 	start := otelprofSpanByName(t, ended, "service.start")
-	if got, _ := otelprofAttrStr(start, telemetryattrs.WcprofOpKindAttr); got != wcprof.OpKindServiceStart.String() {
+	if got := otelprofAttrStr(start, telemetryattrs.WcprofOpKindAttr); got != wcprof.OpKindServiceStart.String() {
 		t.Fatalf("service.start op kind = %q, want service_start", got)
 	}
-	if got, _ := otelprofAttrStr(start, telemetry.DagDigestAttr); got != digest {
+	if got := otelprofAttrStr(start, telemetry.DagDigestAttr); got != digest {
 		t.Fatalf("service.start dag.digest = %q, want %q", got, digest)
 	}
 	if !otelprofAttrBool(start, telemetry.UIPassthroughAttr) {

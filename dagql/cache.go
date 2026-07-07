@@ -3978,6 +3978,7 @@ func (c *Cache) lookupCacheForDigests(
 	return loadedHit, true, nil
 }
 
+//nolint:gocyclo // wait is a state machine; splitting it obscures the control flow.
 func (c *Cache) wait(
 	ctx context.Context,
 	sessionID string,
