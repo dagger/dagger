@@ -11,7 +11,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -40,6 +39,7 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("anthropic")))
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
 		client:   &client,
@@ -70,11 +70,15 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 
 //nolint:gocyclo
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (res *LLMResponse, rerr error) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	markdownW := telemetry.NewWriter(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	// Stream this turn's content into per-block display spans (thinking, text
+	// response, tool-call arguments) as it arrives.
+	dp := newDisplayPhases(ctx, opts.CallDigest)
+	defer func() {
+		dp.CloseAll()
+		if rerr != nil {
+			dp.Abort(rerr)
+		}
+	}()
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	spanCtx := trace.SpanContextFromContext(ctx)
@@ -304,12 +308,41 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, metric.WithAttributes(attrs...))
 		}
 
-		// Check if the event delta contains text and trace it.
-		if delta, ok := event.AsAny().(anthropic.ContentBlockDeltaEvent); ok {
-			if delta.Delta.Text != "" {
-				// Lazily initialize telemetry/logging on first text response.
-				fmt.Fprint(markdownW, delta.Delta.Text)
+		// Route each content block's stream into its own display span: thinking
+		// and tool-call arguments (which main otherwise only shows post-hoc) as
+		// well as the text response.
+		switch ev := event.AsAny().(type) {
+		case anthropic.ContentBlockStartEvent:
+			switch ev.ContentBlock.Type {
+			case "thinking":
+				dp.StartThinking(ev.Index)
+			case "text":
+				dp.StartText(ev.Index)
+			case "tool_use":
+				dp.StartToolCall(ev.Index, ev.ContentBlock.ID, ev.ContentBlock.Name)
 			}
+		case anthropic.ContentBlockDeltaEvent:
+			switch ev.Delta.Type {
+			case "thinking_delta":
+				if p := dp.Phase(ev.Index); p != nil {
+					fmt.Fprint(p.Stdio.Stdout, ev.Delta.Thinking)
+				}
+			case "text_delta":
+				p := dp.Phase(ev.Index)
+				if p == nil {
+					// Text without a start event: lazily open a response phase.
+					p = dp.StartText(ev.Index)
+				}
+				if p.MarkdownW != nil {
+					fmt.Fprint(p.MarkdownW, ev.Delta.Text)
+				}
+			case "input_json_delta":
+				if p := dp.Phase(ev.Index); p != nil {
+					fmt.Fprint(p.Stdio.Stdout, ev.Delta.PartialJSON)
+				}
+			}
+		case anthropic.ContentBlockStopEvent:
+			dp.Close(ev.Index)
 		}
 	}
 
@@ -357,6 +390,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		}
 	}
 
+	displaySpans, toolCallDisplays := dp.Response()
 	return &LLMResponse{
 		Content: contentBlocks,
 		TokenUsage: LLMTokenUsage{
@@ -366,6 +400,8 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 			CachedTokenWrites: acc.Usage.CacheCreationInputTokens,
 			TotalTokens:       acc.Usage.InputTokens + acc.Usage.OutputTokens,
 		},
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCallDisplays,
 	}, nil
 }
 

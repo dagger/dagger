@@ -4,16 +4,18 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -44,6 +46,8 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
 	opts = append(opts, option.WithHeader("originator", "dagger"))
 	opts = append(opts, option.WithHeader("User-Agent", "dagger"))
 
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai-codex")))
+
 	svc := responses.NewResponseService(opts...)
 	return &OpenAICodexClient{svc: svc, endpoint: endpoint}
 }
@@ -55,9 +59,14 @@ func (c *OpenAICodexClient) IsRetryable(err error) bool {
 }
 
 func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-	defer stdio.Close()
+	// Stream this turn's content into per-block display spans.
+	dp := newDisplayPhases(ctx, opts.CallDigest)
+	defer func() {
+		dp.CloseAll()
+		if rerr != nil {
+			dp.Abort(rerr)
+		}
+	}()
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	spanCtx := trace.SpanContextFromContext(ctx)
@@ -123,6 +132,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	var content strings.Builder
 	var contentBlocks []*LLMContentBlock
 	var usage LLMTokenUsage
+	var toolIdx int64
 
 	for stream.Next() {
 		event := stream.Current()
@@ -130,7 +140,7 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		switch event.Type {
 		case "response.output_text.delta":
 			e := event.AsResponseOutputTextDelta()
-			fmt.Fprint(stdio.Stdout, e.Delta)
+			fmt.Fprint(dp.StartText(0).MarkdownW, e.Delta)
 			content.WriteString(e.Delta)
 
 		case "response.output_item.done":
@@ -143,6 +153,8 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 					ToolName:  fc.Name,
 					Arguments: JSON(fc.Arguments),
 				})
+				toolIdx++
+				dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments)
 			}
 
 		case "response.completed":
@@ -176,8 +188,10 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	}
 
 	if stream.Err() != nil {
-		return nil, stream.Err()
+		return nil, codexAPIError(stream.Err())
 	}
+	// Close the streamed text response phase (if any).
+	dp.Close(0)
 
 	// Prepend text content block if we got any text
 	if content.Len() > 0 {
@@ -193,9 +207,12 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		}
 	}
 
+	displaySpans, toolCallDisplays := dp.Response()
 	return &LLMResponse{
-		Content:    contentBlocks,
-		TokenUsage: usage,
+		Content:          contentBlocks,
+		TokenUsage:       usage,
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCallDisplays,
 	}, nil
 }
 
@@ -265,6 +282,28 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 
 	systemPrompt = strings.Join(systemParts, "\n\n")
 	return systemPrompt, items
+}
+
+// codexAPIError turns an opaque openai-go API error into one that surfaces the
+// ChatGPT Codex backend's error detail. The backend reports errors as
+// {"detail":"..."} — a shape the SDK doesn't recognize (it only reads the
+// "error" field), so it otherwise bubbles up a bare "400 Bad Request" with no
+// explanation (e.g. an unsupported-model error).
+func codexAPIError(err error) error {
+	var aerr *openai.Error
+	if !errors.As(err, &aerr) {
+		return err
+	}
+	body := aerr.RawJSON()
+	if body == "" && aerr.Response != nil && aerr.Response.Body != nil {
+		if b, readErr := io.ReadAll(aerr.Response.Body); readErr == nil {
+			body = string(b)
+		}
+	}
+	if msg := llmErrorMessage([]byte(body)); msg != "" {
+		return fmt.Errorf("codex API error (HTTP %d): %s", aerr.StatusCode, msg)
+	}
+	return err
 }
 
 // extractChatGPTAccountID extracts the chatgpt_account_id from a JWT token.

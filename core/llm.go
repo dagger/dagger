@@ -140,6 +140,10 @@ type LLMCallOpts struct {
 	// MaxTokens limits the number of output/completion tokens. Zero means
 	// the provider should use its own default.
 	MaxTokens int
+
+	// CallDigest is this turn's LLM state digest, set on the live display spans
+	// the provider creates so the TUI can branch the conversation from them.
+	CallDigest string
 }
 
 // LLMResponse is the internal result returned by a provider's SendQuery.
@@ -148,6 +152,16 @@ type LLMCallOpts struct {
 type LLMResponse struct {
 	Content    []*LLMContentBlock
 	TokenUsage LLMTokenUsage
+
+	// DisplaySpans are the OTel spans a provider created to stream this turn's
+	// content live (thinking, text, tool-call arguments), in close order. The
+	// loop ends any that CallBatch didn't already end.
+	DisplaySpans []trace.Span
+
+	// ToolCallDisplays maps a tool call's ID to the display span its arguments
+	// streamed into, so CallBatch can parent the tool's execution beneath it and
+	// end the span once the tool returns.
+	ToolCallDisplays map[string]toolCallDisplay
 }
 
 // TextContent returns the concatenation of all text blocks.
@@ -1231,16 +1245,14 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	client := ep.Client
 	err = backoff.Retry(func() error {
 		var sendErr error
-		ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
-			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-			attribute.String(telemetryattrs.LLMCallDigestAttr, llmCallDigest),
-		))
+		// The provider streams this turn's content into its own per-block display
+		// spans (thinking, response, tool calls); it sets the call digest on them
+		// so the TUI can branch from a span, and ends them (or the loop does for
+		// text/thinking spans, once tool results are applied).
 		res, sendErr = client.SendQuery(ctx, messagesToSend, tools, &LLMCallOpts{
-			MaxTokens: llm.maxTokens,
+			MaxTokens:  llm.maxTokens,
+			CallDigest: llmCallDigest,
 		})
-		telemetry.EndWithCause(span, &sendErr)
 		if sendErr != nil {
 			var finished *ModelFinishedError
 			if errors.As(sendErr, &finished) {
@@ -1337,7 +1349,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		}
 	}
 	snapshot := llm.mcp.Snapshot()
-	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls) {
+	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays) {
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResponse",
 			Args: []dagql.NamedInput{
@@ -1378,10 +1390,27 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		})
 	}
 
+	// Tool-call display spans were already ended by CallBatch as each tool
+	// returned. End the remaining (text/thinking) spans now that the turn's
+	// results have been applied, so they close in the order they streamed.
+	endedByCallBatch := make(map[trace.Span]bool, len(res.ToolCallDisplays))
+	for _, tc := range res.ToolCallDisplays {
+		endedByCallBatch[tc.Span] = true
+	}
+	endRemainingDisplaySpans := func() {
+		for _, s := range res.DisplaySpans {
+			if !endedByCallBatch[s] {
+				s.End()
+			}
+		}
+	}
+
 	var stepped dagql.ObjectResult[*LLM]
 	if err := srv.Select(ctx, inst, &stepped, sels...); err != nil {
+		endRemainingDisplaySpans()
 		return inst, err
 	}
+	endRemainingDisplaySpans()
 
 	return stepped, nil
 }

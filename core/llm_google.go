@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
 	"net/http"
 	"strings"
@@ -15,7 +14,6 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
@@ -30,7 +28,8 @@ type GenaiClient struct {
 func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	ctx := context.Background() // FIXME: should we wire this through from somewhere else?
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey: endpoint.Key,
+		APIKey:     endpoint.Key,
+		HTTPClient: newLLMOTelHTTPClient("google"),
 	})
 	if err != nil {
 		return nil, err
@@ -204,9 +203,16 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 
 func (c *GenaiClient) processStreamResponse(
 	stream iter.Seq2[*genai.GenerateContentResponse, error],
-	stdout io.Writer,
+	dp *displayPhases,
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
 ) (contentBlocks []*LLMContentBlock, tokenUsage LLMTokenUsage, err error) {
+	// Display span indices: 0 = text response, 1 = thinking, 2+ = tool calls.
+	const textIdx, thinkingIdx = int64(0), int64(1)
+	toolSeq := int64(1)
+	defer func() {
+		dp.Close(textIdx)
+		dp.Close(thinkingIdx)
+	}()
 	var textContent strings.Builder
 	var thinkingContent strings.Builder
 	var thinkingSig string
@@ -239,10 +245,11 @@ func (c *GenaiClient) processStreamResponse(
 			}
 			switch {
 			case part.Thought:
-				// Thought summary text. Accumulate it (and its signature)
-				// separately from the reply so it round-trips but doesn't
-				// pollute the visible response. Checked before part.Text
-				// because thought parts carry text too.
+				// Thought summary text. Stream it live into its own span, and
+				// accumulate it (and its signature) separately from the reply so
+				// it round-trips but doesn't pollute the visible response.
+				// Checked before part.Text because thought parts carry text too.
+				fmt.Fprint(dp.StartThinking(thinkingIdx).Stdio.Stdout, part.Text)
 				thinkingContent.WriteString(part.Text)
 				if sig != "" {
 					thinkingSig = sig
@@ -260,8 +267,10 @@ func (c *GenaiClient) processStreamResponse(
 					Arguments: JSON(args),
 					Signature: sig,
 				})
+				toolSeq++
+				dp.EmitToolCall(toolSeq, x.Name, x.Name, string(args))
 			case part.Text != "":
-				fmt.Fprint(stdout, part.Text)
+				fmt.Fprint(dp.StartText(textIdx).MarkdownW, part.Text)
 				textContent.WriteString(part.Text)
 			default:
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
@@ -336,9 +345,14 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 }
 
 func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-	defer stdio.Close()
+	// Stream this turn's content into per-block display spans.
+	dp := newDisplayPhases(ctx, opts.CallDigest)
+	defer func() {
+		dp.CloseAll()
+		if rerr != nil {
+			dp.Abort(rerr)
+		}
+	}()
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	spanCtx := trace.SpanContextFromContext(ctx)
@@ -429,16 +443,19 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 
 	contentBlocks, tokenUsage, err := c.processStreamResponse(
 		stream,
-		stdio.Stdout,
+		dp,
 		tokenHandler,
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	displaySpans, toolCallDisplays := dp.Response()
 	return &LLMResponse{
-		Content:    contentBlocks,
-		TokenUsage: tokenUsage,
+		Content:          contentBlocks,
+		TokenUsage:       tokenUsage,
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCallDisplays,
 	}, nil
 }
 

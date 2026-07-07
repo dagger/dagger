@@ -10,7 +10,6 @@ import (
 	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -29,6 +28,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 		if endpoint.Key != "" {
 			opts = append(opts, azure.WithAPIKey(endpoint.Key))
 		}
+		opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai-azure")))
 		c := openai.NewClient(opts...)
 		return &OpenAIClient{client: c, endpoint: endpoint}
 	}
@@ -40,6 +40,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
 
+	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai")))
 	c := openai.NewClient(opts...)
 	return &OpenAIClient{client: c, endpoint: endpoint, disableStreaming: disableStreaming}
 }
@@ -52,9 +53,14 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 }
 
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
-	defer stdio.Close()
+	// Stream this turn's content into per-block display spans.
+	dp := newDisplayPhases(ctx, opts.CallDigest)
+	defer func() {
+		dp.CloseAll()
+		if rerr != nil {
+			dp.Abort(rerr)
+		}
+	}()
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	spanCtx := trace.SpanContextFromContext(ctx)
@@ -151,10 +157,13 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	var chatCompletion *openai.ChatCompletion
 
 	if len(tools) > 0 && c.disableStreaming {
-		chatCompletion, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, attrs, stdio)
+		chatCompletion, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, attrs, dp)
 	} else {
-		chatCompletion, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, attrs, stdio)
+		chatCompletion, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, attrs, dp)
 	}
+	// Close the streamed text response phase (if any) before the tool-call
+	// phases, so spans close in the order the model produced them.
+	dp.Close(0)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +184,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			Text: choice.Message.Content,
 		})
 	}
-	for _, call := range choice.Message.ToolCalls {
+	for i, call := range choice.Message.ToolCalls {
 		if call.Function.Name == "" {
 			slog.Warn("skipping tool call with empty name", "toolCall", call)
 			continue
@@ -190,6 +199,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			ToolName:  call.Function.Name,
 			Arguments: JSON(args),
 		})
+		dp.EmitToolCall(int64(i+1), call.ID, call.Function.Name, args)
 	}
 
 	if len(contentBlocks) == 0 {
@@ -199,6 +209,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 	}
 
 	// Convert OpenAI response to generic LLMResponse
+	displaySpans, toolCallDisplays := dp.Response()
 	return &LLMResponse{
 		Content: contentBlocks,
 		TokenUsage: LLMTokenUsage{
@@ -207,6 +218,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			CachedTokenReads: chatCompletion.Usage.PromptTokensDetails.CachedTokens,
 			TotalTokens:      chatCompletion.Usage.TotalTokens,
 		},
+		DisplaySpans:     displaySpans,
+		ToolCallDisplays: toolCallDisplays,
 	}, nil
 }
 
@@ -216,7 +229,7 @@ func (c *OpenAIClient) queryWithStreaming(
 	outputTokens metric.Int64Gauge,
 	inputTokens metric.Int64Gauge,
 	attrs []attribute.KeyValue,
-	stdio telemetry.SpanStreams,
+	dp *displayPhases,
 ) (*openai.ChatCompletion, error) {
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
 		IncludeUsage: openai.Opt(true),
@@ -250,7 +263,7 @@ func (c *OpenAIClient) queryWithStreaming(
 
 		if len(res.Choices) > 0 {
 			if content := res.Choices[0].Delta.Content; content != "" {
-				fmt.Fprint(stdio.Stdout, content)
+				fmt.Fprint(dp.StartText(0).MarkdownW, content)
 			}
 		}
 	}
@@ -268,7 +281,7 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	outputTokens metric.Int64Gauge,
 	inputTokens metric.Int64Gauge,
 	attrs []attribute.KeyValue,
-	stdio telemetry.SpanStreams,
+	dp *displayPhases,
 ) (*openai.ChatCompletion, error) {
 	compl, err := c.client.Chat.Completions.New(ctx, params)
 	if err != nil {
@@ -284,7 +297,7 @@ func (c *OpenAIClient) queryWithoutStreaming(
 
 	if len(compl.Choices) > 0 {
 		if content := compl.Choices[0].Message.Content; content != "" {
-			fmt.Fprint(stdio.Stdout, content)
+			fmt.Fprint(dp.StartText(0).MarkdownW, content)
 		}
 	}
 
