@@ -760,6 +760,12 @@ class Binding(Type):
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
 
+    def as_module_codegen_config(self) -> "ModuleCodegenConfig":
+        """Retrieve the binding value, as type ModuleCodegenConfig"""
+        _args: list[Arg] = []
+        _ctx = self._select("asModuleCodegenConfig", _args)
+        return ModuleCodegenConfig(_ctx)
+
     def as_module_config_client(self) -> "ModuleConfigClient":
         """Retrieve the binding value, as type ModuleConfigClient"""
         _args: list[Arg] = []
@@ -7159,6 +7165,50 @@ class Env(Type):
         _ctx = self._select("withModule", _args)
         return Env(_ctx)
 
+    def with_module_codegen_config_input(
+        self,
+        name: str,
+        value: "ModuleCodegenConfig",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type ModuleCodegenConfig in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The ModuleCodegenConfig value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withModuleCodegenConfigInput", _args)
+        return Env(_ctx)
+
+    def with_module_codegen_config_output(self, name: str, description: str) -> Self:
+        """Declare a desired ModuleCodegenConfig output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withModuleCodegenConfigOutput", _args)
+        return Env(_ctx)
+
     def with_module_config_client_input(
         self,
         name: str,
@@ -12133,6 +12183,59 @@ class Module(Type):
 
 
 @typecheck
+class ModuleCodegenConfig(Type):
+    """The codegen configuration for the module."""
+
+    async def automatic_gitignore(self) -> bool:
+        """Whether to automatically generate a .gitignore file for this module.
+        Defaults to true if not set.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("automaticGitignore", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> str:
+        """A unique identifier for this ModuleCodegenConfig.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class ModuleConfigClient(Type):
     """The client generated for the module."""
 
@@ -12278,6 +12381,12 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("cloneRef", _args)
         return await _ctx.execute(str)
+
+    def codegen_config(self) -> ModuleCodegenConfig:
+        """The codegen configuration of the module."""
+        _args: list[Arg] = []
+        _ctx = self._select("codegenConfig", _args)
+        return ModuleCodegenConfig(_ctx)
 
     async def commit(self) -> str:
         """The resolved commit of the git repo this source points to.
@@ -16930,6 +17039,7 @@ __all__ = [
     "Label",
     "ListTypeDef",
     "Module",
+    "ModuleCodegenConfig",
     "ModuleConfigClient",
     "ModuleSource",
     "ModuleSourceExperimentalFeature",

@@ -30,3 +30,9 @@ source = ".dagger/modules/abs-rel"
 
 [modules.finder]
 source = ".dagger/modules/finder"
+
+[modules.with-auto-git-ignore]
+source = ".dagger/modules/with-auto-git-ignore"
+
+[modules.without-auto-git-ignore]
+source = ".dagger/modules/without-auto-git-ignore"

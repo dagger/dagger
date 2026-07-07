@@ -1,0 +1,8 @@
+name = "without-auto-git-ignore"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"
+
+[codegen]
+  automaticGitignore = false

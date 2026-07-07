@@ -1188,6 +1188,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\ModuleCodegenConfig",
+			"p": "Dagger/ModuleCodegenConfig.html",
+			"d": "<p>The codegen configuration for the module.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\ModuleConfigClient",
 			"p": "Dagger/ModuleConfigClient.html",
 			"d": "<p>The client generated for the module.</p>",
@@ -2053,6 +2063,12 @@
 			"n": "Dagger\\Binding::asModule",
 			"p": "Dagger/Binding.html#method_asModule",
 			"d": "<p>Retrieve the binding value, as type Module</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asModuleCodegenConfig",
+			"p": "Dagger/Binding.html#method_asModuleCodegenConfig",
+			"d": "<p>Retrieve the binding value, as type ModuleCodegenConfig</p>"
 		},
 		{
 			"t": "M",
@@ -4192,6 +4208,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withModuleCodegenConfigInput",
+			"p": "Dagger/Env.html#method_withModuleCodegenConfigInput",
+			"d": "<p>Create or update a binding of type ModuleCodegenConfig in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withModuleCodegenConfigOutput",
+			"p": "Dagger/Env.html#method_withModuleCodegenConfigOutput",
+			"d": "<p>Declare a desired ModuleCodegenConfig output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withModuleConfigClientInput",
 			"p": "Dagger/Env.html#method_withModuleConfigClientInput",
 			"d": "<p>Create or update a binding of type ModuleConfigClient in the environment</p>"
@@ -5752,6 +5780,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleCodegenConfig::automaticGitignore",
+			"p": "Dagger/ModuleCodegenConfig.html#method_automaticGitignore",
+			"d": "<p>Whether to automatically generate a .gitignore file for this module. Defaults to true if not set.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleCodegenConfig::id",
+			"p": "Dagger/ModuleCodegenConfig.html#method_id",
+			"d": "<p>A unique identifier for this ModuleCodegenConfig.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleConfigClient::directory",
 			"p": "Dagger/ModuleConfigClient.html#method_directory",
 			"d": "<p>The directory the client is generated in.</p>"
@@ -5791,6 +5831,12 @@
 			"n": "Dagger\\ModuleSource::cloneRef",
 			"p": "Dagger/ModuleSource.html#method_cloneRef",
 			"d": "<p>The ref to clone the root of the git repo from. Only valid for git sources.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::codegenConfig",
+			"p": "Dagger/ModuleSource.html#method_codegenConfig",
+			"d": "<p>The codegen configuration of the module.</p>"
 		},
 		{
 			"t": "M",

@@ -436,6 +436,17 @@ type ModuleCodegenConfig struct {
 	AutomaticGitignore *bool `json:"automaticGitignore,omitempty" toml:"automaticGitignore,omitempty"`
 }
 
+func (*ModuleCodegenConfig) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleCodegenConfig",
+		NonNull:   true,
+	}
+}
+
+func (*ModuleCodegenConfig) TypeDescription() string {
+	return "The codegen configuration for the module."
+}
+
 func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
 	if cfg.AutomaticGitignore == nil {
 		return &cfg

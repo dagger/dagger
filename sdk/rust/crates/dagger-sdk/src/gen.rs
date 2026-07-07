@@ -697,6 +697,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type ModuleCodegenConfig
+    pub fn as_module_codegen_config(&self) -> ModuleCodegenConfig {
+        let query = self.selection.select("asModuleCodegenConfig");
+        ModuleCodegenConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type ModuleConfigClient
     pub fn as_module_config_client(&self) -> ModuleConfigClient {
         let query = self.selection.select("asModuleConfigClient");
@@ -7854,6 +7863,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type ModuleCodegenConfig in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ModuleCodegenConfig value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_module_codegen_config_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withModuleCodegenConfigInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired ModuleCodegenConfig output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_module_codegen_config_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withModuleCodegenConfigOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type ModuleConfigClient in the environment
     ///
     /// # Arguments
@@ -12730,6 +12788,54 @@ impl Syncer for Module {
     }
 }
 #[derive(Clone)]
+pub struct ModuleCodegenConfig {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for ModuleCodegenConfig {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for ModuleCodegenConfig {
+    fn graphql_type() -> &'static str {
+        "ModuleCodegenConfig"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl ModuleCodegenConfig {
+    /// Whether to automatically generate a .gitignore file for this module. Defaults to true if not set.
+    pub async fn automatic_gitignore(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("automaticGitignore");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this ModuleCodegenConfig.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for ModuleCodegenConfig {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
 pub struct ModuleConfigClient {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -12839,6 +12945,15 @@ impl ModuleSource {
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneRef");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The codegen configuration of the module.
+    pub fn codegen_config(&self) -> ModuleCodegenConfig {
+        let query = self.selection.select("codegenConfig");
+        ModuleCodegenConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The resolved commit of the git repo this source points to.
     pub async fn commit(&self) -> Result<String, DaggerError> {

@@ -69,6 +69,20 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The codegen configuration of the module.
+  """
+  @spec codegen_config(t()) :: Dagger.ModuleCodegenConfig.t()
+  def codegen_config(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("codegenConfig")
+
+    %Dagger.ModuleCodegenConfig{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The resolved commit of the git repo this source points to.
   """
   @spec commit(t()) :: {:ok, String.t()} | {:error, term()}

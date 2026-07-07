@@ -619,6 +619,29 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Create or update a binding of type ModuleCodegenConfig in the environment
+     */
+    public function withModuleCodegenConfigInput(string $name, ModuleCodegenConfig $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModuleCodegenConfigInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired ModuleCodegenConfig output to be assigned in the environment
+     */
+    public function withModuleCodegenConfigOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModuleCodegenConfigOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type ModuleConfigClient in the environment
      */
     public function withModuleConfigClientInput(string $name, ModuleConfigClient $value, string $description): Env

@@ -3249,6 +3249,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type ModuleCodegenConfig
+   */
+  asModuleCodegenConfig = (): ModuleCodegenConfig => {
+    const ctx = this._ctx.select("asModuleCodegenConfig")
+    return new ModuleCodegenConfig(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type ModuleConfigClient
    */
   asModuleConfigClient = (): ModuleConfigClient => {
@@ -7896,6 +7904,38 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type ModuleCodegenConfig in the environment
+   * @param name The name of the binding
+   * @param value The ModuleCodegenConfig value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withModuleCodegenConfigInput = (
+    name: string,
+    value: ModuleCodegenConfig,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withModuleCodegenConfigInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired ModuleCodegenConfig output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withModuleCodegenConfigOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withModuleCodegenConfigOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type ModuleConfigClient in the environment
    * @param name The name of the binding
    * @param value The ModuleConfigClient value to assign to the binding
@@ -11975,6 +12015,54 @@ export class Module_ extends BaseClient {
 }
 
 /**
+ * The codegen configuration for the module.
+ */
+export class ModuleCodegenConfig extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _automaticGitignore?: boolean = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _automaticGitignore?: boolean) {
+    super(ctx)
+
+    this._id = _id
+    this._automaticGitignore = _automaticGitignore
+  }
+
+  /**
+   * A unique identifier for this ModuleCodegenConfig.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether to automatically generate a .gitignore file for this module. Defaults to true if not set.
+   */
+  automaticGitignore = async (): Promise<boolean> => {
+    if (this._automaticGitignore) {
+      return this._automaticGitignore
+    }
+
+    const ctx = this._ctx.select("automaticGitignore")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * The client generated for the module.
  */
 export class ModuleConfigClient extends BaseClient {
@@ -12179,6 +12267,14 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The codegen configuration of the module.
+   */
+  codegenConfig = (): ModuleCodegenConfig => {
+    const ctx = this._ctx.select("codegenConfig")
+    return new ModuleCodegenConfig(ctx)
   }
 
   /**

@@ -600,6 +600,15 @@ func (r *Binding) AsModule() *Module {
 	}
 }
 
+// Retrieve the binding value, as type ModuleCodegenConfig
+func (r *Binding) AsModuleCodegenConfig() *ModuleCodegenConfig {
+	q := r.query.Select("asModuleCodegenConfig")
+
+	return &ModuleCodegenConfig{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type ModuleConfigClient
 func (r *Binding) AsModuleConfigClient() *ModuleConfigClient {
 	q := r.query.Select("asModuleConfigClient")
@@ -6949,6 +6958,30 @@ func (r *Env) WithModule(module *Module) *Env {
 	}
 }
 
+// Create or update a binding of type ModuleCodegenConfig in the environment
+func (r *Env) WithModuleCodegenConfigInput(name string, value *ModuleCodegenConfig, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleCodegenConfigInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired ModuleCodegenConfig output to be assigned in the environment
+func (r *Env) WithModuleCodegenConfigOutput(name string, description string) *Env {
+	q := r.query.Select("withModuleCodegenConfigOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type ModuleConfigClient in the environment
 func (r *Env) WithModuleConfigClientInput(name string, value *ModuleConfigClient, description string) *Env {
 	assertNotNil("value", value)
@@ -12115,6 +12148,81 @@ func (r *Module) AsSyncer() Syncer {
 	}
 }
 
+// The codegen configuration for the module.
+type ModuleCodegenConfig struct {
+	query *querybuilder.Selection
+
+	automaticGitignore *bool
+	id                 *ID
+}
+
+func (r *ModuleCodegenConfig) WithGraphQLQuery(q *querybuilder.Selection) *ModuleCodegenConfig {
+	return &ModuleCodegenConfig{
+		query: q,
+	}
+}
+
+// Whether to automatically generate a .gitignore file for this module. Defaults to true if not set.
+func (r *ModuleCodegenConfig) AutomaticGitignore(ctx context.Context) (bool, error) {
+	if r.automaticGitignore != nil {
+		return *r.automaticGitignore, nil
+	}
+	q := r.query.Select("automaticGitignore")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ModuleCodegenConfig.
+func (r *ModuleCodegenConfig) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ModuleCodegenConfig) XXX_GraphQLType() string {
+	return "ModuleCodegenConfig"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ModuleCodegenConfig) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ModuleCodegenConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ModuleCodegenConfig) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// AsNode returns this ModuleCodegenConfig as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ModuleCodegenConfig) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // The client generated for the module.
 type ModuleConfigClient struct {
 	query *querybuilder.Selection
@@ -12288,6 +12396,15 @@ func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// The codegen configuration of the module.
+func (r *ModuleSource) CodegenConfig() *ModuleCodegenConfig {
+	q := r.query.Select("codegenConfig")
+
+	return &ModuleCodegenConfig{
+		query: q,
+	}
 }
 
 // The resolved commit of the git repo this source points to.

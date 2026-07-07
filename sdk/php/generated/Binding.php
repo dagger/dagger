@@ -209,6 +209,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type ModuleCodegenConfig
+     */
+    public function asModuleCodegenConfig(): ModuleCodegenConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModuleCodegenConfig');
+        return new \Dagger\ModuleCodegenConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type ModuleConfigClient
      */
     public function asModuleConfigClient(): ModuleConfigClient

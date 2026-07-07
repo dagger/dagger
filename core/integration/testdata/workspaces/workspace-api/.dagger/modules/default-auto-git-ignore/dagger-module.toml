@@ -1,0 +1,5 @@
+name = "default-auto-git-ignore"
+engineVersion = "latest"
+
+[runtime]
+  source = "dang"

@@ -155,6 +155,9 @@ type Binding implements Node {
   """Retrieve the binding value, as type Module"""
   asModule: Module!
 
+  """Retrieve the binding value, as type ModuleCodegenConfig"""
+  asModuleCodegenConfig: ModuleCodegenConfig!
+
   """Retrieve the binding value, as type ModuleConfigClient"""
   asModuleConfigClient: ModuleConfigClient!
 
@@ -3045,6 +3048,31 @@ type Env implements Node {
   withModule(module: ID! @expectedType(name: "Module")): Env! @deprecated(reason: "Use withMainModule instead")
 
   """
+  Create or update a binding of type ModuleCodegenConfig in the environment
+  """
+  withModuleCodegenConfigInput(
+    """The name of the binding"""
+    name: String!
+
+    """The ModuleCodegenConfig value to assign to the binding"""
+    value: ID! @expectedType(name: "ModuleCodegenConfig")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired ModuleCodegenConfig output to be assigned in the environment
+  """
+  withModuleCodegenConfigOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """
   Create or update a binding of type ModuleConfigClient in the environment
   """
   withModuleConfigClientInput(
@@ -4761,6 +4789,17 @@ type Module implements Node & Syncer {
   withObject(object: ID! @expectedType(name: "TypeDef")): Module!
 }
 
+"""The codegen configuration for the module."""
+type ModuleCodegenConfig implements Node {
+  """
+  Whether to automatically generate a .gitignore file for this module. Defaults to true if not set.
+  """
+  automaticGitignore: Boolean!
+
+  """A unique identifier for this ModuleCodegenConfig."""
+  id: ID!
+}
+
 """The client generated for the module."""
 type ModuleConfigClient implements Node {
   """The directory the client is generated in."""
@@ -4793,6 +4832,9 @@ type ModuleSource implements Node & Syncer {
   The ref to clone the root of the git repo from. Only valid for git sources.
   """
   cloneRef: String!
+
+  """The codegen configuration of the module."""
+  codegenConfig: ModuleCodegenConfig!
 
   """The resolved commit of the git repo this source points to."""
   commit: String!

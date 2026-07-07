@@ -944,3 +944,33 @@ func (ModuleConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "VERSION 2")
 }
+
+func (ModuleConfigSuite) TestAutomaticGitIgnore(ctx context.Context, t *testctx.T) {
+	// Check that automaticGitIgnore for codegen config is correctly fetch and exposed.
+	c := connect(ctx, t)
+	base := workspaceFixture(t, c, "workspace-api")
+
+	t.Run("default to true", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("core", "module-source", "--ref-string", ".dagger/modules/default-auto-git-ignore", "codegen-config", "automatic-gitignore")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "true", strings.TrimSpace(out))
+	})
+
+	t.Run("enabled", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("core", "module-source", "--ref-string", ".dagger/modules/with-auto-git-ignore", "codegen-config", "automatic-gitignore")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "true", strings.TrimSpace(out))
+	})
+
+	t.Run("disabled", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("core", "module-source", "--ref-string", ".dagger/modules/without-auto-git-ignore", "codegen-config", "automatic-gitignore")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "false", strings.TrimSpace(out))
+	})
+}

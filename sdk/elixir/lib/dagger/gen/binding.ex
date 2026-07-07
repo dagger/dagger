@@ -324,6 +324,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type ModuleCodegenConfig
+  """
+  @spec as_module_codegen_config(t()) :: Dagger.ModuleCodegenConfig.t()
+  def as_module_codegen_config(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asModuleCodegenConfig")
+
+    %Dagger.ModuleCodegenConfig{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type ModuleConfigClient
   """
   @spec as_module_config_client(t()) :: Dagger.ModuleConfigClient.t()

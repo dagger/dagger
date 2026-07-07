@@ -153,7 +153,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asJSONValue</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type JSONValue</p></dd><dt><a href="Dagger/Binding.html#method_asModule">
 <abbr title="Dagger\Binding">Binding</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type Module</p></dd><dt><a href="Dagger/Binding.html#method_asModuleConfigClient">
+                    <dd><p>Retrieve the binding value, as type Module</p></dd><dt><a href="Dagger/Binding.html#method_asModuleCodegenConfig">
+<abbr title="Dagger\Binding">Binding</abbr>::asModuleCodegenConfig</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type ModuleCodegenConfig</p></dd><dt><a href="Dagger/Binding.html#method_asModuleConfigClient">
 <abbr title="Dagger\Binding">Binding</abbr>::asModuleConfigClient</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type ModuleConfigClient</p></dd><dt><a href="Dagger/Binding.html#method_asModuleSource">
 <abbr title="Dagger\Binding">Binding</abbr>::asModuleSource</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -248,7 +250,9 @@
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::asString</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
                     <dd><p>Decode a string from json</p></dd><dt><a href="Dagger/LLM.html#method_attempt">
 <abbr title="Dagger\LLM">LLM</abbr>::attempt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>create a branch in the LLM's history</p></dd><dt><a href="Dagger/ModuleSource.html#method_asModule">
+                    <dd><p>create a branch in the LLM's history</p></dd><dt><a href="Dagger/ModuleCodegenConfig.html#method_automaticGitignore">
+<abbr title="Dagger\ModuleCodegenConfig">ModuleCodegenConfig</abbr>::automaticGitignore</a>() &mdash; <em>Method in class <a href="Dagger/ModuleCodegenConfig.html"><abbr title="Dagger\ModuleCodegenConfig">ModuleCodegenConfig</abbr></a></em></dt>
+                    <dd><p>Whether to automatically generate a .gitignore file for this module. Defaults to true if not set.</p></dd><dt><a href="Dagger/ModuleSource.html#method_asModule">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation</p></dd><dt><a href="Dagger/ModuleSource.html#method_asString">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::asString</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -394,7 +398,9 @@
 <abbr title="Dagger\Module">Module</abbr>::checks</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>Return all checks defined by the module</p></dd><dt><a href="Dagger/ModuleSource.html#method_cloneRef">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::cloneRef</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_commit">
+                    <dd><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_codegenConfig">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::codegenConfig</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>The codegen configuration of the module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_commit">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The resolved commit of the git repo this source points to.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configClients">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configClients</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -922,7 +928,9 @@
 <abbr title="Dagger\Module">Module</abbr>::interfaces</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>Interfaces served by this module.</p></dd><dt><a href="Dagger/Module.html#method_introspectionSchemaJSON">
 <abbr title="Dagger\Module">Module</abbr>::introspectionSchemaJSON</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>The introspection schema JSON file for this module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_id">
+                    <dd><p>The introspection schema JSON file for this module.</p></dd><dt><a href="Dagger/ModuleCodegenConfig.html#method_id">
+<abbr title="Dagger\ModuleCodegenConfig">ModuleCodegenConfig</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleCodegenConfig.html"><abbr title="Dagger\ModuleCodegenConfig">ModuleCodegenConfig</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this ModuleCodegenConfig.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_id">
 <abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
                     <dd><p>A unique identifier for this ModuleConfigClient.</p></dd><dt><a href="Dagger/ModuleSource.html#method_id">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1075,7 +1083,8 @@
                     <dd><p>A description of the error.</p></dd><dt><a href="Dagger/LLM.html#method_model">
 <abbr title="Dagger\LLM">LLM</abbr>::model</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>return the model used by the llm</p></dd><dt><a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A Dagger module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A Dagger module.</p></dd><dt><a href="Dagger/ModuleCodegenConfig.html"><abbr title="Dagger\ModuleCodegenConfig">ModuleCodegenConfig</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The codegen configuration for the module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The client generated for the module.</p></dd><dt><a href="Dagger/ModuleConfigClientId.html"><abbr title="Dagger\ModuleConfigClientId">ModuleConfigClientId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1784,7 +1793,11 @@
 <abbr title="Dagger\Env">Env</abbr>::withMainModule</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Sets the main module for this environment (the project being worked on)</p></dd><dt><a href="Dagger/Env.html#method_withModule">
 <abbr title="Dagger\Env">Env</abbr>::withModule</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Installs a module into the environment, exposing its functions to the model</p></dd><dt><a href="Dagger/Env.html#method_withModuleConfigClientInput">
+                    <dd><p>Installs a module into the environment, exposing its functions to the model</p></dd><dt><a href="Dagger/Env.html#method_withModuleCodegenConfigInput">
+<abbr title="Dagger\Env">Env</abbr>::withModuleCodegenConfigInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type ModuleCodegenConfig in the environment</p></dd><dt><a href="Dagger/Env.html#method_withModuleCodegenConfigOutput">
+<abbr title="Dagger\Env">Env</abbr>::withModuleCodegenConfigOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired ModuleCodegenConfig output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withModuleConfigClientInput">
 <abbr title="Dagger\Env">Env</abbr>::withModuleConfigClientInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type ModuleConfigClient in the environment</p></dd><dt><a href="Dagger/Env.html#method_withModuleConfigClientOutput">
 <abbr title="Dagger\Env">Env</abbr>::withModuleConfigClientOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>

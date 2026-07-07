@@ -244,6 +244,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg(`path`).Doc(`A subpath from the source directory to select.`),
 			),
 
+		dagql.Func("codegenConfig", s.moduleSourceCodegenConfig).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The codegen configuration of the module.`),
+
 		dagql.Func("cloneRef", s.moduleSourceCloneRef).
 			Doc(`The ref to clone the root of the git repo from. Only valid for git sources.`),
 
@@ -289,6 +293,12 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 
 	dagql.Fields[*core.SDKConfig]{}.Install(dag)
 	dagql.Fields[*modules.ModuleConfigClient]{}.Install(dag)
+	dag.InstallObject(dagql.NewClass[*modules.ModuleCodegenConfig](dag).View(AfterVersion("v1.0.0-0")))
+	dagql.Fields[*modules.ModuleCodegenConfig]{
+		dagql.Func("automaticGitignore", s.moduleCodegenConfigAutomaticGitignore).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Whether to automatically generate a .gitignore file for this module. Defaults to true if not set.`),
+	}.Install(dag)
 
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
@@ -1364,6 +1374,28 @@ func (s *moduleSourceSchema) moduleSourceDirectory(
 		},
 	)
 	return inst, err
+}
+
+func (s *moduleSourceSchema) moduleSourceCodegenConfig(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (*modules.ModuleCodegenConfig, error) {
+	if src.CodegenConfig == nil {
+		return &modules.ModuleCodegenConfig{}, nil
+	}
+	return src.CodegenConfig, nil
+}
+
+func (s *moduleSourceSchema) moduleCodegenConfigAutomaticGitignore(
+	ctx context.Context,
+	cfg *modules.ModuleCodegenConfig,
+	args struct{},
+) (bool, error) {
+	if cfg.AutomaticGitignore == nil {
+		return true, nil
+	}
+	return *cfg.AutomaticGitignore, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceCloneRef(

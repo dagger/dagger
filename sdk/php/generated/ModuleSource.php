@@ -50,6 +50,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble, Node,
     }
 
     /**
+     * The codegen configuration of the module.
+     */
+    public function codegenConfig(): ModuleCodegenConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('codegenConfig');
+        return new \Dagger\ModuleCodegenConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The resolved commit of the git repo this source points to.
      */
     public function commit(): string
