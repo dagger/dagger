@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -110,4 +111,55 @@ func boundarySnapshot(id, parent byte) SpanSnapshot {
 	snap := checkSnapshot(id, "boundary", SpanID{SpanID: trace.SpanID{parent}}, "")
 	snap.Boundary = true
 	return snap
+}
+
+func TestSurfacedChecksMemoizedPerFrame(t *testing.T) {
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:        testID(1),
+			TraceID:   TraceID{TraceID: trace.TraceID{1}},
+			Name:      "root",
+			StartTime: time.Unix(1, 0),
+			EndTime:   time.Unix(5, 0),
+			Status:    sdktrace.Status{Code: codes.Ok},
+		},
+		{
+			ID:        testID(2),
+			TraceID:   TraceID{TraceID: trace.TraceID{1}},
+			Name:      "check lint",
+			CheckName: "lint",
+			ParentID:  testID(1),
+			StartTime: time.Unix(2, 0),
+			EndTime:   time.Unix(3, 0),
+			Status:    sdktrace.Status{Code: codes.Ok},
+		},
+	})
+
+	first := db.SurfacedChecks()
+	if len(first) != 1 || first[0].Name != "lint" {
+		t.Fatalf("expected the lint check, got %+v", first)
+	}
+	if again := db.SurfacedChecks(); &again[0] != &first[0] {
+		t.Fatal("repeated same-frame reads must hit the cache")
+	}
+
+	// New span data (a second check) must invalidate the cache.
+	db.ImportSnapshots([]SpanSnapshot{{
+		ID:        testID(3),
+		TraceID:   TraceID{TraceID: trace.TraceID{1}},
+		Name:      "check unit",
+		CheckName: "unit",
+		ParentID:  testID(1),
+		StartTime: time.Unix(3, 0),
+		EndTime:   time.Unix(4, 0),
+		Status:    sdktrace.Status{Code: codes.Error},
+	}})
+	fresh := db.SurfacedChecks()
+	if len(fresh) != 2 {
+		t.Fatalf("cache must be invalidated by new span data, got %d checks", len(fresh))
+	}
+	if !fresh[0].Failed || fresh[0].Name != "unit" {
+		t.Fatalf("failed check must sort first, got %+v", fresh[0])
+	}
 }

@@ -33,7 +33,22 @@ type CheckNode struct {
 // Checks are deduped by name (a check is failed if any of its spans failed) and
 // nested under the nearest surfaced ancestor check. Roots and children are
 // ordered failed-first, then by name.
+//
+// The result is cached per DB mutation: every input (check names, ancestor
+// chains, boundaries, statuses, the root span) only changes when a span is
+// added or updated, and a render frame re-reads the tree for every check row.
+// Callers must treat the returned nodes as read-only.
 func (db *DB) SurfacedChecks() []*CheckNode {
+	if db.surfacedChecksInit && db.surfacedChecksAt == db.mutations {
+		return db.surfacedChecks
+	}
+	db.surfacedChecks = db.buildSurfacedChecks()
+	db.surfacedChecksAt = db.mutations
+	db.surfacedChecksInit = true
+	return db.surfacedChecks
+}
+
+func (db *DB) buildSurfacedChecks() []*CheckNode {
 	type info struct {
 		span       *Span
 		parentName string

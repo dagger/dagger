@@ -41,7 +41,17 @@ func (claims *renderClaims) claimTestCase(id dagui.SpanID) {
 // When false the global section is the whole test view (no check rendered
 // tests), so missing-ancestor cases are not displaced and warrant no warning.
 func (claims *renderClaims) anyTestCases() bool {
-	return claims != nil && len(claims.tests) > 0
+	return claims.testCaseCount() > 0
+}
+
+// testCaseCount is the number of claimed test cases. Claims only grow within a
+// render pass, so (claims pointer, count) identifies the claimed-case set --
+// derived-view memos key on it.
+func (claims *renderClaims) testCaseCount() int {
+	if claims == nil {
+		return 0
+	}
+	return len(claims.tests)
 }
 
 func (claims *renderClaims) hasTestCase(id dagui.SpanID) bool {

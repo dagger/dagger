@@ -476,3 +476,40 @@ func TestFilterCasesKeepsCaselessFailingSuite(t *testing.T) {
 		t.Fatal("claimed case-less suite must be dropped")
 	}
 }
+
+func TestViewForSpanMemoizedPerFrame(t *testing.T) {
+	db := NewDB()
+	db.ImportSnapshots([]SpanSnapshot{
+		{
+			ID:        testID(1),
+			TraceID:   TraceID{TraceID: trace.TraceID{1}},
+			Name:      "check root",
+			StartTime: time.Unix(1, 0),
+			EndTime:   time.Unix(5, 0),
+			Status:    sdktrace.Status{Code: codes.Ok},
+		},
+		testSnapshot(2, "case-a", testID(1), TestStatusSuccess),
+	})
+	root := db.Spans.Map[testID(1)]
+
+	first := db.TestViewForSpan(root)
+	if first == nil || !first.HasTests() {
+		t.Fatal("expected a test view for the root")
+	}
+	if again := db.TestViewForSpan(root); again != first {
+		t.Fatal("repeated same-frame reads must hit the memo")
+	}
+
+	// New span data must invalidate the memo -- even data arriving through a
+	// plain DB mutation rather than a test-index change.
+	db.ImportSnapshots([]SpanSnapshot{
+		testSnapshot(3, "case-b", testID(1), TestStatusFailure),
+	})
+	fresh := db.TestViewForSpan(root)
+	if fresh == first {
+		t.Fatal("memo must be invalidated by new span data")
+	}
+	if fresh.Counts.Failing != 1 {
+		t.Fatalf("fresh view must include the new failing case, got %+v", fresh.Counts)
+	}
+}

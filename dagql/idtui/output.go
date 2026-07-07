@@ -75,14 +75,17 @@ var agentEnvVars = []string{
 // (Claude Code, Cursor, Codex, Gemini, Copilot, pi, Goose, Amp, etc.) rather
 // than a human at a terminal. Agents consume the output as text, so escape
 // codes are just noise.
-func RunningInAgent() bool {
+//
+// Memoized: the render loop consults it per row per frame, the environment
+// can't change mid-process, and each os.Getenv takes the runtime's env lock.
+var RunningInAgent = sync.OnceValue(func() bool {
 	for _, name := range agentEnvVars {
 		if os.Getenv(name) != "" {
 			return true
 		}
 	}
 	return false
-}
+})
 
 var (
 	bgOnce    = &sync.Once{}

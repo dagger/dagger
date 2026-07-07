@@ -1936,13 +1936,42 @@ func (fe *frontendPretty) orphanTestView() *dagui.TestView {
 	if fe.db == nil {
 		return nil
 	}
-	view := fe.db.TestView()
-	if !view.HasTests() {
-		return nil
+	// FilterCases deep-clones the whole test tree, and a frame reads the
+	// orphan view several times (section render, component View, warnings).
+	// Memoize on the DB mutation count plus the claimed-case set -- claims are
+	// replaced each pass and only grow within one, so (pointer, count)
+	// identifies the set.
+	if fe.orphanViewMemo.valid &&
+		fe.orphanViewMemo.mutations == fe.db.MutationCount() &&
+		fe.orphanViewMemo.claims == fe.claims &&
+		fe.orphanViewMemo.claimed == fe.claims.testCaseCount() {
+		return fe.orphanViewMemo.view
 	}
-	return view.FilterCases(func(node *dagui.TestNode) bool {
-		return node.Span == nil || !fe.claims.hasTestCase(node.Span.ID)
-	})
+	view := fe.db.TestView()
+	var orphan *dagui.TestView
+	if view.HasTests() {
+		orphan = view.FilterCases(func(node *dagui.TestNode) bool {
+			return node.Span == nil || !fe.claims.hasTestCase(node.Span.ID)
+		})
+	}
+	fe.orphanViewMemo = orphanViewMemo{
+		valid:     true,
+		mutations: fe.db.MutationCount(),
+		claims:    fe.claims,
+		claimed:   fe.claims.testCaseCount(),
+		view:      orphan,
+	}
+	return orphan
+}
+
+// orphanViewMemo caches orphanTestView's filtered clone for repeated reads
+// within a render pass.
+type orphanViewMemo struct {
+	valid     bool
+	mutations uint64
+	claims    *renderClaims
+	claimed   int
+	view      *dagui.TestView
 }
 
 func (fe *frontendPretty) orphanTestsComponent() *TestView {

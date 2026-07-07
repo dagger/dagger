@@ -116,6 +116,46 @@ type Frontend interface {
 	prompt.PromptHandler
 }
 
+// TraceFrontend is the optional interface 'dagger trace' drives for
+// incremental loading and report zooming: snapshot import, lazy span/log
+// providers, surfaced-failure prefetch, and name-based zoom targets. Only the
+// pretty frontend implements it; other frontends receive a plain OTLP
+// span/log stream instead.
+type TraceFrontend interface {
+	// SetTraceID lets the frontend point surfaced failure logs at
+	// 'dagger cloud logs <trace> <span>' for the full output.
+	SetTraceID(string)
+	// ImportSnapshots folds Cloud span snapshots (carrying ChildCount and
+	// Partial, which OTLP drops) into the frontend's DB.
+	ImportSnapshots([]dagui.SpanSnapshot)
+	// SetLogProvider/SetSpanProvider register the lazy fetchers fired when a
+	// span is expanded or a failure is surfaced.
+	SetLogProvider(func(id dagui.SpanID, descendants bool))
+	SetSpanProvider(func(id dagui.SpanID))
+	// SurfacedFailedCheckSpans lists the failed checks' spans (plus their
+	// error origins and links) whose subtrees the report needs prefetched.
+	SurfacedFailedCheckSpans() []dagui.SpanID
+	// RequestSurfacedLogs makes the frontend request logs for the failures it
+	// surfaces, so a single final report render includes their detail.
+	RequestSurfacedLogs()
+	// SetFetchWaiter lets the console block a request on in-flight fetches.
+	SetFetchWaiter(func())
+	// SetCIContext records the trace's source commit so the report can
+	// suggest commit-scoped re-run commands.
+	SetCIContext(commit string, isNativeCI bool)
+	// ResolveSpanTarget resolves a --check/--test name against the loaded
+	// view, matching the selection rules the report rendered with.
+	ResolveSpanTarget(check, test string) (dagui.SpanID, bool)
+	// ZoomToSpan scopes the view to a span; RequestZoomLogs fetches the
+	// logs the zoomed report will render.
+	ZoomToSpan(dagui.SpanID)
+	RequestZoomLogs(id dagui.SpanID, descendants bool)
+}
+
+// The pretty frontend must keep satisfying the trace capabilities --
+// a signature drift here would otherwise silently disable them.
+var _ TraceFrontend = (*frontendPretty)(nil)
+
 type extendedError interface {
 	error
 	Extensions() map[string]any

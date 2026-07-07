@@ -234,6 +234,7 @@ type frontendPretty struct {
 	fullscreenTests  *TestView
 	testViews        map[dagui.SpanID]*TestView
 	orphanTests      *TestView
+	orphanViewMemo   orphanViewMemo
 	testSpanChildren map[dagui.SpanID]*TestSpanChildrenView
 
 	// fullscreen log pager state

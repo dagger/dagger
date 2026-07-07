@@ -330,6 +330,15 @@ type TestIndex struct {
 	version      uint64
 	builtVersion uint64
 
+	// perSpanViews memoizes ViewForSpan per root for the current index
+	// version and DB mutation count. Render passes read the same roots
+	// several times per frame (claims seeding, row predicates, rollups);
+	// without the memo each read rescans every known test span.
+	perSpanViews    map[SpanID]*TestView
+	perSpanVersion  uint64
+	perSpanDBEpoch  uint64
+	perSpanMemoInit bool
+
 	initialScanCount       int
 	structuralRebuildCount int
 }
@@ -377,6 +386,23 @@ func (idx *TestIndex) ViewForSpan(root *Span) *TestView {
 	}
 	idx.View()
 
+	// Serve repeated same-frame reads from the memo; any index change or DB
+	// span add/update (which can extend an ancestor chain) invalidates it.
+	if !idx.perSpanMemoInit || idx.perSpanVersion != idx.version || idx.perSpanDBEpoch != idx.db.mutations {
+		idx.perSpanViews = make(map[SpanID]*TestView)
+		idx.perSpanVersion = idx.version
+		idx.perSpanDBEpoch = idx.db.mutations
+		idx.perSpanMemoInit = true
+	}
+	if view, ok := idx.perSpanViews[root.ID]; ok {
+		return view
+	}
+	view := idx.buildViewForSpan(root)
+	idx.perSpanViews[root.ID] = view
+	return view
+}
+
+func (idx *TestIndex) buildViewForSpan(root *Span) *TestView {
 	nodesBySpan := make(map[SpanID]*TestNode)
 	for id, span := range idx.knownTestSpans {
 		if span == nil {

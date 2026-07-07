@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/dustin/go-humanize"
 )
 
 // clientStats accumulates how much data a Client has fetched from Cloud, broken
@@ -72,24 +74,11 @@ func (s *clientStats) Summary() string {
 	sort.Strings(names)
 	var b strings.Builder
 	fmt.Fprintf(&b, "cloud fetch: %d requests, %d records, %s",
-		total.requests, total.records, humanBytes(total.bytes))
+		total.requests, total.records, humanize.Bytes(uint64(total.bytes)))
 	for _, name := range names {
 		st := s.ops[name]
 		fmt.Fprintf(&b, "\n  %-16s %d req, %d records, %s",
-			name, st.requests, st.records, humanBytes(st.bytes))
+			name, st.requests, st.records, humanize.Bytes(uint64(st.bytes)))
 	}
 	return b.String()
-}
-
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for v := n / unit; v >= unit; v /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
 }
