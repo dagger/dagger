@@ -68,7 +68,7 @@ func TestVersionCompatibility(t *testing.T) {
 			targetVersion:  "v0.0.0-dev-123",
 			minVersion:     "v0.0.0",
 			currentVersion: "v0.0.0-dev-456",
-			compatible:     true,
+			compatible:     false,
 		},
 	}
 

@@ -102,20 +102,10 @@ func cleanVersion(v string) string {
 }
 
 func CheckVersionCompatibility(version string, minVersion string) bool {
-	if IsDevVersion(version) && IsDevVersion(Version) {
-		// Both our version and our target version are dev versions - in this
-		// case, strip pre-release info from our target, we should pretend it's
-		// just the real thing here.
-		version = BaseVersion(version)
-	}
 	return semver.Compare(version, minVersion) >= 0
 }
 
 func CheckMaxVersionCompatibility(version string, maxVersion string) bool {
-	if IsDevVersion(version) && IsDevVersion(Version) {
-		// see CheckVersionCompatibility
-		version = BaseVersion(version)
-	}
 	return semver.Compare(version, maxVersion) <= 0
 }
 
