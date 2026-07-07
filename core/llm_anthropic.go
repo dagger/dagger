@@ -144,7 +144,17 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				}
 				blocks = append(blocks, anthropic.NewToolResultBlock(block.CallID, content, block.Errored))
 			case LLMContentThinking:
-				// Extended thinking round-trip is deferred to a later phase.
+				// Round-trip extended thinking. When thinking is enabled and the
+				// assistant made tool calls, Anthropic requires the original
+				// thinking blocks to be replayed unmodified with their signature,
+				// or it rejects the request. A block with no text but a signature
+				// is a redacted thinking block (opaque data stored in Signature).
+				switch {
+				case block.Text != "":
+					blocks = append(blocks, anthropic.NewThinkingBlock(block.Signature, block.Text))
+				case block.Signature != "":
+					blocks = append(blocks, anthropic.NewRedactedThinkingBlock(block.Signature))
+				}
 			}
 		}
 
@@ -230,12 +240,41 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	if opts != nil && opts.MaxTokens > 0 {
 		maxTokens = int64(opts.MaxTokens)
 	}
+
+	// Configure extended thinking / reasoning, if requested. Anthropic requires
+	// MaxTokens to leave room for the thinking budget on top of the reply, so we
+	// bump it when necessary.
+	var thinkingConfig anthropic.ThinkingConfigParamUnion
+	switch c.endpoint.ThinkingMode {
+	case "", "disabled", "none":
+		// thinking disabled
+	case "adaptive":
+		thinkingConfig = anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
+		}
+		if maxTokens < 16384 {
+			maxTokens = 16384
+		}
+	default:
+		// Any other mode (e.g. "enabled", "low"/"medium"/"high") enables thinking
+		// with an explicit token budget.
+		budget := c.endpoint.ThinkingBudget
+		if budget < 1024 {
+			budget = 10000
+		}
+		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(budget)
+		if maxTokens < budget+1024 {
+			maxTokens = budget + 1024
+		}
+	}
+
 	params := anthropic.MessageNewParams{
 		Model:     c.endpoint.Model,
 		MaxTokens: maxTokens,
 		Messages:  messages,
 		Tools:     toolsConfig,
 		System:    systemPrompts,
+		Thinking:  thinkingConfig,
 	}
 
 	// Start a streaming request.
@@ -306,6 +345,14 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				Kind:      LLMContentThinking,
 				Text:      b.Thinking,
 				Signature: b.Signature,
+			})
+		case anthropic.RedactedThinkingBlock:
+			// Redacted thinking carries no readable text, only opaque data that
+			// must be replayed verbatim. Stash it in Signature so the send path
+			// can reconstruct the block.
+			contentBlocks = append(contentBlocks, &LLMContentBlock{
+				Kind:      LLMContentThinking,
+				Signature: b.Data,
 			})
 		}
 	}

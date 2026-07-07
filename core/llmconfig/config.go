@@ -60,6 +60,11 @@ type Provider struct {
 	// (e.g. "low", "medium", "high", "adaptive").
 	ThinkingMode string `toml:"thinking_mode,omitempty"`
 
+	// ThinkingBudget is the maximum number of thinking tokens per turn, for
+	// providers that accept an explicit budget (Anthropic, Google). Zero means
+	// use a provider-specific default.
+	ThinkingBudget int64 `toml:"thinking_budget,omitempty"`
+
 	// APICompat selects which API protocol to use for custom/local endpoints.
 	// Values: "openai" (OpenAI-compatible) or "anthropic" (Anthropic-compatible).
 	// When set, BaseURL is used as the endpoint and the model name is passed through.

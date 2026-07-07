@@ -56,6 +56,8 @@ func TestLlmConfig(t *testing.T) {
 		"env://ANTHROPIC_BASE_URL":         "anthropic-base-url",
 		"env://ANTHROPIC_MODEL":            "anthropic-model",
 		"env://ANTHROPIC_AUTH_TOKEN":       "anthropic-auth-token",
+		"env://ANTHROPIC_THINKING_MODE":    "anthropic-thinking-mode",
+		"env://ANTHROPIC_THINKING_BUDGET":  "12000",
 		"env://OPENAI_API_KEY":             "openai-api-key",
 		"env://OPENAI_AZURE_VERSION":       "openai-azure-version",
 		"env://OPENAI_BASE_URL":            "openai-base-url",
@@ -67,6 +69,8 @@ func TestLlmConfig(t *testing.T) {
 		"env://GEMINI_API_KEY":             "gemini-api-key",
 		"env://GEMINI_BASE_URL":            "gemini-base-url",
 		"env://GEMINI_MODEL":               "gemini-model",
+		"env://GEMINI_THINKING_MODE":       "gemini-thinking-mode",
+		"env://GEMINI_THINKING_BUDGET":     "8000",
 	}
 
 	dagql.Fields[LLMTestQuery]{
@@ -101,9 +105,13 @@ func TestLlmConfig(t *testing.T) {
 	assert.Equal(t, "openai-codex-model", r.OpenAICodexModel)
 	assert.Equal(t, "openai-codex-thinking-mode", r.OpenAICodexThinkingMode)
 	assert.Equal(t, "anthropic-auth-token", r.AnthropicAuthToken)
+	assert.Equal(t, "anthropic-thinking-mode", r.AnthropicThinkingMode)
+	assert.Equal(t, int64(12000), r.AnthropicThinkingBudget)
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
+	assert.Equal(t, "gemini-thinking-mode", r.GeminiThinkingMode)
+	assert.Equal(t, int64(8000), r.GeminiThinkingBudget)
 }
 
 func TestCodexModelRouting(t *testing.T) {
