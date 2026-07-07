@@ -16,8 +16,7 @@ var (
 	// DAGGER_VERSION overrides at init for tests.
 	Version string
 
-	// Tag is the default engine image tag. It defaults to Version for release
-	// builds and Commit for dev builds.
+	// Tag is the default engine image tag. It defaults to Version.
 	//
 	// DAGGER_TAG overrides at init for tests.
 	Tag string
@@ -64,7 +63,7 @@ func init() {
 		Version = cleanVersion(v)
 	}
 	if Tag == "" {
-		Tag = defaultTag(Version, iversion.Commit)
+		Tag = Version
 	}
 	if v, ok := os.LookupEnv(DaggerTagEnv); ok {
 		Tag = v
@@ -92,16 +91,6 @@ func init() {
 		MinimumEngineVersion = cleanVersion(v)
 		MinimumModuleVersion = cleanVersion(v)
 	}
-}
-
-func defaultTag(version, commit string) string {
-	if IsDevVersion(version) {
-		if commit == "" {
-			return "main"
-		}
-		return commit
-	}
-	return version
 }
 
 func cleanVersion(v string) string {
