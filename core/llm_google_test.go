@@ -1,8 +1,8 @@
 package core
 
 import (
+	"context"
 	"encoding/base64"
-	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -119,7 +119,7 @@ func TestGenaiThinkingCapture(t *testing.T) {
 	}
 	noUsage := func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage { return LLMTokenUsage{} }
 
-	blocks, _, err := c.processStreamResponse(stream, io.Discard, noUsage)
+	blocks, _, err := c.processStreamResponse(stream, newDisplayPhases(context.Background(), ""), noUsage)
 	require.NoError(t, err)
 	require.Len(t, blocks, 3)
 

@@ -32,6 +32,7 @@ import (
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
@@ -1231,7 +1232,28 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 
 // CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
 // grouping calls by destructiveness and server to avoid workspace conflicts
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall) []*LLMMessage {
+// toolCallCtx returns the display span context a tool call's arguments streamed
+// into, so the tool's execution nests beneath it. Falls back to ctx when no
+// display span exists (e.g. replay or a provider that doesn't stream).
+func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callID string) context.Context {
+	if tc, ok := displays[callID]; ok {
+		return tc.Ctx
+	}
+	return ctx
+}
+
+// endToolCallDisplay ends a tool call's display span once the tool returns,
+// marking it errored if the call failed. No-op when there's no display span.
+func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, errored bool, errMsg string) {
+	if tc, ok := displays[callID]; ok {
+		if errored {
+			tc.Span.SetStatus(codes.Error, errMsg)
+		}
+		tc.Span.End()
+	}
+}
+
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
 	// Group tool calls by their characteristics
 	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
 	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
@@ -1270,7 +1292,8 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 
 	// 1. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
 	for _, call := range destructiveCalls {
-		result, isError := m.Call(ctx, tools, call)
+		result, isError := m.Call(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
+		endToolCallDisplay(toolCallDisplays, call.CallID, isError, result)
 		allResults = append(allResults, &LLMMessage{
 			Role: LLMMessageRoleUser,
 			Content: []*LLMContentBlock{{
@@ -1284,13 +1307,13 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 
 	// 2. Execute destructive MCP calls one server at a time to avoid workspace conflicts
 	for serverName, calls := range destructiveMCPCalls {
-		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName)
+		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName, toolCallDisplays)
 		allResults = append(allResults, serverResults...)
 	}
 
 	// 3. Execute all regular read-only (non-MCP) calls in parallel
 	if len(regularCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallDisplays)...)
 	}
 
 	// 4. Execute all read-only MCP calls in parallel (safe across servers)
@@ -1299,47 +1322,47 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
 	}
 	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls, toolCallDisplays)...)
 	}
 
 	return allResults
 }
 
 // callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
-func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string) []*LLMMessage {
+func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
 	mcpSrv, ok := m.mcpServers[serverName]
 	if !ok {
 		// Fall back to individual calls if server not found
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	if _, ok := m.mcpSessions[serverName]; !ok {
 		// Fall back to individual calls if session not found
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	ctr := mcpSrv.Service.Self().Container
 	if ctr.Self() == nil || ctr.Self().Config.WorkingDir == "" || ctr.Self().Config.WorkingDir == "/" {
 		// No workspace syncing needed - execute normally
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 	serviceDigest, err := mcpSrv.Service.ContentPreferredDigest(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 	running, err := query.Services(ctx)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 	runningSvc, err := running.Get(ctx, serviceDigest, false)
 	if err != nil {
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	var results []*LLMMessage
@@ -1350,13 +1373,13 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 		m.env.Self().Workspace,
 		func() error {
 			// Execute all tool calls for this server in parallel within the synced context
-			results = m.callBatchRegular(ctx, tools, toolCalls)
+			results = m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 			return nil
 		})
 
 	if err != nil {
 		// Fall back to individual calls if sync fails
-		return m.callBatchRegular(ctx, tools, toolCalls)
+		return m.callBatchRegular(ctx, tools, toolCalls, toolCallDisplays)
 	}
 
 	// Apply workspace changes if any were made
@@ -1370,12 +1393,13 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 }
 
 // callBatchRegular is the original parallel execution logic without MCP-specific syncing
-func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall) []*LLMMessage {
+func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
 	// Run tool calls in parallel using the existing pool logic
 	toolCallsPool := pool.NewWithResults[*LLMMessage]()
 	for _, toolCall := range toolCalls {
 		toolCallsPool.Go(func() *LLMMessage {
-			content, isError := m.Call(ctx, tools, toolCall)
+			content, isError := m.Call(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), tools, toolCall)
+			endToolCallDisplay(toolCallDisplays, toolCall.CallID, isError, content)
 			return &LLMMessage{
 				Role: LLMMessageRoleUser, // Anthropic only allows tool call results in user messages
 				Content: []*LLMContentBlock{{
