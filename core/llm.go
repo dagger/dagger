@@ -89,6 +89,12 @@ type LLMEndpoint struct {
 	Key      string
 	Provider LLMProvider
 	Client   LLMClient
+
+	// AuthToken and IsOAuth carry subscription OAuth credentials (e.g. Claude
+	// Code). When IsOAuth is set, the provider client authenticates with
+	// AuthToken as a bearer token instead of Key.
+	AuthToken string
+	IsOAuth   bool
 }
 
 type LLMProvider string
@@ -175,9 +181,11 @@ const (
 
 // A LLM routing configuration
 type LLMRouter struct {
-	AnthropicAPIKey  string
-	AnthropicBaseURL string
-	AnthropicModel   string
+	AnthropicAPIKey    string
+	AnthropicAuthToken string
+	AnthropicIsOAuth   bool
+	AnthropicBaseURL   string
+	AnthropicModel     string
 
 	OpenAIAPIKey           string
 	OpenAIAzureVersion     string
@@ -231,9 +239,11 @@ func (r *LLMRouter) getReplay(model string) (messages []*ModelMessage, _ error) 
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 	endpoint := &LLMEndpoint{
-		BaseURL:  r.AnthropicBaseURL,
-		Key:      r.AnthropicAPIKey,
-		Provider: Anthropic,
+		BaseURL:   r.AnthropicBaseURL,
+		Key:       r.AnthropicAPIKey,
+		Provider:  Anthropic,
+		AuthToken: r.AnthropicAuthToken,
+		IsOAuth:   r.AnthropicIsOAuth,
 	}
 	endpoint.Client = newAnthropicClient(endpoint)
 
@@ -298,7 +308,7 @@ func (r *LLMRouter) DefaultModel() string {
 	if r.OpenAIAPIKey != "" {
 		return modelDefaultOpenAI
 	}
-	if r.AnthropicAPIKey != "" {
+	if r.AnthropicAPIKey != "" || r.AnthropicAuthToken != "" {
 		return modelDefaultAnthropic
 	}
 	if r.OpenAIBaseURL != "" {
@@ -372,6 +382,11 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	eg.Go(func() error {
 		return save("ANTHROPIC_MODEL", &r.AnthropicModel)
 	})
+	eg.Go(func() error {
+		// OAuth (Claude Code subscription) bearer token, exported client-side
+		// from the persisted llmconfig by `dagger llm`.
+		return save("ANTHROPIC_AUTH_TOKEN", &r.AnthropicAuthToken)
+	})
 
 	eg.Go(func() error {
 		return save("OPENAI_API_KEY", &r.OpenAIAPIKey)
@@ -416,6 +431,9 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		}
 		r.OpenAIDisableStreaming = v
 	}
+
+	// A bearer token implies OAuth (Claude Code) auth for Anthropic.
+	r.AnthropicIsOAuth = r.AnthropicAuthToken != ""
 
 	return nil
 }
