@@ -84,10 +84,6 @@ func versionHuman() string {
 }
 
 func updateAvailable(ctx context.Context) (string, error) {
-	if engine.IsDevVersion(engine.Version) {
-		return "", nil
-	}
-
 	latest, err := latestVersion(ctx)
 	if err != nil {
 		return "", err
