@@ -132,14 +132,3 @@ func BaseVersion(version string) string {
 	version = strings.TrimSuffix(version, semver.Prerelease(version))
 	return version
 }
-
-func IsDevVersion(version string) bool {
-	if version == "" {
-		return true
-	}
-	prerelease := semver.Prerelease(version)
-	if prerelease == "-dev" || strings.Contains(prerelease, "-dev.") || strings.Contains(prerelease, "-dev-") {
-		return true
-	}
-	return false
-}
