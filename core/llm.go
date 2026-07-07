@@ -125,6 +125,11 @@ type LLMEndpoint struct {
 	// spend per turn, for providers that accept an explicit budget (Anthropic,
 	// Google). Zero means use a provider-specific default.
 	ThinkingBudget int64
+
+	// tunnel holds a running container-to-host tunnel for local endpoints,
+	// forwarding the endpoint's traffic through the client's session. Nil for
+	// non-local providers.
+	tunnel *localTunnel
 }
 
 type LLMProvider string
@@ -463,6 +468,7 @@ const (
 	Meta        LLMProvider = "meta"
 	Mistral     LLMProvider = "mistral"
 	DeepSeek    LLMProvider = "deepseek"
+	Local       LLMProvider = "local"
 	Other       LLMProvider = "other"
 )
 
@@ -493,6 +499,16 @@ type LLMRouter struct {
 	GeminiModel          string
 	GeminiThinkingMode   string
 	GeminiThinkingBudget int64
+
+	// Local is a self-hosted, OpenAI- or Anthropic-compatible endpoint (e.g.
+	// Ollama, LM Studio, vLLM) reachable from the client's host. Its traffic is
+	// tunneled to the engine through the client's session, since the engine may
+	// not be able to reach the endpoint directly. APICompat selects the wire
+	// protocol ("openai" or "anthropic"); APIKey is optional.
+	LocalBaseURL   string
+	LocalModel     string
+	LocalAPICompat string
+	LocalAPIKey    string
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -513,6 +529,13 @@ func (r *LLMRouter) isGoogleModel(model string) bool {
 
 func (r *LLMRouter) isMistralModel(model string) bool {
 	return strings.HasPrefix(model, "mistral-") || strings.HasPrefix(model, "mistral/")
+}
+
+// isLocalModel reports whether model is served by the configured local
+// endpoint. Unlike the other providers, local models have no naming convention
+// to key on, so we match the configured model name exactly.
+func (r *LLMRouter) isLocalModel(model string) bool {
+	return r.LocalBaseURL != "" && r.LocalAPICompat != "" && r.LocalModel == model
 }
 
 func (r *LLMRouter) isReplay(model string) bool {
@@ -595,6 +618,23 @@ func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
 	return endpoint, nil
 }
 
+func (r *LLMRouter) routeLocalModel() (*LLMEndpoint, error) {
+	endpoint := &LLMEndpoint{
+		BaseURL:  r.LocalBaseURL,
+		Key:      r.LocalAPIKey,
+		Provider: Local,
+	}
+	switch r.LocalAPICompat {
+	case "openai":
+		endpoint.Client = newOpenAIClient(endpoint, "", false)
+	case "anthropic":
+		endpoint.Client = newAnthropicClient(endpoint)
+	default:
+		return nil, fmt.Errorf("unsupported local API compatibility mode: %q (must be %q or %q)", r.LocalAPICompat, "openai", "anthropic")
+	}
+	return endpoint, nil
+}
+
 func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
 	// default to openAI compat from other providers
 	endpoint := &LLMEndpoint{
@@ -633,6 +673,9 @@ func (r *LLMRouter) DefaultModel() string {
 	if r.GeminiModel != "" {
 		return r.GeminiModel
 	}
+	if r.LocalModel != "" {
+		return r.LocalModel
+	}
 	if r.OpenAIAPIKey != "" {
 		return modelDefaultOpenAI
 	}
@@ -662,6 +705,14 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	var endpoint *LLMEndpoint
 	var err error
 	switch {
+	// NB: must precede the prefix-based matchers — a local model may be named to
+	// look like any provider's (e.g. "gpt-oss"), so an exact configured-model
+	// match wins.
+	case r.isLocalModel(model):
+		endpoint, err = r.routeLocalModel()
+		if err != nil {
+			return nil, err
+		}
 	case r.isAnthropicModel(model):
 		endpoint = r.routeAnthropicModel()
 	// NB: must precede isOpenAIModel — a "codex"-named model (e.g. gpt-5.3-codex)
@@ -765,6 +816,19 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	})
 	eg.Go(func() error {
 		return save("GEMINI_THINKING_MODE", &r.GeminiThinkingMode)
+	})
+
+	eg.Go(func() error {
+		return save("LOCAL_BASE_URL", &r.LocalBaseURL)
+	})
+	eg.Go(func() error {
+		return save("LOCAL_MODEL", &r.LocalModel)
+	})
+	eg.Go(func() error {
+		return save("LOCAL_API_COMPAT", &r.LocalAPICompat)
+	})
+	eg.Go(func() error {
+		return save("LOCAL_API_KEY", &r.LocalAPIKey)
 	})
 
 	var (
@@ -944,6 +1008,29 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	}
 	if endpoint.Model == "" {
 		return nil, fmt.Errorf("no valid LLM endpoint configuration")
+	}
+
+	// A local endpoint is reachable from the client's host, not necessarily the
+	// engine (which may run in a container or on another host). Tunnel its
+	// traffic through the client's session, then rebuild the client against the
+	// rewritten (loopback) base URL.
+	if endpoint.Provider == Local {
+		parentClient, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("local LLM: parent client metadata: %w", err)
+		}
+		tunnelCtx := engine.ContextWithClientMetadata(ctx, parentClient)
+		tunnel, err := setupLocalTunnel(tunnelCtx, endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("setup local LLM tunnel: %w", err)
+		}
+		endpoint.tunnel = tunnel
+		switch router.LocalAPICompat {
+		case "openai":
+			endpoint.Client = newOpenAIClient(endpoint, "", false)
+		case "anthropic":
+			endpoint.Client = newAnthropicClient(endpoint)
+		}
 	}
 
 	llm.endpoint = endpoint

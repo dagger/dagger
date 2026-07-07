@@ -71,6 +71,10 @@ func TestLlmConfig(t *testing.T) {
 		"env://GEMINI_MODEL":               "gemini-model",
 		"env://GEMINI_THINKING_MODE":       "gemini-thinking-mode",
 		"env://GEMINI_THINKING_BUDGET":     "8000",
+		"env://LOCAL_BASE_URL":             "local-base-url",
+		"env://LOCAL_MODEL":                "local-model",
+		"env://LOCAL_API_COMPAT":           "openai",
+		"env://LOCAL_API_KEY":              "local-api-key",
 	}
 
 	dagql.Fields[LLMTestQuery]{
@@ -112,6 +116,54 @@ func TestLlmConfig(t *testing.T) {
 	assert.Equal(t, "gemini-model", r.GeminiModel)
 	assert.Equal(t, "gemini-thinking-mode", r.GeminiThinkingMode)
 	assert.Equal(t, int64(8000), r.GeminiThinkingBudget)
+	assert.Equal(t, "local-base-url", r.LocalBaseURL)
+	assert.Equal(t, "local-model", r.LocalModel)
+	assert.Equal(t, "openai", r.LocalAPICompat)
+	assert.Equal(t, "local-api-key", r.LocalAPIKey)
+}
+
+func TestLocalModelRouting(t *testing.T) {
+	// A local endpoint is keyed by an exact model-name match (it has no naming
+	// convention to detect), and wins ahead of the prefix-based heuristics.
+	r := &LLMRouter{
+		LocalBaseURL:   "http://localhost:11434",
+		LocalModel:     "llama3",
+		LocalAPICompat: "openai",
+		LocalAPIKey:    "sk-local",
+	}
+	// With only a local endpoint configured, its model is the default.
+	assert.Equal(t, "llama3", r.DefaultModel())
+
+	ep, err := r.Route("llama3")
+	assert.NoError(t, err)
+	assert.Equal(t, Local, ep.Provider)
+	assert.Equal(t, "llama3", ep.Model)
+	assert.Equal(t, "http://localhost:11434", ep.BaseURL)
+	assert.Equal(t, "sk-local", ep.Key)
+
+	// A local model named to look like another provider's still routes local.
+	r2 := &LLMRouter{
+		LocalBaseURL:   "http://localhost:1234",
+		LocalModel:     "gpt-oss",
+		LocalAPICompat: "anthropic",
+	}
+	ep2, err := r2.Route("gpt-oss")
+	assert.NoError(t, err)
+	assert.Equal(t, Local, ep2.Provider)
+
+	// A different model name does not match the local slot.
+	assert.False(t, r.isLocalModel("some-other-model"))
+	// Nor does the slot match when it is not fully configured.
+	assert.False(t, (&LLMRouter{LocalModel: "llama3"}).isLocalModel("llama3"))
+
+	// An unsupported API compatibility mode is a routing error.
+	r3 := &LLMRouter{
+		LocalBaseURL:   "http://localhost:11434",
+		LocalModel:     "llama3",
+		LocalAPICompat: "bogus",
+	}
+	_, err = r3.Route("llama3")
+	assert.Error(t, err)
 }
 
 func TestCodexModelRouting(t *testing.T) {

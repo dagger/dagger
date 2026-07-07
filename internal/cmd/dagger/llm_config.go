@@ -129,6 +129,14 @@ func applyLLMConfigEnv() {
 				base = "https://openrouter.ai/api/v1"
 			}
 			setIfEmpty("OPENAI_BASE_URL", base)
+		case "local":
+			// A self-hosted, OpenAI- or Anthropic-compatible endpoint. The engine
+			// tunnels to it through this client, so it need only be reachable from
+			// here (e.g. Ollama on localhost).
+			setIfEmpty("LOCAL_BASE_URL", p.BaseURL)
+			setIfEmpty("LOCAL_MODEL", p.Model)
+			setIfEmpty("LOCAL_API_COMPAT", p.APICompat)
+			setIfEmpty("LOCAL_API_KEY", p.APIKey)
 		}
 	}
 }
