@@ -368,12 +368,6 @@ func (fe *frontendPretty) checksRollupLines(ctx tuist.Context, r *renderer, chil
 	for _, child := range children[:shown] {
 		lines = append(lines, fe.checkStatusLine(out, r, child, "  "))
 	}
-	lines = append(lines, fe.checksRollupMore(out, len(children)-shown))
+	lines = append(lines, summaryMoreLine(out, 2, len(children)-shown))
 	return lines
-}
-
-// checksRollupMore is the faint "… N more …" line shown when condensing drops
-// sub-check rows that wouldn't fit.
-func (fe *frontendPretty) checksRollupMore(out TermOutput, hidden int) string {
-	return "  " + out.String(fmt.Sprintf("… %d more …", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 }

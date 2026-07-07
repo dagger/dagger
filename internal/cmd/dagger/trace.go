@@ -277,7 +277,7 @@ func traceRun(cmd *cobra.Command, args []string) error {
 // suggestion.
 func setTraceCIContext(ctx context.Context, client *cloud.Client, orgID, traceID string) {
 	t, ok := Frontend.(interface {
-		SetCIContext(commit, prNumber string, isNativeCI bool)
+		SetCIContext(commit string, isNativeCI bool)
 	})
 	if !ok {
 		return
@@ -290,21 +290,18 @@ func setTraceCIContext(ctx context.Context, client *cloud.Client, orgID, traceID
 	if meta == nil {
 		return
 	}
-	var commit, prNumber string
+	var commit string
 	var isNativeCI bool
 	if meta.Git != nil {
 		commit = meta.Git.Ref
 	}
 	if meta.CI != nil {
 		isNativeCI = meta.CI.IsNativeCI
-		if meta.CI.Change != nil {
-			prNumber = meta.CI.Change.ID
-			if commit == "" {
-				commit = meta.CI.Change.HeadSHA
-			}
+		if commit == "" && meta.CI.Change != nil {
+			commit = meta.CI.Change.HeadSHA
 		}
 	}
-	t.SetCIContext(commit, prNumber, isNativeCI)
+	t.SetCIContext(commit, isNativeCI)
 }
 
 // fetchGroup tracks in-flight background fetches. Unlike errgroup.Group /

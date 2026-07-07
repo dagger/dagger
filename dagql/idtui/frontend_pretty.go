@@ -824,22 +824,20 @@ func (fe *frontendPretty) SetTraceID(traceID string) {
 	})
 }
 
-// ciContext is the trace's source git/CI context: the commit it ran on and, for
-// native CI, the change (PR) number. It drives the report's re-run suggestions.
+// ciContext is the trace's source git/CI context: the commit it ran on. It
+// drives the report's re-run suggestions.
 type ciContext struct {
 	commit     string // git ref / commit SHA the trace ran on
-	prNumber   string // CI change number, e.g. the PR number
 	isNativeCI bool   // ran in Dagger Cloud native CI (so 'dagger cloud rerun' applies)
 }
 
 // SetCIContext records the trace's source commit / CI change so the report can
 // suggest commit-scoped re-run commands. Called by 'dagger trace' for Cloud
 // traces; no-op for live/local runs.
-func (fe *frontendPretty) SetCIContext(commit, prNumber string, isNativeCI bool) {
+func (fe *frontendPretty) SetCIContext(commit string, isNativeCI bool) {
 	fe.dispatch(func() {
 		fe.ciMeta = &ciContext{
 			commit:     commit,
-			prNumber:   prNumber,
 			isNativeCI: isNativeCI,
 		}
 	})
@@ -1337,12 +1335,6 @@ func (fe *frontendPretty) SetFetchWaiter(wait func()) {
 // yet (ChildCount exceeds the children we actually have); otherwise the subtree
 // is already present and expanding it is purely local.
 func (fe *frontendPretty) requestSpans(id dagui.SpanID) {
-	if fe.spanProvider == nil || !id.IsValid() {
-		return
-	}
-	if fe.requestedSpans[id] {
-		return
-	}
 	span, ok := fe.db.Spans.Map[id]
 	if !ok {
 		// Span not loaded yet; it'll be requested once it's surfaced.
@@ -1352,11 +1344,7 @@ func (fe *frontendPretty) requestSpans(id dagui.SpanID) {
 		// Leaf span: nothing deeper to fetch.
 		return
 	}
-	if fe.requestedSpans == nil {
-		fe.requestedSpans = make(map[dagui.SpanID]bool)
-	}
-	fe.requestedSpans[id] = true
-	fe.spanProvider(id)
+	fe.requestSubtree(id)
 }
 
 // requestSubtree asks the span provider for a span's children even when its
@@ -2175,7 +2163,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// Pre-render chrome below progress. Global tests are rendered before
 	// progress so their claims can suppress duplicate test logs in the trace
 	// rows above them.
-	globalTestLines := fe.renderLiveGlobalTests(ctx)
+	globalTestLines := fe.renderGlobalTests(ctx, false)
 	logsLines := fe.renderLogsLines("")
 
 	// Lines the TUI renders as siblings outside this component, which are
@@ -2338,7 +2326,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 			ctx.Lines(testLines...)
 		}
 	} else if !zoomed && pol.showSubtests {
-		if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
+		if testLines := fe.renderGlobalTests(ctx, true); len(testLines) > 0 {
 			if renderedRows {
 				ctx.Line("")
 			}
@@ -2425,23 +2413,11 @@ func (fe *frontendPretty) renderTraceHeader(r *renderer) []string {
 }
 
 // stripTraceparent removes the cross-SDK "[traceparent:<trace>-<span>]" error
-// markers (and any single space before them) from a message.
+// markers (and any whitespace before them) from a message. It applies the same
+// regex otel-go itself cleans messages with, so the two can't disagree about
+// the marker format.
 func stripTraceparent(s string) string {
-	for {
-		i := strings.Index(s, "[traceparent:")
-		if i < 0 {
-			return s
-		}
-		end := strings.IndexByte(s[i:], ']')
-		if end < 0 {
-			return s
-		}
-		start := i
-		if start > 0 && s[start-1] == ' ' {
-			start--
-		}
-		s = s[:start] + s[i+end+1:]
-	}
+	return telemetry.ErrorOriginRegex.ReplaceAllString(s, "")
 }
 
 // renderZoomedFinalLogs renders the zoomed span's rolled-up logs for the final
@@ -2725,31 +2701,22 @@ func checksHeaderLine(out TermOutput, nodes []*dagui.CheckNode) string {
 }
 
 // checkBreakdownPartsFor renders the failed/passed tallies as "✘ N failed" /
-// "✔ N passed" parts (same icon+color style as the test summary) for the given
-// checks, counted directly rather than recursively: each CHECKS header tallies
-// the checks listed directly beneath it. Boundaries are already honored by
-// SurfacedChecks, so checks a test intentionally runs aren't among the nodes.
-// NB: with incremental --full loading the passed tally only covers checks
-// already fetched.
+// "✔ N passed" parts (via the test summary's renderer, so the two headers stay
+// in visual lockstep) for the given checks, counted directly rather than
+// recursively: each CHECKS header tallies the checks listed directly beneath
+// it. Boundaries are already honored by SurfacedChecks, so checks a test
+// intentionally runs aren't among the nodes. NB: with incremental --full
+// loading the passed tally only covers checks already fetched.
 func checkBreakdownPartsFor(out TermOutput, nodes []*dagui.CheckNode) []string {
-	var failed, passed int
+	var counts dagui.TestCounts
 	for _, n := range nodes {
 		if n.Failed {
-			failed++
+			counts.Failing++
 		} else {
-			passed++
+			counts.Passing++
 		}
 	}
-	var parts []string
-	add := func(count int, icon string, color termenv.Color, label string) {
-		if count == 0 {
-			return
-		}
-		parts = append(parts, out.String(fmt.Sprintf("%s %d %s", icon, count, label)).Foreground(color).String())
-	}
-	add(failed, IconFailure, termenv.ANSIRed, "failed")
-	add(passed, IconSuccess, termenv.ANSIGreen, "passed")
-	return parts
+	return renderTestCountParts(out, counts)
 }
 
 // renderLogsLines returns the zoomed span's log output as lines.

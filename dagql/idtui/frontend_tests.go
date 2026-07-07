@@ -832,8 +832,14 @@ func (tv *TestView) condenseTestSummary(out TermOutput, header string, blocks []
 // renderTestSummaryMore is the faint "… N more …" line shown when condensing
 // drops test rows that wouldn't fit.
 func (tv *TestView) renderTestSummaryMore(out TermOutput, hidden int) string {
-	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
-	return indent + out.String(fmt.Sprintf("… %d more …", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
+	return summaryMoreLine(out, max(tv.SummaryIndent, 0)+2, hidden)
+}
+
+// summaryMoreLine is the faint "… N more …" overflow marker shown when a
+// condensed summary (tests or checks) drops rows that wouldn't fit.
+func summaryMoreLine(out TermOutput, indent, hidden int) string {
+	return strings.Repeat(" ", indent) +
+		out.String(fmt.Sprintf("… %d more …", hidden)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 }
 
 // renderTestSummaryCountsCompact renders the pass/fail tallies on a single line
@@ -1855,7 +1861,10 @@ func (fe *frontendPretty) claimInlineTestCases() {
 	}
 }
 
-func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
+// renderGlobalTests renders the orphan (not-under-a-check) TESTS section. The
+// live view shows a condensed rollup with a viewer hint sized to the screen;
+// the final report shows full log detail at the report's minimum width.
+func (fe *frontendPretty) renderGlobalTests(ctx tuist.Context, final bool) []string {
 	if fe.db == nil {
 		return nil
 	}
@@ -1863,20 +1872,27 @@ func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 	if orphan == nil || !orphan.HasTests() {
 		return nil
 	}
+	logLines, showHint := 8, true
+	if final {
+		logLines, showHint = -1, false
+	}
 	tv := fe.orphanTestsComponent()
 	if tv.SummaryIndent != 0 {
 		tv.SummaryIndent = 0
 		tv.Update()
 	}
-	if tv.SummaryLogLines != 8 {
-		tv.SummaryLogLines = 8
+	if tv.SummaryLogLines != logLines {
+		tv.SummaryLogLines = logLines
 		tv.Update()
 	}
-	if !tv.ShowTestViewerHint {
-		tv.ShowTestViewerHint = true
+	if tv.ShowTestViewerHint != showHint {
+		tv.ShowTestViewerHint = showHint
 		tv.Update()
 	}
 	limit := liveTestViewHeight(ctx)
+	if final {
+		limit = finalTestViewHeight(tv)
+	}
 	if tv.MaxHeight != limit {
 		tv.MaxHeight = limit
 		tv.Update()
@@ -1885,46 +1901,10 @@ func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 	if width <= 0 {
 		width = finalRenderTestsWidth
 	}
-	fe.setOrphanSummary(tv, fe.orphanWarningLines(orphan))
-	lines := fe.RenderChildResult(ctx.Resize(max(width, 1), limit), tv).Lines
-	if len(lines) == 0 {
-		return nil
+	width = max(width, 1)
+	if final {
+		width = max(width, finalRenderTestsWidth)
 	}
-	fe.claims.claimTestReport(nil, orphan)
-	return lines
-}
-
-func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
-	if fe.db == nil {
-		return nil
-	}
-	orphan := fe.orphanTestView()
-	if orphan == nil || !orphan.HasTests() {
-		return nil
-	}
-	tv := fe.orphanTestsComponent()
-	if tv.SummaryIndent != 0 {
-		tv.SummaryIndent = 0
-		tv.Update()
-	}
-	if tv.SummaryLogLines != -1 {
-		tv.SummaryLogLines = -1
-		tv.Update()
-	}
-	if tv.ShowTestViewerHint {
-		tv.ShowTestViewerHint = false
-		tv.Update()
-	}
-	limit := finalTestViewHeight(tv)
-	if tv.MaxHeight != limit {
-		tv.MaxHeight = limit
-		tv.Update()
-	}
-	width := ctx.Width
-	if width <= 0 {
-		width = finalRenderTestsWidth
-	}
-	width = max(width, finalRenderTestsWidth)
 	fe.setOrphanSummary(tv, fe.orphanWarningLines(orphan))
 	lines := fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
 	if len(lines) == 0 {

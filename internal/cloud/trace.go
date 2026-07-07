@@ -192,16 +192,16 @@ func parseGraphQLErrors(op string, data []byte) error {
 	// Only a payload that parses and carries top-level errors is a GraphQL error;
 	// anything else -- a normal data payload, or one that doesn't parse as our
 	// probe -- is not.
-	if err := json.Unmarshal(data, &probe); err != nil || len(probe.Errors) == 0 {
-		return nil
+	if err := json.Unmarshal(data, &probe); err == nil && len(probe.Errors) > 0 {
+		if len(probe.Data) > 0 && string(probe.Data) != "null" {
+			// Partial success: field errors alongside usable data is legal
+			// GraphQL. Let the data flow rather than aborting the whole stream
+			// over fields we may not even consume.
+			return nil
+		}
+		return &graphqlErrorsError{op: op, body: string(data)}
 	}
-	if len(probe.Data) > 0 && string(probe.Data) != "null" {
-		// Partial success: field errors alongside usable data is legal GraphQL.
-		// Let the data flow rather than aborting the whole stream over fields
-		// we may not even consume.
-		return nil
-	}
-	return &graphqlErrorsError{op: op, body: string(data)}
+	return nil
 }
 
 // isUnsupportedArgError reports whether err is a GraphQL validation failure for
@@ -253,45 +253,35 @@ query GetTraceMetadata ($org: ID!, $traceID: ID!) {
 	trace(id: $traceID, org: $org) {
 		git {
 			ref
-			branch
-			tag
 		}
 		ci {
 			isNativeCI
-			repository
 			change {
-				id
 				headSHA
-				branch
 			}
 		}
 	}
 }
 `
 
-// TraceMetadata is the trace's source git/CI context: the commit it ran on and,
-// for native CI, the change (PR) and whether re-running via Dagger Cloud applies.
+// TraceMetadata is the trace's source git/CI context: the commit it ran on and
+// whether re-running via Dagger Cloud applies.
 type TraceMetadata struct {
 	Git *TraceGitMetadata `json:"git"`
 	CI  *TraceCIMetadata  `json:"ci"`
 }
 
 type TraceGitMetadata struct {
-	Ref    string `json:"ref"`
-	Branch string `json:"branch"`
-	Tag    string `json:"tag"`
+	Ref string `json:"ref"`
 }
 
 type TraceCIMetadata struct {
 	IsNativeCI bool           `json:"isNativeCI"`
-	Repository string         `json:"repository"`
 	Change     *TraceCIChange `json:"change"`
 }
 
 type TraceCIChange struct {
-	ID      string `json:"id"` // change number, e.g. the PR number
 	HeadSHA string `json:"headSHA"`
-	Branch  string `json:"branch"`
 }
 
 // TraceMetadata fetches a trace's git/CI context. Returns nil (no error) when the

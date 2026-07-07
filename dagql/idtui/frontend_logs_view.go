@@ -30,11 +30,11 @@ type LogsView struct {
 
 	// Inputs synced by the owner each frame. logPrefix/trimPrefix encode the
 	// row indent, status colour and focus; a change to any of these (or to
-	// height/finalRender) is folded into sig so a stale render is invalidated.
-	logPrefix   string
-	trimPrefix  string
-	height      int
-	finalRender bool
+	// height, or the final-render flag) is folded into sig so a stale render
+	// is invalidated.
+	logPrefix  string
+	trimPrefix string
+	height     int
 
 	// sig is the last-synced signature of the inputs above; the owner calls
 	// sync() to bump the tuist generation only when it actually changes.
@@ -90,7 +90,6 @@ func (lv *LogsView) sync(logPrefix, trimPrefix string, height int, finalRender, 
 		lv.logPrefix = logPrefix
 		lv.trimPrefix = trimPrefix
 		lv.height = height
-		lv.finalRender = finalRender
 		lv.sig = sig
 		lv.Update()
 	}

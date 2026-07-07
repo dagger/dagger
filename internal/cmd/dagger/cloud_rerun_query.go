@@ -3,7 +3,6 @@ package daggercmd
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -203,22 +202,14 @@ func renderCloudList(cmd *cobra.Command, rows []cloudCheckRow, columns []string)
 	for _, col := range columns {
 		headers = append(headers, strings.ToUpper(col))
 	}
-	headers = append(headers, "RESULT")
-	if slices.Contains(columns, "check") {
-		headers = append(headers, "DURATION", "TRACE")
-	}
-	headers = append(headers, "UPDATED")
+	headers = append(headers, "RESULT", "UPDATED")
 	fmt.Fprintln(tw, strings.Join(headers, "\t"))
 	for _, row := range grouped {
 		fields := make([]string, 0, len(headers))
 		for _, col := range columns {
 			fields = append(fields, dash(row.Values[col]))
 		}
-		fields = append(fields, row.Result)
-		if slices.Contains(columns, "check") {
-			fields = append(fields, formatCloudDuration(row.Duration), dash(row.TraceURL))
-		}
-		fields = append(fields, relativeTime(row.UpdatedAt))
+		fields = append(fields, row.Result, relativeTime(row.UpdatedAt))
 		fmt.Fprintln(tw, strings.Join(fields, "\t"))
 	}
 	_ = tw.Flush()
@@ -241,24 +232,14 @@ func groupCloudListRows(rows []cloudCheckRow, columns []string) []groupedCloudLi
 				Values:    values,
 				Result:    row.Result,
 				UpdatedAt: row.UpdatedAt,
-				Duration:  row.Duration,
-				TraceURL:  row.TraceURL,
-				count:     1,
 			}
 			byKey[key] = group
 			order = append(order, key)
 			continue
 		}
-		group.count++
 		group.Result = stricterCloudResult(group.Result, row.Result)
 		if row.UpdatedAt.After(group.UpdatedAt) {
 			group.UpdatedAt = row.UpdatedAt
-		}
-		if group.Duration != row.Duration {
-			group.Duration = 0
-		}
-		if group.TraceURL != row.TraceURL {
-			group.TraceURL = ""
 		}
 	}
 	out := make([]groupedCloudListRow, 0, len(order))
@@ -275,9 +256,6 @@ type groupedCloudListRow struct {
 	Values    map[string]string
 	Result    string
 	UpdatedAt time.Time
-	Duration  time.Duration
-	TraceURL  string
-	count     int
 }
 
 func dash(value string) string {
@@ -285,22 +263,6 @@ func dash(value string) string {
 		return "-"
 	}
 	return value
-}
-
-func formatCloudDuration(d time.Duration) string {
-	if d <= 0 {
-		return "-"
-	}
-	switch {
-	case d < time.Second:
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	case d < time.Minute:
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	case d < time.Hour:
-		return fmt.Sprintf("%dm%02ds", int(d/time.Minute), int((d%time.Minute)/time.Second))
-	default:
-		return fmt.Sprintf("%dh%02dm", int(d/time.Hour), int((d%time.Hour)/time.Minute))
-	}
 }
 
 // checkPastWorkspaceAddress resolves the remote workspace address to look up past

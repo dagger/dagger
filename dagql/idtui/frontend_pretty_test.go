@@ -412,7 +412,7 @@ func TestFinalGlobalTestsUnindented(t *testing.T) {
 	fe := NewWithDB(io.Discard, db)
 	// Render live first so the final report proves it does not inherit the live
 	// "T inspect" hint from the cached inline TestView.
-	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) == 0 {
+	if lines := fe.renderGlobalTests(tuist.Context{Width: 80}, false); len(lines) == 0 {
 		t.Fatal("live global tests did not render")
 	}
 	// Claims are per-render-pass state; the real frontend resets them before each
@@ -420,7 +420,7 @@ func TestFinalGlobalTestsUnindented(t *testing.T) {
 	// having claimed these same orphan cases.
 	fe.claims = newRenderClaims()
 	fe.finalRender = true
-	lines := fe.renderFinalGlobalTests(tuist.Context{Width: 80})
+	lines := fe.renderGlobalTests(tuist.Context{Width: 80}, true)
 	testsLine, ok := findPrettyTestLine(lines, "TESTS")
 	if !ok {
 		t.Fatalf("final global tests did not include TESTS line:\n%s", strings.Join(lines, "\n"))
@@ -474,7 +474,7 @@ func TestOrphanTestsSectionTitledAndWarned(t *testing.T) {
 	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
 	fe.checksReport(tuist.Context{Width: 100}, r, false)
 
-	lines := fe.renderFinalGlobalTests(tuist.Context{Width: 100})
+	lines := fe.renderGlobalTests(tuist.Context{Width: 100}, true)
 	if len(lines) < 3 {
 		t.Fatalf("orphan global tests rendered too few lines:\n%s", strings.Join(lines, "\n"))
 	}
@@ -506,7 +506,7 @@ func TestTraceHeaderShowsVerdict(t *testing.T) {
 		},
 		{
 			name:     "failing call",
-			status:   sdktrace.Status{Code: codes.Error, Description: `call function "phpstan": exit code: 1 [traceparent:abc123-def456]`},
+			status:   sdktrace.Status{Code: codes.Error, Description: `call function "phpstan": exit code: 1 [traceparent:0123456789abcdef0123456789abcdef-0123456789abcdef]`},
 			wantWord: "FAILED",
 			wantErr:  `call function "phpstan": exit code: 1`,
 		},
@@ -733,7 +733,7 @@ func TestRerunSectionCloudAndLocalForNativeCI(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	fe := NewWithDB(io.Discard, rerunReportDB(t))
 	fe.recalculateViewLocked()
-	fe.ciMeta = &ciContext{commit: "abc123", prNumber: "4", isNativeCI: true}
+	fe.ciMeta = &ciContext{commit: "abc123", isNativeCI: true}
 
 	lines := fe.renderRerunSection(nil)
 	joined := strings.Join(lines, "\n")
@@ -972,7 +972,7 @@ func TestLiveGlobalTestsSkipCheckScopedTests(t *testing.T) {
 	// (the global section is emitted before the rollups that claim) -- the very
 	// bug that let check tests duplicate into the global section.
 	fe.claimInlineTestCases()
-	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) != 0 {
+	if lines := fe.renderGlobalTests(tuist.Context{Width: 80}, false); len(lines) != 0 {
 		t.Fatalf("expected no global live report for check-scoped tests, got:\n%s", strings.Join(lines, "\n"))
 	}
 }
@@ -1055,7 +1055,7 @@ func TestLiveGlobalTestsSkipCheckScopedNoTestSuites(t *testing.T) {
 	db.SetPrimarySpan(checkID)
 
 	fe := NewWithDB(io.Discard, db)
-	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) != 0 {
+	if lines := fe.renderGlobalTests(tuist.Context{Width: 80}, false); len(lines) != 0 {
 		t.Fatalf("expected no global live report for check-scoped no-test suite, got:\n%s", strings.Join(lines, "\n"))
 	}
 }
