@@ -64,6 +64,25 @@ var catwalkProviderID = map[string]catwalk.InferenceProvider{
 	"openrouter":   catwalk.InferenceProviderOpenRouter,
 }
 
+// codexModels lists the models available in Codex when authenticated with a
+// ChatGPT subscription (Plus/Pro/Business/Enterprise) rather than an OpenAI API
+// key. OpenAI curates this set separately from the general OpenAI API catalog,
+// and since GPT-5.4 the IDs no longer contain "codex", so it can't be derived
+// by filtering catwalk's OpenAI models by name (and catwalk v0.30.7 predates
+// gpt-5.5 / gpt-5.3-codex-spark entirely). Keep in sync with
+// https://developers.openai.com/codex/models.
+var codexModels = []ModelInfo{
+	{ID: "gpt-5.5", Label: "GPT-5.5", CanReason: true,
+		ReasoningLevels: []string{"low", "medium", "high", "xhigh"}, DefaultReasoningEffort: "medium", Default: true},
+	{ID: "gpt-5.4", Label: "GPT-5.4", CanReason: true,
+		ReasoningLevels: []string{"low", "medium", "high", "xhigh"}, DefaultReasoningEffort: "medium"},
+	{ID: "gpt-5.4-mini", Label: "GPT-5.4 Mini", CanReason: true,
+		ReasoningLevels: []string{"low", "medium", "high", "xhigh"}, DefaultReasoningEffort: "medium"},
+	// Research preview, ChatGPT Pro only.
+	{ID: "gpt-5.3-codex-spark", Label: "GPT-5.3 Codex Spark (Pro preview)", CanReason: true,
+		ReasoningLevels: []string{"minimal", "low", "medium", "high"}, DefaultReasoningEffort: "medium"},
+}
+
 var (
 	catalogOnce sync.Once
 	catalog     map[string][]ModelInfo
@@ -80,6 +99,13 @@ func loadCatalog() map[string][]ModelInfo {
 		}
 
 		for ourKey, cwID := range catwalkProviderID {
+			// Codex-with-ChatGPT-subscription models are curated by hand (see
+			// codexModels), not derived from catwalk's OpenAI catalog.
+			if ourKey == "openai-codex" {
+				catalog[ourKey] = codexModels
+				continue
+			}
+
 			cw, ok := cwByID[cwID]
 			if !ok {
 				continue
@@ -87,11 +113,7 @@ func loadCatalog() map[string][]ModelInfo {
 
 			var models []ModelInfo
 			for _, m := range cw.Models {
-				// For openai-codex, only include codex models.
-				if ourKey == "openai-codex" && !strings.Contains(m.ID, "codex") {
-					continue
-				}
-				// For openai (non-codex), exclude codex models.
+				// For openai (API key), exclude codex-only models.
 				if ourKey == "openai" && strings.Contains(m.ID, "codex") {
 					continue
 				}
