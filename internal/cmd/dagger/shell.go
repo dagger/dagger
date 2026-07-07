@@ -132,8 +132,36 @@ type shellCallHandler struct {
 	mode      interpreterMode
 	savedMode interpreterMode // for coming back from history
 
+	// initialPrompt is the first prompt of the current session, used to name
+	// the auto-saved session file. sessionUUID is the file UUID being updated
+	// in-place; empty until the first save (or reset on branch/resume).
+	initialPrompt string
+	sessionUUID   string
+
+	// queuedMsg carries a message the user submitted while the LLM was running,
+	// to be interjected as the next prompt.
+	queuedMsg   string
+	queuedMsgMu sync.Mutex
+
 	// cancel interrupts the entire shell session
 	cancel func()
+}
+
+// QueueMessage stores a message submitted while the LLM is running, to be
+// interjected as the next prompt once the current turn finishes.
+func (h *shellCallHandler) QueueMessage(msg string) {
+	h.queuedMsgMu.Lock()
+	defer h.queuedMsgMu.Unlock()
+	h.queuedMsg = msg
+}
+
+// DequeueMessage returns and clears any queued interject message.
+func (h *shellCallHandler) DequeueMessage() string {
+	h.queuedMsgMu.Lock()
+	defer h.queuedMsgMu.Unlock()
+	msg := h.queuedMsg
+	h.queuedMsg = ""
+	return msg
 }
 
 func newShellCallHandler(dag *dagger.Client, fe idtui.Frontend) *shellCallHandler {
@@ -381,6 +409,19 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		llm, err := h.llm(ctx)
 		if err != nil {
 			return err
+		}
+		if h.initialPrompt == "" {
+			h.initialPrompt = line
+		}
+		// Auto-save the session after each step, updating the same file
+		// in-place so a conversation maps to a single session file.
+		llm.onStep = func(s *LLMSession) {
+			savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+			if err != nil {
+				slog.Warn("failed to auto-save session", "error", err)
+				return
+			}
+			h.sessionUUID = savedUUID
 		}
 		newLLM, err := llm.WithPrompt(ctx, line)
 		if err != nil {
