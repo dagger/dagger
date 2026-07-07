@@ -39,6 +39,7 @@ const (
 	modelDefaultAnthropic = anthropic.ModelClaudeSonnet4_5
 	modelDefaultGoogle    = "gemini-2.5-flash"
 	modelDefaultOpenAI    = "gpt-4.1"
+	modelDefaultCodex     = "gpt-5.5"
 	modelDefaultMeta      = "llama-3.2"
 	modelDefaultMistral   = "mistral-7b-instruct"
 
@@ -47,6 +48,24 @@ const (
 	// call, enabling the TUI to branch from that point in the conversation.
 	LLMCallDigestAttr = "dagger.io/llm.call.digest"
 )
+
+// codexModelPrefix pins a model to the Codex (ChatGPT subscription) backend.
+// Current Codex models (gpt-5.5, gpt-5.4, …) no longer carry "codex" in their
+// IDs, so the prefix — not the name — is what routes them to the Codex client.
+// Route strips it back off so the model still displays and is sent to the API
+// under its bare name.
+const codexModelPrefix = "openai-codex/"
+
+// normalizeCodexModel ensures a model configured for the Codex slot routes to
+// the Codex client regardless of its name, by prefixing it with
+// codexModelPrefix. Models that already route to Codex (a "codex"-named model
+// or an already-prefixed one) are left untouched.
+func normalizeCodexModel(model string) string {
+	if model == "" || strings.Contains(model, "codex") || strings.HasPrefix(model, codexModelPrefix) {
+		return model
+	}
+	return codexModelPrefix + model
+}
 
 func resolveModelAlias(maybeAlias string) string {
 	switch maybeAlias {
@@ -100,6 +119,10 @@ type LLMEndpoint struct {
 	// AuthToken as a bearer token instead of Key.
 	AuthToken string
 	IsOAuth   bool
+
+	// ThinkingMode carries the reasoning effort (e.g. "low"/"medium"/"high")
+	// for providers that support extended thinking / reasoning (e.g. Codex).
+	ThinkingMode string
 }
 
 type LLMProvider string
@@ -417,13 +440,14 @@ func (*LLMToolCall) Type() *ast.Type {
 }
 
 const (
-	OpenAI    LLMProvider = "openai"
-	Anthropic LLMProvider = "anthropic"
-	Google    LLMProvider = "google"
-	Meta      LLMProvider = "meta"
-	Mistral   LLMProvider = "mistral"
-	DeepSeek  LLMProvider = "deepseek"
-	Other     LLMProvider = "other"
+	OpenAI      LLMProvider = "openai"
+	OpenAICodex LLMProvider = "openai-codex"
+	Anthropic   LLMProvider = "anthropic"
+	Google      LLMProvider = "google"
+	Meta        LLMProvider = "meta"
+	Mistral     LLMProvider = "mistral"
+	DeepSeek    LLMProvider = "deepseek"
+	Other       LLMProvider = "other"
 )
 
 // A LLM routing configuration
@@ -440,6 +464,12 @@ type LLMRouter struct {
 	OpenAIModel            string
 	OpenAIDisableStreaming bool
 
+	// OpenAI Codex uses the Responses API against the ChatGPT backend with a
+	// ChatGPT subscription OAuth token.
+	OpenAICodexAuthToken    string
+	OpenAICodexModel        string
+	OpenAICodexThinkingMode string
+
 	GeminiAPIKey  string
 	GeminiBaseURL string
 	GeminiModel   string
@@ -451,6 +481,10 @@ func (r *LLMRouter) isAnthropicModel(model string) bool {
 
 func (r *LLMRouter) isOpenAIModel(model string) bool {
 	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "openai/")
+}
+
+func (r *LLMRouter) isCodexModel(model string) bool {
+	return strings.Contains(model, "codex") || strings.HasPrefix(model, "openai-codex/")
 }
 
 func (r *LLMRouter) isGoogleModel(model string) bool {
@@ -508,6 +542,20 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 	return endpoint
 }
 
+func (r *LLMRouter) routeCodexModel() *LLMEndpoint {
+	endpoint := &LLMEndpoint{
+		// The Codex client appends "/codex" to reach the Responses API.
+		BaseURL:      "https://chatgpt.com/backend-api",
+		Provider:     OpenAICodex,
+		AuthToken:    r.OpenAICodexAuthToken,
+		IsOAuth:      true,
+		ThinkingMode: r.OpenAICodexThinkingMode,
+	}
+	endpoint.Client = newOpenAICodexClient(endpoint)
+
+	return endpoint
+}
+
 func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
 	endpoint := &LLMEndpoint{
 		BaseURL:  r.GeminiBaseURL,
@@ -547,13 +595,25 @@ func (r *LLMRouter) routeReplayModel(model string) (*LLMEndpoint, error) {
 
 // Return a default model, if configured
 func (r *LLMRouter) DefaultModel() string {
-	for _, model := range []string{r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
-		if model != "" {
-			return model
-		}
+	if r.OpenAIModel != "" {
+		return r.OpenAIModel
+	}
+	if r.OpenAICodexModel != "" {
+		// The codex slot is unambiguous, so pin it to Codex even if the
+		// configured model (e.g. gpt-5.5) shares OpenAI's naming.
+		return normalizeCodexModel(r.OpenAICodexModel)
+	}
+	if r.AnthropicModel != "" {
+		return r.AnthropicModel
+	}
+	if r.GeminiModel != "" {
+		return r.GeminiModel
 	}
 	if r.OpenAIAPIKey != "" {
 		return modelDefaultOpenAI
+	}
+	if r.OpenAICodexAuthToken != "" {
+		return normalizeCodexModel(modelDefaultCodex)
 	}
 	if r.AnthropicAPIKey != "" || r.AnthropicAuthToken != "" {
 		return modelDefaultAnthropic
@@ -580,6 +640,11 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	switch {
 	case r.isAnthropicModel(model):
 		endpoint = r.routeAnthropicModel()
+	// NB: must precede isOpenAIModel — a "codex"-named model (e.g. gpt-5.3-codex)
+	// also matches the gpt- prefix; the codexModelPrefix form does not, but is
+	// caught here too.
+	case r.isCodexModel(model):
+		endpoint = r.routeCodexModel()
 	case r.isOpenAIModel(model):
 		endpoint = r.routeOpenAIModel()
 	case r.isGoogleModel(model):
@@ -597,7 +662,9 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	default:
 		endpoint = r.routeOtherModel()
 	}
-	endpoint.Model = model
+	// Strip the Codex routing prefix (if any) so the model displays and is sent
+	// to the provider under its bare name; non-Codex models are unaffected.
+	endpoint.Model = strings.TrimPrefix(model, codexModelPrefix)
 	return endpoint, nil
 }
 
@@ -646,6 +713,18 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	})
 	eg.Go(func() error {
 		return save("OPENAI_MODEL", &r.OpenAIModel)
+	})
+
+	eg.Go(func() error {
+		// OAuth (ChatGPT subscription) bearer token for the Codex Responses API,
+		// exported client-side from the persisted llmconfig by `dagger llm`.
+		return save("OPENAI_CODEX_AUTH_TOKEN", &r.OpenAICodexAuthToken)
+	})
+	eg.Go(func() error {
+		return save("OPENAI_CODEX_MODEL", &r.OpenAICodexModel)
+	})
+	eg.Go(func() error {
+		return save("OPENAI_CODEX_THINKING_MODE", &r.OpenAICodexThinkingMode)
 	})
 
 	eg.Go(func() error {

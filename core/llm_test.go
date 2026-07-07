@@ -2,8 +2,13 @@ package core
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/openai/openai-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -46,18 +51,22 @@ func TestLlmConfig(t *testing.T) {
 	srv := newCoreDagqlServerForTest(t, q)
 
 	vars := map[string]string{
-		"file://.env":                    "",
-		"env://ANTHROPIC_API_KEY":        "anthropic-api-key",
-		"env://ANTHROPIC_BASE_URL":       "anthropic-base-url",
-		"env://ANTHROPIC_MODEL":          "anthropic-model",
-		"env://OPENAI_API_KEY":           "openai-api-key",
-		"env://OPENAI_AZURE_VERSION":     "openai-azure-version",
-		"env://OPENAI_BASE_URL":          "openai-base-url",
-		"env://OPENAI_MODEL":             "openai-model",
-		"env://OPENAI_DISABLE_STREAMING": "t",
-		"env://GEMINI_API_KEY":           "gemini-api-key",
-		"env://GEMINI_BASE_URL":          "gemini-base-url",
-		"env://GEMINI_MODEL":             "gemini-model",
+		"file://.env":                      "",
+		"env://ANTHROPIC_API_KEY":          "anthropic-api-key",
+		"env://ANTHROPIC_BASE_URL":         "anthropic-base-url",
+		"env://ANTHROPIC_MODEL":            "anthropic-model",
+		"env://ANTHROPIC_AUTH_TOKEN":       "anthropic-auth-token",
+		"env://OPENAI_API_KEY":             "openai-api-key",
+		"env://OPENAI_AZURE_VERSION":       "openai-azure-version",
+		"env://OPENAI_BASE_URL":            "openai-base-url",
+		"env://OPENAI_MODEL":               "openai-model",
+		"env://OPENAI_DISABLE_STREAMING":   "t",
+		"env://OPENAI_CODEX_AUTH_TOKEN":    "openai-codex-auth-token",
+		"env://OPENAI_CODEX_MODEL":         "openai-codex-model",
+		"env://OPENAI_CODEX_THINKING_MODE": "openai-codex-thinking-mode",
+		"env://GEMINI_API_KEY":             "gemini-api-key",
+		"env://GEMINI_BASE_URL":            "gemini-base-url",
+		"env://GEMINI_MODEL":               "gemini-model",
 	}
 
 	dagql.Fields[LLMTestQuery]{
@@ -88,9 +97,86 @@ func TestLlmConfig(t *testing.T) {
 	assert.Equal(t, "openai-base-url", r.OpenAIBaseURL)
 	assert.Equal(t, "openai-model", r.OpenAIModel)
 	assert.True(t, r.OpenAIDisableStreaming)
+	assert.Equal(t, "openai-codex-auth-token", r.OpenAICodexAuthToken)
+	assert.Equal(t, "openai-codex-model", r.OpenAICodexModel)
+	assert.Equal(t, "openai-codex-thinking-mode", r.OpenAICodexThinkingMode)
+	assert.Equal(t, "anthropic-auth-token", r.AnthropicAuthToken)
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
+}
+
+func TestCodexModelRouting(t *testing.T) {
+	// A model configured in the Codex slot pins to the Codex backend even when
+	// its name looks like a plain OpenAI model (post-GPT-5.4, Codex model IDs
+	// no longer contain "codex").
+	r := &LLMRouter{
+		OpenAICodexAuthToken: "tok",
+		OpenAICodexModel:     "gpt-5.5",
+	}
+	assert.Equal(t, "openai-codex/gpt-5.5", r.DefaultModel())
+
+	ep, err := r.Route("")
+	assert.NoError(t, err)
+	assert.Equal(t, OpenAICodex, ep.Provider)
+	// The routing prefix is stripped for display and the API request.
+	assert.Equal(t, "gpt-5.5", ep.Model)
+
+	// With only a Codex token, the default model routes to Codex too.
+	r2 := &LLMRouter{OpenAICodexAuthToken: "tok"}
+	assert.Equal(t, "openai-codex/"+modelDefaultCodex, r2.DefaultModel())
+	epDefault, err := r2.Route("")
+	assert.NoError(t, err)
+	assert.Equal(t, OpenAICodex, epDefault.Provider)
+	assert.Equal(t, modelDefaultCodex, epDefault.Model)
+
+	// An explicitly prefixed model routes to Codex regardless of the slot.
+	epPrefixed, err := r2.Route("openai-codex/gpt-5.4")
+	assert.NoError(t, err)
+	assert.Equal(t, OpenAICodex, epPrefixed.Provider)
+	assert.Equal(t, "gpt-5.4", epPrefixed.Model)
+
+	// A "codex"-named model still routes to Codex (backward compatible).
+	epNamed, err := r2.Route("gpt-5.3-codex")
+	assert.NoError(t, err)
+	assert.Equal(t, OpenAICodex, epNamed.Provider)
+	assert.Equal(t, "gpt-5.3-codex", epNamed.Model)
+}
+
+func TestLLMErrorMessage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"codex detail", `{"detail":"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."}`, "The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."},
+		{"openai error", `{"error":{"message":"invalid model"}}`, "invalid model"},
+		{"bare message", `{"message":"boom"}`, "boom"},
+		{"empty", ``, ""},
+		{"unrecognized", `{"foo":"bar"}`, ""},
+		{"not json", `<html>502 Bad Gateway</html>`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, llmErrorMessage([]byte(tc.body)))
+		})
+	}
+}
+
+func TestCodexAPIError(t *testing.T) {
+	// The Codex backend's {"detail":...} shape is otherwise dropped by the SDK,
+	// which surfaces a bare "400 Bad Request".
+	body := `{"detail":"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."}`
+	aerr := &openai.Error{
+		StatusCode: 400,
+		Response:   &http.Response{Body: io.NopCloser(strings.NewReader(body))},
+	}
+	got := codexAPIError(aerr)
+	assert.ErrorContains(t, got, "HTTP 400")
+	assert.ErrorContains(t, got, "not supported when using Codex")
+
+	// Non-API errors pass through unchanged.
+	plain := errors.New("dial tcp: timeout")
+	assert.Equal(t, plain, codexAPIError(plain))
 }
 
 func TestLlmConfigDisableStreaming(t *testing.T) {

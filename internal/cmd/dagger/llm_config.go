@@ -85,10 +85,16 @@ func applyLLMConfigEnv() {
 			continue
 		}
 		if p.IsOAuth() {
-			// OAuth subscription providers export a bearer token. Only
-			// Anthropic (Claude Code) is wired through the engine so far.
-			if name == "anthropic" {
+			// OAuth subscription providers export a bearer token that the
+			// engine's router picks up. Anthropic (Claude Code) and OpenAI
+			// Codex (ChatGPT subscription) are wired through the engine.
+			switch name {
+			case "anthropic":
 				setIfEmpty("ANTHROPIC_AUTH_TOKEN", p.AuthToken)
+			case "openai-codex":
+				setIfEmpty("OPENAI_CODEX_AUTH_TOKEN", p.AuthToken)
+				setIfEmpty("OPENAI_CODEX_MODEL", p.Model)
+				setIfEmpty("OPENAI_CODEX_THINKING_MODE", p.ThinkingMode)
 			}
 			continue
 		}
