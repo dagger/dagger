@@ -632,6 +632,107 @@ func TestChecksReportNestsSubCheckHeader(t *testing.T) {
 	}
 }
 
+// rerunReportDB builds a DB with a failed outermost check (ci:bootstrap) whose
+// sub-check (go:lint) also failed, for exercising the RE-RUN section.
+func rerunReportDB(t *testing.T) *dagui.DB {
+	t.Helper()
+	db := dagui.NewDB()
+	bootstrapID := prettyTestSpanID(1)
+	goLintID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	end := start.Add(2 * time.Second)
+	failed := sdktrace.Status{Code: codes.Error}
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        bootstrapID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "ci:bootstrap",
+			StartTime: start,
+			EndTime:   end,
+			CheckName: "ci:bootstrap",
+			Status:    failed,
+			Final:     true,
+		},
+		{
+			ID:        goLintID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "go:lint",
+			StartTime: start,
+			EndTime:   end,
+			ParentID:  bootstrapID,
+			CheckName: "go:lint",
+			Status:    failed,
+			Final:     true,
+		},
+	})
+	db.SetPrimarySpan(bootstrapID)
+	return db
+}
+
+func TestRerunSectionCloudAndLocalForNativeCI(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	fe := NewWithDB(io.Discard, rerunReportDB(t))
+	fe.recalculateViewLocked()
+	fe.ciMeta = &ciContext{commit: "abc123", prNumber: "4", isNativeCI: true}
+
+	lines := fe.renderRerunSection(nil)
+	joined := strings.Join(lines, "\n")
+	// Only the outermost check is re-runnable; the sub-check rolls up to it.
+	if strings.Contains(joined, "go:lint") {
+		t.Fatalf("RE-RUN listed a sub-check:\n%s", joined)
+	}
+	// Two distinct sections so the CI re-run and local reproduce don't read as one.
+	if !strings.Contains(joined, "RE-RUN IN CI") || !strings.Contains(joined, "RUN LOCALLY") {
+		t.Fatalf("missing one of the two section headings:\n%s", joined)
+	}
+	if !strings.Contains(joined, `dagger cloud rerun --commit abc123 --check "ci:bootstrap"`) {
+		t.Fatalf("missing cloud rerun line:\n%s", joined)
+	}
+	if !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
+		t.Fatalf("missing local check line:\n%s", joined)
+	}
+	// The CI re-run section leads; the local reproduce section follows.
+	if ciIdx, localIdx := indexOfLine(lines, "RE-RUN IN CI"), indexOfLine(lines, "RUN LOCALLY"); !(ciIdx >= 0 && ciIdx < localIdx) {
+		t.Fatalf("expected RE-RUN IN CI before RUN LOCALLY (ci=%d local=%d):\n%s", ciIdx, localIdx, joined)
+	}
+}
+
+func TestRerunSectionLocalOnlyWithoutNativeCI(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	fe := NewWithDB(io.Discard, rerunReportDB(t))
+	fe.recalculateViewLocked()
+	// No ciMeta (live/local run): only a local check, no cloud rerun.
+
+	lines := fe.renderRerunSection(nil)
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "cloud rerun") || strings.Contains(joined, "RE-RUN IN CI") {
+		t.Fatalf("did not expect a CI re-run section without native CI:\n%s", joined)
+	}
+	if !strings.Contains(joined, "RUN LOCALLY") || !strings.Contains(joined, `dagger check "ci:bootstrap"`) {
+		t.Fatalf("missing local reproduce section:\n%s", joined)
+	}
+}
+
+func TestOutermostSurfacedCheckRollsUpNestedName(t *testing.T) {
+	db := rerunReportDB(t)
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+	roots := fe.db.SurfacedChecks()
+	root := outermostSurfacedCheck(roots, "go:lint")
+	if root == nil || root.Name != "ci:bootstrap" {
+		t.Fatalf("outermostSurfacedCheck(go:lint) = %v, want ci:bootstrap", root)
+	}
+}
+
+func indexOfLine(lines []string, substr string) int {
+	for i, l := range lines {
+		if strings.Contains(l, substr) {
+			return i
+		}
+	}
+	return -1
+}
+
 // TestInlineChecksRollupSurfacesSubChecks drives a full interactive render and
 // checks that a collapsed parent check surfaces its sub-checks as an inline
 // CHECKS rollup -- a CHECKS header and the sub-check rows beneath it, carrying
