@@ -133,7 +133,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		// Only for released versions (not dev, not empty) - go mod tidy will fail for unreleased versions
 		// (replace directives added by tests/users will override this)
 		engineVersion := g.Config.ClientConfig.EngineVersion
-		if engineVersion != "" && !strings.Contains(engineVersion, "-dev") {
+		if engineVersion != "" {
 			clientGoMod.AddRequire("dagger.io/dagger", engineVersion)
 		}
 
@@ -213,7 +213,7 @@ func (g *GoGenerator) writeClientGoMod(mfs *memfs.FS, clientGoModFilePath string
 	}
 
 	engineVersion := g.Config.ClientConfig.EngineVersion
-	if engineVersion != "" && !strings.Contains(engineVersion, "-dev") && !isDaggerPkgCustomReplaced(existingGoMod.Replace) {
+	if engineVersion != "" && !isDaggerPkgCustomReplaced(existingGoMod.Replace) {
 		existingGoMod.AddRequire("dagger.io/dagger", engineVersion)
 	}
 
