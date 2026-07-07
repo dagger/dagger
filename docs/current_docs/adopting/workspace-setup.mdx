@@ -59,6 +59,16 @@ dagger ws settings eslint packageManager yarn
 
 Settings are stored in `dagger.toml` alongside each module, so they're shared with everyone who uses the workspace.
 
+## Control generated-file checks
+
+By default, `dagger check` also runs generators as checks and fails when generated files are stale. That's useful in CI, but during day-to-day development you may not want a check run to fail just because generated files are out of date. New workspaces are created with this default in `dagger.toml`:
+
+```toml
+check-generated = true
+```
+
+Set it to `false` to make `dagger check` skip generate-as-checks by default (the same as passing `--no-generate`). The command-line flags always override the setting: `dagger check --generate` runs only the generators, and `dagger check --no-generate` skips them.
+
 ## Migrate an existing project
 
 If your project already uses a legacy `dagger.json`, convert it to the workspace format:

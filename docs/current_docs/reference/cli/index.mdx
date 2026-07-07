@@ -529,9 +529,6 @@ dagger check [options] [pattern...]
   -l, --list                 List available checks
   -m, --load-module string   Use a one-off module (local path or git ref)
       --no-generate          Only run annotated check functions, skip generate-as-checks
-      --no-past              Disable past Cloud Checks lookup
-      --past                 Only replay past Cloud Checks results
-      --run                  Run checks even when past Cloud Checks results are replayed
       --skip stringArray     Skip checks matching the specified patterns
 ```
 
@@ -1838,7 +1835,7 @@ SDKs are workspace modules whose role is to scaffold/codegen other things:
 new Dagger modules (`dagger module init`) or typed clients against the
 Dagger API (`dagger api client init`). An install becomes an SDK when
 added through this group — `dagger sdk install go` installs
-[modules.go-sdk] with [modules.go-sdk.as-sdk] name = "go" so
+[modules.dagger-go-sdk] with [modules.dagger-go-sdk.as-sdk] name = "go" so
 `dagger module init go` / `dagger api client init go`
 dispatch through that SDK.
 
@@ -1922,9 +1919,9 @@ Install an SDK into the current workspace and mark it with the
 
 Alias resolution: `dagger sdk install go` resolves "go" via the
 embedded sdks.json registry to github.com/dagger/go-sdk. The workspace
-install name is the canonical ref basename (`go-sdk`), and the
-user-facing name is persisted as [modules.go-sdk.as-sdk] name = "go".
-Direct refs work too:
+install name is the canonical ref basename prefixed with "dagger-"
+(`dagger-go-sdk`), and the user-facing name is persisted as
+[modules.dagger-go-sdk.as-sdk] name = "go". Direct refs work too:
 `dagger sdk install github.com/foo/sdk` is installed as
 [modules.sdk] by basename.
 
@@ -1945,7 +1942,7 @@ dagger sdk install go
 
 ```
       --here          Write to the workspace config directory at the workspace cwd
-  -n, --name string   Override the workspace install name (defaults to the registry repo basename, or the basename of a direct ref)
+  -n, --name string   Override the workspace install name (defaults to the registry repo basename prefixed with "dagger-", or the basename of a direct ref)
 ```
 
 ### Options inherited from parent commands
@@ -2428,6 +2425,7 @@ dagger version
 
 ```
       --check   Check for updates
+  -q, --quiet   Print only the canonical build identifier
 ```
 
 ### Options inherited from parent commands
@@ -2442,7 +2440,6 @@ dagger version
   -E, --no-exit                      Leave the TUI running after completion
       --org string                   Dagger Cloud org name for Cloud-scoped commands
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser

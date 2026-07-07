@@ -3,7 +3,6 @@ package daggercmd
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -26,9 +25,6 @@ var (
 	checksFailFast     bool
 	checksNoGenerate   bool
 	checksOnlyGenerate bool
-	checksPast         bool
-	checksNoPast       bool
-	checksRun          bool
 	checksSkip         []string
 )
 
@@ -40,15 +36,8 @@ func init() {
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
 	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
 	checksCmd.Flags().BoolVar(&checksOnlyGenerate, "generate", false, "Only run generate-as-checks, skip annotated check functions")
-	checksCmd.Flags().BoolVar(&checksPast, "past", false, "Only replay past Cloud Checks results")
-	checksCmd.Flags().BoolVar(&checksNoPast, "no-past", false, "Disable past Cloud Checks lookup")
-	checksCmd.Flags().BoolVar(&checksRun, "run", false, "Run checks even when past Cloud Checks results are replayed")
 	checksCmd.Flags().StringArrayVar(&checksSkip, "skip", nil, "Skip checks matching the specified patterns")
 	checksCmd.MarkFlagsMutuallyExclusive("no-generate", "generate")
-	checksCmd.MarkFlagsMutuallyExclusive("past", "no-past", "run")
-	// Past Cloud results can't be filtered by skip patterns, so --skip always
-	// runs checks live.
-	checksCmd.MarkFlagsMutuallyExclusive("past", "skip")
 }
 
 var checksCmd = &cobra.Command{
@@ -68,95 +57,6 @@ Examples:
 }
 
 func runChecksCommand(cmd *cobra.Command, args []string) error {
-	if !checksListMode && len(checksSkip) == 0 {
-		replayed, shouldRun, err := maybeReplayPastChecks(cmd, args)
-		if !shouldRun {
-			return err
-		}
-		if err != nil && !replayed {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Cloud check lookup failed: %v; running checks now.\n\n", err)
-		}
-	}
-
-	return runChecksNow(cmd, args)
-}
-
-func maybeReplayPastChecks(cmd *cobra.Command, args []string) (replayed bool, shouldRun bool, err error) {
-	if checksNoPast {
-		return false, true, nil
-	}
-
-	address, ok, reason, err := checkPastWorkspaceAddress(cmd.Context())
-	if err != nil {
-		if checksPast {
-			return false, false, err
-		}
-		return false, true, err
-	}
-	if !ok {
-		if checksPast {
-			if reason == "" {
-				reason = "no remote workspace is known"
-			}
-			return false, false, idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("past Cloud checks unavailable: %s", reason)}
-		}
-		return false, true, nil
-	}
-
-	res, selectors, err := cloudCLI.loadCloudCheckRowsForWorkspace(cmd.Context(), address, args, false)
-	if err != nil {
-		if checksPast {
-			return false, false, err
-		}
-		if errors.Is(err, errCloudNotAuthenticated) {
-			return false, true, nil
-		}
-		return false, true, err
-	}
-	if len(res.Rows) == 0 {
-		if checksPast {
-			return false, false, idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("no Cloud check result found for %s", address)}
-		}
-		if !checksRun {
-			fmt.Fprintf(cmd.OutOrStdout(), "No Cloud Checks result found for %s; running checks now.\n\n", address)
-		}
-		return false, true, nil
-	}
-
-	err = cloudCLI.replayCloudCheckResult(cmd, res, selectors)
-	if checksRun {
-		return true, true, err
-	}
-	return true, false, err
-}
-
-func checkPastWorkspaceAddress(ctx context.Context) (string, bool, string, error) {
-	address := strings.TrimSpace(workspaceRef)
-	if address != "" {
-		_, ok, err := parseWorkspaceRemoteAddress(ctx, address)
-		if err != nil {
-			return "", false, "", err
-		}
-		if ok {
-			return address, true, "", nil
-		}
-	}
-
-	_, inferred, dirty, inferErr := inferCleanLocalWorkspaceRemoteAddress(ctx, address)
-	if inferErr == nil {
-		if dirty {
-			return "", false, "workspace has uncommitted changes", nil
-		}
-		if inferred == "" {
-			return "", false, "no remote workspace is known", nil
-		}
-		return inferred, true, "", nil
-	}
-
-	return "", false, inferErr.Error(), nil
-}
-
-func runChecksNow(cmd *cobra.Command, args []string) error {
 	params := client.Params{
 		EnableCloudScaleOut:  enableScaleOut,
 		LoadWorkspaceModules: true,

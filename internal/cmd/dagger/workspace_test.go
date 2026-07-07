@@ -635,44 +635,6 @@ func TestSelectedRemoteWorkspaceAddressUsesExplicitRemoteWorkspace(t *testing.T)
 	require.Equal(t, "main", remote.Version)
 }
 
-func TestCheckPastWorkspaceAddress(t *testing.T) {
-	oldWorkspaceRef := workspaceRef
-	t.Cleanup(func() {
-		workspaceRef = oldWorkspaceRef
-	})
-
-	workspaceRef = "github.com/acme/mono/services/api@main"
-	address, ok, reason, err := checkPastWorkspaceAddress(t.Context())
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Empty(t, reason)
-	require.Equal(t, "github.com/acme/mono/services/api@main", address)
-
-	workspaceRef = ""
-	t.Chdir(t.TempDir())
-	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Empty(t, address)
-	require.Contains(t, reason, "find git root")
-
-	_, workspaceDir, sha := setupCleanWorkspaceRepo(t)
-	workspaceRef = "."
-	t.Chdir(workspaceDir)
-	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Empty(t, reason)
-	require.Equal(t, "github.com/acme/mono/services/api@"+sha, address)
-
-	require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "dirty.txt"), []byte("dirty\n"), 0o600))
-	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Empty(t, address)
-	require.Equal(t, "workspace has uncommitted changes", reason)
-}
-
 func TestNormalizeWorkspaceGitOrigin(t *testing.T) {
 	require.Equal(t, "github.com/acme/mono", normalizeWorkspaceGitOrigin("git@github.com:acme/mono.git"))
 	require.Equal(t, "github.com/acme/mono", normalizeWorkspaceGitOrigin("https://github.com/acme/mono.git"))

@@ -425,19 +425,19 @@ func WorkspaceActivity(cmd *cobra.Command, _ []string) error {
 	if workspaceActivityAll {
 		address = remote.BaseAddress
 	}
-	res, _, err := cloudCLI.loadCloudCheckRowsForWorkspace(cmd.Context(), address, nil, true)
+	rows, err := cloudCLI.loadCloudCheckRowsForWorkspace(cmd.Context(), address, nil, true)
 	if errors.Is(err, errCloudNotAuthenticated) {
 		return fmt.Errorf("not authenticated; run 'dagger login' to view workspace activity")
 	}
 	if err != nil {
 		return err
 	}
-	rows := workspaceActivityRows(res.Rows)
-	if len(rows) == 0 {
+	activityRows := workspaceActivityRows(rows)
+	if len(activityRows) == 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "No Cloud activity found for %s.\n", address)
 		return nil
 	}
-	renderWorkspaceActivityRows(cmd, rows)
+	renderWorkspaceActivityRows(cmd, activityRows)
 	return nil
 }
 
@@ -854,7 +854,7 @@ func annotateWorkspaceRemoteRows(ctx context.Context, rows []*workspaceRemoteRow
 			row.Autocheck = workspaceAutocheckStateString(state)
 		}
 	}
-	res, err := cloudCLI.loadCloudCheckRowsAcrossUserOrgs(ctx, cloudCheckSelectorFlags{
+	allCheckRows, err := cloudCLI.loadCloudCheckRowsAcrossUserOrgs(ctx, cloudCheckSelectorFlags{
 		GitHubRepo: []string{remote.CloneRef},
 		Workspace:  []string{remote.BaseAddress},
 	}, false)
@@ -862,7 +862,7 @@ func annotateWorkspaceRemoteRows(ctx context.Context, rows []*workspaceRemoteRow
 		return err
 	}
 	for _, row := range rows {
-		checkRows, _, err := cloudRowsForWorkspaceAddress(ctx, res.Rows, row.Address, nil)
+		checkRows, err := cloudRowsForWorkspaceAddress(ctx, allCheckRows, row.Address, nil)
 		if err != nil {
 			continue
 		}

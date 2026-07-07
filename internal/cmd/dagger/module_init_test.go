@@ -4,8 +4,38 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPlanMigratedSDKFixups(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			// builtin SDK recorded by migration (keyed by prefixed name, bare
+			// source): resolve the bare source to its real ref + name
+			"dagger-php-sdk": {Source: "php", AsSDK: &workspace.ModuleAsSDK{}},
+			"dagger-go-sdk":  {Source: "go", AsSDK: &workspace.ModuleAsSDK{}},
+			// versioned builtin source: resolve, preserving the @version
+			"dagger-java-sdk": {Source: "java@v0.18", AsSDK: &workspace.ModuleAsSDK{}},
+			// already a full ref: leave untouched
+			"custom-sdk": {Source: "github.com/dagger/go-sdk@v1.2.3", AsSDK: &workspace.ModuleAsSDK{}},
+			// not an SDK install: ignore even with a bare source
+			"plain": {Source: "mymod"},
+			// local path SDK: leave untouched
+			"local": {Source: "./sdks/local", AsSDK: &workspace.ModuleAsSDK{}},
+			// bare name absent from the registry: leave untouched
+			"mystery": {Source: "mystery", AsSDK: &workspace.ModuleAsSDK{}},
+		},
+	}
+
+	require.Equal(t, []migratedSDKFixup{
+		{ModuleName: "dagger-go-sdk", Ref: "github.com/dagger/go-sdk", SDKName: "go"},
+		{ModuleName: "dagger-java-sdk", Ref: "github.com/dagger/java-sdk@v0.18", SDKName: "java"},
+		{ModuleName: "dagger-php-sdk", Ref: "github.com/dagger/php-sdk", SDKName: "php"},
+	}, planMigratedSDKFixups(cfg))
+
+	require.Nil(t, planMigratedSDKFixups(nil))
+}
 
 func TestSDKResolve(t *testing.T) {
 	for _, tt := range []struct {
@@ -91,28 +121,28 @@ func TestSDKResolveInstall(t *testing.T) {
 			name:            "registry name resolves repo, install name, and sdk alias",
 			input:           "go",
 			wantRef:         "github.com/dagger/go-sdk",
-			wantInstallName: "go-sdk",
+			wantInstallName: "dagger-go-sdk",
 			wantAsSDKName:   "go",
 		},
 		{
 			name:            "registry alias resolves repo, install name, and canonical sdk alias",
 			input:           "golang",
 			wantRef:         "github.com/dagger/go-sdk",
-			wantInstallName: "go-sdk",
+			wantInstallName: "dagger-go-sdk",
 			wantAsSDKName:   "go",
 		},
 		{
 			name:            "repo basename compatibility fallback resolves repo, install name, and sdk alias",
 			input:           "go-sdk",
 			wantRef:         "github.com/dagger/go-sdk",
-			wantInstallName: "go-sdk",
+			wantInstallName: "dagger-go-sdk",
 			wantAsSDKName:   "go",
 		},
 		{
 			name:            "dang resolves repo, install name, and sdk alias",
 			input:           "dang",
 			wantRef:         "github.com/dagger/dang-sdk",
-			wantInstallName: "dang-sdk",
+			wantInstallName: "dagger-dang-sdk",
 			wantAsSDKName:   "dang",
 		},
 		{

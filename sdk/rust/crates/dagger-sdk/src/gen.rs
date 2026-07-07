@@ -715,6 +715,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type Schema
+    pub fn as_schema(&self) -> Schema {
+        let query = self.selection.select("asSchema");
+        Schema {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type SearchResult
     pub fn as_search_result(&self) -> SearchResult {
         let query = self.selection.select("asSearchResult");
@@ -7992,6 +8001,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type Schema in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Schema value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_schema_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withSchemaInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Schema output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_schema_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withSchemaOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type SearchResult in the environment
     ///
     /// # Arguments
@@ -14275,6 +14333,20 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a GraphQL introspection schema for merging.
+    ///
+    /// # Arguments
+    ///
+    /// * `json` - The introspection schema JSON to load.
+    pub fn schema(&self, json: Json) -> Schema {
+        let mut query = self.selection.select("schema");
+        query = query.arg("json", json);
+        Schema {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Creates a new secret.
     ///
     /// # Arguments
@@ -14513,6 +14585,70 @@ impl ScalarTypeDef {
     }
 }
 impl Node for ScalarTypeDef {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct Schema {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for Schema {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for Schema {
+    fn graphql_type() -> &'static str {
+        "Schema"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl Schema {
+    /// Serialize the schema back to introspection JSON.
+    pub async fn contents(&self) -> Result<Json, DaggerError> {
+        let query = self.selection.select("contents");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Schema.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.
+    ///
+    /// # Arguments
+    ///
+    /// * `module_types` - Introspection JSON describing the types the module defines. Object, interface and enum types are appended to the schema, and a constructor field for the module is added to the Query type.
+    /// * `module_name` - The name of the module whose types are being merged. Used to stamp the @sourceMap directive and to derive the module's constructor field.
+    pub fn merge(&self, module_types: Json, module_name: impl Into<String>) -> Schema {
+        let mut query = self.selection.select("merge");
+        query = query.arg("moduleTypes", module_types);
+        query = query.arg("moduleName", module_name.into());
+        Schema {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for Schema {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();

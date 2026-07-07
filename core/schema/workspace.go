@@ -1256,17 +1256,27 @@ func (s *workspaceSchema) checks(
 
 	noGenerate := args.NoGenerate.GetOr(false).Bool()
 	onlyGenerate := args.OnlyGenerate.GetOr(false).Bool()
+
+	cfg, err := workspaceConfigWithCompatFallback(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	// Apply the workspace default only when no generate flag was passed.
+	if !args.NoGenerate.Valid && !args.OnlyGenerate.Valid && cfg.CheckGenerated != nil && !*cfg.CheckGenerated {
+		noGenerate = true
+	}
+
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	ignoreChecks, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
+	ignoreChecks := workspaceConfigSkipPatternsFromConfig(cfg, func(e workspace.ModuleEntry) []string {
 		return e.Check.Skip
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	var allChecks []*core.Check
 	for _, mod := range mods {
@@ -1368,6 +1378,9 @@ func (s *workspaceSchema) generators(
 		return nil, err
 	}
 
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -1486,6 +1499,9 @@ func (s *workspaceSchema) services(
 		return nil, err
 	}
 
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -1640,6 +1656,17 @@ func matchWorkspaceIncludePath(
 	return false, nil
 }
 
+// ensureWorkspaceIncludeModulesLoaded loads the workspace modules the include
+// patterns demand (all when they don't narrow). Selector fields validate
+// against the core schema, so loading can wait until resolution.
+func ensureWorkspaceIncludeModulesLoaded(ctx context.Context, include []string) error {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	return query.Server.EnsureWorkspaceModules(ctx, include)
+}
+
 func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*core.Module], error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -1702,14 +1729,22 @@ func workspaceConfigSkipPatterns(
 	if err != nil {
 		return nil, err
 	}
+	return workspaceConfigSkipPatternsFromConfig(cfg, getter), nil
+}
 
+// workspaceConfigSkipPatternsFromConfig derives per-module skip patterns from an
+// already-loaded workspace config.
+func workspaceConfigSkipPatternsFromConfig(
+	cfg *workspace.Config,
+	getter func(workspace.ModuleEntry) []string,
+) map[string][]string {
 	result := make(map[string][]string)
 	for name, entry := range cfg.Modules {
 		if patterns := getter(entry); len(patterns) > 0 {
 			result[name] = patterns
 		}
 	}
-	return result, nil
+	return result
 }
 
 // filterNodesByExclude removes items whose nodes match any of the exclude

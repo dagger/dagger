@@ -161,6 +161,9 @@ type Binding implements Node {
   """Retrieve the binding value, as type ModuleSource"""
   asModuleSource: ModuleSource!
 
+  """Retrieve the binding value, as type Schema"""
+  asSchema: Schema!
+
   """Retrieve the binding value, as type SearchResult"""
   asSearchResult: SearchResult!
 
@@ -3110,6 +3113,27 @@ type Env implements Node {
     description: String!
   ): Env!
 
+  """Create or update a binding of type Schema in the environment"""
+  withSchemaInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Schema value to assign to the binding"""
+    value: ID! @expectedType(name: "Schema")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Schema output to be assigned in the environment"""
+  withSchemaOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type SearchResult in the environment"""
   withSearchResultInput(
     """The name of the binding"""
@@ -5395,6 +5419,12 @@ type Query implements Node {
   """Load any object by its ID."""
   node(id: ID!): Node
 
+  """Load a GraphQL introspection schema for merging."""
+  schema(
+    """The introspection schema JSON to load."""
+    json: JSON!
+  ): Schema!
+
   """Creates a new secret."""
   secret(
     """The URI of the secret store"""
@@ -5503,6 +5533,33 @@ type ScalarTypeDef implements Node {
   If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
   sourceModuleName: String!
+}
+
+"""A GraphQL introspection schema that can be inspected and merged."""
+type Schema implements Node {
+  """Serialize the schema back to introspection JSON."""
+  contents: JSON!
+
+  """A unique identifier for this Schema."""
+  id: ID!
+
+  """
+  Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.
+  """
+  merge(
+    """
+    Introspection JSON describing the types the module defines. Object,
+    interface and enum types are appended to the schema, and a constructor field
+    for the module is added to the Query type.
+    """
+    moduleTypes: JSON!
+
+    """
+    The name of the module whose types are being merged. Used to stamp the
+    @sourceMap directive and to derive the module's constructor field.
+    """
+    moduleName: String!
+  ): Schema!
 }
 
 type SearchResult implements Node {

@@ -19,17 +19,81 @@ import (
 
 func TypescriptTemplateFuncs(
 	schemaVersion string,
+	fullSchema *introspection.Schema,
+	selfModule string,
 	cfg generator.Config,
 ) template.FuncMap {
 	return typescriptTemplateFuncs{
 		cfg:           cfg,
 		schemaVersion: schemaVersion,
+		fullSchema:    fullSchema,
+		selfModule:    selfModule,
+		memo:          &templateMemo{},
 	}.FuncMap()
+}
+
+// templateMemo caches results that are constant across every file rendered from
+// one schema. It is held by pointer so the cache survives the value-copies the
+// template engine makes of the funcs receiver. Rendering is sequential, so no
+// locking is needed.
+type templateMemo struct {
+	depExports    []DependencyExport
+	depExportsSet bool
 }
 
 type typescriptTemplateFuncs struct {
 	schemaVersion string
 	cfg           generator.Config
+	memo          *templateMemo
+
+	// fullSchema is the complete, unfiltered schema (all dependency types
+	// included). The per-file render data may carry a filtered schema (the
+	// core schema for client.gen.ts, or a single dep's schema), so the
+	// dependency-splitting helpers consult fullSchema to enumerate deps and
+	// to decide which types belong to client.gen.ts vs. a per-dep file.
+	fullSchema *introspection.Schema
+
+	// selfModule is the name of the module the client is being generated for.
+	// Only *dependencies* are split into their own <dep>.gen.ts files; the
+	// module's own types stay in client.gen.ts, so self is excluded from the
+	// dependency enumeration.
+	selfModule string
+}
+
+// DependencyModules returns the schema's dependency module names with the
+// module being generated for (self) removed: only dependencies are split into
+// their own files. Names are compared kebab-cased to tolerate casing/separator
+// differences between sourceMap module names and the configured name. This is
+// the single source of truth shared by the generator (which filters the schema)
+// and the templates (which enumerate the per-dep files).
+func DependencyModules(schema *introspection.Schema, self string) []string {
+	if schema == nil {
+		return nil
+	}
+	all := schema.DependencyNames()
+	out := make([]string, 0, len(all))
+	for _, name := range all {
+		if isSameModule(name, self) {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+// dependencyNames returns the modules whose types are split into their own
+// files: every module in the schema except the one being generated for.
+func (funcs typescriptTemplateFuncs) dependencyNames() []string {
+	return DependencyModules(funcs.fullSchema, funcs.selfModule)
+}
+
+// isSameModule compares two module names tolerant of casing/separator
+// differences (sourceMap module names vs. the configured module name).
+func isSameModule(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return strcase.ToKebab(a) == strcase.ToKebab(b)
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
@@ -87,6 +151,18 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"LegacyIDableTypes":         funcs.legacyIDableTypes,
 		"LegacyIDName":              funcs.legacyIDName,
 		"LegacyLoadFromIDName":      funcs.legacyLoadFromIDName,
+		// Dependency splitting: render each dependency's types into its own
+		// <dep>.gen.ts file plus prototype augmentations on the extendable
+		// types (Client/Binding/Env).
+		"DependencyFiles":      funcs.dependencyFiles,
+		"DependencyExports":    funcs.dependencyExports,
+		"DepFileName":          funcs.depFileName,
+		"CoreTypeNames":        funcs.coreTypeNames,
+		"CoreValueNames":       funcs.coreValueNames,
+		"ExtendableClassNames": funcs.extendableClassNames,
+		"IsExtendableType":     funcs.isExtendableType,
+		"AugmentFnName":        augmentFnName,
+		"Augmentation":         augmentation,
 	}
 }
 
@@ -538,7 +614,12 @@ func (funcs typescriptTemplateFuncs) legacyLoadFromIDName(typeName string) strin
 	return funcs.formatName("load" + typeName + "FromID")
 }
 
-func (funcs typescriptTemplateFuncs) legacyIDableTypes() []*introspection.Type {
+// legacyIDableTypes returns, for the file currently being rendered, the types
+// whose <Name>ID alias must be declared (legacy mode only). It is scoped to the
+// file's own types so each <dep>.gen.ts emits only its dependency's ID aliases:
+// reading the global schema instead would re-emit every core <Name>ID in every
+// dep file, duplicating client.gen.ts's aliases (TS2308 via `export *`).
+func (funcs typescriptTemplateFuncs) legacyIDableTypes(fileTypes []*introspection.Type) []*introspection.Type {
 	if !funcs.legacyTypeScriptSDKCompat() {
 		return nil
 	}
@@ -547,7 +628,7 @@ func (funcs typescriptTemplateFuncs) legacyIDableTypes() []*introspection.Type {
 		return nil
 	}
 	var types []*introspection.Type
-	for _, t := range schema.Types {
+	for _, t := range fileTypes {
 		if t == nil || t.Name == "Node" || strings.HasPrefix(t.Name, "_") {
 			continue
 		}
@@ -588,4 +669,394 @@ func (funcs typescriptTemplateFuncs) HasLocalDependencies() bool {
 
 func (funcs typescriptTemplateFuncs) isBundle() bool {
 	return funcs.cfg.Bundle
+}
+
+// DependencyExport describes, for a single dependency, the per-dep generated
+// file and the TypeScript identifiers it contributes. client.gen.ts uses this
+// to emit named imports (so inline references like `new Hello(ctx)` resolve)
+// and `export *` re-exports for downstream consumers.
+type DependencyExport struct {
+	// File is the kebab-cased basename (no extension) of the dep file.
+	File string
+	// Names are the TS identifiers (object/scalar/enum/input types plus
+	// per-method Opts types) the dep file exports.
+	Names []string
+	// AugmentFnName is the exported function the dep file uses to attach its
+	// prototype augmentations to the extendable type classes
+	// (e.g. `__applyHelloAugmentations`).
+	AugmentFnName string
+}
+
+// AugmentationData bundles the parent class name and a dep-contributed field
+// for the augmentation sub-templates (text/template only allows a single
+// positional argument).
+type AugmentationData struct {
+	Parent string
+	Field  *introspection.Field
+}
+
+func augmentation(parent string, field *introspection.Field) AugmentationData {
+	return AugmentationData{Parent: parent, Field: field}
+}
+
+// augmentFnName derives the exported augmentation function name for a dep,
+// e.g. "hello" -> "__applyHelloAugmentations".
+func augmentFnName(depName string) string {
+	return "__apply" + strcase.ToCamel(depName) + "Augmentations"
+}
+
+// depFileName converts a module name to the kebab-cased basename used for its
+// generated file, e.g. "myDep" -> "my-dep" (file "my-dep.gen.ts").
+func (funcs typescriptTemplateFuncs) depFileName(moduleName string) string {
+	return strcase.ToKebab(moduleName)
+}
+
+// isExtendableType reports whether the type is one of the core extendable
+// types (Query/Binding/Env) that dependencies contribute fields to via
+// prototype augmentation rather than re-declaring the class.
+func (funcs typescriptTemplateFuncs) isExtendableType(t *introspection.Type) bool {
+	if t == nil {
+		return false
+	}
+	return slices.Contains(introspection.ExtendableTypes, t.Name)
+}
+
+// dependencyFiles returns the per-dep generated filenames (kebab-cased, no
+// extension), sorted by dependency name.
+func (funcs typescriptTemplateFuncs) dependencyFiles() []string {
+	if funcs.fullSchema == nil {
+		return nil
+	}
+	deps := funcs.dependencyNames()
+	out := make([]string, len(deps))
+	for i, d := range deps {
+		out[i] = funcs.depFileName(d)
+	}
+	return out
+}
+
+// dependencyExports returns, for each dependency, the file basename and the
+// set of TS identifiers it exports (so client.gen.ts can import + re-export
+// them). The result is memoized: client.gen.ts asks for it twice (the import
+// block and the footer), and each call does an Include() full-schema scan per
+// dependency.
+func (funcs typescriptTemplateFuncs) dependencyExports() []DependencyExport {
+	if funcs.fullSchema == nil {
+		return nil
+	}
+	if funcs.memo != nil && funcs.memo.depExportsSet {
+		return funcs.memo.depExports
+	}
+	deps := funcs.dependencyNames()
+	out := make([]DependencyExport, 0, len(deps))
+	for _, dep := range deps {
+		depSchema := funcs.fullSchema.Include(dep)
+		out = append(out, DependencyExport{
+			File:          funcs.depFileName(dep),
+			Names:         funcs.exportedTypeNames(depSchema.Types, nil),
+			AugmentFnName: augmentFnName(dep),
+		})
+	}
+	if funcs.memo != nil {
+		funcs.memo.depExports = out
+		funcs.memo.depExportsSet = true
+	}
+	return out
+}
+
+// dependencyNameSet returns the dependency module names as a set, for quick
+// "is this type owned by a dependency" lookups.
+func (funcs typescriptTemplateFuncs) dependencyNameSet() map[string]struct{} {
+	set := map[string]struct{}{}
+	for _, d := range funcs.dependencyNames() {
+		set[d] = struct{}{}
+	}
+	return set
+}
+
+// isDependencyOwned reports whether a type is contributed by one of the
+// dependencies (and so lives in a <dep>.gen.ts file rather than client.gen.ts).
+func (funcs typescriptTemplateFuncs) isDependencyOwned(t *introspection.Type, depSet map[string]struct{}) bool {
+	if sm := t.Directives.SourceMap(); sm != nil {
+		_, ok := depSet[sm.Module]
+		return ok
+	}
+	return false
+}
+
+// isBuiltinScalar reports whether name is a GraphQL builtin scalar that maps to
+// a native TS type (string/number/float/boolean) and is therefore never
+// imported or exported by name.
+func isBuiltinScalar(name string) bool {
+	switch introspection.Scalar(name) {
+	case introspection.ScalarString, introspection.ScalarInt,
+		introspection.ScalarFloat, introspection.ScalarBoolean:
+		return true
+	}
+	return false
+}
+
+// isExportableType reports whether the generated client surfaces this type by
+// name — i.e. whether it can appear in a per-dep file's import and in
+// client.gen.ts's re-export. It is the single predicate shared by the importing
+// side (coreTypeNames/coreValueNames) and the exporting side
+// (exportedTypeNames), so the two can't drift. It excludes internal
+// (_-prefixed) types, builtin scalars, and the extendable types (which are
+// bound from `scope` inside the augmentation function, never imported).
+func (funcs typescriptTemplateFuncs) isExportableType(t *introspection.Type) bool {
+	if t == nil || strings.HasPrefix(t.Name, "_") {
+		return false
+	}
+	if slices.Contains(introspection.ExtendableTypes, t.Name) {
+		return false
+	}
+	return !isBuiltinScalar(t.Name)
+}
+
+// collectReferencedNames returns every type name appearing in the dependency
+// surface (field return types, argument types, and input fields).
+func (funcs typescriptTemplateFuncs) collectReferencedNames(depTypes []*introspection.Type) map[string]struct{} {
+	referenced := map[string]struct{}{}
+	visit := func(ref *introspection.TypeRef) {
+		for ; ref != nil; ref = ref.OfType {
+			if ref.Name != "" {
+				referenced[ref.Name] = struct{}{}
+			}
+		}
+	}
+	for _, t := range depTypes {
+		for _, f := range t.Fields {
+			visit(f.TypeRef)
+			for _, a := range f.Args {
+				visit(a.TypeRef)
+			}
+		}
+		for _, in := range t.InputFields {
+			visit(in.TypeRef)
+		}
+	}
+	return referenced
+}
+
+// addLegacyIDRefs adds, in legacy mode, the <Object>ID alias names referenced
+// by the dependency surface. An object's `id` field (and id-typed args) render
+// as the per-type alias <Object>ID rather than the generic ID scalar, so the
+// dep file imports those aliases from client.gen.ts.
+func (funcs typescriptTemplateFuncs) addLegacyIDRefs(depTypes []*introspection.Type, referenced map[string]struct{}) {
+	if !funcs.legacyTypeScriptSDKCompat() {
+		return
+	}
+	objectNames := map[string]struct{}{}
+	for _, t := range depTypes {
+		if t.Kind == introspection.TypeKindObject {
+			objectNames[t.Name] = struct{}{}
+		}
+	}
+	for name := range referenced {
+		if t := funcs.fullSchema.Types.Get(name); t != nil && t.Kind == introspection.TypeKindObject {
+			objectNames[name] = struct{}{}
+		}
+	}
+	for name := range objectNames {
+		idName := funcs.legacyIDName(name)
+		if funcs.fullSchema.Types.Get(idName) != nil {
+			referenced[idName] = struct{}{}
+		}
+	}
+}
+
+// coreTypeNames returns the core (non-dependency) identifiers a per-dep file
+// imports from client.gen.ts as *types only*: scalars, input objects, enum
+// types, the `float` alias, and (in legacy mode) the <Object>ID aliases the dep
+// references in signatures. Core *values* the dep constructs or calls (object
+// classes, enum converters) are value-imported via coreValueNames instead — a
+// type-only import used as a value is a hard tsc error (TS1361) and, since type
+// imports are erased under ESM, a runtime ReferenceError.
+func (funcs typescriptTemplateFuncs) coreTypeNames(depTypes []*introspection.Type) []string {
+	if funcs.fullSchema == nil {
+		return nil
+	}
+
+	depSet := funcs.dependencyNameSet()
+	referenced := funcs.collectReferencedNames(depTypes)
+	funcs.addLegacyIDRefs(depTypes, referenced)
+
+	seen := map[string]struct{}{}
+	var names []string
+	add := func(name string) {
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	for name := range referenced {
+		// The Float scalar is the one builtin that renders as a TS alias
+		// (`float`) declared in client.gen.ts rather than a native type, so the
+		// dep file imports that alias.
+		if introspection.Scalar(name) == introspection.ScalarFloat {
+			add("float")
+			continue
+		}
+		t := funcs.fullSchema.Types.Get(name)
+		if t == nil || !funcs.isExportableType(t) || funcs.isDependencyOwned(t, depSet) {
+			continue
+		}
+		// Object classes are runtime values (the bodies do `new X(ctx)`); they
+		// are value-imported via coreValueNames, which also covers their use as
+		// signature types.
+		if t.Kind == introspection.TypeKindObject {
+			continue
+		}
+		add(funcs.exportedTypeName(t))
+	}
+
+	sort.Strings(names)
+	return names
+}
+
+// coreValueNames returns the core (non-dependency) identifiers the generated
+// dependency bodies reference as runtime VALUES and therefore value-import from
+// client.gen.ts: object classes they construct with `new`, and the enum
+// converter functions (<Enum>ValueToName / <Enum>NameToValue) they call.
+//
+// Value-importing these is safe under the client.gen.ts <-> dep-file ESM cycle:
+// every reference is inside a method body or the deferred augmentation
+// function, never at module-evaluation time, so the binding is always
+// initialized by the time it is used.
+func (funcs typescriptTemplateFuncs) coreValueNames(depTypes []*introspection.Type) []string {
+	if funcs.fullSchema == nil {
+		return nil
+	}
+
+	depSet := funcs.dependencyNameSet()
+	coreType := func(name string) *introspection.Type {
+		t := funcs.fullSchema.Types.Get(name)
+		if t == nil || !funcs.isExportableType(t) || funcs.isDependencyOwned(t, depSet) {
+			return nil
+		}
+		return t
+	}
+
+	seen := map[string]struct{}{}
+	var names []string
+	add := func(name string) {
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+
+	// Core object classes referenced anywhere in the surface. A value import
+	// covers both `new X(ctx)` in bodies and X used as a signature type.
+	for name := range funcs.collectReferencedNames(depTypes) {
+		if t := coreType(name); t != nil &&
+			t.Kind == introspection.TypeKindObject && len(t.Fields) > 0 {
+			add(funcs.exportedTypeName(t))
+		}
+	}
+
+	// Enum converters, imported only in the direction actually used (NameToValue
+	// for enum return values, ValueToName for enum arguments) so the import is
+	// never unused. The converter name matches its definition in client.gen.ts.
+	addEnumConverters := func(ref *introspection.TypeRef, suffix string) {
+		for ; ref != nil; ref = ref.OfType {
+			if ref.Name == "" {
+				continue
+			}
+			if t := coreType(ref.Name); t != nil && t.Kind == introspection.TypeKindEnum {
+				add(funcs.pascalCase(t.Name) + suffix)
+			}
+		}
+	}
+	for _, t := range depTypes {
+		for _, f := range t.Fields {
+			addEnumConverters(f.TypeRef, "NameToValue")
+			for _, a := range f.Args {
+				addEnumConverters(a.TypeRef, "ValueToName")
+			}
+		}
+	}
+
+	sort.Strings(names)
+	return names
+}
+
+// extendableClassNames returns the TS class names of the extendable core types
+// (Query->Client, Binding, Env) that are actually present in the schema, in
+// declaration order. Dependencies augment these classes, and client.gen.ts
+// passes them to each augmentation function; gating on presence keeps the
+// generated code valid against pre-Binding/Env engine schemas.
+func (funcs typescriptTemplateFuncs) extendableClassNames() []string {
+	if funcs.fullSchema == nil {
+		return nil
+	}
+	var out []string
+	for _, name := range introspection.ExtendableTypes {
+		if funcs.fullSchema.Types.Get(name) != nil {
+			out = append(out, funcs.formatName(funcs.queryToClient(name)))
+		}
+	}
+	return out
+}
+
+// exportedTypeName returns the TS identifier under which a type is exported,
+// matching the per-kind naming used by the templates: objects go through
+// QueryToClient+FormatName, interfaces/inputs through FormatName, while scalars
+// and enums keep their raw schema name.
+func (funcs typescriptTemplateFuncs) exportedTypeName(t *introspection.Type) string {
+	switch t.Kind {
+	case introspection.TypeKindObject:
+		return funcs.formatName(funcs.queryToClient(t.Name))
+	case introspection.TypeKindInterface, introspection.TypeKindInputObject:
+		return funcs.formatName(t.Name)
+	default:
+		return t.Name
+	}
+}
+
+// exportedTypeNames collects the sorted, de-duplicated set of TS identifiers
+// (formatted type names plus per-method Opts types) for the given types,
+// skipping internal (_-prefixed) types, the built-in scalars, and the
+// extendable types. An optional predicate further filters which types to keep.
+func (funcs typescriptTemplateFuncs) exportedTypeNames(
+	types []*introspection.Type,
+	keep func(*introspection.Type) bool,
+) []string {
+	seen := map[string]struct{}{}
+	var names []string
+
+	add := func(name string) {
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+
+	for _, t := range types {
+		if !funcs.isExportableType(t) {
+			continue
+		}
+		if keep != nil && !keep(t) {
+			continue
+		}
+
+		add(funcs.exportedTypeName(t))
+
+		// Per-method Opts struct types are exported alongside the object. The
+		// templates name them with the raw (QueryToClient-only) type name.
+		if t.Kind == introspection.TypeKindObject {
+			for _, f := range t.Fields {
+				if len(funcs.getOptionalArgs(f.Args)) == 0 {
+					continue
+				}
+				add(funcs.queryToClient(t.Name) + funcs.pascalCase(f.Name) + "Opts")
+			}
+		}
+	}
+
+	sort.Strings(names)
+	return names
 }

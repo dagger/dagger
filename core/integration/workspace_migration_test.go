@@ -180,7 +180,7 @@ type Myapp {
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.go-sdk]`)
+		require.Contains(t, configOut, `[modules.dagger-go-sdk]`)
 		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
 
 		reportOut, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
@@ -704,9 +704,9 @@ type Videostitch struct{}
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.go-sdk]`)
+		require.Contains(t, configOut, `[modules.dagger-go-sdk]`)
 		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
-		require.Contains(t, configOut, `[modules.typescript-sdk]`)
+		require.Contains(t, configOut, `[modules.dagger-typescript-sdk]`)
 		require.Contains(t, configOut, `source = "github.com/dagger/typescript-sdk"`)
 
 		reportOut, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)

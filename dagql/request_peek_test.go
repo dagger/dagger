@@ -62,3 +62,17 @@ func TestPeekRootFieldsRejectsBatch(t *testing.T) {
 	require.False(t, ok)
 	require.Nil(t, fields)
 }
+
+func TestPeekRootFieldsRecoversSingleOperation(t *testing.T) {
+	t.Parallel()
+
+	// operationName omitted from the envelope: the sole operation is used.
+	body := `{"query":"query Introspect { currentTypeDefs { name } }"}`
+	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	ok, fields, err := dagql.PeekRootFields(req)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []string{"currentTypeDefs"}, fields)
+}
