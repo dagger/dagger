@@ -81,16 +81,29 @@ func (fe *frontendPretty) zoomKind() zoomKind {
 // DAGGER_TRACE_RENDER override so we can render any preset against a fixed
 // zoom while comparing approaches.
 func (fe *frontendPretty) renderPolicy() traceRenderPolicy {
-	pol := policyForZoom(fe.zoomKind())
+	k := fe.zoomKind()
+	pol := policyForZoom(k)
 	switch os.Getenv("DAGGER_TRACE_RENDER") {
 	case "root":
-		pol = policyForZoom(zoomRoot)
+		return policyForZoom(zoomRoot)
 	case "check":
-		pol = policyForZoom(zoomCheck)
+		return policyForZoom(zoomCheck)
 	case "test":
-		pol = policyForZoom(zoomTest)
+		return policyForZoom(zoomTest)
 	case "span":
-		pol = policyForZoom(zoomSpan)
+		return policyForZoom(zoomSpan)
+	}
+	// A plain trace -- no checks and no tests, e.g. a bare `dagger call` -- has no
+	// checks section or test rollup to carry the failure, so the whole-trace view
+	// would fall back to the bootstrap progress tree and never show why it failed.
+	// Surface the root span's root cause directly instead: the same span-derived
+	// origin (an `error_origin` link / traceparent marker on the root) the
+	// summary's ROOT CAUSE uses. Only at the root zoom; a check/test/span zoom has
+	// its own tier.
+	if k == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
+		if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
+			pol.showRootCause = true
+		}
 	}
 	return pol
 }

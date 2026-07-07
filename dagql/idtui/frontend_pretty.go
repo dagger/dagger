@@ -1430,6 +1430,17 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	}
 
 	// Replay the primary output log to stdout/stderr.
+	if fe.reportOnly {
+		// In report mode a failed plain-call's root cause is already rendered
+		// above (renderRootCauseSection); the primary span's own logs are that
+		// same output wrapped by the engine as `Error: ... Stdout: ... Stderr:
+		// ...`. Replaying them here would duplicate the root cause (and reprint
+		// the raw, un-vterm'd stream). Skip the replay for a failed primary
+		// span; a passing call still replays its result (e.g. test output).
+		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailedOrCausedFailure() {
+			return nil
+		}
+	}
 	return renderPrimaryOutput(w, fe.db)
 }
 
@@ -1832,6 +1843,16 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		zoomed := fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
 			fe.rowsView.Zoomed.ID != fe.db.PrimarySpan
 
+		// Lead the whole-trace report with the overall verdict -- did it pass or
+		// fail, what command ran, and the top-level error -- the one-glance summary
+		// the server-computed summary used to provide. A zoom titles itself below.
+		if !zoomed {
+			if hdr := fe.renderTraceHeader(r); len(hdr) > 0 {
+				ctx.Lines(hdr...)
+				ctx.Line("")
+			}
+		}
+
 		// When scoped to a span (e.g. --test/--span/--check), title the subtree
 		// with the zoomed span so it isn't a headless, mysteriously indented tree.
 		if zoomed {
@@ -1845,6 +1866,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			ctx.Line("") // separate the header from its content
 		}
 
+		rootCauseRendered := false
 		if pol.showRootCause {
 			// XXX: we always render the root cause for now, even when the same
 			// failing span also shows up under a test below (the cause often
@@ -1859,6 +1881,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 			if rcLines := fe.renderRootCauseSection(ctx, r); len(rcLines) > 0 {
 				ctx.Lines(rcLines...)
 				ctx.Line("")
+				rootCauseRendered = true
 			}
 		}
 
@@ -1872,7 +1895,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
 			ctx.Lines(checkLines...)
 			renderedRows = true
-		} else {
+		} else if !rootCauseRendered {
+			// Only fall back to the raw progress tree when there's nothing better.
+			// A plain `dagger call` failure renders its root cause above; dumping
+			// the bootstrap spans (connect / load workspace / parsing args) under
+			// it would just be noise.
 			progressLines := fe.renderProgressLines(r, ctx, 0)
 			ctx.Lines(progressLines...)
 			renderedRows = len(progressLines) > 0
@@ -1986,6 +2013,69 @@ func linesFromView(ctx tuist.Context, view string) {
 		return
 	}
 	ctx.Lines(strings.Split(strings.TrimSuffix(view, "\n"), "\n")...)
+}
+
+// renderTraceHeader renders the trace's overall verdict at the top of the
+// whole-trace report: the invoked command, whether it passed or failed, and the
+// top-level error. The sections below explain the failure in detail; this is the
+// one-glance outcome the server-computed summary used to lead with.
+func (fe *frontendPretty) renderTraceHeader(r *renderer) []string {
+	root := fe.db.RootSpan
+	if root == nil {
+		return nil
+	}
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+
+	icon, word, color := IconSuccess, "PASSED", termenv.ANSIGreen
+	switch {
+	case root.IsFailed():
+		icon, word, color = IconFailure, "FAILED", termenv.ANSIRed
+	case root.IsRunning():
+		icon, word, color = Diamond, "RUNNING", termenv.ANSIYellow
+	}
+	status := out.String(fmt.Sprintf("%s %s", icon, word)).Foreground(color).String()
+	lines := []string{reportHeadingLine(out, "TRACE") + "  " + status}
+
+	name := root.Name
+	if name == "" {
+		name = "-"
+	}
+	dur := out.String(dagui.FormatDuration(root.Activity.Duration(r.now))).Faint().String()
+	lines = append(lines, fmt.Sprintf("%s  %s", name, dur))
+
+	// Top-level error, traceparent markers stripped (they're cross-SDK plumbing,
+	// not part of the message). The detailed cause is rendered below.
+	if root.IsFailed() {
+		if msg := stripTraceparent(root.Status.Description); strings.TrimSpace(msg) != "" {
+			for _, ln := range strings.Split(strings.TrimRight(msg, "\n"), "\n") {
+				if strings.TrimSpace(ln) == "" {
+					continue
+				}
+				lines = append(lines, out.String("! "+ln).Foreground(termenv.ANSIRed).String())
+			}
+		}
+	}
+	return lines
+}
+
+// stripTraceparent removes the cross-SDK "[traceparent:<trace>-<span>]" error
+// markers (and any single space before them) from a message.
+func stripTraceparent(s string) string {
+	for {
+		i := strings.Index(s, "[traceparent:")
+		if i < 0 {
+			return s
+		}
+		end := strings.IndexByte(s[i:], ']')
+		if end < 0 {
+			return s
+		}
+		start := i
+		if start > 0 && s[start-1] == ' ' {
+			start--
+		}
+		s = s[:start] + s[i+end+1:]
+	}
 }
 
 // renderZoomedFinalLogs renders the zoomed span's rolled-up logs for the final
@@ -2266,6 +2356,19 @@ func (fe *frontendPretty) recalculateViewLocked() {
 			if zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]; zoomSpan != nil {
 				for _, origin := range fe.checkRootCauses(zoomSpan) {
 					fe.requestLogs(origin.ID)
+				}
+			}
+		}
+		// For a plain call (no checks, no tests) fetch the primary span's own logs:
+		// these are the command's result output, which the engine prints onto the
+		// root span. renderPrimaryOutput replays db.PrimaryLogs at the end of the
+		// run, so without this the report shows the call tree but never the output.
+		// descendants=false keeps it to the primary output itself, not the whole
+		// rolled-up build log.
+		if fe.zoomKind() == zoomRoot && len(fe.db.SurfacedChecks()) == 0 {
+			if tv := fe.db.TestView(); tv == nil || !tv.HasTests() {
+				if prim := fe.db.PrimarySpan; prim.IsValid() {
+					fe.requestLogsWith(prim, false)
 				}
 			}
 		}
@@ -4080,6 +4183,14 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 	for p := rootCauseTree.Parent; p != nil; p = p.Parent {
 		if p.Span.ID == row.Span.ID {
 			break
+		}
+		if !p.Span.Received {
+			// An ancestor we never fetched: the error origin is point-fetched by
+			// ID, but its parents aren't, so a synthetic-tree walk can reach an
+			// unreceived placeholder (no name, call, or message). renderStepTitle
+			// would render it blank, leaving a stray "› " breadcrumb segment with
+			// nothing before it. Skip it -- we have no data to show.
+			continue
 		}
 		parentRow := &dagui.TraceRow{
 			Span:     p.Span,

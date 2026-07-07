@@ -9,6 +9,8 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -132,6 +134,62 @@ func TestFinalGlobalTestsUnindented(t *testing.T) {
 	}
 	if testsLine != "TESTS" {
 		t.Fatalf("global final TESTS line = %q, want no indentation", testsLine)
+	}
+}
+
+func TestTraceHeaderShowsVerdict(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	start := time.Unix(100, 0)
+	for _, tc := range []struct {
+		name     string
+		status   sdktrace.Status
+		wantWord string
+		wantErr  string
+	}{
+		{
+			name:     "passing call",
+			status:   sdktrace.Status{Code: codes.Ok},
+			wantWord: "PASSED",
+		},
+		{
+			name:     "failing call",
+			status:   sdktrace.Status{Code: codes.Error, Description: `call function "phpstan": exit code: 1 [traceparent:abc123-def456]`},
+			wantWord: "FAILED",
+			wantErr:  `call function "phpstan": exit code: 1`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := dagui.NewDB()
+			rootID := prettyTestSpanID(1)
+			db.ImportSnapshots([]dagui.SpanSnapshot{{
+				ID:        rootID,
+				TraceID:   prettyTestTraceID(),
+				Name:      "test phpstan",
+				StartTime: start,
+				EndTime:   start.Add(2 * time.Second),
+				Status:    tc.status,
+				Final:     true,
+			}})
+			db.SetPrimarySpan(rootID)
+
+			fe := NewWithDB(io.Discard, db)
+			fe.finalRender = true
+			r := newRenderer(fe.db, 40, fe.FrontendOpts, true)
+			joined := strings.Join(fe.renderTraceHeader(r), "\n")
+
+			if !strings.Contains(joined, "TRACE") || !strings.Contains(joined, tc.wantWord) {
+				t.Fatalf("header missing TRACE/%s:\n%s", tc.wantWord, joined)
+			}
+			if !strings.Contains(joined, "test phpstan") {
+				t.Fatalf("header missing command:\n%s", joined)
+			}
+			if tc.wantErr != "" && !strings.Contains(joined, tc.wantErr) {
+				t.Fatalf("header missing error %q:\n%s", tc.wantErr, joined)
+			}
+			if strings.Contains(joined, "traceparent") {
+				t.Fatalf("header should strip traceparent markers:\n%s", joined)
+			}
+		})
 	}
 }
 
