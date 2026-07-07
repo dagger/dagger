@@ -596,17 +596,28 @@ func (v *TestView) FilterCases(keep func(*TestNode) bool) *TestView {
 			}
 		}
 		keepSelf := n.Kind == TestNodeCase && keep(n)
+		// A FAILING suite with no cases of its own -- e.g. a test package that
+		// failed to compile -- has no case children to carry its status, so it
+		// must survive on its own or the failure vanishes from the view.
+		// Failing only: a skipped case-less suite (a package with no test
+		// files) is noise, and a running one shows up once its cases do.
+		caselessSuite := n.Kind != TestNodeCase && len(n.Children) == 0
+		if caselessSuite && n.Category == TestCategoryFailing && keep(n) {
+			keepSelf = true
+		}
 		if !keepSelf && len(kids) == 0 {
 			return nil
 		}
 		clone := *n
 		clone.Parent = nil
 		clone.Children = kids
-		if clone.Kind != TestNodeCase {
+		if clone.Kind != TestNodeCase && !caselessSuite {
 			// Re-derive suite status from the retained cases rather than the
 			// backing span: a suite kept only for its surviving (e.g. passing)
 			// cases must not inherit the failing status contributed by sibling
-			// cases that were filtered out.
+			// cases that were filtered out. A case-less suite (kept above) is
+			// exempt: its own span IS its status, and summaries need the span
+			// to render it.
 			clone.Kind = TestNodeVirtualSuite
 			clone.Span = nil
 			clone.RepresentativeSpan = nil

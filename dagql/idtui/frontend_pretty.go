@@ -882,13 +882,15 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	}
 
 	// Print the final report. Normally it goes to stderr so a redirected stdout
-	// stays the command's result. But a report-mode command (`dagger trace`)
-	// driven by an agent has no separate result stream -- the report *is* the
-	// output -- so route it to stdout there, letting `dagger trace X > out.txt`
-	// capture the report instead of an empty file. Scoped to RunningInAgent to
-	// leave the human and interactive (`dagger call`) streams unchanged.
+	// stays the command's result. But `dagger trace` (fe.traceID is only set by
+	// its SetTraceID) driven by an agent has no separate result stream -- the
+	// report *is* the output -- so route it to stdout there, letting `dagger
+	// trace X > out.txt` capture the report instead of an empty file. Scoped to
+	// the trace command specifically: under an agent EVERY command defaults to
+	// report mode, and e.g. `dagger call ... stdout > f` must keep its stdout
+	// clean.
 	reportOut := io.Writer(os.Stderr)
-	if fe.reportOnly && RunningInAgent() {
+	if fe.reportOnly && fe.traceID != "" && RunningInAgent() {
 		reportOut = os.Stdout
 	}
 	if renderErr := fe.FinalRender(reportOut); renderErr != nil {
@@ -1616,8 +1618,14 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		// own result — e.g. a shell script's output from before it failed —
 		// so replay that, matching the streaming frontends. A passing run
 		// still replays both streams.
+		//
+		// Only drop stderr when the root cause actually rendered, though:
+		// client-side failures carry no span origins (e.g. cobra usage
+		// errors, whose "Run '... --help' for usage." hint lives on the
+		// primary span's stderr), so nothing above covered that stream and
+		// dropping it here would lose it entirely.
 		if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil && primary.IsFailedOrCausedFailure() {
-			return replayPrimaryOutput(w, fe.db, false)
+			return replayPrimaryOutput(w, fe.db, !fe.hasShownRootError())
 		}
 	}
 	return renderPrimaryOutput(w, fe.db)
@@ -1672,7 +1680,7 @@ func (fe *frontendPretty) updateSpanTreesForLogs(spanID dagui.SpanID) {
 	if lv, ok := fe.logsViews[spanID]; ok {
 		lv.Update()
 	}
-	if _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
+	if _, _, rolledUp := fe.logs.findRollUpSpan(spanID); rolledUp {
 		for id := spanID; ; {
 			span := fe.db.Spans.Map[id]
 			if span == nil || span.Boundary || span.Encapsulate || span.Internal {
@@ -1794,6 +1802,12 @@ func (fe FrontendMetricExporter) ForceFlush(context.Context) error {
 }
 
 func (fe *frontendPretty) Background(cmd ExecCommand, raw bool) error {
+	if fe.backgroundReq == nil {
+		// Only the interactive TUI (runWithTUI) can hand the screen to a
+		// terminal session; in report and console modes the channel is never
+		// created and sending would block forever.
+		return fmt.Errorf("running a terminal without the TUI is not supported")
+	}
 	errs := make(chan error, 1)
 	fe.backgroundReq <- backgroundRequest{
 		cmd:  cmd,
@@ -2092,23 +2106,38 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// exactly the body area), and the chrome below (logs, then the global tests
 	// summary) sits beneath them -- so cropping the bottom makes the chrome, not
 	// the focused header, what scrolls offscreen. This is the "main content wins"
-	// rule: reserving chrome space up front -- the old behaviour -- let a tall
-	// global TESTS block squeeze progress until the focused row's own header
-	// scrolled off the top.
-	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader))
+	// rule: reserving the chrome's FULL height up front -- the old behaviour --
+	// let a tall global TESTS block squeeze progress until the focused row's own
+	// header scrolled off the top.
+	//
+	// The chrome still gets a bounded reservation (up to half the body): its
+	// render above already registered claims that suppress the same logs in the
+	// progress rows, so cropping it away entirely would leave a failing test's
+	// detail rendered nowhere -- suppressed in the tree by a section that never
+	// appears.
+	var chrome []string
+	if len(logsLines) > 0 {
+		chrome = append(chrome, logsLines...)
+		chrome = append(chrome, "") // trailing gap
+	}
+	if len(globalTestLines) > 0 {
+		chrome = append(chrome, globalTestLines...)
+		chrome = append(chrome, "") // trailing gap
+	}
+	chromeReserve := 0
+	if h := ctx.ScreenHeight(); h > 0 && len(chrome) > 0 {
+		if avail := h - reserved - len(zoomHeader); avail > 0 {
+			// +1 for the gap line after progress.
+			chromeReserve = min(len(chrome)+1, avail/2)
+		}
+	}
+	progressLines := fe.renderProgressLines(r, ctx, reserved+len(zoomHeader)+chromeReserve)
 	var body []string
 	if len(progressLines) > 0 {
 		body = append(body, progressLines...)
 		body = append(body, "") // gap line after progress
 	}
-	if len(logsLines) > 0 {
-		body = append(body, logsLines...)
-		body = append(body, "") // trailing gap
-	}
-	if len(globalTestLines) > 0 {
-		body = append(body, globalTestLines...)
-		body = append(body, "") // trailing gap
-	}
+	body = append(body, chrome...)
 
 	// Crop the bottom to the rows available for the body: the screen minus the
 	// always-shown siblings and the pinned zoom header. A non-positive
@@ -2174,7 +2203,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		//     dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
 		//   without it (tests carry the cause):
 		//     DAGGER_TRACE_RENDER=root dagger trace a0d14706d2b326f778989c181585e9df --full --check "test-split:test-container"
-		if rcLines := fe.renderRootCauseSection(ctx, r); len(rcLines) > 0 {
+		if rcLines := fe.renderRootCauseSection(ctx, r, false); len(rcLines) > 0 {
 			ctx.Lines(rcLines...)
 			ctx.Line("")
 			rootCauseRendered = true
@@ -2191,11 +2220,14 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
 		ctx.Lines(checkLines...)
 		renderedRows = true
-	} else if !rootCauseRendered {
+	} else if !rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity {
 		// Only fall back to the raw progress tree when there's nothing better.
 		// A plain `dagger call` failure renders its root cause above; dumping
 		// the bootstrap spans (connect / load workspace / parsing args) under
-		// it would just be noise.
+		// it would just be noise. At -v the tree renders anyway: it carries
+		// context the cause section alone can't -- which module call owns the
+		// failure, and which downstream calls stayed pending rather than
+		// cascading the error.
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
 		renderedRows = len(progressLines) > 0
@@ -2222,6 +2254,17 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 				ctx.Line("")
 			}
 			ctx.Lines(testLines...)
+		}
+	}
+
+	if pol.showRootCauseLast {
+		// After the tree, so claims are populated: only origins the tree didn't
+		// already tell in full (error AND logs) render here.
+		if rcLines := fe.renderRootCauseSection(ctx, r, true); len(rcLines) > 0 {
+			if renderedRows {
+				ctx.Line("")
+			}
+			ctx.Lines(rcLines...)
 		}
 	}
 
@@ -2725,7 +2768,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 					}
 				}
 			}
-			if fe.renderPolicy().showRootCause {
+			if pol := fe.renderPolicy(); pol.showRootCause || pol.showRootCauseLast {
 				if zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]; zoomSpan != nil {
 					for _, origin := range fe.checkRootCauses(zoomSpan) {
 						fe.requestLogs(origin.ID)
@@ -4496,7 +4539,11 @@ func (fe *frontendPretty) checkRootCauses(root *dagui.Span) []*dagui.Span {
 // the live tree uses. It reuses renderErrorCause, whose logs.View() preserves
 // the user program's own ANSI colour (UI chrome is handled by the agent/ASCII
 // profile elsewhere -- we must not strip the user's output here).
-func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer) []string {
+//
+// afterTree marks the showRootCauseLast placement (below the tree): origins
+// the tree already told in full are skipped, so the section adds only the
+// detail the tree couldn't carry.
+func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer, afterTree bool) []string {
 	zoomSpan := fe.db.Spans.Map[fe.ZoomedSpan]
 	if zoomSpan == nil {
 		return nil
@@ -4514,6 +4561,23 @@ func (fe *frontendPretty) renderRootCauseSection(ctx tuist.Context, r *renderer)
 			// Incremental --full may not have loaded the origin span (or its
 			// logs) yet; skip rather than render an empty stub.
 			continue
+		}
+		if afterTree {
+			if row := fe.rows.BySpan[origin.ID]; row != nil && row.Expanded {
+				// The origin rendered as its own expanded row in the tree
+				// above -- title, inline logs, and error all told in place.
+				continue
+			}
+		}
+		if fe.claims.hasError(origin.ID) {
+			// The tree already rendered this origin's error (an inline origin
+			// block, or the origin's own row). Only repeat it here if it has
+			// logs the tree didn't show -- a row that printed a bare error
+			// with its logs collapsed still needs its detail surfaced.
+			logs := fe.logs.Logs[origin.ID]
+			if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(origin.ID) {
+				continue
+			}
 		}
 		fe.renderErrorCause(ctx, out, r, zoomRow, "", origin, fe)
 		rendered = true
@@ -4644,6 +4708,7 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 			logs.SetHeight(height)
 		}
 		fmt.Fprint(out, logs.View())
+		fe.claims.claimLog(rootCauseRow.Span)
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
 
@@ -5306,8 +5371,13 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			continue
 		}
 
-		pw, rolledUp := l.findRollUpSpan(spanID)
-		if rolledUp && !verbose && !global {
+		pw, rollUpID, rolledUp := l.findRollUpSpan(spanID)
+		// Skip the prefixed roll-up copy when the record is keyed to the
+		// roll-up span itself -- e.g. 'dagger trace' re-keys descendant
+		// fetches onto the span they were fetched for -- since the raw write
+		// below already lands in that same span's vterm; prefixing a second
+		// copy would double every line.
+		if rolledUp && rollUpID != spanID && !verbose && !global {
 			var context string
 			span, ok := l.DB.Spans.Map[spanID]
 			if ok {
@@ -5371,7 +5441,7 @@ func (l *prettyLogs) extractSpanContext(span *dagui.Span) string {
 	return span.Name
 }
 
-func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, bool) {
+func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, dagui.SpanID, bool) {
 	id := origID
 	for {
 		span := l.DB.Spans.Map[id]
@@ -5389,7 +5459,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 				pw = multiprefixw.New(vterm)
 				l.PrefixWriters[id] = pw
 			}
-			return pw, true
+			return pw, id, true
 		}
 		if span.ParentID.IsValid() {
 			// Keep walking upward
@@ -5398,7 +5468,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			break
 		}
 	}
-	return nil, false
+	return nil, dagui.SpanID{}, false
 }
 
 func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {

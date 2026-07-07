@@ -137,7 +137,14 @@ func (claims *renderClaims) claimTestCases(view *dagui.TestView) {
 		return
 	}
 	for id, node := range view.BySpan {
-		if node != nil && node.Kind == dagui.TestNodeCase {
+		if node == nil {
+			continue
+		}
+		// Case-less suites (e.g. a package that failed to compile) are entries
+		// in their own right -- they have no case children to carry their
+		// status -- so claim them too, keeping the global section from
+		// repeating a suite a check's report already covers.
+		if node.Kind == dagui.TestNodeCase || len(node.Children) == 0 {
 			claims.claimTestCase(id)
 		}
 	}

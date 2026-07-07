@@ -1,7 +1,7 @@
 Expected stderr:
 
-✔ viztest:test-summary X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ OK
-
+CHECKS  ✔ 1 passed
+✔ viztest:test-summary X.Xs OK
   TESTS
     ✘ viztest summary suite › failed test 01 FAIL
           failed test 01 log line 1

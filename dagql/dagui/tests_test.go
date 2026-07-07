@@ -429,3 +429,50 @@ func TestTestIndexIncrementalBehavior(t *testing.T) {
 		t.Fatalf("expected two tests after adding second test, got %d", got)
 	}
 }
+
+func TestFilterCasesKeepsCaselessFailingSuite(t *testing.T) {
+	db := NewDB()
+	start := time.Unix(100, 0)
+	suite := func(id byte, name string, status TestStatus, code codes.Code) SpanSnapshot {
+		return SpanSnapshot{
+			ID:            testID(id),
+			TraceID:       TraceID{TraceID: trace.TraceID{1}},
+			Name:          name,
+			StartTime:     start,
+			EndTime:       start.Add(time.Second),
+			TestSuiteName: name,
+			TestStatus:    status,
+			Status:        sdktrace.Status{Code: code},
+			Final:         true,
+		}
+	}
+	db.ImportSnapshots([]SpanSnapshot{
+		// A test package that failed with no cases, e.g. a compile failure.
+		suite(1, "broken/pkg", TestStatusFailure, codes.Error),
+		// A package with no test files: case-less but only skipped.
+		suite(2, "empty/pkg", TestStatusSkipped, codes.Ok),
+	})
+	view := db.TestView()
+
+	filtered := view.FilterCases(func(*TestNode) bool { return true })
+	node := filtered.FindSuiteByName("broken/pkg")
+	if node == nil {
+		t.Fatal("case-less failing suite must survive FilterCases")
+	}
+	if node.Span == nil {
+		t.Fatal("case-less failing suite must keep its span (summaries render from it)")
+	}
+	if node.Category != TestCategoryFailing {
+		t.Fatalf("case-less failing suite must stay failing, got %v", node.Category)
+	}
+	if filtered.FindSuiteByName("empty/pkg") != nil {
+		t.Fatal("case-less skipped suite is noise and must stay pruned")
+	}
+
+	// A claimed (keep=false) case-less failing suite is dropped, so a check's
+	// own test report doesn't repeat into the global section.
+	claimed := view.FilterCases(func(*TestNode) bool { return false })
+	if claimed.FindSuiteByName("broken/pkg") != nil {
+		t.Fatal("claimed case-less suite must be dropped")
+	}
+}
