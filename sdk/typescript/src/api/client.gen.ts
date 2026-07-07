@@ -2028,7 +2028,7 @@ export enum LLMContentBlockKind {
  * Utility function to convert a LLMContentBlockKind value to its name so
  * it can be uses as argument to call a exposed function.
  */
-export function LlmContentBlockKindValueToName(
+export function LLMContentBlockKindValueToName(
   value: LLMContentBlockKind,
 ): string {
   switch (value) {
@@ -2049,7 +2049,7 @@ export function LlmContentBlockKindValueToName(
  * Utility function to convert a LLMContentBlockKind name to its value so
  * it can be properly used inside the module runtime.
  */
-export function LlmContentBlockKindNameToValue(
+export function LLMContentBlockKindNameToValue(
   name: string,
 ): LLMContentBlockKind {
   switch (name) {
@@ -2089,7 +2089,7 @@ export enum LLMMessageRole {
  * Utility function to convert a LLMMessageRole value to its name so
  * it can be uses as argument to call a exposed function.
  */
-export function LlmMessageRoleValueToName(value: LLMMessageRole): string {
+export function LLMMessageRoleValueToName(value: LLMMessageRole): string {
   switch (value) {
     case LLMMessageRole.Assistant:
       return "ASSISTANT"
@@ -2106,7 +2106,7 @@ export function LlmMessageRoleValueToName(value: LLMMessageRole): string {
  * Utility function to convert a LLMMessageRole name to its value so
  * it can be properly used inside the module runtime.
  */
-export function LlmMessageRoleNameToValue(name: string): LLMMessageRole {
+export function LLMMessageRoleNameToValue(name: string): LLMMessageRole {
   switch (name) {
     case "ASSISTANT":
       return LLMMessageRole.Assistant
@@ -2449,7 +2449,7 @@ export type ClientHttpOpts = {
   experimentalServiceHost?: Service
 }
 
-export type ClientLlmOpts = {
+export type ClientLLMOpts = {
   /**
    * Model to use
    */
@@ -14097,7 +14097,7 @@ export class Client extends BaseClient {
    * @param opts.model Model to use
    * @experimental
    */
-  llm = (opts?: ClientLlmOpts): LLM => {
+  llm = (opts?: ClientLLMOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
     return new LLM(ctx)
   }

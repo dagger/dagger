@@ -294,7 +294,7 @@ func (funcs typescriptTemplateFuncs) fieldExpectedIDType(field introspection.Fie
 // We use a custom implementation instead of strcase.ToCamel because
 // strcase.ToCamel doesn't handle transitions between consecutive
 // uppercase letters correctly (e.g. "LLMContentBlockKind" becomes
-// "LlmcontentBlockKind" instead of "LlmContentBlockKind").
+// "LlmcontentBlockKind" instead of "LLMContentBlockKind").
 func (funcs typescriptTemplateFuncs) pascalCase(name string) string {
 	return toPascalCase(name)
 }
@@ -304,6 +304,14 @@ var (
 	reLowerToUpper      = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 )
 
+// pascalCaseAcronyms lists tokens that render in a fixed canonical form instead
+// of being title-cased, so acronym names round-trip consistently: the "llm"
+// field and the schema's LLM* types both render as "LLM" (mirroring the Go
+// SDK's strcase.ConfigureAcronym("LLM", "LLM")). Keyed by the uppercased token.
+var pascalCaseAcronyms = map[string]string{
+	"LLM": "LLM",
+}
+
 func toPascalCase(s string) string {
 	// Insert word boundaries: "LLMContent" -> "LLM_Content", "blockKind" -> "block_Kind"
 	s = reUpperToUpperLower.ReplaceAllString(s, `${1}_${2}`)
@@ -312,6 +320,10 @@ func toPascalCase(s string) string {
 	parts := strings.Split(s, "_")
 	for i, p := range parts {
 		if len(p) == 0 {
+			continue
+		}
+		if acr, ok := pascalCaseAcronyms[strings.ToUpper(p)]; ok {
+			parts[i] = acr
 			continue
 		}
 		parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
