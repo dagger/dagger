@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -56,6 +57,18 @@ type startingService struct {
 	// profOpID is the wcprof op for this service start, when profiling is
 	// enabled. Waiters record wait events against it.
 	profOpID uint64
+
+	// otelStartSpanCtx is the OTel service.start span for this start — the OTel
+	// analog of profOpID. Minted under ss.l before this startingService is
+	// published to ss.starting (target-before-primitive) so every installer that
+	// blocks on the start has a valid wait target. Zero when OTel telemetry was not
+	// active at start time; a recording joiner then emits a gate-observable
+	// targetless wait (the cross-session case, where a recording caller joins a
+	// start begun by an untraced session), exactly
+	// as for call_exec/lazy. No per-attempt reset is needed (unlike lazy): each
+	// start gets a fresh startingService, deleted from ss.starting when it
+	// completes, so a joiner never reads a stale target.
+	otelStartSpanCtx trace.SpanContext
 }
 
 // RunningService represents a service that is actively running.
@@ -189,6 +202,34 @@ func serviceOriginLink(originCtx trace.SpanContext) trace.Link {
 			attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause),
 		},
 	}
+}
+
+// beginOTelServiceStart mints the OTel service.start span — the
+// self-time-bearing op for a service start + health check, the OTel analog of
+// native's OpKindServiceStart op. It scopes the *start* window only; the
+// long-lived `exec <args>` service span (service.go) stays a passthrough
+// availability marker whose own self-time is just the modest setup gap (its
+// child exec.run absorbs the daemon's idle run), so the idle daemon does not
+// rank. Marked ui.passthrough so dagui keeps showing that service span, not this
+// internal one. Gated only on telemetry being active, independent of wcprof, so
+// the OTel source is reconstructable from a Cloud trace alone.
+func beginOTelServiceStart(ctx context.Context, ident string) (context.Context, trace.Span) {
+	return Tracer(ctx).Start(ctx, "service.start",
+		telemetry.Passthrough(),
+		trace.WithAttributes(
+			attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindServiceStart.String()),
+			attribute.String(telemetry.DagDigestAttr, ident),
+		),
+	)
+}
+
+// endOTelServiceStart ends the service.start span (nil-safe), charging any start
+// error as its status — mirroring native's profOp.End at each start exit.
+func endOTelServiceStart(span trace.Span, errPtr *error) {
+	if span == nil {
+		return
+	}
+	telemetry.EndWithCause(span, errPtr)
 }
 
 func (svc *RunningService) addOriginSpanContexts(origins []trace.SpanContext) {
@@ -334,12 +375,21 @@ func (ss *Services) Get(ctx context.Context, dig digest.Digest, clientSpecific b
 			return running, nil
 		case isStarting:
 			profWait := wcprof.BeginWait(ctx, starting.profOpID, wcprof.WaitReasonService)
+			// OTel installer wait edge: a Get caller that blocks on the
+			// in-flight start credits its blocked interval to the service.start span,
+			// the analog of native's BeginWait above (mirrors startWithKey's isStarting
+			// branch). dagql.EmitOTelWait self-gates on a recording waiter and emits a
+			// gate-observable targetless wait if the start ran untraced (the
+			// cross-session case) rather than dropping the edge.
+			otelWaitStartNS := time.Now().UnixNano()
 			select {
 			case <-ctx.Done():
 				profWait.End()
+				dagql.EmitOTelWait(ctx, starting.otelStartSpanCtx, wcprof.WaitReasonService, otelWaitStartNS, time.Now().UnixNano())
 				return nil, context.Cause(ctx)
 			case <-starting.done:
 				profWait.End()
+				dagql.EmitOTelWait(ctx, starting.otelStartSpanCtx, wcprof.WaitReasonService, otelWaitStartNS, time.Now().UnixNano())
 			}
 		default:
 			return nil, notRunningErr
@@ -953,13 +1003,22 @@ func (ss *Services) startWithKey(
 			ss.l.Unlock()
 			starting.running.addOriginSpanContexts(opts.OriginSpanContexts)
 			profWait := wcprof.BeginWait(ctx, starting.profOpID, wcprof.WaitReasonService)
+			// OTel installer wait edge: this installer blocks on the
+			// in-flight service start, so credit its blocked interval to the
+			// service.start span (the analog of native's BeginWait above).
+			// dagql.EmitOTelWait self-gates on a recording waiter and emits a
+			// gate-observable targetless wait if the start ran
+			// untraced (the cross-session case) rather than dropping the edge.
+			otelWaitStartNS := time.Now().UnixNano()
 			select {
 			case <-ctx.Done():
 				profWait.End()
+				dagql.EmitOTelWait(ctx, starting.otelStartSpanCtx, wcprof.WaitReasonService, otelWaitStartNS, time.Now().UnixNano())
 				releaseSuppression()
 				return nil, nil, context.Cause(ctx)
 			case <-starting.done:
 				profWait.End()
+				dagql.EmitOTelWait(ctx, starting.otelStartSpanCtx, wcprof.WaitReasonService, otelWaitStartNS, time.Now().UnixNano())
 			}
 		default:
 			running := &RunningService{
@@ -975,12 +1034,24 @@ func (ss *Services) startWithKey(
 					Ident: key.Digest.String(),
 				})
 			}
+			// OTel service.start span: minted here, under ss.l and
+			// before the ss.starting publish below (target-before-primitive), so every
+			// installer that joins this start has a valid wait target. svc.Start runs
+			// synchronously under svcCtx, so the span brackets the start + health
+			// check; ended at each start exit below mirroring profOp.End.
+			var startSpan trace.Span
+			if dagql.OTelProfActive(svcCtx) {
+				svcCtx, startSpan = beginOTelServiceStart(svcCtx, key.Digest.String())
+			}
 			start := &startingService{
 				running:  running,
 				ctx:      svcCtx,
 				cancel:   cancel,
 				done:     make(chan struct{}),
 				profOpID: profOp.ID(),
+			}
+			if startSpan != nil {
+				start.otelStartSpanCtx = startSpan.SpanContext()
 			}
 			ss.starting[key] = start
 			ss.l.Unlock()
@@ -990,6 +1061,7 @@ func (ss *Services) startWithKey(
 			if err := svc.Start(svcCtx, running, key.Digest, opts); err != nil {
 				start.err = err
 				profOp.End(wcprof.OutcomeError)
+				endOTelServiceStart(startSpan, &err)
 				releaseSuppression()
 				_ = running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
 				ss.l.Lock()
@@ -1002,6 +1074,7 @@ func (ss *Services) startWithKey(
 				err := fmt.Errorf("service %s started without Wait callback", network.HostHash(key.Digest))
 				start.err = err
 				profOp.End(wcprof.OutcomeError)
+				endOTelServiceStart(startSpan, &err)
 				releaseSuppression()
 				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
 				ss.l.Lock()
@@ -1016,6 +1089,8 @@ func (ss *Services) startWithKey(
 			if context.Cause(svcCtx) != nil {
 				ss.l.Unlock()
 				profOp.End(wcprof.OutcomeCanceled)
+				cause := context.Cause(svcCtx)
+				endOTelServiceStart(startSpan, &cause)
 				releaseSuppression()
 				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
 				return nil, nil, context.Cause(svcCtx)
@@ -1024,6 +1099,7 @@ func (ss *Services) startWithKey(
 			ss.bindings[key] = 1
 			ss.l.Unlock()
 			profOp.End(wcprof.OutcomeOK)
+			endOTelServiceStart(startSpan, nil)
 
 			go func() {
 				if running.Wait == nil {
