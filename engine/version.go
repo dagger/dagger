@@ -100,22 +100,33 @@ func cleanVersion(v string) string {
 	return v
 }
 
+// Compatibility gating compares *base* versions — prerelease and build
+// metadata stripped (see BaseVersion) — NOT strict semver precedence.
+//
+// Why: dev builds carry a prerelease suffix (e.g. "v0.2.0-dev-<commit>"). Under
+// strict semver a prerelease ranks *below* its release and is *ordered against
+// other prereleases of the same base*. That has two unwanted effects for our
+// engine<->client<->module handshake:
+//   - two dev builds cut from the same base version would reject each other
+//     (their suffixes differ), and
+//   - a dev build would be considered "older" than the release it was cut from,
+//     failing a ">= that release" gate against itself.
+//
+// Collapsing every prerelease of vX.Y.Z to vX.Y.Z fixes both. The deliberate
+// trade-off a maintainer must be aware of: this makes ALL prereleases — rc,
+// alpha, beta, dev — interchangeable with the release for gating, so e.g.
+// "v1.0.0-rc1" satisfies ">= v1.0.0". Compatibility here is about the base
+// version's API surface, not prerelease staging. If you ever need prerelease
+// ordering to matter for a gate, do NOT change these functions — that gate
+// belongs elsewhere. Different *base* versions still compare normally
+// (v2.0.0 and v2.0.1 remain distinct).
+
 func CheckVersionCompatibility(version string, minVersion string) bool {
-	if IsDevVersion(version) && IsDevVersion(Version) {
-		// Both our version and our target version are dev versions - in this
-		// case, strip pre-release info from our target, we should pretend it's
-		// just the real thing here.
-		version = BaseVersion(version)
-	}
-	return semver.Compare(version, minVersion) >= 0
+	return semver.Compare(BaseVersion(version), BaseVersion(minVersion)) >= 0
 }
 
 func CheckMaxVersionCompatibility(version string, maxVersion string) bool {
-	if IsDevVersion(version) && IsDevVersion(Version) {
-		// see CheckVersionCompatibility
-		version = BaseVersion(version)
-	}
-	return semver.Compare(version, maxVersion) <= 0
+	return semver.Compare(BaseVersion(version), BaseVersion(maxVersion)) <= 0
 }
 
 func NormalizeVersion(version string) string {
