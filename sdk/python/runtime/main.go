@@ -138,6 +138,15 @@ type PythonSdk struct {
 	// It's assumed that this is the case if there's no pyproject.toml file.
 	IsInit bool
 
+	// TrustedSource is true when the runtime is built from the module's
+	// committed generated files: the committed vendored sdk is kept as-is
+	// (not stripped and re-vendored), no client bindings are generated, and
+	// lock files are trusted rather than updated. Set when the engine calls
+	// ModuleRuntime without introspection JSON, which it only does for
+	// modules that opted out of runtime codegen.
+	// +private
+	TrustedSource bool
+
 	// Discovery holds the logic for getting more information from the target module.
 	// +private
 	Discovery *Discovery
@@ -177,8 +186,15 @@ func (m *PythonSdk) Codegen(
 func (m *PythonSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
+	// +optional
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
+	// The engine omits the introspection JSON for dagger-module.toml
+	// modules, which never run codegen at runtime: trust the committed
+	// generated files instead of regenerating them.
+	if introspectionJSON == nil {
+		return m.moduleRuntimeTrusted(ctx, modSource)
+	}
 	runtime, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
@@ -189,6 +205,65 @@ func (m *PythonSdk) ModuleRuntime(
 		ctr = ctr.Terminal()
 	}
 	return ctr, nil
+}
+
+// moduleRuntimeTrusted builds the runtime container from the module's
+// committed generated files: no SDK vendoring, no client bindings
+// generation, no lock update. Dependencies are still installed (the
+// language-level assemble step, like the Go SDK still running go build on
+// its trusted path).
+func (m *PythonSdk) moduleRuntimeTrusted(ctx context.Context, modSource *dagger.ModuleSource) (*dagger.Container, error) {
+	m.TrustedSource = true
+
+	if _, err := m.Load(ctx, modSource); err != nil {
+		return nil, err
+	}
+	if m.IsInit {
+		return nil, fmt.Errorf("module %q has no source to trust; run `dagger generate` and commit the generated files", m.ModName)
+	}
+	if err := m.requireGeneratedFiles(ctx); err != nil {
+		return nil, err
+	}
+	if _, err := m.WithBase(); err != nil {
+		return nil, err
+	}
+	runtime := m.
+		withRuntimeScript().
+		WithSource().
+		WithInstall()
+	ctr := runtime.Container
+	if runtime.Debug {
+		ctr = ctr.Terminal()
+	}
+	return ctr, nil
+}
+
+// requireGeneratedFiles verifies the module's committed generated files are
+// present. Called only on the trusted path; the codegen path regenerates
+// them so the check would be redundant.
+func (m *PythonSdk) requireGeneratedFiles(ctx context.Context) error {
+	// The generated client bindings live inside the vendored SDK, or at
+	// UserGenPath when the library isn't vendored.
+	required := []string{UserGenPath}
+	if m.VendorPath != "" {
+		required = []string{
+			path.Join(m.VendorPath, ProjectCfg),
+			path.Join(m.VendorPath, SDKGenPath),
+		}
+	}
+	for _, rel := range required {
+		exists, err := m.Source().Exists(ctx, rel)
+		if err != nil {
+			return fmt.Errorf("check generated file %q: %w", rel, err)
+		}
+		if exists {
+			continue
+		}
+		return fmt.Errorf(
+			"module %q: generated file %q is missing; run `dagger generate` and commit the generated files",
+			m.ModName, rel)
+	}
+	return nil
 }
 
 // Common steps for the ModuleRuntime and Codegen functions
@@ -304,13 +379,7 @@ func (m *PythonSdk) uv() dagger.WithContainerFunc {
 // - <source>/src/<package_name>/__init__.py
 // - <source>/src/<package_name>/main.py
 func (m *PythonSdk) WithTemplate() *PythonSdk {
-	m.Container = m.Container.
-		WithFile(
-			RuntimeExecutablePath,
-			dag.CurrentModule().Source().File("template/runtime.py"),
-			dagger.ContainerWithFileOpts{Permissions: 0o755},
-		).
-		WithEntrypoint([]string{RuntimeExecutablePath})
+	m = m.withRuntimeScript()
 
 	d := m.Discovery
 
@@ -361,6 +430,19 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 		}
 	}
 
+	return m
+}
+
+// withRuntimeScript mounts the runtime entrypoint script and sets it as the
+// container entrypoint.
+func (m *PythonSdk) withRuntimeScript() *PythonSdk {
+	m.Container = m.Container.
+		WithFile(
+			RuntimeExecutablePath,
+			dag.CurrentModule().Source().File("template/runtime.py"),
+			dagger.ContainerWithFileOpts{Permissions: 0o755},
+		).
+		WithEntrypoint([]string{RuntimeExecutablePath})
 	return m
 }
 
@@ -482,12 +564,18 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 
 	// Support uv.lock for simple and fast project management workflow.
 	if m.UseUvLock() {
+		syncArgs := []string{"uv", "sync", "--no-dev"}
+		if m.TrustedSource {
+			// Trust the committed lockfile: fail loudly if it's stale
+			// instead of silently re-resolving.
+			syncArgs = append(syncArgs, "--frozen")
+		}
 		// While best practice is to sync dependencies first with only pyproject.toml and
 		// uv.lock, user projects can have more required files for a minimally successful
 		// `uv sync --no-install-project --no-dev`.
 		// Besides, uv is fast enough that's not too bad to skip this optimization.
 		m.Container = ctr.
-			WithExec([]string{"uv", "sync", "--no-dev"}).
+			WithExec(syncArgs).
 			// Activate virtualenv to avoid having to prepend `uv run` to the entrypoint.
 			WithEnvVariable("VIRTUAL_ENV", "$UV_PROJECT_ENVIRONMENT", dagger.ContainerWithEnvVariableOpts{
 				Expand: true,
