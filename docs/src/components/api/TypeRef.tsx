@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "@docusaurus/Link";
 import type { TypeRef } from "./data";
-import { typeHref } from "./data";
+import { useTypeHref } from "./data";
 import TypeInfo from "./TypeInfo";
 import styles from "./styles.module.scss";
 
@@ -9,6 +9,8 @@ import styles from "./styles.module.scss";
 // every published core type cross-linked to its reference page. Named types
 // that aren't core (String, Int, Module, ...) render as plain, colored tokens.
 export default function TypeRefView({ type }: { type: TypeRef }): JSX.Element {
+  const typeHref = useTypeHref();
+
   switch (type.kind) {
     case "nonNull":
       return (

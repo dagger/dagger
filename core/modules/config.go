@@ -215,14 +215,26 @@ type ModuleConfigUserFields struct {
 }
 
 // SDK represents the runtime/sdk field in module config.
-// The source can be reference to a built-in sdk e.g. go, php, elixir or
-// can be a reference to a git path e.g. github.com/username/reponame/sdk-name
+//
+// The source is either a built-in runtime name (e.g. "go", "python") or a
+// canonical module ref (e.g. "github.com/dagger/go-sdk"). Pin is the
+// content-addressed digest of the runtime module for reproducible loads;
+// it is empty for built-ins and only set for external refs.
+//
+// Config, Debug, and Experimental are deprecated and no longer persisted by
+// the current TOML schema. They survive on this struct only for back-compat
+// reading of legacy dagger.json. Writes to current TOML omit them; writes to
+// legacy JSON preserve them (the legacy format is not being rewritten).
 type SDK struct {
-	Source string         `json:"source" toml:"source"`
-	Config map[string]any `json:"config,omitempty" toml:"config,omitempty"`
-	Debug  bool           `json:"debug,omitempty" toml:"debug,omitempty"`
-	// The experimental features enabled for this module.
-	Experimental map[string]bool `json:"experimental,omitempty" toml:"experimental,omitempty"`
+	Source string `json:"source" toml:"source"`
+	Pin    string `json:"pin,omitempty" toml:"pin,omitempty"`
+
+	// Deprecated: not persisted by current TOML schema. Legacy JSON read-only.
+	Config map[string]any `json:"config,omitempty" toml:"-"`
+	// Deprecated: not persisted by current TOML schema. Legacy JSON read-only.
+	Debug bool `json:"debug,omitempty" toml:"-"`
+	// Deprecated: self-calls graduated; not persisted by current TOML schema. Legacy JSON read-only.
+	Experimental map[string]bool `json:"experimental,omitempty" toml:"-"`
 }
 
 func (sdk *SDK) UnmarshalJSON(data []byte) error {
@@ -421,6 +433,9 @@ type ModuleConfigView struct {
 
 type ModuleCodegenConfig struct {
 	// Whether to automatically generate a .gitignore file for this module.
+	//
+	// When explicitly false, the module commits its generated files rather
+	// than ignoring them, and they might be used by an SDK at runtime.
 	AutomaticGitignore *bool `json:"automaticGitignore,omitempty" toml:"automaticGitignore,omitempty"`
 }
 

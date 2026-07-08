@@ -388,6 +388,36 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\CurrentModuleAsSDK",
+			"p": "Dagger/CurrentModuleAsSDK.html",
+			"d": "<p>The SDK-role data for the currently executing module, as installed in the active workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CurrentModuleAsSDKClient",
+			"p": "Dagger/CurrentModuleAsSDKClient.html",
+			"d": "<p>A generated client the current SDK produces in the workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CurrentModuleAsSDKModule",
+			"p": "Dagger/CurrentModuleAsSDKModule.html",
+			"d": "<p>A workspace-local module managed by the current SDK.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\CurrentModuleId",
 			"p": "Dagger/CurrentModuleId.html",
 			"d": "<p>A unique identifier for an object.</p>",
@@ -1388,6 +1418,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Schema",
+			"p": "Dagger/Schema.html",
+			"d": "<p>A GraphQL introspection schema that can be inspected and merged.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\SearchResult",
 			"p": "Dagger/SearchResult.html",
 			"d": null,
@@ -1926,6 +1966,24 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asCurrentModuleAsSDK",
+			"p": "Dagger/Binding.html#method_asCurrentModuleAsSDK",
+			"d": "<p>Retrieve the binding value, as type CurrentModuleAsSDK</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asCurrentModuleAsSDKClient",
+			"p": "Dagger/Binding.html#method_asCurrentModuleAsSDKClient",
+			"d": "<p>Retrieve the binding value, as type CurrentModuleAsSDKClient</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asCurrentModuleAsSDKModule",
+			"p": "Dagger/Binding.html#method_asCurrentModuleAsSDKModule",
+			"d": "<p>Retrieve the binding value, as type CurrentModuleAsSDKModule</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asDiffStat",
 			"p": "Dagger/Binding.html#method_asDiffStat",
 			"d": "<p>Retrieve the binding value, as type DiffStat</p>"
@@ -2013,6 +2071,12 @@
 			"n": "Dagger\\Binding::asPhpSdk",
 			"p": "Dagger/Binding.html#method_asPhpSdk",
 			"d": "<p>Retrieve the binding value, as type PhpSdk</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asSchema",
+			"p": "Dagger/Binding.html#method_asSchema",
+			"d": "<p>Retrieve the binding value, as type Schema</p>"
 		},
 		{
 			"t": "M",
@@ -2535,6 +2599,12 @@
 			"n": "Dagger\\Client::node",
 			"p": "Dagger/Client.html#method_node",
 			"d": "<p>Load any object by its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::schema",
+			"p": "Dagger/Client.html#method_schema",
+			"d": "<p>Load a GraphQL introspection schema for merging.</p>"
 		},
 		{
 			"t": "M",
@@ -3198,6 +3268,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\CurrentModule::asSDK",
+			"p": "Dagger/CurrentModule.html#method_asSDK",
+			"d": "<p>Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CurrentModule::dependencies",
 			"p": "Dagger/CurrentModule.html#method_dependencies",
 			"d": "<p>The dependencies of the module.</p>"
@@ -3243,6 +3319,66 @@
 			"n": "Dagger\\CurrentModule::workdirFile",
 			"p": "Dagger/CurrentModule.html#method_workdirFile",
 			"d": "<p>Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDK::clients",
+			"p": "Dagger/CurrentModuleAsSDK.html#method_clients",
+			"d": "<p>The generated clients this SDK produces in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDK::id",
+			"p": "Dagger/CurrentModuleAsSDK.html#method_id",
+			"d": "<p>A unique identifier for this CurrentModuleAsSDK.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDK::modules",
+			"p": "Dagger/CurrentModuleAsSDK.html#method_modules",
+			"d": "<p>The workspace-local modules this SDK authors and manages.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDK::name",
+			"p": "Dagger/CurrentModuleAsSDK.html#method_name",
+			"d": "<p>The user-facing name of this SDK in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::id",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_id",
+			"d": "<p>A unique identifier for this CurrentModuleAsSDKClient.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::module",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_module",
+			"d": "<p>The module the client is bound to (workspace-relative path or canonical ref).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::path",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_path",
+			"d": "<p>Workspace-root-relative path of the generated client.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::pin",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_pin",
+			"d": "<p>The pinned version of the bound module, if any.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKModule::id",
+			"p": "Dagger/CurrentModuleAsSDKModule.html#method_id",
+			"d": "<p>A unique identifier for this CurrentModuleAsSDKModule.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKModule::path",
+			"p": "Dagger/CurrentModuleAsSDKModule.html#method_path",
+			"d": "<p>Workspace-root-relative path to the managed module.</p>"
 		},
 		{
 			"t": "M",
@@ -3876,6 +4012,42 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKClientInput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKClientInput",
+			"d": "<p>Create or update a binding of type CurrentModuleAsSDKClient in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKClientOutput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKClientOutput",
+			"d": "<p>Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKInput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKInput",
+			"d": "<p>Create or update a binding of type CurrentModuleAsSDK in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKModuleInput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKModuleInput",
+			"d": "<p>Create or update a binding of type CurrentModuleAsSDKModule in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKModuleOutput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKModuleOutput",
+			"d": "<p>Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCurrentModuleAsSDKOutput",
+			"p": "Dagger/Env.html#method_withCurrentModuleAsSDKOutput",
+			"d": "<p>Declare a desired CurrentModuleAsSDK output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withDiffStatInput",
 			"p": "Dagger/Env.html#method_withDiffStatInput",
 			"d": "<p>Create or update a binding of type DiffStat in the environment</p>"
@@ -4065,6 +4237,18 @@
 			"n": "Dagger\\Env::withPhpSdkOutput",
 			"p": "Dagger/Env.html#method_withPhpSdkOutput",
 			"d": "<p>Declare a desired PhpSdk output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSchemaInput",
+			"p": "Dagger/Env.html#method_withSchemaInput",
+			"d": "<p>Create or update a binding of type Schema in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSchemaOutput",
+			"p": "Dagger/Env.html#method_withSchemaOutput",
+			"d": "<p>Declare a desired Schema output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -4857,6 +5041,12 @@
 			"n": "Dagger\\GeneratorGroup::run",
 			"p": "Dagger/GeneratorGroup.html#method_run",
 			"d": "<p>Execute all selected generators</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::asWorkspace",
+			"p": "Dagger/GitRef.html#method_asWorkspace",
+			"d": "<p>Creates a synthetic workspace from this git ref.</p>"
 		},
 		{
 			"t": "M",
@@ -5760,6 +5950,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::updatedConfigDirectory",
+			"p": "Dagger/ModuleSource.html#method_updatedConfigDirectory",
+			"d": "<p>The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::userDefaults",
 			"p": "Dagger/ModuleSource.html#method_userDefaults",
 			"d": "<p>User-defined defaults read from local .env files</p>"
@@ -6069,6 +6265,24 @@
 			"n": "Dagger\\ScalarTypeDef::sourceModuleName",
 			"p": "Dagger/ScalarTypeDef.html#method_sourceModuleName",
 			"d": "<p>If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Schema::contents",
+			"p": "Dagger/Schema.html#method_contents",
+			"d": "<p>Serialize the schema back to introspection JSON.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Schema::id",
+			"p": "Dagger/Schema.html#method_id",
+			"d": "<p>A unique identifier for this Schema.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Schema::merge",
+			"p": "Dagger/Schema.html#method_merge",
+			"d": "<p>Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.</p>"
 		},
 		{
 			"t": "M",
@@ -6516,15 +6730,27 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::changes",
+			"p": "Dagger/Workspace.html#method_changes",
+			"d": "<p>Return the changes from another workspace to this workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::checks",
 			"p": "Dagger/Workspace.html#method_checks",
 			"d": "<p>Return all checks from modules loaded in the workspace.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::clientId",
-			"p": "Dagger/Workspace.html#method_clientId",
-			"d": "<p>The client ID that owns this workspace's host filesystem.</p>"
+			"n": "Dagger\\Workspace::clientGenerate",
+			"p": "Dagger/Workspace.html#method_clientGenerate",
+			"d": "<p>Regenerate all generated API clients registered in workspace config and return the resulting Changeset.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::clientInit",
+			"p": "Dagger/Workspace.html#method_clientInit",
+			"d": "<p>Plan the workspace changes for initializing a generated API client: generated client files at <code>path</code> plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.</p>"
 		},
 		{
 			"t": "M",
@@ -6626,7 +6852,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::moduleInit",
 			"p": "Dagger/Workspace.html#method_moduleInit",
-			"d": "<p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p>"
+			"d": "<p>Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at <code>path</code>, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.</p>"
 		},
 		{
 			"t": "M",
@@ -6651,6 +6877,24 @@
 			"n": "Dagger\\Workspace::update",
 			"p": "Dagger/Workspace.html#method_update",
 			"d": "<p>Refresh workspace-managed state and return the resulting changeset.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withChanges",
+			"p": "Dagger/Workspace.html#method_withChanges",
+			"d": "<p>Return this workspace with a changeset applied, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withNewDirectory",
+			"p": "Dagger/Workspace.html#method_withNewDirectory",
+			"d": "<p>Return this workspace with a directory added, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withNewFile",
+			"p": "Dagger/Workspace.html#method_withNewFile",
+			"d": "<p>Return this workspace with a new or replaced file, without mutating the source.</p>"
 		},
 		{
 			"t": "M",

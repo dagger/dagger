@@ -305,7 +305,7 @@ region = "us-west-2"
 		require.NoError(t, err)
 		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.aws.settings.region")
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
 
@@ -351,15 +351,15 @@ source = "modules/vitest"
 		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "tags", "smoke, regression")
 		require.NoError(t, err)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.vitest.settings.failFast")
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.vitest.settings.failFast")
 		require.NoError(t, err)
 		require.Equal(t, "true", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.vitest.settings.retries")
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.vitest.settings.retries")
 		require.NoError(t, err)
 		require.Equal(t, "3", strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.vitest.settings.tags")
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.vitest.settings.tags")
 		require.NoError(t, err)
 		require.Equal(t, "[smoke, regression]", strings.TrimSpace(string(out)))
 	})
@@ -407,13 +407,13 @@ region = "us-east-1"
 
 		settingsBase, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
 		require.NoError(t, err)
-		configBase, err := hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.aws.settings.region")
+		configBase, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, strings.TrimSpace(string(configBase)), strings.TrimSpace(string(settingsBase)))
 
 		settingsEnv, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region")
 		require.NoError(t, err)
-		configEnv, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "config", "modules.aws.settings.region")
+		configEnv, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, strings.TrimSpace(string(configEnv)), strings.TrimSpace(string(settingsEnv)))
 	})
@@ -430,7 +430,7 @@ region = "us-west-2"
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region", "eu-central-1")
 		require.NoError(t, err)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "config", "modules.aws.settings.region")
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.aws.settings.region")
 		require.NoError(t, err)
 		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
 

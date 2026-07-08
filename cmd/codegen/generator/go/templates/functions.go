@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/token"
+	"go/types"
 	"regexp"
 	"slices"
 	"strings"
@@ -18,6 +19,12 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
+
+// ModuleIntrospectionEmitter produces the module's own types as
+// introspection JSON, for merging into the dependency schema.
+type ModuleIntrospectionEmitter interface {
+	ModuleIntrospectionJSON(moduleName string) ([]byte, error)
+}
 
 func GoTemplateFuncs(
 	ctx context.Context,
@@ -43,6 +50,30 @@ func GoTemplateFuncs(
 		schemaVersion:   schemaVersion,
 		pass:            pass,
 	}.FuncMap()
+}
+
+// NewModuleIntrospectionEmitter constructs a minimal emitter suitable for
+// calling ModuleIntrospectionJSON. The schema and schemaVersion are the current
+// (deps) schema; pkg and fset are from packages.Load on the module source.
+func NewModuleIntrospectionEmitter(
+	ctx context.Context,
+	schema *introspection.Schema,
+	schemaVersion string,
+	cfg generator.Config,
+	pkg *packages.Package,
+	fset *token.FileSet,
+) ModuleIntrospectionEmitter {
+	return goTemplateFuncs{
+		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
+		ctx:             ctx,
+		cfg:             cfg,
+		modulePkg:       pkg,
+		moduleFset:      fset,
+		schema:          schema,
+		fullSchema:      schema,
+		schemaVersion:   schemaVersion,
+		pass:            1,
+	}
 }
 
 type goTemplateFuncs struct {
@@ -96,6 +127,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatDeprecation":       funcs.formatDeprecation,
 		"FormatExperimental":      funcs.formatExperimental,
 		"FormatName":              formatName,
+		"FormatParamName":         formatParamName,
 		"FormatEnum":              funcs.formatEnum,
 		"SortEnumFields":          funcs.sortEnumFields,
 		"GroupEnumByValue":        funcs.groupEnumByValue,
@@ -228,6 +260,27 @@ func formatName(s string) string {
 		s = strings.ToUpper(string(s[0])) + s[1:]
 	}
 	return lintName(s)
+}
+
+// formatParamName formats a GraphQL argument or field name into a Go
+// identifier: keywords don't parse, and predeclared identifiers
+// (types.Universe) would shadow types referenced in the generated body —
+// an argument named "string" breaks `var response string`. Reserved names
+// get a trailing underscore; the GraphQL wire name (q.Arg) keeps the
+// original.
+//
+// "error" is exempt: generated bodies never reference the error type
+// (signature types resolve in the enclosing scope), and the core API
+// already ships a parameter named "error" (FunctionCall.returnError) —
+// escaping it would churn every generated client.
+func formatParamName(s string) string {
+	if s == "error" {
+		return s
+	}
+	if token.IsKeyword(s) || types.Universe.Lookup(s) != nil {
+		return s + "_"
+	}
+	return s
 }
 
 // formatEnum formats a GraphQL Enum value into a Go equivalent
@@ -366,13 +419,13 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 			if err != nil {
 				return "", err
 			}
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
+			args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), outType))
 		} else {
 			inType, err := funcs.FormatInputType(arg, scopes...)
 			if err != nil {
 				return "", err
 			}
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, inType))
+			args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
 		}
 	}
 
@@ -539,7 +592,7 @@ func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (st
 		if err != nil {
 			return "", err
 		}
-		args = append(args, fmt.Sprintf("%s %s", arg.Name, inType))
+		args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
 	}
 	if funcs.hasOptionals(f.Args) {
 		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))
@@ -601,7 +654,7 @@ func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspec
 		if err != nil {
 			return "", err
 		}
-		args = append(args, fmt.Sprintf("%s %s", arg.Name, inType))
+		args = append(args, fmt.Sprintf("%s %s", formatParamName(arg.Name), inType))
 	}
 	if funcs.hasOptionals(f.Args) {
 		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))

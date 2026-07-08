@@ -19,6 +19,9 @@ source = "modules/greeter"
 entrypoint = true
 legacy-default-path = true
 
+[modules.greeter.as-sdk]
+name = "go"
+
 [modules.greeter.settings]
 greeting = "hello"
 enabled = true
@@ -35,6 +38,7 @@ greeting = "hola"
 		Source:            "modules/greeter",
 		Entrypoint:        true,
 		LegacyDefaultPath: true,
+		AsSDK:             &ModuleAsSDK{Name: "go"},
 		Settings: map[string]any{
 			"enabled":  true,
 			"greeting": "hello",
@@ -67,6 +71,7 @@ func TestSerializeConfig(t *testing.T) {
 				Source:            "modules/greeter",
 				Entrypoint:        true,
 				LegacyDefaultPath: true,
+				AsSDK:             &ModuleAsSDK{Name: "go"},
 				Settings: map[string]any{
 					"tags":     []string{"main", "develop"},
 					"greeting": "hello",
@@ -103,6 +108,9 @@ enabled = true
 greeting = "hello"
 tags = ["main", "develop"]
 
+[modules.greeter.as-sdk]
+name = "go"
+
 [modules.wolfi]
 source = "github.com/dagger/dagger/modules/wolfi"
 
@@ -112,6 +120,87 @@ greeting = "hola"
 
 [env.local]
 `, string(out))
+}
+
+func TestWorkspaceCheckGeneratedSetting(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unset leaves CheckGenerated nil", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseConfig([]byte(`[modules.greeter]
+source = "modules/greeter"
+`))
+		require.NoError(t, err)
+		require.Nil(t, cfg.CheckGenerated)
+	})
+
+	t.Run("parses explicit booleans", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseConfig([]byte("check-generated = false\n"))
+		require.NoError(t, err)
+		require.NotNil(t, cfg.CheckGenerated)
+		require.False(t, *cfg.CheckGenerated)
+
+		cfg, err = ParseConfig([]byte("check-generated = true\n"))
+		require.NoError(t, err)
+		require.NotNil(t, cfg.CheckGenerated)
+		require.True(t, *cfg.CheckGenerated)
+	})
+
+	t.Run("serializes when set", func(t *testing.T) {
+		t.Parallel()
+
+		falsy := false
+		out := SerializeConfig(&Config{CheckGenerated: &falsy})
+		require.Equal(t, "check-generated = false\n\n", string(out))
+
+		truthy := true
+		out = SerializeConfig(&Config{CheckGenerated: &truthy})
+		require.Equal(t, "check-generated = true\n\n", string(out))
+
+		out = SerializeConfig(&Config{})
+		require.NotContains(t, string(out), "check-generated")
+	})
+
+	t.Run("read default is true when unset", func(t *testing.T) {
+		t.Parallel()
+
+		value, err := ReadConfigValue([]byte(""), "check-generated")
+		require.NoError(t, err)
+		require.Equal(t, "true", value)
+	})
+
+	t.Run("write and read round-trip", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValue(nil, "check-generated", "false")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.CheckGenerated)
+		require.False(t, *cfg.CheckGenerated)
+
+		value, err := ReadConfigValue(data, "check-generated")
+		require.NoError(t, err)
+		require.Equal(t, "false", value)
+
+		data, err = WriteConfigValue(data, "check-generated", "true")
+		require.NoError(t, err)
+		cfg, err = ParseConfig(data)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.CheckGenerated)
+		require.True(t, *cfg.CheckGenerated)
+	})
+
+	t.Run("rejects sub-keys", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := WriteConfigValue(nil, "check-generated.skip", "foo")
+		require.Error(t, err)
+	})
 }
 
 func TestSerializeConfigQuotesDynamicPathSegments(t *testing.T) {
@@ -333,12 +422,15 @@ func TestWriteConfigValue(t *testing.T) {
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.up.skip", "redis, infra:database")
 		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "modules.greeter.as-sdk.name", "go")
+		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
 		require.NoError(t, err)
 		require.Equal(t, []string{"generate-other-files", "other-generators:*"}, cfg.Modules["greeter"].Generate.Skip)
 		require.Equal(t, []string{"flaky-check"}, cfg.Modules["greeter"].Check.Skip)
 		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["greeter"].Up.Skip)
+		require.Equal(t, &ModuleAsSDK{Name: "go"}, cfg.Modules["greeter"].AsSDK)
 	})
 
 	t.Run("writes quoted path segments", func(t *testing.T) {
@@ -372,7 +464,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.settings")
 
 		_, err = WriteConfigValue(nil, "modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: check, entrypoint, generate, legacy-default-path, settings, source, up")
+		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: as-sdk, check, entrypoint, generate, legacy-default-path, pin, settings, source, up")
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
@@ -575,6 +667,24 @@ region = "us-east-1"
 		require.Contains(t, out, "[env.dev]")
 		require.NotContains(t, out, "[env.ci.modules.greeter.settings]")
 		require.NotContains(t, out, `region = "us-east-1"`)
+	})
+
+	t.Run("removes existing numeric path segments", func(t *testing.T) {
+		t.Parallel()
+
+		existing := []byte(`[ports.3000]
+backendService = "web"
+backendPort = 80
+`)
+
+		cfg, err := ParseConfig(existing)
+		require.NoError(t, err)
+		delete(cfg.Ports, "3000")
+
+		updated, err := UpdateConfigBytes(existing, cfg)
+		require.NoError(t, err)
+		require.NotContains(t, string(updated), "[ports.3000]")
+		require.NotContains(t, string(updated), "backendService")
 	})
 }
 

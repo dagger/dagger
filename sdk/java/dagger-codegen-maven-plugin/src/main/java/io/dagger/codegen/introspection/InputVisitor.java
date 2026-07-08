@@ -17,7 +17,7 @@ class InputVisitor extends AbstractVisitor {
   TypeSpec generateType(Type type) {
     TypeSpec.Builder classBuilder =
         TypeSpec.classBuilder(Helpers.formatName(type))
-            .addJavadoc(type.getDescription() != null ? type.getDescription() : "")
+            .addJavadoc(Helpers.escapeJavadoc(type.getDescription()))
             .addModifiers(Modifier.PUBLIC)
             .addSuperinterface(ClassName.bestGuess("InputValue"));
 

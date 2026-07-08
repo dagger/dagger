@@ -7,7 +7,53 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/sdk/sdkmeta"
 )
+
+// ConventionalSDKShortName returns the workspace-side short name to use for
+// an SDK install derived from its canonical source ref. Builtin runtimes
+// ("go", "python", etc.) pass through unchanged; external refs collapse to
+// the last path segment with any @version suffix stripped — matching the
+// convention `dagger install` uses when no --name is supplied.
+func ConventionalSDKShortName(sdkRef string) string {
+	ref := sdkRef
+	if i := strings.Index(ref, "@"); i >= 0 {
+		ref = ref[:i]
+	}
+	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		ref = ref[i+1:]
+	}
+	return ref
+}
+
+// migrationSDKInstallName returns the workspace module install name to record
+// for a legacy SDK ref. A builtin runtime short name (e.g. "go", "php@v1") is
+// keyed by a "dagger-"-prefixed canonical basename ("dagger-go-sdk",
+// "dagger-php-sdk"), matching `dagger sdk install`, so the SDK install cannot
+// collide with an unrelated module legitimately named "go". External refs and
+// custom/local SDK names keep their existing basename.
+func migrationSDKInstallName(sdkRef string) string {
+	name := ConventionalSDKShortName(sdkRef)
+	if sdkmeta.IsBuiltin(name) {
+		return sdkmeta.InstallNamePrefix + name + "-sdk"
+	}
+	return name
+}
+
+// uniqueModuleName returns base if free, otherwise base with a numeric suffix,
+// so a migrated SDK install never silently overwrites an unrelated module that
+// happens to share its name.
+func uniqueModuleName(modules map[string]ModuleEntry, base string) string {
+	if _, taken := modules[base]; !taken {
+		return base
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d", base, i)
+		if _, taken := modules[candidate]; !taken {
+			return candidate
+		}
+	}
+}
 
 // IsLocalRef performs a fast heuristic check to determine whether a module
 // reference string refers to a local path instead of a git source.
@@ -78,6 +124,38 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	wsCfg := compatWorkspace.WorkspaceConfig()
 	if needsProjectModuleMigration && compatWorkspace.MainModule != nil {
 		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
+	}
+
+	// Surface the legacy module's SDK ref as a workspace module installed
+	// AS an SDK, with the migrated module recorded under the SDK's as-sdk
+	// authoring list. Legacy dagger.json carried the SDK inline on the
+	// module; new dagger.toml records every install (regular module or SDK)
+	// under [modules.*], with the SDK-role data nested in
+	// [modules.<sdk>.as-sdk.*]. This is the file-format catch-up for the
+	// runtime/SDK split.
+	if hasSDK {
+		sdkName := migrationSDKInstallName(cfg.SDK.Source)
+		sdkIsBuiltin := sdkmeta.IsBuiltin(ConventionalSDKShortName(cfg.SDK.Source))
+		entry, exists := wsCfg.Modules[sdkName]
+		// A builtin SDK's legacy source (e.g. "go") is a runtime name, not a
+		// module source, so an existing same-named module is never the same
+		// install. For external/custom SDKs the source is a real ref/path, so
+		// reuse the entry only when it matches; otherwise don't clobber it.
+		if exists && (sdkIsBuiltin || entry.Source != cfg.SDK.Source) {
+			sdkName = uniqueModuleName(wsCfg.Modules, sdkName)
+			exists = false
+		}
+		if !exists {
+			entry = ModuleEntry{Source: cfg.SDK.Source}
+		}
+		if needsProjectModuleMigration {
+			if entry.AsSDK == nil {
+				entry.AsSDK = &ModuleAsSDK{}
+			}
+			modulePath := filepath.Join(LockDirName, "modules", cfg.Name)
+			entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
+		}
+		wsCfg.Modules[sdkName] = entry
 	}
 	workspaceConfigData, err := renderMigrationWorkspaceConfig(wsCfg, compatWorkspace.MainModule)
 	if err != nil {

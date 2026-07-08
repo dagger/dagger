@@ -218,6 +218,16 @@ func (o DynamicOptional) DecodeInput(val any) (Input, error) {
 	if err != nil {
 		return nil, err
 	}
+	if input == nil {
+		// The element decoder coerced the value to "nothing" (e.g. an empty
+		// string decodes to (nil, nil) for JSON). Treat that as an absent
+		// optional rather than a valid-but-nil value, which would otherwise
+		// nil-panic in assign (reflect.TypeOf(nil).AssignableTo).
+		return DynamicOptional{
+			Elem:  o.Elem,
+			Valid: false,
+		}, nil
+	}
 	return DynamicOptional{
 		Elem:  o.Elem,
 		Value: input,

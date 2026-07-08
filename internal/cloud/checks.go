@@ -55,6 +55,22 @@ query GetOrgChecks ($org: String!, $repos: [String!], $first: Int) {
 }
 ` + checkCommitFragments
 
+const getUserChecksOperation = `
+query GetUserChecks ($repos: [String!], $first: Int) {
+	user {
+		checks(repos: $repos, first: $first) {
+			nodes {
+				... CheckCommitProps
+				org {
+					id
+					name
+				}
+			}
+		}
+	}
+}
+` + checkCommitFragments
+
 const getModuleChecksOperation = `
 query GetModuleChecks ($org: String!, $moduleRef: String!, $moduleVersion: String!) {
 	org(name: $org) {
@@ -131,6 +147,15 @@ type CheckCommit struct {
 	Events        []CheckEvent     `json:"events"`
 	Refs          []CheckCommitRef `json:"refs"`
 	Checks        []Check          `json:"checks"`
+	// Org identifies the owning org of the commit. It is only populated by
+	// user-scoped queries (e.g. UserChecks) where checks may span orgs; the
+	// org-scoped queries leave it zero since the org is known from context.
+	Org CheckCommitOrg `json:"org"`
+}
+
+type CheckCommitOrg struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type CheckEvent struct {
@@ -210,6 +235,96 @@ func (c *Client) OrgChecks(
 		return nil, fmt.Errorf("org %q not found", org)
 	}
 	return data.Org.Checks.Nodes, nil
+}
+
+func (c *Client) UserChecks(
+	ctx context.Context,
+	repos []string,
+	first int,
+) ([]CheckCommit, error) {
+	vars := map[string]any{
+		"repos": expandRepoForms(repos),
+	}
+	if first > 0 {
+		vars["first"] = first
+	}
+	var data struct {
+		User *struct {
+			Checks struct {
+				Nodes []CheckCommit `json:"nodes"`
+			} `json:"checks"`
+		} `json:"user"`
+	}
+	if err := c.doGraphQL(ctx, "GetUserChecks", getUserChecksOperation, vars, &data); err != nil {
+		return nil, err
+	}
+	if data.User == nil {
+		return nil, nil
+	}
+	return data.User.Checks.Nodes, nil
+}
+
+const rerunChecksOperation = `
+mutation RerunChecks ($org: ID!, $checkIds: [ID!]!, $cleanSlate: Boolean) {
+	rerunChecks(org: $org, checkIds: $checkIds, cleanSlate: $cleanSlate) {
+		id
+		name
+		status
+		moduleRef
+		moduleVersion
+	}
+}
+`
+
+// RerunChecks re-runs the given checks (by ID) on Dagger Cloud, against the same
+// commit they originally ran on, and returns the newly queued check runs. Checks
+// that are already running or queued are skipped server-side and won't appear in
+// the result. cleanSlate requests a no-cache-reuse run; it's an experimental,
+// org-gated feature and is ignored when unavailable.
+func (c *Client) RerunChecks(ctx context.Context, orgID string, checkIDs []string, cleanSlate bool) ([]Check, error) {
+	vars := map[string]any{
+		"org":      orgID,
+		"checkIds": checkIDs,
+	}
+	if cleanSlate {
+		vars["cleanSlate"] = true
+	}
+	var data struct {
+		RerunChecks []Check `json:"rerunChecks"`
+	}
+	if err := c.doGraphQL(ctx, "RerunChecks", rerunChecksOperation, vars, &data); err != nil {
+		return nil, err
+	}
+	return data.RerunChecks, nil
+}
+
+const rerunLoadOperation = `
+mutation RerunLoad ($org: ID!, $checkId: ID!) {
+	rerunLoad(org: $org, checkId: $checkId) {
+		id
+		name
+		status
+		moduleRef
+		moduleVersion
+	}
+}
+`
+
+// RerunLoad re-runs a failed load check (the gate that discovers and runs a
+// commit's checks) by ID, returning the newly queued load check. Load checks are
+// internal and can't go through RerunChecks; the server requires the check to be
+// a failed load check.
+func (c *Client) RerunLoad(ctx context.Context, orgID, checkID string) (*Check, error) {
+	var data struct {
+		RerunLoad Check `json:"rerunLoad"`
+	}
+	if err := c.doGraphQL(ctx, "RerunLoad", rerunLoadOperation, map[string]any{
+		"org":     orgID,
+		"checkId": checkID,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.RerunLoad, nil
 }
 
 func (c *Client) ModuleChecks(

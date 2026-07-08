@@ -30,3 +30,10 @@ func TestStabilizeDedupesAdjacentPortWarnings(t *testing.T) {
 
 	require.Equal(t, expected, Stabilize(input))
 }
+
+func TestStabilizeRemovesPacketLoss(t *testing.T) {
+	input := "✘ .failEffect: Container! 3.7s ERROR (5.88% dropped)\n"
+	expected := "✘ .failEffect: Container! X.Xs ERROR\n"
+
+	require.Equal(t, expected, Stabilize(input))
+}

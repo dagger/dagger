@@ -12,6 +12,12 @@ import { Location } from "./location.js"
 
 export const CLIENT_GEN_FILE = "client.gen.ts"
 
+// Generated client files share the `.gen.ts` suffix: `client.gen.ts` plus one
+// `<dep>.gen.ts` per dependency (dependency types are split into their own
+// files). All of them are part of the SDK surface the introspector must search
+// when resolving type references like a dependency-contributed enum.
+export const GENERATED_CLIENT_SUFFIX = ".gen.ts"
+
 export type ResolvedNodeWithSymbol<T extends keyof DeclarationsMap> = {
   type: T
   node: DeclarationsMap[T]
@@ -29,11 +35,20 @@ export class AST {
 
   private readonly sourceFiles: ts.SourceFile[]
 
+  // Resolved paths of the SDK-generated binding files (client.gen.ts and each
+  // <dep>.gen.ts). Empty when the caller didn't supply them, in which case
+  // isGeneratedClientFile falls back to the `.gen.ts` suffix.
+  private readonly generatedClientFiles: Set<string>
+
   constructor(
     public readonly files: string[],
     private readonly userModule: Module[],
+    generatedClientFiles: string[] = [],
   ) {
     this.files = files.map((f) => path.resolve(f))
+    this.generatedClientFiles = new Set(
+      generatedClientFiles.map((f) => path.resolve(f)),
+    )
     const program = ts.createProgram(files, {
       experimentalDecorators: true,
       moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -43,6 +58,16 @@ export class AST {
     this.sourceFiles = program
       .getSourceFiles()
       .filter((file) => !file.isDeclarationFile)
+  }
+
+  // isGeneratedClientFile reports whether a file is one of the SDK-generated
+  // bindings (client.gen.ts or a <dep>.gen.ts). It checks the explicit set when
+  // available, falling back to the `.gen.ts` suffix otherwise.
+  public isGeneratedClientFile(fileName: string): boolean {
+    if (this.generatedClientFiles.size > 0) {
+      return this.generatedClientFiles.has(path.resolve(fileName))
+    }
+    return fileName.endsWith(GENERATED_CLIENT_SUFFIX)
   }
 
   public findResolvedNodeByName<T extends keyof DeclarationsMap>(
@@ -60,9 +85,11 @@ export class AST {
       ts.forEachChild(sourceFile, (node) => {
         if (result !== undefined) return
 
-        // Skip if it's not from the client gen nor the user module
+        // Skip if it's not from a generated client file nor the user module.
+        // Generated files include client.gen.ts and every per-dependency
+        // <dep>.gen.ts (split out from the core client).
         if (
-          !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
+          !this.isGeneratedClientFile(sourceFile.fileName) &&
           !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return
@@ -105,9 +132,11 @@ export class AST {
 
     for (const sourceFile of this.sourceFiles) {
       ts.forEachChild(sourceFile, (node) => {
-        // Skip if it's not from the client gen nor the user module
+        // Skip if it's not from a generated client file nor the user module.
+        // Generated files include client.gen.ts and every per-dependency
+        // <dep>.gen.ts (split out from the core client).
         if (
-          !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
+          !this.isGeneratedClientFile(sourceFile.fileName) &&
           !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return

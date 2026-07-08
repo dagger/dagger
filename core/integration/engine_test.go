@@ -1,7 +1,7 @@
 package core
 
 // These tests cover the Dagger engine process and the client/engine contract.
-// They verify signal handling, engine naming, `dagger run`, version
+// They verify signal handling, engine naming, `dagger api exec`, version
 // compatibility, cancellation, Prometheus metrics, DagQL cache cleanup, and
 // client metadata reuse.
 //
@@ -223,7 +223,12 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
-	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "version"})
+	// The engine name reaches the user via the client's "connected" INFO log,
+	// which only the streaming plain frontend prints (the report frontend, the
+	// non-TTY default, doesn't render passing-span logs).
+	clientCtr = clientCtr.
+		WithEnvVariable("DAGGER_PROGRESS", "plain").
+		WithExec([]string{"dagger", "core", "version"})
 
 	// version call
 	stdout, err := clientCtr.Stdout(ctx)
@@ -244,38 +249,54 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	require.Equal(t, engineName, strings.TrimSpace(stdout))
 }
 
-func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
+func (EngineSuite) TestDaggerExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngine := devEngineContainerAsService(devEngineContainer(c))
+	for _, tc := range []struct {
+		name string
+		cmd  string
+	}{
+		{"exec", "dagger api exec"},
+		{"compat", "dagger run"},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.W[*testing.T]) {
+			devEngine := devEngineContainerAsService(devEngineContainer(c))
 
-	clientCtr := engineClientContainer(ctx, t, c, devEngine)
+			clientCtr := engineClientContainer(ctx, t, c, devEngine)
 
-	command := fmt.Sprintf(`
-		export NO_COLOR=1
-		jq -n '{query:"{container{from(address: \"%s\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
-		dagger run sh -c 'curl -s \
-			-u $DAGGER_SESSION_TOKEN: \
-			--max-time 30 \
-			-H "content-type:application/json" \
-			-d @- \
-			http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
-		alpineImage,
-	)
+			command := fmt.Sprintf(`
+				export NO_COLOR=1
+				jq -n '{query:"{container{from(address: \"%s\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
+				%s sh -c 'curl -s \
+					-u $DAGGER_SESSION_TOKEN: \
+					--max-time 30 \
+					-H "content-type:application/json" \
+					-d @- \
+					http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
+				alpineImage,
+				tc.cmd,
+			)
 
-	clientCtr = clientCtr.
-		WithExec([]string{"apk", "add", "jq", "curl"}).
-		WithExec([]string{"sh", "-c", command})
+			clientCtr = clientCtr.
+				// The stderr assertion below checks the plain frontend's live
+				// span stream ("Container.from"); the report frontend (the
+				// non-TTY default) renders the tree once at exit with
+				// call-chain naming instead.
+				WithEnvVariable("DAGGER_PROGRESS", "plain").
+				WithExec([]string{"apk", "add", "jq", "curl"}).
+				WithExec([]string{"sh", "-c", command})
 
-	stdout, err := clientCtr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, stdout, distconsts.AlpineVersion)
-	require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "`+distconsts.AlpineVersion+`\n"}}}}}`, stdout)
+			stdout, err := clientCtr.Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, distconsts.AlpineVersion)
+			require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "`+distconsts.AlpineVersion+`\n"}}}}}`, stdout)
 
-	stderr, err := clientCtr.Stderr(ctx)
-	require.NoError(t, err)
-	// verify we got some progress output
-	require.Contains(t, stderr, "Container.from")
+			stderr, err := clientCtr.Stderr(ctx)
+			require.NoError(t, err)
+			// verify we got some progress output
+			require.Contains(t, stderr, "Container.from")
+		})
+	}
 }
 
 func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
@@ -923,7 +944,7 @@ class Dep:
 set -eu
 # Load module + dependency schema a few times to exercise cache lifecycle.
 for i in $(seq 1 4); do
-  dagger functions >/dev/null
+  dagger api functions >/dev/null
 done
 			`}).Sync(ctx)
 		return err

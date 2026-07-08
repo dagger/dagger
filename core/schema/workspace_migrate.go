@@ -18,11 +18,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type workspaceMigrateArgs struct {
-	// Proceed even if modules cannot be loaded to generate settings hints.
-	Force bool `default:"false"`
-}
-
 type workspaceMigrationProgressContextKey struct{}
 
 type workspaceMigrationPlanBundle struct {
@@ -48,7 +43,7 @@ func (plans workspaceMigrationPlanBundle) empty() bool {
 func (s *workspaceSchema) migrate(
 	ctx context.Context,
 	ws *core.Workspace,
-	args workspaceMigrateArgs,
+	args struct{},
 ) (migration *core.WorkspaceMigration, rerr error) {
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("workspace migration is local-only")
@@ -97,7 +92,7 @@ func (s *workspaceSchema) migrate(
 			continue
 		}
 
-		plan, err := s.prepareWorkspaceMigrationPlan(ctx, ws, args, compatWorkspace)
+		plan, err := s.prepareWorkspaceMigrationPlan(ctx, ws, compatWorkspace)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +142,6 @@ func (s *workspaceSchema) migrate(
 func (s *workspaceSchema) prepareWorkspaceMigrationPlan(
 	ctx context.Context,
 	ws *core.Workspace,
-	args workspaceMigrateArgs,
 	compatWorkspace *workspace.CompatWorkspace,
 ) (*workspace.MigrationPlan, error) {
 	plan, err := workspace.PlanMigration(compatWorkspace)
@@ -170,9 +164,12 @@ func (s *workspaceSchema) prepareWorkspaceMigrationPlan(
 	}
 	hints, hintWarnings := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plannedConfigDir, plan.ProjectRoot, updatedDir)
 	if len(hintWarnings) > 0 {
-		if !args.Force {
-			return nil, fmt.Errorf("could not load modules to generate settings hints: %s; use --force to migrate anyway", strings.Join(hintWarnings, "; "))
-		}
+		// Settings hints are pure enrichment (pre-filled [modules.<m>.settings.*]
+		// defaults). When a module can't be loaded to introspect them — e.g. an
+		// SDK source that doesn't resolve as a local path — record the failure as
+		// a migration-report warning instead of aborting. The mechanical
+		// sdk->runtime migration is still valid; the user can fill in settings
+		// later with `dagger settings`.
 		appendWorkspaceMigrationNonGapWarnings(plan, hintWarnings)
 	}
 	if len(hints) > 0 {
@@ -459,7 +456,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, err
 	}
 
-	var changes *core.Changeset
+	var changes dagql.ObjectResult[*core.Changeset]
 	if err := func() (rerr error) {
 		diffCtx, span := core.Tracer(ctx).Start(ctx, "compute migration changeset", telemetry.Internal())
 		defer telemetry.EndWithCause(span, &rerr)
@@ -469,7 +466,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	}(); err != nil {
 		return nil, fmt.Errorf("migration changeset: %w", err)
 	}
-	return changes, nil
+	return changes.Self(), nil
 }
 
 func applyWorkspaceMigrationLegacyLockMoves(
@@ -987,16 +984,15 @@ func workspaceMigrationChanges(
 	ctx context.Context,
 	after dagql.ObjectResult[*core.Directory],
 	before dagql.ObjectResult[*core.Directory],
-) (*core.Changeset, error) {
+) (changes dagql.ObjectResult[*core.Changeset], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 
-	var changes dagql.ObjectResult[*core.Changeset]
 	beforeID, err := before.ID()
 	if err != nil {
-		return nil, err
+		return changes, err
 	}
 	if err := srv.Select(ctx, after, &changes, dagql.Selector{
 		Field: "changes",
@@ -1004,9 +1000,9 @@ func workspaceMigrationChanges(
 			{Name: "from", Value: dagql.NewID[*core.Directory](beforeID)},
 		},
 	}); err != nil {
-		return nil, err
+		return changes, err
 	}
-	return changes.Self(), nil
+	return changes, nil
 }
 
 func workspaceMigrationProjectRootPath(ws *core.Workspace, plan *workspace.MigrationPlan) (string, error) {

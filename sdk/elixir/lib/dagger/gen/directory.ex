@@ -63,10 +63,6 @@ defmodule Dagger.Directory do
 
   @doc """
   Creates a synthetic workspace from this directory.
-
-  > #### Experimental {: .warning}
-  >
-  > "Synthetic workspaces currently support filesystem APIs only."
   """
   @spec as_workspace(t(), [{:cwd, String.t() | nil}]) :: Dagger.Workspace.t()
   def as_workspace(%__MODULE__{} = directory, optional_args \\ []) do

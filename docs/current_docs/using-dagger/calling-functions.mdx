@@ -12,20 +12,20 @@ description: "Call module functions directly and chain them into pipelines"
 dagger call jest test
 ```
 
-`dagger call` is shorthand for `dagger function call`.
+`dagger call` is a top-level shortcut for `dagger api call`.
 
 ## Discover functions
 
 List the functions available in your workspace:
 
 ```shell
-dagger function list
+dagger api functions
 ```
 
 List the functions on a specific module:
 
 ```shell
-dagger function list jest
+dagger api functions jest
 ```
 
 Every function and its arguments are also visible through `--help`:

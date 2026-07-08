@@ -1,0 +1,5 @@
+type Test {
+  pub callFoo: String! {
+    foo.curve(FooEcCurve.P256)
+  }
+}

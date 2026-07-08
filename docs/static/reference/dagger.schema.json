@@ -85,7 +85,7 @@
       "properties": {
         "automaticGitignore": {
           "type": "boolean",
-          "description": "Whether to automatically generate a .gitignore file for this module."
+          "description": "Whether to automatically generate a .gitignore file for this module.\n\nWhen explicitly false, the module commits its generated files rather than ignoring them, and they might be used by an SDK at runtime."
         }
       },
       "additionalProperties": false,
@@ -214,18 +214,23 @@
         "source": {
           "type": "string"
         },
+        "pin": {
+          "type": "string"
+        },
         "config": {
-          "type": "object"
+          "type": "object",
+          "description": "Deprecated: not persisted by current TOML schema. Legacy JSON read-only."
         },
         "debug": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Deprecated: not persisted by current TOML schema. Legacy JSON read-only."
         },
         "experimental": {
           "additionalProperties": {
             "type": "boolean"
           },
           "type": "object",
-          "description": "The experimental features enabled for this module."
+          "description": "Deprecated: self-calls graduated; not persisted by current TOML schema. Legacy JSON read-only."
         }
       },
       "additionalProperties": false,

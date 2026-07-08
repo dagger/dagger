@@ -1,11 +1,11 @@
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
-import { themes as prismThemes } from "prism-react-renderer";
 import remarkCodeImport from "remark-code-import";
 import remarkTemplate from "./plugins/remark-template";
 import llmsTxtPlugin from "./plugins/llms-txt-plugin";
 import daggerApiReference from "./plugins/dagger-api-reference";
 import path from "path";
+import { daggerDarkPrismTheme } from "./src/prism/theme";
 
 import { daggerVersion } from "./current_docs/partials/version";
 
@@ -14,6 +14,14 @@ const docsPath = "./current_docs";
 const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
 const latestVersion = "0.21.4";
 const versions = require("./versions.json") as string[];
+// Local search only indexes the default version (served at the root). Keep the
+// auto-generated SDK reference and every non-default version out of the index.
+const localSearchExclude = [
+  "/reference/typescript/",
+  ...versions
+    .filter((v) => v !== latestVersion)
+    .map((v) => `${baseUrl}${v}/`),
+];
 const versionLabels: Record<string, string> = {};
 const versionSelectOptions = [
   ...versions.map((version) => ({
@@ -181,41 +189,16 @@ const config: Config = {
     // Parses docs-graphql/schema.graphqls into the model rendered by the
     // API reference components on the type reference pages.
     daggerApiReference,
+    // Builds a client-side search index over the current docs version. Pairs
+    // with the swizzled SearchBar (src/theme/SearchBar) for a local,
+    // command-palette search that needs no external service.
+    ["./plugins/local-search", { exclude: localSearchExclude }],
     [
       "posthog-docusaurus",
       {
         apiKey: "phc_rykA1oJnBnxTwavpgJKr4RAVXEgCkpyPVi21vQ7906d",
         appUrl: "https://us.i.posthog.com", // Changed to standard PostHog URL
         enableInDevelopment: true, // Enable tracking in development
-      },
-    ],
-    [
-      "docusaurus-plugin-typedoc",
-      {
-        id: "current-generation",
-        plugin: ["typedoc-plugin-markdown", "typedoc-plugin-frontmatter"],
-        entryPoints: [
-          "../sdk/typescript/src/connect.ts",
-          "../sdk/typescript/src/api/client.gen.ts",
-          "../sdk/typescript/src/common/errors/index.ts",
-        ],
-        tsconfig: "../sdk/typescript/tsconfig.json",
-        out: "current_docs/reference/typescript/",
-        excludeProtected: true,
-        exclude: "../sdk/typescript/node_modules/**",
-        skipErrorChecking: true,
-        disableSources: true,
-        sanitizeComments: true,
-        frontmatterGlobals: {
-          displayed_sidebar: "current",
-          sidebar_label: "TypeScript SDK Reference",
-          title: "TypeScript SDK Reference",
-        },
-        textContentMappings: {
-          "title.indexPage": "TypeScript SDK Reference",
-          "footer.text": "",
-        },
-        requiredToBeDocumented: ["Class"],
       },
     ],
   ],
@@ -261,8 +244,8 @@ const config: Config = {
         "powershell",
         "java",
       ],
-      theme: prismThemes.oneLight,
-      darkTheme: prismThemes.oneDark,
+      theme: daggerDarkPrismTheme,
+      darkTheme: daggerDarkPrismTheme,
     },
     navbar: {
       logo: {
@@ -313,19 +296,14 @@ const config: Config = {
         },
       ],
     },
-    algolia: {
-      apiKey: "bffda1490c07dcce81a26a144115cc02",
-      indexName: "dagger",
-      appId: "XEIYPBWGOI",
-    },
     colorMode: {
       defaultMode: "light",
     },
     zoom: {
       selector: ".markdown img:not(.not-zoom)",
       background: {
-        light: "rgb(255, 255, 255)",
-        dark: "rgb(50, 50, 50)",
+        light: "var(--color-white)",
+        dark: "var(--color-backgroundDark)",
       },
       // medium-zoom configuration options
       // Refer to https://github.com/francoischalifour/medium-zoom#options

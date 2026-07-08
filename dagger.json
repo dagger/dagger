@@ -67,11 +67,19 @@
     {
       "name": "golang",
       "source": "github.com/dagger/go@main",
-      "pin": "4985ec6b9752e9deac3d37276c0f8a33ceba30bf",
+      "pin": "5683fb4f7e2e909a453eba727fb982077d5d11b5",
       "customizations": [
         {
-          "argument": "selectModule",
-          "default": "e2e/*"
+          "argument": "test",
+          "default": "e2e/**"
+        },
+        {
+          "argument": "lint",
+          "default": "!**"
+        },
+        {
+          "argument": "generate",
+          "default": "docs/current_docs/reference"
         }
       ]
     },

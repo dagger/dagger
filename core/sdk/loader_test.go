@@ -123,37 +123,37 @@ func TestWorkspaceModuleForRuntime(t *testing.T) {
 		{
 			name:    "go",
 			runtime: "go",
-			want:    WorkspaceModule{Name: "go-sdk", Source: "github.com/dagger/go-sdk"},
+			want:    WorkspaceModule{Name: "dagger-go-sdk", Source: "github.com/dagger/go-sdk"},
 			wantOK:  true,
 		},
 		{
 			name:    "typescript",
 			runtime: "typescript",
-			want:    WorkspaceModule{Name: "typescript-sdk", Source: "github.com/dagger/typescript-sdk"},
+			want:    WorkspaceModule{Name: "dagger-typescript-sdk", Source: "github.com/dagger/typescript-sdk"},
 			wantOK:  true,
 		},
 		{
 			name:    "python",
 			runtime: "python",
-			want:    WorkspaceModule{Name: "python-sdk", Source: "github.com/dagger/python-sdk"},
+			want:    WorkspaceModule{Name: "dagger-python-sdk", Source: "github.com/dagger/python-sdk"},
 			wantOK:  true,
 		},
 		{
 			name:    "java defaults to engine tag",
 			runtime: "java",
-			want:    WorkspaceModule{Name: "java-sdk", Source: "github.com/dagger/dagger/sdk/java@v0.12.6"},
+			want:    WorkspaceModule{Name: "dagger-java-sdk", Source: "github.com/dagger/dagger/sdk/java@v0.12.6"},
 			wantOK:  true,
 		},
 		{
 			name:    "php keeps explicit suffix",
 			runtime: "php@main",
-			want:    WorkspaceModule{Name: "php-sdk", Source: "github.com/dagger/dagger/sdk/php@main"},
+			want:    WorkspaceModule{Name: "dagger-php-sdk", Source: "github.com/dagger/dagger/sdk/php@main"},
 			wantOK:  true,
 		},
 		{
 			name:    "dang",
 			runtime: "dang",
-			want:    WorkspaceModule{Name: "dang-sdk", Source: "github.com/dagger/dang-sdk"},
+			want:    WorkspaceModule{Name: "dagger-dang-sdk", Source: "github.com/dagger/dang-sdk"},
 			wantOK:  true,
 		},
 		{

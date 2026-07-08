@@ -270,11 +270,17 @@ func (fe *frontendPretty) dirtySearchTrees() {
 		if st, ok := fe.spanTrees[spanID]; ok {
 			st.Update()
 		}
+		if lv, ok := fe.logsViews[spanID]; ok {
+			lv.Update()
+		}
 	}
 	for spanID := range fe.prevSearchMatchSpans {
 		if !fe.searchMatchSpans[spanID] {
 			if st, ok := fe.spanTrees[spanID]; ok {
 				st.Update()
+			}
+			if lv, ok := fe.logsViews[spanID]; ok {
+				lv.Update()
 			}
 		}
 	}

@@ -36,6 +36,12 @@ func TestWorkspaceCompat(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceCompatSuite{})
 }
 
+// `dagger migrate` was removed and folded into `dagger setup` (its migrate
+// step). The compat→workspace assertions below read the on-disk
+// .dagger/migration-report.md + dagger.toml that the migrate changeset writes,
+// then exercise the migrated workspace through `dagger setup --auto-apply`
+// (migrate + recommended-module install).
+
 func compatDaggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
@@ -467,7 +473,7 @@ func (WorkspaceCompatSuite) TestCompatWarning(ctx context.Context, t *testctx.T)
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
 	require.NoError(t, err, string(out))
-	require.Contains(t, string(out), "No workspace config found, inferring from dagger.json.\nRun 'dagger migrate' when ready.")
+	require.Contains(t, string(out), "No workspace config found, inferring from dagger.json.\nRun 'dagger setup' when ready.")
 	require.Contains(t, string(out), "hello from blueprint")
 }
 
@@ -485,7 +491,7 @@ func (WorkspaceCompatSuite) TestCompatRequiresWorkspaceRoot(ctx context.Context,
 	// With no detected workspace root this cannot become an ambient compat
 	// workspace. Load it explicitly to verify legacy workspace fields are still
 	// rejected as generic module fields.
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "api", "functions", "-m", ".")
 	requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.")
 }
 
@@ -509,7 +515,7 @@ func (WorkspaceCompatSuite) TestWorkspaceCompatMutationGuards(ctx context.Contex
 
 		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.Error(t, err)
-		requireErrOut(t, err, "workspace is using legacy dagger.json config; run dagger migrate first")
+		requireErrOut(t, err, "workspace is using legacy dagger.json config; run dagger setup first")
 
 		_, err = os.Stat(filepath.Join(workdir, "dagger.toml"))
 		require.ErrorIs(t, err, os.ErrNotExist)
@@ -534,7 +540,7 @@ func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Cont
   ]
 }`), 0o644))
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "api", "functions", "-m", ".")
 		require.Error(t, err)
 		requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W .\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces")
 	})
@@ -558,7 +564,7 @@ source = "legacy"
 		require.NoError(t, err)
 		require.Contains(t, out, "points at a legacy workspace, not a plain module")
 		require.Contains(t, out, `uses legacy workspace fields "blueprint"`)
-		require.Contains(t, out, "run `dagger migrate` in")
+		require.Contains(t, out, "run `dagger setup` in")
 		require.Contains(t, out, ".dagger/modules")
 	})
 
@@ -632,7 +638,7 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 	t.Run("migrate converts a compat workspace into workspace config plus modules", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := legacyCompatDangSource(t, c, "hello from migrated compat").
-			With(compatDaggerExec("migrate", "-y"))
+			With(compatDaggerExec("setup", "--auto-apply"))
 
 		stdout, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
@@ -664,11 +670,13 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 	t.Run("migrate creates root parent workspace for sdk-only root-source modules", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := legacySDKOnlyGoSource(t, c, "hello from sdk-only root").
-			With(compatDaggerExec("migrate", "-y"))
+			With(compatDaggerExec("setup", "--auto-apply"))
 
+		// `dagger setup` runs migration through a changeset and records its
+		// follow-up warnings in .dagger/migration-report.md rather than on
+		// stdout, so assert on the on-disk report below instead of the output.
 		out, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, "Warning: Root module requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m . ...`.")
 
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
 		require.NoError(t, err, "sdk-only dagger.json should remain in place")
@@ -678,7 +686,7 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.go-sdk]`)
+		require.Contains(t, configOut, `[modules.dagger-go-sdk]`)
 		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
 
 		reportOut, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
@@ -711,11 +719,13 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
     }
   ]
 }`, legacyDangModule("toolchain", "toolchain", "Toolchain", "hello from toolchain")).
-			With(compatDaggerExec("migrate", "-y"))
+			With(compatDaggerExec("setup", "--auto-apply"))
 
+		// The "N old setting(s) need review" summary now lives in the on-disk
+		// migration report (and as per-gap sections) rather than on stdout, so
+		// assert on .dagger/migration-report.md instead of the command output.
 		output, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, output)
-		require.Contains(t, output, "Warning: 2 old setting(s) need review; see .dagger/migration-report.md")
 
 		report, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -752,7 +762,7 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
     }
   ]
 }`).
-		With(compatDaggerExec("migrate", "-y"))
+		With(compatDaggerExec("setup", "--auto-apply"))
 
 	configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 	require.NoError(t, err)
@@ -807,7 +817,7 @@ func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context,
     }
   ]
 }`).
-		With(compatDaggerExec("migrate", "-y"))
+		With(compatDaggerExec("setup", "--auto-apply"))
 
 	configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 	require.NoError(t, err)
@@ -908,7 +918,7 @@ type Helper {
 	compatHelper, err := base.With(compatDaggerCall("helper", "message")).Stdout(ctx)
 	require.NoError(t, err)
 
-	migrated := base.With(compatDaggerExec("migrate", "-y"))
+	migrated := base.With(compatDaggerExec("setup", "--auto-apply"))
 	migratedEntrypoint, err := migrated.With(compatDaggerCall("greet")).Stdout(ctx)
 	require.NoError(t, err)
 	migratedHelper, err := migrated.With(compatDaggerCall("helper", "message")).Stdout(ctx)

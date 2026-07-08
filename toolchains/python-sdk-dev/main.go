@@ -46,9 +46,14 @@ func New(
 
 	// +default="sdk/python"
 	sourcePath string,
+	// A docker config file with credentials to install on clients.
+	// +optional
+	clientDockerConfig *dagger.Secret,
 ) *PythonSdkDev {
 	return &PythonSdkDev{
-		DevContainer: dag.DaggerEngine().InstallClient(
+		DevContainer: dag.DaggerEngine(dagger.DaggerEngineOpts{
+			ClientDockerConfig: clientDockerConfig,
+		}).InstallClient(
 			dag.Wolfi().
 				Container(dagger.WolfiContainerOpts{Packages: []string{"libgcc"}}).
 				WithEnvVariable("PYTHONUNBUFFERED", "1").

@@ -236,7 +236,10 @@ func (ElixirSuite) TestEnumArg(ctx context.Context, t *testctx.T) {
 			With(daggerCallAt(".", "enum-value", "--value=BAZ")).
 			Stdout(ctx)
 		requireErrOut(t, err, "invalid argument \"BAZ\" for \"--value\" flag: value should be one of BAR,FOO,GAR")
-		requireErrOut(t, err, "Run 'dagger call enum-value --help' for usage.")
+		// No assertion on cobra's `Run '... --help' for usage.` hint: it is
+		// printed to the primary span's stderr, which the report frontend (the
+		// non-TTY default) drops for failed runs in favor of its own error
+		// rendering.
 	})
 }
 

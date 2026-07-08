@@ -10,6 +10,11 @@ export async function scan(
   files: string[],
   moduleName = "",
   loadModule = true,
+  // generatedClientFiles is the explicit set of SDK-generated binding files
+  // (client.gen.ts and each <dep>.gen.ts). When provided, the AST uses it to
+  // tell generated code from user source instead of guessing by filename,
+  // which would misclassify a user file that happens to end in `.gen.ts`.
+  generatedClientFiles: string[] = [],
 ) {
   if (files.length === 0) {
     throw new IntrospectionError("no files to introspect found")
@@ -22,7 +27,7 @@ export async function scan(
   if (loadModule) {
     userModule = await load(files)
   }
-  const ast = new AST(files, userModule)
+  const ast = new AST(files, userModule, generatedClientFiles)
 
   const module = new DaggerModule(formattedModuleName, userModule, ast)
 

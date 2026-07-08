@@ -733,6 +733,7 @@ defmodule Dagger.Container do
           {:include, [String.t()]},
           {:gitignore, boolean() | nil},
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:expand, boolean() | nil},
           {:permissions, integer() | nil}
         ]) :: Dagger.Container.t()
@@ -746,6 +747,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
 
@@ -929,6 +931,7 @@ defmodule Dagger.Container do
   @spec with_file(t(), String.t(), Dagger.File.t(), [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
@@ -939,6 +942,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
@@ -953,6 +957,7 @@ defmodule Dagger.Container do
   @spec with_files(t(), String.t(), [String.t()], [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_files(%__MODULE__{} = container, path, sources, optional_args \\ []) do
@@ -963,6 +968,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("sources", sources)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
@@ -995,6 +1001,7 @@ defmodule Dagger.Container do
           {:source, Dagger.Directory.t() | nil},
           {:sharing, Dagger.CacheSharingMode.t() | nil},
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_mounted_cache(%__MODULE__{} = container, path, cache, optional_args \\ []) do
@@ -1009,6 +1016,7 @@ defmodule Dagger.Container do
       )
       |> QB.maybe_put_arg("sharing", optional_args[:sharing])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
@@ -1022,6 +1030,7 @@ defmodule Dagger.Container do
   """
   @spec with_mounted_directory(t(), String.t(), Dagger.Directory.t(), [
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:read_only, boolean() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
@@ -1032,6 +1041,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("readOnly", optional_args[:read_only])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
@@ -1046,6 +1056,7 @@ defmodule Dagger.Container do
   """
   @spec with_mounted_file(t(), String.t(), Dagger.File.t(), [
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_mounted_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
@@ -1055,6 +1066,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
@@ -1068,6 +1080,7 @@ defmodule Dagger.Container do
   """
   @spec with_mounted_secret(t(), String.t(), Dagger.Secret.t(), [
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:mode, integer() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
@@ -1078,6 +1091,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("mode", optional_args[:mode])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
@@ -1112,6 +1126,7 @@ defmodule Dagger.Container do
   @spec with_new_file(t(), String.t(), String.t(), [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_new_file(%__MODULE__{} = container, path, contents, optional_args \\ []) do
@@ -1122,6 +1137,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("contents", contents)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
@@ -1228,6 +1244,7 @@ defmodule Dagger.Container do
   """
   @spec with_unix_socket(t(), String.t(), Dagger.Socket.t(), [
           {:owner, String.t() | nil},
+          {:inherit_owner, boolean() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_unix_socket(%__MODULE__{} = container, path, source, optional_args \\ []) do
@@ -1237,6 +1254,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("owner", optional_args[:owner])
+      |> QB.maybe_put_arg("inheritOwner", optional_args[:inherit_owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{

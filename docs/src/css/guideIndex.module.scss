@@ -44,8 +44,8 @@
 
 
   html[data-theme="dark"] & {
-    border-color: rgba(75,75,90, 0.5);
-    background-color: rgba(43, 47, 70, 0.3);
+    border-color: var(--color-gray-800);
+    background-color: var(--color-gray-900);
   }
 }
 
@@ -67,7 +67,7 @@
 .filterInput {
   border: none;
   width: 100%;
-  background: transparent;
+  background: var(--color-transparent);
 
   &::placeholder {
     color: var(--ifm-menu-color);
@@ -80,7 +80,7 @@
 
   html[data-theme="dark"] & {
     color: var(--ifm-color-primary-light);
-    background: transparent;
+    background: var(--color-transparent);
   }
 }
 
@@ -96,14 +96,14 @@
   left: -1px;
   right: -1px;
   border: 1px solid var(--ifm-menu-color);
-  background-color: white;
+  background-color: var(--color-white);
   max-height: 200px;
   overflow-y: scroll;
   z-index: 99;
 
   html[data-theme="dark"] & {
-    background: white;
-    border: 1px solid var(--ifm-menu-color);
+    background: var(--ifm-background-surface-color);
+    border: 1px solid var(--ifm-color-emphasis-300);
   }
 
   ul {
@@ -129,23 +129,23 @@
   }
 
   html[data-theme="dark"] & {
-    background-color: #1a1b30;
-    border-color: rgba(75,75,90, 0.5);
+    background-color: var(--ifm-background-surface-color);
+    border-color: var(--ifm-color-emphasis-300);
     li:hover {
-      background-color: rgba(211, 211, 211, 0.118);
+      background-color: var(--ifm-hover-overlay);
     }
   }
 }
 
 .guideCard {
   height: 100%;
-  box-shadow: 0px 4px 8px 0px rgba(173, 170, 198, 0.50);
-  border: 1px solid rgba(75,75,90, 0.3);
+  box-shadow: 0px 4px 8px 0px var(--color-blackAlpha-200);
+  border: 1px solid var(--color-gray-200);
   border-radius: 0.5rem;
   display: flex;
   gap: 0.8rem;
   flex-wrap: wrap;
-  background-color: transparent;
+  background-color: var(--color-transparent);
   color: var(--ifm-color-primary-dark) !important;
   text-decoration: none !important;
   padding: 1.5rem;
@@ -156,9 +156,9 @@
   }
 
   html[data-theme="dark"] & {
-    box-shadow: 0px 4px 8px 0px rgba(13, 12, 27, 0.50);
-    background-color: rgba(43, 47, 70, 0.3);
-    border-color: rgba(75,75,90, 0.5);
+    box-shadow: 0px 4px 8px 0px var(--color-blackAlpha-700);
+    background-color: var(--color-gray-900);
+    border-color: var(--color-gray-800);
   }
 }
 

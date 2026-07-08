@@ -62,7 +62,23 @@ type DB struct {
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
 
+	// mutations counts span adds and updates. Derived-view memos (e.g. the
+	// per-span test views and surfaced checks) key on it so a cached result is
+	// reused across the many reads of a single render frame but never survives
+	// new span data.
+	mutations uint64
+
+	surfacedChecks     []*CheckNode
+	surfacedChecksAt   uint64
+	surfacedChecksInit bool
+
 	testIndex *TestIndex
+}
+
+// MutationCount reports how many span adds/updates the DB has seen, for
+// callers memoizing views derived from span data (see the mutations field).
+func (db *DB) MutationCount() uint64 {
+	return db.mutations
 }
 
 type resumeOutputKey struct {
@@ -182,6 +198,7 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 }
 
 func (db *DB) update(span *Span) {
+	db.mutations++
 	db.noteTestSpanUpdated(span)
 	if span.Final {
 		// don't bump versions for final spans; leave the remote as the
@@ -785,6 +802,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// FIXME: refactor? can we keep some sort of flat map of spans an append
 	// children to them instead of having the single big ordered list?
 	db.Spans.Add(span)
+	db.mutations++
 	db.noteTestSpanUpdated(span)
 }
 
