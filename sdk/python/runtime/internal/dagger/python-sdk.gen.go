@@ -340,27 +340,22 @@ func (r *PythonSDK) ModSource() *ModuleSource {
 	}
 }
 
-// Container for executing the Python module runtime
-func (r *PythonSDK) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
-	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
-	q := r.query.Select("moduleRuntime")
-	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
-
-	return &Container{
-		query: q,
-	}
+// PythonSDKModuleRuntimeOpts contains options for PythonSDK.ModuleRuntime
+type PythonSDKModuleRuntimeOpts struct {
+	IntrospectionJSON *File
 }
 
 // Container for executing the Python module runtime
-func (r *PythonSDK) ModuleTypesExp(modSource *ModuleSource, introspectionJson *File, outputFilePath string) *Container {
+func (r *PythonSDK) ModuleRuntime(modSource *ModuleSource, opts ...PythonSDKModuleRuntimeOpts) *Container {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
-	q := r.query.Select("moduleTypesExp")
+	q := r.query.Select("moduleRuntime")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `introspectionJson` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IntrospectionJSON) {
+			q = q.Arg("introspectionJson", opts[i].IntrospectionJSON)
+		}
+	}
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
-	q = q.Arg("outputFilePath", outputFilePath)
 
 	return &Container{
 		query: q,
