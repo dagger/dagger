@@ -2110,17 +2110,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if opts.Stdin != "" {
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
 		}
-		// Env is runtime/session context, so keep it off persisted exec state.
-		var envContext dagql.ObjectResult[*Env]
-		if state.FunctionCall != nil {
-			env, ok, err := EnvFromContext(ctx)
-			if err != nil {
-				return fmt.Errorf("resolve exec env context: %w", err)
-			}
-			if ok {
-				envContext = env
-			}
-		}
 
 		execErrCh := make(chan error, 1)
 		go func() {
@@ -2138,7 +2127,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				nestedClientMetadata,
 				state.ModuleContext,
 				state.FunctionCall,
-				envContext,
 			)
 		}()
 

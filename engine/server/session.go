@@ -223,9 +223,6 @@ type daggerClient struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
-	// If the client is executing in an Env context, this is that Env.
-	env dagql.ObjectResult[*core.Env]
-
 	// engine utility job-related state/config
 	hostServiceProxyClientID string
 	getClientCaller          func(context.Context, string) (engineutil.SessionCaller, error)
@@ -690,9 +687,6 @@ type ClientInitOpts struct {
 
 	// If the client is running from a function in a module, this is that function call.
 	FunctionCall *core.FunctionCall
-
-	// If the client is executing in an Env context, this is that Env.
-	EnvContext dagql.ObjectResult[*core.Env]
 }
 
 // requires that client.stateMu is held
@@ -785,23 +779,6 @@ func (srv *Server) initializeDaggerClient(
 	coreMod := coreSchemaBase.CoreMod(coreView)
 	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
-
-	if opts.EnvContext.Self() != nil {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get engine cache for env context: %w", err)
-		}
-
-		attached, err := cache.AttachResult(ctx, opts.SessionID, client.dag, opts.EnvContext)
-		if err != nil {
-			return fmt.Errorf("attach env context during client init: %w", err)
-		}
-		envInst, ok := attached.(dagql.ObjectResult[*core.Env])
-		if !ok {
-			return fmt.Errorf("attach env context during client init: expected %T, got %T", opts.EnvContext, attached)
-		}
-		client.env = envInst
-	}
 
 	if opts.ModuleContext.Self() != nil {
 		cache, err := dagql.EngineCache(ctx)
@@ -1343,7 +1320,6 @@ func (srv *Server) ServeHTTPToNestedClient(
 	hostServiceProxyToCaller bool,
 	moduleCtx dagql.AnyObjectResult,
 	functionCall dagql.Typed,
-	envCtx dagql.AnyObjectResult,
 ) {
 	if nestedClientMetadata == nil {
 		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
@@ -1373,18 +1349,6 @@ func (srv *Server) ServeHTTPToNestedClient(
 		fnCall = typed
 	}
 
-	var envContext dagql.ObjectResult[*core.Env]
-	if envCtx != nil {
-		typed, ok := envCtx.(dagql.ObjectResult[*core.Env])
-		if !ok {
-			http.Error(w, fmt.Sprintf("nested client env context is %T, not Env", envCtx), http.StatusInternalServerError)
-			return
-		}
-		if typed.Self() != nil {
-			envContext = typed
-		}
-	}
-
 	var hostServiceProxyClientID string
 	if hostServiceProxyToCaller {
 		hostServiceProxyClientID = callerClientID
@@ -1396,7 +1360,6 @@ func (srv *Server) ServeHTTPToNestedClient(
 		HostServiceProxyClientID: hostServiceProxyClientID,
 		ModuleContext:            moduleContext,
 		FunctionCall:             fnCall,
-		EnvContext:               envContext,
 	}).ServeHTTP(w, r)
 }
 
@@ -2331,14 +2294,6 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 		return nil, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
 	}
 	return client.fnCall, nil
-}
-
-func (srv *Server) CurrentEnv(ctx context.Context) (dagql.ObjectResult[*core.Env], error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Env]{}, err
-	}
-	return client.env, nil
 }
 
 // Return the modules being served to the current client
