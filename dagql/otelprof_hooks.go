@@ -57,13 +57,15 @@ func OTelProfActive(ctx context.Context) bool {
 // before publishing the ongoingCall, and stashes its SpanContext there — so every
 // joiner that observes the ongoingCall has a valid wait target.
 func beginOTelCallExec(callCtx context.Context, callKey, class string) (context.Context, trace.Span) {
-	return Tracer(callCtx).Start(callCtx, class,
+	prev := trace.SpanContextFromContext(callCtx)
+	ctx, span := Tracer(callCtx).Start(callCtx, class,
 		telemetry.Passthrough(),
 		trace.WithAttributes(
 			attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindCallExec.String()),
 			attribute.String(telemetry.DagDigestAttr, callKey),
 		),
 	)
+	return MarkProfilingSpan(ctx, prev), span
 }
 
 // beginOTelPublishResult starts the dagql.publishResult span as a child of the
@@ -82,6 +84,63 @@ func beginOTelPublishResult(ctx context.Context) trace.Span {
 		),
 	)
 	return span
+}
+
+// User-facing attribution across profiling spans.
+//
+// A profiling span (the call_exec twin, exec.run, service.start, a lazy op)
+// becomes the CURRENT span on the context user work runs under, but no
+// frontend renders it as a row. Attribution surfaces that read "the current
+// span" from that context — the module-function error-origin fallback
+// (core/exec_error.go) and the traceparent injected into a container's env
+// (engineutil executor_spec.go), which parents everything the container's
+// nested SDK client emits, logs included — must not attribute to an
+// unrendered span: an error origin nobody rendered defeats the CLI's
+// already-shown-error suppression, and logs parented to a hidden span vanish
+// from the row that should show them. These helpers keep the last
+// user-facing (non-profiling) span reachable from the context so those
+// surfaces attribute exactly as they did before the profiling emission
+// existed.
+
+type userFacingSpan struct {
+	// sc is the last non-profiling span that was current on this context
+	// chain before a profiling span took over.
+	sc trace.SpanContext
+	// lastProfiling identifies the profiling span that was current when sc
+	// was recorded; it lets MarkProfilingSpan distinguish "starting under
+	// another profiling span" (keep sc) from "a real span became current in
+	// between" (adopt it).
+	lastProfiling trace.SpanID
+}
+
+type userFacingSpanKey struct{}
+
+// MarkProfilingSpan records, on a context whose current span was just set to
+// a profiling span, which span user-facing attribution should use instead:
+// prev (the span that was current before the profiling span started) — unless
+// prev is itself the previously marked profiling span, in which case the
+// earlier user-facing record is kept. Exported for the profiling-span begin
+// sites outside this package (engineutil exec.run, core service.start).
+func MarkProfilingSpan(ctx context.Context, prev trace.SpanContext) context.Context {
+	uf, _ := ctx.Value(userFacingSpanKey{}).(userFacingSpan)
+	if !uf.sc.IsValid() || !uf.lastProfiling.IsValid() || prev.SpanID() != uf.lastProfiling {
+		uf.sc = prev
+	}
+	uf.lastProfiling = trace.SpanFromContext(ctx).SpanContext().SpanID()
+	return context.WithValue(ctx, userFacingSpanKey{}, uf)
+}
+
+// UserFacingSpanContext returns the span context user-facing attribution
+// (error origins, container traceparent injection) should use for ctx: the
+// current span, unless the current span is a marked profiling span, in which
+// case the last user-facing span recorded by MarkProfilingSpan.
+func UserFacingSpanContext(ctx context.Context) trace.SpanContext {
+	cur := trace.SpanContextFromContext(ctx)
+	if uf, ok := ctx.Value(userFacingSpanKey{}).(userFacingSpan); ok &&
+		uf.sc.IsValid() && cur.SpanID() == uf.lastProfiling {
+		return uf.sc
+	}
+	return cur
 }
 
 // EndProfSpan ends a profiling span (exec.run, service.start, call_exec,

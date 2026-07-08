@@ -1301,7 +1301,9 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return fmt.Errorf("failed to get engine client: %w", err)
 		}
-		causeCtx := trace.SpanContextFromContext(ctx)
+		// User-facing cause: the resolver runs on the call_exec twin's context, but
+	// exec-error attribution must name a span frontends render.
+	causeCtx := dagql.UserFacingSpanContext(ctx)
 
 		rootOutputBinding := func(ref bkcache.ImmutableRef) error {
 			dirPath := "/"
@@ -2051,6 +2053,12 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		// one identical value. ProfArgs is json:"-", so this cannot perturb a cache key.
 		if execMD != nil {
 			execMD.ProfArgs = slices.Clone(metaSpec.Args)
+			// Same in-process pattern: the executor needs the user-facing span
+			// for the container's traceparent injection, and only core still
+			// knows it here — the executor runs on a detached execution
+			// context that does not carry this ctx's mark (see
+			// ExecutionMetadata.UserFacingSpanCtx).
+			execMD.UserFacingSpanCtx = dagql.UserFacingSpanContext(ctx)
 		}
 		if emu != nil {
 			metaSpec.Args = append([]string{engineutil.DaggerQemuEmulatorMountPoint}, metaSpec.Args...)

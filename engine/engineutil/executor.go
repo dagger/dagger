@@ -85,6 +85,24 @@ type ExecutionMetadata struct {
 	// core->executor hand-off is an in-process pointer (never re-serialized), so
 	// excluding it from JSON cannot drop it before the emit.
 	ProfArgs []string `json:"-"`
+
+	// UserFacingSpanCtx is the last user-facing (non-profiling) span of the API
+	// call this exec runs under, captured in core at exec-setup time (see
+	// dagql.UserFacingSpanContext). The executor injects IT as the container's
+	// traceparent — not its own current span: the exec runs on a detached
+	// execution context (shared/deduped, possibly lazily resumed) whose current
+	// span is a profiling span (the call_exec twin / a resume span) and which
+	// does not carry the caller's context mark, so only core still knows the
+	// user-facing span. Everything the container emits (nested SDK client
+	// spans, user process logs, returned Error origin extensions) parents to
+	// the injected id, and telemetry parented to an unrendered passthrough span
+	// vanishes from the row that should show it.
+	//
+	// json:"-" is load-bearing for the same reason as ProfArgs above: this
+	// run-time-only value must never perturb an exec cache key, and the
+	// core->executor hand-off is an in-process pointer, so excluding it from
+	// JSON cannot drop it before use.
+	UserFacingSpanCtx trace.SpanContext `json:"-"`
 }
 
 func (c *Client) Run(

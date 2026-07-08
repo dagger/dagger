@@ -45,13 +45,15 @@ import (
 // ident mirrors native's exec.run ident (executor.go): the call digest when
 // known, else the execution id — so the cross-source oracle can match per-exec.
 func beginOTelExecRun(ctx context.Context, ident string) (context.Context, trace.Span) {
-	return Tracer(ctx).Start(ctx, "exec.run",
+	prev := trace.SpanContextFromContext(ctx)
+	runCtx, span := Tracer(ctx).Start(ctx, "exec.run",
 		telemetry.Passthrough(),
 		trace.WithAttributes(
 			attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindExec.String()),
 			attribute.String(telemetry.DagDigestAttr, ident),
 		),
 	)
+	return dagql.MarkProfilingSpan(runCtx, prev), span
 }
 
 // endOTelExecRun ends the exec.run span, charging any run error as its status

@@ -167,11 +167,12 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 			return callbackCtx, resumeSpan, true
 		}
 	}
+	prev := trace.SpanContextFromContext(evalCtx)
 	callbackCtx, lazySpan := Tracer(evalCtx).Start(
 		evalCtx,
 		profCallClass(resultCall),
 		telemetry.Passthrough(),
 		trace.WithAttributes(attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindLazy.String())),
 	)
-	return callbackCtx, lazySpan, false
+	return MarkProfilingSpan(callbackCtx, prev), lazySpan, false
 }

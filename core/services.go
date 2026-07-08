@@ -214,13 +214,15 @@ func serviceOriginLink(originCtx trace.SpanContext) trace.Link {
 // internal one. Gated only on telemetry being active, independent of wcprof, so
 // the OTel source is reconstructable from a Cloud trace alone.
 func beginOTelServiceStart(ctx context.Context, ident string) (context.Context, trace.Span) {
-	return Tracer(ctx).Start(ctx, "service.start",
+	prev := trace.SpanContextFromContext(ctx)
+	startCtx, span := Tracer(ctx).Start(ctx, "service.start",
 		telemetry.Passthrough(),
 		trace.WithAttributes(
 			attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindServiceStart.String()),
 			attribute.String(telemetry.DagDigestAttr, ident),
 		),
 	)
+	return dagql.MarkProfilingSpan(startCtx, prev), span
 }
 
 // endOTelServiceStart ends the service.start span (nil-safe), charging any start

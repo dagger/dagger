@@ -836,9 +836,22 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 		engine.OTelMetricsEndpointEnv+"="+otelEndpoint+"/v1/metrics",
 	)
 
-	// Telemetry propagation (traceparent, tracestate, baggage, etc)
+	// Telemetry propagation (traceparent, tracestate, baggage, etc). The
+	// injected traceparent parents everything the container emits — the nested
+	// SDK client's spans and the user process's logs — so it must name the
+	// user-facing span (the withExec / function call), not the exec.run
+	// profiling span this ctx currently carries: telemetry parented to an
+	// unrendered passthrough span vanishes from the row that should show it.
+	propSpanCtx := dagql.UserFacingSpanContext(ctx)
+	if state.execMD != nil && state.execMD.UserFacingSpanCtx.IsValid() {
+		// The in-process value from core is authoritative: the exec runs on a
+		// detached execution context that does not carry the caller's context
+		// mark, so resolving from this ctx alone still lands on a profiling
+		// span (see ExecutionMetadata.UserFacingSpanCtx).
+		propSpanCtx = state.execMD.UserFacingSpanCtx
+	}
 	state.spec.Process.Env = append(state.spec.Process.Env,
-		telemetry.PropagationEnv(ctx)...)
+		telemetry.PropagationEnv(trace.ContextWithSpanContext(ctx, propSpanCtx))...)
 
 	return nil
 }
