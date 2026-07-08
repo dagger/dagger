@@ -189,6 +189,43 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory) (*publish
 		return nil, err
 	}
 
+	// A stable release reads release notes from a changelog file per published
+	// component: the root .changes/<tag>.md for the engine and CLI (cli-dev's
+	// publish step), and <component>/.changes/<tag>.md for each SDK and the Helm
+	// chart (Changelog.lookupEntry, used when cutting their GitHub releases). The
+	// pre-release working tree under test carries none of these until the release
+	// is actually cut, so stub them all.
+	//
+	// The check inspects each resulting release body (see the embedded python
+	// below), asserting it mentions its own release tag, carries a "What to do
+	// next?" follow-up section, and (for the root release) has at least one
+	// "### Added/Changed/Fixed" section. Component release tags are
+	// "<component>/<version>" (e.g. "sdk/go/v1.0.0") while the root engine/CLI
+	// tag is just the version, so title each stub with its own tag — mirroring
+	// the real changelog headers (e.g. "## sdk/go/v0.11.0 - <date>").
+	// A component's changelog path and its release tag usually match, but not
+	// always: the Helm chart's notes live under helm/dagger/ while its release
+	// is tagged helm/chart/. Write each stub to its path but title it with its
+	// tag (the string the check looks for in the body).
+	for _, c := range []struct{ path, tag string }{
+		{"", ""}, // engine + CLI (root .changes, tagged just <version>)
+		{"sdk/go/", "sdk/go/"},
+		{"sdk/python/", "sdk/python/"},
+		{"sdk/typescript/", "sdk/typescript/"},
+		{"sdk/elixir/", "sdk/elixir/"},
+		{"sdk/rust/", "sdk/rust/"},
+		{"sdk/php/", "sdk/php/"},
+		{"helm/dagger/", "helm/chart/"},
+	} {
+		tag := c.tag + releaseTag // "v1.0.0", "sdk/go/v1.0.0", "helm/chart/v1.0.0"
+		notes := "## " + tag + "\n\n" +
+			"### Changed\n\n" +
+			"- Publish-check placeholder entry.\n\n" +
+			"### What to do next?\n\n" +
+			"- Read the [documentation](https://docs.dagger.io)\n"
+		source = source.WithNewFile(c.path+".changes/"+releaseTag+".md", notes)
+	}
+
 	env := &publishCheckEnv{
 		source:          source,
 		releaseTag:      releaseTag,
