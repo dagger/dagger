@@ -181,12 +181,9 @@ func (s *LLMSession) ToggleAutocompact() {
 }
 
 func (s *LLMSession) reset() {
-	s.updateLLMAndAgentVar(
-		s.dag.LLM(dagger.LLMOpts{Model: s.model}).
-			WithEnv(s.dag.Env(dagger.EnvOpts{
-				Privileged: true,
-				Writable:   true,
-			})))
+	// The LLM binds the current workspace by default (see core.NewLLM), so its
+	// schema and file-editing surface derive from the user's workspace.
+	s.updateLLMAndAgentVar(s.dag.LLM(dagger.LLMOpts{Model: s.model}))
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -446,7 +443,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 	}
 	s.frontend.SetStatusLine(statusData)
 
-	s.afterFS = llm.Env().Workspace()
+	s.afterFS = llm.Workspace().Directory(".")
 
 	dirDiff := s.afterFS.Changes(s.beforeFS)
 
@@ -525,7 +522,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 	}
 
 	if s.beforeFS == nil {
-		s.beforeFS = s.llm.Env().Workspace()
+		s.beforeFS = s.llm.Workspace().Directory(".")
 		s.beforeFSTime = time.Now()
 	}
 
@@ -1013,11 +1010,14 @@ func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
 
 	withChanges := currentFS.WithDirectory(".", localChanges)
 
-	newLLM := s.llm.WithEnv(
-		s.llm.Env().WithWorkspace(withChanges),
-	)
-
 	dirDiff := withChanges.Changes(currentFS)
+
+	// Overlay the host-local edits onto the LLM's bound workspace so the agent
+	// sees them. (Overlay is currently value-workspace only; unifying local
+	// host-sync is the deferred apply-changes work.)
+	newLLM := s.llm.WithWorkspace(
+		s.llm.Workspace().WithChanges(dirDiff),
+	)
 
 	// Add an LLM prompt as a cue to the model so it knows what files changed.
 	entries, err := idtui.PreviewPatch(s.plumbingCtx, s.dag, dirDiff)

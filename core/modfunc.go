@@ -871,13 +871,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
 
-	var envContext dagql.ObjectResult[*Env]
-	if env, ok, err := EnvFromContext(ctx); err != nil {
-		return nil, fmt.Errorf("resolve function env context: %w", err)
-	} else if ok {
-		envContext = env
-	}
-
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -887,7 +880,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	err = runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
+	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
 		return nil, returnStateErr

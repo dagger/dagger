@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/dag"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/querybuilder"
@@ -82,16 +80,11 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		return fmt.Errorf("no module found and --env-privileged not specified")
 	}
 
-	envID, err := dag.Env(dagger.EnvOpts{Privileged: envPrivileged}).ID(ctx)
-	if err != nil {
-		return fmt.Errorf("error making environment: %w", err)
-	}
-
 	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
+	// The LLM binds the current workspace by default and serves its toolset
+	// over MCP, exposing the workspace's schema.
 	q = q.Root().
 		Select("llm").
-		Select("withStaticTools").
-		Select("withEnv").Arg("env", envID).
 		Select("__mcp")
 
 	var response any
