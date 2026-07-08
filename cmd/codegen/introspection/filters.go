@@ -6,13 +6,12 @@ import "slices"
 // installing a dependency.
 var ExtendableTypes = []string{
 	"Query",
-	"Binding",
 	"Env",
 }
 
 // DependencyNames returns the unique list of module names that appear in
 // the schema's sourceMap directives, excluding the built-in extendable types
-// (Query, Binding, Env) whose fields are contributed by multiple modules.
+// (Query, Env) whose fields are contributed by multiple modules.
 func (s *Schema) DependencyNames() []string {
 	seen := map[string]struct{}{}
 	var names []string

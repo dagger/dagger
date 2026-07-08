@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -48,6 +49,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("allow the LLM to interact with an environment via MCP"),
 		dagql.Func("env", s.env).
 			Doc("return the LLM's current environment"),
+		dagql.Func("withWorkspace", s.withWorkspace).
+			Doc("Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.").
+			Args(
+				dagql.Arg("workspace").Doc("The workspace to work in."),
+			),
+		dagql.Func("workspace", s.workspace).
+			Doc("Return the workspace the LLM is bound to."),
 		dagql.Func("withStaticTools", s.withStaticTools).
 			Doc("Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration"),
 		dagql.Func("withModel", s.withModel).
@@ -107,6 +115,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("tag").Doc("Arbitrary string tag for the object, typically in TypeName#Number format"),
 				dagql.Arg("object").Doc("The object to track, as a generic ID"),
+				dagql.Arg("description").Doc("An optional description of the object, surfaced to the model when it lists tracked objects"),
 			),
 		dagql.Func("withMaxTokens", s.withMaxTokens).
 			Doc("Set the maximum number of output tokens the model may generate per API call").
@@ -151,8 +160,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
-		dagql.Func("bindResult", s.bindResult).
-			Doc("returns the type of the current state"),
 		dagql.Func("tokenUsage", s.tokenUsage).
 			Doc("returns the token usage of the current state"),
 	}.Install(srv)
@@ -185,6 +192,32 @@ func (s *llmSchema) withStaticTools(ctx context.Context, llm *core.LLM, args str
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
 	return llm.Env(), nil
+}
+
+func (s *llmSchema) withWorkspace(ctx context.Context, llm *core.LLM, args struct {
+	Workspace dagql.ID[*core.Workspace]
+}) (*core.LLM, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ws, err := args.Workspace.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithWorkspace(ws), nil
+}
+
+func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Workspace], _ error) {
+	ws := llm.Workspace()
+	if ws.Self() == nil {
+		// The LLM binds the current workspace by default, but a context with no
+		// current workspace (e.g. `dagger shell --model` run outside a workspace)
+		// leaves it unbound. Return an error rather than a zero-value Workspace!,
+		// which nil-derefs in the Workspace field resolvers and crashes the engine.
+		return res, fmt.Errorf("no workspace is bound to this LLM (no current workspace in this context)")
+	}
+	return ws, nil
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
@@ -264,10 +297,11 @@ func (s *llmSchema) withToolResponse(ctx context.Context, llm *core.LLM, args st
 }
 
 func (s *llmSchema) withObject(ctx context.Context, llm *core.LLM, args struct {
-	Tag    string
-	Object dagql.AnyID
+	Tag         string
+	Object      dagql.AnyID
+	Description string `default:""`
 }) (*core.LLM, error) {
-	return llm.WithObject(args.Tag, args.Object), nil
+	return llm.WithObject(args.Tag, args.Object, args.Description), nil
 }
 
 func (s *llmSchema) withMaxTokens(_ context.Context, llm *core.LLM, args struct {
@@ -402,16 +436,6 @@ func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ stru
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
 	return llm.ToolsDoc(ctx)
-}
-
-func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
-	Name string
-}) (dagql.Nullable[*core.Binding], error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return dagql.Null[*core.Binding](), err
-	}
-	return llm.BindResult(ctx, srv, args.Name)
 }
 
 func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {

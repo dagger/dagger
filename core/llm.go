@@ -986,6 +986,58 @@ func (llm *LLM) Clone() *LLM {
 	return &cp
 }
 
+var _ dagql.HasDependencyResults = (*LLM)(nil)
+
+// AttachDependencyResults declares the results the LLM value embeds outside
+// its call structure: the workspace it is bound to (captured imperatively by
+// NewLLM and rebound by workspace-mutating tool results) and the objects bound
+// as tools when a tool result rebound them mid-step (a withTools arg is
+// already a structural dependency, but a rebind happens inside step execution).
+// Declaring these edges lets the cache retain the embedded results and
+// propagate their session-resource requirements — in particular, a
+// client-owned workspace gates results embedding it to the session that
+// created them (see WorkspaceClientHandle), so a new session re-resolves its
+// own workspace instead of inheriting a dead client binding from cache.
+func (llm *LLM) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	if llm == nil || llm.mcp == nil {
+		return nil, nil
+	}
+	var deps []dagql.AnyResult
+	if llm.mcp.workspace.Self() != nil {
+		attached, err := attach(llm.mcp.workspace)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm workspace: %w", err)
+		}
+		ws, ok := attached.(dagql.ObjectResult[*Workspace])
+		if !ok {
+			return nil, fmt.Errorf("attach llm workspace: unexpected result %T", attached)
+		}
+		llm.mcp.workspace = ws
+		deps = append(deps, attached)
+	}
+	for i, bound := range llm.mcp.boundTools {
+		if bound.Object == nil {
+			continue
+		}
+		attached, err := attach(bound.Object)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm bound tool object: %w", err)
+		}
+		obj, ok := attached.(dagql.AnyObjectResult)
+		if !ok {
+			return nil, fmt.Errorf("attach llm bound tool object: unexpected result %T", attached)
+		}
+		llm.mcp.boundTools[i].Object = obj
+		deps = append(deps, attached)
+	}
+	return deps, nil
+}
+
 func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	llm.endpointMtx.Lock()
 	defer llm.endpointMtx.Unlock()
@@ -1071,13 +1123,6 @@ func (llm *LLM) WithPrompt(
 	// The prompt message.
 	prompt string,
 ) *LLM {
-	prompt = os.Expand(prompt, func(key string) string {
-		if binding, found := llm.mcp.env.Self().Input(key); found {
-			return binding.String()
-		}
-		// leave unexpanded, perhaps it refers to an object var
-		return fmt.Sprintf("$%s", key)
-	})
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role: LLMMessageRoleUser,
@@ -1184,10 +1229,11 @@ func (llm *LLM) WithToolResponse(callID, content string, errored bool) *LLM {
 }
 
 // WithObject tracks an object so the LLM can reference it in subsequent tool
-// calls, re-registering it under the given tag after a history rebuild.
-func (llm *LLM) WithObject(objectID string, id dagql.AnyID) *LLM {
+// calls, re-registering it under the given tag after a history rebuild. The
+// optional description is surfaced to the model when it lists tracked objects.
+func (llm *LLM) WithObject(objectID string, id dagql.AnyID, description string) *LLM {
 	llm = llm.Clone()
-	llm.mcp = llm.mcp.WithObject(objectID, id)
+	llm.mcp = llm.mcp.WithObject(objectID, id, description)
 	return llm
 }
 
@@ -1530,25 +1576,6 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 		llm := inst.Self()
 
 		if !llm.HasPrompt() {
-			if llm.HasMissingOutputs() {
-				// There's no prompt, and yet there are outputs unfulfilled. This means
-				// future calls to Env.Output may fail, so we should interject to help
-				// the LLM along.
-				if newLLM, interjected, interjectErr := llm.Interject(ctx, inst); interjectErr != nil {
-					if ctx.Err() != nil {
-						return inst, nil
-					}
-					return inst, interjectErr
-				} else if interjected {
-					inst = newLLM
-					// interjected - continue
-					continue
-				} else {
-					// no interjection - user gave up?
-					break
-				}
-			}
-
 			// nothing to do - either never prompted, or naturally reached the end of
 			// the loop (e.g. LLM reply with no additional tool calls)
 			return inst, nil
@@ -1573,8 +1600,6 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 			return inst, err
 		}
 	}
-
-	return inst, nil
 }
 
 func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], bool, error) {
@@ -1645,18 +1670,6 @@ func mdQuote(msg string) string {
 
 func (llm *LLM) HasPrompt() bool {
 	return len(llm.Messages) > 0 && llm.Messages[len(llm.Messages)-1].Role == LLMMessageRoleUser
-}
-
-func (llm *LLM) HasMissingOutputs() bool {
-	if id, err := llm.Env().ID(); err != nil || id == nil {
-		return false
-	}
-	for _, out := range llm.Env().Self().outputsByName {
-		if out.Value == nil {
-			return false
-		}
-	}
-	return true
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -1954,6 +1967,16 @@ func (llm *LLM) Env() dagql.ObjectResult[*Env] {
 	return llm.mcp.env
 }
 
+func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {
+	llm = llm.Clone()
+	llm.mcp.workspace = ws
+	return llm
+}
+
+func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
+	return llm.mcp.workspace
+}
+
 // A variable in the LLM environment
 type LLMVariable struct {
 	// The name of the variable
@@ -1992,20 +2015,6 @@ func (*LLMVariable) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 		return nil, fmt.Errorf("decode persisted LLM variable payload: %w", err)
 	}
 	return &v, nil
-}
-
-func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
-	var res dagql.Nullable[*Binding]
-	if llm.mcp.LastResult() == nil {
-		return res, nil
-	}
-	res.Value = &Binding{
-		Key:          name,
-		Value:        llm.mcp.LastResult(),
-		ExpectedType: llm.mcp.LastResult().Type().Name(),
-	}
-	res.Valid = true
-	return res, nil
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {

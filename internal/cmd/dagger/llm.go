@@ -529,10 +529,12 @@ func (s *LLMSession) syncVarsToLLM() error {
 		s.beforeFSTime = time.Now()
 	}
 
-	syncedEnvQ := s.dag.QueryBuilder().
+	// Object-typed shell vars are threaded to the LLM one-way via withObject
+	// (which takes object IDs). String/scalar vars are no longer injected.
+	syncedLLMQ := s.dag.QueryBuilder().
 		Select("node").
-		Arg("id", s.llm.Env()).
-		InlineFragment("Env")
+		Arg("id", s.llm).
+		InlineFragment("LLM")
 
 	var changed bool
 	for name, value := range s.shell.runner.Vars {
@@ -552,136 +554,64 @@ func (s *LLMSession) syncVarsToLLM() error {
 			continue
 		}
 
-		dbg.Printf("syncing var %q => llm env\n", name)
+		key := GetStateKey(value.String())
+		if key == "" {
+			// not an object-typed var; nothing to track
+			continue
+		}
+
+		st, err := s.shell.state.Load(key)
+		if err != nil {
+			return err
+		}
+		q := st.QueryBuilder(s.dag)
+		modDef := s.shell.GetDef(st)
+		typeDef, err := st.GetTypeDef(modDef)
+		if err != nil {
+			return err
+		}
+		if typeDef.AsFunctionProvider() == nil {
+			continue
+		}
+
+		var id string
+		if err := q.Select("id").Bind(&id).Execute(ctx); err != nil {
+			return err
+		}
+		dgst, err := idDigest(id)
+		if err != nil {
+			return err
+		}
+
+		dbg.Printf("syncing var %q => llm object\n", name)
 
 		changed = true
-
-		if key := GetStateKey(value.String()); key != "" {
-			st, err := s.shell.state.Load(key)
-			if err != nil {
-				return err
-			}
-			q := st.QueryBuilder(s.dag)
-			modDef := s.shell.GetDef(st)
-			typeDef, err := st.GetTypeDef(modDef)
-			if err != nil {
-				return err
-			}
-			if typeDef.AsFunctionProvider() != nil {
-				var id string
-				if err := q.Select("id").Bind(&id).Execute(ctx); err != nil {
-					return err
-				}
-				digest, err := idDigest(id)
-				if err != nil {
-					return err
-				}
-				typeName := typeDef.Name()
-				syncedEnvQ = syncedEnvQ.
-					Select(fmt.Sprintf("with%sInput", typeName)).
-					Arg("name", name).
-					Arg("description", ""). // TODO
-					Arg("value", id)
-				s.syncedVars[name] = digest
-			}
-		} else {
-			s.syncedVars[name] = hashutil.HashStrings(value.String())
-			syncedEnvQ = syncedEnvQ.
-				Select("withStringInput").
-				Arg("name", name).
-				Arg("description", ""). // TODO
-				Arg("value", value.String())
-		}
+		syncedLLMQ = syncedLLMQ.
+			Select("withObject").
+			Arg("tag", name).
+			Arg("object", id).
+			Arg("description", name)
+		s.syncedVars[name] = dgst
 	}
 	if !changed {
 		return nil
 	}
-	var envID dagger.ID
-	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
+	var llmID dagger.ID
+	if err := syncedLLMQ.Select("id").Bind(&llmID).Execute(ctx); err != nil {
 		return err
 	}
-	s.updateLLMAndAgentVar(s.llm.WithEnv(dagger.Ref[*dagger.Env](s.dag, envID)))
-	return nil
+	return s.updateLLMAndAgentVar(dagger.Ref[*dagger.LLM](s.dag, llmID))
 }
 
 func (s *LLMSession) syncVarsFromLLM() error {
-	ctx := s.plumbingCtx
-
-	outputs, err := s.llm.Env().Outputs(ctx)
-	if err != nil {
-		return err
-	}
-
-	assign := func(bnd *dagger.Binding) error {
-		name, err := bnd.Name(ctx)
-		if err != nil {
-			return err
-		}
-		typeName, err := bnd.TypeName(ctx)
-		if err != nil {
-			return err
-		}
-		isNull, err := bnd.IsNull(ctx)
-		if err != nil {
-			return err
-		}
-		if isNull {
-			return nil
-		}
-		switch typeName {
-		case "", "Query", "Void":
-			return nil
-		case "String":
-			str, err := bnd.AsString(ctx)
-			if err != nil {
-				return err
-			}
-			s.assignShellString(ctx, name, str)
-			return nil
-		default:
-			var objID string
-			if err :=
-				s.dag.QueryBuilder().
-					Select("node").
-					Arg("id", bnd).
-					InlineFragment("Binding").
-					Select("as" + typeName).
-					Select("id").
-					Bind(&objID).
-					Execute(ctx); err != nil {
-				return err
-			}
-			return s.assignShell(ctx, name, &dynamicObject{objID, typeName})
-		}
-	}
-
-	// assign all outputs
-	for _, output := range outputs {
-		if err := assign(&output); err != nil {
-			return err
-		}
-	}
-
-	// assign last value
-	return assign(s.llm.BindResult(lastValueVar))
+	// Output/last-value readback was removed along with the prompt-I/O bag;
+	// objects now flow to the LLM one-way via withObject.
+	return nil
 }
 
 type dagqlObject interface {
 	XXX_GraphQLType() string
 	XXX_GraphQLID(context.Context) (string, error)
-}
-
-type dynamicObject struct {
-	id       string
-	typeName string
-}
-
-func (do *dynamicObject) XXX_GraphQLType() string { //nolint:staticcheck
-	return do.typeName
-}
-
-func (do *dynamicObject) XXX_GraphQLID(ctx context.Context) (string, error) { //nolint:staticcheck
-	return do.id, nil
 }
 
 func (s *LLMSession) assignShell(ctx context.Context, name string, idable dagqlObject) error {

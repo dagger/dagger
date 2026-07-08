@@ -25,7 +25,7 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
-	currentWorkspaceField := dagql.Func("currentWorkspace", s.currentWorkspace).
+	currentWorkspaceField := dagql.NodeFunc("currentWorkspace", s.currentWorkspace).
 		WithInput(dagql.PerCallInput).
 		Doc("Detect and return the current workspace.").
 		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
@@ -412,10 +412,52 @@ func detectWorkspaceFilesInDirectory(
 
 func (s *workspaceSchema) currentWorkspace(
 	ctx context.Context,
-	parent *core.Query,
+	parent dagql.ObjectResult[*core.Query],
 	_ struct{},
-) (*core.Workspace, error) {
-	return parent.Server.CurrentWorkspace(ctx)
+) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	ws, err := parent.Self().Server.CurrentWorkspace(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	res, err := dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+	if err != nil {
+		return inst, err
+	}
+	if ws.ClientID == "" {
+		// Value/git workspaces have no owning client; their results are safe
+		// to share unconditionally.
+		return res, nil
+	}
+	// Client-owned workspace: require a session-resource handle so results
+	// embedding this workspace (an LLM bound to it, a module value capturing
+	// it) are only served to sessions holding the handle. Later sessions never
+	// load this client's handle, so their lookups skip those results and
+	// re-resolve against their own workspace instead of inheriting a dead
+	// client binding.
+	handle := core.WorkspaceClientHandle(ws.ClientID)
+	res, err = res.WithSessionResourceHandle(ctx, handle)
+	if err != nil {
+		return inst, err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("current workspace client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return inst, fmt.Errorf("current workspace: empty session ID")
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("current workspace: dagql cache: %w", err)
+	}
+	if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, ws); err != nil {
+		return inst, fmt.Errorf("bind workspace session resource: %w", err)
+	}
+	return res, nil
 }
 
 func (s *workspaceSchema) cwd(
