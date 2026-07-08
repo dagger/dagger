@@ -1196,7 +1196,13 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvToContext(ctx, m.env), args)
+	toolCtx := EnvToContext(ctx, m.env)
+	if m.workspace.Self() != nil {
+		// Bind the LLM's Workspace so the tool's contextual (+defaultPath) and
+		// Workspace-typed args resolve against it, not the ambient workspace.
+		toolCtx = WorkspaceToContext(toolCtx, m.workspace)
+	}
+	result, err := tool.Call(toolCtx, args)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}

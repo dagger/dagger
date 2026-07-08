@@ -1221,6 +1221,17 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
 	}
 
+	// Prefer a Workspace explicitly bound into the context (an LLM bound via
+	// withWorkspace) over the ambient currentWorkspace, so the agent's
+	// Workspace-typed args resolve against its own workspace.
+	if boundWS, ok := WorkspaceFromContext(ctx); ok {
+		wsID, err := boundWS.ID()
+		if err != nil {
+			return nil, fmt.Errorf("get bound workspace ID: %w", err)
+		}
+		return dagql.NewID[*Workspace](wsID), nil
+	}
+
 	var ws dagql.ObjectResult[*Workspace]
 	err := dag.Select(ctx, dag.Root(), &ws,
 		dagql.Selector{
