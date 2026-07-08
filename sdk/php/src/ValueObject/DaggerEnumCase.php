@@ -23,10 +23,10 @@ final readonly class DaggerEnumCase
             name: $case->getName(),
             value: (string) $case->getBackingValue(),
             description: (current($case
-            ->getAttributes(Attribute\Doc::class)) ?: null)
-            ?->newInstance()
-            ->description
-            ?? '',
+                ->getAttributes(Attribute\Doc::class)) ?: null)
+                ?->newInstance()
+                ->description
+                ?? '',
         );
     }
 }

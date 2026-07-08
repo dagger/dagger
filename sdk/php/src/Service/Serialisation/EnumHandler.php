@@ -18,7 +18,7 @@ final readonly class EnumHandler implements SubscribingHandlerInterface
 {
     /**
      * @return array<array{
-     *     direction: 1|2,
+     *     direction: GraphNavigatorInterface::*,
      *     format: string,
      *     type: class-string,
      *     method: string,

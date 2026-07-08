@@ -52,10 +52,10 @@ final readonly class DaggerEnum
                 name: $case->getName(),
                 value: $case->getBackingValue(),
                 description: (current($case
-                ->getAttributes(Attribute\Doc::class)) ?: null)
-                ?->newInstance()
-                ->description
-                ?? '',
+                    ->getAttributes(Attribute\Doc::class)) ?: null)
+                    ?->newInstance()
+                    ->description
+                    ?? '',
             );
         }
 
