@@ -21,7 +21,6 @@ func init() {
 	rootCmd.AddCommand(generateClientCmd)
 	rootCmd.AddCommand(generateModuleCmd)
 	rootCmd.AddCommand(generateLibraryCmd)
-	rootCmd.AddCommand(generateTypeDefsCmd)
 	rootCmd.AddCommand(generateEntrypointCmd)
 
 	rootCmd.PersistentFlags().StringVar(&lang, "lang", "go", "language to generate")

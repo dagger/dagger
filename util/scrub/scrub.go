@@ -121,7 +121,7 @@ var scrubs = []scrubber{
 	},
 	// version=
 	{
-		regexp.MustCompile(`version=v[a-fv0-9.-]+`), // "v" is in "dev" :)
+		regexp.MustCompile(`version=v[0-9A-Za-z.+-]+`),
 		"version=v0.18.13-250710134709-7edd4496ecc1",
 		"version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx",
 	},
@@ -182,6 +182,12 @@ var scrubs = []scrubber{
 		regexp.MustCompile(`\d+?\sbytes`),
 		"1048576000 bytes",
 		"XX bytes",
+	},
+	// Packet loss depends on transient network conditions in the test environment.
+	{
+		regexp.MustCompile(` \(\d+(\.\d+)?(e[+-]?\d+)?% dropped\)`),
+		" (5.88% dropped)",
+		"",
 	},
 	// duration quantities
 	{

@@ -786,6 +786,24 @@ func (span *Span) Parents(f func(*Span) bool) {
 	}
 }
 
+// FirstMissingAncestor returns the nearest ancestor span that was referenced
+// (as a parent) but never exported to the database -- i.e. a placeholder
+// allocated only to satisfy a child's ParentID. It returns nil when the whole
+// ancestor chain was received. This is the signal that a test case dangles
+// because intermediate spans are genuinely absent from the trace data, not
+// merely unfetched.
+func (span *Span) FirstMissingAncestor() *Span {
+	if span == nil {
+		return nil
+	}
+	for cur := span.ParentSpan; cur != nil; cur = cur.ParentSpan {
+		if !cur.Received {
+			return cur
+		}
+	}
+	return nil
+}
+
 func (span *Span) Hidden(opts FrontendOpts) bool {
 	verbosity := opts.Verbosity
 	if v, ok := opts.SpanVerbosity[span.ID]; ok {

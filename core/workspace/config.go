@@ -17,8 +17,12 @@ type Config struct {
 	Modules            map[string]ModuleEntry `json:"modules,omitempty" toml:"modules"`
 	Ignore             []string               `json:"ignore,omitempty" toml:"ignore"`
 	DefaultsFromDotEnv bool                   `json:"defaults_from_dotenv,omitempty" toml:"defaults_from_dotenv,omitempty"`
-	Env                map[string]EnvOverlay  `json:"env,omitempty" toml:"env"`
-	Ports              map[string]PortMapping `json:"ports,omitempty" toml:"ports,omitempty"`
+	// CheckGenerated controls whether `dagger check` runs generate-as-checks,
+	// which fail when generated files are stale. Defaults to true; set false to
+	// skip them (like --no-generate). CLI flags override it.
+	CheckGenerated *bool                  `json:"check-generated,omitempty" toml:"check-generated,omitempty"`
+	Env            map[string]EnvOverlay  `json:"env,omitempty" toml:"env"`
+	Ports          map[string]PortMapping `json:"ports,omitempty" toml:"ports,omitempty"`
 }
 
 // PortMapping declares a host port that forwards to a workspace service.
@@ -33,12 +37,59 @@ type PortMapping struct {
 // ModuleEntry represents a single module entry in the workspace config.
 type ModuleEntry struct {
 	Source            string         `json:"source" toml:"source"`
+	Pin               string         `json:"pin,omitempty" toml:"pin,omitempty"`
 	Settings          map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
 	Entrypoint        bool           `json:"entrypoint,omitempty" toml:"entrypoint,omitempty"`
 	LegacyDefaultPath bool           `json:"legacy-default-path,omitempty" toml:"legacy-default-path,omitempty"`
 	Up                ModuleSkip     `json:"up,omitempty" toml:"up,omitempty"`
 	Generate          ModuleSkip     `json:"generate,omitempty" toml:"generate,omitempty"`
 	Check             ModuleSkip     `json:"check,omitempty" toml:"check,omitempty"`
+
+	// AsSDK is the SDK-role data for module entries that serve as SDKs in
+	// this workspace. Its presence (any populated sub-field) marks the
+	// module as installed *as* an SDK; absence means it's a plain installed
+	// module. The role data — which authored modules and generated clients
+	// this SDK manages locally — lives nested rather than in a parallel
+	// top-level section so settings, install, and SDK metadata all
+	// converge on a single [modules.<name>.*] entry.
+	AsSDK *ModuleAsSDK `json:"as-sdk,omitempty" toml:"as-sdk,omitempty"`
+}
+
+// ModuleAsSDK carries the per-module SDK-role data: which authored modules
+// and clients this SDK manages in the workspace. Serialized under
+// [modules.<name>.as-sdk] with array-of-tables sub-blocks.
+type ModuleAsSDK struct {
+	// Name is the user-facing SDK name used by `dagger module init <sdk>` and
+	// `dagger api client init <sdk>`. When empty, the module entry name is used.
+	Name string `json:"name,omitempty" toml:"name,omitempty"`
+
+	// Modules lists the workspace-local modules this SDK authors and
+	// manages. Each entry becomes a [[modules.<name>.as-sdk.modules]] block.
+	Modules []SDKManagedModule `json:"modules,omitempty" toml:"modules,omitempty"`
+
+	// Clients lists generated typed bindings this SDK produces in the
+	// workspace. Each entry becomes a [[modules.<name>.as-sdk.clients]]
+	// block. Shape is intentionally minimal until concrete client SDKs
+	// (TypeScript, Go) take shape.
+	Clients []SDKManagedClient `json:"clients,omitempty" toml:"clients,omitempty"`
+}
+
+// SDKManagedModule is a workspace-relative path to a module that an SDK
+// authors and manages here. The path is the only required field; the
+// module's own engine state lives in <path>/dagger-module.toml.
+type SDKManagedModule struct {
+	Path string `json:"path" toml:"path"`
+}
+
+// SDKManagedClient is a workspace-relative path to a generated client
+// produced by an SDK, bound to one module. Module accepts a
+// workspace-relative path or canonical ref, same resolution as
+// [modules.X].source. Shape will evolve as concrete client SDKs implement.
+type SDKManagedClient struct {
+	Path    string            `json:"path" toml:"path"`
+	Module  string            `json:"module" toml:"module"`
+	Pin     string            `json:"pin,omitempty" toml:"pin,omitempty"`
+	Options map[string]string `json:"options,omitempty" toml:"-"`
 }
 
 // ModuleSkip carries the per-action skip patterns for a module entry.
@@ -82,7 +133,64 @@ func ParseConfig(data []byte) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse dagger.toml: %w", err)
 	}
+	if err := populateClientOptions(data, &cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+func populateClientOptions(data []byte, cfg *Config) error {
+	if len(data) == 0 || cfg == nil || len(cfg.Modules) == 0 {
+		return nil
+	}
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		return fmt.Errorf("parse dagger.toml client options: %w", err)
+	}
+
+	for moduleName, entry := range cfg.Modules {
+		if entry.AsSDK == nil || len(entry.AsSDK.Clients) == 0 {
+			continue
+		}
+		rawClients := tree.GetPath([]string{"modules", moduleName, "as-sdk", "clients"})
+		clientTrees, ok := rawClients.([]*toml.Tree)
+		if !ok {
+			continue
+		}
+		for i := range entry.AsSDK.Clients {
+			if i >= len(clientTrees) {
+				break
+			}
+			options := clientOptionsFromTree(clientTrees[i])
+			if len(options) > 0 {
+				entry.AsSDK.Clients[i].Options = options
+			}
+		}
+		cfg.Modules[moduleName] = entry
+	}
+	return nil
+}
+
+func clientOptionsFromTree(tree *toml.Tree) map[string]string {
+	if tree == nil {
+		return nil
+	}
+	options := map[string]string{}
+	for _, key := range tree.Keys() {
+		switch key {
+		case "path", "module", "pin":
+			continue
+		}
+		value, ok := tree.GetPath([]string{key}).(string)
+		if !ok {
+			continue
+		}
+		options[key] = value
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	return options
 }
 
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
@@ -185,6 +293,10 @@ func SerializeConfig(cfg *Config) []byte {
 		b.WriteString("defaults_from_dotenv = true\n\n")
 	}
 
+	if cfg.CheckGenerated != nil {
+		fmt.Fprintf(&b, "check-generated = %t\n\n", *cfg.CheckGenerated)
+	}
+
 	wroteModules := writeModuleEntries(&b, cfg.Modules)
 	if wroteModules && (len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
 		b.WriteString("\n")
@@ -206,17 +318,23 @@ func cloneConfig(cfg *Config) *Config {
 		Ignore:             append([]string(nil), cfg.Ignore...),
 		DefaultsFromDotEnv: cfg.DefaultsFromDotEnv,
 	}
+	if cfg.CheckGenerated != nil {
+		checkGenerated := *cfg.CheckGenerated
+		cloned.CheckGenerated = &checkGenerated
+	}
 	if len(cfg.Modules) > 0 {
 		cloned.Modules = make(map[string]ModuleEntry, len(cfg.Modules))
 		for name, entry := range cfg.Modules {
 			cloned.Modules[name] = ModuleEntry{
 				Source:            entry.Source,
+				Pin:               entry.Pin,
 				Settings:          cloneConfigMap(entry.Settings),
 				Entrypoint:        entry.Entrypoint,
 				LegacyDefaultPath: entry.LegacyDefaultPath,
 				Up:                ModuleSkip{Skip: append([]string(nil), entry.Up.Skip...)},
 				Generate:          ModuleSkip{Skip: append([]string(nil), entry.Generate.Skip...)},
 				Check:             ModuleSkip{Skip: append([]string(nil), entry.Check.Skip...)},
+				AsSDK:             cloneModuleAsSDK(entry.AsSDK),
 			}
 		}
 	}
@@ -242,6 +360,39 @@ func cloneConfig(cfg *Config) *Config {
 		}
 	}
 	return cloned
+}
+
+// cloneModuleAsSDK deep-copies the AsSDK sub-table. Preserves an empty
+// (non-nil with no Modules and no Clients) AsSDK — its mere presence is the
+// "this install IS an SDK" marker, even before any module or client is
+// authored under it. A nil input means "this install is not an SDK"; the
+// clone passes that through unchanged.
+func cloneModuleAsSDK(in *ModuleAsSDK) *ModuleAsSDK {
+	if in == nil {
+		return nil
+	}
+	return &ModuleAsSDK{
+		Name:    in.Name,
+		Modules: append([]SDKManagedModule(nil), in.Modules...),
+		Clients: cloneSDKManagedClients(in.Clients),
+	}
+}
+
+func cloneSDKManagedClients(in []SDKManagedClient) []SDKManagedClient {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]SDKManagedClient, len(in))
+	for i, client := range in {
+		out[i] = client
+		if len(client.Options) > 0 {
+			out[i].Options = make(map[string]string, len(client.Options))
+			for key, value := range client.Options {
+				out[i].Options[key] = value
+			}
+		}
+	}
+	return out
 }
 
 func cloneConfigMap(config map[string]any) map[string]any {
@@ -275,6 +426,9 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		modulePath := "modules." + formatConfigPathSegment(name)
 		fmt.Fprintf(b, "[%s]\n", modulePath)
 		fmt.Fprintf(b, "source = %q\n", entry.Source)
+		if entry.Pin != "" {
+			fmt.Fprintf(b, "pin = %q\n", entry.Pin)
+		}
 		if entry.Entrypoint {
 			b.WriteString("entrypoint = true\n")
 		}
@@ -291,9 +445,50 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 			fmt.Fprintf(b, "check.skip = %s\n", formatConfigValue(entry.Check.Skip))
 		}
 		writeConfigTable(b, modulePath+".settings", entry.Settings, true)
+		writeModuleAsSDK(b, modulePath, entry.AsSDK)
 	}
 
 	return true
+}
+
+// writeModuleAsSDK renders the [[modules.<name>.as-sdk.modules]] and
+// [[modules.<name>.as-sdk.clients]] array-of-tables blocks under a module's
+// section. No-op when the module isn't installed as an SDK.
+func writeModuleAsSDK(b *strings.Builder, modulePath string, asSDK *ModuleAsSDK) {
+	if asSDK == nil {
+		return
+	}
+	// Emit the parent section when it carries scalar metadata or when the
+	// otherwise-empty section is the "this install IS an SDK" marker.
+	if asSDK.Name != "" || len(asSDK.Modules) == 0 && len(asSDK.Clients) == 0 {
+		b.WriteString("\n")
+		fmt.Fprintf(b, "[%s.as-sdk]\n", modulePath)
+		if asSDK.Name != "" {
+			fmt.Fprintf(b, "name = %q\n", asSDK.Name)
+		}
+	}
+	for _, mod := range asSDK.Modules {
+		b.WriteString("\n")
+		fmt.Fprintf(b, "[[%s.as-sdk.modules]]\n", modulePath)
+		fmt.Fprintf(b, "path = %q\n", mod.Path)
+	}
+	for _, client := range asSDK.Clients {
+		b.WriteString("\n")
+		fmt.Fprintf(b, "[[%s.as-sdk.clients]]\n", modulePath)
+		fmt.Fprintf(b, "path = %q\n", client.Path)
+		fmt.Fprintf(b, "module = %q\n", client.Module)
+		if client.Pin != "" {
+			fmt.Fprintf(b, "pin = %q\n", client.Pin)
+		}
+		keys := make([]string, 0, len(client.Options))
+		for key := range client.Options {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Fprintf(b, "%s = %s\n", formatConfigPathSegment(key), formatConfigValue(client.Options[key]))
+		}
+	}
 }
 
 func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
@@ -421,6 +616,9 @@ func ReadConfigValue(data []byte, key string) (string, error) {
 func readMissingConfigDefault(tree *toml.Tree, parts []string) (string, bool) {
 	if len(parts) == 1 && parts[0] == "defaults_from_dotenv" {
 		return "false", true
+	}
+	if len(parts) == 1 && parts[0] == "check-generated" {
+		return "true", true
 	}
 	if len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path") {
 		if tree.GetPath(parts[:2]) != nil {
@@ -740,6 +938,16 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 		}
 		cfg.DefaultsFromDotEnv = boolValue
 		return nil
+	case "check-generated":
+		if len(parts) != 1 {
+			return fmt.Errorf("invalid key %q; check-generated does not have sub-keys", strings.Join(parts, "."))
+		}
+		boolValue, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("check-generated must be a boolean")
+		}
+		cfg.CheckGenerated = &boolValue
+		return nil
 	case "modules":
 		if len(parts) < 3 {
 			return fmt.Errorf("cannot set %q directly; specify a field like %s.settings", strings.Join(parts, "."), strings.Join(parts, "."))
@@ -788,6 +996,14 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 			case "check":
 				entry.Check.Skip = skip
 			}
+		case "as-sdk":
+			if len(parts) != 4 || parts[3] != "name" {
+				return fmt.Errorf("invalid key %q; expected modules.%s.as-sdk.name", strings.Join(parts, "."), moduleName)
+			}
+			if entry.AsSDK == nil {
+				entry.AsSDK = &ModuleAsSDK{}
+			}
+			entry.AsSDK.Name = fmt.Sprint(value)
 		default:
 			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
 		}
@@ -855,6 +1071,9 @@ func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) erro
 
 	rest := parts[1:]
 	fieldType := field.Type
+	for fieldType.Kind() == reflect.Ptr {
+		fieldType = fieldType.Elem()
+	}
 
 	switch fieldType.Kind() {
 	case reflect.Map:
@@ -933,7 +1152,8 @@ func preferredExampleFieldName(t reflect.Type) string {
 func parseValueString(parts []string, rawValue string) any {
 	leaf := parts[len(parts)-1]
 
-	if leaf == "entrypoint" || leaf == "legacy-default-path" || (len(parts) == 1 && parts[0] == "defaults_from_dotenv") {
+	if leaf == "entrypoint" || leaf == "legacy-default-path" ||
+		(len(parts) == 1 && (parts[0] == "defaults_from_dotenv" || parts[0] == "check-generated")) {
 		return rawValue == "true"
 	}
 

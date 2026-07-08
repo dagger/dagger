@@ -135,233 +135,20 @@ func (e *ExecError) Unwrap() error {
 }
 
 // A unique identifier for an object.
-type AddressID string
-
-// A unique identifier for an object.
-type BindingID string
-
-// A unique identifier for an object.
-type CacheVolumeID string
-
-// A unique identifier for an object.
-type ChangesetID string
-
-// A unique identifier for an object.
-type CheckGroupID string
-
-// A unique identifier for an object.
-type CheckID string
-
-// A unique identifier for an object.
-type ClientFilesyncMirrorID string
-
-// A unique identifier for an object.
-type CloudID string
-
-// A unique identifier for an object.
-type ContainerID string
-
-// A unique identifier for an object.
-type CurrentModuleID string
-
-// A unique identifier for an object.
-type DiffStatID string
-
-// A unique identifier for an object.
-type DirectoryID string
-
-// A unique identifier for an object.
-type EngineCacheEntryID string
-
-// A unique identifier for an object.
-type EngineCacheEntrySetID string
-
-// A unique identifier for an object.
-type EngineCacheID string
-
-// A unique identifier for an object.
-type EngineID string
-
-// A unique identifier for an object.
-type EnumTypeDefID string
-
-// A unique identifier for an object.
-type EnumValueTypeDefID string
-
-// A unique identifier for an object.
-type EnvFileID string
-
-// A unique identifier for an object.
-type EnvID string
-
-// A unique identifier for an object.
-type EnvVariableID string
-
-// A unique identifier for an object.
-type ErrorID string
-
-// A unique identifier for an object.
-type ErrorValueID string
-
-// A unique identifier for an object.
-type ExportableID string
-
-// A unique identifier for an object.
-type FieldTypeDefID string
-
-// A unique identifier for an object.
-type FileID string
-
-// A unique identifier for an object.
-type FunctionArgID string
-
-// A unique identifier for an object.
-type FunctionCallArgValueID string
-
-// A unique identifier for an object.
-type FunctionCallID string
-
-// A unique identifier for an object.
-type FunctionID string
-
-// A unique identifier for an object.
-type GeneratedCodeID string
-
-// A unique identifier for an object.
-type GeneratorGroupID string
-
-// A unique identifier for an object.
-type GeneratorID string
-
-// A unique identifier for an object.
-type GitRefID string
-
-// A unique identifier for an object.
-type GitRepositoryID string
-
-// A unique identifier for an object.
-type HTTPStateID string
-
-// A unique identifier for an object.
-type HealthcheckConfigID string
-
-// A unique identifier for an object.
-type HostID string
-
-// A unique identifier for an object.
 type ID string
-
-// A unique identifier for an object.
-type InputTypeDefID string
-
-// A unique identifier for an object.
-type InterfaceTypeDefID string
 
 // An arbitrary JSON-encoded value.
 type JSON string
-
-// A unique identifier for an object.
-type JSONValueID string
-
-// A unique identifier for an object.
-type LLMID string
-
-// A unique identifier for an object.
-type LLMTokenUsageID string
-
-// A unique identifier for an object.
-type LabelID string
-
-// A unique identifier for an object.
-type ListTypeDefID string
-
-// A unique identifier for an object.
-type ModuleConfigClientID string
-
-// A unique identifier for an object.
-type ModuleID string
-
-// A unique identifier for an object.
-type ModuleSourceID string
-
-// A unique identifier for an object.
-type ObjectTypeDefID string
 
 // The platform config OS and architecture in a Container.
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 type Platform string
 
-// A unique identifier for an object.
-type PortID string
-
-// A unique identifier for an object.
-type RemoteGitMirrorID string
-
-// A unique identifier for an object.
-type SDKConfigID string
-
-// A unique identifier for an object.
-type ScalarTypeDefID string
-
-// A unique identifier for an object.
-type SearchResultID string
-
-// A unique identifier for an object.
-type SearchSubmatchID string
-
-// A unique identifier for an object.
-type SecretID string
-
-// A unique identifier for an object.
-type ServiceID string
-
-// A unique identifier for an object.
-type SocketID string
-
-// A unique identifier for an object.
-type SourceMapID string
-
-// A unique identifier for an object.
-type StatID string
-
-// A unique identifier for an object.
-type SyncerID string
-
-// A unique identifier for an object.
-type TerminalID string
-
-// A unique identifier for an object.
-type TypeDefID string
-
-// A unique identifier for an object.
-type UpGroupID string
-
-// A unique identifier for an object.
-type UpID string
-
 // The absence of a value.
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
-
-// A unique identifier for an object.
-type WorkspaceGitID string
-
-// A unique identifier for an object.
-type WorkspaceID string
-
-// A unique identifier for an object.
-type WorkspaceMigrationID string
-
-// A unique identifier for an object.
-type WorkspaceMigrationStepID string
-
-// A unique identifier for an object.
-type WorkspaceModuleID string
-
-// A unique identifier for an object.
-type WorkspaceModuleSettingID string
 
 // Key value object that represents a build argument.
 type BuildArg struct {
@@ -678,6 +465,33 @@ func (r *Binding) AsContainer() *Container {
 	}
 }
 
+// Retrieve the binding value, as type CurrentModuleAsSDK
+func (r *Binding) AsCurrentModuleAsSDK() *CurrentModuleAsSDK {
+	q := r.query.Select("asCurrentModuleAsSDK")
+
+	return &CurrentModuleAsSDK{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CurrentModuleAsSDKClient
+func (r *Binding) AsCurrentModuleAsSDKClient() *CurrentModuleAsSDKClient {
+	q := r.query.Select("asCurrentModuleAsSDKClient")
+
+	return &CurrentModuleAsSDKClient{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CurrentModuleAsSDKModule
+func (r *Binding) AsCurrentModuleAsSDKModule() *CurrentModuleAsSDKModule {
+	q := r.query.Select("asCurrentModuleAsSDKModule")
+
+	return &CurrentModuleAsSDKModule{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type DiffStat
 func (r *Binding) AsDiffStat() *DiffStat {
 	q := r.query.Select("asDiffStat")
@@ -800,6 +614,15 @@ func (r *Binding) AsModuleSource() *ModuleSource {
 	q := r.query.Select("asModuleSource")
 
 	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Schema
+func (r *Binding) AsSchema() *Schema {
+	q := r.query.Select("asSchema")
+
+	return &Schema{
 		query: q,
 	}
 }
@@ -2839,6 +2662,8 @@ type ContainerWithDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 
@@ -2865,6 +2690,10 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3135,6 +2964,8 @@ type ContainerWithFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3151,6 +2982,10 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3175,6 +3010,8 @@ type ContainerWithFilesOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3190,6 +3027,10 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3231,6 +3072,8 @@ type ContainerWithMountedCacheOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -3251,6 +3094,10 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3273,6 +3120,8 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Mount the directory read-only.
 	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -3287,6 +3136,10 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `readOnly` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
@@ -3313,6 +3166,8 @@ type ContainerWithMountedFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3325,6 +3180,10 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3347,6 +3206,8 @@ type ContainerWithMountedSecretOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Permission given to the mounted secret (e.g., 0600).
 	//
 	// This option requires an owner to be set to be active.
@@ -3365,6 +3226,10 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `mode` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Mode) {
@@ -3423,6 +3288,8 @@ type ContainerWithNewFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3438,6 +3305,10 @@ func (r *Container) WithNewFile(path string, contents string, opts ...ContainerW
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3537,6 +3408,8 @@ type ContainerWithUnixSocketOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -3549,6 +3422,10 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3914,6 +3791,17 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
+// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+//
+// Errors if the current module is not installed as an SDK in this workspace.
+func (r *CurrentModule) AsSDK() *CurrentModuleAsSDK {
+	q := r.query.Select("asSDK")
+
+	return &CurrentModuleAsSDK{
+		query: q,
+	}
+}
+
 // The dependencies of the module.
 func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
 	q := r.query.Select("dependencies")
@@ -4088,6 +3976,325 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 // AsNode returns this CurrentModule as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *CurrentModule) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// The SDK-role data for the currently executing module, as installed in the active workspace.
+type CurrentModuleAsSDK struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+}
+
+func (r *CurrentModuleAsSDK) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDK {
+	return &CurrentModuleAsSDK{
+		query: q,
+	}
+}
+
+// The generated clients this SDK produces in the workspace.
+func (r *CurrentModuleAsSDK) Clients(ctx context.Context) ([]CurrentModuleAsSDKClient, error) {
+	q := r.query.Select("clients")
+
+	q = q.Select("id")
+
+	type clients struct {
+		Id ID
+	}
+
+	convert := func(fields []clients) []CurrentModuleAsSDKClient {
+		out := []CurrentModuleAsSDKClient{}
+
+		for i := range fields {
+			val := CurrentModuleAsSDKClient{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "CurrentModuleAsSDKClient")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []clients
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this CurrentModuleAsSDK.
+func (r *CurrentModuleAsSDK) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CurrentModuleAsSDK) XXX_GraphQLType() string {
+	return "CurrentModuleAsSDK"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CurrentModuleAsSDK) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CurrentModuleAsSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CurrentModuleAsSDK) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The workspace-local modules this SDK authors and manages.
+func (r *CurrentModuleAsSDK) Modules(ctx context.Context) ([]CurrentModuleAsSDKModule, error) {
+	q := r.query.Select("modules")
+
+	q = q.Select("id")
+
+	type modules struct {
+		Id ID
+	}
+
+	convert := func(fields []modules) []CurrentModuleAsSDKModule {
+		out := []CurrentModuleAsSDKModule{}
+
+		for i := range fields {
+			val := CurrentModuleAsSDKModule{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "CurrentModuleAsSDKModule")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []modules
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The user-facing name of this SDK in the workspace.
+func (r *CurrentModuleAsSDK) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this CurrentModuleAsSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CurrentModuleAsSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A generated client the current SDK produces in the workspace.
+type CurrentModuleAsSDKClient struct {
+	query *querybuilder.Selection
+
+	id     *ID
+	module *string
+	path   *string
+	pin    *string
+}
+
+func (r *CurrentModuleAsSDKClient) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDKClient {
+	return &CurrentModuleAsSDKClient{
+		query: q,
+	}
+}
+
+// A unique identifier for this CurrentModuleAsSDKClient.
+func (r *CurrentModuleAsSDKClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CurrentModuleAsSDKClient) XXX_GraphQLType() string {
+	return "CurrentModuleAsSDKClient"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CurrentModuleAsSDKClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CurrentModuleAsSDKClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CurrentModuleAsSDKClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The module the client is bound to (workspace-relative path or canonical ref).
+func (r *CurrentModuleAsSDKClient) Module(ctx context.Context) (string, error) {
+	if r.module != nil {
+		return *r.module, nil
+	}
+	q := r.query.Select("module")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Workspace-root-relative path of the generated client.
+func (r *CurrentModuleAsSDKClient) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The pinned version of the bound module, if any.
+func (r *CurrentModuleAsSDKClient) Pin(ctx context.Context) (string, error) {
+	if r.pin != nil {
+		return *r.pin, nil
+	}
+	q := r.query.Select("pin")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this CurrentModuleAsSDKClient as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CurrentModuleAsSDKClient) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A workspace-local module managed by the current SDK.
+type CurrentModuleAsSDKModule struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	path *string
+}
+
+func (r *CurrentModuleAsSDKModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModuleAsSDKModule {
+	return &CurrentModuleAsSDKModule{
+		query: q,
+	}
+}
+
+// A unique identifier for this CurrentModuleAsSDKModule.
+func (r *CurrentModuleAsSDKModule) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CurrentModuleAsSDKModule) XXX_GraphQLType() string {
+	return "CurrentModuleAsSDKModule"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CurrentModuleAsSDKModule) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CurrentModuleAsSDKModule) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CurrentModuleAsSDKModule) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Workspace-root-relative path to the managed module.
+func (r *CurrentModuleAsSDKModule) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this CurrentModuleAsSDKModule as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CurrentModuleAsSDKModule) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -4318,8 +4525,6 @@ type DirectoryAsWorkspaceOpts struct {
 }
 
 // Creates a synthetic workspace from this directory.
-//
-// Experimental: Synthetic workspaces currently support filesystem APIs only.
 func (r *Directory) AsWorkspace(opts ...DirectoryAsWorkspaceOpts) *Workspace {
 	q := r.query.Select("asWorkspace")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -6380,6 +6585,78 @@ func (r *Env) WithCurrentModule() *Env {
 	}
 }
 
+// Create or update a binding of type CurrentModuleAsSDKClient in the environment
+func (r *Env) WithCurrentModuleAsSDKClientInput(name string, value *CurrentModuleAsSDKClient, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModuleAsSDKClientInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment
+func (r *Env) WithCurrentModuleAsSDKClientOutput(name string, description string) *Env {
+	q := r.query.Select("withCurrentModuleAsSDKClientOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type CurrentModuleAsSDK in the environment
+func (r *Env) WithCurrentModuleAsSDKInput(name string, value *CurrentModuleAsSDK, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModuleAsSDKInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type CurrentModuleAsSDKModule in the environment
+func (r *Env) WithCurrentModuleAsSDKModuleInput(name string, value *CurrentModuleAsSDKModule, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModuleAsSDKModuleInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment
+func (r *Env) WithCurrentModuleAsSDKModuleOutput(name string, description string) *Env {
+	q := r.query.Select("withCurrentModuleAsSDKModuleOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CurrentModuleAsSDK output to be assigned in the environment
+func (r *Env) WithCurrentModuleAsSDKOutput(name string, description string) *Env {
+	q := r.query.Select("withCurrentModuleAsSDKOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type DiffStat in the environment
 func (r *Env) WithDiffStatInput(name string, value *DiffStat, description string) *Env {
 	assertNotNil("value", value)
@@ -6736,6 +7013,30 @@ func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, descriptio
 // Declare a desired ModuleSource output to be assigned in the environment
 func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 	q := r.query.Select("withModuleSourceOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Schema in the environment
+func (r *Env) WithSchemaInput(name string, value *Schema, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withSchemaInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Schema output to be assigned in the environment
+func (r *Env) WithSchemaOutput(name string, description string) *Env {
+	q := r.query.Select("withSchemaOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -9389,6 +9690,29 @@ func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	}
 }
 
+// GitRefAsWorkspaceOpts contains options for GitRef.AsWorkspace
+type GitRefAsWorkspaceOpts struct {
+	// Current working directory inside the workspace root. Defaults to the workspace root.
+	//
+	// Default: "/"
+	Cwd string
+}
+
+// Creates a synthetic workspace from this git ref.
+func (r *GitRef) AsWorkspace(opts ...GitRefAsWorkspaceOpts) *Workspace {
+	q := r.query.Select("asWorkspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cwd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cwd) {
+			q = q.Arg("cwd", opts[i].Cwd)
+		}
+	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // The resolved commit id at this ref.
 func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
@@ -9532,8 +9856,6 @@ type GitRepositoryAsWorkspaceOpts struct {
 }
 
 // Creates a synthetic workspace from this git repository.
-//
-// Experimental: Synthetic workspaces currently support filesystem APIs only.
 func (r *GitRepository) AsWorkspace(opts ...GitRepositoryAsWorkspaceOpts) *Workspace {
 	q := r.query.Select("asWorkspace")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -12376,6 +12698,17 @@ func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	return convert(response), nil
 }
 
+// The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
+//
+// Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
+func (r *ModuleSource) UpdatedConfigDirectory() *Directory {
+	q := r.query.Select("updatedConfigDirectory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // User-defined defaults read from local .env files
 func (r *ModuleSource) UserDefaults() *EnvFile {
 	q := r.query.Select("userDefaults")
@@ -13467,714 +13800,6 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 	}
 }
 
-// Load a Address from its ID.
-func (r *Query) LoadAddressFromID(id AddressID) *Address {
-	q := r.query.Select("loadAddressFromID")
-	q = q.Arg("id", id)
-
-	return &Address{
-		query: q,
-	}
-}
-
-// Load a Binding from its ID.
-func (r *Query) LoadBindingFromID(id BindingID) *Binding {
-	q := r.query.Select("loadBindingFromID")
-	q = q.Arg("id", id)
-
-	return &Binding{
-		query: q,
-	}
-}
-
-// Load a CacheVolume from its ID.
-func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
-	q := r.query.Select("loadCacheVolumeFromID")
-	q = q.Arg("id", id)
-
-	return &CacheVolume{
-		query: q,
-	}
-}
-
-// Load a Changeset from its ID.
-func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
-	q := r.query.Select("loadChangesetFromID")
-	q = q.Arg("id", id)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Load a Check from its ID.
-func (r *Query) LoadCheckFromID(id CheckID) *Check {
-	q := r.query.Select("loadCheckFromID")
-	q = q.Arg("id", id)
-
-	return &Check{
-		query: q,
-	}
-}
-
-// Load a CheckGroup from its ID.
-func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
-	q := r.query.Select("loadCheckGroupFromID")
-	q = q.Arg("id", id)
-
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// Load a ClientFilesyncMirror from its ID.
-func (r *Query) LoadClientFilesyncMirrorFromID(id ClientFilesyncMirrorID) *ClientFilesyncMirror {
-	q := r.query.Select("loadClientFilesyncMirrorFromID")
-	q = q.Arg("id", id)
-
-	return &ClientFilesyncMirror{
-		query: q,
-	}
-}
-
-// Load a Cloud from its ID.
-func (r *Query) LoadCloudFromID(id CloudID) *Cloud {
-	q := r.query.Select("loadCloudFromID")
-	q = q.Arg("id", id)
-
-	return &Cloud{
-		query: q,
-	}
-}
-
-// Load a Container from its ID.
-func (r *Query) LoadContainerFromID(id ContainerID) *Container {
-	q := r.query.Select("loadContainerFromID")
-	q = q.Arg("id", id)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Load a CurrentModule from its ID.
-func (r *Query) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
-	q := r.query.Select("loadCurrentModuleFromID")
-	q = q.Arg("id", id)
-
-	return &CurrentModule{
-		query: q,
-	}
-}
-
-// Load a DiffStat from its ID.
-func (r *Query) LoadDiffStatFromID(id DiffStatID) *DiffStat {
-	q := r.query.Select("loadDiffStatFromID")
-	q = q.Arg("id", id)
-
-	return &DiffStat{
-		query: q,
-	}
-}
-
-// Load a Directory from its ID.
-func (r *Query) LoadDirectoryFromID(id DirectoryID) *Directory {
-	q := r.query.Select("loadDirectoryFromID")
-	q = q.Arg("id", id)
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Load a EngineCacheEntry from its ID.
-func (r *Query) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
-	q := r.query.Select("loadEngineCacheEntryFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCacheEntry{
-		query: q,
-	}
-}
-
-// Load a EngineCacheEntrySet from its ID.
-func (r *Query) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
-	q := r.query.Select("loadEngineCacheEntrySetFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCacheEntrySet{
-		query: q,
-	}
-}
-
-// Load a EngineCache from its ID.
-func (r *Query) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
-	q := r.query.Select("loadEngineCacheFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCache{
-		query: q,
-	}
-}
-
-// Load a Engine from its ID.
-func (r *Query) LoadEngineFromID(id EngineID) *Engine {
-	q := r.query.Select("loadEngineFromID")
-	q = q.Arg("id", id)
-
-	return &Engine{
-		query: q,
-	}
-}
-
-// Load a EnumTypeDef from its ID.
-func (r *Query) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
-	q := r.query.Select("loadEnumTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &EnumTypeDef{
-		query: q,
-	}
-}
-
-// Load a EnumValueTypeDef from its ID.
-func (r *Query) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
-	q := r.query.Select("loadEnumValueTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &EnumValueTypeDef{
-		query: q,
-	}
-}
-
-// Load a EnvFile from its ID.
-func (r *Query) LoadEnvFileFromID(id EnvFileID) *EnvFile {
-	q := r.query.Select("loadEnvFileFromID")
-	q = q.Arg("id", id)
-
-	return &EnvFile{
-		query: q,
-	}
-}
-
-// Load a Env from its ID.
-func (r *Query) LoadEnvFromID(id EnvID) *Env {
-	q := r.query.Select("loadEnvFromID")
-	q = q.Arg("id", id)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Load a EnvVariable from its ID.
-func (r *Query) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
-	q := r.query.Select("loadEnvVariableFromID")
-	q = q.Arg("id", id)
-
-	return &EnvVariable{
-		query: q,
-	}
-}
-
-// Load a Error from its ID.
-func (r *Query) LoadErrorFromID(id ErrorID) *Error {
-	q := r.query.Select("loadErrorFromID")
-	q = q.Arg("id", id)
-
-	return &Error{
-		query: q,
-	}
-}
-
-// Load a ErrorValue from its ID.
-func (r *Query) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
-	q := r.query.Select("loadErrorValueFromID")
-	q = q.Arg("id", id)
-
-	return &ErrorValue{
-		query: q,
-	}
-}
-
-// Load a Exportable from its ID.
-func (r *Query) LoadExportableFromID(id ExportableID) Exportable {
-	q := r.query.Select("loadExportableFromID")
-	q = q.Arg("id", id)
-	return &ExportableClient{
-		query: q,
-	}
-}
-
-// Load a FieldTypeDef from its ID.
-func (r *Query) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
-	q := r.query.Select("loadFieldTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &FieldTypeDef{
-		query: q,
-	}
-}
-
-// Load a File from its ID.
-func (r *Query) LoadFileFromID(id FileID) *File {
-	q := r.query.Select("loadFileFromID")
-	q = q.Arg("id", id)
-
-	return &File{
-		query: q,
-	}
-}
-
-// Load a FunctionArg from its ID.
-func (r *Query) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
-	q := r.query.Select("loadFunctionArgFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionArg{
-		query: q,
-	}
-}
-
-// Load a FunctionCallArgValue from its ID.
-func (r *Query) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
-	q := r.query.Select("loadFunctionCallArgValueFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionCallArgValue{
-		query: q,
-	}
-}
-
-// Load a FunctionCall from its ID.
-func (r *Query) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
-	q := r.query.Select("loadFunctionCallFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionCall{
-		query: q,
-	}
-}
-
-// Load a Function from its ID.
-func (r *Query) LoadFunctionFromID(id FunctionID) *Function {
-	q := r.query.Select("loadFunctionFromID")
-	q = q.Arg("id", id)
-
-	return &Function{
-		query: q,
-	}
-}
-
-// Load a GeneratedCode from its ID.
-func (r *Query) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
-	q := r.query.Select("loadGeneratedCodeFromID")
-	q = q.Arg("id", id)
-
-	return &GeneratedCode{
-		query: q,
-	}
-}
-
-// Load a Generator from its ID.
-func (r *Query) LoadGeneratorFromID(id GeneratorID) *Generator {
-	q := r.query.Select("loadGeneratorFromID")
-	q = q.Arg("id", id)
-
-	return &Generator{
-		query: q,
-	}
-}
-
-// Load a GeneratorGroup from its ID.
-func (r *Query) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
-	q := r.query.Select("loadGeneratorGroupFromID")
-	q = q.Arg("id", id)
-
-	return &GeneratorGroup{
-		query: q,
-	}
-}
-
-// Load a GitRef from its ID.
-func (r *Query) LoadGitRefFromID(id GitRefID) *GitRef {
-	q := r.query.Select("loadGitRefFromID")
-	q = q.Arg("id", id)
-
-	return &GitRef{
-		query: q,
-	}
-}
-
-// Load a GitRepository from its ID.
-func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
-	q := r.query.Select("loadGitRepositoryFromID")
-	q = q.Arg("id", id)
-
-	return &GitRepository{
-		query: q,
-	}
-}
-
-// Load a HTTPState from its ID.
-func (r *Query) LoadHTTPStateFromID(id HTTPStateID) *HTTPState {
-	q := r.query.Select("loadHTTPStateFromID")
-	q = q.Arg("id", id)
-
-	return &HTTPState{
-		query: q,
-	}
-}
-
-// Load a HealthcheckConfig from its ID.
-func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
-	q := r.query.Select("loadHealthcheckConfigFromID")
-	q = q.Arg("id", id)
-
-	return &HealthcheckConfig{
-		query: q,
-	}
-}
-
-// Load a Host from its ID.
-func (r *Query) LoadHostFromID(id HostID) *Host {
-	q := r.query.Select("loadHostFromID")
-	q = q.Arg("id", id)
-
-	return &Host{
-		query: q,
-	}
-}
-
-// Load a InputTypeDef from its ID.
-func (r *Query) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
-	q := r.query.Select("loadInputTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &InputTypeDef{
-		query: q,
-	}
-}
-
-// Load a InterfaceTypeDef from its ID.
-func (r *Query) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
-	q := r.query.Select("loadInterfaceTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &InterfaceTypeDef{
-		query: q,
-	}
-}
-
-// Load a JSONValue from its ID.
-func (r *Query) LoadJSONValueFromID(id JSONValueID) *JSONValue {
-	q := r.query.Select("loadJSONValueFromID")
-	q = q.Arg("id", id)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Load a LLM from its ID.
-func (r *Query) LoadLLMFromID(id LLMID) *LLM {
-	q := r.query.Select("loadLLMFromID")
-	q = q.Arg("id", id)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Load a LLMTokenUsage from its ID.
-func (r *Query) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
-	q := r.query.Select("loadLLMTokenUsageFromID")
-	q = q.Arg("id", id)
-
-	return &LLMTokenUsage{
-		query: q,
-	}
-}
-
-// Load a Label from its ID.
-func (r *Query) LoadLabelFromID(id LabelID) *Label {
-	q := r.query.Select("loadLabelFromID")
-	q = q.Arg("id", id)
-
-	return &Label{
-		query: q,
-	}
-}
-
-// Load a ListTypeDef from its ID.
-func (r *Query) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
-	q := r.query.Select("loadListTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ListTypeDef{
-		query: q,
-	}
-}
-
-// Load a ModuleConfigClient from its ID.
-func (r *Query) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
-	q := r.query.Select("loadModuleConfigClientFromID")
-	q = q.Arg("id", id)
-
-	return &ModuleConfigClient{
-		query: q,
-	}
-}
-
-// Load a Module from its ID.
-func (r *Query) LoadModuleFromID(id ModuleID) *Module {
-	q := r.query.Select("loadModuleFromID")
-	q = q.Arg("id", id)
-
-	return &Module{
-		query: q,
-	}
-}
-
-// Load a ModuleSource from its ID.
-func (r *Query) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
-	q := r.query.Select("loadModuleSourceFromID")
-	q = q.Arg("id", id)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Load a ObjectTypeDef from its ID.
-func (r *Query) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
-	q := r.query.Select("loadObjectTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ObjectTypeDef{
-		query: q,
-	}
-}
-
-// Load a Port from its ID.
-func (r *Query) LoadPortFromID(id PortID) *Port {
-	q := r.query.Select("loadPortFromID")
-	q = q.Arg("id", id)
-
-	return &Port{
-		query: q,
-	}
-}
-
-// Load a RemoteGitMirror from its ID.
-func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror {
-	q := r.query.Select("loadRemoteGitMirrorFromID")
-	q = q.Arg("id", id)
-
-	return &RemoteGitMirror{
-		query: q,
-	}
-}
-
-// Load a SDKConfig from its ID.
-func (r *Query) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
-	q := r.query.Select("loadSDKConfigFromID")
-	q = q.Arg("id", id)
-
-	return &SDKConfig{
-		query: q,
-	}
-}
-
-// Load a ScalarTypeDef from its ID.
-func (r *Query) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
-	q := r.query.Select("loadScalarTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ScalarTypeDef{
-		query: q,
-	}
-}
-
-// Load a SearchResult from its ID.
-func (r *Query) LoadSearchResultFromID(id SearchResultID) *SearchResult {
-	q := r.query.Select("loadSearchResultFromID")
-	q = q.Arg("id", id)
-
-	return &SearchResult{
-		query: q,
-	}
-}
-
-// Load a SearchSubmatch from its ID.
-func (r *Query) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
-	q := r.query.Select("loadSearchSubmatchFromID")
-	q = q.Arg("id", id)
-
-	return &SearchSubmatch{
-		query: q,
-	}
-}
-
-// Load a Secret from its ID.
-func (r *Query) LoadSecretFromID(id SecretID) *Secret {
-	q := r.query.Select("loadSecretFromID")
-	q = q.Arg("id", id)
-
-	return &Secret{
-		query: q,
-	}
-}
-
-// Load a Service from its ID.
-func (r *Query) LoadServiceFromID(id ServiceID) *Service {
-	q := r.query.Select("loadServiceFromID")
-	q = q.Arg("id", id)
-
-	return &Service{
-		query: q,
-	}
-}
-
-// Load a Socket from its ID.
-func (r *Query) LoadSocketFromID(id SocketID) *Socket {
-	q := r.query.Select("loadSocketFromID")
-	q = q.Arg("id", id)
-
-	return &Socket{
-		query: q,
-	}
-}
-
-// Load a SourceMap from its ID.
-func (r *Query) LoadSourceMapFromID(id SourceMapID) *SourceMap {
-	q := r.query.Select("loadSourceMapFromID")
-	q = q.Arg("id", id)
-
-	return &SourceMap{
-		query: q,
-	}
-}
-
-// Load a Stat from its ID.
-func (r *Query) LoadStatFromID(id StatID) *Stat {
-	q := r.query.Select("loadStatFromID")
-	q = q.Arg("id", id)
-
-	return &Stat{
-		query: q,
-	}
-}
-
-// Load a Syncer from its ID.
-func (r *Query) LoadSyncerFromID(id SyncerID) Syncer {
-	q := r.query.Select("loadSyncerFromID")
-	q = q.Arg("id", id)
-	return &SyncerClient{
-		query: q,
-	}
-}
-
-// Load a Terminal from its ID.
-func (r *Query) LoadTerminalFromID(id TerminalID) *Terminal {
-	q := r.query.Select("loadTerminalFromID")
-	q = q.Arg("id", id)
-
-	return &Terminal{
-		query: q,
-	}
-}
-
-// Load a TypeDef from its ID.
-func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
-	q := r.query.Select("loadTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// Load a Up from its ID.
-func (r *Query) LoadUpFromID(id UpID) *Up {
-	q := r.query.Select("loadUpFromID")
-	q = q.Arg("id", id)
-
-	return &Up{
-		query: q,
-	}
-}
-
-// Load a UpGroup from its ID.
-func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
-	q := r.query.Select("loadUpGroupFromID")
-	q = q.Arg("id", id)
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
-// Load a Workspace from its ID.
-func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
-	q := r.query.Select("loadWorkspaceFromID")
-	q = q.Arg("id", id)
-
-	return &Workspace{
-		query: q,
-	}
-}
-
-// Load a WorkspaceGit from its ID.
-func (r *Query) LoadWorkspaceGitFromID(id WorkspaceGitID) *WorkspaceGit {
-	q := r.query.Select("loadWorkspaceGitFromID")
-	q = q.Arg("id", id)
-
-	return &WorkspaceGit{
-		query: q,
-	}
-}
-
-// Load a WorkspaceMigration from its ID.
-func (r *Query) LoadWorkspaceMigrationFromID(id WorkspaceMigrationID) *WorkspaceMigration {
-	q := r.query.Select("loadWorkspaceMigrationFromID")
-	q = q.Arg("id", id)
-
-	return &WorkspaceMigration{
-		query: q,
-	}
-}
-
-// Load a WorkspaceMigrationStep from its ID.
-func (r *Query) LoadWorkspaceMigrationStepFromID(id WorkspaceMigrationStepID) *WorkspaceMigrationStep {
-	q := r.query.Select("loadWorkspaceMigrationStepFromID")
-	q = q.Arg("id", id)
-
-	return &WorkspaceMigrationStep{
-		query: q,
-	}
-}
-
-// Load a WorkspaceModule from its ID.
-func (r *Query) LoadWorkspaceModuleFromID(id WorkspaceModuleID) *WorkspaceModule {
-	q := r.query.Select("loadWorkspaceModuleFromID")
-	q = q.Arg("id", id)
-
-	return &WorkspaceModule{
-		query: q,
-	}
-}
-
-// Load a WorkspaceModuleSetting from its ID.
-func (r *Query) LoadWorkspaceModuleSettingFromID(id WorkspaceModuleSettingID) *WorkspaceModuleSetting {
-	q := r.query.Select("loadWorkspaceModuleSettingFromID")
-	q = q.Arg("id", id)
-
-	return &WorkspaceModuleSetting{
-		query: q,
-	}
-}
-
 // Create a new module.
 func (r *Query) Module() *Module {
 	q := r.query.Select("module")
@@ -14229,6 +13854,16 @@ func (r *Query) Node(id ID) Node {
 	q := r.query.Select("node")
 	q = q.Arg("id", id)
 	return &NodeClient{
+		query: q,
+	}
+}
+
+// Load a GraphQL introspection schema for merging.
+func (r *Query) Schema(json JSON) *Schema {
+	q := r.query.Select("schema")
+	q = q.Arg("json", json)
+
+	return &Schema{
 		query: q,
 	}
 }
@@ -14559,6 +14194,100 @@ func (r *ScalarTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 // AsNode returns this ScalarTypeDef as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *ScalarTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A GraphQL introspection schema that can be inspected and merged.
+type Schema struct {
+	query *querybuilder.Selection
+
+	contents *JSON
+	id       *ID
+}
+type WithSchemaFunc func(r *Schema) *Schema
+
+// With calls the provided function with current Schema.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Schema) With(f WithSchemaFunc) *Schema {
+	return f(r)
+}
+
+func (r *Schema) WithGraphQLQuery(q *querybuilder.Selection) *Schema {
+	return &Schema{
+		query: q,
+	}
+}
+
+// Serialize the schema back to introspection JSON.
+func (r *Schema) Contents(ctx context.Context) (JSON, error) {
+	if r.contents != nil {
+		return *r.contents, nil
+	}
+	q := r.query.Select("contents")
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Schema.
+func (r *Schema) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Schema) XXX_GraphQLType() string {
+	return "Schema"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Schema) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Schema) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Schema) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.
+func (r *Schema) Merge(moduleTypes JSON, moduleName string) *Schema {
+	q := r.query.Select("merge")
+	q = q.Arg("moduleTypes", moduleTypes)
+	q = q.Arg("moduleName", moduleName)
+
+	return &Schema{
+		query: q,
+	}
+}
+
+// AsNode returns this Schema as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Schema) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
@@ -16270,7 +15999,6 @@ type Workspace struct {
 	query *querybuilder.Selection
 
 	address     *string
-	clientId    *string
 	configFile  *string
 	configRead  *string
 	configWrite *string
@@ -16281,8 +16009,15 @@ type Workspace struct {
 	id          *ID
 	init        *string
 	install     *string
-	moduleInit  *string
 	uninstall   *string
+}
+type WithWorkspaceFunc func(r *Workspace) *Workspace
+
+// With calls the provided function with current Workspace.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Workspace) With(f WithWorkspaceFunc) *Workspace {
+	return f(r)
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -16302,6 +16037,17 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Return the changes from another workspace to this workspace.
+func (r *Workspace) Changes(other *Workspace) *Changeset {
+	assertNotNil("other", other)
+	q := r.query.Select("changes")
+	q = q.Arg("other", other)
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // WorkspaceChecksOpts contains options for Workspace.Checks
@@ -16343,17 +16089,43 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	}
 }
 
-// The client ID that owns this workspace's host filesystem.
-func (r *Workspace) ClientID(ctx context.Context) (string, error) {
-	if r.clientId != nil {
-		return *r.clientId, nil
+// Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
+func (r *Workspace) ClientGenerate() *Changeset {
+	q := r.query.Select("clientGenerate")
+
+	return &Changeset{
+		query: q,
 	}
-	q := r.query.Select("clientId")
+}
 
-	var response string
+// WorkspaceClientInitOpts contains options for Workspace.ClientInit
+type WorkspaceClientInitOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
 
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	Args JSON
+}
+
+// Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
+func (r *Workspace) ClientInit(path string, sdk string, module string, opts ...WorkspaceClientInitOpts) *Changeset {
+	q := r.query.Select("clientInit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("module", module)
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // Selected native workspace config file relative to the workspace root, if any.
@@ -16689,6 +16461,10 @@ type WorkspaceInstallOpts struct {
 	Name string
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+	// Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
+	AsSDK bool
+	// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+	AsSDKName string
 }
 
 // Install a module into the workspace, writing dagger.toml to the host.
@@ -16706,6 +16482,14 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
 		}
+		// `asSdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AsSDK) {
+			q = q.Arg("asSdk", opts[i].AsSDK)
+		}
+		// `asSdkName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AsSDKName) {
+			q = q.Arg("asSdkName", opts[i].AsSDKName)
+		}
 	}
 	q = q.Arg("ref", ref)
 
@@ -16715,22 +16499,11 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 	return response, q.Execute(ctx)
 }
 
-// WorkspaceMigrateOpts contains options for Workspace.Migrate
-type WorkspaceMigrateOpts struct {
-	Force bool
-}
-
 // Plan the explicit migration needed for the current workspace.
 //
 // The returned plan has an empty changeset and no steps when no migration is needed.
-func (r *Workspace) Migrate(opts ...WorkspaceMigrateOpts) *WorkspaceMigration {
+func (r *Workspace) Migrate() *WorkspaceMigration {
 	q := r.query.Select("migrate")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `force` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Force) {
-			q = q.Arg("force", opts[i].Force)
-		}
-	}
 
 	return &WorkspaceMigration{
 		query: q,
@@ -16739,28 +16512,31 @@ func (r *Workspace) Migrate(opts ...WorkspaceMigrateOpts) *WorkspaceMigration {
 
 // WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
 type WorkspaceModuleInitOpts struct {
-	// SDK to use for the new module.
+	// Workspace SDK name or module entry name to use.
 	SDK string
+	// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+	Path string
 	// Source subpath within the new module.
 	Source string
 	// Additional include patterns for the module.
 	Include []string
-	// Enable the self-calls experimental feature for the new module.
-	SelfCalls bool
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+
+	Args JSON
 }
 
-// Create a new module owned by the workspace and auto-install it in dagger.toml.
-func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...WorkspaceModuleInitOpts) (string, error) {
-	if r.moduleInit != nil {
-		return *r.moduleInit, nil
-	}
+// Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
+func (r *Workspace) ModuleInit(name string, opts ...WorkspaceModuleInitOpts) *Changeset {
 	q := r.query.Select("moduleInit")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sdk` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SDK) {
 			q = q.Arg("sdk", opts[i].SDK)
+		}
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
 		}
 		// `source` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Source) {
@@ -16770,21 +16546,20 @@ func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...Workspa
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
-		// `selfCalls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SelfCalls) {
-			q = q.Arg("selfCalls", opts[i].SelfCalls)
-		}
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
 		}
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
 	}
 	q = q.Arg("name", name)
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &Changeset{
+		query: q,
+	}
 }
 
 // WorkspaceModuleListOpts contains options for Workspace.ModuleList
@@ -16888,6 +16663,54 @@ func (r *Workspace) Update() *Changeset {
 	q := r.query.Select("update")
 
 	return &Changeset{
+		query: q,
+	}
+}
+
+// Return this workspace with a changeset applied, without mutating the source.
+func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChanges")
+	q = q.Arg("changes", changes)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a directory added, without mutating the source.
+func (r *Workspace) WithNewDirectory(path string, source *Directory) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withNewDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithNewFileOpts contains options for Workspace.WithNewFile
+type WorkspaceWithNewFileOpts struct {
+	// Permissions of the new file.
+	//
+	// Default: 420
+	Permissions int
+}
+
+// Return this workspace with a new or replaced file, without mutating the source.
+func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceWithNewFileOpts) *Workspace {
+	q := r.query.Select("withNewFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("contents", contents)
+
+	return &Workspace{
 		query: q,
 	}
 }

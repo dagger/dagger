@@ -93,7 +93,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 		err = os.MkdirAll(modDir, 0755)
 		require.NoError(t, err)
 
-		out, err := execWithEnv(ctx, t, modDir, env, "-m", "https://github.com/grouville/daggerverse-private.git/zip", "functions")
+		out, err := execWithEnv(ctx, t, modDir, env, "-m", "https://github.com/grouville/daggerverse-private.git/zip", "api", "functions")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "Description")
 	})
@@ -127,7 +127,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 		err = os.MkdirAll(modDir, 0755)
 		require.NoError(t, err)
 
-		out, err := execWithEnv(ctx, t, modDir, env, "-m", "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", "functions")
+		out, err := execWithEnv(ctx, t, modDir, env, "-m", "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", "api", "functions")
 		require.NoError(t, err)
 		require.Contains(t, string(out), "Description")
 	})
@@ -161,7 +161,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 		err := os.MkdirAll(modDir, 0755)
 		require.NoError(t, err)
 
-		_, err = execWithEnv(ctx, t, modDir, nil, "-m", "https://github.com/grouville/daggerverse-private.git/zip", "functions")
+		_, err = execWithEnv(ctx, t, modDir, nil, "-m", "https://github.com/grouville/daggerverse-private.git/zip", "api", "functions")
 		require.Error(t, err)
 		requireErrOut(t, err, "Authentication failed")
 	})

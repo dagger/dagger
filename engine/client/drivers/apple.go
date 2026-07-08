@@ -51,10 +51,10 @@ func (apple) ImageLoader(ctx context.Context) imageload.Backend {
 	return imageload.Apple{}
 }
 
-func (apple) ContainerRun(ctx context.Context, name string, opts runOpts) error {
-	args := []string{"run", "--name", name, "-d"}
+func (apple) runArgs(name string, opts runOpts) (args []string, envs []string, _ error) {
+	args = []string{"run", "--name", name, "-d"}
 
-	envs := os.Environ()
+	envs = os.Environ()
 
 	for _, volume := range opts.volumes {
 		if !strings.Contains(volume, ":") {
@@ -73,7 +73,15 @@ func (apple) ContainerRun(ctx context.Context, name string, opts runOpts) error 
 		}
 	}
 	for _, port := range opts.ports {
-		return fmt.Errorf("unsupported port argument %q", port)
+		return nil, nil, fmt.Errorf("unsupported port argument %q", port)
+	}
+
+	if opts.privileged {
+		// apple's `container` has no `--privileged` flag; `--cap-add ALL` is the
+		// equivalent. Since `container` 1.0.0 the default capability set no longer
+		// includes CAP_SYS_ADMIN, which the engine needs to bind-mount
+		// /etc/resolv.conf during network setup, so it must be granted explicitly.
+		args = append(args, "--cap-add", "ALL")
 	}
 
 	if opts.cpus != "" {
@@ -91,6 +99,15 @@ func (apple) ContainerRun(ctx context.Context, name string, opts runOpts) error 
 
 	args = append(args, opts.image)
 	args = append(args, opts.args...)
+
+	return args, envs, nil
+}
+
+func (a apple) ContainerRun(ctx context.Context, name string, opts runOpts) error {
+	args, envs, err := a.runArgs(name, opts)
+	if err != nil {
+		return err
+	}
 
 	cmd := exec.CommandContext(ctx, "container", args...)
 	cmd.Env = envs

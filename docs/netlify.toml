@@ -27,52 +27,52 @@
 
 [[redirects]]
   from = "/api/arguments"
-  to = "/extending/editions/dang"
+  to = "/extending/arguments"
   status = 301
 
 [[redirects]]
   from = "/api/cache-volumes"
-  to = "/extending/editions/dang"
+  to = "/extending/cache-volumes"
   status = 301
 
 [[redirects]]
   from = "/api/chaining"
-  to = "/extending/editions/dang"
+  to = "/extending/chaining"
   status = 301
 
 [[redirects]]
   from = "/api/cli"
-  to = "/core-concepts"
+  to = "/getting-started/api/cli"
   status = 301
 
 [[redirects]]
   from = "/api/constructor"
-  to = "/extending/editions/dang"
+  to = "/extending/constructors"
   status = 301
 
 [[redirects]]
   from = "/api/custom-functions"
-  to = "/extending/editions/dang"
+  to = "/extending/functions"
   status = 301
 
 [[redirects]]
   from = "/api/custom-types"
-  to = "/extending/editions/dang"
+  to = "/extending/custom-types"
   status = 301
 
 [[redirects]]
   from = "/api/daggerverse"
-  to = "/extending/editions/dang"
+  to = "/extending/daggerverse"
   status = 301
 
 [[redirects]]
   from = "/api/default-paths"
-  to = "/extending/types/directory"
+  to = "/getting-started/types/directory"
   status = 301
 
 [[redirects]]
   from = "/api/documentation"
-  to = "/extending/editions/dang"
+  to = "/extending/documentation"
   status = 301
 
 [[redirects]]
@@ -82,232 +82,212 @@
 
 [[redirects]]
   from = "/api/enumerations"
-  to = "/extending/editions/dang"
+  to = "/extending/enumerations"
   status = 301
 
 [[redirects]]
   from = "/api/error-handling"
-  to = "/extending/editions/dang"
+  to = "/extending/error-handling"
   status = 301
 
 [[redirects]]
   from = "/api/filters"
-  to = "/extending/types/directory"
+  to = "/getting-started/types/directory"
   status = 301
 
 [[redirects]]
   from = "/api/http"
-  to = "/core-concepts"
+  to = "/getting-started/api/http"
   status = 301
 
 [[redirects]]
   from = "/api/ide-integration"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/reference/ide-setup"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/reference/glossary"
-  to = "/core-concepts"
+  to = "/reference/ide-setup"
   status = 301
 
 [[redirects]]
   from = "/api/interfaces"
-  to = "/extending/editions/dang"
+  to = "/extending/interfaces"
   status = 301
 
 [[redirects]]
   from = "/api/internals"
-  to = "/core-concepts"
+  to = "/reference/api/internals"
   status = 301
 
 [[redirects]]
   from = "/api/llm"
-  to = "/extending/types/llm"
+  to = "/getting-started/types/llm"
   status = 301
 
 [[redirects]]
   from = "/api/module-dependencies"
-  to = "/extending/editions/dang"
+  to = "/extending/module-dependencies"
   status = 301
 
 [[redirects]]
   from = "/api/module-structure"
-  to = "/extending/editions/dang"
+  to = "/extending/modules"
   status = 301
 
 [[redirects]]
   from = "/api/module-tests"
-  to = "/extending/testing"
-  status = 301
-
-[[redirects]]
-  from = "/reference/best-practices/modules"
-  to = "/extending/testing"
-  status = 301
-
-[[redirects]]
-  from = "/reference/best-practices/monorepos"
-  to = "/adopting/workspace-setup"
+  to = "/reference/best-practices/modules"
   status = 301
 
 [[redirects]]
   from = "/api/packages"
-  to = "/extending/editions/dang"
+  to = "/extending/packages"
   status = 301
 
 [[redirects]]
   from = "/api/playground"
-  to = "/extending/editions/dang"
+  to = "/extending/api-playground"
   status = 301
 
 [[redirects]]
   from = "/api/remote-modules"
-  to = "/extending/editions/dang"
+  to = "/extending/modules"
   status = 301
 
 [[redirects]]
   from = "/api/remote-repositories"
-  to = "/extending/editions/dang"
+  to = "/extending/remote-repositories"
   status = 301
 
 [[redirects]]
   from = "/api/return-values"
-  to = "/extending/editions/dang"
+  to = "/extending/return-types"
   status = 301
 
 [[redirects]]
   from = "/api/sdk"
-  to = "/core-concepts"
+  to = "/getting-started/api/sdk"
   status = 301
 
 [[redirects]]
   from = "/api/secrets"
-  to = "/extending/editions/dang"
+  to = "/extending/secrets"
   status = 301
 
 [[redirects]]
   from = "/api/services"
-  to = "/extending/editions/dang"
+  to = "/extending/services"
   status = 301
 
 [[redirects]]
   from = "/api/state"
-  to = "/extending/editions/dang"
+  to = "/extending/state"
   status = 301
 
 [[redirects]]
   from = "/api/terminal"
-  to = "/adopting/observability"
+  to = "/features/observability"
   status = 301
 
 [[redirects]]
   from = "/features/security"
-  to = "/"
+  to = "/features/sandbox"
   status = 301
 
 [[redirects]]
   from = "/api/types"
-  to = "/extending/types"
+  to = "/getting-started/types"
   status = 301
 
 [[redirects]]
   from = "/ci/adopting"
-  to = "/adopting/workspace-setup"
+  to = "/reference/best-practices/adopting"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/apple-container"
-  to = "/getting-started/installation"
+  to = "/reference/container-runtimes/apple-container"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/argo-workflows"
-  to = "/adopting/triggers/argo-workflows"
+  to = "/getting-started/ci-integrations/argo-workflows"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/aws-codebuild"
-  to = "/adopting/triggers/aws-codebuild"
+  to = "/getting-started/ci-integrations/aws-codebuild"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/azure-pipelines"
-  to = "/adopting/triggers/azure-pipelines"
+  to = "/getting-started/ci-integrations/azure-pipelines"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/ci"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/circleci"
-  to = "/adopting/triggers/circleci"
+  to = "/getting-started/ci-integrations/circleci"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/container-runtimes"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/github"
-  to = "/adopting/triggers/github-actions"
+  to = "/getting-started/ci-integrations/github"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/github-actions"
-  to = "/adopting/triggers/github-actions"
+  to = "/getting-started/ci-integrations/github-actions"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/gitlab"
-  to = "/adopting/triggers/gitlab"
+  to = "/getting-started/ci-integrations/gitlab-ci"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/google-cloud-run"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/jenkins"
-  to = "/adopting/triggers/jenkins"
+  to = "/getting-started/ci-integrations/jenkins"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/kubernetes"
-  to = "/getting-started/installation"
+  to = "/reference/container-runtimes/kubernetes"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/nerdctl"
-  to = "/getting-started/installation"
+  to = "/reference/container-runtimes/nerdctl"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/openshift"
-  to = "/getting-started/installation"
+  to = "/reference/container-runtimes/openshift"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/podman"
-  to = "/getting-started/installation"
+  to = "/reference/container-runtimes/podman"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/tekton"
-  to = "/adopting/triggers/tekton"
+  to = "/getting-started/ci-integrations/tekton"
   status = 301
 
 [[redirects]]
@@ -357,32 +337,32 @@
 
 [[redirects]]
   from = "/contributing"
-  to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
+  to = "/reference/best-practices/contributing"
   status = 301
 
 [[redirects]]
   from = "/features"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
   from = "/features/debugging"
-  to = "/adopting/observability"
+  to = "/features/observability"
   status = 301
 
 [[redirects]]
   from = "/features/modules"
-  to = "/extending"
+  to = "/features/reusability"
   status = 301
 
 [[redirects]]
   from = "/features/services"
-  to = "/extending/types/service"
+  to = "/getting-started/types/service"
   status = 301
 
 [[redirects]]
   from = "/features/visualization"
-  to = "/adopting/observability"
+  to = "/features/observability"
   status = 301
 
 [[redirects]]
@@ -391,28 +371,28 @@
   status = 301
 
 [[redirects]]
+  from = "/quickstart"
+  to = "/getting-started/quickstarts/basics"
+  status = 301
+
+[[redirects]]
   from = "/quickstart/agent"
-  to = "/quickstart"
+  to = "/getting-started/quickstarts/agent"
   status = 301
 
 [[redirects]]
   from = "/quickstart/agent-in-project"
-  to = "/quickstart"
+  to = "/getting-started/quickstarts/agent-in-project"
   status = 301
 
 [[redirects]]
   from = "/quickstart/ci"
-  to = "/quickstart"
+  to = "/getting-started/quickstarts/ci"
   status = 301
 
 [[redirects]]
   from = "/troubleshooting"
-  to = "/"
-  status = 301
-
-[[redirects]]
-  from = "/reference/troubleshooting"
-  to = "/"
+  to = "/reference/troubleshooting"
   status = 301
 
 ## end: specific redirects for 0.18 docs ##
@@ -452,12 +432,12 @@
 
 [[redirects]]
   from = "/manuals/user"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
   from = "/user-guide"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
@@ -482,67 +462,57 @@
 
 [[redirects]]
   from = "/ai-agents/quickstart"
-  to = "/quickstart"
+  to = "/getting-started/quickstarts/agent"
   status = 301
 
 [[redirects]]
   from = "/ci/quickstart/*"
-  to = "/quickstart"
+  to = "/getting-started/quickstarts/ci"
   status = 301
 
 [[redirects]]
   from = "/quickstart/*"
-  to = "/quickstart"
+  to = "/getting-started/quickstarts/basics"
   status = 301
 
 [[redirects]]
   from = "/quickstart/basics"
-  to = "/quickstart"
+  to = "/getting-started/quickstarts/basics"
   status = 301
 
 [[redirects]]
   from = "/adopting"
-  to = "/adopting/workspace-setup"
-  status = 301
-
-[[redirects]]
-  from = "/reference/best-practices/adopting"
-  to = "/adopting/workspace-setup"
-  status = 301
-
-[[redirects]]
-  from = "/reference/best-practices/contributing"
-  to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
+  to = "/reference/best-practices/adopting"
   status = 301
 
 [[redirects]]
   from = "/ai-agents"
-  to = "/reference/configuration/llm"
+  to = "/features/llm"
   status = 301
 
 [[redirects]]
     from = "/features/large-language-model/"
-    to = "/reference/configuration/llm"
+    to = "/features/llm"
     status = 301
 
 [[redirects]]
     from = "/features/mcp/"
-    to = "/reference/configuration/llm"
+    to = "/features/llm"
     status = 301
 
 [[redirects]]
     from = "/features/programmable-pipelines"
-    to = "/"
+    to = "/features/programmability"
     status = 301
 
 [[redirects]]
   from = "/162770/faq"
-  to = "/"
+  to = "/faq"
   status = 301
 
 [[redirects]]
   from = "/204441/contributing"
-  to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
+  to = "/reference/best-practices/contributing"
   status = 301
 
 [[redirects]]
@@ -552,45 +522,45 @@
 
 [[redirects]]
   from = "/648215/quickstart"
-  to = "/quickstart"
+  to = "/getting-started/quickstarts/basics"
   status = 301
 
 [[redirects]]
   # redirect modules feature page
   from = "/features/reusable-modules"
-  to = "/extending"
+  to = "/features/reusability"
   status = 301
 
 [[redirects]]
   from = "/api/254103/build-custom-client"
-  to = "/core-concepts"
+  to = "/getting-started/api/http"
   status = 301
 
 [[redirects]]
   from = "/integrations/containerd"
-  to = "/getting-started/installation"
+  to = "/reference/container-runtimes/nerdctl"
   status = 301
 
 [[redirects]]
   from = "/integrations/php"
-  to = "/core-concepts"
+  to = "/getting-started/api/sdk"
   status = 301
 
 [[redirects]]
   from = "/ci/integrations/php"
-  to = "/core-concepts"
+  to = "/getting-started/api/sdk"
   status = 301
 
 [[redirects]]
   from = "/integrations/java"
-  to = "/core-concepts"
+  to = "/getting-started/api/sdk"
   status = 301
 
 
 [[redirects]]
   # redirect quickstart custom function page to new URL
   from = "/quickstart/428201/custom-modules"
-  to = "/extending/editions/dang"
+  to = "/extending/functions"
   status = 301
 
 [[redirects]]
@@ -1315,7 +1285,7 @@
 
 [[redirects]]
   from = "/ci/integrations/*"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
@@ -1325,7 +1295,7 @@
 
 [[redirects]]
   from = "/manuals/user/*"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
@@ -1340,12 +1310,12 @@
 
 [[redirects]]
   from = "/user-guide/*"
-  to = "/"
+  to = "/getting-started"
   status = 301
 
 [[redirects]]
   from = "/cloud/*"
-  to = "/reference/configuration/cloud"
+  to = "/configuration/cloud"
   status = 301
 
 [[redirects]]
@@ -1353,389 +1323,845 @@
   to = "/reference/cli"
   status = 301
 
-[[redirects]]
-  from = "/getting-started/ci-integrations/github"
-  to = "/adopting/triggers/github-actions"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/ci-integrations/gitlab-ci"
-  to = "/adopting/triggers/gitlab"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/ci-integrations/*"
-  to = "/adopting/triggers/:splat"
-  status = 301
-
-[[redirects]]
-  from = "/extending/custom-applications/*"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/use-cases"
-  to = "/"
-  status = 301
-
-[[redirects]]
-  from = "/examples"
-  to = "/"
-  status = 301
-
-[[redirects]]
-  from = "/faq"
-  to = "/"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/concepts"
-  to = "/core-concepts"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/api/*"
-  to = "/core-concepts"
-  status = 301
-
-[[redirects]]
-  from = "/reference/api/internals"
-  to = "/core-concepts"
-  status = 301
-
 ## end: wildcard redirects ##
 
 [[redirects]]
   from = "/reference/container-runtimes/kubernetes"
-  to = "/adopting/scaling/kubernetes"
+  to = "/reference/deployment/kubernetes"
   status = 301
 
 [[redirects]]
   from = "/reference/container-runtimes/openshift"
-  to = "/adopting/scaling/openshift"
+  to = "/reference/deployment/openshift"
   status = 301
 
-[[redirects]]
-  from = "/reference/deployment/kubernetes"
-  to = "/adopting/scaling/kubernetes"
-  status = 301
+## start: disabled 1.0 redirects ##
+##
+## Enable when 1.0 docs are served from /.
+## Before enabling, validate these targets against the 1.0 build.
+##
 
-[[redirects]]
-  from = "/reference/deployment/openshift"
-  to = "/adopting/scaling/openshift"
-  status = 301
-
-[[redirects]]
-  from = "/reference/deployment/*"
-  to = "/adopting/scaling"
-  status = 301
-
-[[redirects]]
-  from = "/reference/container-runtimes/*"
-  to = "/getting-started/installation"
-  status = 301
-
-[[redirects]]
-  from = "/adopting/container-runtimes/*"
-  to = "/getting-started/installation"
-  status = 301
-
-[[redirects]]
-  from = "/adopting/engine-runtime"
-  to = "/reference/configuration/engine"
-  status = 301
-
-[[redirects]]
-  from = "/adopting/engine-configuration"
-  to = "/reference/configuration/engine"
-  status = 301
-
-[[redirects]]
-  from = "/core-concepts/artifacts"
-  to = "/core-concepts"
-  status = 301
-
-[[redirects]]
-  from = "/using-dagger/shipping"
-  to = "/core-concepts/functions"
-  status = 301
-
-[[redirects]]
-  from = "/adopting/ci-integration"
-  to = "/adopting/triggers"
-  status = 301
-
-[[redirects]]
-  from = "/adopting/ci-infrastructure"
-  to = "/adopting/triggers"
-  status = 301
-
-[[redirects]]
-  from = "/adopting/caching"
-  to = "/core-concepts/caching"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/types/*"
-  to = "/extending/types/:splat"
-  status = 301
-
-# ============================================================
-# Workspace branch: cookbook section deleted
-# Recipes distributed into per-SDK edition pages (Go, TS, Python).
-# See extending/editions/{go,typescript,python}/index.mdx
-# ============================================================
-
-[[redirects]]
-  from = "/cookbook"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/cookbook/builds"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/cookbook/containers"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/cookbook/errors"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/cookbook/filesystems"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/cookbook/secrets"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/cookbook/services"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/cookbook/agents"
-  to = "/reference/configuration/llm"
-  status = 301
-
-# ============================================================
-# Workspace branch: extending/modules/* consolidated into editions
-# All per-topic module pages (arguments, functions, chaining, etc.)
-# merged into extending/editions/dang.mdx (the Base Edition).
-# ============================================================
-
-[[redirects]]
-  from = "/extending/arguments"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/cache-volumes"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/chaining"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/constructors"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/custom-types"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/daggerverse"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/documentation"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/enumerations"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/error-handling"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/functions"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/interfaces"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/module-dependencies"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/modules"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/packages"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/api-playground"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/remote-repositories"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/return-types"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/secrets"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/services"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/state"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/llm"
-  to = "/extending/editions/dang"
-  status = 301
-
-[[redirects]]
-  from = "/extending/function-caching"
-  to = "/extending/editions/dang"
-  status = 301
-
-# ============================================================
-# Workspace branch: quickstarts consolidated into /quickstart
-# Old multi-quickstart pages (basics, ci, agent, toolchain/blueprint)
-# replaced by a single quickstart at getting-started/quickstart.mdx.
-# ============================================================
-
-[[redirects]]
-  from = "/getting-started/quickstarts/basics"
-  to = "/quickstart"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/quickstarts/ci"
-  to = "/quickstart"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/quickstarts/agent"
-  to = "/quickstart"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/quickstarts/agent-in-project"
-  to = "/quickstart"
-  status = 301
-
-[[redirects]]
-  from = "/getting-started/quickstarts/toolchain"
-  to = "/quickstart"
-  status = 301
-
-# ============================================================
-# Workspace branch: features section deleted
-# Content scattered: caching -> core-concepts, observability ->
-# adopting, secrets -> adopting, llm -> reference/configuration.
-# Some features had no direct replacement (sandbox, shell,
-# programmability, local-defaults) and redirect to root.
-# ============================================================
-
-[[redirects]]
-  from = "/features/caching"
-  to = "/core-concepts/caching"
-  status = 301
-
-[[redirects]]
-  from = "/features/observability"
-  to = "/adopting/observability"
-  status = 301
-
-[[redirects]]
-  from = "/features/secrets"
-  to = "/adopting/secrets"
-  status = 301
-
-[[redirects]]
-  from = "/features/llm"
-  to = "/reference/configuration/llm"
-  status = 301
-
-[[redirects]]
-  from = "/features/shell"
-  to = "/"
-  status = 301
-
-[[redirects]]
-  from = "/features/programmability"
-  to = "/"
-  status = 301
-
-[[redirects]]
-  from = "/features/reusability"
-  to = "/extending"
-  status = 301
-
-[[redirects]]
-  from = "/features/sandbox"
-  to = "/"
-  status = 301
-
-[[redirects]]
-  from = "/features/local-defaults"
-  to = "/"
-  status = 301
-
-# ============================================================
-# Workspace branch: toolchains concept dropped
-# Toolchains are now just modules in your workspace.
-# ============================================================
-
-[[redirects]]
-  from = "/core-concepts/toolchains"
-  to = "/core-concepts/modules"
-  status = 301
-
+# [[redirects]]
+#   from = "/api/arguments"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/cache-volumes"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/chaining"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/cli"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/constructor"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/custom-functions"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/custom-types"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/daggerverse"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/default-paths"
+#   to = "/extending/types/directory"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/documentation"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/enumerations"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/error-handling"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/filters"
+#   to = "/extending/types/directory"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/http"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/ide-integration"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/ide-setup"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/glossary"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/interfaces"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/internals"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/llm"
+#   to = "/extending/types/llm"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/module-dependencies"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/module-structure"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/module-tests"
+#   to = "/extending/testing"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/best-practices/modules"
+#   to = "/extending/testing"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/best-practices/monorepos"
+#   to = "/adopting/workspace-setup"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/packages"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/playground"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/remote-modules"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/remote-repositories"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/return-values"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/sdk"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/secrets"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/services"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/state"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/terminal"
+#   to = "/adopting/observability"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/security"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/types"
+#   to = "/extending/types"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/adopting"
+#   to = "/adopting/workspace-setup"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/apple-container"
+#   to = "/getting-started/installation"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/argo-workflows"
+#   to = "/adopting/triggers/argo-workflows"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/aws-codebuild"
+#   to = "/adopting/triggers/aws-codebuild"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/azure-pipelines"
+#   to = "/adopting/triggers/azure-pipelines"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/ci"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/circleci"
+#   to = "/adopting/triggers/circleci"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/container-runtimes"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/github"
+#   to = "/adopting/triggers/github-actions"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/github-actions"
+#   to = "/adopting/triggers/github-actions"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/gitlab"
+#   to = "/adopting/triggers/gitlab"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/google-cloud-run"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/jenkins"
+#   to = "/adopting/triggers/jenkins"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/kubernetes"
+#   to = "/getting-started/installation"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/nerdctl"
+#   to = "/getting-started/installation"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/openshift"
+#   to = "/getting-started/installation"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/podman"
+#   to = "/getting-started/installation"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/tekton"
+#   to = "/adopting/triggers/tekton"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/contributing"
+#   to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/debugging"
+#   to = "/adopting/observability"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/modules"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/services"
+#   to = "/extending/types/service"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/visualization"
+#   to = "/adopting/observability"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/quickstart/agent"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/quickstart/agent-in-project"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/quickstart/ci"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/troubleshooting"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/troubleshooting"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/manuals/user"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/user-guide"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ai-agents/quickstart"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/quickstart/*"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/quickstart/*"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/quickstart/basics"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/adopting"
+#   to = "/adopting/workspace-setup"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/best-practices/adopting"
+#   to = "/adopting/workspace-setup"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/best-practices/contributing"
+#   to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ai-agents"
+#   to = "/reference/configuration/llm"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/large-language-model/"
+#   to = "/reference/configuration/llm"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/mcp/"
+#   to = "/reference/configuration/llm"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/programmable-pipelines"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/162770/faq"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/204441/contributing"
+#   to = "https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/648215/quickstart"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/reusable-modules"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/api/254103/build-custom-client"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/integrations/containerd"
+#   to = "/getting-started/installation"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/integrations/php"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/php"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/integrations/java"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/quickstart/428201/custom-modules"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/ci/integrations/*"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/manuals/user/*"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/user-guide/*"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cloud/*"
+#   to = "/reference/configuration/cloud"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/ci-integrations/github"
+#   to = "/adopting/triggers/github-actions"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/ci-integrations/gitlab-ci"
+#   to = "/adopting/triggers/gitlab"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/ci-integrations/*"
+#   to = "/adopting/triggers/:splat"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/custom-applications/*"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/use-cases"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/examples"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/faq"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/concepts"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/api/*"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/api/internals"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/container-runtimes/kubernetes"
+#   to = "/adopting/scaling/kubernetes"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/container-runtimes/openshift"
+#   to = "/adopting/scaling/openshift"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/deployment/kubernetes"
+#   to = "/adopting/scaling/kubernetes"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/deployment/openshift"
+#   to = "/adopting/scaling/openshift"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/deployment/*"
+#   to = "/adopting/scaling"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/reference/container-runtimes/*"
+#   to = "/getting-started/installation"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/adopting/container-runtimes/*"
+#   to = "/getting-started/installation"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/adopting/engine-runtime"
+#   to = "/reference/configuration/engine"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/adopting/engine-configuration"
+#   to = "/reference/configuration/engine"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/core-concepts/artifacts"
+#   to = "/extending/how-dagger-works"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/using-dagger/shipping"
+#   to = "/extending/how-dagger-works/functions"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/adopting/ci-integration"
+#   to = "/adopting/triggers"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/adopting/ci-infrastructure"
+#   to = "/adopting/triggers"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/adopting/caching"
+#   to = "/extending/how-dagger-works/cache"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/types/*"
+#   to = "/extending/types/:splat"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cookbook"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cookbook/builds"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cookbook/containers"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cookbook/errors"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cookbook/filesystems"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cookbook/secrets"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cookbook/services"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/cookbook/agents"
+#   to = "/reference/configuration/llm"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/arguments"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/cache-volumes"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/chaining"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/constructors"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/custom-types"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/daggerverse"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/documentation"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/enumerations"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/error-handling"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/functions"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/interfaces"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/module-dependencies"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/modules"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/packages"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/api-playground"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/remote-repositories"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/return-types"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/secrets"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/services"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/state"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/llm"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/extending/function-caching"
+#   to = "/extending/sdks/dang"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/quickstarts/basics"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/quickstarts/ci"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/quickstarts/agent"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/quickstarts/agent-in-project"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/getting-started/quickstarts/toolchain"
+#   to = "/quickstart"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/caching"
+#   to = "/extending/how-dagger-works/cache"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/observability"
+#   to = "/adopting/observability"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/secrets"
+#   to = "/adopting/secrets"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/llm"
+#   to = "/reference/configuration/llm"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/shell"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/programmability"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/reusability"
+#   to = "/extending"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/sandbox"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/features/local-defaults"
+#   to = "/"
+#   status = 301
+#
+# [[redirects]]
+#   from = "/core-concepts/toolchains"
+#   to = "/extending/how-dagger-works/modules"
+#   status = 301
+#
+## end: disabled 1.0 redirects ##
 [[headers]]
   for = "/*"
   [headers.values]

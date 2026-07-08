@@ -60,9 +60,12 @@ func generateCode(
 	fset *token.FileSet,
 	pass int,
 ) error {
-	// Collect all dependency module names present in the schema so we can
-	// split them out into separate files and exclude them from the main
-	// internal/dagger/dagger.gen.go.
+	// Collect all module names present in the schema so we can split them
+	// out into separate files and exclude them from the main
+	// internal/dagger/dagger.gen.go. In module generation the current
+	// module's own types are merged into the schema with a @sourceMap for
+	// this module, so they get their own <module>.gen.go too — same as
+	// dependencies, and same as client generation already does.
 	depNames := schema.DependencyNames()
 
 	// When there are dependencies, generate the core schema (excluding all

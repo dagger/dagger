@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
@@ -38,8 +37,8 @@ func (spec *parsedEnumTypeReference) lookup(key string) *parsedEnumMember {
 	return nil
 }
 
-func (spec *parsedEnumTypeReference) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
-	return dag.TypeDef().WithEnum(spec.name), nil
+func (spec *parsedEnumTypeReference) TypeDefCode() (*Statement, error) {
+	return Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(Lit(spec.name)), nil
 }
 
 func (spec *parsedEnumTypeReference) GoType() types.Type {
@@ -222,33 +221,49 @@ type parsedEnumMember struct {
 
 var _ NamedParsedType = &parsedEnumType{}
 
-func (spec *parsedEnumType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
-	withEnumOpts := dagger.TypeDefWithEnumOpts{}
+func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
+	withEnumArgsCode := []Code{
+		Lit(spec.name),
+	}
+	withEnumOptsCode := []Code{}
 	if spec.doc != "" {
-		withEnumOpts.Description = strings.TrimSpace(spec.doc)
+		withEnumOptsCode = append(withEnumOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
 	}
 	if spec.sourceMap != nil {
-		withEnumOpts.SourceMap = spec.sourceMap.TypeDef(dag)
+		withEnumOptsCode = append(withEnumOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
 	}
-	typeDefObject := dag.TypeDef().WithEnum(spec.name, withEnumOpts)
+	if len(withEnumOptsCode) > 0 {
+		withEnumArgsCode = append(withEnumArgsCode, Id("dagger").Dot("TypeDefWithEnumOpts").Values(withEnumOptsCode...))
+	}
+
+	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(withEnumArgsCode...)
 
 	for _, val := range spec.values {
-		memberOpts := dagger.TypeDefWithEnumMemberOpts{}
+		memberTypeDefCode := []Code{
+			Lit(val.name),
+		}
+		var withEnumMemberOpts []Code
 		if val.value != "" {
-			memberOpts.Value = val.value
+			withEnumMemberOpts = append(withEnumMemberOpts, Id("Value").Op(":").Lit(val.value))
 		}
 		if val.doc != "" {
-			memberOpts.Description = strings.TrimSpace(val.doc)
+			withEnumMemberOpts = append(withEnumMemberOpts, Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)))
 		}
 		if val.deprecated != nil {
-			memberOpts.Deprecated = strings.TrimSpace(*val.deprecated)
+			withEnumMemberOpts = append(withEnumMemberOpts, Id("Deprecated").Op(":").Lit(strings.TrimSpace(*val.deprecated)))
 		}
 		if val.sourceMap != nil {
-			memberOpts.SourceMap = val.sourceMap.TypeDef(dag)
+			withEnumMemberOpts = append(withEnumMemberOpts, Id("SourceMap").Op(":").Add(val.sourceMap.TypeDefCode()))
 		}
-		typeDefObject = typeDefObject.WithEnumMember(val.name, memberOpts)
+		if len(withEnumMemberOpts) > 0 {
+			memberTypeDefCode = append(memberTypeDefCode,
+				Id("dagger").Dot("TypeDefWithEnumMemberOpts").Values(withEnumMemberOpts...),
+			)
+		}
+		typeDefCode = dotLine(typeDefCode, "WithEnumMember").Call(memberTypeDefCode...)
 	}
-	return typeDefObject, nil
+
+	return typeDefCode, nil
 }
 
 func (spec *parsedEnumType) GoType() types.Type {

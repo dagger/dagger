@@ -429,6 +429,22 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The module's dagger.json with any in-memory edits from with* APIs applied, as a diff relative to the source's context directory.
+
+  Unlike generatedContextDirectory, this does not run codegen and does not validate the engine version against the running engine, so it can be used to declare an engine requirement newer than the running engine. Loading or serving such a module still fails at moduleSource.asModule.
+  """
+  @spec updated_config_directory(t()) :: Dagger.Directory.t()
+  def updated_config_directory(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("updatedConfigDirectory")
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   User-defined defaults read from local .env files
   """
   @spec user_defaults(t()) :: Dagger.EnvFile.t()

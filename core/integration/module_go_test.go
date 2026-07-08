@@ -496,9 +496,11 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
-		// when evaluating the query against the engine GQL schema.
-		require.Contains(t, logs.String(), `type "Container" is already defined by module "daggercore"`)
+		// With self calls always enabled for Go, a module type shadowing a
+		// core type no longer fails the load; the core type keeps winning in
+		// the client schema, so the extension method is simply absent — same
+		// engine-side validation error as the different-mod-name case.
+		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
 	})
 }
 

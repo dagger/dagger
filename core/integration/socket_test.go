@@ -114,6 +114,11 @@ func (ContainerSuite) TestWithUnixSocketOwner(ctx context.Context, t *testctx.T)
 				Owner: owner,
 			})
 		})
+		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
+			return ctr.WithUnixSocket(name, hostSock, dagger.ContainerWithUnixSocketOpts{
+				InheritOwner: true,
+			})
+		})
 	})
 }
 

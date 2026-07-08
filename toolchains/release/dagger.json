@@ -1,6 +1,6 @@
 {
   "name": "release",
-  "engineVersion": "v0.21.6",
+  "engineVersion": "v0.21.7",
   "sdk": {
     "source": "go"
   },
@@ -65,10 +65,6 @@
     {
       "name": "typescript-sdk-dev",
       "source": "../typescript-sdk-dev"
-    },
-    {
-      "name": "version",
-      "source": "../../version"
     },
     {
       "name": "wolfi",

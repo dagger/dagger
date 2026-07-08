@@ -1,0 +1,65 @@
+---
+slug: /extending
+title: "Module Developer Guide"
+description: "When to build a Dagger module, how to develop one, and how to design an API people can call."
+---
+
+# Module Developer Guide
+
+A module is a reusable, typed API for automation — functions, objects, checks, services, and generators that anyone can run from a workspace, in CI, in Cloud, or from an agent. This guide covers when to build a module, the development loop, and how to design one people will actually use.
+
+It's language-agnostic. For the underlying model, read [How Dagger Works](./how-dagger-works/index.mdx); for syntax, pick your [SDK](#choose-your-sdk).
+
+## When to build a module
+
+Build a module when a workflow should become a durable, named interface rather than a remembered sequence of steps — something run often, in more than one place, that encodes a project's conventions or composes with other modules. A module earns its name by improving the caller's experience: better names, typed inputs, structured outputs, and clear errors. Wrapping a single command in a module just for ceremony isn't worth it.
+
+Install a module into a workspace ([`.dagger/config.toml`](../reference/configuration/workspace.mdx)) to make it part of a project's command surface; publish a reusable module when several projects need the same capability. See [Workspace Setup](../adopting/workspace-setup.mdx).
+
+## Developer workflow
+
+Dagger ships no language-specific module tooling in the CLI. Instead, **each SDK is itself a Dagger module** — `github.com/dagger/go-sdk`, `dang-sdk`, and so on — whose functions you call to develop a module in that language. The exact commands differ per SDK and live on each [SDK page](#choose-your-sdk); the loop is the same everywhere:
+
+1. **Scaffold** a new module — the SDK writes its `dagger.json` and a source skeleton, returned as a [changeset](../using-dagger/changesets.mdx) you apply.
+2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](./type-system/index.mdx).
+3. **Regenerate** the client bindings whenever the module's shape or its dependencies change.
+4. **Add dependencies** on other modules, and **pin** the engine version the module needs.
+5. **Check and test** with the module's [checks](./how-dagger-works/checks.mdx) and your own tests.
+
+The verbs `dagger check` and `dagger generate` are the same across every SDK; the scaffold, regenerate, and dependency steps come from the SDK module.
+
+## Designing a good API
+
+Start from the call you want people to remember, then make it obvious.
+
+- **Name for intent.** Functions and objects should read like the caller's goal, not the implementation.
+- **Type inputs honestly.** Prefer real Dagger types over strings, defaults for conventions, [settings](../reference/configuration/workspace.mdx) for team-wide values, and `Secret` for credentials — not magic environment variables or assumed host paths.
+- **Return rich values.** Return a `Container`, a `Directory`, a `Changeset` — whatever lets the caller or another module continue the workflow — instead of flattening everything into a string.
+- **Make side effects explicit.** A function that edits files returns a changeset; a long-running dependency is a `Service`; external effects belong in clearly named publish or export functions.
+- **Keep the boundary clean.** Expose a small public API and keep helpers, intermediate containers, and generated files private. If a caller must know an internal path to use the module, the API is leaking.
+- **Fail usefully.** An error should say what failed, whose problem it is (an input, a credential, the network, or the module), and what to try next — in the caller's terms, validated early before expensive work begins.
+
+## Checks, generators, and services
+
+A module can expose plain functions that just return values — that's valid and composes fine. But a module earns its place by plugging into Dagger's workflows. There are three first-class function types, and a genuinely useful reusable module provides **at least one**:
+
+- **Checks** validate the project — tests, linters, scans, policy. They run with `dagger check`, locally, in CI, and as [Cloud Checks](../adopting/triggers/index.mdx). See [Checks](./how-dagger-works/checks.mdx).
+- **Generators** produce source changes as reviewable [changesets](../using-dagger/changesets.mdx) — codegen, formatting, lockfile updates. They run with `dagger generate`.
+- **Services** expose a long-running service — a database, web server, or proxy — started with `dagger up`.
+
+You mark a function as one of these in your SDK (`@check`, `@generate`, `@up`, or the language's equivalent — see your [SDK guide](#choose-your-sdk)). A module that offers none of them is often better left as a plain function call than packaged as a module.
+
+Round these out with the rest of the platform: [settings and environments](../reference/configuration/workspace.mdx) for team and per-context defaults, explicit `Secret` inputs for credentials, and [Dagger Cloud](../adopting/observability.mdx) for traces and remote execution.
+
+## Quality
+
+A module is ready for other people when its public API is small and well-named, its functions and arguments are documented (so `dagger call --help` is useful), its inputs and outputs are typed and composable, and its secrets, services, and side effects are explicit. Cover the main path and the important failure modes with tests. Treat the API as a contract — renaming a function or changing a default is a breaking change. Publish modules as versioned Git refs; consumers add them with `dagger mod install`.
+
+## Choose your SDK
+
+Pick a language to build in. Each guide covers its syntax, project layout, development workflow, dependencies, and testing:
+
+- **[Dang](./sdks/dang.mdx)** — Dagger's native DSL. No codegen and no build step: what you write is what runs. Best when your module orchestrates containers, files, and other Dagger objects.
+- **[Go](./sdks/go.mdx)** — Build modules in Go with a generated, typed client.
+- **[TypeScript](./sdks/typescript.mdx)** — Build modules in TypeScript with decorators and a generated client (Bun, Deno, or Node).
+- **[Python](./sdks/python.mdx)** — Build modules in Python with type hints, decorators, and a generated client.

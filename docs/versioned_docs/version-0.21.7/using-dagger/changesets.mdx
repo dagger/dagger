@@ -1,0 +1,34 @@
+---
+title: "Changesets"
+slug: /using-dagger/changesets
+description: "Review and apply changes that Dagger proposes to your working tree"
+---
+
+# Changesets
+
+Some commands don't just report a result — they propose changes to your files. A code generator produces new source, an autofixing linter rewrites formatting. Dagger returns these as a **changeset**: a diff you can review before anything touches your working tree.
+
+Changesets come from **generators** (run by `dagger generate`) and from functions written to return one — a formatter's `fix`, for example, called with `dagger call`. A `check` never produces a changeset; it only validates. `dagger check` *can* verify that a generator's output is already up to date, but it never applies a fix itself.
+
+## Review and apply
+
+When a command returns a changeset, Dagger shows you the diff and waits for you to apply it. Nothing is written until you approve.
+
+## Apply automatically
+
+Pass `-y` / `--auto-apply` to apply changes without prompting — useful in scripts and non-interactive sessions:
+
+```shell
+dagger generate -y
+```
+
+## In CI
+
+In CI you typically want to *verify* that committed files are already up to date rather than rewrite them. `dagger check` runs your checks and also runs each generator as a read-only check — it fails, without applying anything, if a generator's output differs from what's committed:
+
+```yaml
+# GitHub Actions
+- run: dagger check
+```
+
+Use `dagger check --generate` to run only the generator verification. A failing generator check means the committed output was stale — run `dagger generate` (or the relevant fix function) locally to apply the changeset, then commit.

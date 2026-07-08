@@ -13,11 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The TUI draws on the terminal's alternate screen; this escape sequence is
-// emitted when it leaves that screen, marking the boundary between frames
-// the user only sees while the command runs and output that stays in their
-// terminal after it exits.
-const exitAltScreen = "\x1b[?1049l"
+// The TUI hides the hardware cursor while it draws and shows it again as
+// the very last step of teardown, so this escape sequence marks the
+// boundary between frames the user only sees while the command runs and
+// output that stays in their terminal after it exits. (The alternate
+// screen is not a reliable boundary: the TUI only falls back to it when
+// the live tree overflows a terminal without synchronized-output support,
+// and the live view condenses itself to fit the viewport.)
+const restoreCursor = "\x1b[?25h"
 
 // TestInteractiveFinalRenderEmitsProgress guards #12936: a failed `dagger
 // call` under an interactive TTY must still leave the progress tree and the
@@ -56,7 +59,7 @@ func (m *Progress) Fail(ctx context.Context) (string, error) {
 
 		// Warm the module so the run under test is bounded by the failing
 		// exec, not by codegen/load.
-		_, err = hostDaggerExec(ctx, t, modDir, "-m", ".", "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "-m", ".", "api", "functions")
 		require.NoError(t, err)
 
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -77,18 +80,20 @@ func (m *Progress) Fail(ctx context.Context) (string, error) {
 		// and never rewinds. Once we've matched a piece of output, any later
 		// ExpectString can only match bytes that came *after* it.
 		//
-		// So we first wait for the TUI to leave the alternate screen. After
-		// that point, everything we match is part of what the user still
-		// sees in their terminal after the command has exited: which is
-		// exactly the final render we're trying to protect.
+		// So we first wait for the TUI to restore the cursor, the last thing
+		// it writes as it tears down (it hides the cursor for the whole run,
+		// and nothing in this run — no forms, no terminal — shows it early).
+		// After that point, everything we match is part of what the user
+		// still sees in their terminal after the command has exited: which
+		// is exactly the final render we're trying to protect.
 		//
 		// Doing it this way matters: while the TUI is running it also shows
 		// the failure icon and the "tui-final-render" marker, so if we just
-		// called ExpectString without the alt-screen gate first, the test
+		// called ExpectString without the teardown gate first, the test
 		// would happily pass even when the final render is completely empty
 		// (which is the bug we're guarding against).
-		_, err = console.ExpectString(exitAltScreen)
-		require.NoError(t, err, "TUI never left the alternate screen")
+		_, err = console.ExpectString(restoreCursor)
+		require.NoError(t, err, "TUI never tore down (cursor never restored)")
 
 		_, err = console.ExpectString(idtui.IconFailure)
 		require.NoError(t, err, "final render is missing the failure icon")

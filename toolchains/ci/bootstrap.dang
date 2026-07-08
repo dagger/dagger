@@ -25,7 +25,16 @@ type CI {
       .playground
       .withMountedDirectory("./dagger", source)
       .withWorkdir("./dagger")
-      .withExec(["dagger", "checks"] + checks)
+      # TODO: change back to `.withExec(["dagger check"] + checks)`
+      # The mounted Workspace is a plain snapshot with no .git, so the
+      # nested check would make toolchains/ci its context root and reject
+      # ../engine-dev. Remove this once the GitRepository inputs are gone
+      # from cli-dev/go and bootstrap no longer depends on git-root discovery.
+      .withExec([
+        "sh", "-c",
+        "git init --quiet && exec dagger check \"$@\"",
+        "dagger",
+      ] + checks)
       .sync
 
     null

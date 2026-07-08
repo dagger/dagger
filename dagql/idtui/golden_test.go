@@ -31,6 +31,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/util/scrub"
@@ -39,6 +40,15 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// The frontend adjusts its output when driven by an AI coding agent
+	// (RunningInAgent): plain "== X ==" headings, the report on stdout, ANSI
+	// stripped. The tests and goldens assert the human form, and the golden
+	// suite passes os.Environ() to the CLIs it spawns -- so running the suite
+	// from inside an agent session would silently flip the output under test.
+	// Scrub the detection variables up front for the whole test binary.
+	for _, name := range idtui.AgentEnvVars {
+		os.Unsetenv(name)
+	}
 	os.Exit(oteltestctx.Main(m))
 }
 

@@ -745,6 +745,11 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 				if err != nil {
 					return fmt.Errorf("load contextual arg %q: %w", arg.Name, err)
 				}
+				if ctxVal == nil {
+					// The contextual value is unavailable and the arg is
+					// optional: leave it unset.
+					return nil
+				}
 
 				ctxArgVals[i] = &argInput{
 					argName: arg.Name,
@@ -1115,7 +1120,25 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*File](fileID), nil
 
 	case "GitRepository", "GitRef":
-		return fn.loadContextualGitArg(ctx, dag, arg)
+		id, err := fn.loadContextualGitArg(ctx, dag, arg)
+		if err != nil && arg.TypeDef.Self().Optional && errors.Is(err, ErrNoGitContext) {
+			// The context simply isn't a git checkout (`dagger init` before
+			// `git init`, an exported source tree). That's a legitimate
+			// environment, not an error, so resolve a nullable arg to null
+			// and let the function proceed without git info. SDK codegen
+			// marks every defaultPath arg optional in the schema, so in
+			// practice this covers all contextual git args; modules decide
+			// how strictly to treat a null. A .git that exists but is
+			// unusable -- a dead submodule/worktree pointer, a corrupt repo
+			// -- is a broken environment and fails the call instead (see
+			// ModuleSource.resolveGitPointer).
+			slog.Warn("skipping contextual git argument: module context has no git checkout",
+				"function", fn.metadata.Name,
+				"arg", arg.OriginalName,
+				"defaultPath", arg.DefaultPath)
+			return nil, nil
+		}
+		return id, err
 	}
 
 	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.Self().AsObject.Value.Self().Name)

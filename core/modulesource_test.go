@@ -45,6 +45,18 @@ func (sdk *moduleSourceAttachTestSDK) CloneForModuleSource(*ModuleSource) SDK {
 	return &cp
 }
 
+func (sdk *moduleSourceAttachTestSDK) AsModuleInitializer() (ModuleInitializer, bool) {
+	return nil, false
+}
+
+func (sdk *moduleSourceAttachTestSDK) AsClientInitializer() (ClientInitializer, bool) {
+	return nil, false
+}
+
+func (sdk *moduleSourceAttachTestSDK) AsRuntimeTarget() (RuntimeTarget, bool) {
+	return nil, false
+}
+
 func (sdk *moduleSourceAttachTestSDK) AttachDependencyResults(
 	ctx context.Context,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),

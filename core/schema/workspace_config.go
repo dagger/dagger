@@ -29,11 +29,11 @@ func (s *workspaceSchema) workspaceInit(
 		Here bool `default:"false"`
 	},
 ) (dagql.String, error) {
-	if parent.HostPath() == "" {
-		return "", fmt.Errorf("workspace init is local-only")
+	if err := requireLocalWorkspace(parent, "workspace init"); err != nil {
+		return "", err
 	}
 	if parent.CompatWorkspace() != nil {
-		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
 	}
 
 	configDirRel := workspaceConfigDirectoryForWrite(parent, args.Here)
@@ -90,13 +90,16 @@ func loadWorkspaceConfigForMutation(
 	if err := unsupportedSyntheticWorkspaceFeature(ws, "config mutations"); err != nil {
 		return nil, false, err
 	}
+	if err := requireLocalWorkspace(ws, "workspace config mutation"); err != nil {
+		return nil, false, err
+	}
 	if ws.ConfigFile != "" && (!here || workspaceSameConfigDirectory(ws, workspaceConfigDirectoryForWrite(ws, true))) {
 		cfg, err := readWorkspaceConfig(ctx, ws)
 		return cfg, false, err
 	}
 
 	if ws.CompatWorkspace() != nil {
-		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger setup first")
 	}
 	if policy == workspaceConfigMustExist {
 		return nil, false, fmt.Errorf("no dagger.toml found in workspace")
@@ -110,7 +113,9 @@ func loadWorkspaceConfigForMutation(
 		return nil, false, fmt.Errorf("initialize workspace: %w", err)
 	}
 
-	return &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}, true, nil
+	return &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{},
+	}, true, nil
 }
 
 func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *core.Workspace, here bool) error {
@@ -190,8 +195,8 @@ func workspaceHostPath(ws *core.Workspace, rel ...string) (string, error) {
 	if ws == nil {
 		return "", fmt.Errorf("workspace is required")
 	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace has no host path")
+	if err := requireLocalWorkspace(ws, "workspace host access"); err != nil {
+		return "", err
 	}
 
 	parts := append([]string{ws.HostPath()}, rel...)
@@ -216,6 +221,10 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	}
 
 	if ws.HostPath() != "" {
+		ctx, err = withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
 		configPath, err := workspaceHostPath(ws, configFile)
 		if err != nil {
 			return nil, err

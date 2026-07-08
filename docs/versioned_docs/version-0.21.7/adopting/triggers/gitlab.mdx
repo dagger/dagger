@@ -1,0 +1,81 @@
+---
+title: "GitLab CI"
+slug: /adopting/triggers/gitlab
+description: "Learn how to use Dagger with GitLab CI."
+---
+
+# GitLab CI
+
+GitLab CI runs `dagger check` inside your existing pipeline, so the same checks you run locally run on every push — without rewriting your `.gitlab-ci.yml`.
+
+:::tip
+For checks with no pipeline YAML at all, enable [Cloud Checks](./index.mdx) with `dagger ws autocheck on`. The GitLab CI configuration below is the hybrid-mode alternative for when you want to drive Dagger from your existing GitLab CI setup.
+:::
+
+## How it works
+
+When running your Dagger checks with GitLab CI, the general workflow looks like this:
+
+1. GitLab receives a trigger based on a repository event.
+1. GitLab begins processing the stages and jobs in the `.gitlab-ci.yml` file.
+1. GitLab downloads the Dagger CLI.
+1. GitLab runs `dagger check` against the modules installed in your workspace.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the GitLab runner.
+1. The Dagger CLI runs the checks and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. The pipeline completes with success or failure based on the check results. Logs appear in GitLab as usual.
+
+## Prerequisites
+
+- A GitLab repository with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](../workspace-setup.mdx).
+- Any one of the following:
+  - [GitLab-hosted runners](https://docs.gitlab.com/ee/ci/runners/index.html) using the (default) [Docker Machine executor](https://docs.gitlab.com/runner/executors/docker_machine.html)
+  - [Self-managed GitLab Runners](https://docs.gitlab.com/runner/install/index.html) using the [Docker executor](https://docs.gitlab.com/runner/executors/docker.html).
+  - [Self-managed GitLab Runners](https://docs.gitlab.com/runner/install/index.html) in a Kubernetes cluster and using the [Kubernetes executor](https://docs.gitlab.com/runner/executors/kubernetes/).
+
+## Examples
+
+### Docker executor
+
+The following example demonstrates how to run `dagger check` in a GitLab CI/CD pipeline using the (default) [Docker Machine executor](https://docs.gitlab.com/runner/executors/docker_machine.html) or the [Docker executor](https://docs.gitlab.com/runner/executors/docker.html). In both these cases, the Dagger Engine is provisioned "just in time" using a Docker-in-Docker (`dind`) service.
+
+```yaml title=".gitlab-ci.yml" file=./snippets/gitlab-docker-hello.yml
+```
+
+`dagger check` runs all checks from the modules installed in your workspace and exits non-zero if any fail. To scope the run to a single module's checks, pass a pattern — for example `dagger check go:*`.
+
+### Kubernetes executor
+
+The following example demonstrates how to run `dagger check` in a GitLab CI/CD pipeline using the [Kubernetes executor](https://docs.gitlab.com/runner/executors/kubernetes/).
+
+```yaml title=".gitlab-ci.yml" file=./snippets/gitlab-kubernetes-hello.yml
+```
+
+Each GitLab Runner must be configured to only run on nodes with pre-provisioned instances of the Dagger Engine. This is achieved using taints and tolerations on the nodes, and pod affinity.
+
+The following code listings illustrate the configuration to be applied to each GitLab Runner, with taints, tolerations and pod affinity set via the `dagger-node` key. For an example of the corresponding node configuration, refer to the [OpenShift](../scaling/openshift.mdx) integration page.
+
+To use this configuration, replace the YOUR-GITLAB-URL placeholder with the URL of your GitLab instance and replace the YOUR-GITLAB-RUNNER-TOKEN-REFERENCE placeholder with your [GitLab Runner authentication token](https://docs.gitlab.com/ee/ci/runners/runners_scope.html#create-a-shared-runner-with-a-runner-authentication-token).
+
+```yaml title="runner-config.yml" file=./snippets/gitlab-runner-config.yml
+```
+
+```yaml title="runner.yml" file=./snippets/gitlab-runner.yml
+```
+
+## Dagger Cloud Engines
+
+By default the CLI starts a Dagger Engine inside the GitLab runner. For a faster, more reliable experience, offload execution to a managed Dagger Engine provided by Dagger Cloud by adding `--cloud` to the command:
+
+```shell
+dagger check --cloud
+```
+
+Cloud Engines provide a large persistent cache shared across runs and far more compute than a GitLab runner, so checks are typically much faster — and you don't provision or maintain any infrastructure. This requires the `DAGGER_CLOUD_TOKEN` variable configured above.
+
+## Resources
+
+If you have any questions about additional ways to use GitLab with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [GitLab channel](https://discord.com/channels/707636530424053791/1122940615806685296).
+
+## About GitLab
+
+[GitLab](https://gitlab.com/) is a popular Web-based platform used for version control and collaboration. It allows developers to store and manage their code in repositories, track changes over time, and collaborate with other developers on projects.

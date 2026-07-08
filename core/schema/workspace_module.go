@@ -138,11 +138,7 @@ func (s *workspaceSchema) moduleSettings(
 	if err != nil {
 		return nil, err
 	}
-	ref, err := workspaceSettingsModuleRef(ws.Self(), configDir, entry.Source)
-	if err != nil {
-		return nil, fmt.Errorf("resolve settings source for module %q: %w", parent.Self().Name, err)
-	}
-	if ref == "" {
+	if entry.Source == "" {
 		return nil, nil
 	}
 
@@ -151,7 +147,7 @@ func (s *workspaceSchema) moduleSettings(
 		return nil, err
 	}
 
-	hints, err := introspectConstructorArgs(ctx, srv, ref)
+	hints, err := introspectWorkspaceModuleSettings(ctx, srv, ws.Self(), configDir, entry.Source)
 	if err != nil {
 		return nil, fmt.Errorf("discover settings for module %q: %w", parent.Self().Name, err)
 	}
@@ -176,27 +172,28 @@ func (s *workspaceSchema) moduleSettings(
 	return settings, nil
 }
 
-func workspaceSettingsModuleRef(
+func introspectWorkspaceModuleSettings(
+	ctx context.Context,
+	srv *dagql.Server,
 	ws *core.Workspace,
 	configDir string,
 	source string,
-) (string, error) {
-	if source == "" {
-		return "", nil
-	}
-
+) ([]workspace.ConstructorArgHint, error) {
 	if core.FastModuleSourceKindCheck(source, "") != core.ModuleSourceKindLocal {
-		return source, nil
+		return introspectConstructorArgs(ctx, srv, source)
 	}
 
 	resolvedSource := workspace.ResolveModuleEntrySource(configDir, source)
 	if filepath.IsAbs(resolvedSource) {
-		return resolvedSource, nil
+		return introspectConstructorArgs(ctx, srv, resolvedSource)
 	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace project root is required for local module source %q", source)
+	if ws.HostPath() != "" {
+		return introspectConstructorArgs(ctx, srv, filepath.Join(ws.HostPath(), resolvedSource))
 	}
-	return filepath.Join(ws.HostPath(), resolvedSource), nil
+	if rootfs := ws.Rootfs(); rootfs.Self() != nil {
+		return introspectConstructorArgsFromDirectory(ctx, srv, rootfs, resolvedSource)
+	}
+	return nil, fmt.Errorf("workspace project root is required for local module source %q", source)
 }
 
 func workspaceSettingConfigKey(moduleName, settingName string) string {

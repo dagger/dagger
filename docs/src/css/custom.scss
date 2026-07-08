@@ -1,25 +1,9 @@
-@use "sass:meta";
-@use "sass:color";
 $mobile-width: 480px;
 $tablet-width: 1180px;
 $desktop-width: 1200px;
 $desktop-xl-width: 1400px;
 
-// branding colors
-$oat-color: rgb(248, 244, 239);
-$tangerine-color: rgb(239, 123, 26);
-$lemon-color: rgb(252, 2192, 9);
-$crimson-color: rgb(190, 29, 67);
-$aqua-color: rgb(64, 185, 188);
-$cloud-color: rgb(208, 224, 249);
-$plum-color: rgb(62, 59, 107);
-$inkberry-color: rgb(26, 24, 51);
-$obsidian-color: rgb(25, 25, 34);
-
 @import url("https://fonts.cdnfonts.com/css/general-sans");
-
-// define a css variable for the dark mode background color
-$dagger-dark-mode-background-color: rgb(13, 12, 27);
 
 // Define General Sans Medium fallback
 @font-face {
@@ -35,54 +19,453 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
   --ifm-font-family-base: "General Sans Medium",
     "General Sans Medium Placeholder", system-ui, -apple-system, Segoe UI,
     Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont;
-  --ifm-font-size-base: 18px;
+  --ifm-font-size-base: 16.2px; // 90% of the previous 18px
   --ifm-font-weight-base: 400;
-  --ifm-background-color: #{$oat-color};
-  --ifm-color-primary-light: #21798d;
-  --ifm-color-primary: #21798d;
-  --ifm-heading-color: #{$dagger-dark-mode-background-color};
-  --ifm-hover-overlay: #e1f5fb;
-  --ifm-menu-color-active: #21798d;
-  --ifm-menu-color-background-active: rgba($inkberry-color, 0.1);
-  --ifm-menu-color-background-hover: rgba($inkberry-color, 0.1);
-  --ifm-menu-color: #4b4b5a;
-  --ifm-navbar-background-color: #{$oat-color};
+  // Inline <code> shipped with Infima's cramped 0.1rem padding, so the border
+  // practically touched the text. Give it room to breathe site-wide.
+  --ifm-code-padding-horizontal: 0.45rem;
+  --ifm-code-padding-vertical: 0.2rem;
+
+  // Shared Dagger product palette.
+  // Source: https://gist.githubusercontent.com/vito/00c2372d1e4c31401e768ba5d2826295/raw/18ebf1c7d6ebf22947b49a4f06fe1651995ac534/gistfile1.txt
+  --font-sans: "Open Sans", sans-serif;
+  --font-mono: "Hack", monospace;
+  --font-heading: "Montserrat", sans-serif;
+  --ifm-font-family-monospace: var(--font-mono);
+
+  --header-height: 75px;
+
+  --scrollbar-track: var(--color-gray-100);
+  --scrollbar-thumb: var(--color-gray-200);
+  --scrollbar-thumb-hover: var(--color-gray-300);
+  --scrollbar-thumb-active: var(--color-gray-400);
+
+  --scrollbar-track-dark: var(--color-gray-800);
+  --scrollbar-thumb-dark: var(--color-gray-700);
+  --scrollbar-thumb-hover-dark: var(--color-gray-600);
+  --scrollbar-thumb-active-dark: var(--color-gray-500);
+
+  --drop-shadow-md: none;
+  --drop-shadow-dark: none;
+  --inset-shadow-md: none;
+  --inset-shadow-dark: none;
+
+  --shadow-login: 0rem 2rem 2.5rem -0.75rem var(--color-blackHole);
+
+  --color-blackHole: #0d0c1b;
+  --color-white: #ffffff;
+
+  --color-transparent: transparent;
+
+  --color-primary: var(--color-blue-500);
+  --color-primaryDark: var(--color-blue-200);
+  --color-primaryVariant: var(--color-blue-600);
+
+  --color-secondary: var(--color-cyan-400);
+  --color-secondaryVariant: var(--color-cyan-600);
+
+  --color-background: var(--color-white);
+  --color-backgroundDark: var(--color-blackHole);
+  --color-backgroundSecondary: var(--color-gray-50);
+  --color-backgroundSecondaryDark: var(--color-gray-800);
+
+  --color-error: var(--color-red-500);
+  --color-errorDark: var(--color-red-200);
+
+  --color-whiteAlpha-50: rgba(255, 255, 255, 0.04);
+  --color-whiteAlpha-100: rgba(255, 255, 255, 0.08);
+  --color-whiteAlpha-200: rgba(255, 255, 255, 0.1);
+  --color-whiteAlpha-300: rgba(255, 255, 255, 0.12);
+  --color-whiteAlpha-400: rgba(255, 255, 255, 0.16);
+  --color-whiteAlpha-500: rgba(255, 255, 255, 0.24);
+  --color-whiteAlpha-600: rgba(255, 255, 255, 0.32);
+  --color-whiteAlpha-700: rgba(255, 255, 255, 0.4);
+  --color-whiteAlpha-800: rgba(255, 255, 255, 0.64);
+  --color-whiteAlpha-900: rgba(255, 255, 255, 0.88);
+
+  --color-blackAlpha-50: rgba(13, 12, 27, 0.04);
+  --color-blackAlpha-100: rgba(13, 12, 27, 0.08);
+  --color-blackAlpha-200: rgba(13, 12, 27, 0.1);
+  --color-blackAlpha-300: rgba(13, 12, 27, 0.12);
+  --color-blackAlpha-400: rgba(13, 12, 27, 0.16);
+  --color-blackAlpha-500: rgba(13, 12, 27, 0.24);
+  --color-blackAlpha-600: rgba(13, 12, 27, 0.32);
+  --color-blackAlpha-700: rgba(13, 12, 27, 0.4);
+  --color-blackAlpha-800: rgba(13, 12, 27, 0.64);
+  --color-blackAlpha-900: rgba(13, 12, 27, 0.88);
+
+  --color-gray-50: #f4f4ff;
+  --color-gray-100: #d2d2e3;
+  --color-gray-200: #b5b4cb;
+  --color-gray-300: #9796b5;
+  --color-gray-400: #7a79a0;
+  --color-gray-500: #605e85;
+  --color-gray-600: #4b4968;
+  --color-gray-700: #333248;
+  --color-gray-800: #232237;
+  --color-gray-900: #131226;
+
+  --color-red-50: #ffe5eb;
+  --color-red-100: #fbbac4;
+  --color-red-200: #f28e9e;
+  --color-red-300: #eb6177;
+  --color-red-400: #e73853;
+  --color-red-500: #ca1b37;
+  --color-red-600: #9e132b;
+  --color-red-700: #710b1b;
+  --color-red-800: #460410;
+  --color-red-900: #1e0004;
+
+  --color-orange-50: #ffefdd;
+  --color-orange-100: #fdd5b2;
+  --color-orange-200: #f9ba86;
+  --color-orange-300: #f49f57;
+  --color-orange-400: #f08328;
+  --color-orange-500: #d76a0f;
+  --color-orange-600: #a8520a;
+  --color-orange-700: #783a05;
+  --color-orange-800: #4a2200;
+  --color-orange-900: #1e0900;
+
+  --color-yellow-50: #fff4db;
+  --color-yellow-100: #ffe4ae;
+  --color-yellow-200: #fed67e;
+  --color-yellow-300: #fdcc4d;
+  --color-yellow-400: #fcc51d;
+  --color-yellow-500: #c17c0a;
+  --color-yellow-600: #aa6706;
+  --color-yellow-700: #7e4600;
+  --color-yellow-800: #4c2500;
+  --color-yellow-900: #1c0900;
+
+  --color-green-50: #e1fced;
+  --color-green-100: #bfefd2;
+  --color-green-200: #99e3b6;
+  --color-green-300: #72d799;
+  --color-green-400: #4dcc7d;
+  --color-green-500: #209f50;
+  --color-green-600: #228748;
+  --color-green-700: #196336;
+  --color-green-800: #093c1f;
+  --color-green-900: #001605;
+
+  --color-teal-50: #ddfdfd;
+  --color-teal-100: #baf1f2;
+  --color-teal-200: #94e5e7;
+  --color-teal-300: #6dd9db;
+  --color-teal-400: #47ced1;
+  --color-teal-500: #139a9d;
+  --color-teal-600: #148385;
+  --color-teal-700: #0d6667;
+  --color-teal-800: #003d3e;
+  --color-teal-900: #001717;
+
+  --color-blue-50: #e2eeff;
+  --color-blue-100: #b1c8ff;
+  --color-blue-200: #7f9eff;
+  --color-blue-300: #4d72ff;
+  --color-blue-400: #3874ff;
+  --color-blue-500: #064fe5;
+  --color-blue-600: #004ab3;
+  --color-blue-700: #003d81;
+  --color-blue-800: #002a50;
+  --color-blue-900: #001120;
+
+  --color-cyan-50: #ddfbff;
+  --color-cyan-100: #b7eaf7;
+  --color-cyan-200: #90dbee;
+  --color-cyan-300: #66cce6;
+  --color-cyan-400: #3fbddd;
+  --color-cyan-500: #1a96b6;
+  --color-cyan-600: #197f99;
+  --color-cyan-700: #0b5b6e;
+  --color-cyan-800: #003844;
+  --color-cyan-900: #00141b;
+
+  --color-purple-50: #faf5ff;
+  --color-purple-100: #e9d8fd;
+  --color-purple-200: #d6bcfa;
+  --color-purple-300: #b794f4;
+  --color-purple-400: #9f7aea;
+  --color-purple-500: #805ad5;
+  --color-purple-600: #6b46c1;
+  --color-purple-700: #553c9a;
+  --color-purple-800: #44337a;
+  --color-purple-900: #322659;
+
+  --color-pink-50: #fff5f7;
+  --color-pink-100: #fed7e2;
+  --color-pink-200: #fbb6ce;
+  --color-pink-300: #f687b3;
+  --color-pink-400: #ed64a6;
+  --color-pink-500: #d53f8c;
+  --color-pink-600: #b83280;
+  --color-pink-700: #97266d;
+  --color-pink-800: #702459;
+  --color-pink-900: #521b41;
+
+  --color-redAlpha-10: color-mix(
+    in srgb,
+    var(--color-red-500) 10%,
+    transparent
+  );
+  --color-yellowAlpha-10: color-mix(
+    in srgb,
+    var(--color-yellow-500) 10%,
+    transparent
+  );
+  --color-greenAlpha-10: color-mix(
+    in srgb,
+    var(--color-green-500) 10%,
+    transparent
+  );
+  --color-blueAlpha-10: color-mix(
+    in srgb,
+    var(--color-blue-500) 10%,
+    transparent
+  );
+  --color-cyanAlpha-10: color-mix(
+    in srgb,
+    var(--color-cyan-500) 10%,
+    transparent
+  );
+
+  --color-raisinBlack-700: #26243e;
+  --color-raisinBlack-800: #1a192b;
+
+  --ifm-color-white: var(--color-white);
+  --ifm-color-black: var(--color-blackHole);
+  --ifm-color-gray-0: var(--color-white);
+  --ifm-color-gray-100: var(--color-gray-50);
+  --ifm-color-gray-200: var(--color-gray-100);
+  --ifm-color-gray-300: var(--color-gray-200);
+  --ifm-color-gray-400: var(--color-gray-300);
+  --ifm-color-gray-500: var(--color-gray-400);
+  --ifm-color-gray-600: var(--color-gray-500);
+  --ifm-color-gray-700: var(--color-gray-600);
+  --ifm-color-gray-800: var(--color-gray-700);
+  --ifm-color-gray-900: var(--color-gray-800);
+  --ifm-color-gray-1000: var(--color-gray-900);
+  --ifm-background-color: var(--color-backgroundSecondary);
+  --ifm-background-surface-color: var(--color-white);
+  --ifm-color-content: var(--color-gray-800);
+  --ifm-color-content-secondary: var(--color-gray-600);
+  --ifm-font-color-base: var(--color-gray-800);
+  --ifm-font-color-secondary: var(--color-gray-600);
+  --ifm-heading-color: var(--color-blackHole);
+  --ifm-color-secondary-lightest: var(--color-gray-50);
+  --ifm-color-secondary-lighter: var(--color-gray-100);
+  --ifm-color-secondary-light: var(--color-gray-200);
+  --ifm-color-secondary: var(--color-gray-300);
+  --ifm-color-secondary-dark: var(--color-gray-400);
+  --ifm-color-secondary-darker: var(--color-gray-500);
+  --ifm-color-secondary-darkest: var(--color-gray-600);
+  --ifm-color-secondary-contrast-background: var(--color-gray-50);
+  --ifm-color-secondary-contrast-foreground: var(--color-gray-800);
+  --ifm-color-primary-lightest: var(--color-blue-200);
+  --ifm-color-primary-lighter: var(--color-blue-300);
+  --ifm-color-primary-light: var(--color-blue-400);
+  --ifm-color-primary: var(--color-blue-500);
+  --ifm-color-primary-dark: var(--color-blue-600);
+  --ifm-color-primary-darker: var(--color-blue-700);
+  --ifm-color-primary-darkest: var(--color-blue-800);
+  --ifm-color-primary-contrast-background: var(--color-blue-50);
+  --ifm-color-primary-contrast-foreground: var(--color-blue-800);
+  --ifm-color-success-lightest: var(--color-green-200);
+  --ifm-color-success-lighter: var(--color-green-300);
+  --ifm-color-success-light: var(--color-green-400);
+  --ifm-color-success: var(--color-green-500);
+  --ifm-color-success-dark: var(--color-green-600);
+  --ifm-color-success-darker: var(--color-green-700);
+  --ifm-color-success-darkest: var(--color-green-800);
+  --ifm-color-success-contrast-background: var(--color-green-50);
+  --ifm-color-success-contrast-foreground: var(--color-green-800);
+  --ifm-color-info-lightest: var(--color-cyan-200);
+  --ifm-color-info-lighter: var(--color-cyan-300);
+  --ifm-color-info-light: var(--color-cyan-400);
+  --ifm-color-info: var(--color-cyan-500);
+  --ifm-color-info-dark: var(--color-cyan-600);
+  --ifm-color-info-darker: var(--color-cyan-700);
+  --ifm-color-info-darkest: var(--color-cyan-800);
+  --ifm-color-info-contrast-background: var(--color-cyan-50);
+  --ifm-color-info-contrast-foreground: var(--color-cyan-800);
+  --ifm-color-warning-lightest: var(--color-yellow-200);
+  --ifm-color-warning-lighter: var(--color-yellow-300);
+  --ifm-color-warning-light: var(--color-yellow-400);
+  --ifm-color-warning: var(--color-yellow-500);
+  --ifm-color-warning-dark: var(--color-yellow-600);
+  --ifm-color-warning-darker: var(--color-yellow-700);
+  --ifm-color-warning-darkest: var(--color-yellow-800);
+  --ifm-color-warning-contrast-background: var(--color-yellow-50);
+  --ifm-color-warning-contrast-foreground: var(--color-yellow-800);
+  --ifm-color-danger: var(--color-red-500);
+  --ifm-color-danger-dark: var(--color-red-600);
+  --ifm-color-danger-darker: var(--color-red-700);
+  --ifm-color-danger-darkest: var(--color-red-800);
+  --ifm-color-danger-light: var(--color-red-400);
+  --ifm-color-danger-lighter: var(--color-red-300);
+  --ifm-color-danger-lightest: var(--color-red-200);
+  --ifm-color-danger-contrast-background: var(--color-red-50);
+  --ifm-color-danger-contrast-foreground: var(--color-red-800);
+  --ifm-color-emphasis-0: var(--color-white);
+  --ifm-color-emphasis-100: var(--color-gray-50);
+  --ifm-color-emphasis-200: var(--color-gray-100);
+  --ifm-color-emphasis-300: var(--color-gray-200);
+  --ifm-color-emphasis-400: var(--color-gray-300);
+  --ifm-color-emphasis-500: var(--color-gray-400);
+  --ifm-color-emphasis-600: var(--color-gray-500);
+  --ifm-color-emphasis-700: var(--color-gray-600);
+  --ifm-color-emphasis-800: var(--color-gray-700);
+  --ifm-color-emphasis-900: var(--color-gray-800);
+  --ifm-color-emphasis-1000: var(--color-gray-900);
+  --ifm-code-background: var(--color-backgroundSecondary);
+  --ifm-code-color: var(--color-purple-600);
+  --ifm-global-shadow-lw: 0 1px 2px 0 var(--color-blackAlpha-200);
+  --ifm-global-shadow-md: 0 5px 40px var(--color-blackAlpha-500);
+  --ifm-global-shadow-tl: 0 12px 28px 0 var(--color-blackAlpha-500),
+    0 2px 4px 0 var(--color-blackAlpha-200);
+  --ifm-hover-overlay: var(--color-cyan-50);
+  --ifm-table-background: var(--color-transparent);
+  --ifm-table-stripe-background: var(--color-gray-50);
+  --ifm-scrollbar-track-background-color: var(--color-gray-50);
+  --ifm-scrollbar-thumb-background-color: var(--color-gray-300);
+  --ifm-scrollbar-thumb-hover-background-color: var(--color-gray-400);
+  --docusaurus-highlighted-code-line-bg: var(--color-gray-100);
+  --ifm-menu-color-active: var(--color-blue-600);
+  --ifm-menu-color-background-active: var(--color-gray-100);
+  --ifm-menu-color-background-hover: var(--color-gray-100);
+  --ifm-menu-color: var(--color-gray-600);
+  --ifm-navbar-background-color: var(--color-backgroundSecondary);
   --ifm-navbar-height: 4.5rem;
   --ifm-navbar-padding-vertical: 0.75rem;
-  --ifm-navbar-link-color: rgb(80, 80, 81);
-  --ifm-toc-link-color: #4b4b5a;
+  --ifm-navbar-link-color: var(--color-gray-600);
+  --ifm-toc-link-color: var(--color-gray-600);
 }
 
 html[data-theme="dark"] {
-  --ifm-background-color: #{$inkberry-color};
-  --ifm-color-primary-light: #57c7e3;
-  --ifm-color-primary: #57c7e3;
-  --ifm-heading-color: white;
-  --ifm-hover-overlay: #2b2f46;
-  --ifm-menu-color-active: #57c7e3;
-  --ifm-menu-color-background-active: rgba(26, 24, 51, 0.1);
-  --ifm-menu-color-background-hover: rgba(26, 24, 51, 0.1);
-  --ifm-menu-color: white;
-  --ifm-toc-link-color: white;
-  --ifm-navbar-background-color: #{$inkberry-color};
-  --ifm-navbar-link-color: white;
+  --ifm-color-gray-0: var(--color-blackHole);
+  --ifm-color-gray-100: var(--color-gray-900);
+  --ifm-color-gray-200: var(--color-gray-800);
+  --ifm-color-gray-300: var(--color-gray-700);
+  --ifm-color-gray-400: var(--color-gray-600);
+  --ifm-color-gray-500: var(--color-gray-500);
+  --ifm-color-gray-600: var(--color-gray-400);
+  --ifm-color-gray-700: var(--color-gray-300);
+  --ifm-color-gray-800: var(--color-gray-200);
+  --ifm-color-gray-900: var(--color-gray-100);
+  --ifm-color-gray-1000: var(--color-white);
+  --ifm-background-color: var(--color-backgroundDark);
+  --ifm-background-surface-color: var(--color-gray-900);
+  --ifm-color-content: var(--color-gray-100);
+  --ifm-color-content-secondary: var(--color-gray-300);
+  --ifm-font-color-base: var(--color-gray-100);
+  --ifm-font-color-secondary: var(--color-gray-300);
+  --ifm-heading-color: var(--color-white);
+  --ifm-color-secondary-lightest: var(--color-gray-50);
+  --ifm-color-secondary-lighter: var(--color-gray-100);
+  --ifm-color-secondary-light: var(--color-gray-200);
+  --ifm-color-secondary: var(--color-gray-300);
+  --ifm-color-secondary-dark: var(--color-gray-400);
+  --ifm-color-secondary-darker: var(--color-gray-500);
+  --ifm-color-secondary-darkest: var(--color-gray-600);
+  --ifm-color-secondary-contrast-background: var(--color-gray-800);
+  --ifm-color-secondary-contrast-foreground: var(--color-gray-100);
+  --ifm-color-primary-lightest: var(--color-blue-50);
+  --ifm-color-primary-lighter: var(--color-blue-100);
+  --ifm-color-primary-light: var(--color-blue-100);
+  --ifm-color-primary: var(--color-primaryDark);
+  --ifm-color-primary-dark: var(--color-blue-300);
+  --ifm-color-primary-darker: var(--color-blue-400);
+  --ifm-color-primary-darkest: var(--color-blue-500);
+  --ifm-color-primary-contrast-background: var(--color-blueAlpha-10);
+  --ifm-color-primary-contrast-foreground: var(--color-blue-100);
+  --ifm-color-success-lightest: var(--color-green-50);
+  --ifm-color-success-lighter: var(--color-green-100);
+  --ifm-color-success-light: var(--color-green-200);
+  --ifm-color-success: var(--color-green-300);
+  --ifm-color-success-dark: var(--color-green-400);
+  --ifm-color-success-darker: var(--color-green-500);
+  --ifm-color-success-darkest: var(--color-green-600);
+  --ifm-color-success-contrast-background: var(--color-greenAlpha-10);
+  --ifm-color-success-contrast-foreground: var(--color-green-100);
+  --ifm-color-info-lightest: var(--color-cyan-50);
+  --ifm-color-info-lighter: var(--color-cyan-100);
+  --ifm-color-info-light: var(--color-cyan-200);
+  --ifm-color-info: var(--color-cyan-300);
+  --ifm-color-info-dark: var(--color-cyan-400);
+  --ifm-color-info-darker: var(--color-cyan-500);
+  --ifm-color-info-darkest: var(--color-cyan-600);
+  --ifm-color-info-contrast-background: var(--color-cyanAlpha-10);
+  --ifm-color-info-contrast-foreground: var(--color-cyan-100);
+  --ifm-color-warning-lightest: var(--color-yellow-50);
+  --ifm-color-warning-lighter: var(--color-yellow-100);
+  --ifm-color-warning-light: var(--color-yellow-200);
+  --ifm-color-warning: var(--color-yellow-300);
+  --ifm-color-warning-dark: var(--color-yellow-400);
+  --ifm-color-warning-darker: var(--color-yellow-500);
+  --ifm-color-warning-darkest: var(--color-yellow-600);
+  --ifm-color-warning-contrast-background: var(--color-yellowAlpha-10);
+  --ifm-color-warning-contrast-foreground: var(--color-yellow-100);
+  --ifm-color-danger-lightest: var(--color-red-50);
+  --ifm-color-danger-lighter: var(--color-red-100);
+  --ifm-color-danger-light: var(--color-red-200);
+  --ifm-color-danger: var(--color-errorDark);
+  --ifm-color-danger-dark: var(--color-red-300);
+  --ifm-color-danger-darker: var(--color-red-400);
+  --ifm-color-danger-darkest: var(--color-red-500);
+  --ifm-color-danger-contrast-background: var(--color-redAlpha-10);
+  --ifm-color-danger-contrast-foreground: var(--color-red-100);
+  --ifm-color-emphasis-0: var(--color-blackHole);
+  --ifm-color-emphasis-100: var(--color-gray-900);
+  --ifm-color-emphasis-200: var(--color-gray-800);
+  --ifm-color-emphasis-300: var(--color-gray-700);
+  --ifm-color-emphasis-400: var(--color-gray-600);
+  --ifm-color-emphasis-500: var(--color-gray-500);
+  --ifm-color-emphasis-600: var(--color-gray-400);
+  --ifm-color-emphasis-700: var(--color-gray-300);
+  --ifm-color-emphasis-800: var(--color-gray-200);
+  --ifm-color-emphasis-900: var(--color-gray-100);
+  --ifm-color-emphasis-1000: var(--color-white);
+  --ifm-code-background: var(--color-gray-800);
+  --ifm-code-color: var(--color-purple-200);
+  --ifm-global-shadow-lw: 0 1px 2px 0 var(--color-blackAlpha-700);
+  --ifm-global-shadow-md: 0 5px 40px var(--color-blackAlpha-800);
+  --ifm-global-shadow-tl: 0 12px 28px 0 var(--color-blackAlpha-800),
+    0 2px 4px 0 var(--color-blackAlpha-700);
+  --ifm-hover-overlay: var(--color-gray-800);
+  --ifm-table-background: var(--color-transparent);
+  --ifm-table-stripe-background: var(--color-gray-900);
+  --ifm-scrollbar-track-background-color: var(--color-gray-900);
+  --ifm-scrollbar-thumb-background-color: var(--color-gray-700);
+  --ifm-scrollbar-thumb-hover-background-color: var(--color-gray-600);
+  --docusaurus-highlighted-code-line-bg: var(--color-gray-800);
+  --ifm-menu-color-active: var(--color-cyan-300);
+  --ifm-menu-color-background-active: var(--color-gray-800);
+  --ifm-menu-color-background-hover: var(--color-gray-800);
+  --ifm-menu-color: var(--color-gray-200);
+  --ifm-navbar-background-color: var(--color-backgroundDark);
+  --ifm-navbar-link-color: var(--color-gray-200);
+  --ifm-toc-link-color: var(--color-gray-300);
 
   // Make sure dropdown menus also have the correct background
   .dropdown__menu,
   .dropdown__link {
-    background-color: #{$dagger-dark-mode-background-color} !important;
+    background-color: var(--ifm-background-surface-color) !important;
+  }
+
+  .dropdown__link:hover {
+    background-color: var(--ifm-hover-overlay) !important;
   }
 
   // Fix any potential navigation borders in dark mode
   .navbar-sidebar {
-    border-color: #{$dagger-dark-mode-background-color} !important;
-    background-color: #{$dagger-dark-mode-background-color} !important;
+    border-color: var(--color-backgroundDark) !important;
+    background-color: var(--color-backgroundDark) !important;
   }
 
-  // Make announcement bar use plum color in dark mode
   .theme-announcement-bar {
-    background-color: #{$plum-color} !important; /* Using plum color for branding */
-    color: white !important; /* Using white text for contrast */
+    background-color: var(--color-purple-800) !important;
+    color: var(--color-white) !important;
   }
 }
 
@@ -112,9 +495,9 @@ html[data-theme="dark"] {
   button,
   .closeButton_CVFx,
   .announcementBarClose_gvF7 {
-    color: white !important;
+    color: var(--color-white) !important;
     font-size: 0.875rem !important; /* 14px relative */
-    background-color: transparent !important;
+    background-color: var(--color-transparent) !important;
     transition: all 0.2s ease-in-out !important;
     position: absolute !important;
     right: 1rem !important;
@@ -164,12 +547,11 @@ aside[class*="docSidebarContainer"] {
   box-shadow: none !important;
 
   @include desktop {
-    height: calc(
-      100vh - var(--ifm-navbar-height)
-    ) !important; /* Account for navbar height */
-    min-height: calc(100vh - var(--ifm-navbar-height)) !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    margin-top: 0 !important;
     position: sticky !important;
-    top: var(--ifm-navbar-height) !important; /* Start below navbar */
+    top: 0 !important;
     // overflow: auto !important; /* Prevent container from scrolling */
   }
 
@@ -191,7 +573,7 @@ aside[class*="docSidebarContainer"] {
 
     /* Custom scrollbar styling for better UX */
     scrollbar-width: thin !important; /* Firefox - show thin scrollbar */
-    scrollbar-color: rgba(0, 0, 0, 0.2) transparent !important; /* Firefox scrollbar colors */
+    scrollbar-color: var(--scrollbar-thumb) var(--color-transparent) !important; /* Firefox scrollbar colors */
 
     /* WebKit browsers (Chrome, Safari, Edge) - show minimal scrollbar */
     &::-webkit-scrollbar {
@@ -199,16 +581,16 @@ aside[class*="docSidebarContainer"] {
     }
 
     &::-webkit-scrollbar-track {
-      background: transparent !important;
+      background: var(--color-transparent) !important;
     }
 
     &::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.2) !important;
+      background: var(--scrollbar-thumb) !important;
       border-radius: 3px !important;
     }
 
     &::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 0, 0, 0.4) !important;
+      background: var(--scrollbar-thumb-hover) !important;
     }
   }
 }
@@ -217,14 +599,15 @@ aside[class*="docSidebarContainer"] {
 html[data-theme="dark"] {
   .menu {
     @include desktop {
-      scrollbar-color: rgba(255, 255, 255, 0.3) transparent !important; /* Firefox dark scrollbar */
+      scrollbar-color: var(--scrollbar-thumb-dark)
+        var(--color-transparent) !important; /* Firefox dark scrollbar */
 
       &::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.3) !important;
+        background: var(--scrollbar-thumb-dark) !important;
       }
 
       &::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.5) !important;
+        background: var(--scrollbar-thumb-hover-dark) !important;
       }
     }
   }
@@ -251,7 +634,7 @@ div[class*="docSidebarMenu"],
   font-size: 00.8175rem;
   font-weight: normal !important; /* Normal weight for inactive items */
   padding: 0.5rem 0.5rem !important; /* Increased vertical padding for consistent height */
-  border-bottom: 3px solid transparent !important; /* Add transparent border to prevent layout shift */
+  border-bottom: 3px solid var(--color-transparent) !important; /* Add transparent border to prevent layout shift */
   height: 36px !important; /* Set consistent height */
   display: flex !important;
   align-items: center !important;
@@ -285,9 +668,9 @@ div[class*="docSidebarMenu"],
   .docs-version-select {
     max-width: 88px;
     height: 36px;
-    border: 1px solid rgba(255, 255, 255, 0.35);
+    border: 1px solid var(--color-gray-100);
     border-radius: 4px;
-    background: transparent;
+    background: var(--color-transparent);
     color: var(--ifm-navbar-link-color);
     font: inherit;
     font-size: 0.8175rem;
@@ -311,7 +694,7 @@ html[data-theme="light"] {
     .navbar-blog-link:not(.navbar__link--active):not(
       .dagger-cloud-button
     ):hover {
-    border-bottom: 3px solid rgba(239, 123, 26, 0.5) !important; // tangerine, 50% opacity
+    border-bottom: 3px solid var(--color-orange-300) !important;
   }
 }
 
@@ -323,7 +706,7 @@ html[data-theme="dark"] {
     .navbar-blog-link:not(.navbar__link--active):not(
       .dagger-cloud-button
     ):hover {
-    border-bottom: 3px solid rgba(190, 29, 67, 0.5) !important; // crimson, 50% opacity
+    border-bottom: 3px solid var(--color-red-400) !important;
   }
 }
 
@@ -337,26 +720,26 @@ html[data-theme="light"] {
     .navbar__item
     .navbar__link.navbar__link--active:not(.dagger-cloud-button),
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
-    color: rgb(23, 23, 24) !important;
+    color: var(--color-gray-900) !important;
     font-weight: 600 !important; /* Bold weight for active items */
-    border-bottom: 3px solid #{$tangerine-color} !important;
+    border-bottom: 3px solid var(--color-orange-400) !important;
   }
 
   // Make announcement bar use inkberry color in light mode
   .theme-announcement-bar {
-    background-color: #{$inkberry-color} !important; /* Using inkberry color for branding */
-    color: white !important; /* Using white text for contrast */
+    background-color: var(--color-blackHole) !important;
+    color: var(--color-white) !important;
   }
 
   /* Style for active links in the sidebar - light mode only */
   .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
-    background-color: rgba(26, 24, 51, 0.1) !important;
+    background-color: var(--color-gray-100) !important;
     border-radius: 4px !important;
   }
 
   /* Hover effect for menu links - light mode only */
   .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
-    background-color: rgba(26, 24, 51, 0.1) !important;
+    background-color: var(--color-gray-100) !important;
     border-radius: 4px !important;
   }
 }
@@ -367,30 +750,20 @@ html[data-theme="dark"] {
     .navbar__item
     .navbar__link.navbar__link--active:not(.dagger-cloud-button),
   .navbar-blog-link.navbar__link--active:not(.dagger-cloud-button) {
-    color: white !important;
+    color: var(--color-white) !important;
     font-weight: 600 !important; /* Bold weight for active items */
-    border-bottom: 3px solid #{$crimson-color} !important;
+    border-bottom: 3px solid var(--color-red-500) !important;
   }
 
   /* Style for active links in the sidebar - dark mode only */
   .menu__link.menu__link--active:not(.menu__list-item-collapsible .menu__link) {
-    background-color: rgba(
-      208,
-      224,
-      249,
-      0.15
-    ) !important; /* Using cloud-color with transparency */
+    background-color: var(--color-gray-800) !important;
     border-radius: 4px !important;
   }
 
   /* Hover effect for menu links - dark mode only */
   .menu__link:not(.menu__list-item-collapsible .menu__link):hover {
-    background-color: rgba(
-      208,
-      224,
-      249,
-      0.15
-    ) !important; /* Using cloud-color with transparency */
+    background-color: var(--color-gray-800) !important;
     border-radius: 4px !important;
   }
 }
@@ -401,6 +774,7 @@ html[data-theme="dark"] {
   border-bottom: none !important;
 
   @include desktop {
+    display: none !important;
     margin-bottom: 1.1rem;
   }
 }
@@ -443,12 +817,12 @@ html[data-theme="dark"] {
 }
 
 .theme-layout-footer {
-  background-color: #{$dagger-dark-mode-background-color};
-  color: white;
+  background-color: var(--color-blackHole);
+  color: var(--color-white);
 }
 
 .theme-layout-footer a {
-  color: white;
+  color: var(--color-white);
   text-decoration: none;
   // font size relative to 13px
   font-size: 0.8125rem; // 13px
@@ -478,7 +852,7 @@ body {
   height: 36px !important; /* Match navbar links height */
   display: flex !important;
   align-items: center !important;
-  margin-bottom: 3px transparent;
+  margin-bottom: 3px;
 
   // Hide on tablet resolutions
   @include tablet {
@@ -493,17 +867,13 @@ body {
 /* Light mode styling for Dagger Cloud button */
 html[data-theme="light"] {
   .dagger-cloud-button {
-    background-color: #{$plum-color} !important; /* Dark blue/purple color */
-    color: white !important;
-    border: 1px solid #{$plum-color} !important; /* Use same color for consistent border */
+    background-color: var(--color-purple-800) !important;
+    color: var(--color-white) !important;
+    border: 1px solid var(--color-purple-800) !important;
 
     &:hover {
-      background-color: rgb(
-        29,
-        26,
-        56
-      ) !important; /* Slightly lighter on hover */
-      border-color: rgb(29, 26, 56) !important;
+      background-color: var(--color-raisinBlack-800) !important;
+      border-color: var(--color-raisinBlack-800) !important;
       transform: none !important; /* Prevent any transform effects */
     }
   }
@@ -512,18 +882,13 @@ html[data-theme="light"] {
 /* Dark mode styling for Dagger Cloud button */
 html[data-theme="dark"] {
   .dagger-cloud-button {
-    background-color: #{$plum-color} !important; /* Using plum color for branding */
-    color: white !important; /* White text for contrast */
-    border: 1px solid #{$plum-color} !important;
+    background-color: var(--color-purple-800) !important;
+    color: var(--color-white) !important; /* White text for contrast */
+    border: 1px solid var(--color-purple-800) !important;
 
     &:hover {
-      background-color: rgba(
-        62,
-        59,
-        107,
-        0.8
-      ) !important; /* Slightly lighter plum on hover */
-      border-color: rgba(62, 59, 107, 0.8) !important;
+      background-color: var(--color-purple-700) !important;
+      border-color: var(--color-purple-700) !important;
       transform: none !important; /* Prevent any transform effects */
     }
   }
@@ -551,7 +916,7 @@ h4 {
 }
 
 .footer {
-  color: white;
+  color: var(--color-white);
   padding: 4rem 0 1.5rem;
 
   .flex {
@@ -563,7 +928,7 @@ h4 {
   }
 
   hr {
-    background-color: #4b4968;
+    background-color: var(--color-gray-600);
   }
 
   .justify-between {
@@ -571,12 +936,12 @@ h4 {
   }
 
   .footer__link-item {
-    color: white;
+    color: var(--color-white);
     font-size: 0.875rem;
   }
 
   .discord-icon {
-    background-color: white;
+    background-color: var(--color-white);
     mask-image: url("/img/discord-icon.svg");
     mask-size: 100%;
 
@@ -602,7 +967,7 @@ h4 {
   .footer-discord-link {
     background-image: url("/img/discord-icon.svg");
     /* Discord icon is often black, so force it to white */
-    filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+    filter: invert(1) brightness(2) drop-shadow(0 0 2px var(--color-blackHole));
   }
   .footer-x-link {
     background-image: url("/img/x-icon.svg");
@@ -612,17 +977,17 @@ h4 {
   .footer-discord-link:hover,
   .footer-x-link:hover {
     opacity: 1;
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--color-gray-800);
     border-radius: 6px;
   }
 }
 
 // Ensure footer icons are visible in both themes
 html[data-theme="light"] .footer-discord-link {
-  filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+  filter: invert(1) brightness(2) drop-shadow(0 0 2px var(--color-blackHole));
 }
 html[data-theme="dark"] .footer-discord-link {
-  filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+  filter: invert(1) brightness(2) drop-shadow(0 0 2px var(--color-blackHole));
 }
 html[data-theme="light"] .footer-x-link {
   filter: none;
@@ -633,7 +998,7 @@ html[data-theme="dark"] .footer-x-link {
 
 .footer__copyright {
   font-size: 0.875rem !important; // 14px
-  color: white;
+  color: var(--color-white);
   align-content: left;
 }
 
@@ -641,7 +1006,7 @@ html[data-theme="dark"] .footer-x-link {
   height: 35px;
   margin: 0;
   padding: 0;
-  background-color: white;
+  background-color: var(--color-white);
   mask-image: url("/img/github-icon.svg");
   mask-size: 100%;
   width: 30px;
@@ -661,64 +1026,28 @@ html[data-theme="dark"] .footer-x-link {
   @include mobile {
     margin: auto;
     html[data-theme="light"] {
-      background-color: black;
+      background-color: var(--color-blackHole);
     }
   }
 }
 
 // adjust style for Dagger Shell tab title
 .language-shell > div:nth-child(1) {
-  background-color: white;
-  color: #{$plum-color};
+  // No background here: this selector matches the content wrapper around the
+  // <pre>, so a solid color leaks out behind the code block's rounded corners
+  // (a white fringe in dark mode). Let the pre's own background show through.
+  color: var(--color-purple-800);
   font-style: italic;
 }
 
-// Style for pre elements with different modes
-html[data-theme="light"] pre {
-  border: 1px solid rgb(223, 223, 224); // Obsidian color with transparency
-  color: #{$inkberry-color};
-}
-
-html[data-theme="dark"] pre {
-  background: #{$obsidian-color} !important;
-  border: 1px solid rgba(25, 25, 34, 0.3); // Obsidian color with transparency
-  color: #f8f8f2; // Light color for code text in dark mode
+html[data-theme="dark"] .language-shell > div:nth-child(1) {
+  color: var(--color-purple-200);
 }
 
 // Remove top and bottom padding from header-searchbar
 .header-searchbar {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
-}
-
-// DocSearch button styling to match background color in both themes
-html[data-theme="light"] .DocSearch.DocSearch-Button {
-  background-color: #fff !important;
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 8px !important; /* Match Dagger Cloud button radius */
-  height: 36px !important; /* Match navbar links height */
-  padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
-
-  &:hover {
-    background-color: #f7f7f7 !important;
-  }
-}
-
-html[data-theme="dark"] .DocSearch.DocSearch-Button {
-  background-color: #{$obsidian-color} !important;
-  border: none !important;
-  border-radius: 8px !important; /* Match Dagger Cloud button radius */
-  height: 36px !important; /* Match navbar links height */
-  padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
-
-  &:hover {
-    background-color: color.adjust($inkberry-color, $lightness: 5%) !important;
-  }
-
-  @include mobile {
-    background-color: #{$plum-color} !important; /* Match announcement bar color in dark mode */
-  }
 }
 
 /* Dark mode toggle button consistent height */
@@ -729,41 +1058,16 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
   align-items: center !important;
 }
 
-// Use mobile-style search (magnifying glass only) on tablet screens
-@include tablet {
-  .DocSearch-Button {
-    width: 48px !important;
-    min-width: 48px !important;
-    padding: 0 !important;
+@include desktop {
+  .docs-right-sidebar-cloud-button {
     display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-
-    .DocSearch-Button-Container {
-      justify-content: center !important;
-      align-items: center !important;
-      display: flex !important;
-    }
-
-    .DocSearch-Search-Icon {
-      width: 20px !important;
-      height: 20px !important;
-      margin: 0 !important;
-    }
-
-    .DocSearch-Button-Placeholder,
-    .DocSearch-Button-Keys {
-      display: none !important;
-    }
   }
 
-  // Apply mobile hover effect for dark theme on tablet
-  html[data-theme="dark"] .DocSearch.DocSearch-Button {
-    background-color: #{$plum-color} !important;
-
-    &:hover {
-      background-color: rgba(62, 59, 107, 0.8) !important;
-    }
+  .docs-sidebar-search {
+    display: flex;
+    margin-top: 0.75rem;
+    min-width: 0;
+    width: 100%;
   }
 }
 
@@ -789,7 +1093,7 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
 // Style tabs to match sidebar hover effects
 // Add consistent bottom border to tab container
 ul.tabs {
-  border-bottom: 1px solid rgb(218, 221, 225) !important;
+  border-bottom: 1px solid var(--ifm-color-emphasis-300) !important;
   display: flex !important;
   width: 100% !important;
 }
@@ -807,15 +1111,15 @@ ul.tabs {
 
 html[data-theme="light"] {
   .tabs__item:hover {
-    background-color: rgba(26, 24, 51, 0.1) !important;
+    background-color: var(--color-gray-100) !important;
     color: var(--ifm-menu-color-active);
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
   }
 
   .tabs__item--active {
-    background-color: rgba(26, 24, 51, 0.1) !important;
-    border-bottom: 1px solid #{$plum-color} !important;
+    background-color: var(--color-gray-100) !important;
+    border-bottom: 1px solid var(--color-purple-800) !important;
     color: var(--ifm-menu-color-active);
     font-weight: 600;
   }
@@ -823,15 +1127,15 @@ html[data-theme="light"] {
 
 html[data-theme="dark"] {
   .tabs__item:hover {
-    background-color: rgba(208, 224, 249, 0.1) !important;
+    background-color: var(--color-gray-800) !important;
     color: var(--ifm-menu-color-active);
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
   }
 
   .tabs__item--active {
-    background-color: rgba(208, 224, 249, 0.15) !important;
-    border-bottom: 1px solid #{$aqua-color} !important;
+    background-color: var(--color-gray-800) !important;
+    border-bottom: 1px solid var(--color-cyan-300) !important;
     color: var(--ifm-menu-color-active);
     font-weight: 600;
   }
@@ -852,14 +1156,14 @@ html[data-theme="dark"] {
 
 // Light mode flowchart styling
 html[data-theme="light"] .flowchart {
-  background-color: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background-color: var(--color-white);
+  box-shadow: 0 2px 4px var(--color-blackAlpha-200);
 }
 
 // Dark mode flowchart styling using brand variables
 html[data-theme="dark"] .flowchart {
-  background-color: #{$obsidian-color};
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: var(--color-gray-800);
+  border: 1px solid var(--color-gray-700);
 }
 
 .flowchart svg {
@@ -878,22 +1182,22 @@ html[data-theme="dark"] .flowchart {
 }
 
 .markdown table thead {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--color-gray-50);
 }
 
 html[data-theme="dark"] .markdown table thead {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--color-gray-900);
 }
 
 .markdown table th,
 .markdown table td {
   padding: 0.75rem;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-gray-100);
 }
 
 html[data-theme="dark"] .markdown table th,
 html[data-theme="dark"] .markdown table td {
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: var(--color-gray-800);
 }
 
 // Table of Contents styling to match sidebar
@@ -909,7 +1213,7 @@ html[data-theme="dark"] .markdown table td {
     color: var(--ifm-menu-color);
     transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     text-decoration: none;
-    border-left: 3px solid transparent;
+    border-left: 3px solid var(--color-transparent);
 
     &:hover {
       text-decoration: none;
@@ -921,16 +1225,15 @@ html[data-theme="dark"] .markdown table td {
 html[data-theme="light"] {
   .table-of-contents__link {
     &:hover {
-      // background-color: rgba(26, 24, 51, 0.05) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid rgba(239, 123, 26, 0.5); // Light version of tangerine color
+      border-left: 3px solid var(--color-orange-300);
       padding-left: 0.5rem;
     }
 
     &.table-of-contents__link--active {
-      background-color: rgba(26, 24, 51, 0.1) !important;
+      background-color: var(--color-gray-100) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid #{$tangerine-color} !important; // Matching navbar border color
+      border-left: 3px solid var(--color-orange-400) !important;
       padding-left: 0.5rem;
     }
   }
@@ -940,16 +1243,16 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
   .table-of-contents__link {
     &:hover {
-      background-color: rgba(208, 224, 249, 0.1) !important;
-      color: var(--ifm-menu-color-active);
-      border-left: 3px solid rgba(190, 29, 67, 0.5); // Light version of crimson color
+      background-color: var(--color-gray-800) !important;
+      color: var(--ifm-menu-color);
+      border-left: 3px solid var(--color-yellow-300);
       padding-left: 0.5rem;
     }
 
     &.table-of-contents__link--active {
-      background-color: rgba(208, 224, 249, 0.15) !important;
-      color: var(--ifm-menu-color-active);
-      border-left: 3px solid #{$crimson-color} !important; // Matching navbar border color
+      background-color: var(--color-gray-800) !important;
+      color: var(--ifm-menu-color);
+      border-left: 3px solid var(--color-yellow-400) !important;
       padding-left: 0.5rem;
     }
   }
@@ -997,4 +1300,37 @@ html[data-theme="dark"] {
 
 .menu__link {
   font-size: 0.875rem !important; // 14px
+}
+
+/* ── content "sheet" ──────────────────────────────────────────────
+   The doc content sits on a white sheet that rises from the palette page
+   background like a rounded sheet of paper. The article column is the sheet;
+   the left nav and (when present) the right table of contents stay on the
+   page background to either side. */
+:root {
+  --doc-sheet-bg: var(--color-white);
+  --doc-sheet-radius: 18px;
+}
+html[data-theme="dark"] {
+  --doc-sheet-bg: var(--color-gray-900);
+}
+
+main[class*="docMainContainer"] {
+  // page-background gap between the left nav and the sheet, mirroring the gutter the
+  // table of contents leaves on the right
+  padding-left: 1.5rem;
+
+  .row > .col:has(.theme-doc-markdown) {
+    background: var(--doc-sheet-bg);
+    min-height: 100vh;
+    // even 2rem inset on all sides
+    padding: 2rem;
+    border-radius: var(--doc-sheet-radius);
+  }
+
+  // Keep the right-hand table of contents on the page background, so the
+  // sheet's rounded top-right corner reads against it.
+  .col--3 {
+    background: var(--color-transparent);
+  }
 }

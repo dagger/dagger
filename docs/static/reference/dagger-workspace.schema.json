@@ -20,6 +20,10 @@
         "defaults_from_dotenv": {
           "type": "boolean"
         },
+        "check-generated": {
+          "type": "boolean",
+          "description": "CheckGenerated controls whether `dagger check` runs generate-as-checks, which fail when generated files are stale. Defaults to true; set false to skip them (like --no-generate). CLI flags override it."
+        },
         "env": {
           "additionalProperties": {
             "$ref": "#/$defs/EnvOverlay"
@@ -60,9 +64,37 @@
       "type": "object",
       "description": "EnvOverlay is a named workspace environment overlay."
     },
+    "ModuleAsSDK": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name is the user-facing SDK name used by `dagger module init \u003csdk\u003e` and `dagger api client init \u003csdk\u003e`. When empty, the module entry name is used."
+        },
+        "modules": {
+          "items": {
+            "$ref": "#/$defs/SDKManagedModule"
+          },
+          "type": "array",
+          "description": "Modules lists the workspace-local modules this SDK authors and manages. Each entry becomes a [[modules.\u003cname\u003e.as-sdk.modules]] block."
+        },
+        "clients": {
+          "items": {
+            "$ref": "#/$defs/SDKManagedClient"
+          },
+          "type": "array",
+          "description": "Clients lists generated typed bindings this SDK produces in the workspace. Each entry becomes a [[modules.\u003cname\u003e.as-sdk.clients]] block. Shape is intentionally minimal until concrete client SDKs (TypeScript, Go) take shape."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ModuleAsSDK carries the per-module SDK-role data: which authored modules and clients this SDK manages in the workspace."
+    },
     "ModuleEntry": {
       "properties": {
         "source": {
+          "type": "string"
+        },
+        "pin": {
           "type": "string"
         },
         "settings": {
@@ -82,6 +114,10 @@
         },
         "check": {
           "$ref": "#/$defs/ModuleSkip"
+        },
+        "as-sdk": {
+          "$ref": "#/$defs/ModuleAsSDK",
+          "description": "AsSDK is the SDK-role data for module entries that serve as SDKs in this workspace. Its presence (any populated sub-field) marks the module as installed *as* an SDK; absence means it's a plain installed module. The role data — which authored modules and generated clients this SDK manages locally — lives nested rather than in a parallel top-level section so settings, install, and SDK metadata all converge on a single [modules.\u003cname\u003e.*] entry."
         }
       },
       "additionalProperties": false,
@@ -120,6 +156,45 @@
         "backendPort"
       ],
       "description": "PortMapping declares a host port that forwards to a workspace service."
+    },
+    "SDKManagedClient": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "pin": {
+          "type": "string"
+        },
+        "options": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "module"
+      ],
+      "description": "SDKManagedClient is a workspace-relative path to a generated client produced by an SDK, bound to one module."
+    },
+    "SDKManagedModule": {
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "description": "SDKManagedModule is a workspace-relative path to a module that an SDK authors and manages here."
     }
   }
 }

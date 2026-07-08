@@ -155,11 +155,11 @@ func (ModuleSuite) TestGeneratePrivateGitDependency(ctx context.Context, t *test
 		return out, runErr
 	}
 
-	// Initialize a workspace with the go-sdk generator installed.
+	// Initialize a workspace with go-sdk installed and marked as an SDK.
+	// Workspace creation is implicit on first install (it creates dagger.toml
+	// at the workspace root), so there is no separate `workspace init` step.
 	require.NoError(t, exec.Command("git", "-C", workDir, "init").Run())
-	out, err := run("workspace", "init")
-	require.NoError(t, err, string(out))
-	out, err = run("install", "github.com/dagger/go-sdk")
+	out, err := run("sdk", "install", "go")
 	require.NoError(t, err, string(out))
 
 	// A Go SDK module (discovered by go-sdk's generate-all) that declares the
@@ -202,5 +202,65 @@ func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "ubercool", howCoolIsDagger)
+	})
+
+	t.Run("golang transitive existing go.mod", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+		defer cleanup()
+
+		socket := c.Host().UnixSocket(sockPath)
+
+		const (
+			privateDep        = "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git/privatewrapper"
+			privateDepVersion = "v0.0.1"
+		)
+
+		modGen := goGitBase(t, c).
+			WithExec([]string{"apk", "add", "openssh", "openssl"}).
+			WithUnixSocket("/sock/unix-socket", socket).
+			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
+			WithNewFile("/root/.gitconfig", `
+[url "ssh://git@gitlab.com/"]
+	insteadOf = https://gitlab.com/
+`).
+			WithEnvVariable("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=no").
+			WithNewFile("/work/dagger.toml", `[modules.foo]
+source = ".dagger/modules/foo"
+entrypoint = true
+`).
+			WithNewFile("/work/.dagger/modules/foo/dagger.json", `{
+  "name": "foo",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git"
+    }
+  }
+}`).
+			WithNewFile("/work/.dagger/modules/foo/go.mod", fmt.Sprintf(`module dagger/foo
+
+go 1.21.3
+
+require %s %s
+`, privateDep, privateDepVersion)).
+			WithNewFile("/work/.dagger/modules/foo/main.go", fmt.Sprintf(`package main
+
+import "%s/pkg/coolwrapper"
+
+type Foo struct{}
+
+func (m *Foo) HowCoolIsDagger() string {
+	return coolwrapper.HowCoolIsThat()
+}
+`, privateDep)).
+			WithWorkdir("/work")
+
+		howCoolIsDagger, err := modGen.
+			With(daggerExec("call", "how-cool-is-dagger")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "private-transitive-go-dep:ubercool", howCoolIsDagger)
 	})
 }
