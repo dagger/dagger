@@ -1098,7 +1098,7 @@ func main() {
 			WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
 			WithExec([]string{"npm", "init", "-y"}).
 			WithExec([]string{"npm", "pkg", "set", "type=module"}).
-			WithExec([]string{"npm", "install", "-D", "typescript"}).
+			WithExec([]string{"npm", "install", "-D", "typescript@6.0.3"}).
 			WithNewFile("index.ts", `import { connection as c1, dag as dag1 } from "@my-app/dagger1";
 import { connection as c2, dag as dag2 } from "@my-app/dagger2";
 
@@ -2082,7 +2082,7 @@ func withTypeScriptSetup(content string, outputDir string) func(*dagger.Containe
 			WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
 			WithExec([]string{"npm", "init", "-y"}).
 			WithExec([]string{"npm", "pkg", "set", "type=module"}).
-			WithExec([]string{"npm", "install", "-D", "typescript"}).
+			WithExec([]string{"npm", "install", "-D", "typescript@6.0.3"}).
 			WithNewFile("index.ts", content).
 			WithNewFile("tsconfig.json", fmt.Sprintf(`{
   "compilerOptions": {
