@@ -1324,3 +1324,40 @@ func (WorkspaceAPISuite) TestWorkspaceConfigBuildersAfterUnrelatedEdit(ctx conte
 	require.NoError(t, err)
 	require.NotContains(t, string(hostConfig), "demo")
 }
+
+// TestWorkspaceBoundLLMAcrossSessions verifies that a module function returning
+// a workspace-bound LLM still works from a fresh session once a previous
+// session has cached it. The LLM captures the creating session's workspace —
+// including its owning client — imperatively, so the cached value must not be
+// served to later sessions: client-owned workspace results carry a per-client
+// session-resource handle that gates results embedding them to the session
+// that created them. A regression here surfaces on the second run as
+// "failed to retrieve session main client: client ... not found".
+func (WorkspaceAPISuite) TestWorkspaceBoundLLMAcrossSessions(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	modDir := filepath.Join(workdir, "agentmod")
+	require.NoError(t, os.MkdirAll(modDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "dagger.json"),
+		[]byte(`{"name":"agentmod","engineVersion":"v0.21.5","sdk":{"source":"dang"}}`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.dang"), []byte(`type Agentmod {
+  pub agent: LLM! {
+    llm
+  }
+}
+`), 0o644))
+
+	// The first session computes and caches the module call chain, embedding an
+	// LLM bound to this session's workspace. LLM.tools derives the tool schema
+	// from the bound workspace, which routes through the workspace's owning
+	// client.
+	out1, err := hostDaggerExec(ctx, t, workdir, "--silent", "-m", "./agentmod", "call", "agent", "tools")
+	require.NoError(t, err)
+
+	// A new session must not inherit the first session's workspace client
+	// binding from cache: the cached LLM is gated to the first session, so this
+	// call re-resolves against the new session's own workspace.
+	out2, err := hostDaggerExec(ctx, t, workdir, "--silent", "-m", "./agentmod", "call", "agent", "tools")
+	require.NoError(t, err, "second session must not fail on a stale workspace client binding")
+	require.Equal(t, string(out1), string(out2))
+}
