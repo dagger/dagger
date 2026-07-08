@@ -652,6 +652,10 @@ func (srv *Server) stampSessionComplete(ctx context.Context, sess *daggerSession
 		trace.WithAttributes(
 			attribute.Bool(telemetryattrs.WcprofSessionCompleteAttr, true),
 			attribute.String(telemetryattrs.WcprofSessionSpanCountAttr, strconv.Itoa(n)),
+			// The carrier is protocol bookkeeping, not a unit of work: keep it
+			// out of rendered trees (TUI and Cloud); the loader reads its
+			// attributes regardless.
+			attribute.Bool(telemetry.UIInternalAttr, true),
 		),
 	)
 	span.End()
