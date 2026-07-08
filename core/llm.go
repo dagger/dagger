@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -965,24 +964,33 @@ func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error
 	if err != nil {
 		return nil, err
 	}
-	var env dagql.ObjectResult[*Env]
-	if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
-		Field: "env",
-	}); err != nil {
+	mcp := newMCP()
+	// Bind the current workspace by default so the LLM's schema derives from its
+	// own workspace (see MCP.Server), matching the CLI's view. Best-effort: a
+	// context with no loaded workspace (ErrNoCurrentWorkspace) leaves the LLM
+	// unbound and MCP.Server falls back to the current client's served deps. The
+	// direct pre-check keeps the "no workspace" case from failing LLM creation
+	// while still surfacing a genuine Select error. This is imperative (not
+	// recorded as a .withWorkspace selector on the LLM ID), so it re-resolves to
+	// the current workspace on history replay; an explicit LLM.withWorkspace still
+	// pins a specific workspace via the ID.
+	if _, err := q.CurrentWorkspace(ctx); err == nil {
+		var ws dagql.ObjectResult[*Workspace]
+		if err := srv.Select(ctx, srv.Root(), &ws, dagql.Selector{
+			Field: "currentWorkspace",
+		}); err != nil {
+			return nil, err
+		}
+		mcp.workspace = ws
+	} else if !errors.Is(err, ErrNoCurrentWorkspace) {
 		return nil, err
 	}
 	return &LLM{
 		model:       model,
 		provider:    provider,
-		mcp:         newMCP(env),
+		mcp:         mcp,
 		endpointMtx: &sync.Mutex{},
 	}, nil
-}
-
-func (llm *LLM) WithStaticTools() *LLM {
-	llm = llm.Clone()
-	llm.mcp.staticTools = true
-	return llm
 }
 
 // loadLLMRouter creates an LLM router that routes to the root client
@@ -1250,12 +1258,13 @@ func (llm *LLM) WithToolResult(callID, content string, errored bool) *LLM {
 	return llm
 }
 
-// WithObject tracks an object so the LLM can reference it in subsequent tool
-// calls, re-registering it under the given tag after a history rebuild. The
-// optional description is surfaced to the model when it lists tracked objects.
-func (llm *LLM) WithObject(objectID string, id dagql.AnyID, description string) *LLM {
+// WithTools binds an object so every eligible method becomes a tool
+// (hack/designs/workspace-agents.md). A tool that returns the bound object's own type rebinds
+// it as the new agent state; except lists method names to exclude (e.g. the
+// module's own entrypoint).
+func (llm *LLM) WithTools(obj dagql.AnyObjectResult, except []string) *LLM {
 	llm = llm.Clone()
-	llm.mcp = llm.mcp.WithObject(objectID, id, description)
+	llm.mcp = llm.mcp.WithTools(obj, except)
 	return llm
 }
 
@@ -1273,15 +1282,6 @@ func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 	llm = llm.Clone()
 	llm.disableDefaultSystemPrompt = true
 	return llm
-}
-
-// Disable the default system prompt
-func (llm *LLM) WithBlockedFunction(ctx context.Context, typeName, funcName string) (*LLM, error) {
-	llm = llm.Clone()
-	if err := llm.mcp.BlockFunction(ctx, typeName, funcName); err != nil {
-		return nil, err
-	}
-	return llm, nil
 }
 
 // Add an external MCP server to the LLM
@@ -1354,13 +1354,14 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	llm = llm.Clone()
 
-	// Snapshot the object registry before anything can ingest into this step's
-	// transient MCP clone - building the tool list already registers env input
-	// objects. Everything ingested during the step must be re-registered onto
-	// the materialized state via withObject, or later steps will re-ingest it
-	// under a fresh tag, corrupting the tag counter and aliasing existing tags
-	// to the wrong objects.
-	snapshot := llm.mcp.Snapshot()
+	// Capture the bound state entering this step before anything can mutate it
+	// on this step's transient MCP clone - building the tool list already
+	// touches the bindings. Anything that changes during the step must be
+	// re-recorded onto the materialized state via withWorkspace/withTools, or
+	// later steps will rebuild history from the stale bindings and silently
+	// revert it.
+	wsBefore, _ := llm.mcp.WorkspaceID()
+	toolsBefore, _ := llm.mcp.BoundToolBindings()
 
 	tools, err := llm.mcp.Tools(ctx)
 	if err != nil {
@@ -1429,26 +1430,49 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 			},
 		})
 	}
-	newObjs := llm.mcp.NewObjects(snapshot)
-	sort.Strings(newObjs)
-	for _, objID := range newObjs {
-		id, ok := llm.mcp.IDForLLMID(objID)
-		if !ok {
-			continue
-		}
+
+	// Persist an in-step workspace change (e.g. a tool returned a Changeset that
+	// was overlaid onto the bound workspace) so the edit survives the LLM history
+	// rebuild — a rebuild otherwise re-binds the original workspace (via NewLLM or
+	// the last recorded withWorkspace) and loses the overlay. Handle-safe compare
+	// (post-eval IDs are handle-form).
+	if wsAfter, err := llm.mcp.WorkspaceID(); err == nil && wsAfter != nil &&
+		stableIDDigest(wsAfter) != stableIDDigest(wsBefore) {
 		sels = append(sels, dagql.Selector{
-			Field: "withObject",
+			Field: "withWorkspace",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "tag",
-					Value: dagql.NewString(objID),
-				},
-				{
-					Name:  "object",
-					Value: dagql.NewAnyID(id),
+					Name:  "workspace",
+					Value: dagql.NewID[*Workspace](wsAfter),
 				},
 			},
 		})
+	}
+
+	// Persist an in-step state transition: a tool that returned its bound object's
+	// own type rebinds it (hack/designs/workspace-agents.md). Re-emit a withTools selector for
+	// each binding whose object changed, so the new state survives the history
+	// rebuild — the same shape as the withWorkspace persist above.
+	if toolsAfter, err := llm.mcp.BoundToolBindings(); err == nil {
+		for i, after := range toolsAfter {
+			if i < len(toolsBefore) &&
+				stableIDDigest(after.ID) == stableIDDigest(toolsBefore[i].ID) {
+				continue
+			}
+			sels = append(sels, dagql.Selector{
+				Field: "withTools",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "object",
+						Value: dagql.NewAnyID(after.ID),
+					},
+					{
+						Name:  "except",
+						Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(after.Except...)),
+					},
+				},
+			})
+		}
 	}
 
 	// Tool-call display spans were already ended by CallBatch as each tool
@@ -1958,16 +1982,6 @@ func (llm *LLM) Transcript() string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
-}
-
-func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {
-	llm = llm.Clone()
-	llm.mcp.env = env
-	return llm
-}
-
-func (llm *LLM) Env() dagql.ObjectResult[*Env] {
-	return llm.mcp.env
 }
 
 func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {

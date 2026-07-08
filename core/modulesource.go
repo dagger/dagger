@@ -1412,17 +1412,12 @@ func (src *ModuleSource) LoadContextDir(
 	//   1. a Workspace explicitly bound into the context (an LLM bound via
 	//      withWorkspace), so the agent's defaultPath args resolve against its
 	//      own (possibly overlaid) workspace;
-	//   2. otherwise an Env, using its workspace directory;
-	//   3. otherwise the module source itself.
+	//   2. otherwise the module source itself.
 	//
 	// NOTE: this applies unilaterally, whether the module was loaded from Host,
 	// Git, or a Directory.
 	if ws, ok := WorkspaceFromContext(ctx); ok {
 		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
-	} else if env, ok, envErr := EnvFromContext(ctx); envErr != nil {
-		return inst, envErr
-	} else if ok {
-		inst, err = src.loadContextFromEnv(ctx, dag, env, path, filterInputs)
 	} else {
 		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
 	}
@@ -1456,44 +1451,6 @@ func (src *ModuleSource) LoadContextDir(
 		}
 	}
 
-	return inst, nil
-}
-
-func (src *ModuleSource) loadContextFromEnv(
-	ctx context.Context,
-	dag *dagql.Server,
-	env dagql.ObjectResult[*Env],
-	path string,
-	filterInputs []dagql.NamedInput,
-) (inst dagql.ObjectResult[*Directory], err error) {
-	// If path is not absolute, it's relative to the module root directory.
-	// If path is absolute, it's relative to the context directory.
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(src.SourceRootSubpath, path)
-	}
-	sels := []dagql.Selector{
-		{
-			Field: "workspace",
-		},
-	}
-	if path != "." {
-		sels = append(sels, dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(path)},
-			},
-		})
-	}
-	if len(filterInputs) > 0 {
-		sels = append(sels, dagql.Selector{
-			Field: "filter",
-			Args:  filterInputs,
-		})
-	}
-	err = dag.Select(ctx, env, &inst, sels...)
-	if err != nil {
-		return inst, fmt.Errorf("failed to select env directory: %w", err)
-	}
 	return inst, nil
 }
 
