@@ -428,34 +428,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*PythonSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson)
-		case "ModuleTypesExp":
-			var parent PythonSdk
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var modSource *dagger.ModuleSource
-			if inputArgs["modSource"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["modSource"]), &modSource)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg modSource", err))
-				}
-			}
-			var introspectionJson *dagger.File
-			if inputArgs["introspectionJSON"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["introspectionJSON"]), &introspectionJson)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
-				}
-			}
-			var outputFilePath string
-			if inputArgs["outputFilePath"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["outputFilePath"]), &outputFilePath)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg outputFilePath", err))
-				}
-			}
-			return (*PythonSdk).ModuleTypesExp(&parent, ctx, modSource, introspectionJson, outputFilePath)
 		case "Source":
 			var parent PythonSdk
 			err = json.Unmarshal(parentJSON, &parent)
