@@ -1407,16 +1407,21 @@ func (src *ModuleSource) LoadContextDir(
 		})
 	}
 
-	// Check if there's an Env - if so, use its workspace as the context for
-	// defaultPath arguments.
+	// Determine the context for defaultPath arguments, in priority order:
+	//
+	//   1. a Workspace explicitly bound into the context (an LLM bound via
+	//      withWorkspace), so the agent's defaultPath args resolve against its
+	//      own (possibly overlaid) workspace;
+	//   2. otherwise an Env, using its workspace directory;
+	//   3. otherwise the module source itself.
 	//
 	// NOTE: this applies unilaterally, whether the module was loaded from Host,
 	// Git, or a Directory.
-	env, ok, envErr := EnvFromContext(ctx)
-	if envErr != nil {
+	if ws, ok := WorkspaceFromContext(ctx); ok {
+		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
+	} else if env, ok, envErr := EnvFromContext(ctx); envErr != nil {
 		return inst, envErr
-	}
-	if ok {
+	} else if ok {
 		inst, err = src.loadContextFromEnv(ctx, dag, env, path, filterInputs)
 	} else {
 		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
@@ -1490,6 +1495,46 @@ func (src *ModuleSource) loadContextFromEnv(
 		return inst, fmt.Errorf("failed to select env directory: %w", err)
 	}
 	return inst, nil
+}
+
+func (src *ModuleSource) loadContextFromWorkspace(
+	ctx context.Context,
+	dag *dagql.Server,
+	ws dagql.ObjectResult[*Workspace],
+	path string,
+	filterInputs []dagql.NamedInput,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	// Workspace.directory resolves relative paths against the workspace cwd, but
+	// the contextual path is relative to the workspace (context) root — so
+	// anchor it as an absolute path (see workspaceContextDirPath). The filters
+	// fold directly into the directory selector's native include/exclude/
+	// gitignore args, collapsing the Env path's separate .filter step.
+	dirArgs := append([]dagql.NamedInput{
+		{Name: "path", Value: dagql.String(workspaceContextDirPath(src.SourceRootSubpath, path))},
+	}, filterInputs...)
+	err = dag.Select(ctx, ws, &inst, dagql.Selector{
+		Field: "directory",
+		Args:  dirArgs,
+	})
+	if err != nil {
+		return inst, fmt.Errorf("failed to select workspace directory: %w", err)
+	}
+	return inst, nil
+}
+
+// workspaceContextDirPath computes the workspace-root-relative path for a
+// module's contextual (+defaultPath) argument. A relative defaultPath is taken
+// relative to the module root (sourceRootSubpath); an absolute defaultPath is
+// taken relative to the context/workspace root. The result is always an
+// absolute (root-anchored) path: Workspace.directory resolves relative paths
+// against the workspace cwd but absolute paths against the workspace root, and
+// the context path is always root-relative.
+func workspaceContextDirPath(sourceRootSubpath, defaultPath string) string {
+	p := defaultPath
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(sourceRootSubpath, p)
+	}
+	return filepath.Join("/", p)
 }
 
 func (src *ModuleSource) loadContextFromSource(
