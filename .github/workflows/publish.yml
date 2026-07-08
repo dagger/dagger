@@ -14,6 +14,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Guard: the release tag must match internal/version/VERSION.
+      #
+      # Today a release has two independent version inputs. `release publish`
+      # below reads the version from the git tag (--tag), while the SDK/Helm/docs
+      # artifacts it ships are baked from internal/version/VERSION at commit time
+      # (via `dagger generate`). Nothing else reconciles them, so a tag pushed
+      # against a commit whose VERSION differs would publish an internally
+      # inconsistent release: an engine image tagged vX.Y.Z alongside SDKs, chart
+      # and docs still pointing at some other version. This guard fails fast on
+      # that mismatch. It intentionally allows pre-releases (e.g. v1.0.0-beta.1)
+      # as long as the tag and VERSION agree.
+      #
+      # This is transitional. Today the git tag is an *input*: its name is the
+      # release version. The plan is to invert that — internal/version/VERSION
+      # (the source) becomes the sole version input, and the git tag becomes a
+      # pure *output*. Pushing a tag will just mean "release this source": the
+      # version is read from VERSION, and the tag is derived from it rather than
+      # supplying it. Once the tag can no longer diverge from VERSION by
+      # construction, this guard becomes redundant.
+      - name: "Require the release tag to match internal/version/VERSION"
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="$(tr -d '[:space:]' < internal/version/VERSION)"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "refusing to release: tag $GITHUB_REF_NAME != internal/version/VERSION ($version)" >&2
+            exit 1
+          fi
       - name: "Publish"
         uses: ./.github/actions/call
         with:
