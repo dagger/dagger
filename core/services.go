@@ -224,12 +224,12 @@ func beginOTelServiceStart(ctx context.Context, ident string) (context.Context, 
 }
 
 // endOTelServiceStart ends the service.start span (nil-safe), charging any start
-// error as its status — mirroring native's profOp.End at each start exit.
+// error as its status — mirroring native's profOp.End at each start exit. Via
+// dagql.EndProfSpan, never telemetry.EndWithCause: stamping this unrendered
+// passthrough span as the error's origin would preempt the install spans'
+// origin tracking (trackServiceOrigin) with a span no frontend shows.
 func endOTelServiceStart(span trace.Span, errPtr *error) {
-	if span == nil {
-		return
-	}
-	telemetry.EndWithCause(span, errPtr)
+	dagql.EndProfSpan(span, errPtr)
 }
 
 func (svc *RunningService) addOriginSpanContexts(origins []trace.SpanContext) {

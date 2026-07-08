@@ -3095,7 +3095,14 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 					if lazyIsResume && err != nil && blockedOnPrerequisite(err, shared.id) {
 						lazySpan.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
 					}
-					telemetry.EndWithCause(lazySpan, &err)
+					if lazyIsResume {
+						// The resume span predates the profiling emission and is
+						// part of the UI's deferred-work vocabulary; it keeps its
+						// error-origin-stamping role.
+						telemetry.EndWithCause(lazySpan, &err)
+					} else {
+						EndProfSpan(lazySpan, &err)
+					}
 				}()
 			}
 
@@ -3828,9 +3835,7 @@ func (c *Cache) getOrInitCallInner(
 		oc.err = err
 		oc.val = val
 		execOp.EndWithResult(profErrOutcome(err), profResultID(val))
-		if execSpan != nil {
-			telemetry.EndWithCause(execSpan, &err)
-		}
+		EndProfSpan(execSpan, &err)
 
 		c.callsMu.Lock()
 		noWaiters := oc.waiters == 0
@@ -4093,9 +4098,7 @@ func (c *Cache) wait(
 			}
 			pubOp.EndWithResult(profErrOutcome(oc.initCompletedResultErr), resID)
 		}
-		if pubSpan != nil {
-			telemetry.EndWithCause(pubSpan, &oc.initCompletedResultErr)
-		}
+		EndProfSpan(pubSpan, &oc.initCompletedResultErr)
 		c.callsMu.Lock()
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 		c.callsMu.Unlock()

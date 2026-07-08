@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/telemetryattrs"
@@ -81,6 +82,43 @@ func beginOTelPublishResult(ctx context.Context) trace.Span {
 		),
 	)
 	return span
+}
+
+// EndProfSpan ends a profiling span (exec.run, service.start, call_exec,
+// publishResult, non-resume lazy ops), charging err as its status so the
+// loader records the op's outcome. Unlike telemetry.EndWithCause it NEVER
+// stamps the span into the error's tracked origins: profiling spans are
+// passthrough/support spans no frontend renders as rows, and error-origin
+// tracking drives user-facing attribution — an error whose first origin is an
+// unrendered span defeats the CLI's already-shown-error suppression (a
+// redundant trailing Error: block) and renders internal spans in the origin
+// sections (e.g. "✘ exec.run"). Origin-stamping stays with the user-visible
+// spans (core.AroundFunc's EndWithCause); origins already tracked in the error
+// are still linked here, exactly as EndWithCause links them, for clean OTel
+// data. Nil-safe.
+func EndProfSpan(span trace.Span, errPtr *error) {
+	if span == nil {
+		return
+	}
+	if errPtr == nil || *errPtr == nil {
+		span.SetStatus(codes.Ok, "")
+		span.End()
+		return
+	}
+	err := *errPtr
+	for _, origin := range telemetry.ParseErrorOrigins(err.Error()) {
+		if origin.IsValid() && origin.SpanID() != span.SpanContext().SpanID() {
+			span.AddLink(trace.Link{
+				SpanContext: origin,
+				Attributes: []attribute.KeyValue{
+					attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeErrorOrigin),
+				},
+			})
+		}
+	}
+	span.RecordError(err)
+	span.SetStatus(codes.Error, telemetry.ErrorOriginRegex.ReplaceAllString(err.Error(), ""))
+	span.End()
 }
 
 // EmitOTelWait records, as a span link on the waiter's current span, that the

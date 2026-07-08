@@ -55,10 +55,12 @@ func beginOTelExecRun(ctx context.Context, ident string) (context.Context, trace
 }
 
 // endOTelExecRun ends the exec.run span, charging any run error as its status
-// (the OTel analog of execOp.EndErr). Kept here so executor.go owns no otel-go
-// span lifecycle of its own.
+// (the OTel analog of execOp.EndErr) — via dagql.EndProfSpan, never
+// telemetry.EndWithCause: stamping this unrendered passthrough span as the
+// error's origin would also mutate the error the executor returns to core.
+// Kept here so executor.go owns no otel-go span lifecycle of its own.
 func endOTelExecRun(span trace.Span, errPtr *error) {
-	telemetry.EndWithCause(span, errPtr)
+	dagql.EndProfSpan(span, errPtr)
 }
 
 // emitOTelExecSplit emits the containerStart (engine) and processRun (user) child
