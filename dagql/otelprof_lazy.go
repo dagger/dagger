@@ -176,3 +176,28 @@ func (c *Cache) beginOTelLazyOp(evalCtx context.Context, sharedID sharedResultID
 	)
 	return MarkProfilingSpan(callbackCtx, prev), lazySpan, false
 }
+
+// endOTelLazyOp ends the lazy op span begun by beginOTelLazyOp, charging err
+// as its status.
+//
+// Producer-context re-point only (the resume span): if the callback failed
+// only because a prerequisite result's evaluation failed, this result's own
+// deferred work never ran — mark the resume span blocked so the UI returns
+// the owning API spans to pending instead of marking them caused-failed with
+// the cascaded error. The failing prerequisite's own resume span carries the
+// real failure and its install-span cause links.
+//
+// The resume span predates the profiling emission and is part of the UI's
+// deferred-work vocabulary, so it keeps its error-origin-stamping role
+// (EndWithCause); the non-resume lazy op is pure profiling emission and must
+// never stamp (EndProfSpan).
+func endOTelLazyOp(span trace.Span, isResume bool, sharedID sharedResultID, errPtr *error) {
+	if isResume && *errPtr != nil && blockedOnPrerequisite(*errPtr, sharedID) {
+		span.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
+	}
+	if isResume {
+		telemetry.EndWithCause(span, errPtr)
+	} else {
+		EndProfSpan(span, errPtr)
+	}
+}

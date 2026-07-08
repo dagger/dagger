@@ -1302,8 +1302,8 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			return fmt.Errorf("failed to get engine client: %w", err)
 		}
 		// User-facing cause: the resolver runs on the call_exec twin's context, but
-	// exec-error attribution must name a span frontends render.
-	causeCtx := dagql.UserFacingSpanContext(ctx)
+		// exec-error attribution must name a span frontends render.
+		causeCtx := dagql.UserFacingSpanContext(ctx)
 
 		rootOutputBinding := func(ref bkcache.ImmutableRef) error {
 			dirPath := "/"

@@ -28,7 +28,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/engine/wcprof"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -3084,25 +3083,7 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		runEval := func() {
 			if lazySpan != nil {
 				defer func() {
-					// Producer-context re-point only (the resume span): if the
-					// callback failed only because a prerequisite result's
-					// evaluation failed, this result's own deferred work never
-					// ran. Mark the resume span blocked so the UI returns the
-					// owning API spans to pending instead of marking them
-					// caused-failed with the cascaded error. The failing
-					// prerequisite's own resume span carries the real failure and
-					// its install-span cause links.
-					if lazyIsResume && err != nil && blockedOnPrerequisite(err, shared.id) {
-						lazySpan.SetAttributes(attribute.Bool(telemetryattrs.DagBlockedAttr, true))
-					}
-					if lazyIsResume {
-						// The resume span predates the profiling emission and is
-						// part of the UI's deferred-work vocabulary; it keeps its
-						// error-origin-stamping role.
-						telemetry.EndWithCause(lazySpan, &err)
-					} else {
-						EndProfSpan(lazySpan, &err)
-					}
+					endOTelLazyOp(lazySpan, lazyIsResume, shared.id, &err)
 				}()
 			}
 
