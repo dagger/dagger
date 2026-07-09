@@ -191,13 +191,14 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	// LLM.withTools (hack/designs/workspace-agents.md): each eligible method becomes a tool,
 	// and a method that returns the bound object's own type rebinds it as the new
 	// state. These are loaded first so a bound method overrides a builtin of the
-	// same name. External MCP tools and the ReadLogs builtin also apply.
+	// same name. External MCP tools, skills, and the ReadLogs builtin also apply.
 	if err := m.loadObjectTools(ctx, srv, allTools); err != nil {
 		return nil, err
 	}
 	if err := m.loadMCPTools(ctx, allTools); err != nil {
 		return nil, err
 	}
+	m.loadSkillTools(srv, allTools)
 	m.loadBuiltins(srv, allTools)
 	return allTools.Order, nil
 }
