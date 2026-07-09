@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/sdk/sdkmeta"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -14,6 +15,13 @@ import (
 // Return true if the given module is a builtin SDK.
 func IsModuleSDKBuiltin(module string) bool {
 	return sdkmeta.IsBuiltin(module)
+}
+
+// useRuntimeCodegen reports whether the runtime may regenerate the module's
+// bindings. Decided by config format alone: dagger.json always (legacy
+// behavior), dagger-module.toml never — it builds from committed files.
+func useRuntimeCodegen(src dagql.ObjectResult[*core.ModuleSource]) bool {
+	return src.Self().ConfigFilename != modules.Filename
 }
 
 func scopeSourceForSDKOperation(
