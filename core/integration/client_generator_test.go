@@ -1827,6 +1827,8 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 	})
 
 	t.Run("dev version does not get pinned in go.mod", func(ctx context.Context, t *testctx.T) {
+		t.Skip("codegen now pins the engine version unconditionally; dev/unpublished versions are resolved via a replace directive (or, in future, a dev module proxy) rather than special-cased out of go.mod")
+
 		c := connect(ctx, t)
 
 		// Create a module with a dev engine version
