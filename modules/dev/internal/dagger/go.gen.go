@@ -46,16 +46,14 @@ func (r *Env) WithGoOutput(name string, description string) *Env { // go (../../
 type Go struct { // go (../../../../toolchains/go/main.go:186:6)
 	query *querybuilder.Selection
 
-	cgo        *bool
-	checkTidy  *Void
-	id         *ID
-	limit      *int
-	lint       *Void
-	lintModule *Void
-	race       *bool
-	test       *Void
-	tests      *string
-	version    *string
+	cgo       *bool
+	checkTidy *Void
+	id        *ID
+	limit     *int
+	race      *bool
+	test      *Void
+	tests     *string
+	version   *string
 }
 type WithGoFunc func(r *Go) *Go
 
@@ -377,43 +375,6 @@ func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../../../toolch
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// GoLintOpts contains options for Go.Lint
-type GoLintOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:857:2)
-
-	Exclude []string // go (../../../../toolchains/go/main.go:858:2)
-}
-
-// Lint the project
-func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../toolchains/go/main.go:855:1)
-	if r.lint != nil {
-		return nil
-	}
-	q := r.query.Select("lint")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
-func (r *Go) LintModule(ctx context.Context, module string) error { // go (../../../../toolchains/go/main.go:883:1)
-	if r.lintModule != nil {
-		return nil
-	}
-	q := r.query.Select("lintModule")
-	q = q.Arg("module", module)
-
-	return q.Execute(ctx)
 }
 
 // GoListPackagesOpts contains options for Go.ListPackages

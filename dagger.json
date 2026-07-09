@@ -75,7 +75,7 @@
         },
         {
           "argument": "lint",
-          "default": "!**"
+          "default": ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
         },
         {
           "argument": "generate",
