@@ -96,6 +96,75 @@ func UpdateConfigBytesWithHints(
 	return insertWorkspaceSettingHintComments(out, cfg, hints), nil
 }
 
+// deleteConfigDocumentPath removes the value at parts from the raw document,
+// preserving surrounding formatting and comments. collapsed is the topmost
+// table the removal empties (a prefix of parts, or parts itself).
+func deleteConfigDocumentPath(data []byte, parts, collapsed []string) ([]byte, error) {
+	del := parts
+	if len(collapsed) < len(parts) {
+		// The document can only drop leaf keys or whole section headers —
+		// deleting an implied intermediate table path is a silent no-op — so
+		// widen to the shortest emptied prefix that is an actual section.
+		// Any levels implied by that section's dotted header vanish with it.
+		sections, err := configSectionSet(data)
+		if err != nil {
+			return nil, err
+		}
+		for probe := collapsed; len(probe) < len(parts); probe = parts[:len(probe)+1] {
+			if sections[JoinConfigPath(probe...)] {
+				del = probe
+				break
+			}
+		}
+	}
+
+	doc, err := neontoml.Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse existing config: %w", err)
+	}
+	path := JoinConfigPath(del...)
+	if err := doc.Delete(path); err != nil {
+		return nil, fmt.Errorf("delete config path %q: %w", path, err)
+	}
+
+	// Removing an env's last overlay may take its only section header with
+	// it; the env must stay defined so --env selection keeps working.
+	if parts[0] == "env" {
+		cfg, err := ParseConfig(doc.Bytes())
+		if err != nil {
+			return nil, fmt.Errorf("parse config after delete: %w", err)
+		}
+		if env, ok := cfg.Env[parts[1]]; !ok || len(env.Modules) == 0 {
+			if err := ensureEmptyEnvSections(doc, map[string]EnvOverlay{parts[1]: {}}); err != nil {
+				return nil, err
+			}
+			// The placeholder trick also creates an empty [env] parent
+			// header; deleting an exact section only drops that header.
+			if err := doc.Delete("env"); err != nil {
+				return nil, fmt.Errorf("drop empty env header: %w", err)
+			}
+		}
+	}
+
+	return doc.Bytes(), nil
+}
+
+// configSectionSet returns the dotted paths of the document's section headers.
+func configSectionSet(data []byte) (map[string]bool, error) {
+	doc, err := tomledit.Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parse config sections: %w", err)
+	}
+	set := map[string]bool{}
+	for _, section := range doc.Sections {
+		if section.Heading == nil {
+			continue
+		}
+		set[JoinConfigPath(section.Heading.Name...)] = true
+	}
+	return set, nil
+}
+
 func configDocumentMap(cfg *Config) map[string]any {
 	values := make(map[string]any)
 
