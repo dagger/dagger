@@ -41,6 +41,8 @@ function paths such as `["lint"]` or `["tests", "run"]`.
 
 ```graphql
 # `Verb` is defined in artifacts.md.
+# `ActionID`, `Changeset`, and `ChangesetsMergeConflict` are existing
+# engine/DagQL types referenced here, not introduced by this document.
 
 """
 Engine-owned function selector syntax used to match plan entrypoints.
@@ -315,8 +317,10 @@ example's tests:
 workspace.artifacts.filterDimension("go-test").plan(verb: CHECK).run
 ```
 
-with `GoTests.batch.run`, yields one batched action over `TestFoo`+`TestBar`;
-without it, one action per test.
+if `GoTests` exposes `run` on its batch type (see
+[collections.md § Batch shadowing](./collections.md#batch-shadowing)), this
+yields one batched action over `TestFoo`+`TestBar`; without it, one action per
+test.
 
 ### `generate`
 

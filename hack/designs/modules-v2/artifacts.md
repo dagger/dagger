@@ -35,8 +35,8 @@ one selection vocabulary they all share.
 This document defines selection only. It does not cover:
 
 - **`dagger call` and `dagger shell`.** They keep their existing path syntaxes.
-  Whether they ever adopt this model is [Q&nbsp;below](#open-questions), not a
-  commitment.
+  Whether they ever adopt this model is deliberately left open (see
+  [Decisions](#decisions)), not a commitment.
 - **Actions, action paths, and execution plans.** Defined in
   [plans.md](./plans.md). Artifacts defines only enough verb-scope behavior to
   decide which artifacts stay in scope for a verb.
@@ -184,7 +184,10 @@ around. The set is closed: `CHECK`, `GENERATE`, `SHIP`, `UP`.
 | `UP`       | Brings up a long-running interactive service.         | Runs a process; forwards signals; ports.  |
 
 The four are orthogonal across two axes — validate vs. mutate, and
-local/remote/live — and cover the lifecycle without overlap.
+local/remote/live — and cover the lifecycle without overlap. Per-verb execution
+is specified separately over the plan substrate: `check` and `generate` in
+[plans.md](./plans.md), `ship` in [ship.md](./ship.md); `up` uses the same
+substrate.
 
 A function joins a verb by annotation. In the canonical example `lint` is both a
 regular function (`dagger call lint`) and a member of CHECK (`dagger check`):
@@ -619,6 +622,8 @@ type GoTest {
   pub run: Void! @check
 }
 ```
+
+Assume `keys` resolves to `TestFoo` and `TestBar`.
 
 Expected:
 

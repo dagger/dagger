@@ -32,7 +32,8 @@ cannot offer these features generically.
 
 A collection is declared on an ordinary object type with `@collection` /
 `+collection` and projected by the engine into a synthetic public type with a
-small standard algebra: `keys`, `list`, `get`, `subset`, and `batch`.
+small standard surface: the algebra `keys`, `list`, `get`, `subset`, plus a
+type-specific `batch` namespace.
 
 Deliberately narrow:
 
@@ -64,7 +65,8 @@ type has one effective `keys` field and one effective `get` function:
 - `@keys` / `@get` override those default names only.
 
 The canonical `GoTests` collection (see
-[artifacts.md § Canonical Example](./artifacts.md#canonical-example)) in each SDK:
+[artifacts.md § Canonical Example](./artifacts.md#canonical-example)), expressed
+in each SDK:
 
 ```dang
 type GoTests @collection {
@@ -203,7 +205,8 @@ A collection occurrence contributes to the [Artifacts](./artifacts.md) model:
 
 - a new selector dimension named by the collection's **item type** (`go-test`)
 - selector values from the collection's current keys
-- extra coordinates on rows when that dimension is needed for uniqueness
+- extra coordinates on rows when that dimension is needed to distinguish them
+  (see [artifacts.md § Dimensions and coordinates](./artifacts.md#dimensions-and-coordinates))
 
 The base dimensions stay valid; collections add selector space rather than a
 parallel targeting model. For the canonical example, the base scope
@@ -228,8 +231,10 @@ workspace.artifacts
   .plan(verb: CHECK)
 ```
 
-Without batch behavior the plan has one action per item; with it, one action
-over the subset, equivalent to:
+Here `go.tests` projects to the synthetic `GoTests` collection type, whose
+algebra (`subset`, `batch`) the compiled plan drives directly. Without batch
+behavior the plan has one action per item; with it, one action over the subset,
+equivalent to:
 
 ```text
 go.tests.subset(keys: ["TestFoo", "TestBar"]).batch.run
@@ -310,8 +315,9 @@ type) and batch checks (on the `batch` type):
 - Otherwise the item check remains.
 
 Execution follows: a shadowing batch check runs once over the current subset; an
-unshadowed item check runs once per item. Suppose the canonical `GoTests` has
-item checks `run` and `lint`, and `batch` defines `run` but not `lint`:
+unshadowed item check runs once per item. Extend the canonical `GoTest` item
+type with a `lint` check alongside its `run`, and let `GoTests.batch` define
+`run` but not `lint`:
 
 ```console
 $ dagger check -l
