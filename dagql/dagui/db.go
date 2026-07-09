@@ -32,6 +32,11 @@ type LLMTokenMetrics struct {
 	mu sync.Mutex
 	// ByModel maps a model name to its accumulated token metrics.
 	ByModel map[string]*LLMModelMetrics
+	// gaugeValues stores the last value seen for each metric series. LLM token
+	// instruments are gauges that providers record with cumulative per-call
+	// values while streaming; keeping deltas between last values prevents repeat
+	// metric exports from being counted as new spend.
+	gaugeValues map[string]int64
 }
 
 // Snapshot returns a copy of the per-model metrics safe to read from any
@@ -78,6 +83,28 @@ func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoin
 	if m.ByModel == nil {
 		m.ByModel = make(map[string]*LLMModelMetrics)
 	}
+	if m.gaugeValues == nil {
+		m.gaugeValues = make(map[string]int64)
+	}
+
+	seriesKey := metricName + "|" + point.Attributes.Encoded(attribute.DefaultEncoder())
+	prev, seen := m.gaugeValues[seriesKey]
+	m.gaugeValues[seriesKey] = point.Value
+
+	delta := point.Value
+	if seen {
+		if point.Value >= prev {
+			delta = point.Value - prev
+		} else {
+			// Treat a lower value for the same series as a fresh baseline rather
+			// than subtracting from already-reported spend. This can happen if a
+			// provider retries within the same span or a gauge series is reset.
+			delta = point.Value
+		}
+	}
+	if delta == 0 {
+		return
+	}
 
 	metrics, ok := m.ByModel[model]
 	if !ok {
@@ -86,17 +113,19 @@ func (m *LLMTokenMetrics) Aggregate(metricName string, point metricdata.DataPoin
 			Provider: provider,
 		}
 		m.ByModel[model] = metrics
+	} else if metrics.Provider == "" && provider != "" {
+		metrics.Provider = provider
 	}
 
 	switch metricName {
 	case telemetry.LLMInputTokens:
-		metrics.InputTokens += point.Value
+		metrics.InputTokens += delta
 	case telemetry.LLMOutputTokens:
-		metrics.OutputTokens += point.Value
+		metrics.OutputTokens += delta
 	case telemetry.LLMInputTokensCacheReads:
-		metrics.CachedTokenReads += point.Value
+		metrics.CachedTokenReads += delta
 	case telemetry.LLMInputTokensCacheWrites:
-		metrics.CachedTokenWrites += point.Value
+		metrics.CachedTokenWrites += delta
 	}
 }
 

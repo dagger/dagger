@@ -1044,7 +1044,7 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 	if _, err := handler.llm(ctx); err != nil { // init llmSession
 		return err
 	}
-	if err := handler.llmSession.updateLLMAndAgentVar(llm); err != nil {
+	if err := handler.llmSession.updateLLM(llm); err != nil {
 		return err
 	}
 
