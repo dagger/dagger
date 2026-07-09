@@ -2431,7 +2431,22 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		// progress tree, which collapses on exit 0.
 		ctx.Lines(genLines...)
 		renderedRows = true
-	} else if !rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity {
+	}
+	// At the root, render the LLM conversation reveal-independently: a
+	// CONVERSATION heading then every surfaced message nested under the tool call
+	// that spawned it (renderConversationSection). This is the message analog of
+	// the checks section -- it surfaces the transcript at the top level of any
+	// trace that ran an LLM, without the reveal bubbling or the shell's manual
+	// zoom. When both checks and a conversation surface (rare), the conversation
+	// follows the checks with a blank line between.
+	if convLines := fe.conversationReport(ctx, r, zoomed); len(convLines) > 0 {
+		if renderedRows {
+			ctx.Line("")
+		}
+		ctx.Lines(convLines...)
+		renderedRows = true
+	}
+	if !renderedRows && (!rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity) {
 		// Only fall back to the raw progress tree when there's nothing better.
 		// A plain `dagger call` failure renders its root cause above; dumping
 		// the bootstrap spans (connect / load workspace / parsing args) under
@@ -2924,6 +2939,7 @@ func (fe *frontendPretty) formHeight() int {
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
 	fe.promoteChecksLocked()
+	fe.promoteConversationLocked()
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 
@@ -2950,6 +2966,45 @@ func (fe *frontendPretty) recalculateViewLocked() {
 				}
 			}
 		}
+
+		// Surfaced LLM conversation: NOT report-only, unlike the failure fetches
+		// below. The final report's conversation section (renderMessageNode)
+		// renders in interactive mode too -- on exit, in a single pass with no
+		// lazy re-render to fill it -- so both the interactive Pretty TUI and the
+		// report frontend need these logs pre-fetched, or the transcript degrades
+		// to a bare list of tool-call names. 'dagger trace' drains this fetch
+		// (RequestSurfacedLogs then logFg.Wait, both modes) before the final
+		// render. Each message's content -- a prompt/thinking/response's text, a
+		// tool call's arguments and its execution output -- lives in span logs,
+		// not an attribute. (A live shell has no provider but streams its logs in,
+		// so they're already present.)
+		//
+		// This runs BEFORE the failure fetch: a failed tool-call display span is
+		// also a failed row, and the failure fetch would requestLogs it with the
+		// roll-up its RollUpLogs implies (descendants=true) -- which Cloud returns
+		// empty for (see below) -- latching the requestLogs dedup and losing the
+		// arguments. Fetching descendants=false here first wins that dedup.
+		var reqConversationLogs func(nodes []*dagui.MessageNode)
+		reqConversationLogs = func(nodes []*dagui.MessageNode) {
+			for _, n := range nodes {
+				if n.Span != nil {
+					// Fetch each message span's OWN logs (descendants=false), not its
+					// roll-up. A prompt/thinking/response's text and a tool call's
+					// arguments stream into the span itself; a tool call's execution
+					// output lives in a nested exec span whose logs Cloud's descendant
+					// roll-up won't return here (they cross a RollUpLogs boundary), so
+					// a descendants=true fetch comes back empty and the call renders
+					// bare. So fetch the exec span's own logs directly too -- that's
+					// the result (or error) the LLM saw (see renderMessageLogs).
+					fe.requestLogsWith(n.Span.ID, false)
+					if exec := toolCallExecSpan(n.Span); exec != nil {
+						fe.requestLogsWith(exec.ID, false)
+					}
+				}
+				reqConversationLogs(n.Children)
+			}
+		}
+		reqConversationLogs(fe.db.SurfacedConversation())
 
 		// Eager failure-detail fetch is REPORT-ONLY. The non-interactive report
 		// renders once and can't wait for a fetch dispatched mid-render, so it
@@ -3046,6 +3101,30 @@ func (fe *frontendPretty) promoteChecksLocked() {
 		// hide, and passing it through would reparent its children (the tests) to
 		// the top level, breaking the inline tests-under-check view. Nothing to
 		// promote.
+		return
+	}
+	fe.db.RootSpan.Passthrough = true
+	if !fe.ZoomedSpan.IsValid() {
+		fe.ZoomedSpan = fe.db.PrimarySpan
+	}
+}
+
+// promoteConversationLocked is the LLM-message analog of promoteChecksLocked:
+// when a trace ran an LLM, mark the root span passthrough so RowsView surfaces
+// the revealed message spans at the top level instead of the root's setup
+// children (session connect, workspace load). This is what replaces `dagger
+// shell`'s old manual zoom -- the conversation surfaces on its own via the
+// reveal mechanism, exactly as checks do. Messages bubble to the root via reveal
+// (top-level turns reach the root; a sub-agent's turns stop at the tool-call
+// span that spawned them), so this reuses the existing tree/row rendering.
+func (fe *frontendPretty) promoteConversationLocked() {
+	if fe.db == nil || fe.db.RootSpan == nil || !fe.db.HasConversation() {
+		return
+	}
+	if fe.db.RootSpan.LLMRole != "" {
+		// The root span is itself a message: there's no setup noise above it to
+		// hide, and passing it through would reparent its children to the top
+		// level. Nothing to promote.
 		return
 	}
 	fe.db.RootSpan.Passthrough = true
