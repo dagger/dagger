@@ -50,7 +50,7 @@ dagger [options] [subcommand | file...]
 * [dagger module](#dagger-module)	 - Author a module: edit dependencies, engine version, etc.
 * [dagger sdk](#dagger-sdk)	 - Install and manage SDKs (the modules that author other modules)
 * [dagger search](#dagger-search)	 - Search for modules you can install
-* [dagger settings](#dagger-settings)	 - Get or set module settings (use --env for an env overlay)
+* [dagger settings](#dagger-settings)	 - Get, set, or unset module settings (use --env for an env overlay)
 * [dagger setup](#dagger-setup)	 - Ensure Dagger is properly set up and operational in the workspace
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a module from your workspace
 * [dagger up](#dagger-up)	 - Run your project's services for local development — databases, APIs, dev servers, etc.
@@ -2306,7 +2306,7 @@ dagger search wolfi
 
 ## dagger settings
 
-Get or set module settings (use --env for an env overlay)
+Get, set, or unset module settings (use --env for an env overlay)
 
 ```
 dagger settings [module] [key] [value]
@@ -2315,7 +2315,8 @@ dagger settings [module] [key] [value]
 ### Options
 
 ```
-      --here   Write workspace config at the selected workspace cwd
+      --here    Write workspace config at the selected workspace cwd
+  -u, --unset   Remove the setting from workspace config
 ```
 
 ### Options inherited from parent commands
@@ -2632,6 +2633,7 @@ Get or set workspace configuration values in dagger.toml.
 With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
+With one argument and --unset, removes the value at the given key.
 
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
@@ -2645,7 +2647,8 @@ dagger workspace config [key] [value] [flags]
 ### Options
 
 ```
-      --here   Write workspace config at the selected workspace cwd
+      --here    Write workspace config at the selected workspace cwd
+  -u, --unset   Remove the value at the given key
 ```
 
 ### Options inherited from parent commands
