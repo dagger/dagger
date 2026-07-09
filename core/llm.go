@@ -209,15 +209,48 @@ func (r *LLMResponse) ToolCalls() []*LLMContentBlock {
 }
 
 type LLMTokenUsage struct {
+	// InputTokens is uncached input/prompt tokens. Cached input is accounted for
+	// separately in CachedTokenReads/CachedTokenWrites so the buckets are
+	// additive for cost and context accounting.
 	InputTokens       int64 `field:"true" json:"input_tokens" doc:"Uncached input tokens sent to the model."`
 	OutputTokens      int64 `field:"true" json:"output_tokens" doc:"Tokens received from the model, including text and tool calls."`
 	CachedTokenReads  int64 `field:"true" json:"cached_token_reads" doc:"Input tokens served from the provider's prompt cache."`
 	CachedTokenWrites int64 `field:"true" json:"cached_token_writes" doc:"Input tokens written to the provider's prompt cache."`
-	TotalTokens       int64 `field:"true" json:"total_tokens" doc:"Total tokens consumed, as reported by the provider."`
+	// TotalTokens is the provider-reported total tokens for a single call when
+	// available, otherwise the sum of the additive buckets above.
+	TotalTokens int64 `field:"true" json:"total_tokens" doc:"Total tokens consumed, as reported by the provider."`
 }
 
 func (*LLMTokenUsage) TypeDescription() string {
 	return "A count of tokens consumed by LLM API calls."
+}
+
+func (usage LLMTokenUsage) hasTokens() bool {
+	return usage.InputTokens != 0 ||
+		usage.OutputTokens != 0 ||
+		usage.CachedTokenReads != 0 ||
+		usage.CachedTokenWrites != 0 ||
+		usage.TotalTokens != 0
+}
+
+// contextTokens returns the number of tokens represented by this usage record
+// for context-window purposes. Providers should fill TotalTokens as the sum of
+// uncached input, output, cache reads, and cache writes, but using the max keeps
+// native provider totals that include extra categories (e.g. reasoning/tool-use
+// accounting) from being truncated.
+func (usage LLMTokenUsage) contextTokens() int64 {
+	components := usage.InputTokens + usage.OutputTokens + usage.CachedTokenReads + usage.CachedTokenWrites
+	return max(usage.TotalTokens, components)
+}
+
+func uncachedInputTokens(promptTokens, cachedTokens int64) int64 {
+	if cachedTokens <= 0 {
+		return promptTokens
+	}
+	if promptTokens >= cachedTokens {
+		return promptTokens - cachedTokens
+	}
+	return promptTokens
 }
 
 var _ dagql.PersistedObject = (*LLMTokenUsage)(nil)
@@ -396,6 +429,24 @@ func (m *LLMMessage) TextContent() string {
 		}
 	}
 	return sb.String()
+}
+
+// estimateTokens returns a conservative token estimate for a message when the
+// provider has not reported exact usage yet. It mirrors Pi's chars/4 fallback
+// and is only used for messages after the last provider usage record (usually
+// tool results queued for the next call) or before the first model call.
+func (m *LLMMessage) estimateTokens() int64 {
+	var chars int
+	for _, b := range m.Content {
+		chars += len(b.Text)
+		chars += len(b.CallID)
+		chars += len(b.ToolName)
+		chars += len(b.Arguments)
+	}
+	if chars == 0 {
+		return 0
+	}
+	return int64((chars + 3) / 4)
 }
 
 // ToolCalls returns the tool-call content blocks.
@@ -2047,4 +2098,36 @@ func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsa
 		res.TotalTokens += msg.TokenUsage.TotalTokens
 	}
 	return &res, nil
+}
+
+// ContextTokens returns the estimated number of tokens currently occupying the
+// context window. Unlike TokenUsage, this is not cumulative over the whole
+// session: it uses the last provider-reported assistant usage as a baseline and
+// estimates any trailing messages (for example tool results) that have been
+// appended since that response and will be sent with the next request.
+func (llm *LLM) ContextTokens(ctx context.Context, dag *dagql.Server) (int, error) {
+	_ = dag
+	messages, err := llm.messagesWithSystemPrompt(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return int(estimateOccupiedContextTokens(messages)), nil
+}
+
+func estimateOccupiedContextTokens(messages []*LLMMessage) int64 {
+	lastUsageIndex := -1
+	var tokens int64
+	for i := len(messages) - 1; i >= 0; i-- {
+		usage := messages[i].TokenUsage
+		if usage != nil && usage.hasTokens() {
+			lastUsageIndex = i
+			tokens = usage.contextTokens()
+			break
+		}
+	}
+
+	for i := lastUsageIndex + 1; i < len(messages); i++ {
+		tokens += messages[i].estimateTokens()
+	}
+	return tokens
 }
