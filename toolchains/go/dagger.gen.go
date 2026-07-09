@@ -390,41 +390,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Go).GenerateDaggerRuntimes(&parent, ctx)
-		case "Lint":
-			var parent Go
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var include []string
-			if inputArgs["include"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["include"]), &include)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg include", err))
-				}
-			}
-			var exclude []string
-			if inputArgs["exclude"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["exclude"]), &exclude)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg exclude", err))
-				}
-			}
-			return nil, (*Go).Lint(&parent, ctx, include, exclude)
-		case "LintModule":
-			var parent Go
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var module string
-			if inputArgs["module"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["module"]), &module)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg module", err))
-				}
-			}
-			return nil, (*Go).LintModule(&parent, ctx, module)
 		case "ListPackages":
 			var parent Go
 			err = json.Unmarshal(parentJSON, &parent)

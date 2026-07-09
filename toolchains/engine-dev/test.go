@@ -57,7 +57,7 @@ func (dev *EngineDev) Test(
 	ebpfProgs []string,
 ) error {
 	// FIXME: use the damn standard Go toolchain
-	ctr, _, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
+	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (dev *EngineDev) TestTelemetry(
 	// +optional
 	ebpfProgs []string,
 ) (*dagger.Changeset, error) {
-	ctr, _, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
+	ctr, ldflagValues, err := dev.testContainer(ctx, ebpfProgs)
 	if err != nil {
 		return nil, err
 	}
@@ -226,10 +226,9 @@ func (dev *EngineDev) test(
 		WithExec(args)
 }
 
-// Build an ephemeral test environment ready to run core engine tests
-// Also return the URL of a pprof debug endpoint, to dump profiling data from the tested engine
+// Build an ephemeral test environment ready to run core engine tests.
 // (FIXME: do this more cleanly, and reuse the standard Go toolchain)
-func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*dagger.Container, string, []string, error) {
+func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*dagger.Container, []string, error) {
 	devEngine, err := dev.
 		WithEBPFProgs(ebpfProgs).
 		WithEngineConfig(`registry."registry:5000"`, `http = true`).
@@ -242,7 +241,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 			"",    // version
 		)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	// TODO: mitigation for https://github.com/dagger/dagger/issues/8031
@@ -288,19 +287,14 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	// FIXME: just persist the dev engine into a field of the object... cleaner
 	devEngineSvc, err = devEngineSvc.Start(ctx)
 	if err != nil {
-		return nil, "", nil, err
-	}
-
-	debugEndpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 6060, Scheme: "http"})
-	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	utilDirPath := "/dagger-dev"
 	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source})
 	ldflagValues, err := goToolchain.Values(ctx)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 	tests := goToolchain.Env().
 		WithExec([]string{"go", "install", "github.com/dagger/otel-go/cmd/otelgotest"}).
@@ -312,9 +306,9 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 
 	tests, err = dev.InstallClient(ctx, tests, devEngineSvc, "")
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
-	return tests, debugEndpoint, ldflagValues, nil
+	return tests, ldflagValues, nil
 }
 
 func testLdflags(values []string) string {
