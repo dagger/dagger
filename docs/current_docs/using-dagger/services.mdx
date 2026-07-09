@@ -54,7 +54,7 @@ A function exposes a host service by accepting it as an argument, using the `tcp
 
 ```shell
 # Make a database running on the host reachable from the function
-dagger call integration-test --db=tcp://localhost:5432
+dagger api call integration-test --db=tcp://localhost:5432
 ```
 
 Inside the function the argument is an ordinary `Service`, so the same code works whether the upstream runs on your host or in another container.

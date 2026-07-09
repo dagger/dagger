@@ -10,7 +10,13 @@ You've seen Dagger work on [hello-dagger](../getting-started/quickstart.mdx). No
 
 ## Get started
 
-Search for modules that match the tools, frameworks, and languages you use:
+The quickest path is the same one the quickstart uses — `dagger setup` scans your project and recommends suitable modules to install:
+
+```shell
+dagger setup
+```
+
+Prefer to pick modules yourself? Search for ones that match the tools, frameworks, and languages you use:
 
 ```shell
 dagger search eslint
@@ -37,10 +43,10 @@ dagger install github.com/dagger/vitest
 dagger install github.com/dagger/prettier
 ```
 
-The first install creates `dagger.toml` at the workspace root. To create the config in the current directory instead - for a workspace nested inside a larger repository - initialize it explicitly with `--here`:
+The first install creates `dagger.toml` at the workspace root. To create the config in the current directory instead - for a workspace nested inside a larger repository - pass `--here` to the first install:
 
 ```shell
-dagger ws init --here
+dagger install --here github.com/dagger/eslint
 ```
 
 ## Configure modules
@@ -48,13 +54,13 @@ dagger ws init --here
 Many modules expose settings — a base image, a package manager, and so on. List the settings for your installed modules:
 
 ```shell
-dagger ws settings
+dagger settings
 ```
 
 Set one with `module`, `key`, and `value`:
 
 ```shell
-dagger ws settings eslint packageManager yarn
+dagger settings eslint packageManager yarn
 ```
 
 Settings are stored in `dagger.toml` alongside each module, so they're shared with everyone who uses the workspace.
@@ -71,10 +77,10 @@ Set it to `false` to make `dagger check` skip generate-as-checks by default (the
 
 ## Migrate an existing project
 
-If your project already uses a legacy `dagger.json`, convert it to the workspace format:
+If your project already uses a legacy `dagger.json`, run `dagger setup` — its migration step converts your existing configuration to the workspace format:
 
 ```shell
-dagger ws migrate
+dagger setup
 ```
 
 This writes `dagger.toml` from your existing configuration. See [Upgrade to Workspaces](../reference/upgrade-to-workspaces.mdx) for details.
