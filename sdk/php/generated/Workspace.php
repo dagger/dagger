@@ -504,6 +504,21 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Return this workspace with a configuration value removed.
+     *
+     * Errors when the key is not currently set.
+     */
+    public function withoutConfigValue(string $key, ?bool $here = false): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutConfigValue');
+        $innerQueryBuilder->setArgument('key', $key);
+        if (null !== $here) {
+        $innerQueryBuilder->setArgument('here', $here);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return this workspace with a module removed from its config.
      */
     public function withoutModule(string $name, ?bool $here = false): Workspace

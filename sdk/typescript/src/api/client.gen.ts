@@ -2941,6 +2941,13 @@ export type WorkspaceWithoutConfigEnvOpts = {
   here?: boolean
 }
 
+export type WorkspaceWithoutConfigValueOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
 export type WorkspaceWithoutModuleOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
@@ -15565,6 +15572,21 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithoutConfigEnvOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withoutConfigEnv", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a configuration value removed.
+   *
+   * Errors when the key is not currently set.
+   * @param key Dotted key path (e.g. modules.greeter.settings.greeting).
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withoutConfigValue = (
+    key: string,
+    opts?: WorkspaceWithoutConfigValueOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withoutConfigValue", { key, ...opts })
     return new Workspace(ctx)
   }
 

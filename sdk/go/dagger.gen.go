@@ -16846,6 +16846,30 @@ func (r *Workspace) WithoutConfigEnv(name string, opts ...WorkspaceWithoutConfig
 	}
 }
 
+// WorkspaceWithoutConfigValueOpts contains options for Workspace.WithoutConfigValue
+type WorkspaceWithoutConfigValueOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a configuration value removed.
+//
+// Errors when the key is not currently set.
+func (r *Workspace) WithoutConfigValue(key string, opts ...WorkspaceWithoutConfigValueOpts) *Workspace {
+	q := r.query.Select("withoutConfigValue")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("key", key)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithoutModuleOpts contains options for Workspace.WithoutModule
 type WorkspaceWithoutModuleOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
