@@ -209,6 +209,9 @@ type Binding implements Node {
   """Retrieve the binding value, as type WorkspaceModuleSetting"""
   asWorkspaceModuleSetting: WorkspaceModuleSetting!
 
+  """Retrieve the binding value, as type WorkspaceSDK"""
+  asWorkspaceSDK: WorkspaceSDK!
+
   """Returns the digest of the binding value"""
   digest: String!
 
@@ -3475,6 +3478,29 @@ type Env implements Node {
     description: String!
   ): Env!
 
+  """Create or update a binding of type WorkspaceSDK in the environment"""
+  withWorkspaceSDKInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceSDK value to assign to the binding"""
+    value: ID! @expectedType(name: "WorkspaceSDK")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceSDK output to be assigned in the environment
+  """
+  withWorkspaceSDKOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Returns a new environment without any outputs"""
   withoutOutputs: Env!
 
@@ -6073,11 +6099,8 @@ type Workspace implements Node {
   """
   address: String!
 
-  """Return the changes from another workspace to this workspace."""
-  changes(
-    """Workspace to compare from."""
-    other: ID! @expectedType(name: "Workspace")
-  ): Changeset!
+  """Return this workspace's pending overlay changes."""
+  changes: Changeset!
 
   """Return all checks from modules loaded in the workspace."""
   checks(
@@ -6099,35 +6122,6 @@ type Workspace implements Node {
   ): CheckGroup!
 
   """
-  Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
-  """
-  clientGenerate: Changeset!
-
-  """
-  Plan the workspace changes for initializing a generated API client: generated
-  client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in
-  dagger.toml. Returns the resulting Changeset for the caller to preview and
-  apply.
-  """
-  clientInit(
-    """Workspace-relative output directory for the generated client."""
-    path: String!
-
-    """Workspace SDK name or module entry name to use."""
-    sdk: String!
-
-    """
-    Workspace-relative path or canonical ref for the module the client binds to.
-    """
-    module: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-
-    args: JSON
-  ): Changeset!
-
-  """
   Selected native workspace config file relative to the workspace root, if any.
   """
   configFile: String!
@@ -6144,20 +6138,6 @@ type Workspace implements Node {
   configRead(
     """Dotted key path (e.g. modules.greeter.source). Empty for full config."""
     key: String = ""
-  ): String!
-
-  """Write a configuration value to dagger.toml."""
-  configWrite(
-    """Dotted key path (e.g. modules.greeter.source)."""
-    key: String!
-
-    """
-    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
-    """
-    value: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
   ): String!
 
   """
@@ -6196,26 +6176,11 @@ type Workspace implements Node {
     gitignore: Boolean = false
   ): Directory!
 
-  """Create a named workspace environment if it does not already exist."""
-  envCreate(
-    """Environment name."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
   """List named environments defined in the workspace configuration."""
   envList: [String!]!
 
-  """Remove a named workspace environment."""
-  envRemove(
-    """Environment name."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
+  """Write this workspace's pending changes to its local Git workspace."""
+  export: Void!
 
   """
   Returns a File from the workspace.
@@ -6265,37 +6230,6 @@ type Workspace implements Node {
   """A unique identifier for this Workspace."""
   id: ID!
 
-  """Initialize workspace config, creating dagger.toml."""
-  init(
-    """
-    Create the workspace config directory at the workspace cwd instead of using the default write target.
-    """
-    here: Boolean = false
-  ): String!
-
-  """Install a module into the workspace, writing dagger.toml to the host."""
-  install(
-    """Module reference to install."""
-    ref: String!
-
-    """Override name for the installed module entry."""
-    name: String = ""
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-
-    """
-    Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that
-    dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
-    """
-    asSdk: Boolean = false
-
-    """
-    User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
-    """
-    asSdkName: String = ""
-  ): String!
-
   """
   Plan the explicit migration needed for the current workspace.
 
@@ -6303,44 +6237,23 @@ type Workspace implements Node {
   """
   migrate: WorkspaceMigration!
 
-  """
-  Plan the workspace changes for initializing a new module: dagger-module.toml +
-  SDK codegen output at `path`, the authoring entry under
-  [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>].
-  The SDK must already be installed as an SDK. Returns the resulting Changeset
-  for the caller to preview and apply.
-  """
-  moduleInit(
-    """Name of the new module."""
+  """Return a module defined in the workspace configuration."""
+  module(
+    """Module name to inspect."""
     name: String!
-
-    """Workspace SDK name or module entry name to use."""
-    sdk: String = ""
-
-    """
-    Workspace-relative path for the new module. Defaults to
-    ".dagger/modules/<name>"; using the default also installs the module in
-    [modules.<name>].
-    """
-    path: String = ""
-
-    """Source subpath within the new module."""
-    source: String = ""
-
-    """Additional include patterns for the module."""
-    include: [String!] = []
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-
-    args: JSON
-  ): Changeset!
+  ): WorkspaceModule!
 
   """List modules defined in the workspace configuration."""
-  moduleList(
-    """Optional module alias to inspect."""
-    module: String = ""
-  ): [WorkspaceModule!]!
+  modules: [WorkspaceModule!]!
+
+  """An installed SDK, by name."""
+  sdk(
+    """SDK name to look up."""
+    name: String!
+  ): WorkspaceSDK!
+
+  """Installed SDKs."""
+  sdks: [WorkspaceSDK!]!
 
   """Return all services from modules loaded in the workspace."""
   services(
@@ -6349,29 +6262,88 @@ type Workspace implements Node {
   ): UpGroup!
 
   """
-  Uninstall a module from the workspace, writing dagger.toml to the host.
-  """
-  uninstall(
-    """Name of the installed module entry to remove."""
-    name: String!
-
-    """Write to the workspace config directory at the workspace cwd."""
-    here: Boolean = false
-  ): String!
-
-  """
-  Refresh workspace-managed state and return the resulting changeset.
-
-  Currently this refreshes existing lockfile entries only.
-  """
-  update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
-
-  """
   Return this workspace with a changeset applied, without mutating the source.
   """
   withChanges(
     """Changes to apply."""
     changes: ID! @expectedType(name: "Changeset")
+  ): Workspace!
+
+  """Return this workspace with a named config environment created."""
+  withConfigEnv(
+    """Environment name."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a configuration value written."""
+  withConfigValue(
+    """Dotted key path."""
+    key: String!
+
+    """Value to set."""
+    value: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a generated API client initialized."""
+  withInitClient(
+    """Workspace-relative output directory for the generated client."""
+    path: String!
+
+    """Workspace SDK name or module entry name to use."""
+    sdk: String!
+
+    """
+    Workspace-relative path or canonical ref for the module the client binds to.
+    """
+    module: String!
+
+    """SDK-specific init arguments."""
+    args: JSON
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a new module initialized."""
+  withInitModule(
+    """Name of the new module."""
+    name: String!
+
+    """Workspace SDK name or module entry name to use."""
+    sdk: String!
+
+    """Workspace-relative path for the new module."""
+    path: String = ""
+
+    """Source subpath within the new module."""
+    source: String = ""
+
+    """Additional include patterns for the module."""
+    include: [String!] = []
+
+    """SDK-specific init arguments."""
+    args: JSON
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a module installed in its config."""
+  withModule(
+    """Module reference to install."""
+    ref: String!
+
+    """Override name for the installed module entry."""
+    name: String = ""
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): Workspace!
 
   """
@@ -6399,6 +6371,53 @@ type Workspace implements Node {
 
     """Permissions of the new file."""
     permissions: Int = 420
+  ): Workspace!
+
+  """Return this workspace with an SDK installed in its config."""
+  withSDK(
+    """SDK module reference to install."""
+    ref: String!
+
+    """Override name for the installed SDK entry."""
+    name: String = ""
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+
+    """
+    User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    """
+    asSdkName: String = ""
+  ): Workspace!
+
+  """Return this workspace with refreshed lockfile state."""
+  withUpdatedLock: Workspace!
+
+  """Return this workspace with a named config environment removed."""
+  withoutConfigEnv(
+    """Environment name."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with a module removed from its config."""
+  withoutModule(
+    """Name of the installed module entry to remove."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
+  """Return this workspace with an SDK removed from its config."""
+  withoutSDK(
+    """Name of the installed SDK entry to remove."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): Workspace!
 }
 
@@ -6481,5 +6500,25 @@ type WorkspaceModuleSetting implements Node {
   The configured value after applying the selected workspace environment, or empty when unset.
   """
   value: String!
+}
+
+"""
+An installed SDK: a module marked for scaffolding other modules and clients.
+"""
+type WorkspaceSDK implements Node {
+  """Clients generated with this SDK."""
+  clients: [WorkspaceModule!]!
+
+  """A unique identifier for this WorkspaceSDK."""
+  id: ID!
+
+  """Modules authored with this SDK."""
+  modules: [WorkspaceModule!]!
+
+  """The user-facing SDK name."""
+  name: String!
+
+  """The module reference this SDK was installed from."""
+  ref: String!
 }
 

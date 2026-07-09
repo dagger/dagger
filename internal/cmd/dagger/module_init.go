@@ -68,7 +68,7 @@ func sdkResolve(input string) (string, error) {
 //     reducing the chance of colliding with an unrelated module; and
 //   - the registry's canonical user-facing name to persist as as-sdk.name.
 //
-// Full refs return an empty install name so Workspace.install keeps its normal
+// Full refs return an empty install name so Workspace.withSDK keeps its normal
 // basename-derived behavior for third-party SDK refs. They also return an
 // empty SDK name so third-party refs can rely on the module entry name.
 func sdkResolveInstall(input string) (ref string, installName string, asSDKName string, _ error) {
@@ -134,10 +134,9 @@ to add more choices.
 For example, after ` + "`dagger sdk install go`" + `, run
 ` + "`dagger module init go myapp`" + `.
 
-The CLI is a thin wrapper around the engine's Workspace.moduleInit. The
-engine validates that <sdk> is installed as an SDK in dagger.toml, plans the
-workspace changes, and returns a Changeset that the CLI previews and applies
-through the standard changeset apply flow.
+The CLI is a thin wrapper around the engine's Workspace.withInitModule. The
+engine validates that <sdk> is installed as an SDK in dagger.toml and returns
+an updated workspace that the CLI previews and exports.
 
 What the engine does (atomically, in one Changeset):
   1. Resolves <sdk> to an installed SDK entry and requires its as-sdk marker.
@@ -169,78 +168,18 @@ func runModuleInitWithSDK(cmd *cobra.Command, sdkName, name string) error {
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
 		dag := ec.Dagger()
-
-		exportPath, err := currentWorkspaceExportPath(ctx, dag.CurrentWorkspace())
-		if err != nil {
-			return err
-		}
-
 		sdkArgs, err := sdkInitArgsJSON(cmd)
 		if err != nil {
 			return err
 		}
-
-		changesetID, err := callModuleInit(ctx, dag, name, sdkName, moduleInitPath, sdkArgs)
-		if err != nil {
-			return err
+		opts := dagger.WorkspaceWithInitModuleOpts{
+			Path: moduleInitPath,
 		}
-
-		_, err = handleChangesetResponseAt(ctx, dag, changesetID, autoApply, exportPath)
+		if sdkArgs != "" {
+			opts.Args = dagger.JSON(sdkArgs)
+		}
+		updated := dag.CurrentWorkspace().WithInitModule(name, sdkName, opts)
+		_, err = handleWorkspaceResponse(ctx, dag, updated, autoApply)
 		return err
 	})
-}
-
-// callModuleInit invokes the engine's Workspace.moduleInit via a raw GraphQL
-// query so this code can ship ahead of an SDK regeneration. sdkName is the
-// user-facing SDK name from [modules.<name>.as-sdk] or the module entry name.
-// When the Go SDK is regenerated against the new schema, the body collapses
-// to a single typed call:
-//
-//	dag.CurrentWorkspace().ModuleInit(ctx, name, dagger.WorkspaceModuleInitOpts{
-//	    SDK: sdkName, Path: path,
-//	})
-//
-// until then we go directly through dag.Do.
-func callModuleInit(ctx context.Context, dag *dagger.Client, name, sdkName, path, sdkArgs string) (string, error) {
-	var res struct {
-		CurrentWorkspace struct {
-			ModuleInit struct {
-				ID string `json:"id"`
-			} `json:"moduleInit"`
-		} `json:"currentWorkspace"`
-	}
-	err := dag.Do(ctx, &dagger.Request{
-		Query: `query ModuleInit($name: String!, $sdk: String!, $path: String, $args: JSON) {
-  currentWorkspace {
-    moduleInit(name: $name, sdk: $sdk, path: $path, args: $args) {
-      id
-    }
-  }
-}`,
-		Variables: withOptionalSDKInitArgs(map[string]any{
-			"name": name,
-			"sdk":  sdkName,
-			"path": path,
-		}, sdkArgs),
-	}, &dagger.Response{Data: &res})
-	if err != nil {
-		return "", fmt.Errorf("plan module init: %w", err)
-	}
-	if res.CurrentWorkspace.ModuleInit.ID == "" {
-		return "", fmt.Errorf("module init returned an empty changeset id")
-	}
-	return res.CurrentWorkspace.ModuleInit.ID, nil
-}
-
-// withOptionalSDKInitArgs adds the SDK-specific init args JSON to vars only
-// when the user actually supplied SDK flags. sdkInitArgsJSON returns "" for
-// no flags; sending args: "" makes the engine decode an empty-string JSON to
-// (nil, nil), which nil-panics the optional arg path while resolving the init
-// field (DynamicOptional{Valid: true, Value: nil} -> assign(nil)). Omitting
-// the variable entirely yields a clean absent/null optional instead.
-func withOptionalSDKInitArgs(vars map[string]any, sdkArgs string) map[string]any {
-	if sdkArgs != "" {
-		vars["args"] = sdkArgs
-	}
-	return vars
 }

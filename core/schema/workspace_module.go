@@ -10,21 +10,14 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type workspaceModuleListArgs struct {
-	Module string `default:""`
-}
-
-func (s *workspaceSchema) moduleList(
+func (s *workspaceSchema) workspaceModules(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
-	args workspaceModuleListArgs,
+	name string,
 ) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
 	ws := parent.Self()
-	if isSyntheticWorkspace(ws) {
-		return dagql.ObjectResultArray[*core.WorkspaceModule]{}, nil
-	}
 	if ws.ConfigFile == "" {
-		return nil, nil
+		return dagql.ObjectResultArray[*core.WorkspaceModule]{}, nil
 	}
 
 	cfg, err := readWorkspaceConfig(ctx, ws)
@@ -37,19 +30,19 @@ func (s *workspaceSchema) moduleList(
 		return nil, err
 	}
 	modules := make(core.WorkspaceModules, 0, len(cfg.Modules))
-	for name, entry := range cfg.Modules {
-		if args.Module != "" && name != args.Module {
+	for moduleName, entry := range cfg.Modules {
+		if name != "" && moduleName != name {
 			continue
 		}
 		source := filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 		modules = append(modules, &core.WorkspaceModule{
-			Name:       name,
+			Name:       moduleName,
 			Entrypoint: entry.Entrypoint,
 			Source:     source,
 		})
 	}
-	if args.Module != "" && len(modules) == 0 {
-		return nil, fmt.Errorf("module %q is not installed in the workspace", args.Module)
+	if name != "" && len(modules) == 0 {
+		return nil, fmt.Errorf("module %q is not installed in the workspace", name)
 	}
 	modules.Sort()
 
@@ -73,6 +66,31 @@ func (s *workspaceSchema) moduleList(
 		results = append(results, result)
 	}
 	return results, nil
+}
+
+func (s *workspaceSchema) modules(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ struct{},
+) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
+	return s.workspaceModules(ctx, parent, "")
+}
+
+func (s *workspaceSchema) module(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Name string
+	},
+) (dagql.ObjectResult[*core.WorkspaceModule], error) {
+	if args.Name == "" {
+		return dagql.ObjectResult[*core.WorkspaceModule]{}, fmt.Errorf("module name is required")
+	}
+	modules, err := s.workspaceModules(ctx, parent, args.Name)
+	if err != nil {
+		return dagql.ObjectResult[*core.WorkspaceModule]{}, err
+	}
+	return modules[0], nil
 }
 
 func (s *workspaceSchema) workspaceModule(
@@ -101,7 +119,7 @@ func (s *workspaceSchema) moduleSettings(
 		return nil, err
 	}
 
-	// moduleList creates WorkspaceModule results from Workspace.__workspaceModule,
+	// modules creates WorkspaceModule results from Workspace.__workspaceModule,
 	// so the DagQL receiver is the workspace that owns this module entry.
 	receiver, err := parent.Receiver(ctx, srv)
 	if err != nil {
@@ -111,10 +129,6 @@ func (s *workspaceSchema) moduleSettings(
 	if !ok {
 		return nil, fmt.Errorf("workspace module %q has unexpected receiver %T", parent.Self().Name, receiver)
 	}
-	if err := unsupportedSyntheticWorkspaceFeature(ws.Self(), "module settings"); err != nil {
-		return nil, err
-	}
-
 	cfg, err := readWorkspaceConfig(ctx, ws.Self())
 	if err != nil {
 		return nil, err
@@ -187,11 +201,11 @@ func introspectWorkspaceModuleSettings(
 	if filepath.IsAbs(resolvedSource) {
 		return introspectConstructorArgs(ctx, srv, resolvedSource)
 	}
+	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
+		return introspectConstructorArgsFromDirectory(ctx, srv, rootfs, resolvedSource)
+	}
 	if ws.HostPath() != "" {
 		return introspectConstructorArgs(ctx, srv, filepath.Join(ws.HostPath(), resolvedSource))
-	}
-	if rootfs := ws.Rootfs(); rootfs.Self() != nil {
-		return introspectConstructorArgsFromDirectory(ctx, srv, rootfs, resolvedSource)
 	}
 	return nil, fmt.Errorf("workspace project root is required for local module source %q", source)
 }

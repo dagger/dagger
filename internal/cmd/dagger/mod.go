@@ -41,14 +41,14 @@ With no query, lists all known modules.`,
 func listWorkspaceModules(ctx context.Context, out io.Writer, dag *dagger.Client) error {
 	var res struct {
 		CurrentWorkspace struct {
-			ModuleList []struct {
+			Modules []struct {
 				Name   string
 				Source string
 			}
 		}
 	}
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `query { currentWorkspace { moduleList { name source } } }`,
+		Query: `query { currentWorkspace { modules { name source } } }`,
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -56,7 +56,7 @@ func listWorkspaceModules(ctx context.Context, out io.Writer, dag *dagger.Client
 		return err
 	}
 
-	mods := res.CurrentWorkspace.ModuleList
+	mods := res.CurrentWorkspace.Modules
 	if len(mods) == 0 {
 		_, err := fmt.Fprintln(out, "No modules installed in the workspace.")
 		return err

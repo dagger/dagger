@@ -219,6 +219,29 @@ func TestLookupLockForMode(t *testing.T) {
 		require.Equal(t, workspace.LockModePinned, mode)
 		require.NotNil(t, lock)
 	})
+
+	t.Run("uses an in-memory overlay lock without a host binding", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModePinned),
+		})
+		overlay := workspace.NewLock()
+		ctx = withWorkspaceLookupLockOverride(ctx, overlay)
+
+		mode, lock, err := lookupLockForMode(ctx, nil, operation)
+		require.NoError(t, err)
+		require.Equal(t, workspace.LockModePinned, mode)
+		require.NotNil(t, lock)
+
+		inputs := []any{"alpine:latest", "linux/amd64"}
+		want := workspace.LookupResult{Value: "sha256:abc123", Policy: workspace.PolicyPin}
+		require.NoError(t, lock.SetLookup(lockCoreNamespace, operation, inputs, want))
+		got, ok, err := overlay.GetLookup(lockCoreNamespace, operation, inputs)
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Equal(t, want, got)
+	})
 }
 
 func TestWorkspaceInstallLookupContext(t *testing.T) {

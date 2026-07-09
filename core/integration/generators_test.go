@@ -233,6 +233,101 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 	}
 }
 
+// TestSDKGeneratorOwnsClients verifies the engine-to-SDK handoff for generated
+// clients without depending on any production SDK's code generation. The SDK
+// module reads the clients assigned to it in dagger.toml and exposes an ordinary
+// generator that writes one marker file per client.
+func (GeneratorsSuite) TestSDKGeneratorOwnsClients(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := goGitBase(t, c).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c)).
+		WithNewFile("dagger.toml", `[modules.client-generator-fixture]
+source = ".dagger/client-generator-fixture"
+
+[modules.client-generator-fixture.as-sdk]
+name = "fixture"
+
+[[modules.client-generator-fixture.as-sdk.clients]]
+path = "clients/one"
+module = "github.com/shykes/hello"
+pin = "deadbeef"
+
+[[modules.client-generator-fixture.as-sdk.clients]]
+path = "clients/two"
+module = "."
+`).
+		WithNewFile(".dagger/client-generator-fixture/dagger.json", `{
+  "name": "client-generator-fixture",
+  "engineVersion": "latest",
+  "sdk": { "source": "go" },
+  "source": "."
+}`).
+		WithNewFile(".dagger/client-generator-fixture/main.go", `package main
+
+import (
+	"context"
+
+	"dagger/client-generator-fixture/internal/dagger"
+)
+
+type ClientGeneratorFixture struct{}
+
+// +generate
+func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context) (*dagger.Changeset, error) {
+	clients, err := dag.CurrentModule().AsSDK().Clients(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	generated := dag.Directory()
+	for _, client := range clients {
+		path, err := client.Path(ctx)
+		if err != nil {
+			return nil, err
+		}
+		module, err := client.Module(ctx)
+		if err != nil {
+			return nil, err
+		}
+		pin, err := client.Pin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		generated = generated.WithNewFile(path+"/generated.txt", module+"\n"+pin+"\n")
+	}
+
+	return generated.Changes(dag.Directory()), nil
+}
+`)
+
+	list, err := base.
+		With(daggerExec("generate", "-l")).
+		CombinedOutput(ctx)
+	require.NoError(t, err, list)
+	require.Contains(t, list, "client-generator-fixture:generate-clients")
+
+	clients, err := base.
+		With(daggerExec("api", "client", "list", "--json")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `[
+  {"sdk":"fixture","path":"clients/one","module":"github.com/shykes/hello","pin":"deadbeef"},
+  {"sdk":"fixture","path":"clients/two","module":"."}
+]`, clients)
+
+	generated := base.With(daggerExec("generate", "-y"))
+
+	one, err := generated.File("clients/one/generated.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "github.com/shykes/hello\ndeadbeef\n", one)
+
+	two, err := generated.File("clients/two/generated.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ".\n\n", two)
+}
+
 func (GeneratorsSuite) TestGeneratorGroupChangesSyncWithNestedSDKCodegen(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -277,14 +372,7 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 		return "", err
 	}
 
-	_, err = dag.Changeset().
-		WithChangesets([]*dagger.Changeset{
-			generatorChanges,
-			workspace.ClientGenerate(),
-		}, dagger.ChangesetWithChangesetsOpts{
-			OnConflict: dagger.ChangesetsMergeConflictFailEarly,
-		}).
-		Sync(ctx)
+	_, err = generatorChanges.Sync(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -293,9 +381,8 @@ func (m *Consumer) SyncGenerators(ctx context.Context, workspace *dagger.Workspa
 }
 `)
 
-	// This mirrors the generated Go SDK contract used by `dagger generate`:
-	// generator changes from nested SDK/codegen are merged with client-generation
-	// changes, then the merged changeset is synced.
+	// SDK generators own their generated client output, so syncing generator
+	// changes is the complete generation contract.
 	out, err := modGen.
 		With(daggerNonNestedExec("call", "sync-generators")).
 		CombinedOutput(ctx)

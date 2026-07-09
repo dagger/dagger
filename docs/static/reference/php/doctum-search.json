@@ -1797,6 +1797,16 @@
 			}
 		},
 		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceSDK",
+			"p": "Dagger/WorkspaceSDK.html",
+			"d": "<p>An installed SDK: a module marked for scaffolding other modules and clients.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
 			"t": "I",
 			"n": "Dagger\\Client\\IdAble",
 			"p": "Dagger/Client/IdAble.html",
@@ -2167,6 +2177,12 @@
 			"n": "Dagger\\Binding::asWorkspaceModuleSetting",
 			"p": "Dagger/Binding.html#method_asWorkspaceModuleSetting",
 			"d": "<p>Retrieve the binding value, as type WorkspaceModuleSetting</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asWorkspaceSDK",
+			"p": "Dagger/Binding.html#method_asWorkspaceSDK",
+			"d": "<p>Retrieve the binding value, as type WorkspaceSDK</p>"
 		},
 		{
 			"t": "M",
@@ -4435,6 +4451,18 @@
 			"n": "Dagger\\Env::withWorkspaceOutput",
 			"p": "Dagger/Env.html#method_withWorkspaceOutput",
 			"d": "<p>Declare a desired Workspace output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceSDKInput",
+			"p": "Dagger/Env.html#method_withWorkspaceSDKInput",
+			"d": "<p>Create or update a binding of type WorkspaceSDK in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceSDKOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceSDKOutput",
+			"d": "<p>Declare a desired WorkspaceSDK output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6732,25 +6760,13 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::changes",
 			"p": "Dagger/Workspace.html#method_changes",
-			"d": "<p>Return the changes from another workspace to this workspace.</p>"
+			"d": "<p>Return this workspace's pending overlay changes.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Workspace::checks",
 			"p": "Dagger/Workspace.html#method_checks",
 			"d": "<p>Return all checks from modules loaded in the workspace.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::clientGenerate",
-			"p": "Dagger/Workspace.html#method_clientGenerate",
-			"d": "<p>Regenerate all generated API clients registered in workspace config and return the resulting Changeset.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::clientInit",
-			"p": "Dagger/Workspace.html#method_clientInit",
-			"d": "<p>Plan the workspace changes for initializing a generated API client: generated client files at <code>path</code> plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.</p>"
 		},
 		{
 			"t": "M",
@@ -6766,12 +6782,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::configWrite",
-			"p": "Dagger/Workspace.html#method_configWrite",
-			"d": "<p>Write a configuration value to dagger.toml.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::cwd",
 			"p": "Dagger/Workspace.html#method_cwd",
 			"d": "<p>Current location within the workspace root.</p>"
@@ -6784,21 +6794,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::envCreate",
-			"p": "Dagger/Workspace.html#method_envCreate",
-			"d": "<p>Create a named workspace environment if it does not already exist.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::envList",
 			"p": "Dagger/Workspace.html#method_envList",
 			"d": "<p>List named environments defined in the workspace configuration.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::envRemove",
-			"p": "Dagger/Workspace.html#method_envRemove",
-			"d": "<p>Remove a named workspace environment.</p>"
+			"n": "Dagger\\Workspace::export",
+			"p": "Dagger/Workspace.html#method_export",
+			"d": "<p>Write this workspace's pending changes to its local Git workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -6832,33 +6836,33 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::init",
-			"p": "Dagger/Workspace.html#method_init",
-			"d": "<p>Initialize workspace config, creating dagger.toml.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::install",
-			"p": "Dagger/Workspace.html#method_install",
-			"d": "<p>Install a module into the workspace, writing dagger.toml to the host.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::migrate",
 			"p": "Dagger/Workspace.html#method_migrate",
 			"d": "<p>Plan the explicit migration needed for the current workspace.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::moduleInit",
-			"p": "Dagger/Workspace.html#method_moduleInit",
-			"d": "<p>Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at <code>path</code>, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.</p>"
+			"n": "Dagger\\Workspace::module",
+			"p": "Dagger/Workspace.html#method_module",
+			"d": "<p>Return a module defined in the workspace configuration.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::moduleList",
-			"p": "Dagger/Workspace.html#method_moduleList",
+			"n": "Dagger\\Workspace::modules",
+			"p": "Dagger/Workspace.html#method_modules",
 			"d": "<p>List modules defined in the workspace configuration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::sdk",
+			"p": "Dagger/Workspace.html#method_sdk",
+			"d": "<p>An installed SDK, by name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::sdks",
+			"p": "Dagger/Workspace.html#method_sdks",
+			"d": "<p>Installed SDKs.</p>"
 		},
 		{
 			"t": "M",
@@ -6868,21 +6872,39 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Workspace::uninstall",
-			"p": "Dagger/Workspace.html#method_uninstall",
-			"d": "<p>Uninstall a module from the workspace, writing dagger.toml to the host.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::update",
-			"p": "Dagger/Workspace.html#method_update",
-			"d": "<p>Refresh workspace-managed state and return the resulting changeset.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Workspace::withChanges",
 			"p": "Dagger/Workspace.html#method_withChanges",
 			"d": "<p>Return this workspace with a changeset applied, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withConfigEnv",
+			"p": "Dagger/Workspace.html#method_withConfigEnv",
+			"d": "<p>Return this workspace with a named config environment created.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withConfigValue",
+			"p": "Dagger/Workspace.html#method_withConfigValue",
+			"d": "<p>Return this workspace with a configuration value written.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withInitClient",
+			"p": "Dagger/Workspace.html#method_withInitClient",
+			"d": "<p>Return this workspace with a generated API client initialized.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withInitModule",
+			"p": "Dagger/Workspace.html#method_withInitModule",
+			"d": "<p>Return this workspace with a new module initialized.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withModule",
+			"p": "Dagger/Workspace.html#method_withModule",
+			"d": "<p>Return this workspace with a module installed in its config.</p>"
 		},
 		{
 			"t": "M",
@@ -6895,6 +6917,36 @@
 			"n": "Dagger\\Workspace::withNewFile",
 			"p": "Dagger/Workspace.html#method_withNewFile",
 			"d": "<p>Return this workspace with a new or replaced file, without mutating the source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withSDK",
+			"p": "Dagger/Workspace.html#method_withSDK",
+			"d": "<p>Return this workspace with an SDK installed in its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withUpdatedLock",
+			"p": "Dagger/Workspace.html#method_withUpdatedLock",
+			"d": "<p>Return this workspace with refreshed lockfile state.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutConfigEnv",
+			"p": "Dagger/Workspace.html#method_withoutConfigEnv",
+			"d": "<p>Return this workspace with a named config environment removed.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutModule",
+			"p": "Dagger/Workspace.html#method_withoutModule",
+			"d": "<p>Return this workspace with a module removed from its config.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::withoutSDK",
+			"p": "Dagger/Workspace.html#method_withoutSDK",
+			"d": "<p>Return this workspace with an SDK removed from its config.</p>"
 		},
 		{
 			"t": "M",
@@ -7015,6 +7067,36 @@
 			"n": "Dagger\\WorkspaceModuleSetting::value",
 			"p": "Dagger/WorkspaceModuleSetting.html#method_value",
 			"d": "<p>The configured value after applying the selected workspace environment, or empty when unset.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceSDK::clients",
+			"p": "Dagger/WorkspaceSDK.html#method_clients",
+			"d": "<p>Clients generated with this SDK.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceSDK::id",
+			"p": "Dagger/WorkspaceSDK.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceSDK.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceSDK::modules",
+			"p": "Dagger/WorkspaceSDK.html#method_modules",
+			"d": "<p>Modules authored with this SDK.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceSDK::name",
+			"p": "Dagger/WorkspaceSDK.html#method_name",
+			"d": "<p>The user-facing SDK name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceSDK::ref",
+			"p": "Dagger/WorkspaceSDK.html#method_ref",
+			"d": "<p>The module reference this SDK was installed from.</p>"
 		},
 		{
 			"t": "M",

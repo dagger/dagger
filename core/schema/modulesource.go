@@ -82,6 +82,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 					`If not set, the module source code is loaded from the root of the directory.`),
 			),
 		dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load the directory as a Dagger module source`).
 			Args(
 				dagql.Arg("sourceRootPath").Doc(

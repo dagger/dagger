@@ -9,25 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const workspaceLockUpdateQuery = `query {
-  currentWorkspace {
-    update {
-      isEmpty
-      export(path: ".")
-    }
-  }
-}
-`
-
-type workspaceLockUpdateResponse struct {
-	CurrentWorkspace struct {
-		Update struct {
-			IsEmpty bool
-			Export  string
-		}
-	}
-}
-
 func init() {
 	lockCmd.AddCommand(lockUpdateCmd)
 	setWorkspaceFlagPolicy(lockCmd, workspaceFlagPolicyLocalOnly)
@@ -52,7 +33,7 @@ var lockUpdateCmd = &cobra.Command{
 	RunE: runWorkspaceUpdate,
 }
 
-func runWorkspaceUpdate(cmd *cobra.Command, moduleNames []string) error {
+func runWorkspaceUpdate(cmd *cobra.Command, _ []string) error {
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
@@ -61,12 +42,20 @@ func runWorkspaceUpdate(cmd *cobra.Command, moduleNames []string) error {
 }
 
 func updateWorkspaceLockfile(ctx context.Context, outWriter io.Writer, dag *dagger.Client) error {
-	var res workspaceLockUpdateResponse
-	if err := dag.Do(ctx, &dagger.Request{Query: workspaceLockUpdateQuery}, &dagger.Response{Data: &res}); err != nil {
+	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithUpdatedLock())
+	if err != nil {
 		return err
 	}
-
-	return writeWorkspaceLockUpdateResult(outWriter, res.CurrentWorkspace.Update.IsEmpty)
+	isEmpty, err := updated.Changes().IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if !isEmpty {
+		if err := updated.Export(ctx); err != nil {
+			return err
+		}
+	}
+	return writeWorkspaceLockUpdateResult(outWriter, isEmpty)
 }
 
 func writeWorkspaceLockUpdateResult(outWriter io.Writer, isEmpty bool) error {

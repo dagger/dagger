@@ -11,6 +11,10 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -218,11 +222,535 @@ func (WorkspaceAPISuite) TestWorkspaceFindUp(ctx context.Context, t *testctx.T) 
 	})
 }
 
-// TestHostWorkspaceFunctionalOverlayAPIsRejectClearly documents the current
-// boundary for the value-workspace overlay APIs. Host-local workspaces do not
-// have a rootfs to overlay, so they should fail before generic rootfs plumbing
-// leaks through to users.
-func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsRejectClearly(ctx context.Context, t *testctx.T) {
+func (WorkspaceAPISuite) TestRootlessCurrentWorkspace(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "workspace.txt"), []byte("workspace"), 0o644))
+	queryPath := writeQueryDoc(t, t.TempDir(), "rootless.graphql", `{
+  currentWorkspace {
+    cwd
+    configFile
+    directory(path: "/") {
+      entries
+    }
+    changes {
+      isEmpty
+    }
+  }
+}
+`)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"currentWorkspace": {
+			"cwd": "/",
+			"configFile": "",
+			"directory": {"entries": ["workspace.txt"]},
+			"changes": {"isEmpty": true}
+		}
+	}`, string(out))
+}
+
+func (WorkspaceAPISuite) TestRootlessCurrentWorkspaceIgnoresIrrelevantDaggerJSON(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.json"), []byte(`{}`), 0o644))
+	queryPath := writeQueryDoc(t, workdir, "rootless-irrelevant-legacy.graphql", `{
+  currentWorkspace {
+    cwd
+    configFile
+    changes {
+      isEmpty
+    }
+  }
+}
+`)
+
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"currentWorkspace": {
+			"cwd": "/",
+			"configFile": "",
+			"changes": {"isEmpty": true}
+		}
+	}`, string(out))
+}
+
+func (WorkspaceAPISuite) TestHostWorkspaceOverlayAndExport(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "base.txt"), []byte("base"), 0o644))
+
+	stageQueryPath := writeQueryDoc(t, workdir, "stage.graphql", `{
+  currentWorkspace {
+    withNewFile(path: "staged.txt", contents: "staged") {
+      changes {
+        isEmpty
+        addedPaths
+      }
+      file(path: "staged.txt") {
+        contents
+      }
+    }
+  }
+}
+`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", stageQueryPath)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"currentWorkspace": {
+			"withNewFile": {
+				"changes": {
+					"isEmpty": false,
+					"addedPaths": ["staged.txt"]
+				},
+				"file": {
+					"contents": "staged"
+				}
+			}
+		}
+	}`, string(out))
+	_, err = os.Stat(filepath.Join(workdir, "staged.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	exportQueryPath := writeQueryDoc(t, workdir, "export.graphql", `{
+  currentWorkspace {
+    withNewFile(path: "staged.txt", contents: "staged") {
+      export
+    }
+  }
+}
+`)
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", exportQueryPath)
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(workdir, "staged.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "staged", string(got))
+}
+
+func (WorkspaceAPISuite) TestHostWorkspaceExportFromGitWorktree(ctx context.Context, t *testctx.T) {
+	tmp := t.TempDir()
+	repoDir := filepath.Join(tmp, "repo")
+	worktreeDir := filepath.Join(tmp, "worktree")
+	initGitRepo(ctx, t, repoDir)
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "base.txt"), []byte("base"), 0o644))
+	runGit(ctx, t, repoDir, "add", ".")
+	runGit(ctx, t, repoDir, "commit", "-m", "initial")
+	runGit(ctx, t, repoDir, "worktree", "add", worktreeDir, "HEAD")
+
+	exportQueryPath := writeQueryDoc(t, worktreeDir, "worktree-export.graphql", `{
+  currentWorkspace {
+    withNewFile(path: "staged.txt", contents: "staged") {
+      export
+    }
+  }
+}
+`)
+	_, err := hostDaggerExec(ctx, t, worktreeDir, "--silent", "query", "--doc", exportQueryPath)
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(worktreeDir, "staged.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "staged", string(got))
+}
+
+func runGit(ctx context.Context, t *testctx.T, dir string, args ...string) {
+	t.Helper()
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+}
+
+func (WorkspaceAPISuite) TestWorkspaceConfigBuildersStageOverlay(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+
+	queryPath := writeQueryDoc(t, workdir, "config-builders.graphql", `{
+  currentWorkspace {
+    withConfigValue(key: "modules.demo.source", value: "./demo") {
+      withConfigEnv(name: "dev") {
+        configFile
+        changes {
+          isEmpty
+          addedPaths
+        }
+        file(path: "dagger.toml") {
+          contents
+        }
+      }
+    }
+  }
+}
+`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithConfigValue struct {
+				WithConfigEnv struct {
+					ConfigFile string `json:"configFile"`
+					Changes    struct {
+						IsEmpty    bool     `json:"isEmpty"`
+						AddedPaths []string `json:"addedPaths"`
+					} `json:"changes"`
+					File struct {
+						Contents string `json:"contents"`
+					} `json:"file"`
+				} `json:"withConfigEnv"`
+			} `json:"withConfigValue"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal(out, &got))
+	staged := got.CurrentWorkspace.WithConfigValue.WithConfigEnv
+	require.Equal(t, "dagger.toml", staged.ConfigFile)
+	require.False(t, staged.Changes.IsEmpty)
+	require.Equal(t, []string{"dagger.toml"}, staged.Changes.AddedPaths)
+	require.Contains(t, staged.File.Contents, `[modules.demo]`)
+	require.Contains(t, staged.File.Contents, `source = "./demo"`)
+	require.Contains(t, staged.File.Contents, `[env.dev]`)
+
+	_, err = os.Stat(filepath.Join(workdir, "dagger.toml"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func (WorkspaceAPISuite) TestWorkspaceBuilderExportPreservesCommentsAndFullOverlay(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte(`# keep this comment
+[modules.demo]
+source = "./demo"
+`), 0o644))
+
+	queryPath := writeQueryDoc(t, workdir, "builder-export.graphql", `{
+  currentWorkspace {
+    withConfigValue(key: "modules.demo.settings.message", value: "hello") {
+      withNewFile(path: "generated.txt", contents: "generated") {
+        export
+      }
+    }
+  }
+}
+`)
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	config, err := os.ReadFile(filepath.Join(workdir, "dagger.toml"))
+	require.NoError(t, err)
+	require.Contains(t, string(config), "# keep this comment")
+	require.Contains(t, string(config), `message = "hello"`)
+	generated, err := os.ReadFile(filepath.Join(workdir, "generated.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "generated", string(generated))
+}
+
+func (WorkspaceAPISuite) TestSyntheticWorkspaceModuleBuildersUseWorkspaceSnapshot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	workspaceID, err := c.Directory().
+		WithNewFile("modules/demo/dagger-module.toml", `name = "demo"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "go"
+`).
+		AsWorkspace().
+		ID(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		Node struct {
+			WithModule struct {
+				ConfigFile string `json:"configFile"`
+				Changes    struct {
+					AddedPaths []string `json:"addedPaths"`
+				} `json:"changes"`
+				Module struct {
+					Name   string `json:"name"`
+					Source string `json:"source"`
+				} `json:"module"`
+				WithUpdatedLock struct {
+					Changes struct {
+						AddedPaths []string `json:"addedPaths"`
+					} `json:"changes"`
+					Lock struct {
+						Contents string `json:"contents"`
+					} `json:"lock"`
+				} `json:"withUpdatedLock"`
+				WithoutModule struct {
+					Modules []struct {
+						Name string `json:"name"`
+					} `json:"modules"`
+					Config struct {
+						Contents string `json:"contents"`
+					} `json:"config"`
+				} `json:"withoutModule"`
+			} `json:"withModule"`
+		} `json:"node"`
+	}
+	err = c.Do(ctx, &dagger.Request{
+		Query: `query SyntheticWorkspaceModuleBuilders($workspace: ID!) {
+  node(id: $workspace) {
+    ... on Workspace {
+      withModule(ref: "./modules/demo") {
+        configFile
+        changes { addedPaths }
+        module(name: "demo") { name source }
+        withUpdatedLock {
+          changes { addedPaths }
+          lock: file(path: "dagger.lock") { contents }
+        }
+        withoutModule(name: "demo") {
+          modules { name }
+          config: file(path: "dagger.toml") { contents }
+        }
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{"workspace": workspaceID},
+	}, &dagger.Response{Data: &got})
+	require.NoError(t, err)
+	require.Equal(t, "dagger.toml", got.Node.WithModule.ConfigFile)
+	require.Equal(t, []string{"dagger.toml"}, got.Node.WithModule.Changes.AddedPaths)
+	require.Equal(t, "demo", got.Node.WithModule.Module.Name)
+	require.Equal(t, "modules/demo", got.Node.WithModule.Module.Source)
+	require.ElementsMatch(t, []string{"dagger.lock", "dagger.toml"}, got.Node.WithModule.WithUpdatedLock.Changes.AddedPaths)
+	require.Empty(t, got.Node.WithModule.WithUpdatedLock.Lock.Contents)
+	require.Empty(t, got.Node.WithModule.WithoutModule.Modules)
+	require.NotContains(t, got.Node.WithModule.WithoutModule.Config.Contents, "modules.demo")
+}
+
+func (WorkspaceAPISuite) TestAbsoluteModuleRefInsideLocalWorkspaceUsesOverlaySnapshot(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	updated := c.CurrentWorkspace().
+		WithNewFile("modules/demo/dagger-module.toml", `name = "demo"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "go"
+`).
+		WithModule(filepath.Join(workdir, "modules", "demo"))
+
+	name, err := updated.Module("demo").Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "demo", name)
+	added, err := updated.Changes().AddedPaths(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"dagger.toml", "modules/", "modules/demo/", "modules/demo/dagger-module.toml"}, added)
+
+	_, err = os.Stat(filepath.Join(workdir, "modules", "demo", "dagger-module.toml"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func (WorkspaceAPISuite) TestSyntheticWorkspaceGitModuleStagesConfigAndLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	workspaceID, err := c.Directory().AsWorkspace().ID(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		Node struct {
+			WithModule struct {
+				Changes struct {
+					AddedPaths []string `json:"addedPaths"`
+				} `json:"changes"`
+				Config struct {
+					Contents string `json:"contents"`
+				} `json:"config"`
+				Lock struct {
+					Contents string `json:"contents"`
+				} `json:"lock"`
+			} `json:"withModule"`
+		} `json:"node"`
+	}
+	err = c.Do(ctx, &dagger.Request{
+		Query: `query SyntheticWorkspaceGitModule($workspace: ID!) {
+  node(id: $workspace) {
+    ... on Workspace {
+      withModule(ref: "github.com/dagger/dagger/modules/wolfi@v0.20.2") {
+        changes { addedPaths }
+        config: file(path: "dagger.toml") { contents }
+        lock: file(path: "dagger.lock") { contents }
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{"workspace": workspaceID},
+	}, &dagger.Response{Data: &got})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"dagger.lock", "dagger.toml"}, got.Node.WithModule.Changes.AddedPaths)
+	require.Contains(t, got.Node.WithModule.Config.Contents, `source = "github.com/dagger/dagger/modules/wolfi@v0.20.2"`)
+	require.Contains(t, got.Node.WithModule.Lock.Contents, `[["version","1"]]`)
+	require.Contains(t, got.Node.WithModule.Lock.Contents, `"git.tag"`)
+}
+
+func (WorkspaceAPISuite) TestSyntheticWorkspaceDetectsExistingConfigAndLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ws := c.Directory().
+		WithNewFile("app/dagger.toml", `# keep this comment
+[modules.existing]
+source = "../modules/existing"
+`).
+		WithNewFile("app/dagger.lock", "").
+		WithNewFile("app/nested/marker", "nested").
+		AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/app/nested"})
+
+	configFile, err := ws.ConfigFile(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "app/dagger.toml", configFile)
+
+	updated := ws.WithModule("github.com/dagger/dagger/modules/wolfi@v0.20.2")
+	modified, err := updated.Changes().ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"app/dagger.lock", "app/dagger.toml"}, modified)
+
+	config, err := updated.File("/app/dagger.toml").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, config, "# keep this comment")
+	require.Contains(t, config, "[modules.existing]")
+	require.Contains(t, config, "[modules.wolfi]")
+}
+
+func (WorkspaceAPISuite) TestWorkspaceSDKReadersUseStagedOverlay(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "sdk"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "sdk", "dagger-module.toml"), []byte(`name = "custom-sdk"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "go"
+`), 0o644))
+
+	queryPath := writeQueryDoc(t, workdir, "sdk-readers.graphql", `{
+  currentWorkspace {
+    withSDK(ref: "./sdk", name: "go-sdk", asSdkName: "go") {
+      changes {
+        addedPaths
+      }
+      file(path: "dagger.toml") {
+        contents
+      }
+      sdks {
+        name
+        ref
+        modules {
+          name
+          source
+        }
+        clients {
+          name
+          source
+        }
+      }
+      sdk(name: "go") {
+        name
+        ref
+      }
+    }
+  }
+}
+`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithSDK struct {
+				Changes struct {
+					AddedPaths []string `json:"addedPaths"`
+				} `json:"changes"`
+				File struct {
+					Contents string `json:"contents"`
+				} `json:"file"`
+				SDKs []struct {
+					Name    string `json:"name"`
+					Ref     string `json:"ref"`
+					Modules []any  `json:"modules"`
+					Clients []any  `json:"clients"`
+				} `json:"sdks"`
+				SDK struct {
+					Name string `json:"name"`
+					Ref  string `json:"ref"`
+				} `json:"sdk"`
+			} `json:"withSDK"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal(out, &got))
+	staged := got.CurrentWorkspace.WithSDK
+	require.Equal(t, []string{"dagger.toml"}, staged.Changes.AddedPaths)
+	require.Contains(t, staged.File.Contents, `[modules.go-sdk]`)
+	require.Contains(t, staged.File.Contents, `source = "sdk"`)
+	require.Contains(t, staged.File.Contents, `[modules.go-sdk.as-sdk]`)
+	require.Contains(t, staged.File.Contents, `name = "go"`)
+	require.Len(t, staged.SDKs, 1)
+	require.Equal(t, "go", staged.SDKs[0].Name)
+	require.Equal(t, "sdk", staged.SDKs[0].Ref)
+	require.Empty(t, staged.SDKs[0].Modules)
+	require.Empty(t, staged.SDKs[0].Clients)
+	require.Equal(t, "go", staged.SDK.Name)
+	require.Equal(t, "sdk", staged.SDK.Ref)
+
+	_, err = os.Stat(filepath.Join(workdir, "dagger.toml"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func (WorkspaceAPISuite) TestWorkspaceExportFailureBySource(ctx context.Context, t *testctx.T) {
+	t.Run("rootless local", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		queryPath := writeQueryDoc(t, workdir, "rootless-export.graphql", `{
+  currentWorkspace {
+    withNewFile(path: "staged.txt", contents: "staged") {
+      export
+    }
+  }
+}
+`)
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+		require.Error(t, err)
+		requireErrOut(t, err, "workspace export requires a local Git workspace")
+	})
+
+	t.Run("synthetic directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := testutil.QueryWithClient[struct{}](c, t, `{
+  directory {
+    asWorkspace {
+      withNewFile(path: "staged.txt", contents: "staged") {
+        export
+      }
+    }
+  }
+}`, nil)
+		requireErrOut(t, err, "cannot export a synthetic workspace")
+	})
+
+	t.Run("remote git ref", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+			WithNewFile("base.txt", "base"))
+		workdir := t.TempDir()
+		queryPath := writeQueryDoc(t, workdir, "remote-export.graphql", `{
+  currentWorkspace {
+    withNewFile(path: "staged.txt", contents: "staged") {
+      export
+    }
+  }
+}
+`)
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "-W", remoteRef, "query", "--doc", queryPath)
+		require.Error(t, err)
+		requireErrOut(t, err, "cannot export a remote Git workspace")
+	})
+}
+
+func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsChain(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	initGitRepo(ctx, t, workdir)
 
@@ -235,67 +763,63 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsRejectClearly(ctx
 	changedDir := baseDir.WithNewFile("changed.txt", "changed")
 	changesID, err := changedDir.Changes(baseDir).ID(ctx)
 	require.NoError(t, err)
-	otherWorkspaceID, err := c.Directory().AsWorkspace().ID(ctx)
-	require.NoError(t, err)
 
-	// These Workspace overlay fields are not in the generated Go SDK yet.
-	// Selecting id through GraphQL is intentional: it exercises the public
-	// object-returning resolver path where dependency attachment currently
-	// leaks the generic rootfs error.
 	for _, tc := range []struct {
-		name      string
-		query     string
-		variables map[string]any
+		name       string
+		query      string
+		variables  map[string]any
+		wantOutput string
 	}{
 		{
 			name: "withNewFile",
 			query: `{
 				currentWorkspace {
 					withNewFile(path: "new.txt", contents: "new") {
-						id
+						changes {
+							addedPaths
+						}
 					}
 				}
 			}`,
+			wantOutput: `{"currentWorkspace":{"withNewFile":{"changes":{"addedPaths":["new.txt"]}}}}`,
 		},
 		{
 			name: "withNewDirectory",
 			query: `query HostWorkspaceWithNewDirectory($source: ID!) {
 				currentWorkspace {
 					withNewDirectory(path: "dir", source: $source) {
-						id
+						changes {
+							addedPaths
+						}
 					}
 				}
 			}`,
-			variables: map[string]any{"source": sourceID},
+			variables:  map[string]any{"source": sourceID},
+			wantOutput: `{"currentWorkspace":{"withNewDirectory":{"changes":{"addedPaths":["dir/nested.txt","dir/"]}}}}`,
 		},
 		{
 			name: "withChanges",
 			query: `query HostWorkspaceWithChanges($changes: ID!) {
 				currentWorkspace {
 					withChanges(changes: $changes) {
-						id
+						changes {
+							addedPaths
+						}
 					}
 				}
 			}`,
-			variables: map[string]any{"changes": changesID},
-		},
-		{
-			name: "changes",
-			query: `query HostWorkspaceChanges($other: ID!) {
-				currentWorkspace {
-					changes(other: $other) {
-						id
-					}
-				}
-			}`,
-			variables: map[string]any{"other": otherWorkspaceID},
+			variables:  map[string]any{"changes": changesID},
+			wantOutput: `{"currentWorkspace":{"withChanges":{"changes":{"addedPaths":["changed.txt"]}}}}`,
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			_, err := testutil.QueryWithClient[struct{}](c, t, tc.query, &testutil.QueryOptions{
+			out, err := testutil.QueryWithClient[map[string]any](c, t, tc.query, &testutil.QueryOptions{
 				Variables: tc.variables,
 			})
-			requireErrOut(t, err, "only supported for value workspaces")
+			require.NoError(t, err)
+			got, err := json.Marshal(out)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.wantOutput, string(got))
 		})
 	}
 }

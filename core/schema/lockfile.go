@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,7 +22,18 @@ type workspaceLookupLock struct {
 	lock  *workspace.Lock
 }
 
+type workspaceLookupLockOverrideKey struct{}
+
+func withWorkspaceLookupLockOverride(ctx context.Context, lock *workspace.Lock) context.Context {
+	ctx = context.WithValue(ctx, workspaceLookupLockOverrideKey{}, lock)
+	return dagql.WithPerClientCacheScope(ctx)
+}
+
 func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspaceLookupLock, error) {
+	if lock, ok := ctx.Value(workspaceLookupLockOverrideKey{}).(*workspace.Lock); ok && lock != nil {
+		return &workspaceLookupLock{lock: lock}, nil
+	}
+
 	lock, ok, err := query.CurrentWorkspaceLock(ctx)
 	if err != nil {
 		return nil, err
@@ -41,8 +53,10 @@ func (l *workspaceLookupLock) SetLookup(namespace, operation string, inputs []an
 	if l == nil {
 		return fmt.Errorf("workspace lock is required")
 	}
-	if err := l.query.SetCurrentWorkspaceLookup(l.ctx, namespace, operation, inputs, result); err != nil {
-		return err
+	if l.query != nil {
+		if err := l.query.SetCurrentWorkspaceLookup(l.ctx, namespace, operation, inputs, result); err != nil {
+			return err
+		}
 	}
 	if err := l.lock.SetLookup(namespace, operation, inputs, result); err != nil {
 		return err

@@ -377,17 +377,33 @@ func (WorkspaceSuite) TestChainedOverlayGitRefWorkspaceReportsAllOverlayChanges(
 }
 
 // TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState asserts that
-// value workspaces do not accidentally route non-filesystem workspace APIs
-// through the caller's current session. Listing APIs return empty results
-// because no module graph is loaded; local-only mutations reject.
+// value workspaces read and build against their own snapshot rather than the
+// caller's current session. Only export remains local-Git-specific.
 func (WorkspaceSuite) TestSyntheticWorkspaceManagementAPIsDoNotDependOnHostState(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ws := syntheticWorkspaceSource(c).AsWorkspace()
 
 	assertSyntheticWorkspaceListsAreEmpty(ctx, t, ws)
 
-	_, err := ws.Install(ctx, "github.com/dagger/dagger/modules/wolfi")
+	updated := ws.WithModule("github.com/dagger/dagger/modules/wolfi@v0.20.2")
+	added, err := updated.Changes().AddedPaths(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"dagger.lock", "dagger.toml"}, added)
+
+	modules, err := updated.Modules(ctx)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+	name, err := modules[0].Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "wolfi", name)
+
+	baseModules, err := ws.Modules(ctx)
+	require.NoError(t, err)
+	require.Empty(t, baseModules)
+
+	err = updated.Export(ctx)
 	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot export a synthetic workspace")
 }
 
 // TestSyntheticWorkspaceFindUpValidatesNames asserts that Workspace.findUp
@@ -445,7 +461,7 @@ func assertSyntheticWorkspaceListsAreEmpty(ctx context.Context, t *testctx.T, ws
 	require.NoError(t, err)
 	require.Empty(t, services)
 
-	modules, err := ws.ModuleList(ctx)
+	modules, err := ws.Modules(ctx)
 	require.NoError(t, err)
 	require.Empty(t, modules)
 

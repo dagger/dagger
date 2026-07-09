@@ -766,6 +766,15 @@ func (r *Binding) AsWorkspaceModuleSetting() *WorkspaceModuleSetting {
 	}
 }
 
+// Retrieve the binding value, as type WorkspaceSDK
+func (r *Binding) AsWorkspaceSDK() *WorkspaceSDK {
+	q := r.query.Select("asWorkspaceSDK")
+
+	return &WorkspaceSDK{
+		query: q,
+	}
+}
+
 // Returns the digest of the binding value
 func (r *Binding) Digest(ctx context.Context) (string, error) {
 	if r.digest != nil {
@@ -7407,6 +7416,30 @@ func (r *Env) WithWorkspaceModuleSettingOutput(name string, description string) 
 // Declare a desired Workspace output to be assigned in the environment
 func (r *Env) WithWorkspaceOutput(name string, description string) *Env {
 	q := r.query.Select("withWorkspaceOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type WorkspaceSDK in the environment
+func (r *Env) WithWorkspaceSDKInput(name string, value *WorkspaceSDK, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceSDKInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceSDK output to be assigned in the environment
+func (r *Env) WithWorkspaceSDKOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceSDKOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -15998,18 +16031,13 @@ func (r *UpGroup) AsNode() Node {
 type Workspace struct {
 	query *querybuilder.Selection
 
-	address     *string
-	configFile  *string
-	configRead  *string
-	configWrite *string
-	cwd         *string
-	envCreate   *string
-	envRemove   *string
-	findUp      *string
-	id          *ID
-	init        *string
-	install     *string
-	uninstall   *string
+	address    *string
+	configFile *string
+	configRead *string
+	cwd        *string
+	export     *Void
+	findUp     *string
+	id         *ID
 }
 type WithWorkspaceFunc func(r *Workspace) *Workspace
 
@@ -16039,11 +16067,9 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Return the changes from another workspace to this workspace.
-func (r *Workspace) Changes(other *Workspace) *Changeset {
-	assertNotNil("other", other)
+// Return this workspace's pending overlay changes.
+func (r *Workspace) Changes() *Changeset {
 	q := r.query.Select("changes")
-	q = q.Arg("other", other)
 
 	return &Changeset{
 		query: q,
@@ -16089,45 +16115,6 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	}
 }
 
-// Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
-func (r *Workspace) ClientGenerate() *Changeset {
-	q := r.query.Select("clientGenerate")
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// WorkspaceClientInitOpts contains options for Workspace.ClientInit
-type WorkspaceClientInitOpts struct {
-	// Write to the workspace config directory at the workspace cwd.
-	Here bool
-
-	Args JSON
-}
-
-// Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
-func (r *Workspace) ClientInit(path string, sdk string, module string, opts ...WorkspaceClientInitOpts) *Changeset {
-	q := r.query.Select("clientInit")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-	}
-	q = q.Arg("path", path)
-	q = q.Arg("sdk", sdk)
-	q = q.Arg("module", module)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Selected native workspace config file relative to the workspace root, if any.
 func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
 	if r.configFile != nil {
@@ -16165,33 +16152,6 @@ func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadO
 			q = q.Arg("key", opts[i].Key)
 		}
 	}
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// WorkspaceConfigWriteOpts contains options for Workspace.ConfigWrite
-type WorkspaceConfigWriteOpts struct {
-	// Write to the workspace config directory at the workspace cwd.
-	Here bool
-}
-
-// Write a configuration value to dagger.toml.
-func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string, opts ...WorkspaceConfigWriteOpts) (string, error) {
-	if r.configWrite != nil {
-		return *r.configWrite, nil
-	}
-	q := r.query.Select("configWrite")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-	}
-	q = q.Arg("key", key)
-	q = q.Arg("value", value)
 
 	var response string
 
@@ -16252,32 +16212,6 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	}
 }
 
-// WorkspaceEnvCreateOpts contains options for Workspace.EnvCreate
-type WorkspaceEnvCreateOpts struct {
-	// Write to the workspace config directory at the workspace cwd.
-	Here bool
-}
-
-// Create a named workspace environment if it does not already exist.
-func (r *Workspace) EnvCreate(ctx context.Context, name string, opts ...WorkspaceEnvCreateOpts) (string, error) {
-	if r.envCreate != nil {
-		return *r.envCreate, nil
-	}
-	q := r.query.Select("envCreate")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-	}
-	q = q.Arg("name", name)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // List named environments defined in the workspace configuration.
 func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	q := r.query.Select("envList")
@@ -16288,30 +16222,14 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// WorkspaceEnvRemoveOpts contains options for Workspace.EnvRemove
-type WorkspaceEnvRemoveOpts struct {
-	// Write to the workspace config directory at the workspace cwd.
-	Here bool
-}
-
-// Remove a named workspace environment.
-func (r *Workspace) EnvRemove(ctx context.Context, name string, opts ...WorkspaceEnvRemoveOpts) (string, error) {
-	if r.envRemove != nil {
-		return *r.envRemove, nil
+// Write this workspace's pending changes to its local Git workspace.
+func (r *Workspace) Export(ctx context.Context) error {
+	if r.export != nil {
+		return nil
 	}
-	q := r.query.Select("envRemove")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-	}
-	q = q.Arg("name", name)
+	q := r.query.Select("export")
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return q.Execute(ctx)
 }
 
 // Returns a File from the workspace.
@@ -16430,75 +16348,6 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// WorkspaceInitOpts contains options for Workspace.Init
-type WorkspaceInitOpts struct {
-	// Create the workspace config directory at the workspace cwd instead of using the default write target.
-	Here bool
-}
-
-// Initialize workspace config, creating dagger.toml.
-func (r *Workspace) Init(ctx context.Context, opts ...WorkspaceInitOpts) (string, error) {
-	if r.init != nil {
-		return *r.init, nil
-	}
-	q := r.query.Select("init")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-	}
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// WorkspaceInstallOpts contains options for Workspace.Install
-type WorkspaceInstallOpts struct {
-	// Override name for the installed module entry.
-	Name string
-	// Write to the workspace config directory at the workspace cwd.
-	Here bool
-	// Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
-	AsSDK bool
-	// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
-	AsSDKName string
-}
-
-// Install a module into the workspace, writing dagger.toml to the host.
-func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceInstallOpts) (string, error) {
-	if r.install != nil {
-		return *r.install, nil
-	}
-	q := r.query.Select("install")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `name` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Name) {
-			q = q.Arg("name", opts[i].Name)
-		}
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-		// `asSdk` optional argument
-		if !querybuilder.IsZeroValue(opts[i].AsSDK) {
-			q = q.Arg("asSdk", opts[i].AsSDK)
-		}
-		// `asSdkName` optional argument
-		if !querybuilder.IsZeroValue(opts[i].AsSDKName) {
-			q = q.Arg("asSdkName", opts[i].AsSDKName)
-		}
-	}
-	q = q.Arg("ref", ref)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // Plan the explicit migration needed for the current workspace.
 //
 // The returned plan has an empty changeset and no steps when no migration is needed.
@@ -16510,81 +16359,27 @@ func (r *Workspace) Migrate() *WorkspaceMigration {
 	}
 }
 
-// WorkspaceModuleInitOpts contains options for Workspace.ModuleInit
-type WorkspaceModuleInitOpts struct {
-	// Workspace SDK name or module entry name to use.
-	SDK string
-	// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
-	Path string
-	// Source subpath within the new module.
-	Source string
-	// Additional include patterns for the module.
-	Include []string
-	// Write to the workspace config directory at the workspace cwd.
-	Here bool
-
-	Args JSON
-}
-
-// Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
-func (r *Workspace) ModuleInit(name string, opts ...WorkspaceModuleInitOpts) *Changeset {
-	q := r.query.Select("moduleInit")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sdk` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SDK) {
-			q = q.Arg("sdk", opts[i].SDK)
-		}
-		// `path` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Path) {
-			q = q.Arg("path", opts[i].Path)
-		}
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
-		}
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-	}
+// Return a module defined in the workspace configuration.
+func (r *Workspace) Module(name string) *WorkspaceModule {
+	q := r.query.Select("module")
 	q = q.Arg("name", name)
 
-	return &Changeset{
+	return &WorkspaceModule{
 		query: q,
 	}
 }
 
-// WorkspaceModuleListOpts contains options for Workspace.ModuleList
-type WorkspaceModuleListOpts struct {
-	// Optional module alias to inspect.
-	Module string
-}
-
 // List modules defined in the workspace configuration.
-func (r *Workspace) ModuleList(ctx context.Context, opts ...WorkspaceModuleListOpts) ([]WorkspaceModule, error) {
-	q := r.query.Select("moduleList")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `module` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Module) {
-			q = q.Arg("module", opts[i].Module)
-		}
-	}
+func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("modules")
 
 	q = q.Select("id")
 
-	type moduleList struct {
+	type modules struct {
 		Id ID
 	}
 
-	convert := func(fields []moduleList) []WorkspaceModule {
+	convert := func(fields []modules) []WorkspaceModule {
 		out := []WorkspaceModule{}
 
 		for i := range fields {
@@ -16595,7 +16390,50 @@ func (r *Workspace) ModuleList(ctx context.Context, opts ...WorkspaceModuleListO
 
 		return out
 	}
-	var response []moduleList
+	var response []modules
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// An installed SDK, by name.
+func (r *Workspace) SDK(name string) *WorkspaceSDK {
+	q := r.query.Select("sdk")
+	q = q.Arg("name", name)
+
+	return &WorkspaceSDK{
+		query: q,
+	}
+}
+
+// Installed SDKs.
+func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
+	q := r.query.Select("sdks")
+
+	q = q.Select("id")
+
+	type sdks struct {
+		Id ID
+	}
+
+	convert := func(fields []sdks) []WorkspaceSDK {
+		out := []WorkspaceSDK{}
+
+		for i := range fields {
+			val := WorkspaceSDK{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceSDK")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []sdks
 
 	q = q.Bind(&response)
 
@@ -16628,18 +16466,26 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 }
 
-// WorkspaceUninstallOpts contains options for Workspace.Uninstall
-type WorkspaceUninstallOpts struct {
+// Return this workspace with a changeset applied, without mutating the source.
+func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChanges")
+	q = q.Arg("changes", changes)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithConfigEnvOpts contains options for Workspace.WithConfigEnv
+type WorkspaceWithConfigEnvOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
 }
 
-// Uninstall a module from the workspace, writing dagger.toml to the host.
-func (r *Workspace) Uninstall(ctx context.Context, name string, opts ...WorkspaceUninstallOpts) (string, error) {
-	if r.uninstall != nil {
-		return *r.uninstall, nil
-	}
-	q := r.query.Select("uninstall")
+// Return this workspace with a named config environment created.
+func (r *Workspace) WithConfigEnv(name string, opts ...WorkspaceWithConfigEnvOpts) *Workspace {
+	q := r.query.Select("withConfigEnv")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
@@ -16648,30 +16494,133 @@ func (r *Workspace) Uninstall(ctx context.Context, name string, opts ...Workspac
 	}
 	q = q.Arg("name", name)
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Refresh workspace-managed state and return the resulting changeset.
-//
-// Currently this refreshes existing lockfile entries only.
-//
-// Experimental: Experimental workspace update API currently refreshes existing lockfile entries only.
-func (r *Workspace) Update() *Changeset {
-	q := r.query.Select("update")
-
-	return &Changeset{
+	return &Workspace{
 		query: q,
 	}
 }
 
-// Return this workspace with a changeset applied, without mutating the source.
-func (r *Workspace) WithChanges(changes *Changeset) *Workspace {
-	assertNotNil("changes", changes)
-	q := r.query.Select("withChanges")
-	q = q.Arg("changes", changes)
+// WorkspaceWithConfigValueOpts contains options for Workspace.WithConfigValue
+type WorkspaceWithConfigValueOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a configuration value written.
+func (r *Workspace) WithConfigValue(key string, value string, opts ...WorkspaceWithConfigValueOpts) *Workspace {
+	q := r.query.Select("withConfigValue")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithInitClientOpts contains options for Workspace.WithInitClient
+type WorkspaceWithInitClientOpts struct {
+	// SDK-specific init arguments.
+	Args JSON
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a generated API client initialized.
+func (r *Workspace) WithInitClient(path string, sdk string, module string, opts ...WorkspaceWithInitClientOpts) *Workspace {
+	q := r.query.Select("withInitClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sdk", sdk)
+	q = q.Arg("module", module)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithInitModuleOpts contains options for Workspace.WithInitModule
+type WorkspaceWithInitModuleOpts struct {
+	// Workspace-relative path for the new module.
+	Path string
+	// Source subpath within the new module.
+	Source string
+	// Additional include patterns for the module.
+	Include []string
+	// SDK-specific init arguments.
+	Args JSON
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a new module initialized.
+func (r *Workspace) WithInitModule(name string, sdk string, opts ...WorkspaceWithInitModuleOpts) *Workspace {
+	q := r.query.Select("withInitModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+		// `source` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Source) {
+			q = q.Arg("source", opts[i].Source)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("sdk", sdk)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithModuleOpts contains options for Workspace.WithModule
+type WorkspaceWithModuleOpts struct {
+	// Override name for the installed module entry.
+	Name string
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a module installed in its config.
+func (r *Workspace) WithModule(ref string, opts ...WorkspaceWithModuleOpts) *Workspace {
+	q := r.query.Select("withModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("ref", ref)
 
 	return &Workspace{
 		query: q,
@@ -16709,6 +16658,115 @@ func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceW
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("contents", contents)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithSDKOpts contains options for Workspace.WithSDK
+type WorkspaceWithSDKOpts struct {
+	// Override name for the installed SDK entry.
+	Name string
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+	// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+	AsSDKName string
+}
+
+// Return this workspace with an SDK installed in its config.
+func (r *Workspace) WithSDK(ref string, opts ...WorkspaceWithSDKOpts) *Workspace {
+	q := r.query.Select("withSDK")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+		// `asSdkName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AsSDKName) {
+			q = q.Arg("asSdkName", opts[i].AsSDKName)
+		}
+	}
+	q = q.Arg("ref", ref)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with refreshed lockfile state.
+func (r *Workspace) WithUpdatedLock() *Workspace {
+	q := r.query.Select("withUpdatedLock")
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithoutConfigEnvOpts contains options for Workspace.WithoutConfigEnv
+type WorkspaceWithoutConfigEnvOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a named config environment removed.
+func (r *Workspace) WithoutConfigEnv(name string, opts ...WorkspaceWithoutConfigEnvOpts) *Workspace {
+	q := r.query.Select("withoutConfigEnv")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithoutModuleOpts contains options for Workspace.WithoutModule
+type WorkspaceWithoutModuleOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with a module removed from its config.
+func (r *Workspace) WithoutModule(name string, opts ...WorkspaceWithoutModuleOpts) *Workspace {
+	q := r.query.Select("withoutModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// WorkspaceWithoutSDKOpts contains options for Workspace.WithoutSDK
+type WorkspaceWithoutSDKOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Return this workspace with an SDK removed from its config.
+func (r *Workspace) WithoutSDK(name string, opts ...WorkspaceWithoutSDKOpts) *Workspace {
+	q := r.query.Select("withoutSDK")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
 
 	return &Workspace{
 		query: q,
@@ -17247,6 +17305,161 @@ func (r *WorkspaceModuleSetting) Value(ctx context.Context) (string, error) {
 // AsNode returns this WorkspaceModuleSetting as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *WorkspaceModuleSetting) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// An installed SDK: a module marked for scaffolding other modules and clients.
+type WorkspaceSDK struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	name *string
+	ref  *string
+}
+
+func (r *WorkspaceSDK) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceSDK {
+	return &WorkspaceSDK{
+		query: q,
+	}
+}
+
+// Clients generated with this SDK.
+func (r *WorkspaceSDK) Clients(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("clients")
+
+	q = q.Select("id")
+
+	type clients struct {
+		Id ID
+	}
+
+	convert := func(fields []clients) []WorkspaceModule {
+		out := []WorkspaceModule{}
+
+		for i := range fields {
+			val := WorkspaceModule{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceModule")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []clients
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this WorkspaceSDK.
+func (r *WorkspaceSDK) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceSDK) XXX_GraphQLType() string {
+	return "WorkspaceSDK"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceSDK) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceSDK) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceSDK) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Modules authored with this SDK.
+func (r *WorkspaceSDK) Modules(ctx context.Context) ([]WorkspaceModule, error) {
+	q := r.query.Select("modules")
+
+	q = q.Select("id")
+
+	type modules struct {
+		Id ID
+	}
+
+	convert := func(fields []modules) []WorkspaceModule {
+		out := []WorkspaceModule{}
+
+		for i := range fields {
+			val := WorkspaceModule{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "WorkspaceModule")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []modules
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The user-facing SDK name.
+func (r *WorkspaceSDK) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The module reference this SDK was installed from.
+func (r *WorkspaceSDK) Ref(ctx context.Context) (string, error) {
+	if r.ref != nil {
+		return *r.ref, nil
+	}
+	q := r.query.Select("ref")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this WorkspaceSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *WorkspaceSDK) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}

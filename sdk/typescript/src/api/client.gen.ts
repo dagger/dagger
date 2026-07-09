@@ -2743,26 +2743,11 @@ export type WorkspaceChecksOpts = {
   onlyGenerate?: boolean
 }
 
-export type WorkspaceClientInitOpts = {
-  /**
-   * Write to the workspace config directory at the workspace cwd.
-   */
-  here?: boolean
-  args?: JSON
-}
-
 export type WorkspaceConfigReadOpts = {
   /**
    * Dotted key path (e.g. modules.greeter.source). Empty for full config.
    */
   key?: string
-}
-
-export type WorkspaceConfigWriteOpts = {
-  /**
-   * Write to the workspace config directory at the workspace cwd.
-   */
-  here?: boolean
 }
 
 export type WorkspaceDirectoryOpts = {
@@ -2782,20 +2767,6 @@ export type WorkspaceDirectoryOpts = {
   gitignore?: boolean
 }
 
-export type WorkspaceEnvCreateOpts = {
-  /**
-   * Write to the workspace config directory at the workspace cwd.
-   */
-  here?: boolean
-}
-
-export type WorkspaceEnvRemoveOpts = {
-  /**
-   * Write to the workspace config directory at the workspace cwd.
-   */
-  here?: boolean
-}
-
 export type WorkspaceFindUpOpts = {
   /**
    * Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
@@ -2810,43 +2781,42 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
-export type WorkspaceInitOpts = {
+export type WorkspaceServicesOpts = {
   /**
-   * Create the workspace config directory at the workspace cwd instead of using the default write target.
+   * Only include services matching the specified patterns
+   */
+  include?: string[]
+}
+
+export type WorkspaceWithConfigEnvOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
 }
 
-export type WorkspaceInstallOpts = {
+export type WorkspaceWithConfigValueOpts = {
   /**
-   * Override name for the installed module entry.
+   * Write to the workspace config directory at the workspace cwd.
    */
-  name?: string
+  here?: boolean
+}
+
+export type WorkspaceWithInitClientOpts = {
+  /**
+   * SDK-specific init arguments.
+   */
+  args?: JSON
 
   /**
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
-
-  /**
-   * Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
-   */
-  asSdk?: boolean
-
-  /**
-   * User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
-   */
-  asSdkName?: string
 }
 
-export type WorkspaceModuleInitOpts = {
+export type WorkspaceWithInitModuleOpts = {
   /**
-   * Workspace SDK name or module entry name to use.
-   */
-  sdk?: string
-
-  /**
-   * Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+   * Workspace-relative path for the new module.
    */
   path?: string
 
@@ -2861,27 +2831,22 @@ export type WorkspaceModuleInitOpts = {
   include?: string[]
 
   /**
+   * SDK-specific init arguments.
+   */
+  args?: JSON
+
+  /**
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
-  args?: JSON
 }
 
-export type WorkspaceModuleListOpts = {
+export type WorkspaceWithModuleOpts = {
   /**
-   * Optional module alias to inspect.
+   * Override name for the installed module entry.
    */
-  module?: string
-}
+  name?: string
 
-export type WorkspaceServicesOpts = {
-  /**
-   * Only include services matching the specified patterns
-   */
-  include?: string[]
-}
-
-export type WorkspaceUninstallOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
    */
@@ -2893,6 +2858,44 @@ export type WorkspaceWithNewFileOpts = {
    * Permissions of the new file.
    */
   permissions?: number
+}
+
+export type WorkspaceWithSdkOpts = {
+  /**
+   * Override name for the installed SDK entry.
+   */
+  name?: string
+
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+
+  /**
+   * User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+   */
+  asSdkName?: string
+}
+
+export type WorkspaceWithoutConfigEnvOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceWithoutModuleOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceWithoutSdkOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
 }
 
 export type __DirectiveArgsOpts = {
@@ -3397,6 +3400,14 @@ export class Binding extends BaseClient {
   asWorkspaceModuleSetting = (): WorkspaceModuleSetting => {
     const ctx = this._ctx.select("asWorkspaceModuleSetting")
     return new WorkspaceModuleSetting(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceSDK
+   */
+  asWorkspaceSDK = (): WorkspaceSDK => {
+    const ctx = this._ctx.select("asWorkspaceSDK")
+    return new WorkspaceSDK(ctx)
   }
 
   /**
@@ -8453,6 +8464,38 @@ export class Env extends BaseClient {
    */
   withWorkspaceOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withWorkspaceOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceSDK in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceSDK value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceSDKInput = (
+    name: string,
+    value: WorkspaceSDK,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceSDKInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceSDK output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceSDKOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceSDKOutput", {
+      name,
+      description,
+    })
     return new Env(ctx)
   }
 
@@ -14976,14 +15019,9 @@ export class Workspace extends BaseClient {
   private readonly _address?: string = undefined
   private readonly _configFile?: string = undefined
   private readonly _configRead?: string = undefined
-  private readonly _configWrite?: string = undefined
   private readonly _cwd?: string = undefined
-  private readonly _envCreate?: string = undefined
-  private readonly _envRemove?: string = undefined
+  private readonly _export?: Void = undefined
   private readonly _findUp?: string = undefined
-  private readonly _init?: string = undefined
-  private readonly _install?: string = undefined
-  private readonly _uninstall?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -14994,14 +15032,9 @@ export class Workspace extends BaseClient {
     _address?: string,
     _configFile?: string,
     _configRead?: string,
-    _configWrite?: string,
     _cwd?: string,
-    _envCreate?: string,
-    _envRemove?: string,
+    _export?: Void,
     _findUp?: string,
-    _init?: string,
-    _install?: string,
-    _uninstall?: string,
   ) {
     super(ctx)
 
@@ -15009,14 +15042,9 @@ export class Workspace extends BaseClient {
     this._address = _address
     this._configFile = _configFile
     this._configRead = _configRead
-    this._configWrite = _configWrite
     this._cwd = _cwd
-    this._envCreate = _envCreate
-    this._envRemove = _envRemove
+    this._export = _export
     this._findUp = _findUp
-    this._init = _init
-    this._install = _install
-    this._uninstall = _uninstall
   }
 
   /**
@@ -15050,11 +15078,10 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Return the changes from another workspace to this workspace.
-   * @param other Workspace to compare from.
+   * Return this workspace's pending overlay changes.
    */
-  changes = (other: Workspace): Changeset => {
-    const ctx = this._ctx.select("changes", { other })
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
     return new Changeset(ctx)
   }
 
@@ -15068,36 +15095,6 @@ export class Workspace extends BaseClient {
   checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })
     return new CheckGroup(ctx)
-  }
-
-  /**
-   * Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
-   */
-  clientGenerate = (): Changeset => {
-    const ctx = this._ctx.select("clientGenerate")
-    return new Changeset(ctx)
-  }
-
-  /**
-   * Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
-   * @param path Workspace-relative output directory for the generated client.
-   * @param sdk Workspace SDK name or module entry name to use.
-   * @param module Workspace-relative path or canonical ref for the module the client binds to.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
-   */
-  clientInit = (
-    path: string,
-    sdk: string,
-    module_: string,
-    opts?: WorkspaceClientInitOpts,
-  ): Changeset => {
-    const ctx = this._ctx.select("clientInit", {
-      path,
-      sdk,
-      module: module_,
-      ...opts,
-    })
-    return new Changeset(ctx)
   }
 
   /**
@@ -15138,28 +15135,6 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Write a configuration value to dagger.toml.
-   * @param key Dotted key path (e.g. modules.greeter.source).
-   * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
-   */
-  configWrite = async (
-    key: string,
-    value: string,
-    opts?: WorkspaceConfigWriteOpts,
-  ): Promise<string> => {
-    if (this._configWrite) {
-      return this._configWrite
-    }
-
-    const ctx = this._ctx.select("configWrite", { key, value, ...opts })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
    * Current location within the workspace root.
    *
    * The workspace root is returned as "/".
@@ -15193,26 +15168,6 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Create a named workspace environment if it does not already exist.
-   * @param name Environment name.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
-   */
-  envCreate = async (
-    name: string,
-    opts?: WorkspaceEnvCreateOpts,
-  ): Promise<string> => {
-    if (this._envCreate) {
-      return this._envCreate
-    }
-
-    const ctx = this._ctx.select("envCreate", { name, ...opts })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
    * List named environments defined in the workspace configuration.
    */
   envList = async (): Promise<string[]> => {
@@ -15224,23 +15179,16 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Remove a named workspace environment.
-   * @param name Environment name.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * Write this workspace's pending changes to its local Git workspace.
    */
-  envRemove = async (
-    name: string,
-    opts?: WorkspaceEnvRemoveOpts,
-  ): Promise<string> => {
-    if (this._envRemove) {
-      return this._envRemove
+  export = async (): Promise<void> => {
+    if (this._export) {
+      return
     }
 
-    const ctx = this._ctx.select("envRemove", { name, ...opts })
+    const ctx = this._ctx.select("export")
 
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+    await ctx.execute()
   }
 
   /**
@@ -15298,45 +15246,6 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Initialize workspace config, creating dagger.toml.
-   * @param opts.here Create the workspace config directory at the workspace cwd instead of using the default write target.
-   */
-  init = async (opts?: WorkspaceInitOpts): Promise<string> => {
-    if (this._init) {
-      return this._init
-    }
-
-    const ctx = this._ctx.select("init", { ...opts })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Install a module into the workspace, writing dagger.toml to the host.
-   * @param ref Module reference to install.
-   * @param opts.name Override name for the installed module entry.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
-   * @param opts.asSdk Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
-   * @param opts.asSdkName User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
-   */
-  install = async (
-    ref: string,
-    opts?: WorkspaceInstallOpts,
-  ): Promise<string> => {
-    if (this._install) {
-      return this._install
-    }
-
-    const ctx = this._ctx.select("install", { ref, ...opts })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
    * Plan the explicit migration needed for the current workspace.
    *
    * The returned plan has an empty changeset and no steps when no migration is needed.
@@ -15347,37 +15256,55 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
-   * @param name Name of the new module.
-   * @param opts.sdk Workspace SDK name or module entry name to use.
-   * @param opts.path Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
-   * @param opts.source Source subpath within the new module.
-   * @param opts.include Additional include patterns for the module.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * Return a module defined in the workspace configuration.
+   * @param name Module name to inspect.
    */
-  moduleInit = (name: string, opts?: WorkspaceModuleInitOpts): Changeset => {
-    const ctx = this._ctx.select("moduleInit", { name, ...opts })
-    return new Changeset(ctx)
+  module_ = (name: string): WorkspaceModule => {
+    const ctx = this._ctx.select("module", { name })
+    return new WorkspaceModule(ctx)
   }
 
   /**
    * List modules defined in the workspace configuration.
-   * @param opts.module Optional module alias to inspect.
    */
-  moduleList = async (
-    opts?: WorkspaceModuleListOpts,
-  ): Promise<WorkspaceModule[]> => {
-    type moduleList = {
+  modules = async (): Promise<WorkspaceModule[]> => {
+    type modules = {
       id: ID
     }
 
-    const ctx = this._ctx.select("moduleList", { ...opts }).select("id")
+    const ctx = this._ctx.select("modules").select("id")
 
-    const response: Awaited<moduleList[]> = await ctx.execute()
+    const response: Awaited<modules[]> = await ctx.execute()
 
     return response.map(
       (r) =>
         new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
+    )
+  }
+
+  /**
+   * An installed SDK, by name.
+   * @param name SDK name to look up.
+   */
+  sdk = (name: string): WorkspaceSDK => {
+    const ctx = this._ctx.select("sdk", { name })
+    return new WorkspaceSDK(ctx)
+  }
+
+  /**
+   * Installed SDKs.
+   */
+  sdks = async (): Promise<WorkspaceSDK[]> => {
+    type sdks = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("sdks").select("id")
+
+    const response: Awaited<sdks[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new WorkspaceSDK(ctx.copy().selectNode(r.id, "WorkspaceSDK")),
     )
   }
 
@@ -15391,42 +15318,92 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Uninstall a module from the workspace, writing dagger.toml to the host.
-   * @param name Name of the installed module entry to remove.
-   * @param opts.here Write to the workspace config directory at the workspace cwd.
-   */
-  uninstall = async (
-    name: string,
-    opts?: WorkspaceUninstallOpts,
-  ): Promise<string> => {
-    if (this._uninstall) {
-      return this._uninstall
-    }
-
-    const ctx = this._ctx.select("uninstall", { name, ...opts })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Refresh workspace-managed state and return the resulting changeset.
-   *
-   * Currently this refreshes existing lockfile entries only.
-   * @experimental
-   */
-  update = (): Changeset => {
-    const ctx = this._ctx.select("update")
-    return new Changeset(ctx)
-  }
-
-  /**
    * Return this workspace with a changeset applied, without mutating the source.
    * @param changes Changes to apply.
    */
   withChanges = (changes: Changeset): Workspace => {
     const ctx = this._ctx.select("withChanges", { changes })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a named config environment created.
+   * @param name Environment name.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withConfigEnv = (
+    name: string,
+    opts?: WorkspaceWithConfigEnvOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withConfigEnv", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a configuration value written.
+   * @param key Dotted key path.
+   * @param value Value to set.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withConfigValue = (
+    key: string,
+    value: string,
+    opts?: WorkspaceWithConfigValueOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withConfigValue", { key, value, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a generated API client initialized.
+   * @param path Workspace-relative output directory for the generated client.
+   * @param sdk Workspace SDK name or module entry name to use.
+   * @param module Workspace-relative path or canonical ref for the module the client binds to.
+   * @param opts.args SDK-specific init arguments.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withInitClient = (
+    path: string,
+    sdk: string,
+    module_: string,
+    opts?: WorkspaceWithInitClientOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withInitClient", {
+      path,
+      sdk,
+      module: module_,
+      ...opts,
+    })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a new module initialized.
+   * @param name Name of the new module.
+   * @param sdk Workspace SDK name or module entry name to use.
+   * @param opts.path Workspace-relative path for the new module.
+   * @param opts.source Source subpath within the new module.
+   * @param opts.include Additional include patterns for the module.
+   * @param opts.args SDK-specific init arguments.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withInitModule = (
+    name: string,
+    sdk: string,
+    opts?: WorkspaceWithInitModuleOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withInitModule", { name, sdk, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a module installed in its config.
+   * @param ref Module reference to install.
+   * @param opts.name Override name for the installed module entry.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withModule = (ref: string, opts?: WorkspaceWithModuleOpts): Workspace => {
+    const ctx = this._ctx.select("withModule", { ref, ...opts })
     return new Workspace(ctx)
   }
 
@@ -15452,6 +15429,62 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithNewFileOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with an SDK installed in its config.
+   * @param ref SDK module reference to install.
+   * @param opts.name Override name for the installed SDK entry.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   * @param opts.asSdkName User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+   */
+  withSDK = (ref: string, opts?: WorkspaceWithSdkOpts): Workspace => {
+    const ctx = this._ctx.select("withSDK", { ref, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with refreshed lockfile state.
+   */
+  withUpdatedLock = (): Workspace => {
+    const ctx = this._ctx.select("withUpdatedLock")
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a named config environment removed.
+   * @param name Environment name.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withoutConfigEnv = (
+    name: string,
+    opts?: WorkspaceWithoutConfigEnvOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withoutConfigEnv", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a module removed from its config.
+   * @param name Name of the installed module entry to remove.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withoutModule = (
+    name: string,
+    opts?: WorkspaceWithoutModuleOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withoutModule", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with an SDK removed from its config.
+   * @param name Name of the installed SDK entry to remove.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withoutSDK = (name: string, opts?: WorkspaceWithoutSdkOpts): Workspace => {
+    const ctx = this._ctx.select("withoutSDK", { name, ...opts })
     return new Workspace(ctx)
   }
 
@@ -15844,6 +15877,107 @@ export class WorkspaceModuleSetting extends BaseClient {
     }
 
     const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * An installed SDK: a module marked for scaffolding other modules and clients.
+ */
+export class WorkspaceSDK extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _name?: string = undefined
+  private readonly _ref?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _name?: string, _ref?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+    this._ref = _ref
+  }
+
+  /**
+   * A unique identifier for this WorkspaceSDK.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Clients generated with this SDK.
+   */
+  clients = async (): Promise<WorkspaceModule[]> => {
+    type clients = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("clients").select("id")
+
+    const response: Awaited<clients[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
+    )
+  }
+
+  /**
+   * Modules authored with this SDK.
+   */
+  modules = async (): Promise<WorkspaceModule[]> => {
+    type modules = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("modules").select("id")
+
+    const response: Awaited<modules[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
+    )
+  }
+
+  /**
+   * The user-facing SDK name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module reference this SDK was installed from.
+   */
+  ref = async (): Promise<string> => {
+    if (this._ref) {
+      return this._ref
+    }
+
+    const ctx = this._ctx.select("ref")
 
     const response: Awaited<string> = await ctx.execute()
 

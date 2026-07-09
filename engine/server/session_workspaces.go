@@ -690,9 +690,21 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// No native workspace and no eligible legacy module: nothing to load.
+	// No native workspace and no eligible legacy module: keep a rootless local
+	// workspace for context-only APIs, but do not load modules.
 	if ws == nil {
-		client.workspace = nil
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return fmt.Errorf("building rootless workspace: client metadata: %w", err)
+		}
+		coreWS := &core.Workspace{
+			Address:  localWorkspaceAddress(cwd, "."),
+			Cwd:      ".",
+			ClientID: clientMetadata.ClientID,
+		}
+		coreWS.SetHostPath(cwd)
+		coreWS.SetSource(core.NewWorkspaceSourceRootlessLocal(cwd))
+		client.workspace = coreWS
 		client.pendingModules = nil
 		return nil
 	}
@@ -831,7 +843,11 @@ func (srv *Server) buildCoreWorkspace(
 		// Local: store host path only. Directories are resolved lazily
 		// via per-call host.directory() in resolveRootfs.
 		coreWS.SetHostPath(detected.Root)
-		coreWS.SetSource(core.NewWorkspaceSourceClientLocal(detected.Root, clientMetadata.ClientID))
+		if detected.HasGitRoot {
+			coreWS.SetSource(core.NewWorkspaceSourceClientLocal(detected.Root))
+		} else {
+			coreWS.SetSource(core.NewWorkspaceSourceRootlessLocal(detected.Root))
+		}
 	} else {
 		// Remote: store the cloned git tree.
 		coreWS.SetRootfs(prebuiltRootfs)

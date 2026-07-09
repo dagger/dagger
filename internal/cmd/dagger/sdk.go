@@ -148,9 +148,8 @@ func init() {
 		sdkClientOptionsCmd,
 	)
 
-	// These mutate workspace config on the host; rejecting `--workspace` for
-	// anything other than a local path keeps remote refs from sneaking into
-	// install/uninstall paths (matches `dagger install` / `dagger uninstall`).
+	// These commands finish by exporting the staged workspace, so the selected
+	// workspace must have a local Git source.
 	setWorkspaceFlagPolicy(sdkInstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(sdkUninstallCmd, workspaceFlagPolicyLocalOnly)
 }
@@ -177,7 +176,7 @@ func runSDKInstall(cmd *cobra.Command, args []string) error {
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
 		dag := ec.Dagger()
-		if err := callSDKInstall(ctx, dag, cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere); err != nil {
+		if err := installWorkspaceSDK(ctx, dag, cmd.OutOrStdout(), canonicalRef, name, asSDKName, sdkInstallHere); err != nil {
 			return err
 		}
 		printSDKInstallCapabilityHints(ctx, dag, cmd, hintName, canonicalRef)
@@ -251,34 +250,49 @@ func printSDKInstallCapabilityHints(ctx context.Context, dag *dagger.Client, cmd
 	}
 }
 
-// callSDKInstall invokes Workspace.install with asSdk=true via raw GraphQL.
-// Will collapse to `dag.CurrentWorkspace().Install(ctx, ref,
-// WorkspaceInstallOpts{Name, Here, AsSdk: true, AsSdkName: ...})` once the Go
-// SDK binding regenerates against the new schema.
-func callSDKInstall(ctx context.Context, dag *dagger.Client, out io.Writer, ref, name, asSDKName string, here bool) error {
-	var res struct {
-		CurrentWorkspace struct {
-			Install string `json:"install"`
-		} `json:"currentWorkspace"`
-	}
-	err := dag.Do(ctx, &dagger.Request{
-		Query: `query SDKInstall($ref: String!, $name: String, $here: Boolean, $asSdk: Boolean, $asSdkName: String) {
-  currentWorkspace {
-    install(ref: $ref, name: $name, here: $here, asSdk: $asSdk, asSdkName: $asSdkName)
-  }
-}`,
-		Variables: map[string]any{
-			"ref":       ref,
-			"name":      name,
-			"here":      here,
-			"asSdk":     true,
-			"asSdkName": asSDKName,
-		},
-	}, &dagger.Response{Data: &res})
+func installWorkspaceSDK(ctx context.Context, dag *dagger.Client, out io.Writer, ref, name, asSDKName string, here bool) error {
+	current := dag.CurrentWorkspace()
+	previousConfig, err := current.ConfigFile(ctx)
 	if err != nil {
-		return fmt.Errorf("install sdk: %w", err)
+		return err
 	}
-	_, err = fmt.Fprintln(out, res.CurrentWorkspace.Install)
+	updated, err := materializeWorkspace(ctx, dag, current.WithSDK(ref, dagger.WorkspaceWithSDKOpts{
+		Name:      name,
+		Here:      here,
+		AsSDKName: asSDKName,
+	}))
+	if err != nil {
+		return err
+	}
+	resolvedName, err := workspaceInstalledModuleName(ctx, current, updated, ref, name)
+	if err != nil {
+		return err
+	}
+	configPath, err := workspaceConfigHostPath(ctx, updated)
+	if err != nil {
+		return err
+	}
+	updatedConfig, err := updated.ConfigFile(ctx)
+	if err != nil {
+		return err
+	}
+	isEmpty, err := updated.Changes().IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	if isEmpty {
+		_, err = fmt.Fprintf(out, "SDK %q is already installed\n", resolvedName)
+		return err
+	}
+	if previousConfig != updatedConfig {
+		if _, err := fmt.Fprintf(out, "Created workspace config in %s\n", filepath.Dir(configPath)); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(out, "Installed SDK %q in %s\n", resolvedName, configPath)
 	return err
 }
 
@@ -314,7 +328,7 @@ func runSDKUninstall(cmd *cobra.Command, args []string) error {
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
-		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), ec.Dagger(), name, sdkUninstallHere)
+		return uninstallWorkspaceSDK(ctx, cmd.OutOrStdout(), ec.Dagger(), name, sdkUninstallHere)
 	})
 }
 

@@ -347,33 +347,34 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 		require.NoError(t, err)
 	})
 
-	t.Run("local-only workspace mutations reject a remote selected workspace at execution time", func(ctx context.Context, t *testctx.T) {
+	t.Run("remote workspace builders only fail at the export boundary", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceSelectionSimpleWorkspaceDir(c, "remote", "Remote", "remote workspace"))
 
 		for _, tc := range []struct {
-			name  string
-			query string
+			name    string
+			query   string
+			wantErr string
 		}{
 			{
-				name:  "init",
-				query: `{currentWorkspace{init}}`,
+				name:    "config value",
+				query:   `{currentWorkspace{withConfigValue(key:"modules.demo.source", value:"demo"){export}}}`,
+				wantErr: "cannot export a remote Git workspace",
 			},
 			{
-				name:  "configWrite",
-				query: `{currentWorkspace{configWrite(key:"modules.demo.source", value:"demo")}}`,
+				name:    "new file",
+				query:   `{currentWorkspace{withNewFile(path:"demo.txt", contents:"demo"){export}}}`,
+				wantErr: "cannot export a remote Git workspace",
 			},
 			{
-				name:  "moduleInit",
-				query: `{currentWorkspace{moduleInit(name:"demo")}}`,
+				name:    "lock update",
+				query:   `{currentWorkspace{withUpdatedLock{export}}}`,
+				wantErr: "cannot export a remote Git workspace",
 			},
 			{
-				name:  "update",
-				query: `{currentWorkspace{update{isEmpty}}}`,
-			},
-			{
-				name:  "migrate",
-				query: `{currentWorkspace{migrate{steps{id}}}}`,
+				name:    "migrate",
+				query:   `{currentWorkspace{migrate{steps{id}}}}`,
+				wantErr: "workspace migration is local-only",
 			},
 		} {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
@@ -383,7 +384,7 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 					With(workspaceSelectionDaggerQueryFail(tc.query, "-W", remoteRef)).
 					CombinedOutput(ctx)
 				require.NoError(t, err)
-				require.Contains(t, out, "local-only")
+				require.Contains(t, out, tc.wantErr)
 				require.NotContains(t, out, "--workspace must be a local path")
 			})
 		}

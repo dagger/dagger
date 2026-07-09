@@ -92,18 +92,18 @@ func runRecommend(ctx context.Context, dag *dagger.Client) ([]recommendation, er
 func installedModuleNames(ctx context.Context, dag *dagger.Client) (map[string]bool, error) {
 	var res struct {
 		CurrentWorkspace struct {
-			ModuleList []struct {
+			Modules []struct {
 				Name string
 			}
 		}
 	}
 	if err := dag.Do(ctx, &dagger.Request{
-		Query: `query { currentWorkspace { moduleList { name } } }`,
+		Query: `query { currentWorkspace { modules { name } } }`,
 	}, &dagger.Response{Data: &res}); err != nil {
 		return nil, fmt.Errorf("list installed modules: %w", err)
 	}
-	installed := make(map[string]bool, len(res.CurrentWorkspace.ModuleList))
-	for _, m := range res.CurrentWorkspace.ModuleList {
+	installed := make(map[string]bool, len(res.CurrentWorkspace.Modules))
+	for _, m := range res.CurrentWorkspace.Modules {
 		installed[m.Name] = true
 	}
 	return installed, nil

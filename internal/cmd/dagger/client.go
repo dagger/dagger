@@ -65,23 +65,16 @@ func runAPIClientInitWithSDK(cmd *cobra.Command, sdkName, clientPath, moduleRef 
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, ec *client.Client) error {
 		dag := ec.Dagger()
-
-		exportPath, err := currentWorkspaceExportPath(ctx, dag.CurrentWorkspace())
-		if err != nil {
-			return err
-		}
-
 		sdkArgs, err := sdkInitArgsJSON(cmd)
 		if err != nil {
 			return err
 		}
-
-		changesetID, err := callClientInit(ctx, dag, clientPath, sdkName, moduleRef, sdkArgs)
-		if err != nil {
-			return err
+		opts := dagger.WorkspaceWithInitClientOpts{}
+		if sdkArgs != "" {
+			opts.Args = dagger.JSON(sdkArgs)
 		}
-
-		applied, err := handleChangesetResponseAt(ctx, dag, changesetID, autoApply, exportPath)
+		updated := dag.CurrentWorkspace().WithInitClient(clientPath, sdkName, moduleRef, opts)
+		applied, err := handleWorkspaceResponse(ctx, dag, updated, autoApply)
 		if err != nil {
 			return err
 		}
@@ -100,44 +93,6 @@ const clientInitGenerateHint = `
 
       dagger generate
 `
-
-func callClientInit(
-	ctx context.Context,
-	dag *dagger.Client,
-	path string,
-	sdkName string,
-	moduleRef string,
-	sdkArgs string,
-) (string, error) {
-	var res struct {
-		CurrentWorkspace struct {
-			ClientInit struct {
-				ID string `json:"id"`
-			} `json:"clientInit"`
-		} `json:"currentWorkspace"`
-	}
-	err := dag.Do(ctx, &dagger.Request{
-		Query: `query ClientInit($path: String!, $sdk: String!, $module: String!, $args: JSON) {
-  currentWorkspace {
-    clientInit(path: $path, sdk: $sdk, module: $module, args: $args) {
-      id
-    }
-  }
-}`,
-		Variables: withOptionalSDKInitArgs(map[string]any{
-			"path":   path,
-			"sdk":    sdkName,
-			"module": moduleRef,
-		}, sdkArgs),
-	}, &dagger.Response{Data: &res})
-	if err != nil {
-		return "", fmt.Errorf("plan api client init: %w", err)
-	}
-	if res.CurrentWorkspace.ClientInit.ID == "" {
-		return "", fmt.Errorf("api client init returned an empty changeset id")
-	}
-	return res.CurrentWorkspace.ClientInit.ID, nil
-}
 
 type apiClientListEntry struct {
 	SDK     string            `json:"sdk"`
