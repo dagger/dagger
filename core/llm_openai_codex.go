@@ -81,6 +81,10 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	if err != nil {
 		return nil, err
 	}
+	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
+	if err != nil {
+		return nil, err
+	}
 	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
 	if err != nil {
 		return nil, err
@@ -160,15 +164,23 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		case "response.completed":
 			e := event.AsResponseCompleted()
 			resp := e.Response
-			if resp.Usage.InputTokens > 0 {
-				usage.InputTokens = resp.Usage.InputTokens
+			cachedTokens := resp.Usage.InputTokensDetails.CachedTokens
+			usage.InputTokens = uncachedInputTokens(resp.Usage.InputTokens, cachedTokens)
+			usage.CachedTokenReads = cachedTokens
+			usage.OutputTokens = resp.Usage.OutputTokens
+			usage.TotalTokens = usage.InputTokens + usage.OutputTokens + usage.CachedTokenReads
+			if resp.Usage.TotalTokens > usage.TotalTokens {
+				usage.TotalTokens = resp.Usage.TotalTokens
+			}
+			if usage.InputTokens > 0 {
 				inputTokens.Record(ctx, usage.InputTokens, metric.WithAttributes(attrs...))
 			}
-			if resp.Usage.OutputTokens > 0 {
-				usage.OutputTokens = resp.Usage.OutputTokens
+			if usage.CachedTokenReads > 0 {
+				inputTokensCacheReads.Record(ctx, usage.CachedTokenReads, metric.WithAttributes(attrs...))
+			}
+			if usage.OutputTokens > 0 {
 				outputTokens.Record(ctx, usage.OutputTokens, metric.WithAttributes(attrs...))
 			}
-			usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 
 			// Extract text from the completed response (tool calls handled above)
 			for _, item := range resp.Output {

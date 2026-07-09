@@ -152,6 +152,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("print documentation for available tools"),
 		dagql.Func("tokenUsage", s.tokenUsage).
 			Doc("returns the token usage of the current state"),
+		dagql.Func("contextTokens", s.contextTokens).
+			Doc("estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session"),
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 	dagql.Fields[*core.LLMMessage]{}.Install(srv)
@@ -411,6 +413,14 @@ func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (
 		return nil, err
 	}
 	return llm.TokenUsage(ctx, srv)
+}
+
+func (s *llmSchema) contextTokens(ctx context.Context, llm *core.LLM, _ struct{}) (int, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return llm.ContextTokens(ctx, srv)
 }
 
 func (s *llmSchema) withoutMessageHistory(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLM, error) {
