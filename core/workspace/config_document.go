@@ -454,7 +454,7 @@ func insertWorkspaceSettingHintComments(data []byte, cfg *Config, hints map[stri
 			if existingSettings[strings.ToLower(hint.Name)] {
 				continue
 			}
-			if desc := hintDescriptionLine(hint.Description); desc != "" {
+			for _, desc := range hintDescriptionLines(hint.Description) {
 				commentLines = append(commentLines, "# "+desc)
 			}
 			commentLines = append(commentLines, fmt.Sprintf("# %s%s = %s", hintPrefix, formatConfigPathSegment(hint.Name), hint.ExampleValue))
@@ -473,14 +473,22 @@ func insertWorkspaceSettingHintComments(data []byte, cfg *Config, hints map[stri
 	return []byte(strings.Join(lines, "\n"))
 }
 
-func hintDescriptionLine(description string) string {
+// hintDescriptionLines returns the first paragraph of a setting description,
+// one line per entry. Doc comments wrap mid-sentence, so a single line would
+// truncate the description.
+func hintDescriptionLines(description string) []string {
+	var lines []string
 	for _, line := range strings.Split(description, "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" {
-			return line
+		if line == "" {
+			if len(lines) > 0 {
+				break
+			}
+			continue
 		}
+		lines = append(lines, line)
 	}
-	return ""
+	return lines
 }
 
 func findModuleHintInsertionPoint(lines []string, moduleName string) (insertAfter int, hintPrefix string) {

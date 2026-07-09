@@ -1,7 +1,9 @@
 package workspace
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -1166,6 +1168,9 @@ func parseValueString(parts []string, rawValue string) any {
 	if value, err := strconv.ParseFloat(rawValue, 64); err == nil {
 		return value
 	}
+	if values, ok := parseJSONArrayValue(rawValue); ok {
+		return values
+	}
 	if strings.Contains(rawValue, ",") {
 		items := strings.Split(rawValue, ",")
 		values := make([]string, len(items))
@@ -1176,4 +1181,39 @@ func parseValueString(parts []string, rawValue string) any {
 	}
 
 	return rawValue
+}
+
+// parseJSONArrayValue parses a JSON array of scalars into TOML-typed values.
+// Non-JSON values (e.g. glob patterns like "[abc]*") report false so callers
+// fall back to plain string handling.
+func parseJSONArrayValue(rawValue string) ([]any, bool) {
+	trimmed := strings.TrimSpace(rawValue)
+	if !strings.HasPrefix(trimmed, "[") {
+		return nil, false
+	}
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	dec.UseNumber()
+	var values []any
+	if err := dec.Decode(&values); err != nil {
+		return nil, false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, false
+	}
+	for i, item := range values {
+		switch v := item.(type) {
+		case string, bool:
+		case json.Number:
+			if n, err := strconv.ParseInt(v.String(), 10, 64); err == nil {
+				values[i] = n
+			} else if f, err := v.Float64(); err == nil {
+				values[i] = f
+			} else {
+				return nil, false
+			}
+		default:
+			return nil, false
+		}
+	}
+	return values, true
 }
