@@ -2,164 +2,69 @@
 
 Depends on: [Execution Plans](./plans.md)
 
+A collection is a keyed set of objects. Collections extend both prior layers:
+they add keyed selector dimensions to [Artifacts](./artifacts.md) and
+collection-aware batching to [Plans](./plans.md). They do not replace either.
+
 ## Table of Contents
 
 - [Problem](#problem)
 - [Proposal](#proposal)
 - [Use Cases](#use-cases)
-- [Interfaces](#interfaces)
-- [How Collections Expand Artifacts](#how-collections-expand-artifacts)
-- [How Collections Expand Plans](#how-collections-expand-plans)
+- [Authoring](#authoring)
+- [Projected API](#projected-api)
+- [Extending Artifacts](#extending-artifacts)
+- [Extending Plans](#extending-plans)
 - [Checks and Generators](#checks-and-generators)
+- [Type System](#type-system)
 - [Implementation Notes](#implementation-notes)
 - [General Maps](#general-maps)
 
 ## Problem
 
-Modules can discover dynamic sets of related objects (tests by name, packages
-by path, services by label). But they can't present them to clients without
-losing features like `dagger check`, `dagger call` keyed selection, filtering,
-or batching. Keys aren't first-class in the schema, so every module invents
-ad hoc accessors, and tooling can't offer these features generically.
+Modules can discover dynamic sets of related objects — tests by name, packages
+by path, services by label — but cannot present them to clients without losing
+`dagger check`, keyed selection, filtering, or batching. Keys are not
+first-class in the schema, so every module invents ad hoc accessors and tooling
+cannot offer these features generically.
 
 ## Proposal
 
-A collection is a keyed set of objects, defined on ordinary module types
-using `@collection` / `+collection` and projected by the engine into a
-synthetic public type with a small standard algebra: `keys`, `list`, `get`,
-`subset`, and `batch`.
+A collection is declared on an ordinary object type with `@collection` /
+`+collection` and projected by the engine into a synthetic public type with a
+small standard algebra: `keys`, `list`, `get`, `subset`, and `batch`.
 
-This proposal is intentionally narrow:
+Deliberately narrow:
 
-- Collections are keyed sets of objects. A broader map abstraction may follow,
-  but is out of scope.
-- They layer semantics onto existing objects, not a new type kind.
-- They are declared on object types with `@collection` / `+collection`, with
-  `keys` and `get` by convention or `@keys` / `@get` by override.
-- They add keyed traversal, selection, and batching — nothing else.
+- Collections are keyed sets of **objects**. A broader map abstraction may
+  follow but is out of scope (see [General Maps](#general-maps)).
+- They layer semantics onto existing objects; they are not a new type kind.
+- They add keyed traversal, selection, and batching — nothing else (no mutation
+  or execution semantics of their own).
 
 ## Use Cases
 
-### Test Selection
+- **Test selection.** A suite publishes its tests as a collection keyed by name;
+  users select tests by key instead of ad hoc flags. This is the motivation for
+  collection-aware filtering in `check`/`generate`.
+- **Test splitting.** `subset(keys)` turns one collection into an exact
+  key-selected subset while preserving collection shape, letting tooling divide
+  tests into buckets. `batch` gives the subset a place to execute efficiently.
+- **One module, many projects.** A repository often holds many apps, packages,
+  or services, discovered at runtime and keyed by names or paths. Collections
+  let one module publish that dynamic set and let clients select by key.
 
-A test suite can publish its tests as a collection keyed by test name. Users
-and tools select tests by key instead of relying on ad hoc command flags or
-list position.
+## Authoring
 
-This is the motivation for collection-aware filtering in `dagger check` and
-`dagger generate`: a user should be able to say "run these tests" by naming
-them directly.
+Collections are defined by annotating the object type itself. Each collection
+type has one effective `keys` field and one effective `get` function:
 
-### Test Splitting
+- If a field named `keys` exists, it is the effective `keys` field.
+- If a function named `get` exists, it is the effective `get` function.
+- `@keys` / `@get` override those default names only.
 
-Collections make test splitting precise because a subset of tests can be
-represented explicitly as another collection.
-
-`subset(keys)` is the key operation here. It turns one collection into an exact
-key-selected subset while preserving collection shape. That lets tooling
-divide tests into buckets without losing the collection abstraction.
-
-`batch` complements this by giving a collection a place to implement efficient
-execution over a selected subset.
-
-### One Module, Many Projects
-
-Collections let one installed module publish a dynamic set of related projects.
-
-In practice, a single repository often contains many apps, packages, modules,
-sites, or services. Those sets are usually discovered at runtime and are keyed
-by names or paths that matter to users.
-
-Collections give modules a standard way to publish those dynamic sets and let
-clients select one project by key or operate on subsets.
-
-## Interfaces
-
-### Module Definition
-
-Collections are defined on ordinary object types by annotating the type itself
-as a collection.
-
-Each collection type has:
-- one effective `keys` field
-- one effective `get` function
-
-The type annotation is required. Member annotations are optional.
-
-- If a collection type exposes a field named `keys`, that field is the
-  effective `keys` field by default.
-- If a collection type exposes a function named `get`, that function is the
-  effective `get` function by default.
-- `@keys` and `@get` are only needed to override those default names.
-
-Canonical schema shape:
-
-```graphql
-"""Collection of Go modules keyed by workspace path."""
-type GoModules @collection {
-  """All keys currently present in the collection."""
-  keys: [WorkspacePath!]!
-
-  """Resolve one module by workspace path."""
-  get(
-    """Workspace path to resolve."""
-    path: WorkspacePath!
-  ): GoModule!
-}
-```
-
-Non-standard names:
-
-```graphql
-"""Collection of Go modules keyed by workspace path."""
-type GoModules @collection {
-  """All keys currently present in the collection."""
-  paths: [WorkspacePath!]! @keys
-
-  """Resolve one module by workspace path."""
-  module(
-    """Workspace path to resolve."""
-    path: WorkspacePath!
-  ): GoModule! @get
-}
-```
-
-Rules:
-- `@collection` / `+collection` is required on the type itself
-- the effective `keys` field enumerates the collection keyspace
-- the effective `get` function resolves one item by key
-- `keys` must be an exposed field
-- `get` must be an exposed function
-- if `@keys` is absent, the exposed field named `keys` is used
-- if `@get` is absent, the exposed function named `get` is used
-- if `@keys` or `@get` is present, it overrides the default name-based
-  convention
-- only scalar and enum input types are valid as collection keys; this includes
-  builtin scalars, custom scalars, and enums; object, input-object, interface,
-  and list types are not valid collection key types
-- the effective `keys` field returns `[KeyType!]!`
-- the effective `get` function accepts exactly one non-null `KeyType` argument
-  and returns a non-null object
-- a collection must have exactly one effective `keys` field and exactly one
-  effective `get` function
-- keys should be unique within a collection
-
-Collection validity is enforced in two stages. At module load time, the engine
-validates structure: whether the type is marked as a collection, whether there
-is exactly one effective `keys` field and one effective `get` function, and
-whether their signatures are valid. At runtime, the engine validates behavior
-when the collection is used: if `keys` advertises a key that `get` cannot
-resolve, collection operations fail at the point of use.
-
-Collections describe how a dynamic set is addressed and traversed. They do not
-by themselves add mutation, execution, or other higher-level behavior.
-
-Any exposed function on the collection type beyond the effective `keys` field and
-`get` is automatically re-homed under the synthetic `batch` namespace (see
-[Batch Namespace](#batch-namespace)). Module authors define batch operations
-as ordinary functions on the collection type; the engine handles projection.
-
-Illustrative authoring examples:
+The canonical `GoTests` collection (see
+[artifacts.md § Canonical Example](./artifacts.md#canonical-example)) in each SDK:
 
 ```dang
 type GoTests @collection {
@@ -211,33 +116,39 @@ class GoTests:
         return GoTest(name=name)
 ```
 
-### DagQL Schema
-
-The raw module-defined collection object stays hidden from clients.
-
-Instead, a field or function returning a collection projects to a synthetic
-collection object with engine-defined standardized members. The projected field
-keeps the original module name.
-
-Example internal shape:
+Non-standard names use overrides:
 
 ```graphql
-"""Root object exposing a collection of Go modules."""
-type Go {
-  """Collection of Go modules."""
-  modules: GoModules!
+type GoModules @collection {
+  paths: [WorkspacePath!]! @keys
+  module(path: WorkspacePath!): GoModule! @get
 }
 ```
 
-Example public projection:
+Requirements:
+
+- `@collection` is required on the type; a collection has exactly one effective
+  `keys` field (returning `[KeyType!]!`) and one effective `get` function
+  (taking exactly one non-null `KeyType`, returning a non-null object).
+- Key types are scalar or enum only (builtin scalars, custom scalars, enums).
+  Object, input-object, interface, and list types are not valid keys.
+- Keys should be unique within a collection.
+- Any other exposed function on the type is re-homed under `batch` (see
+  [Projected API](#projected-api)); non-function fields are not projected except
+  the effective `keys` field.
+
+Validity is enforced in two stages: at **load** the engine validates structure
+(annotation present, exactly one `keys`/`get`, valid signatures); at **runtime**
+it validates behavior (if `keys` advertises a key `get` cannot resolve,
+operations fail at the point of use).
+
+## Projected API
+
+The raw module-defined collection type stays hidden. A field or function
+returning a collection projects to a synthetic public type — keeping the
+original field name — with engine-defined members:
 
 ```graphql
-"""Root object exposing the projected public collection."""
-type Go {
-  """Projected collection of Go modules."""
-  modules: GoModules!
-}
-
 """Synthetic public projection of a Go module collection."""
 type GoModules {
   """Keys in the current subset, in stable collection order."""
@@ -247,133 +158,68 @@ type GoModules {
   list: [GoModule!]!
 
   """Resolve one item in the current subset by key."""
-  get(
-    """Key to resolve."""
-    key: WorkspacePath!
-  ): GoModule!
+  get(key: WorkspacePath!): GoModule!
 
   """Restrict the collection to an exact subset of keys."""
-  subset(
-    """Keys to retain from the current subset."""
-    keys: [WorkspacePath!]!
-  ): GoModules!
+  subset(keys: [WorkspacePath!]!): GoModules!
 
   """Type-specific efficient operations over the current subset."""
   batch: GoModules_Batch!
 }
-
-"""Type-specific batch operations over the current subset."""
-type GoModules_Batch {
-  """Illustrative only: efficiently evaluate checks over the current subset."""
-  checks: CheckGroup!
-}
 ```
 
-Rules:
-- projection keeps the original field/function name
-- projection applies to both fields and functions returning collections
-- public collection types are synthetic and engine-defined
-- item types are unchanged; collection-relative identity stays on the
-  collection, not the item
-- list order preserves the order of the effective `keys` field
-- `get` errors on an unknown key
-- `subset` is exact key selection, not a predicate language; it preserves
-  parent key order and errors on unknown or duplicate keys
+### Algebra
 
-The engine materializes `list` by iterating keys and calling the backing
-`get`. `subset` narrows the keyspace while preserving collection shape.
+- `keys` — the current subset's keyspace
+- `list` — materializes the current subset's items (engine iterates `keys`,
+  calls backing `get`)
+- `get(key)` — one item from the current subset; errors on unknown key
+- `subset(keys)` — exact key selection (not a predicate language); preserves
+  parent key order; errors on unknown or duplicate keys
 
-### Collection Algebra
+Laws:
 
-The synthetic collection object defines a small algebra:
-- `keys` describes the current subset's keyspace
-- `list` materializes the current subset's items
-- `get(key)` materializes one item from the current subset
-- `subset(keys)` narrows the current subset while preserving collection shape
-
-Expected laws:
-- `c.subset(keys: c.keys)` is equivalent to `c`
+- `c.subset(keys: c.keys)` ≡ `c`
 - `c.subset(keys: ks).keys` returns `ks` in parent order
 - `c.subset(keys: ks).list` returns the items for `ks` in parent order
 - `c.subset(keys: ks).get(k)` errors unless `k` is in `ks`
 
-This keeps subset transport, exact-key access, and enumeration coherent across
-both single-engine and cross-engine execution.
+Item types are unchanged: collection-relative identity stays on the collection,
+not the item.
 
-### Batch Namespace
+### Batch namespace
 
-`batch` is not part of the core collection algebra. It is a type-specific
-namespace for collection-level operations that can execute more efficiently
-over the current subset than invoking the equivalent item-level operation one
-item at a time.
+`batch` is not part of the core algebra. It is a type-specific namespace for
+operations that execute more efficiently over the whole subset than one item at
+a time. The engine identifies the effective `keys` and `get` and re-homes every
+other exposed function under `batch`. For example, a collection of tests may
+expose `runTests`; the engine projects it as `c.batch.runTests`, running one
+`go test` process over many selected tests. `batch` operates on the current
+subset, so `c.subset(keys: ks).batch` sees only `ks`.
 
-The synthetic `batch` type is derived from the backing collection type. The
-engine identifies the effective `keys` field and effective `get` function;
-every other exposed function on the collection type is re-homed under `batch`.
-Non-function fields are not projected publicly, except for the effective `keys`
-field.
+## Extending Artifacts
 
-For example, a collection of test definitions may expose a `runTests` function
-alongside `keys` and `get`. The engine projects `runTests` under `batch`,
-so clients call `c.batch.runTests` to run one `go test` process over many
-selected tests rather than one process per test.
+A collection occurrence contributes to the [Artifacts](./artifacts.md) model:
 
-Important boundaries:
-- `batch` operates on the current subset, so `c.subset(keys: ks).batch`
-  sees only `ks`
-- `batch` is type-specific; different collection types may expose different
-  methods under it, and their meaning is outside the core collection algebra
-
-## How Collections Expand Artifacts
-
-Collections extend the selector model defined in [artifacts.md](./artifacts.md).
-They do not replace it.
-
-A collection occurrence contributes:
-- a new public selector dimension named by the collection's item type
+- a new selector dimension named by the collection's **item type** (`go-test`)
 - selector values from the collection's current keys
-- extra artifact coordinates when that dimension is needed for uniqueness in
-  the current scope
+- extra coordinates on rows when that dimension is needed for uniqueness
 
-Example:
+The base dimensions stay valid; collections add selector space rather than a
+parallel targeting model. For the canonical example, the base scope
+`filterCoordinates("type", ["go-test"])` can be narrowed further by
+`filterCoordinates("go-test", ["TestFoo"])`.
 
-```console
-$ dagger check --help
-  --type=<name>
+## Extending Plans
 
-$ dagger check --help
-  --type=<name>
-  --go-test=<name>
-```
-
-Base Artifacts scope:
-
-```text
-workspace.artifacts
-  .filterCoordinates("type", ["go-test"])
-```
-
-Expanded by a collection:
-
-```text
-workspace.artifacts
-  .filterCoordinates("type", ["go-test"])
-  .filterCoordinates("go-test", ["TestFoo"])
-```
-
-The base dimensions remain valid. Collections add new selector space rather
-than introducing a parallel targeting model.
-
-## How Collections Expand Plans
-
-Plan compilation still starts from an Artifacts scope. Collections change plan
-compilation in two places:
+Plan compilation still starts from an Artifacts scope. Collections change it in
+two places:
 
 1. collection selector dimensions lower to `subset(keys: ...)` on matching
    collections
 2. collection `batch` behavior may replace one-item-at-a-time expansion
 
-Example:
+For the canonical example:
 
 ```text
 workspace.artifacts
@@ -382,36 +228,117 @@ workspace.artifacts
   .plan(verb: CHECK)
 ```
 
-Without collection-aware batch behavior, the plan may contain one action per
-selected item.
-
-With collection-aware batch behavior, the plan may instead contain one action
-over the filtered subset, equivalent to:
+Without batch behavior the plan has one action per item; with it, one action
+over the subset, equivalent to:
 
 ```text
-go.tests
-  .subset(keys: ["TestFoo", "TestBar"])
-  .batch
-  .runTest
+go.tests.subset(keys: ["TestFoo", "TestBar"]).batch.run
 ```
 
-### Typedefs
+## Checks and Generators
 
-This section answers how collections are represented in the schema and
-introspection model, as distinct from the public client-facing API they
-project to.
+These rules are specific to the check/generate feature, not the core algebra.
+Generators follow the same traversal and filtering as checks throughout.
 
-Collections should be represented in the type system as metadata layered on an
-object, not as a peer kind.
+### Filter model
 
-That means:
-- projected collections still have `TypeDef.Kind = OBJECT`
-- projected collections still populate `TypeDef.AsObject`
-- projected collections additionally populate `TypeDef.AsCollection`
+Collections add keyed dimensions and batch behavior on top of the built-in
+`type` dimension. Two flag forms, both lowering to the Artifacts API:
 
-This keeps collection-unaware clients simple: they can continue treating a
-collection projection as an ordinary object. Collection-aware traversal
-surfaces can look for `AsCollection` when they need keyed-hop behavior.
+- `--<item-type>=<key>` — the canonical keyed filter →
+  `filterCoordinates("<item-type>", [...])`
+- `--<collection-type>` — convenience presence alias →
+  `filterDimension("<item-type>")`
+
+For item type `GoTest` in collection `GoTests`:
+
+```text
+--go-test=TestFoo              => filterCoordinates("go-test", ["TestFoo"])
+--go-tests                     => filterDimension("go-test")
+--go-tests --go-test=TestFoo   => filterCoordinates("go-test", ["TestFoo"])
+```
+
+The presence alias is positive-only: `--go-tests` is legal; `--go-tests=true`,
+`--go-tests=false`, and `--no-go-tests` are not. This keeps the selector model
+positive-only without one-off boolean negation.
+
+These aliases are CLI sugar. After parsing, the engine sees only real item
+dimensions. Names are derived mechanically from Dagger's CLI casing rules:
+keyed filters use the item type name, presence aliases use the collection type
+name. Each value gets its own flag instance; comma-separated values are
+forbidden. Repeated `--<item-type>` values are OR within the dimension;
+repeating `--<collection-type>` has no additional effect. Type renames are
+CLI-breaking for both forms.
+
+```console
+$ dagger check --go-test=TestFoo --go-test=TestBar --go-module=./myapp/app2
+$ dagger check --go-tests --go-module=./myapp/app2
+```
+
+These filters are scope-relative constraints, not unique selectors: one filter
+narrows every matching collection occurrence to the given key subset and may
+match zero, one, or many occurrences. Combine filters to narrow further.
+
+### Listing and discovery
+
+`dagger list` is the exploration surface, using the same filter flags as the
+verb commands, and can be projected through a verb to match its scope:
+
+```console
+$ dagger list                      # available dimensions with key types
+$ dagger list types                # artifact types
+$ dagger list go-module --check    # go modules in check scope
+$ dagger list go-test --check \
+    --go-module=./myapp/app2       # go tests filtered by module
+```
+
+`dagger list --help` lists real dimensions (`go-test`), not convenience aliases
+(`go-tests`), though command help may show accepted aliases in its flag list.
+Listing applies active filters from other dimensions first, flattens
+parent/child relationships between dimensions, and prints unique values in
+stable order. `dagger check -l` / `generate -l` use the table-capable listing
+from [plans.md](./plans.md#cli-listing); collection dimensions become columns
+when needed to distinguish rows.
+
+### Batch shadowing
+
+A collection has one effective check set drawn from item checks (on the item
+type) and batch checks (on the `batch` type):
+
+- If an item check and a batch check share a name, the batch check shadows the
+  item check.
+- Otherwise the item check remains.
+
+Execution follows: a shadowing batch check runs once over the current subset; an
+unshadowed item check runs once per item. Suppose the canonical `GoTests` has
+item checks `run` and `lint`, and `batch` defines `run` but not `lint`:
+
+```console
+$ dagger check -l
+GO TEST   ACTION
+TestFoo   lint
+TestFoo   run
+TestBar   lint
+TestBar   run
+
+$ dagger check --go-test=TestFoo --go-test=TestBar run
+# runs once via go.tests.batch.run over the filtered subset
+
+$ dagger check --go-test=TestFoo --go-test=TestBar lint
+# runs once per filtered item via the item type's lint
+```
+
+## Type System
+
+Collections are metadata layered on an object, not a peer kind:
+
+- projected collections keep `TypeDef.Kind = OBJECT`
+- they still populate `TypeDef.AsObject`
+- they additionally populate `TypeDef.AsCollection`
+
+Collection-unaware clients keep treating a projection as an ordinary object;
+collection-aware surfaces read `AsCollection` for keyed-hop behavior. This
+document does not introduce a `TypeDefKindCollection`.
 
 ```go
 // CollectionTypeDef describes collection semantics layered on top of an object type.
@@ -427,325 +354,41 @@ type CollectionTypeDef struct {
 }
 ```
 
-This document does not introduce `TypeDefKindCollection`.
-
-### Reserved Names
-
-Leading `_` is reserved for Dagger-injected fields and arguments.
-
-The core synthetic collection object in this document uses normal names
-(`keys`, `list`, `get`, `subset`, `batch`) because that object is fully
-engine-owned and does not expose raw module-defined collection methods.
-
-The reservation still matters as a general rule for future Dagger-injected
-members and other projection escape hatches. Module authors should not define
-public fields or arguments with leading `_`.
-
-## Checks and Generators
-
-This section describes how collections interact with the existing check and
-generator feature. These rules are specific to that feature and are not part of
-the core collection interfaces defined above.
-
-### Checks
-
-Collections affect checks through generated filters and through the collection's
-effective check set.
-
-The base selector model lives in [artifacts.md](./artifacts.md). Collections do
-not replace it. They add keyed dimensions and batch behavior on top of
-the pre-existing built-in `type` dimension.
-
-#### Filter Model
-
-Check filters shape the effective check tree before listing or execution.
-
-Collection-provided selector dimensions still use
-`--<dimension>=<value>`, repeatable. Those dimension flags are named by
-**item type** (singular), not collection type. Dedicated provenance filters
-such as `--path` remain separate; collections do not change them.
-
-Those valued flags lower to `filterCoordinates(...)`.
-
-In addition, each collection may expose one convenience presence flag named by
-the **collection type** itself:
-
-- `--<item-type>=<key>` is the canonical keyed filter
-- `--<collection-type>` is a convenience alias for presence filtering on that
-  item dimension
-
-For example, if collection type `GoTests` publishes item type `GoTest`, then:
-
-```console
---go-test=TestFoo
---go-tests
-```
-
-lower to:
-
-```text
-filterCoordinates("go-test", ["TestFoo"])
-filterDimension("go-test")
-```
-
-These aliases are CLI sugar only. They do not add new dimensions to the
-Artifacts model. After CLI parsing and normalization, the engine sees only the
-real item dimension:
-
-```text
---go-test=TestFoo              => filterCoordinates("go-test", ["TestFoo"])
---go-tests                     => filterDimension("go-test")
---go-tests --go-test=TestFoo   => filterCoordinates("go-test", ["TestFoo"])
-```
-
-The alias is positive-only.
-
-- `--go-tests` is legal
-- `--go-tests=true` is invalid
-- `--go-tests=false` is invalid
-- `--no-go-tests` is not part of this design
-
-This keeps the selector model positive-only and avoids introducing one-off
-boolean negation semantics for collections.
-
-Each flag points to `dagger list` for discovery:
-
-```console
-$ dagger check --help
-  --type=<name>         Filter by artifact type (see: dagger list types)
-  --go-tests            Filter to artifacts with a non-null go-test coordinate
-  --go-module=<name>    Filter by go module (see: dagger list go-module --check)
-  --go-test=<name>      Filter by go test (see: dagger list go-test --check)
-```
-
-Filter names are derived mechanically using Dagger's existing CLI casing
-rules:
-
-- keyed filters use the item type name
-- presence aliases use the collection type name
-
-Each value gets its own flag instance. Comma-separated values in a single
-flag occurrence are forbidden (or treated as a literal key containing a
-comma).
-
-Examples:
-
-```console
-$ dagger check --type=go --type=nodejs
-$ dagger check --go-test=TestFoo --go-test=TestBar --go-module=./myapp/app2
-$ dagger check --go-tests --go-module=./myapp/app2
-```
-
-The built-in `type` axis remains available alongside these collection
-dimensions:
-
-```console
-$ dagger check --type=go-test --go-test=TestFoo run
-$ dagger check --go-test=TestFoo run
-$ dagger check --go-tests --go-module=./foo/bar run
-```
-
-The second form is legal because filtering by `--go-test=...` already implies
-that the selected rows are `go-test` artifacts.
-
-The third form is legal because `--go-tests` is just presence-filter sugar for
-`go-test`, further narrowed by `--go-module`.
-
-More generally:
-
-- `--<collection-type>` means: keep rows where the corresponding
-  `--<item-type>` coordinate is non-null
-- `--<collection-type> --<item-type>=...` is equivalent to
-  `--<item-type>=...`
-- repeated `--<item-type>=...` values remain OR within that dimension, exactly
-  like any other repeatable dimension filter
-- repeating `--<collection-type>` has no additional effect
-- `--type=<item-type> --<collection-type>` is equivalent to
-  `--<collection-type>`
-
-These dimension filters are scope-relative constraints, not unique selectors.
-
-- A filter narrows every matching collection occurrence to the given
-  key subset.
-- A filter may match zero, one, or many occurrences.
-- To narrow further, combine filters.
-
-If function-path selectors remain temporarily for CLI compatibility, filters do
-not depend on them. They should be treated as a thin transitional alias over
-the typed selector model, not as a separate long-term targeting system.
-
-Type renames are CLI-breaking for both generated keyed filters and collection
-presence aliases.
-
-#### Listing and Discovery
-
-`dagger list` is the exploration surface for discovering filter values. It can
-also be projected through a verb when needed to match a verb-local selector
-scope:
-
-```console
-$ dagger list                      # available dimensions with key types
-$ dagger list types                # artifact types
-$ dagger list go-module --check    # go modules in check scope
-$ dagger list go-test --check      # all go tests in check scope
-$ dagger list go-test --check \
-    --go-module=./myapp/app2       # go tests filtered by module
-```
-
-`dagger list` uses the same filter flags as `check`/`generate`/`ship`/`up`.
-
-Important:
-
-- `dagger list --help` lists real dimensions such as `go-test`
-- it does not list convenience aliases such as `go-tests`, because those are
-  not dimensions
-- command help may still show accepted aliases in the flag list
-
-Listing rules:
-
-- `dagger list <dimension>` lists items in that dimension.
-- Active filters from other dimensions are applied first.
-- Parent/child relationships between different filter dimensions are
-  intentionally flattened.
-- Output is unique values in stable order.
-
-Example:
-
-```console
-$ dagger check --go-test=TestFoo --go-test=TestBar --go-module=./foo/bar
-# run selected tests
-
-$ dagger check --go-tests
-# run all go tests in scope
-
-$ dagger check --go-tests --go-module=./foo/bar
-# run all go tests for this selected go module
-```
-
-`dagger check -l` and `dagger generate -l` use the table-capable action
-listing defined in [plans.md](./plans.md). Collection dimensions simply become
-more columns when they are needed to distinguish the listed rows.
-
-#### Batch Shadowing
-
-Collections affect checks in two places:
-
-- item checks, defined on the collection's item type
-- batch checks, defined on the collection's `batch` type
-
-A collection contributes one effective check set.
-
-- If an item check and a batch check have the same name, the batch check
-  shadows the item check.
-- If no batch check exists for a name, the item check remains in the effective
-  check set.
-
-Execution follows the same rule.
-
-- A shadowing batch check runs once for the current collection subset.
-- An unshadowed item check runs once per item in the current collection
-  subset.
-
-For example, suppose `go.tests` has item checks `runTest` and `lint`, and
-`go.tests.batch` defines `runTest` but not `lint`.
-
-```console
-$ dagger check -l
-GO TEST   ACTION
-TestFoo   lint
-TestFoo   run-test
-TestBar   lint
-TestBar   run-test
-
-$ dagger check --go-test=TestFoo --go-test=TestBar run-test
-# runs once using go.tests.batch.runTest over the filtered subset
-
-$ dagger check --go-test=TestFoo --go-test=TestBar lint
-# runs once per filtered item using the item type's lint check
-```
-
-### Generators
-
-Generators follow the same traversal rules as checks. The collection-aware
-filtering and targeting described above applies to both.
+Leading `_` stays reserved for Dagger-injected members. The synthetic collection
+object uses normal names (`keys`, `list`, `get`, `subset`, `batch`) because it
+is fully engine-owned and exposes no raw module methods; module authors should
+not define public members with a leading `_`.
 
 ## Implementation Notes
 
-Important:
+The existing `collections` branch is a useful behavior reference but predates the
+`Artifacts → Plans → Collections` ordering. The final implementation targets the
+Artifacts/Plans stack; it does **not** revive the old
+`CheckGroup` / `GeneratorGroup` / `ModTree` integration path.
 
-- the existing `collections` branch is a useful prototype and behavior
-  reference, but it predates the current `Artifacts -> Execution Plans ->
-  Collections` ordering
-- final implementation should target the Artifacts/Plans stack, not revive the
-  old `CheckGroup` / `GeneratorGroup` / `ModTree` integration path
-
-Collections affect several existing implementation areas.
-
-### Engine
-
-The engine is responsible for validating collection definitions and projecting
-them into the public schema:
-- validate module-side `+collection`, `+keys`, and `+get`
-- synthesize public collection objects
-- expose `AsCollection` alongside `AsObject`
-- implement `keys`, `list`, `get`, `subset`, and `batch` on the synthetic
-  collection object
-
-### Module Runtimes
-
-Module runtimes must support authoring collections on ordinary objects:
-- runtime-side schema registration must accept `+collection`, `+keys`, and
-  `+get`
-- existing pragma/decorator/directive plumbing should extend to collection
-  semantics
-- the raw module-defined collection object remains a backing shape rather than
-  the public client shape
-
-### Generated Clients
-
-Generated client libraries should reflect the projected public DAGQL surface:
-- collection-valued members appear as synthetic collection objects
-- projected collections preserve the distinction between the core collection
-  algebra and the type-specific `batch` namespace
-- generated clients should not collapse the core collection algebra into a
-  type-specific `batch` surface
-
-### `dagger call`
-
-`dagger call` does not add keyed-refinement sugar for collections. Collection
-traversal follows the projected API directly: users call `keys`, `list`,
-`get`, `subset`, and `batch` explicitly.
-
-Collection-aware filtering — where generated CLI flags lower to `subset` on
-matching collections — belongs to verb commands (`dagger check`, `dagger
-generate`, `dagger ship`, `dagger up`) and `dagger list`, not to `dagger call`.
-
-### `dagger shell`
-
-`dagger shell` follows the same rule as `dagger call`: collection traversal
-uses the projected API explicitly. Shell completion and help should understand
-collection-valued steps in the current pipeline, but no collection-aware
-filtering is added.
-
-### `dagger functions`
-
-Other existing discoverability surfaces should follow the same projection model:
-- `dagger functions`
-- shell completion/help
-- module/type inspection
-- schema introspection consumed by tooling
+- **Engine** — validate `+collection` / `+keys` / `+get`; synthesize public
+  collection objects; expose `AsCollection` alongside `AsObject`; implement
+  `keys`, `list`, `get`, `subset`, `batch`.
+- **Module runtimes** — accept `+collection` / `+keys` / `+get` in schema
+  registration by extending existing pragma/decorator/directive plumbing; the
+  raw collection object stays a backing shape, not the public shape.
+- **Generated clients** — reflect the projected surface; preserve the split
+  between the core algebra and the type-specific `batch` namespace (do not
+  collapse the algebra into `batch`).
+- **`dagger call` / `dagger shell`** — no keyed-refinement sugar. Traversal uses
+  the projected API explicitly (`keys`, `list`, `get`, `subset`, `batch`).
+  Collection-aware filtering belongs to the verb commands and `dagger list`.
+  Shell completion/help should understand collection-valued steps.
+- **`dagger functions`, completion, inspection, introspection** — follow the same
+  projection model.
 
 ## General Maps
 
 Collections are map-shaped at the semantic layer — `keys` defines a typed
-keyspace, `get` resolves a value from a key — but this proposal restricts
-values to objects. It does not introduce:
-- a public DagQL map kind
-- traversal or codegen rules for arbitrary map values
-- typedef or introspection rules for a general map abstraction
-
-A broader map design may follow; collections are intended not to close that
-door.
+keyspace, `get` resolves a value — but this proposal restricts values to
+objects. It does not introduce a public DagQL map kind, traversal/codegen for
+arbitrary map values, or typedef/introspection rules for a general map. A broader
+map design may follow; collections are intended not to close that door.
 
 ## Open Questions
 
