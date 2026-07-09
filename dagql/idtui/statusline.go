@@ -33,6 +33,22 @@ type StatusLineData struct {
 	AutoCompact bool
 }
 
+// LLMCostFunc computes the dollar cost of a model's token usage. The CLI
+// registers one (closing over its pricing tables) so the frontend can price the
+// live metric rollup without depending on the pricing package.
+type LLMCostFunc func(model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64
+
+// StatusLineLive carries the aggregate token/cost rollup across all models and
+// sub-agents, recomputed from live metrics at render time so the status line
+// stays current between turns instead of freezing on the last per-step push.
+type StatusLineLive struct {
+	InputTokens  int
+	OutputTokens int
+	CacheReads   int
+	CacheWrites  int
+	TotalCost    float64
+}
+
 // StatusLine renders a compact, single-line status bar showing LLM token
 // usage, cost, context window utilisation and the active model name:
 //
@@ -42,6 +58,10 @@ type StatusLine struct {
 
 	profile termenv.Profile
 	data    StatusLineData
+	// liveStats, when set, is consulted on every render to source the token
+	// rollup and cost from live metrics (all models + sub-agents). It returns
+	// false before any metrics have arrived, falling back to data.
+	liveStats func() (StatusLineLive, bool)
 }
 
 var _ tuist.Component = (*StatusLine)(nil)
@@ -55,6 +75,18 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 	d := sl.data
 	if d.Model == "" {
 		return
+	}
+
+	// Override the token rollup and cost with live metrics so they reflect the
+	// latest turn (and any sub-agents) without waiting for the next per-step push.
+	if sl.liveStats != nil {
+		if live, ok := sl.liveStats(); ok {
+			d.InputTokens = live.InputTokens
+			d.OutputTokens = live.OutputTokens
+			d.CacheReads = live.CacheReads
+			d.CacheWrites = live.CacheWrites
+			d.TotalCost = live.TotalCost
+		}
 	}
 
 	width := max(ctx.Width, 20)
