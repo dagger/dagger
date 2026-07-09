@@ -118,10 +118,6 @@
       "source": "toolchains/rust-sdk-dev"
     },
     {
-      "name": "sdks",
-      "source": "toolchains/all-sdks"
-    },
-    {
       "name": "security",
       "source": "toolchains/security",
       "customizations": [

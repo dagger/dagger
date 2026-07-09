@@ -42,7 +42,7 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 	require.NoError(t, err)
 	want := canonicalJSON(t, wantBytes)
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("base schema allowlist mismatch (-want +got):\n%s\nNew public APIs must be gated with View(AfterVersion(<next release version from .changes/.next>)).", diff)
+		t.Fatalf("base schema allowlist mismatch (-want +got):\n%s\nNew public APIs must be gated with View(AfterVersion(<next release version from internal/version/VERSION>)).", diff)
 	}
 }
 

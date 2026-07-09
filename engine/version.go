@@ -11,13 +11,13 @@ import (
 
 var (
 	// Version is the engine/CLI semver, derived from internal/version.Version
-	// (which embeds VERSION at build time) with a "v" prefix.
+	// (which embeds the VERSION file at build time) with a "v" prefix. It is no
+	// longer injected via -ldflags: the binary self-reports from embedded VERSION.
 	//
 	// DAGGER_VERSION overrides at init for tests.
 	Version string
 
-	// Tag is the default engine image tag. It defaults to Version for release
-	// builds and Commit for dev builds.
+	// Tag is the default engine image tag. It defaults to Version.
 	//
 	// DAGGER_TAG overrides at init for tests.
 	Tag string
@@ -54,7 +54,7 @@ var (
 
 func init() {
 	if Version == "" {
-		Version = iversion.Version
+		Version = iversion.Version(iversion.WithV())
 	}
 
 	// hack: dynamically populate version env vars
@@ -64,7 +64,7 @@ func init() {
 		Version = cleanVersion(v)
 	}
 	if Tag == "" {
-		Tag = defaultTag(Version, iversion.Commit)
+		Tag = Version
 	}
 	if v, ok := os.LookupEnv(DaggerTagEnv); ok {
 		Tag = v
@@ -94,16 +94,6 @@ func init() {
 	}
 }
 
-func defaultTag(version, commit string) string {
-	if IsDevVersion(version) {
-		if commit == "" {
-			return "main"
-		}
-		return commit
-	}
-	return version
-}
-
 func cleanVersion(v string) string {
 	if semver.IsValid("v" + v) {
 		return "v" + v
@@ -111,22 +101,33 @@ func cleanVersion(v string) string {
 	return v
 }
 
+// Compatibility gating compares *base* versions — prerelease and build
+// metadata stripped (see BaseVersion) — NOT strict semver precedence.
+//
+// Why: dev builds carry a prerelease suffix (e.g. "v0.2.0-dev-<commit>"). Under
+// strict semver a prerelease ranks *below* its release and is *ordered against
+// other prereleases of the same base*. That has two unwanted effects for our
+// engine<->client<->module handshake:
+//   - two dev builds cut from the same base version would reject each other
+//     (their suffixes differ), and
+//   - a dev build would be considered "older" than the release it was cut from,
+//     failing a ">= that release" gate against itself.
+//
+// Collapsing every prerelease of vX.Y.Z to vX.Y.Z fixes both. The deliberate
+// trade-off a maintainer must be aware of: this makes ALL prereleases — rc,
+// alpha, beta, dev — interchangeable with the release for gating, so e.g.
+// "v1.0.0-rc1" satisfies ">= v1.0.0". Compatibility here is about the base
+// version's API surface, not prerelease staging. If you ever need prerelease
+// ordering to matter for a gate, do NOT change these functions — that gate
+// belongs elsewhere. Different *base* versions still compare normally
+// (v2.0.0 and v2.0.1 remain distinct).
+
 func CheckVersionCompatibility(version string, minVersion string) bool {
-	if IsDevVersion(version) && IsDevVersion(Version) {
-		// Both our version and our target version are dev versions - in this
-		// case, strip pre-release info from our target, we should pretend it's
-		// just the real thing here.
-		version = BaseVersion(version)
-	}
-	return semver.Compare(version, minVersion) >= 0
+	return semver.Compare(BaseVersion(version), BaseVersion(minVersion)) >= 0
 }
 
 func CheckMaxVersionCompatibility(version string, maxVersion string) bool {
-	if IsDevVersion(version) && IsDevVersion(Version) {
-		// see CheckVersionCompatibility
-		version = BaseVersion(version)
-	}
-	return semver.Compare(version, maxVersion) <= 0
+	return semver.Compare(BaseVersion(version), BaseVersion(maxVersion)) <= 0
 }
 
 func NormalizeVersion(version string) string {
@@ -151,15 +152,4 @@ func BaseVersion(version string) string {
 	version = strings.TrimSuffix(version, semver.Build(version))
 	version = strings.TrimSuffix(version, semver.Prerelease(version))
 	return version
-}
-
-func IsDevVersion(version string) bool {
-	if version == "" {
-		return true
-	}
-	prerelease := semver.Prerelease(version)
-	if prerelease == "-dev" || strings.Contains(prerelease, "-dev.") || strings.Contains(prerelease, "-dev-") {
-		return true
-	}
-	return false
 }

@@ -8,6 +8,16 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// TestVersionCompatibility exercises CheckVersionCompatibility, which compares
+// BASE versions (prerelease + build metadata stripped). The consequence these
+// cases pin down: a prerelease is interchangeable with its release and with
+// other prereleases of the same base, while different bases still differ.
+//
+// Harness note: currentVersion defaults to minVersion and exists only to
+// replicate init()'s min-version capping (min is lowered to currentVersion when
+// currentVersion is the older of the two). The compatibility check itself only
+// looks at (targetVersion, effective minVersion) — it does not consult the
+// running Version — so setVersion here just feeds that capping step.
 func TestVersionCompatibility(t *testing.T) {
 	tc := []struct {
 		targetVersion  string
@@ -37,27 +47,27 @@ func TestVersionCompatibility(t *testing.T) {
 
 		// more complicated pre-releases
 		{
-			// v0.2.0-123 < v0.2.0
+			// same base v0.2.0: the prerelease is treated as its release
 			targetVersion: "v0.2.0-123",
 			minVersion:    "v0.2.0",
-			compatible:    false,
+			compatible:    true,
 		},
 		{
-			// v0.2.0-123 ~= v0.2.0
+			// same base v0.2.0
 			targetVersion:  "v0.2.0-123",
 			minVersion:     "v0.2.0",
 			currentVersion: "v0.2.0-123",
 			compatible:     true,
 		},
 		{
-			// v0.2.0-123 !~= v0.2.0
+			// two prereleases sharing base v0.2.0 are compatible
 			targetVersion:  "v0.2.0-123",
 			minVersion:     "v0.2.0",
 			currentVersion: "v0.2.0-456",
-			compatible:     false,
+			compatible:     true,
 		},
 
-		// even more complicated dev versions
+		// dev builds: differing -dev suffixes, same base
 		{
 			targetVersion:  "v0.0.0-dev-123",
 			minVersion:     "v0.0.0",
@@ -65,6 +75,7 @@ func TestVersionCompatibility(t *testing.T) {
 			compatible:     true,
 		},
 		{
+			// same base v0.0.0 despite different -dev suffixes
 			targetVersion:  "v0.0.0-dev-123",
 			minVersion:     "v0.0.0",
 			currentVersion: "v0.0.0-dev-456",
@@ -135,27 +146,6 @@ func TestBaseVersion(t *testing.T) {
 	for _, tc := range tc {
 		t.Run(tc.version, func(t *testing.T) {
 			require.Equal(t, tc.result, BaseVersion(tc.version))
-		})
-	}
-}
-
-func TestIsDevVersion(t *testing.T) {
-	tc := []struct {
-		version string
-		isDev   bool
-	}{
-		{version: "", isDev: true},
-		{version: "v0.19.9", isDev: false},
-		{version: "v1.0.0-dev", isDev: true},
-		{version: "v1.0.0-dev.1", isDev: true},
-		{version: "v0.19.9-241210-dev-abc123", isDev: true},
-		{version: "v0.19.9-241210123456-dev-abc123def456", isDev: true},
-		{version: "v0.19.9-123", isDev: false},
-		{version: "v0.19.9-rc1", isDev: false},
-	}
-	for _, tc := range tc {
-		t.Run(tc.version, func(t *testing.T) {
-			require.Equal(t, tc.isDev, IsDevVersion(tc.version))
 		})
 	}
 }
