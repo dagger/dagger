@@ -882,6 +882,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
+	// Carry the receiver object (with its dagql ID) engine-side so the module can
+	// reach it via Query.currentNode. It rides the fnCall by reference into the
+	// nested client session (ServeHTTPToNestedClient) for both in-process and
+	// containerized runtimes. Nil for top-level / constructor calls.
+	if obj, ok := opts.ParentTyped.(dagql.AnyObjectResult); ok {
+		fnCall.parentTyped = obj
+	}
 
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
