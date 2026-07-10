@@ -479,6 +479,13 @@ func (s *workspaceSchema) resolveRootfs(
 	if root, ok := ws.SourceDirectory(); ok && root.Self() != nil {
 		return s.resolveRootfsFromDirectory(ctx, srv, ws, root, resolvedPath, filter, gitignore)
 	}
+	if _, ok := ws.BaseSource().(*core.WorkspaceSourceRootlessLocal); ok {
+		var empty dagql.ObjectResult[*core.Directory]
+		if err := srv.Select(ctx, srv.Root(), &empty, dagql.Selector{Field: "directory"}); err != nil {
+			return inst, fmt.Errorf("workspace directory %q: create rootless directory: %w", resolvedPath, err)
+		}
+		return s.resolveRootfsFromDirectory(ctx, srv, ws, empty, resolvedPath, filter, gitignore)
+	}
 
 	if ws.HostPath() != "" {
 		ctx, err = s.withWorkspaceClientContext(ctx, ws)

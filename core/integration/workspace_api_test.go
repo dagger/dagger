@@ -245,7 +245,7 @@ func (WorkspaceAPISuite) TestRootlessCurrentWorkspace(ctx context.Context, t *te
 		"currentWorkspace": {
 			"cwd": "/",
 			"configFile": "",
-			"directory": {"entries": ["workspace.txt"]},
+			"directory": {"entries": []},
 			"changes": {"isEmpty": true}
 		}
 	}`, string(out))
