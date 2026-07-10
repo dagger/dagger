@@ -1267,6 +1267,8 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 						Source: testGitModuleRef(tc, "top-level"),
 					}},
 				})).
+				// materialize generated files first: toml modules don't regenerate at runtime
+				With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`)).
 				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -1304,6 +1306,8 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 						Source: testGitModuleRef(tc, "ts"),
 					}},
 				})).
+				// materialize generated files first: toml modules don't regenerate at runtime
+				With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`)).
 				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -1341,6 +1345,8 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 						Source: testGitModuleRef(tc, "py"),
 					}},
 				})).
+				// materialize generated files first: toml modules don't regenerate at runtime
+				With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`)).
 				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)

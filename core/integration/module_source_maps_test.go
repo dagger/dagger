@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -108,6 +109,21 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 		},
 	}
 
+	// Go fixtures are toml modules: materialize their generated files before
+	// anything loads them (dep first — the root's codegen loads it).
+	// TypeScript still regenerates at runtime.
+	materializeGoModules := func(rootSDK, depSDK string) dagger.WithContainerFunc {
+		return func(ctr *dagger.Container) *dagger.Container {
+			if depSDK == "go" {
+				ctr = ctr.With(daggerQuery(`{moduleSource(refString:"dep"){generatedContextDirectory{export(path:".")}}}`))
+			}
+			if rootSDK == "go" {
+				ctr = ctr.With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`))
+			}
+			return ctr
+		}
+	}
+
 	for _, tc := range tcs {
 		t.Run(fmt.Sprintf("%s dep with go generation", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
@@ -116,6 +132,7 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 				With(withModuleFixture(t, c, ".", "go/source-map-root")).
 				With(withModuleFixture(t, c, "dep", tc.fixture)).
 				With(clientGeneratorWorkspaceClients(clientGeneratorSDKClientFor("go", "client"))).
+				With(materializeGoModules("go", tc.sdk)).
 				With(daggerExec("generate", "-y"))
 
 			codegenContents, err := modGen.File("client/dep.gen.go").Contents(ctx)
@@ -135,6 +152,7 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 				With(withModuleFixture(t, c, ".", "typescript/source-map-root")).
 				With(withModuleFixture(t, c, "dep", tc.fixture)).
 				With(clientGeneratorWorkspaceClients(clientGeneratorSDKClientFor("typescript", "sdk"))).
+				With(materializeGoModules("typescript", tc.sdk)).
 				With(daggerExec("generate", "-y"))
 
 			// Dependency types are split into their own <dep>.gen.ts file, so the

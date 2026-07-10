@@ -340,12 +340,16 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 		require.NotContains(t, out, "intentionally invalid")
 	})
 
-	t.Run("generating across all modules still loads the broken module", func(ctx context.Context, t *testctx.T) {
+	t.Run("generating across all modules skips the broken module with a warning", func(ctx context.Context, t *testctx.T) {
+		// Generator enumeration loads modules best-effort: the broken module
+		// is still loaded (unlike the narrowed cases above, which never touch
+		// it) but its failure surfaces as a warning instead of failing the
+		// run — running generate may be exactly what repairs it.
 		out, err := base.
-			With(daggerExecFail("generate", "-l")).
+			With(daggerExec("generate", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "bad")
+		require.Contains(t, out, `Skipping module "bad"`)
 	})
 }
 
