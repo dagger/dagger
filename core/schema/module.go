@@ -248,6 +248,40 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				return an error.`),
 	}.Install(dag)
 
+	// currentNode returns the object that received the current module function
+	// call, as the universal Node interface — so a module can reference itself
+	// (e.g. to bind its own methods as tools via LLM.withTools) without
+	// reconstructing a fresh instance. It reads the receiver threaded onto the
+	// active FunctionCall (ModuleFunction.Call sets FunctionCall.parentTyped).
+	// DoNotCache: it depends on the ambient call context; a statically typed
+	// caller (Dang) forces it to a concrete id at the call site, so it need not
+	// be reproducible as a lazy call.
+	dag.Root().ObjectType().Extend(
+		dagql.FieldSpec{
+			Name: "currentNode",
+			Description: "The object that received the current module function call, as a Node. " +
+				"Errors when there is no current call, or the call is top-level (e.g. a module constructor).",
+			Type:       nodeInterfaceType{},
+			Args:       dagql.NewInputSpecs(),
+			DoNotCache: "Depends on the ambient module function call context.",
+		},
+		func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
+			query, err := core.CurrentQuery(ctx)
+			if err != nil {
+				return nil, err
+			}
+			fnCall, err := query.CurrentFunctionCall(ctx)
+			if err != nil {
+				return nil, err
+			}
+			node := fnCall.ParentTyped()
+			if node == nil {
+				return nil, fmt.Errorf("currentNode: the current call has no receiving object (top-level or constructor call)")
+			}
+			return node, nil
+		},
+	)
+
 	dagql.Fields[*core.FunctionCall]{
 		dagql.Func("returnValue", s.functionCallReturnValue).
 			WithInput(dagql.PerClientInput).
@@ -2074,6 +2108,14 @@ func (s *moduleSchema) currentModule(
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
 	return self.CurrentFunctionCall(ctx)
+}
+
+// nodeInterfaceType is a dagql.Typed marker naming the universal Node interface,
+// used as currentNode's return type so the field resolves to Node!.
+type nodeInterfaceType struct{}
+
+func (nodeInterfaceType) Type() *ast.Type {
+	return &ast.Type{NamedType: "Node", NonNull: true}
 }
 
 func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.Nullable[dagql.ObjectResult[*core.Container]], error) {

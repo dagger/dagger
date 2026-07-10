@@ -2391,6 +2391,22 @@ type FunctionCall struct {
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
 
 	returnState *functionCallReturnState
+
+	// parentTyped is the receiver object the function was called on, carrying its
+	// dagql ID. It is engine-side only (not persisted, not sent to the module),
+	// and backs Query.currentNode so a module can reference the object that
+	// received the call. Nil for top-level / constructor calls.
+	parentTyped dagql.AnyResult
+}
+
+// ParentTyped returns the receiver object the function was called on (with its
+// dagql ID), or nil for a top-level / constructor call. It backs
+// Query.currentNode.
+func (fnCall *FunctionCall) ParentTyped() dagql.AnyResult {
+	if fnCall == nil {
+		return nil
+	}
+	return fnCall.parentTyped
 }
 
 type persistedFunctionCall FunctionCall

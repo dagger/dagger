@@ -1092,6 +1092,14 @@ func (arg Argument) View(view ViewFilter) Argument {
 	return arg
 }
 
+// Directive attaches a GraphQL directive to the argument, e.g.
+// ExpectedTypeDirective("Node") to convey that an ID-typed argument accepts any
+// object (via the universal Node interface).
+func (arg Argument) Directive(dir *ast.Directive) Argument {
+	arg.Spec.Directives = append(slices.Clone(arg.Spec.Directives), dir)
+	return arg
+}
+
 func (arg Argument) Deprecated(paras ...string) Argument {
 	if len(paras) == 0 && arg.Spec.Description != "" {
 		reason := arg.Spec.Description
