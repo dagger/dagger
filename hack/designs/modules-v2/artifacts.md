@@ -150,6 +150,27 @@ dimension merely by existing.
 
 Cross-module `type` collisions are [Q1](#open-questions).
 
+### Selector paths and the `type:field` bridge
+
+A selector string is `[<type>]:<field>[:<field>…]`: the leading segment is a
+`type` coordinate, each remaining segment a step along the **artifact-relative**
+field/action path, and a `[<key>]` suffix pins a collection member (lowering to
+the same key filter as `--<item-type>=<key>`, not a bespoke `get`). The leading
+`<type>` may be dropped once scope already fixes one artifact — `dagger check
+--type=go tests:run` ≡ `check go:tests:run`. Because a top-level object's `type`
+kebab-matches its constructor field (`Go`/`go`), every legacy `<module>:<fn>`
+string re-resolves **unchanged** under this reading: the token that once
+navigated a root field now selects the artifact of that `type`. Collection items
+are ordinary artifacts, so `type:field[:field]` reaches them identically;
+`[<key>]` only refines *which* member.
+
+One grammar backs every consumer of the selection vocabulary — positional
+`check`/`generate`/`up` selectors, `FunctionPattern` ([plans.md](./plans.md)),
+and `from` references in workspace config — so a path learned in one place
+transfers verbatim to the others. Disambiguation is engine-owned: a leading
+segment naming an in-scope `type` is a type filter; otherwise it is the first
+step of a relative path.
+
 ### Dimension key types
 
 Dimension keys travel as strings. `Artifact.coordinates` is `[String]!`, CLI
