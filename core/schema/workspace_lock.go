@@ -65,7 +65,12 @@ func (s *workspaceSchema) workspaceLockChangeset(
 		return changes, fmt.Errorf("workspace lockfile is not selected")
 	}
 
-	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	// The diff only ever covers the lockfile write, so a base scoped to the
+	// lock path yields the same changeset without materializing the whole
+	// tree for host workspaces.
+	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{
+		Include: []string{filepath.ToSlash(ws.LockFile)},
+	}, false)
 	if err != nil {
 		return changes, err
 	}
@@ -115,19 +120,24 @@ func (s *workspaceSchema) readWorkspaceLockForOverlay(
 		return nil, fmt.Errorf("workspace lockfile is not selected")
 	}
 
-	root, err := s.workspaceOverlayRootfs(ctx, ws)
+	// Scope the read to the lock path candidates so host workspaces sync only
+	// those files instead of materializing the whole tree just to stat a lock.
+	lockPath := filepath.ToSlash(ws.LockFile)
+	legacyLockPath := filepath.ToSlash(workspace.LegacyLockFilePathForCanonical(ws.LockFile))
+	root, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{
+		Include: []string{lockPath, legacyLockPath},
+	}, false)
 	if err != nil {
 		return nil, err
 	}
 	statFS := &core.DirectoryStatFS{Dir: root}
 
-	lockPath := filepath.ToSlash(ws.LockFile)
 	_, exists, err := core.StatFSExists(ctx, statFS, lockPath)
 	if err != nil {
 		return nil, fmt.Errorf("stat workspace lock: %w", err)
 	}
 	if !exists {
-		lockPath = filepath.ToSlash(workspace.LegacyLockFilePathForCanonical(ws.LockFile))
+		lockPath = legacyLockPath
 		_, exists, err = core.StatFSExists(ctx, statFS, lockPath)
 		if err != nil {
 			return nil, fmt.Errorf("stat legacy workspace lock: %w", err)
