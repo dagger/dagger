@@ -105,6 +105,19 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ChecksSuite) TestChecksNoMatch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := checksTestEnv(t, c)
+	require.NoError(t, err)
+
+	out, err := modGen.
+		WithWorkdir("hello-with-checks").
+		With(daggerExecFail("--progress=report", "check", "missing-check")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, `no checks matched pattern "missing-check"`)
+}
+
 func (ChecksSuite) TestChecksViaLegacyBlueprintConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
