@@ -41,7 +41,7 @@ dagger settings                              # list every module's settings
 dagger settings eslint packageManager yarn   # set one
 ```
 
-`dagger settings <module> <key> <value>` is a typed front-end over the config file — it writes `modules.<module>.settings.<key>`. List values can be passed as a JSON array (`dagger settings eslint paths '["src","lib"]'`) or a comma-separated string (`src,lib`); both are stored as a TOML array. `dagger workspace config <key> <value>` is the lower-level key/value interface to the same file.
+`dagger settings <module> <key> <value>` is a typed front-end over the config file — it writes `modules.<module>.settings.<key>`. List values can be passed as separate arguments (`dagger settings eslint paths src lib`), which are stored verbatim as TOML array elements; a single comma-separated value (`src,lib`) also splits into an array. `dagger workspace config <key> <value>` is the lower-level key/value interface to the same file.
 
 ### Skipping functions for a verb
 

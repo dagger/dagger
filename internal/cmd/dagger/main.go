@@ -677,7 +677,7 @@ func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
 func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
 	switch commandName(cmd) {
 	case "settings", "workspace settings":
-		return len(args) == 3
+		return len(args) >= 3
 	default:
 		return false
 	}
