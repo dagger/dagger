@@ -414,6 +414,20 @@ func TestWriteConfigValue(t *testing.T) {
 		}, cfg.Env["ci"])
 	})
 
+	t.Run("settings named after module bool fields keep their written value", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValue(nil, "modules.greeter.settings.entrypoint", "cmd/main.go")
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "env.ci.modules.greeter.settings.entrypoint", "cmd/ci.go")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.Equal(t, "cmd/main.go", cfg.Modules["greeter"].Settings["entrypoint"])
+		require.Equal(t, "cmd/ci.go", cfg.Env["ci"].Modules["greeter"].Settings["entrypoint"])
+	})
+
 	t.Run("writes JSON array values as native arrays", func(t *testing.T) {
 		t.Parallel()
 

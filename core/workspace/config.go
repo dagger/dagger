@@ -1253,9 +1253,7 @@ func preferredExampleFieldName(t reflect.Type) string {
 }
 
 func parseValueString(parts []string, rawValue string) any {
-	leaf := parts[len(parts)-1]
-
-	if leaf == "entrypoint" || leaf == "legacy-default-path" ||
+	if (len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path")) ||
 		(len(parts) == 1 && (parts[0] == "defaults_from_dotenv" || parts[0] == "check-generated")) {
 		return rawValue == "true"
 	}
