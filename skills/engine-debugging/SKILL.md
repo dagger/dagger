@@ -21,6 +21,8 @@ Start from evidence, not broad guesses.
 Use focused repros, recorded traces, and small log windows. Avoid dumping full
 test output into the conversation.
 
+Use Dagger's default progress UI. Do not pass `--progress=plain`.
+
 Prefer small, high-signal log lines over broad dumps. Good debug logs identify
 the boundary being checked and include the relevant stable IDs, digests, keys,
 hit path, or lifecycle state needed to compare expected and actual behavior.
@@ -32,7 +34,7 @@ Use a tight test repro before adding logs.
 Recommended integration command format:
 
 ```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>'
+dagger call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>'
 ```
 
 This command rebuilds the dev engine, runs it as an ephemeral service, and then
@@ -46,7 +48,7 @@ runs tests against it. Output includes:
 Capture output to a file under `/tmp` to avoid overwhelming terminal context:
 
 ```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>' > /tmp/engine-debug.log 2>&1
+dagger call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>' > /tmp/engine-debug.log 2>&1
 rg -n "panic:|--- FAIL:|^FAIL\s" /tmp/engine-debug.log
 ```
 
@@ -93,7 +95,7 @@ stack traces, you are done and do not need to wait for the test hang to end.
 To compare behavior against an engine from another git ref:
 
 ```bash
-dagger --progress=plain call engine-dev --source 'https://github.com/dagger/dagger#main' test --pkg ./core/integration --run='TestSomeSuite/TestSomeSubtestYouWant'
+dagger call engine-dev --source 'https://github.com/dagger/dagger#main' test --pkg ./core/integration --run='TestSomeSuite/TestSomeSubtestYouWant'
 ```
 
 Do not run multiple suites in parallel unless necessary. Each suite is CPU-heavy
@@ -115,15 +117,15 @@ may provide either a raw trace ID or a command copied from the web UI, such as:
 dagger trace <trace-id>
 ```
 
-Replay that trace locally with plain progress and capture it to a temp file:
+Replay that trace locally and capture it to a temp file:
 
 ```bash
-dagger --progress=plain trace <trace-id> > /tmp/ci-trace-<trace-id>.log 2>&1
+dagger trace <trace-id> > /tmp/ci-trace-<trace-id>.log 2>&1
 ```
 
-This does not rerun the CI job. It fetches and prints the recorded trace in the
-same style as local `--progress=plain` output. Keep the full output in `/tmp`,
-inspect it with `rg`, and avoid dumping the whole trace into the conversation.
+This does not rerun the CI job. It fetches and prints the recorded trace. Keep
+the full output in `/tmp`, inspect it with `rg`, and avoid dumping the whole
+trace into the conversation.
 
 ### Finding Trace IDs From GitHub PR Checks
 
@@ -173,8 +175,8 @@ Current GitHub status URLs often only include `check=<name>`, so the lookup is
 reruns and prefer the non-success/latest row that matches the status being
 debugged.
 
-Once you have the trace ID, replay it with `dagger --progress=plain trace ...`
-and capture output to `/tmp` as described above.
+Once you have the trace ID, replay it with `dagger trace ...` and capture output
+to `/tmp` as described above.
 
 Start with the usual failure scan:
 
@@ -191,15 +193,15 @@ sed -n '<start>,<end>p' /tmp/ci-trace-<trace-id>.log
 
 Use the replayed trace to identify the exact failing call, subtest, generated
 command, or engine error. Once the failing surface is clear, decide whether to
-reproduce it locally with a tight `dagger --progress=plain call engine-dev ...`
-command or debug directly from the recorded CI trace.
+reproduce it locally with a tight `dagger call engine-dev ...` command or debug
+directly from the recorded CI trace.
 
 ## Performance Debugging With Persistent Dev Engine
 
 For most testing/debugging flows, prefer ephemeral engines via:
 
 ```bash
-dagger --progress=plain call engine-dev ...
+dagger call engine-dev ...
 ```
 
 For performance debugging, such as pprof snapshots, repeated profiling loops, or
