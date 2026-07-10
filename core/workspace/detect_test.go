@@ -110,6 +110,23 @@ func TestDetectReturnsNilWithoutGit(t *testing.T) {
 	require.Nil(t, ws)
 }
 
+func TestDetectInRootDoesNotClaimGitRoot(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	existing := map[string]struct{}{
+		"/workspace/dagger.toml": {},
+	}
+
+	ws, err := DetectInRoot(ctx, fakePathExists(existing), "/workspace/app", "/workspace")
+	require.NoError(t, err)
+	require.Equal(t, "/workspace", ws.Root)
+	require.False(t, ws.HasGitRoot)
+	require.Equal(t, "app", ws.Cwd)
+	require.Equal(t, "dagger.toml", ws.ConfigFile)
+	require.Equal(t, "dagger.lock", ws.LockFile)
+}
+
 func fakePathExists(existing map[string]struct{}) PathExistsFunc {
 	return func(_ context.Context, path string) (string, bool, error) {
 		cleanPath := filepath.Clean(path)
