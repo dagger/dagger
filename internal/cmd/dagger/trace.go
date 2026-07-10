@@ -186,7 +186,17 @@ func traceRun(cmd *cobra.Command, args []string) error {
 		// fetch a span's children on demand when the user expands it. The loader
 		// uses the outer ctx so lazy expands keep working while the TUI is
 		// interactive (-E).
-		loader := newTraceLoader(ctx, tf, client, orgID, traceID)
+		//
+		// ...unless the whole tree is going to be shown and expanded anyway
+		// (--debug, --expand, or a verbosity that expands completed spans): then
+		// fetch the entire trace up front. Incremental loading only pays off when
+		// most of the tree stays collapsed; once everything expands it just leaves
+		// spans unfetched (report mode renders once, with no lazy expand) or costs
+		// a round-trip per expand. This mirrors IsExpanded's own always-expand
+		// gate (dagql/dagui/types.go).
+		full := opts.Debug || opts.ExpandCompleted ||
+			opts.Verbosity >= dagui.ExpandCompletedVerbosity
+		loader := newTraceLoader(ctx, tf, client, orgID, traceID, full)
 		if tf != nil {
 			tf.SetSpanProvider(loader.listen)
 		}
@@ -390,19 +400,27 @@ type traceLoader struct {
 	// frontends without the trace capabilities.
 	tf idtui.TraceFrontend
 
+	// full requests the entire trace in the initial stream (Incremental: false)
+	// instead of priority-only + lazy subtree backfills. Set when the whole tree
+	// is going to be shown and expanded anyway (high verbosity / --debug /
+	// --expand), where lazy loading would just leave never-expanded spans
+	// unfetched (report mode renders once) and cost a round-trip per expand.
+	full bool
+
 	// background backfills (lazy child loads) run on the command's ctx so they
 	// keep working while the TUI is interactive (-E).
 	sem chan struct{}
 	fg  fetchGroup
 }
 
-func newTraceLoader(ctx context.Context, tf idtui.TraceFrontend, client *cloud.Client, orgID, traceID string) *traceLoader {
+func newTraceLoader(ctx context.Context, tf idtui.TraceFrontend, client *cloud.Client, orgID, traceID string, full bool) *traceLoader {
 	l := &traceLoader{
 		ctx:     ctx,
 		tf:      tf,
 		client:  client,
 		orgID:   orgID,
 		traceID: traceID,
+		full:    full,
 		filter:  map[dagui.SpanID]bool{{}: true}, // subscribe to roots first
 		sem:     make(chan struct{}, 8),
 	}
@@ -417,7 +435,9 @@ func newTraceLoader(ctx context.Context, tf idtui.TraceFrontend, client *cloud.C
 // loadInitial streams the trace's priority (root) spans and blocks until the
 // stream completes. For a completed trace this returns once everything the
 // server sends for the priority set is in; deeper spans (if the trace is marked
-// Partial) are fetched lazily afterward.
+// Partial) are fetched lazily afterward. When l.full is set the server is asked
+// for the whole trace up front instead (Incremental: false), so nothing is left
+// Partial and no lazy backfill is needed.
 func (l *traceLoader) loadInitial(ctx context.Context) error {
 	l.mu.Lock()
 	listen := l.listenIDsLocked()
@@ -425,7 +445,7 @@ func (l *traceLoader) loadInitial(ctx context.Context) error {
 	if err := l.client.StreamSpansWith(ctx, l.orgID, l.traceID, cloud.SpanStreamOpts{
 		Root:        true,
 		Listen:      listen,
-		Incremental: true,
+		Incremental: !l.full,
 	}, l.ingest); err != nil {
 		return err
 	}
