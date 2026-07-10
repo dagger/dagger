@@ -5066,6 +5066,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GeneratorGroup::loadFailures",
+			"p": "Dagger/GeneratorGroup.html#method_loadFailures",
+			"d": "<p>Load failures tolerated while collecting the generators.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GeneratorGroup::run",
 			"p": "Dagger/GeneratorGroup.html#method_run",
 			"d": "<p>Execute all selected generators</p>"

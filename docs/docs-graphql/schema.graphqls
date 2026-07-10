@@ -4123,6 +4123,16 @@ type GeneratorGroup implements Node {
   """Return a list of individual generators and their details"""
   list: [Generator!]!
 
+  """
+  Load failures tolerated while collecting the generators.
+
+  Empty unless a workspace module could not be loaded during an unscoped 'dagger
+  generate' (no selector), where load failures are tolerated so the modules that
+  do load still generate. Each entry is a human-readable error message. An
+  explicit selector keeps failing hard instead.
+  """
+  loadFailures: [String!]!
+
   """Execute all selected generators"""
   run: GeneratorGroup!
 }

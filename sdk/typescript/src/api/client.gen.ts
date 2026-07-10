@@ -10281,6 +10281,19 @@ export class GeneratorGroup extends BaseClient {
   }
 
   /**
+   * Load failures tolerated while collecting the generators.
+   *
+   * Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
+   */
+  loadFailures = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("loadFailures")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Execute all selected generators
    */
   run = (): GeneratorGroup => {
