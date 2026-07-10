@@ -248,16 +248,6 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_currentEnv">currentEnv</a>()
-        
-                                            <p><p>Returns the current environment</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -274,6 +264,16 @@
                     <a href="#method_currentModule">currentModule</a>()
         
                                             <p><p>The module currently being served in the session, if any.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_currentNode">currentNode</a>()
+        
+                                            <p><p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -324,16 +324,6 @@
                     <a href="#method_engine">engine</a>()
         
                                             <p><p>The Dagger engine container configuration and state</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_env">env</a>(bool|null $privileged = false, bool|null $writable = false)
-        
-                                            <p><p>Initializes a new environment</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -441,7 +431,7 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_llm">llm</a>(string|null $model = null, int|null $maxAPICalls = null)
+                    <a href="#method_llm">llm</a>(string|null $model = null)
         
                                             <p><p>Initialize a Large Language Model (LLM)</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -1057,41 +1047,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_currentEnv">
-        <div class="location">at line 104</div>
-        <code>                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
-    <strong>currentEnv</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Returns the current environment</p></p>                <p><p>When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.</p>
-<p>When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.</p></p>        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_currentFunctionCall">
-        <div class="location">at line 115</div>
+        <div class="location">at line 102</div>
         <code>                    <a href="../Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a>
     <strong>currentFunctionCall</strong>()
         </code>
@@ -1123,7 +1080,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_currentModule">
-        <div class="location">at line 124</div>
+        <div class="location">at line 111</div>
         <code>                    <a href="../Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a>
     <strong>currentModule</strong>()
         </code>
@@ -1154,8 +1111,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_currentNode">
+        <div class="location">at line 120</div>
+        <code>                    <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+    <strong>currentNode</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_currentTypeDefs">
-        <div class="location">at line 133</div>
+        <div class="location">at line 129</div>
         <code>                    array
     <strong>currentTypeDefs</strong>(bool|null $returnAllTypes = false, bool|null $hideCore = null)
         </code>
@@ -1202,7 +1191,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_currentWorkspace">
-        <div class="location">at line 148</div>
+        <div class="location">at line 144</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>currentWorkspace</strong>()
         </code>
@@ -1234,7 +1223,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_defaultPlatform">
-        <div class="location">at line 157</div>
+        <div class="location">at line 153</div>
         <code>                    <a href="../Dagger/Platform.html"><abbr title="Dagger\Platform">Platform</abbr></a>
     <strong>defaultPlatform</strong>()
         </code>
@@ -1266,7 +1255,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_directory">
-        <div class="location">at line 166</div>
+        <div class="location">at line 162</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>directory</strong>()
         </code>
@@ -1298,7 +1287,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_engine">
-        <div class="location">at line 175</div>
+        <div class="location">at line 171</div>
         <code>                    <a href="../Dagger/Engine.html"><abbr title="Dagger\Engine">Engine</abbr></a>
     <strong>engine</strong>()
         </code>
@@ -1329,55 +1318,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_env">
-        <div class="location">at line 184</div>
-        <code>                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
-    <strong>env</strong>(bool|null $privileged = false, bool|null $writable = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Initializes a new environment</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>bool|null</td>
-                <td>$privileged</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$writable</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_envFile">
-        <div class="location">at line 199</div>
+        <div class="location">at line 180</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>envFile</strong>(bool|null $expand = null)
         </code>
@@ -1419,7 +1361,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_error">
-        <div class="location">at line 211</div>
+        <div class="location">at line 192</div>
         <code>                    <a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a>
     <strong>error</strong>(string $message)
         </code>
@@ -1461,7 +1403,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 221</div>
+        <div class="location">at line 202</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>file</strong>(string $name, string $contents, int|null $permissions = 420)
         </code>
@@ -1513,7 +1455,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_function">
-        <div class="location">at line 235</div>
+        <div class="location">at line 216</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>function</strong>(string $name, <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $returnType)
         </code>
@@ -1560,7 +1502,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_generatedCode">
-        <div class="location">at line 246</div>
+        <div class="location">at line 227</div>
         <code>                    <a href="../Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a>
     <strong>generatedCode</strong>(<a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a> $code)
         </code>
@@ -1602,7 +1544,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_git">
-        <div class="location">at line 256</div>
+        <div class="location">at line 237</div>
         <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
     <strong>git</strong>(string $url, bool|null $keepGitDir = true, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\Socket">Socket</abbr>|null $sshAuthSocket = null, string|null $httpAuthUsername = &#039;&#039;, <abbr title="Dagger\Dagger\Secret">Secret</abbr>|null $httpAuthToken = null, <abbr title="Dagger\Dagger\Secret">Secret</abbr>|null $httpAuthHeader = null, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $experimentalServiceHost = null)
         </code>
@@ -1679,7 +1621,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_host">
-        <div class="location">at line 295</div>
+        <div class="location">at line 276</div>
         <code>                    <a href="../Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a>
     <strong>host</strong>()
         </code>
@@ -1711,7 +1653,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_http">
-        <div class="location">at line 304</div>
+        <div class="location">at line 285</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>http</strong>(string $url, string|null $name = null, int|null $permissions = null, string|null $checksum = null, <abbr title="Dagger\Dagger\Secret">Secret</abbr>|null $authHeader = null, <abbr title="Dagger\Dagger\Service">Service</abbr>|null $experimentalServiceHost = null)
         </code>
@@ -1778,7 +1720,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 335</div>
+        <div class="location">at line 316</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -1810,7 +1752,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_json">
-        <div class="location">at line 344</div>
+        <div class="location">at line 325</div>
         <code>                    <a href="../Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a>
     <strong>json</strong>()
         </code>
@@ -1842,9 +1784,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_llm">
-        <div class="location">at line 353</div>
+        <div class="location">at line 334</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>llm</strong>(string|null $model = null, int|null $maxAPICalls = null)
+    <strong>llm</strong>(string|null $model = null)
         </code>
     </h3>
     <div class="details">    
@@ -1861,11 +1803,6 @@
                     <tr>
                 <td>string|null</td>
                 <td>$model</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>int|null</td>
-                <td>$maxAPICalls</td>
                 <td></td>
             </tr>
             </table>
@@ -1889,7 +1826,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_module">
-        <div class="location">at line 368</div>
+        <div class="location">at line 346</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>module</strong>()
         </code>
@@ -1921,7 +1858,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleRuntime">
-        <div class="location">at line 374</div>
+        <div class="location">at line 352</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>moduleRuntime</strong>(<a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a> $modSource, <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a> $introspectionJson)
         </code>
@@ -1969,7 +1906,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleSource">
-        <div class="location">at line 385</div>
+        <div class="location">at line 363</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         </code>
@@ -2031,7 +1968,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_node">
-        <div class="location">at line 412</div>
+        <div class="location">at line 390</div>
         <code>                    <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
     <strong>node</strong>(<a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
         </code>
@@ -2073,7 +2010,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_schema">
-        <div class="location">at line 422</div>
+        <div class="location">at line 400</div>
         <code>                    <a href="../Dagger/Schema.html"><abbr title="Dagger\Schema">Schema</abbr></a>
     <strong>schema</strong>(<a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $json)
         </code>
@@ -2115,7 +2052,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 432</div>
+        <div class="location">at line 410</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
@@ -2162,7 +2099,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 447</div>
+        <div class="location">at line 425</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -2209,7 +2146,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceDir">
-        <div class="location">at line 455</div>
+        <div class="location">at line 433</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>sourceDir</strong>()
         </code>
@@ -2242,7 +2179,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 464</div>
+        <div class="location">at line 442</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -2294,7 +2231,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 476</div>
+        <div class="location">at line 454</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -2326,7 +2263,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 485</div>
+        <div class="location">at line 463</div>
         <code>                    string
     <strong>version</strong>()
         </code>
@@ -2358,7 +2295,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_with">
-        <div class="location">at line 494</div>
+        <div class="location">at line 472</div>
         <code>                    <a href="../Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a>
     <strong>with</strong>(<abbr title="Dagger\Dagger\Directory">Directory</abbr>|null $sdkSourceDir = null)
         </code>

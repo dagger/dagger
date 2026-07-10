@@ -21,22 +21,12 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * returns the type of the current state
+     * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
      */
-    public function bindResult(string $name): Binding
+    public function contextTokens(): int
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('bindResult');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Binding($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * return the LLM's current environment
-     */
-    public function env(): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('env');
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contextTokens');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'contextTokens');
     }
 
     /**
@@ -181,27 +171,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Return a new LLM with the specified function no longer exposed as a tool
-     */
-    public function withBlockedFunction(string $typeName, string $function): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlockedFunction');
-        $innerQueryBuilder->setArgument('typeName', $typeName);
-        $innerQueryBuilder->setArgument('function', $function);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * allow the LLM to interact with an environment via MCP
-     */
-    public function withEnv(Env $env): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnv');
-        $innerQueryBuilder->setArgument('env', $env);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Add an external MCP server to the LLM
      */
     public function withMCPServer(string $name, Service $service): LLM
@@ -229,17 +198,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModel');
         $innerQueryBuilder->setArgument('model', $model);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Track an object so the LLM can reference it in subsequent tool calls.
-     */
-    public function withObject(string $tag, Id $object): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
-        $innerQueryBuilder->setArgument('tag', $tag);
-        $innerQueryBuilder->setArgument('object', $object);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -295,15 +253,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
-     */
-    public function withStaticTools(): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withStaticTools');
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Add a system prompt to the LLM's environment
      */
     public function withSystemPrompt(string $prompt): LLM
@@ -338,6 +287,29 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
+     */
+    public function withTools(Node $object, ?array $except = []): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTools');
+        $innerQueryBuilder->setArgument('object', $object);
+        if (null !== $except) {
+        $innerQueryBuilder->setArgument('except', $except);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
+     */
+    public function withWorkspace(Workspace $workspace): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspace');
+        $innerQueryBuilder->setArgument('workspace', $workspace);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Disable the default system prompt
      */
     public function withoutDefaultSystemPrompt(): LLM
@@ -362,5 +334,14 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSystemPrompts');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return the workspace the LLM is bound to.
+     */
+    public function workspace(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

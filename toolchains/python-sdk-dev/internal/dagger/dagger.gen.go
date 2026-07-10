@@ -11271,8 +11271,6 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 }
 
 // The blueprint referenced by the module source.
-//
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
 func (r *ModuleSource) Blueprint() *ModuleSource {
 	q := r.query.Select("blueprint")
 
@@ -11340,7 +11338,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 	return convert(response), nil
 }
 
-// Whether an existing module config file was found.
+// Whether an existing dagger.json for the module was found.
 func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	if r.configExists != nil {
 		return *r.configExists, nil
@@ -11576,7 +11574,7 @@ func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The original name of the module as read from the module config file (or set for the first time with the withName API).
+// The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
 func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	if r.moduleOriginalName != nil {
 		return *r.moduleOriginalName, nil
@@ -11637,7 +11635,7 @@ func (r *ModuleSource) SDK() *SDKConfig {
 	}
 }
 
-// The path, relative to the context directory, that contains the module config.
+// The path, relative to the context directory, that contains the module's dagger.json.
 func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	if r.sourceRootSubpath != nil {
 		return *r.sourceRootSubpath, nil
@@ -11677,8 +11675,6 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 }
 
 // The toolchains referenced by the module source.
-//
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
 func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	q := r.query.Select("toolchains")
 
@@ -11734,8 +11730,6 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 }
 
 // Set a blueprint for the module source.
-//
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithBlueprint(blueprint *ModuleSource) *ModuleSource {
 	assertNotNil("blueprint", blueprint)
 	q := r.query.Select("withBlueprint")
@@ -11828,8 +11822,6 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 }
 
 // Add toolchains to the module source.
-//
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
 	q := r.query.Select("withToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -11840,8 +11832,6 @@ func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource 
 }
 
 // Update the blueprint module to the latest version.
-//
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 	q := r.query.Select("withUpdateBlueprint")
 
@@ -11861,8 +11851,6 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 }
 
 // Update one or more toolchains.
-//
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithUpdateToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withUpdateToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -11883,8 +11871,6 @@ func (r *ModuleSource) WithUpdatedClients(clients []string) *ModuleSource {
 }
 
 // Remove the current blueprint from the module source.
-//
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
 	q := r.query.Select("withoutBlueprint")
 
@@ -11924,8 +11910,6 @@ func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperi
 }
 
 // Remove the provided toolchains from the module source.
-//
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withoutToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -13482,7 +13466,7 @@ func (r *Query) Module() *Module {
 type ModuleSourceOpts struct {
 	// The pinned version of the module source
 	RefPin string
-	// If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
+	// If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
 	DisableFindUp bool
 	// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
 	AllowNotExists bool
@@ -15685,11 +15669,12 @@ func (r *UpGroup) AsNode() Node {
 	}
 }
 
-// A Dagger workspace detected from the current working directory or constructed from a Directory.
+// A Dagger workspace detected from the current working directory.
 type Workspace struct {
 	query *querybuilder.Selection
 
 	address     *string
+	clientId    *string
 	configPath  *string
 	findUp      *string
 	hasConfig   *bool
@@ -15704,7 +15689,7 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	}
 }
 
-// Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
+// Canonical Dagger address of the workspace directory.
 func (r *Workspace) Address(ctx context.Context) (string, error) {
 	if r.address != nil {
 		return *r.address, nil
@@ -15750,6 +15735,19 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 	}
 }
 
+// The client ID that owns this workspace's host filesystem.
+func (r *Workspace) ClientID(ctx context.Context) (string, error) {
+	if r.clientId != nil {
+		return *r.clientId, nil
+	}
+	q := r.query.Select("clientId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Path to config.toml relative to the workspace boundary (empty if not initialized).
 func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
 	if r.configPath != nil {
@@ -15775,7 +15773,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -15801,7 +15799,7 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 
 // Returns a File from the workspace.
 //
-// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -15813,7 +15811,7 @@ func (r *Workspace) File(path string) *File {
 
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
-	// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
+	// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
 	//
 	// Default: "."
 	From string
@@ -15823,9 +15821,9 @@ type WorkspaceFindUpOpts struct {
 //
 // Returns the absolute workspace path if found, or null if not found.
 //
-// Relative start paths resolve from the workspace cwd.
+// Relative start paths resolve from the workspace directory.
 //
-// The search stops at the workspace root and will not traverse above it.
+// The search stops at the workspace boundary and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil

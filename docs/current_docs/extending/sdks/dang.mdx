@@ -26,7 +26,7 @@ Module development tooling for Dang lives in a Dagger module of its own — **`g
 dagger install github.com/dagger/dang-sdk
 
 # Then call its functions
-dagger api call dang-sdk <function> [args]
+dagger call dang-sdk <function> [args]
 ```
 
 The functions you will use most often:
@@ -56,7 +56,7 @@ Install the Dang SDK into your workspace, then create a new module with its `ini
 
 ```shell
 dagger install github.com/dagger/dang-sdk
-dagger api call dang-sdk init --name my-ci
+dagger call dang-sdk init --name my-ci
 ```
 
 `init` returns a [changeset](../../using-dagger/changesets.mdx) — which Dagger shows you to review before the files are written into your workspace.
@@ -65,7 +65,7 @@ dagger api call dang-sdk init --name my-ci
 
 - `--name` (required) — the module name.
 - `--path` — choose a different module location. The target path must not already contain a Dagger module.
-- `--template` — materialize files from `templates/<template>`. The empty default uses the minimal built-in template. Run `dagger api call dang-sdk templates` to see what is available.
+- `--template` — materialize files from `templates/<template>`. The empty default uses the minimal built-in template. Run `dagger call dang-sdk templates` to see what is available.
 - `--ignore-generated` — configure generation to add generated SDK paths to `.gitignore` instead of checking them in. (For Dang there are no generated client files, so this has little practical effect — see [Generate / module metadata](#generate--module-metadata).)
 
 ### Generated layout
@@ -112,7 +112,7 @@ type MyCi {
 Once applied, call your module by pointing `-m` at it (or running from inside the module's workspace):
 
 ```shell
-dagger -m .dagger/modules/my-ci api call hello
+dagger -m .dagger/modules/my-ci call hello
 # hello from Dang
 ```
 
@@ -146,12 +146,12 @@ type MyCi {
 }
 ```
 
-`pub` makes things visible to callers. The top-of-file docstring is the module's summary, shown in `dagger api functions` and `dagger api call --help`. Per-member docstrings document individual functions and arguments.
+`pub` makes things visible to callers. The top-of-file docstring is the module's summary, shown in `dagger functions` and `dagger call --help`. Per-member docstrings document individual functions and arguments.
 
 Try it:
 
 ```shell
-dagger api call hello
+dagger call hello
 # Hello from Dagger!
 ```
 
@@ -283,7 +283,7 @@ type Security {
 Invalid values produce a clear error listing the allowed choices:
 
 ```shell
-dagger api call scan --ref=alpine:latest --severity=FOO
+dagger call scan --ref=alpine:latest --severity=FOO
 # Error: value should be one of UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
 ```
 
@@ -359,8 +359,8 @@ Arguments can carry:
 - **Non-null markers** — `!` means required (when no default); absence means nullable.
 
 ```shell
-dagger api call build
-dagger api call build --node-version=18
+dagger call build
+dagger call build --node-version=18
 ```
 
 Constructor-style arguments (members on the primary type, set in `new(...)`) give users knobs they can override globally. The constructor also receives the user's [Workspace](#workspace-inputs) — auto-populated by Dagger — from which the module reads project files:
@@ -390,7 +390,7 @@ type MyCi {
 
 ```shell
 # CLI override
-dagger api call --node-version=18 build
+dagger call --node-version=18 build
 
 # Or in dagger.toml
 # [modules.my-ci.settings]
@@ -448,12 +448,12 @@ pub deploy(
 Callers provide secrets via providers:
 
 ```shell
-dagger api call deploy --token=env:DEPLOY_TOKEN        # environment variable
-dagger api call deploy --token=file:./token.txt        # file
-dagger api call deploy --token=cmd:"gh auth token"     # command output
-dagger api call deploy --token=op://vault/item/field   # 1Password
-dagger api call deploy --token=vault://path/to/secret  # HashiCorp Vault
-dagger api call deploy --token=gcp://secret-name       # Google Cloud Secret Manager
+dagger call deploy --token=env:DEPLOY_TOKEN        # environment variable
+dagger call deploy --token=file:./token.txt        # file
+dagger call deploy --token=cmd:"gh auth token"     # command output
+dagger call deploy --token=op://vault/item/field   # 1Password
+dagger call deploy --token=vault://path/to/secret  # HashiCorp Vault
+dagger call deploy --token=gcp://secret-name       # Google Cloud Secret Manager
 ```
 
 Secrets are scoped to the module that defines them. To share one across modules, pass it explicitly via a function argument.
@@ -517,7 +517,7 @@ A Dang module can depend on other Dagger modules (written in any SDK). Manage de
 Add a dependency:
 
 ```shell
-dagger api call dang-sdk mod deps add \
+dagger call dang-sdk mod deps add \
   --source github.com/shykes/daggerverse/hello@v0.3.0 \
   --name hello
 ```
@@ -528,13 +528,13 @@ List, update, and remove:
 
 ```shell
 # List dependencies
-dagger api call dang-sdk mod deps list
+dagger call dang-sdk mod deps list
 
 # Update one dependency by name (or all remote deps if omitted) — returns a changeset
-dagger api call dang-sdk mod deps update --name hello
+dagger call dang-sdk mod deps update --name hello
 
 # Remove one by name — returns a changeset
-dagger api call dang-sdk mod deps remove --name hello
+dagger call dang-sdk mod deps remove --name hello
 ```
 
 The result is reflected in `dagger-module.toml`:
@@ -598,19 +598,19 @@ The `mod generate` operation still exists for consistency and for module discove
 
 ```shell
 # Regenerate a single module (no client bindings for Dang; changeset is typically empty)
-dagger api call dang-sdk mod generate
+dagger call dang-sdk mod generate
 
 # Regenerate every Dang module discovered in the workspace
-dagger api call dang-sdk generate-all
+dagger call dang-sdk generate-all
 
 # List every module in the workspace whose runtime.source is "dang"
-dagger api call dang-sdk modules
+dagger call dang-sdk modules
 ```
 
 You can suppress generation for a module (or subtree) by placing the configured skip-marker file at or above the module root. The marker filename is reported by:
 
 ```shell
-dagger api call dang-sdk skip-generate-filename
+dagger call dang-sdk skip-generate-filename
 ```
 
 Because there is nothing to commit from generation, the `--ignore-generated` flag on `init` has no meaningful effect for Dang — there are no generated SDK paths to add to `.gitignore`.
@@ -621,16 +621,16 @@ Each module declares the Dagger engine version it requires via `engineVersion` i
 
 ```shell
 # Read the required version (without the leading "v")
-dagger api call dang-sdk mod engine required
+dagger call dang-sdk mod engine required
 
 # Pin to a specific version — returns a changeset
-dagger api call dang-sdk mod engine require --version v1.0.0-beta.3
+dagger call dang-sdk mod engine require --version v1.0.0-beta.3
 
 # Pin to the current engine
-dagger api call dang-sdk mod engine require-current
+dagger call dang-sdk mod engine require-current
 
 # Pin to the latest stable release
-dagger api call dang-sdk mod engine require-latest
+dagger call dang-sdk mod engine require-latest
 ```
 
 `engineVersion` must be a concrete version (e.g. `v1.0.0-beta.3`). `require-latest` resolves the latest stable release to its concrete version and pins that, keeping the module reproducible across machines and CI.
@@ -823,7 +823,7 @@ The most direct way to test a Dang module is to call its functions and run its c
 
 ```shell
 # Smoke test — does it build?
-dagger api call build
+dagger call build
 
 # Run all checks
 dagger check
@@ -867,7 +867,7 @@ Consumers install your module into their workspace with the `dagger` CLI:
 dagger install github.com/yourorg/yourrepo/path@v0.1.0
 ```
 
-They can then call its functions (`dagger api call ...`) and run its checks (`dagger check`).
+They can then call its functions (`dagger call ...`) and run its checks (`dagger check`).
 
 ## Troubleshooting
 

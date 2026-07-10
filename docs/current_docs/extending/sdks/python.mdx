@@ -19,11 +19,11 @@ Module development tooling lives in the **Python SDK module itself**: `github.co
 dagger install github.com/dagger/python-sdk
 
 # Then call its functions
-dagger api call python-sdk <function> ...
+dagger call python-sdk <function> ...
 ```
 
 ```shell
-dagger api call python-sdk init --help
+dagger call python-sdk init --help
 ```
 
 The functions you use most often:
@@ -52,7 +52,7 @@ Install the Python SDK into your workspace, then create a new module with its `i
 
 ```shell
 dagger install github.com/dagger/python-sdk
-dagger api call python-sdk init --name=my-module
+dagger call python-sdk init --name=my-module
 ```
 
 `init` returns a [changeset](../../using-dagger/changesets.mdx) — a diff of the files to write — which Dagger shows you to review before anything is written to disk.
@@ -169,7 +169,7 @@ class MyModule:
 The set of fields that have a value at construction time forms the module's **constructor**. Callers pass them as top-level flags:
 
 ```shell
-dagger api call --greeting=Hi --name=Dagger message
+dagger call --greeting=Hi --name=Dagger message
 ```
 
 `@object_type` builds on dataclasses, so you can define an explicit `__init__` to derive state from the constructor arguments, and `field(init=False)` for computed fields:
@@ -303,7 +303,7 @@ class MyModule:
         return f"{greeting}, {name}!"
 ```
 
-These descriptions surface in `dagger api functions` and `dagger api call --help`.
+These descriptions surface in `dagger functions` and `dagger call --help`.
 
 ### Defaults and nullability
 
@@ -315,8 +315,8 @@ def build(self, node_version: str = "20") -> dagger.Container: ...
 ```
 
 ```shell
-dagger api call build              # uses "20"
-dagger api call build --node-version=18
+dagger call build              # uses "20"
+dagger call build --node-version=18
 ```
 
 A parameter without a default is **required**. To make an argument nullable (accepts no value, defaulting to `None`), use `T | None`:
@@ -516,7 +516,7 @@ class MyModule:
 Callers supply secrets via providers (`env:`, `file:`, `cmd:`, `op://`, `vault://`, …):
 
 ```shell
-dagger api call github-api --token=env:GITHUB_TOKEN
+dagger call github-api --token=env:GITHUB_TOKEN
 ```
 
 ### Services
@@ -563,7 +563,7 @@ Modules can depend on other modules. Manage dependencies in `dagger-module.toml`
 Add a dependency (returns a changeset of the `dagger-module.toml` edit to review and apply):
 
 ```shell
-dagger api call python-sdk \
+dagger call python-sdk \
   mod deps add --source=github.com/shykes/daggerverse/hello@v0.3.0
 ```
 
@@ -573,13 +573,13 @@ List, update, and remove:
 
 ```shell
 # List dependency names (or sources when unnamed)
-dagger api call python-sdk mod deps list
+dagger call python-sdk mod deps list
 
 # Update one dependency by name, or all remote deps if --name is omitted
-dagger api call python-sdk mod deps update --name=hello
+dagger call python-sdk mod deps update --name=hello
 
 # Remove a dependency by name or source
-dagger api call python-sdk mod deps remove --name=hello
+dagger call python-sdk mod deps remove --name=hello
 ```
 
 A module reference follows `[proto://]host/repo[/subpath][@version]`; `@version` may be a tag, branch, or commit. Local dependencies use a relative path source (e.g. `./path/to/module`).
@@ -602,13 +602,13 @@ See [Designing for composability](../type-system/designing-for-composability.mdx
 The generated client (the `sdk/` directory and `dagger`/`dag` types) reflects the engine API plus your dependencies. Regenerate it after changing dependencies or the required engine version. `mod generate` returns a changeset:
 
 ```shell
-dagger api call python-sdk mod generate
+dagger call python-sdk mod generate
 ```
 
 To regenerate every Python SDK module discovered in the project at once:
 
 ```shell
-dagger api call python-sdk generate-all
+dagger call python-sdk generate-all
 ```
 
 If a project also declares a generator binding, the platform-level `dagger generate` runs all generators (across SDKs) and presents a combined changeset for review. See [Checks, generators, and services](#checks-generators-and-services) below.
@@ -621,16 +621,16 @@ If a project also declares a generator binding, the platform-level `dagger gener
 
 ```shell
 # Read the current requirement (without leading "v")
-dagger api call python-sdk mod engine required
+dagger call python-sdk mod engine required
 
 # Require a specific version
-dagger api call python-sdk mod engine require --version=v1.0.0-beta.3
+dagger call python-sdk mod engine require --version=v1.0.0-beta.3
 
 # Pin to the engine you're running now
-dagger api call python-sdk mod engine require-current
+dagger call python-sdk mod engine require-current
 
 # Pin to the latest stable release
-dagger api call python-sdk mod engine require-latest
+dagger call python-sdk mod engine require-latest
 ```
 
 After changing the engine version, run `mod generate` to refresh the bindings against the new API.
@@ -782,7 +782,7 @@ The most direct test is to call your functions and assert on the output:
 
 ```shell
 # Smoke test — does it build?
-dagger api call build
+dagger call build
 
 # Run all checks
 dagger check
@@ -930,10 +930,10 @@ If `.venv` lives inside the module, add it to `.gitignore` **and** to `"include"
 
 ```shell
 # Read the current configuration
-dagger api call python-sdk mod config get
+dagger call python-sdk mod config get
 
 # Set values at once (returns a changeset)
-dagger api call python-sdk \
+dagger call python-sdk \
   mod config set --python-version=3.12 --use-uv
 ```
 
@@ -946,8 +946,8 @@ Modules are distributed as Git repositories — there is no package registry ste
 Pin the engine version and commit generated bindings before tagging:
 
 ```shell
-dagger api call python-sdk mod engine require --version=v1.0.0-beta.3
-dagger api call python-sdk mod generate
+dagger call python-sdk mod engine require --version=v1.0.0-beta.3
+dagger call python-sdk mod generate
 git add -A && git commit -m "release" && git tag v0.1.0 && git push --tags
 ```
 
@@ -960,12 +960,12 @@ dagger install github.com/you/your-module@v0.1.0
 or call it ad hoc:
 
 ```shell
-dagger -m github.com/you/your-module@v0.1.0 api call <function> ...
+dagger -m github.com/you/your-module@v0.1.0 call <function> ...
 ```
 
 ## Troubleshooting
 
-- **`dagger init` / `dagger develop` not found.** Module development tooling lives in the Python SDK module, not the CLI. Install it with `dagger install github.com/dagger/python-sdk`, then use `dagger api call python-sdk init …` and `dagger api call python-sdk mod generate`.
+- **`dagger init` / `dagger develop` not found.** Module development tooling lives in the Python SDK module, not the CLI. Install it with `dagger install github.com/dagger/python-sdk`, then use `dagger call python-sdk init …` and `dagger call python-sdk mod generate`.
 - **`init` "didn't write any files."** `init` returns a changeset; review and apply it to write the files into your workspace.
 - **Target already contains a module.** `init` refuses to overwrite an existing module. Choose a different `--path` or `--name`.
 - **IDE has no autocompletion / `import dagger` unresolved.** The `sdk/` client must be generated and installed into an active `.venv`. Run `mod generate` (if gitignored) and `uv sync` / `uv pip install -e ./sdk -e .`.

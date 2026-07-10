@@ -1108,9 +1108,39 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\LLMContentBlock",
+			"p": "Dagger/LLMContentBlock.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\LLMContentBlockInput",
+			"p": "Dagger/LLMContentBlockInput.html",
+			"d": "<p>A content block within an LLM message.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\LLMId",
 			"p": "Dagger/LLMId.html",
 			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\LLMMessage",
+			"p": "Dagger/LLMMessage.html",
+			"d": null,
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1131,6 +1161,16 @@
 			"n": "Dagger\\LLMTokenUsageId",
 			"p": "Dagger/LLMTokenUsageId.html",
 			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\LLMToolCall",
+			"p": "Dagger/LLMToolCall.html",
+			"d": null,
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -2060,6 +2100,24 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asLLMContentBlock",
+			"p": "Dagger/Binding.html#method_asLLMContentBlock",
+			"d": "<p>Retrieve the binding value, as type LLMContentBlock</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asLLMMessage",
+			"p": "Dagger/Binding.html#method_asLLMMessage",
+			"d": "<p>Retrieve the binding value, as type LLMMessage</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asLLMToolCall",
+			"p": "Dagger/Binding.html#method_asLLMToolCall",
+			"d": "<p>Retrieve the binding value, as type LLMToolCall</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asModule",
 			"p": "Dagger/Binding.html#method_asModule",
 			"d": "<p>Retrieve the binding value, as type Module</p>"
@@ -2474,12 +2532,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::currentEnv",
-			"p": "Dagger/Client.html#method_currentEnv",
-			"d": "<p>Returns the current environment</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Client::currentFunctionCall",
 			"p": "Dagger/Client.html#method_currentFunctionCall",
 			"d": "<p>The FunctionCall context that the SDK caller is currently executing in.</p>"
@@ -2489,6 +2541,12 @@
 			"n": "Dagger\\Client::currentModule",
 			"p": "Dagger/Client.html#method_currentModule",
 			"d": "<p>The module currently being served in the session, if any.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentNode",
+			"p": "Dagger/Client.html#method_currentNode",
+			"d": "<p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p>"
 		},
 		{
 			"t": "M",
@@ -2519,12 +2577,6 @@
 			"n": "Dagger\\Client::engine",
 			"p": "Dagger/Client.html#method_engine",
 			"d": "<p>The Dagger engine container configuration and state</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Client::env",
-			"p": "Dagger/Client.html#method_env",
-			"d": "<p>Initializes a new environment</p>"
 		},
 		{
 			"t": "M",
@@ -4196,6 +4248,42 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withLLMContentBlockInput",
+			"p": "Dagger/Env.html#method_withLLMContentBlockInput",
+			"d": "<p>Create or update a binding of type LLMContentBlock in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withLLMContentBlockOutput",
+			"p": "Dagger/Env.html#method_withLLMContentBlockOutput",
+			"d": "<p>Declare a desired LLMContentBlock output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withLLMMessageInput",
+			"p": "Dagger/Env.html#method_withLLMMessageInput",
+			"d": "<p>Create or update a binding of type LLMMessage in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withLLMMessageOutput",
+			"p": "Dagger/Env.html#method_withLLMMessageOutput",
+			"d": "<p>Declare a desired LLMMessage output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withLLMToolCallInput",
+			"p": "Dagger/Env.html#method_withLLMToolCallInput",
+			"d": "<p>Create or update a binding of type LLMToolCall in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withLLMToolCallOutput",
+			"p": "Dagger/Env.html#method_withLLMToolCallOutput",
+			"d": "<p>Declare a desired LLMToolCall output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withMainModule",
 			"p": "Dagger/Env.html#method_withMainModule",
 			"d": "<p>Sets the main module for this environment (the project being worked on)</p>"
@@ -5420,15 +5508,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::bindResult",
-			"p": "Dagger/LLM.html#method_bindResult",
-			"d": "<p>returns the type of the current state</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\LLM::env",
-			"p": "Dagger/LLM.html#method_env",
-			"d": "<p>return the LLM's current environment</p>"
+			"n": "Dagger\\LLM::contextTokens",
+			"p": "Dagger/LLM.html#method_contextTokens",
+			"d": "<p>estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session</p>"
 		},
 		{
 			"t": "M",
@@ -5468,6 +5550,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::messages",
+			"p": "Dagger/LLM.html#method_messages",
+			"d": "<p>The full message history.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::model",
 			"p": "Dagger/LLM.html#method_model",
 			"d": "<p>return the model used by the llm</p>"
@@ -5477,6 +5565,18 @@
 			"n": "Dagger\\LLM::provider",
 			"p": "Dagger/LLM.html#method_provider",
 			"d": "<p>return the provider used by the llm</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::replay",
+			"p": "Dagger/LLM.html#method_replay",
+			"d": "<p>Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::serializeHistory",
+			"p": "Dagger/LLM.html#method_serializeHistory",
+			"d": "<p>return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)</p>"
 		},
 		{
 			"t": "M",
@@ -5504,21 +5604,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::withBlockedFunction",
-			"p": "Dagger/LLM.html#method_withBlockedFunction",
-			"d": "<p>Return a new LLM with the specified function no longer exposed as a tool</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\LLM::withEnv",
-			"p": "Dagger/LLM.html#method_withEnv",
-			"d": "<p>allow the LLM to interact with an environment via MCP</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\LLM::withMCPServer",
 			"p": "Dagger/LLM.html#method_withMCPServer",
 			"d": "<p>Add an external MCP server to the LLM</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withMaxTokens",
+			"p": "Dagger/LLM.html#method_withMaxTokens",
+			"d": "<p>Set the maximum number of output tokens the model may generate per API call</p>"
 		},
 		{
 			"t": "M",
@@ -5540,15 +5634,39 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::withStaticTools",
-			"p": "Dagger/LLM.html#method_withStaticTools",
-			"d": "<p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p>"
+			"n": "Dagger\\LLM::withResponse",
+			"p": "Dagger/LLM.html#method_withResponse",
+			"d": "<p>Append an assistant response to the message history</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\LLM::withSystemPrompt",
 			"p": "Dagger/LLM.html#method_withSystemPrompt",
 			"d": "<p>Add a system prompt to the LLM's environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withToolCall",
+			"p": "Dagger/LLM.html#method_withToolCall",
+			"d": "<p>Append a tool call to the last assistant message</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withToolResponse",
+			"p": "Dagger/LLM.html#method_withToolResponse",
+			"d": "<p>Append a tool response to the message history</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withTools",
+			"p": "Dagger/LLM.html#method_withTools",
+			"d": "<p>Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withWorkspace",
+			"p": "Dagger/LLM.html#method_withWorkspace",
+			"d": "<p>Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -5567,6 +5685,78 @@
 			"n": "Dagger\\LLM::withoutSystemPrompts",
 			"p": "Dagger/LLM.html#method_withoutSystemPrompts",
 			"d": "<p>Clear the system prompts, leaving only the default system prompt</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::workspace",
+			"p": "Dagger/LLM.html#method_workspace",
+			"d": "<p>Return the workspace the LLM is bound to.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMContentBlock::arguments",
+			"p": "Dagger/LLMContentBlock.html#method_arguments",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMContentBlock::callId",
+			"p": "Dagger/LLMContentBlock.html#method_callId",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMContentBlock::errored",
+			"p": "Dagger/LLMContentBlock.html#method_errored",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMContentBlock::id",
+			"p": "Dagger/LLMContentBlock.html#method_id",
+			"d": "<p>A unique identifier for this LLMContentBlock.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMContentBlock::kind",
+			"p": "Dagger/LLMContentBlock.html#method_kind",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMContentBlock::text",
+			"p": "Dagger/LLMContentBlock.html#method_text",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMContentBlock::toolName",
+			"p": "Dagger/LLMContentBlock.html#method_toolName",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMContentBlockInput::__construct",
+			"p": "Dagger/LLMContentBlockInput.html#method___construct",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessage::content",
+			"p": "Dagger/LLMMessage.html#method_content",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessage::id",
+			"p": "Dagger/LLMMessage.html#method_id",
+			"d": "<p>A unique identifier for this LLMMessage.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMMessage::role",
+			"p": "Dagger/LLMMessage.html#method_role",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -5603,6 +5793,12 @@
 			"n": "Dagger\\LLMTokenUsage::totalTokens",
 			"p": "Dagger/LLMTokenUsage.html#method_totalTokens",
 			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMToolCall::id",
+			"p": "Dagger/LLMToolCall.html#method_id",
+			"d": "<p>A unique identifier for this LLMToolCall.</p>"
 		},
 		{
 			"t": "M",

@@ -6,7 +6,7 @@ description: "The dagger.toml workspace configuration file schema."
 
 # Workspace configuration
 
-A workspace is configured by a `dagger.toml` file. It records the modules installed in the workspace, their settings, and any per-environment overrides. Unlike a module's [`dagger-module.toml`](./modules.mdx), `dagger.toml` is the consumer side: it's what `dagger check`, `dagger generate`, `dagger up`, and `dagger api call` load.
+A workspace is configured by a `dagger.toml` file. It records the modules installed in the workspace, their settings, and any per-environment overrides. Unlike a module's [`dagger-module.toml`](./modules.mdx), `dagger.toml` is the consumer side: it's what `dagger check`, `dagger generate`, `dagger up`, and `dagger call` load.
 
 For more information, refer to the [schema for the Dagger workspace configuration file](https://docs.dagger.io/reference/dagger-workspace.schema.json).
 
@@ -41,7 +41,7 @@ dagger settings                              # list every module's settings
 dagger settings eslint packageManager yarn   # set one
 ```
 
-`dagger settings <module> <key> <value>` is a typed front-end over the config file — it writes `modules.<module>.settings.<key>`. List values can be passed as a JSON array (`dagger settings eslint paths '["src","lib"]'`) or a comma-separated string (`src,lib`); both are stored as a TOML array. `dagger workspace config <key> <value>` is the lower-level key/value interface to the same file.
+`dagger settings <module> <key> <value>` is a typed front-end over the config file — it writes `modules.<module>.settings.<key>`. For values it can't express on the command line (such as lists), edit `dagger.toml` directly. `dagger workspace config <key> <value>` is the lower-level key/value interface to the same file.
 
 ### Skipping functions for a verb
 
@@ -75,4 +75,4 @@ Write overlays with `dagger settings --env <name> <module> <key> <value>` (or `d
 
 ## Lockfile
 
-Resolved runtime lookups, such as container image references and Git references, are recorded in `dagger.lock` alongside the config. Module loading follows the same runtime lookup policy and does not add a separate `modules.resolve` entry. Refresh the lock with `dagger update` or `dagger lock update`. See [Lockfiles](../cli/lockfiles.mdx) for lock modes and policies.
+Resolved runtime lookups, such as container image references and Git references, are recorded in `dagger.lock` alongside the config. Module loading follows the same runtime lookup policy and does not add a separate `modules.resolve` entry. Refresh the lock with `dagger workspace update` or `dagger lock update`. See [Lockfiles](../cli/lockfiles.mdx) for lock modes and policies.

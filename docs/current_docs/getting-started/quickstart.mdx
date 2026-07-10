@@ -38,13 +38,13 @@ git checkout -b add-dagger-checks
 
 ## Setup your workspace
 
-`dagger setup` walks through a few prompts: logging in to Dagger Cloud, migrating any legacy configuration (not needed here), and installing recommended modules based on a scan of your project.
+Scans your project and recommends suitable Dagger modules to be installed.
 
 ```shell
 dagger setup
 ```
 
-Log in to Dagger Cloud when prompted — you'll use it later to enable automatic checks — and select `Install` to install the recommended modules.
+Select `Install` when prompted to install the recommended modules.
 This creates a `dagger.toml` configuration file and adds three modules: a linter, a test runner, and a code formatter.
 
 ## Run checks
@@ -63,7 +63,7 @@ Let Prettier rewrite the files for you:
 dagger api call prettier write
 ```
 
-This returns a [changeset](../using-dagger/changesets.mdx) — the reformatted files — and offers to apply it to your working tree; confirm to apply it. Run the checks again:
+This returns a [changeset](../using-dagger/changesets.mdx) — the reformatted files — and applies it to your working tree. Run the checks again:
 
 ```shell
 dagger check
@@ -84,7 +84,7 @@ git push -u origin add-dagger-checks
 Dagger can infer the GitHub repository from your local checkout:
 
 ```shell
-dagger workspace remote
+dagger ws remote
 ```
 
 Enable automatic checks for that repository:

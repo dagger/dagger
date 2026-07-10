@@ -360,7 +360,7 @@ For example, to mirror the default Docker Hub `docker.io` registry to `mirror.gc
 To test the configuration:
 
 ```shell
-dagger -M api call --progress=plain container \
+dagger -M call --progress=plain container \
   from --address=hello-world \
   with-exec --args=/hello \
   stdout
@@ -403,7 +403,7 @@ The configuration can be repeated for multiple registries and mirrors if needed:
 To test the configuration:
 
 ```shell
-dagger -M api call --progress=plain container \
+dagger -M call --progress=plain container \
   from --address=hello-world \
   with-exec --args=/hello \
   stdout

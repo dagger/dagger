@@ -276,7 +276,7 @@ If you require more in-depth testing, you can still create a dedicated test modu
 
 ## Test function signature
 
-Since test functions are ordinary Dagger functions, you can return any value that's allowed. While this approach works fine when running a test with `dagger api call`, there are scenarios where a single return value isn't sufficient. For example, you might need to handle multiple output objects, wait for asynchronous operations, manage errors, or (in some languages) provide additional context.
+Since test functions are ordinary Dagger functions, you can return any value that's allowed. While this approach works fine when running a test with `dagger call`, there are scenarios where a single return value isn't sufficient. For example, you might need to handle multiple output objects, wait for asynchronous operations, manage errors, or (in some languages) provide additional context.
 
 Another challenge arises when you have multiple test functions with parameters, as you must remember to call each test function with the correct arguments.
 
@@ -447,7 +447,7 @@ export class Tests {
 </TabItem>
 </Tabs>
 
-You can now run all tests for the module using `dagger api call -m tests all`.
+You can now run all tests for the module using `dagger call -m tests all`.
 
 :::tip
 Adopting a standard test function signature greatly simplifies both kinds of `all` functions.

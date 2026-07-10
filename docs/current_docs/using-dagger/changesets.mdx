@@ -8,7 +8,7 @@ description: "Review and apply changes that Dagger proposes to your working tree
 
 Some commands don't just report a result — they propose changes to your files. A code generator produces new source, an autofixing linter rewrites formatting. Dagger returns these as a **changeset**: a diff you can review before anything touches your working tree.
 
-Changesets come from **generators** (run by `dagger generate`) and from functions written to return one — a formatter's `fix`, for example, called with `dagger api call`. A `check` never produces a changeset; it only validates. `dagger check` *can* verify that a generator's output is already up to date, but it never applies a fix itself.
+Changesets come from **generators** (run by `dagger generate`) and from functions written to return one — a formatter's `fix`, for example, called with `dagger call`. A `check` never produces a changeset; it only validates. `dagger check` *can* verify that a generator's output is already up to date, but it never applies a fix itself.
 
 ## Review and apply
 
