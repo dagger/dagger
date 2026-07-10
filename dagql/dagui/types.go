@@ -327,15 +327,27 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 		return expanded
 	}
 
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[row.Span.ID]; ok {
+		verbosity = v
+	}
+
 	autoExpand := row.Depth() < 1 && row.IsRunningOrChildRunning
 
 	alwaysExpand := row.Span.IsCanceled() ||
-		opts.Verbosity >= ExpandCompletedVerbosity ||
+		verbosity >= ExpandCompletedVerbosity ||
 		opts.ExpandCompleted
 
-	// never expand tool calls by default, tends to show a bunch of guts that
-	// distracts from the overall history
-	neverExpand := row.Span.LLMTool != "" || row.Span.RollUpLogs || row.Span.RollUpSpans
+	// Tool calls and rolled-up spans hide their guts by default -- they tend to
+	// show a bunch of internals that distract from the overall history. But at a
+	// high enough verbosity (the same threshold that expands completed spans)
+	// the user is explicitly asking to see everything, so let it punch through
+	// the rollup boundary -- e.g. 'dagger trace --span <toolcall> -vvvvv' to
+	// inspect a slow tool call's full call tree. ExpandCompleted alone does not
+	// punch through: it keeps completed spans open but still respects rollup
+	// boundaries.
+	neverExpand := (row.Span.LLMTool != "" || row.Span.RollUpLogs || row.Span.RollUpSpans) &&
+		verbosity < ExpandCompletedVerbosity
 
 	return (autoExpand || alwaysExpand) && !neverExpand
 }
