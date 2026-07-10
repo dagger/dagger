@@ -110,6 +110,17 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	}
 
 	if ws.HostPath() != "" {
+		// Host overlay edits to the config live only in the changeset's delta
+		// side (host overlays store no full read root — see overlayEdit);
+		// untouched configs read straight from the host file below.
+		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok && ws.OverlayPathTouched(configFile) {
+			data, err := core.DirectoryReadFile(ctx, deltaRoot, configFile)
+			if err != nil {
+				return nil, fmt.Errorf("reading config: %w", err)
+			}
+			return data, nil
+		}
+
 		ctx, err = withWorkspaceClientContext(ctx, ws)
 		if err != nil {
 			return nil, err

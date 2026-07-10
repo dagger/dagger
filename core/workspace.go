@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
+	"strings"
 
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -105,8 +107,17 @@ type WorkspaceSourceGitRef struct {
 func (*WorkspaceSourceGitRef) workspaceSource() {}
 
 type WorkspaceSourceOverlay struct {
-	Base    WorkspaceSource
-	Changes dagql.ObjectResult[*Changeset]
+	Base WorkspaceSource
+	// TouchedPaths is the cumulative set of workspace-relative paths the
+	// overlay's edits affect. Set only for host-backed (client-local) overlays,
+	// where it sizes the sparse diff base: Changes.After is the accumulated
+	// edits applied to an empty base (the delta root — it never references the
+	// host tree) and Changes.Before is host.directory including only these
+	// paths, so forcing the changeset syncs just the touched files instead of
+	// uploading the whole workspace. Value/git/rootless overlays leave this nil
+	// and diff full in-engine trees (nothing to upload).
+	TouchedPaths []string
+	Changes      dagql.ObjectResult[*Changeset]
 }
 
 func (*WorkspaceSourceOverlay) workspaceSource() {}
@@ -137,14 +148,18 @@ func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef]) WorkspaceSource {
 
 func NewWorkspaceSourceOverlay(
 	base WorkspaceSource,
+	touchedPaths []string,
 	changes dagql.ObjectResult[*Changeset],
 ) WorkspaceSource {
 	if overlay, ok := base.(*WorkspaceSourceOverlay); ok {
 		base = overlay.Base
 	}
+	// The caller accumulates TouchedPaths (union with the parent overlay's)
+	// before constructing, so they are already cumulative here.
 	return &WorkspaceSourceOverlay{
-		Base:    base,
-		Changes: changes,
+		Base:         base,
+		TouchedPaths: touchedPaths,
+		Changes:      changes,
 	}
 }
 
@@ -182,6 +197,13 @@ func (ws *Workspace) SourceDirectory() (dagql.ObjectResult[*Directory], bool) {
 			return ws.rootfs, true
 		}
 	case *WorkspaceSourceOverlay:
+		if _, local := src.Base.(*WorkspaceSourceClientLocal); local {
+			// Host-backed overlays store no full tree: Changes.After is the
+			// edits applied to an empty base (sparse), not host + edits.
+			// Reads resolve per-call against the host instead (see
+			// schema.resolveHostOverlayRootfs).
+			return dagql.ObjectResult[*Directory]{}, false
+		}
 		if changes := src.Changes.Self(); changes != nil && changes.After.Self() != nil {
 			return changes.After, true
 		}
@@ -215,6 +237,60 @@ func (ws *Workspace) OverlayChanges() (dagql.ObjectResult[*Changeset], bool) {
 		return dagql.ObjectResult[*Changeset]{}, false
 	}
 	return overlay.Changes, true
+}
+
+// ClientLocalBase reports whether the workspace's base source is the client's
+// local git-rooted host directory. False for rootless local workspaces (which
+// also carry a host path but must not read through it) and for value/git
+// workspaces.
+func (ws *Workspace) ClientLocalBase() bool {
+	if ws == nil {
+		return false
+	}
+	_, ok := ws.BaseSource().(*WorkspaceSourceClientLocal)
+	return ok
+}
+
+// OverlayDeltaRoot returns a host-backed overlay's accumulated edits applied to
+// an empty base — the changeset's After side, which never references the host
+// tree — or false if this workspace has no such overlay (a pristine workspace,
+// or a value/git/rootless overlay whose After is a full tree).
+func (ws *Workspace) OverlayDeltaRoot() (dagql.ObjectResult[*Directory], bool) {
+	if !ws.ClientLocalBase() {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	overlay, ok := ws.Source().(*WorkspaceSourceOverlay)
+	if !ok {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	changes := overlay.Changes.Self()
+	if changes == nil || changes.After.Self() == nil {
+		return dagql.ObjectResult[*Directory]{}, false
+	}
+	return changes.After, true
+}
+
+// OverlayTouchedPaths returns the cumulative set of workspace-relative paths the
+// overlay's edits affect, used to size the sparse diff base.
+func (ws *Workspace) OverlayTouchedPaths() []string {
+	overlay, ok := ws.Source().(*WorkspaceSourceOverlay)
+	if !ok {
+		return nil
+	}
+	return overlay.TouchedPaths
+}
+
+// OverlayPathTouched reports whether the overlay's edits affect the given
+// workspace-relative path, either directly or via a touched parent directory.
+func (ws *Workspace) OverlayPathTouched(p string) bool {
+	p = path.Clean(filepath.ToSlash(p))
+	for _, touched := range ws.OverlayTouchedPaths() {
+		touched = path.Clean(filepath.ToSlash(touched))
+		if p == touched || strings.HasPrefix(p, touched+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (ws *Workspace) BaseSource() WorkspaceSource {
@@ -346,6 +422,7 @@ type persistedWorkspaceSource struct {
 	RootResultID   uint64                    `json:"rootResultID,omitempty"`
 	GitRefResultID uint64                    `json:"gitRefResultID,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
+	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
 	HostPath       string                    `json:"hostPath,omitempty"`
 	Base           *persistedWorkspaceSource `json:"base,omitempty"`
 }
@@ -395,6 +472,7 @@ func encodePersistedWorkspaceSource(cache dagql.PersistedObjectCache, src Worksp
 			}
 			payload.Base = base
 		}
+		payload.TouchedPaths = src.TouchedPaths
 		if src.Changes.Self() != nil {
 			changesID, err := encodePersistedObjectRef(cache, src.Changes, "workspace overlay changes")
 			if err != nil {
@@ -458,7 +536,7 @@ func decodePersistedWorkspaceSource(
 				return nil, err
 			}
 		}
-		return NewWorkspaceSourceOverlay(base, changes), nil
+		return NewWorkspaceSourceOverlay(base, persisted.TouchedPaths, changes), nil
 	default:
 		return nil, fmt.Errorf("decode persisted workspace source: unsupported source kind %q", persisted.Kind)
 	}

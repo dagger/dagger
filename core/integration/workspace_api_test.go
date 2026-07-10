@@ -328,6 +328,65 @@ func (WorkspaceAPISuite) TestHostWorkspaceOverlayAndExport(ctx context.Context, 
 	require.Equal(t, "staged", string(got))
 }
 
+// TestHostWorkspaceSparseOverlayDiff verifies that editing an existing host file
+// through the overlay reports it as modified (not added) and exports correctly.
+// The overlay diffs against a sparse base (only the touched paths are synced from
+// the host, never the whole tree), so the touched file's host version must be
+// present for the diff to classify the edit as a modification; a broken sparse
+// base would misreport the edit as an addition.
+func (WorkspaceAPISuite) TestHostWorkspaceSparseOverlayDiff(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "existing.txt"), []byte("one\ntwo\nthree\n"), 0o644))
+
+	queryPath := writeQueryDoc(t, workdir, "sparse-modify.graphql", `{
+  currentWorkspace {
+    withNewFile(path: "existing.txt", contents: "one\nCHANGED\nthree\n") {
+      withNewFile(path: "brand-new.txt", contents: "new") {
+        changes {
+          addedPaths
+          modifiedPaths
+        }
+      }
+    }
+  }
+}
+`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"currentWorkspace": {
+			"withNewFile": {
+				"withNewFile": {
+					"changes": {
+						"addedPaths": ["brand-new.txt"],
+						"modifiedPaths": ["existing.txt"]
+					}
+				}
+			}
+		}
+	}`, string(out))
+
+	// The host tree is untouched until export.
+	sparseGot, err := os.ReadFile(filepath.Join(workdir, "existing.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "one\ntwo\nthree\n", string(sparseGot))
+
+	exportQueryPath := writeQueryDoc(t, workdir, "sparse-export.graphql", `{
+  currentWorkspace {
+    withNewFile(path: "existing.txt", contents: "one\nCHANGED\nthree\n") {
+      export
+    }
+  }
+}
+`)
+	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", exportQueryPath)
+	require.NoError(t, err)
+	sparseGot, err = os.ReadFile(filepath.Join(workdir, "existing.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "one\nCHANGED\nthree\n", string(sparseGot))
+}
+
 func (WorkspaceAPISuite) TestHostWorkspaceExportFromGitWorktree(ctx context.Context, t *testctx.T) {
 	tmp := t.TempDir()
 	repoDir := filepath.Join(tmp, "repo")
@@ -822,4 +881,175 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsChain(ctx context
 			require.JSONEq(t, tc.wantOutput, string(got))
 		})
 	}
+}
+
+// TestHostWorkspaceOverlayReads verifies reads through a host overlay: the
+// overlay stores no full read root (materializing one would upload the whole
+// host tree — the perf half is checked by tracing Host.directory for a missing
+// include filter), so reads resolve as a sparse host slice with the overlay
+// changeset applied on top. Untouched paths must serve host content, edited and
+// created paths the overlay content, and removed paths must not resurface from
+// the host.
+func (WorkspaceAPISuite) TestHostWorkspaceOverlayReads(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "untouched.txt"), []byte("host"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "edited.txt"), []byte("before"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "doomed.txt"), []byte("doomed"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "notes.md"), []byte("# notes"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(workdir, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "sub", "inner.txt"), []byte("inner"), 0o644))
+
+	c := connect(ctx, t, dagger.WithWorkdir(workdir))
+
+	// A changeset that modifies edited.txt and removes doomed.txt.
+	baseDir := c.Directory().
+		WithNewFile("edited.txt", "before").
+		WithNewFile("doomed.txt", "doomed")
+	changedDir := c.Directory().WithNewFile("edited.txt", "after")
+	changesID, err := changedDir.Changes(baseDir).ID(ctx)
+	require.NoError(t, err)
+
+	// All reads go through the same overlay: changeset applied, plus files
+	// created directly (one at the root, one in a new directory for glob).
+	const overlayPrefix = `query OverlayReads($changes: ID!) {
+		currentWorkspace {
+			withChanges(changes: $changes) {
+				withNewFile(path: "created.txt", contents: "created") {
+					withNewFile(path: "docs/new.md", contents: "new doc") {
+	`
+	const overlaySuffix = `
+					}
+				}
+			}
+		}
+	}`
+	overlayQuery := func(body string) (map[string]any, error) {
+		out, err := testutil.QueryWithClient[map[string]any](c, t, overlayPrefix+body+overlaySuffix, &testutil.QueryOptions{
+			Variables: map[string]any{"changes": changesID},
+		})
+		if err != nil {
+			return nil, err
+		}
+		result := *out
+		for _, key := range []string{"currentWorkspace", "withChanges", "withNewFile", "withNewFile"} {
+			result = result[key].(map[string]any)
+		}
+		return result, nil
+	}
+
+	t.Run("untouched file serves host content", func(ctx context.Context, t *testctx.T) {
+		got, err := overlayQuery(`untouched: file(path: "untouched.txt") { contents }`)
+		require.NoError(t, err)
+		require.Equal(t, "host", got["untouched"].(map[string]any)["contents"])
+	})
+
+	t.Run("edited and created files serve overlay content", func(ctx context.Context, t *testctx.T) {
+		got, err := overlayQuery(`
+			edited: file(path: "edited.txt") { contents }
+			created: file(path: "created.txt") { contents }
+		`)
+		require.NoError(t, err)
+		require.Equal(t, "after", got["edited"].(map[string]any)["contents"])
+		require.Equal(t, "created", got["created"].(map[string]any)["contents"])
+	})
+
+	t.Run("removed file does not resurface from the host", func(ctx context.Context, t *testctx.T) {
+		_, err := overlayQuery(`doomed: file(path: "doomed.txt") { contents }`)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "doomed.txt")
+	})
+
+	t.Run("filtered listing merges host and overlay", func(ctx context.Context, t *testctx.T) {
+		got, err := overlayQuery(`listing: directory(path: ".", include: ["*.txt"]) { entries }`)
+		require.NoError(t, err)
+		require.ElementsMatch(t,
+			[]any{"created.txt", "edited.txt", "untouched.txt"},
+			got["listing"].(map[string]any)["entries"],
+		)
+	})
+
+	t.Run("untouched subdirectory reads from host", func(ctx context.Context, t *testctx.T) {
+		got, err := overlayQuery(`
+			sub: directory(path: "sub") { entries }
+			inner: file(path: "sub/inner.txt") { contents }
+		`)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []any{"inner.txt"}, got["sub"].(map[string]any)["entries"])
+		require.Equal(t, "inner", got["inner"].(map[string]any)["contents"])
+	})
+
+	t.Run("glob includes span host and overlay", func(ctx context.Context, t *testctx.T) {
+		got, err := overlayQuery(`markdown: directory(path: ".", include: ["**/*.md"]) { glob(pattern: "**/*.md") }`)
+		require.NoError(t, err)
+		require.ElementsMatch(t,
+			[]any{"notes.md", "docs/new.md"},
+			got["markdown"].(map[string]any)["glob"],
+		)
+	})
+}
+
+// TestWorkspaceConfigBuildersAfterUnrelatedEdit verifies that config builders
+// still read the host's dagger.toml through an overlay whose edits don't touch
+// it (host overlays store no full read root, so config reads dispatch on the
+// touched-paths set), and that subsequent builder writes accumulate through the
+// overlay's delta.
+func (WorkspaceAPISuite) TestWorkspaceConfigBuildersAfterUnrelatedEdit(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte("[modules.existing]\nsource = \"./existing\"\n"), 0o644))
+
+	queryPath := writeQueryDoc(t, workdir, "config-after-edit.graphql", `{
+  currentWorkspace {
+    withNewFile(path: "unrelated.txt", contents: "x") {
+      withConfigValue(key: "modules.demo.source", value: "./demo") {
+        withConfigEnv(name: "dev") {
+          changes {
+            addedPaths
+            modifiedPaths
+          }
+          file(path: "dagger.toml") {
+            contents
+          }
+        }
+      }
+    }
+  }
+}
+`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			WithNewFile struct {
+				WithConfigValue struct {
+					WithConfigEnv struct {
+						Changes struct {
+							AddedPaths    []string `json:"addedPaths"`
+							ModifiedPaths []string `json:"modifiedPaths"`
+						} `json:"changes"`
+						File struct {
+							Contents string `json:"contents"`
+						} `json:"file"`
+					} `json:"withConfigEnv"`
+				} `json:"withConfigValue"`
+			} `json:"withNewFile"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal(out, &got))
+	staged := got.CurrentWorkspace.WithNewFile.WithConfigValue.WithConfigEnv
+	require.Equal(t, []string{"unrelated.txt"}, staged.Changes.AddedPaths)
+	require.Equal(t, []string{"dagger.toml"}, staged.Changes.ModifiedPaths)
+	// Host config content survives (the first builder read the untouched host
+	// file), and both builder writes are present (the second read the staged
+	// overlay copy).
+	require.Contains(t, staged.File.Contents, `[modules.existing]`)
+	require.Contains(t, staged.File.Contents, `[modules.demo]`)
+	require.Contains(t, staged.File.Contents, `[env.dev]`)
+
+	// The host tree stays untouched until export.
+	hostConfig, err := os.ReadFile(filepath.Join(workdir, "dagger.toml"))
+	require.NoError(t, err)
+	require.NotContains(t, string(hostConfig), "demo")
 }

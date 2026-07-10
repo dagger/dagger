@@ -99,29 +99,32 @@ func (s *workspaceSchema) stageWorkspaceConfigAndLock(
 	data []byte,
 	lock *workspaceOverlayLock,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	root, err := s.workspaceOverlayRootfs(ctx, parent.Self())
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	updated, err := workspaceWithFile(ctx, dag, root, filepath.ToSlash(staged.ConfigFile), data)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("stage workspace config update: %w", err)
 	}
 	lockPath, lockData, lockChanged, err := lock.updatedFile()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	configPath := filepath.ToSlash(staged.ConfigFile)
+	touched := []string{configPath}
 	if lockChanged {
-		updated, err = workspaceWithFile(ctx, dag, updated, filepath.ToSlash(lockPath), lockData)
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("stage workspace lock update: %w", err)
-		}
+		touched = append(touched, filepath.ToSlash(lockPath))
 	}
-	return s.overlayWorkspaceWithMutation(ctx, parent, updated, func(ws *core.Workspace) {
+	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		updated, err := workspaceWithFile(ctx, dag, base, configPath, data)
+		if err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace config update: %w", err)
+		}
+		if lockChanged {
+			updated, err = workspaceWithFile(ctx, dag, updated, filepath.ToSlash(lockPath), lockData)
+			if err != nil {
+				return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace lock update: %w", err)
+			}
+		}
+		return updated, nil
+	}, func(ws *core.Workspace) {
 		setWorkspaceConfigSelection(ws, staged.ConfigDir)
 	})
 }
@@ -303,27 +306,31 @@ func (s *workspaceSchema) withoutModule(
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	root, err := s.workspaceOverlayRootfs(ctx, parent.Self())
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	updatedRoot, err := workspaceWithFile(ctx, dag, root, filepath.ToSlash(staged.ConfigFile), updatedConfig)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("stage workspace config update: %w", err)
-	}
+	configPath := filepath.ToSlash(staged.ConfigFile)
+	managedDirPath := path.Clean(filepath.ToSlash(managedModulePath))
+	touched := []string{configPath}
 	if removeManagedModuleDir {
-		updatedRoot, err = workspaceMigrationSelectDirectory(ctx, updatedRoot, "withoutDirectory", []dagql.NamedInput{
-			{Name: "path", Value: dagql.String(path.Clean(filepath.ToSlash(managedModulePath)))},
-		})
-		if err != nil {
-			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("stage workspace directory removal %q: %w", managedModulePath, err)
-		}
+		touched = append(touched, managedDirPath)
 	}
-	return s.overlayWorkspaceWithMutation(ctx, parent, updatedRoot, func(ws *core.Workspace) {
+	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		updatedRoot, err := workspaceWithFile(ctx, dag, base, configPath, updatedConfig)
+		if err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace config update: %w", err)
+		}
+		if removeManagedModuleDir {
+			updatedRoot, err = workspaceMigrationSelectDirectory(ctx, updatedRoot, "withoutDirectory", []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(managedDirPath)},
+			})
+			if err != nil {
+				return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("stage workspace directory removal %q: %w", managedModulePath, err)
+			}
+		}
+		return updatedRoot, nil
+	}, func(ws *core.Workspace) {
 		setWorkspaceConfigSelection(ws, staged.ConfigDir)
 	})
 }
@@ -344,10 +351,6 @@ func (s *workspaceSchema) workspaceWithChangeset(
 	if changes.Self() == nil {
 		return parent, nil
 	}
-	root, err := s.workspaceOverlayRootfs(ctx, parent.Self())
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
 	changesID, err := changes.ID()
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -356,16 +359,20 @@ func (s *workspaceSchema) workspaceWithChangeset(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	var updated dagql.ObjectResult[*core.Directory]
-	if err := srv.Select(ctx, root, &updated, dagql.Selector{
-		Field: "withChanges",
-		Args: []dagql.NamedInput{
-			{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)},
-		},
-	}); err != nil {
+	touched, err := changesetTouchedPaths(ctx, changes.Self())
+	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	return s.overlayWorkspace(ctx, parent, updated)
+	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var updated dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, base, &updated, dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)},
+			},
+		})
+		return updated, err
+	}, nil)
 }
 
 func (s *workspaceSchema) withInitModule(
