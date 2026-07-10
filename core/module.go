@@ -326,6 +326,18 @@ func (mod *Module) ApplyWorkspaceDefaultsToTypeDefs(ctx context.Context, dag *da
 					b := userInput == "true"
 					marshaled, _ := json.Marshal(b)
 					jsonValue = JSON(marshaled)
+				case TypeDefKindList:
+					// Mirror UserDefaultPrimitive.Value: JSON arrays pass through,
+					// plain strings are comma-split.
+					if trimmed := strings.TrimSpace(userInput); strings.HasPrefix(trimmed, "[") && json.Valid([]byte(trimmed)) {
+						jsonValue = JSON(trimmed)
+					} else {
+						marshaled, err := json.Marshal(strings.Split(userInput, ","))
+						if err != nil {
+							continue
+						}
+						jsonValue = JSON(marshaled)
+					}
 				default:
 					if json.Valid([]byte(userInput)) {
 						jsonValue = JSON(userInput)

@@ -38,7 +38,7 @@ Use this checklist when asked to regenerate generated files.
 
 1. Run generation and redirect all output to the temp file:
 
-- `dagger --progress=plain call generate layer export --path . >"$tmp_log" 2>&1`
+- `dagger call generate layer export --path . >"$tmp_log" 2>&1`
 
 1. Search the temp file as needed instead of printing full output.
 

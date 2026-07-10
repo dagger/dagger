@@ -39,13 +39,13 @@ its `init` function:
 
 ```shell
 dagger install github.com/dagger/typescript-sdk
-dagger call typescript-sdk init --name=my-module
+dagger api call typescript-sdk init --name=my-module
 ```
 
 `init` returns a [changeset](../../using-dagger/changesets.mdx) describing the files to
 create — which Dagger shows you to review before anything is written to disk.
 
-`init` arguments (from `dagger call typescript-sdk init --help`):
+`init` arguments (from `dagger api call typescript-sdk init --help`):
 
 | Argument | Required | Description |
 |---|---|---|
@@ -157,7 +157,7 @@ class MyModule {
 Call it like any other module:
 
 ```shell
-dagger -m ./my-module call build --src=.
+dagger -m ./my-module api call build --src=.
 ```
 
 Key points:
@@ -300,7 +300,7 @@ the Dagger type system (see [Type System](../type-system/index.mdx)):
 
 Use JSDoc comments. The comment above a method is the function description; the
 comment above a parameter is the argument description. Both appear in
-`dagger functions` and `dagger call --help`.
+`dagger api functions` and `dagger api call --help`.
 
 ```typescript
 @object()
@@ -342,8 +342,8 @@ greet(name = "world"): string {
 ```
 
 ```shell
-dagger call greet            # Hello, world!
-dagger call greet --name=Sam # Hello, Sam!
+dagger api call greet            # Hello, world!
+dagger api call greet --name=Sam # Hello, Sam!
 ```
 
 ### Nullability
@@ -507,10 +507,10 @@ async deploy(token: Secret): Promise<string> {
 Callers supply secrets through providers:
 
 ```shell
-dagger call deploy --token=env:DEPLOY_TOKEN
-dagger call deploy --token=file:./token.txt
-dagger call deploy --token=cmd:"gh auth token"
-dagger call deploy --token=op://vault/item/field
+dagger api call deploy --token=env:DEPLOY_TOKEN
+dagger api call deploy --token=file:./token.txt
+dagger api call deploy --token=cmd:"gh auth token"
+dagger api call deploy --token=op://vault/item/field
 ```
 
 ### Services
@@ -561,16 +561,16 @@ Dependencies are declared in `dagger-module.toml` and managed with the SDK modul
 
 ```shell
 # List current dependencies
-dagger call typescript-sdk mod deps list
+dagger api call typescript-sdk mod deps list
 
 # Add a dependency
-dagger call typescript-sdk mod deps add --source=github.com/dagger/dagger/modules/go
+dagger api call typescript-sdk mod deps add --source=github.com/dagger/dagger/modules/go
 
 # Update one dependency, or all remote dependencies
-dagger call typescript-sdk mod deps update --help
+dagger api call typescript-sdk mod deps update --help
 
 # Remove a dependency by name or source
-dagger call typescript-sdk mod deps remove --help
+dagger api call typescript-sdk mod deps remove --help
 ```
 
 `mod deps add` arguments: `--source` (required, the module reference) and
@@ -616,7 +616,7 @@ you add or update a dependency, or bump the engine version. Use the SDK module's
 `mod generate`, which returns a changeset:
 
 ```shell
-dagger call typescript-sdk mod generate
+dagger api call typescript-sdk mod generate
 ```
 
 If the generate skip marker is present in the module (or an ancestor), the
@@ -648,14 +648,14 @@ with `mod engine`:
 
 ```shell
 # Show the required version (without leading "v")
-dagger call typescript-sdk mod engine required
+dagger api call typescript-sdk mod engine required
 
 # Pin to a specific version
-dagger call typescript-sdk mod engine require --help
+dagger api call typescript-sdk mod engine require --help
 
 # Pin to the current engine, or the latest stable release
-dagger call typescript-sdk mod engine require-current
-dagger call typescript-sdk mod engine require-latest
+dagger api call typescript-sdk mod engine require-current
+dagger api call typescript-sdk mod engine require-latest
 ```
 
 After changing the engine version, regenerate bindings (`mod generate`) so the
@@ -849,7 +849,7 @@ The primary way to test a module is to call its functions and run its checks:
 
 ```shell
 # Smoke test — does it build?
-dagger -m ./my-module call build --src=.
+dagger -m ./my-module api call build --src=.
 
 # Run all checks
 dagger check

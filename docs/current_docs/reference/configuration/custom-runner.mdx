@@ -26,7 +26,7 @@ The consolidated steps to use a custom runner are:
   registry. If no changes are needed, just use it as is.
 - Start the runner image in your target of choice, [requirements](#execution-requirements) and [configuration](#configuration) in mind.
 - Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with a [value pointing to your target](#connection-interface).
-- Call `dagger call` or execute SDK code directly with that environment variable set.
+- Run `dagger api call` or execute SDK code directly with that environment variable set.
 
 :::important
 The `_EXPERIMENTAL_DAGGER_RUNNER_HOST` variable is experimental and may change in future.
@@ -99,7 +99,7 @@ The sections below provide instructions for the local host and for cloud infrast
 Use the following commands to deploy a GPU-enabled Dagger runner on the local host:
 
 ```shell
-VERSION=$(dagger version | cut -d' ' -f2)
+VERSION=$(dagger version | awk '/^version:/{print $2}')
 docker rm -f dagger-engine-${VERSION} 2>/dev/null && docker run --gpus all -d --privileged -e _EXPERIMENTAL_DAGGER_GPU_SUPPORT=true --name dagger-engine-${VERSION} registry.dagger.io/engine:${VERSION}-gpu -- --debug
 ```
 
@@ -112,7 +112,7 @@ Use the following commands to deploy a GPU-enabled Dagger runner on Fly.io:
 ```shell
 export FLYIO_TOKEN=YOUR-FLY.IO-TOKEN
 export FLYIO_ORG=YOUR-FLY.IO-ORG-NAME
-dagger -m github.com/samalba/dagger-modules/nvidia-gpu call deploy-dagger-on-fly --token env://FLYIO_TOKEN --org env://FLYIO_ORG
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu api call deploy-dagger-on-fly --token env://FLYIO_TOKEN --org env://FLYIO_ORG
 ```
 
 :::note
@@ -132,7 +132,7 @@ To stop using the remote Dagger Engine on Fly.io and return to using your local 
 ```shell
 unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
 # Make sure the Fly app name matches the one that was provisioned earlier
-dagger -m github.com/samalba/dagger-modules/nvidia-gpu call destroy-dagger-on-fly --token env://FLYIO_TOKEN --app dagger-v0-14-0-smart-gerhard-2024-12-06
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu api call destroy-dagger-on-fly --token env://FLYIO_TOKEN --app dagger-v0-14-0-smart-gerhard-2024-12-06
 ```
 
 </TabItem>
@@ -142,7 +142,7 @@ Lambda Labs provides traditional virtual machines with a GPU attached.
 Use the following commands to deploy a GPU-enabled Dagger runner on a Lambda Labs virtual machine:
 
 ```shell
-VERSION=$(dagger version | cut -d' ' -f2)
+VERSION=$(dagger version | awk '/^version:/{print $2}')
 docker rm -f dagger-engine-${VERSION} 2>/dev/null && docker run --gpus all -d --privileged -e _EXPERIMENTAL_DAGGER_GPU_SUPPORT=true --name dagger-engine-${VERSION} registry.dagger.io/engine:${VERSION}-gpu -- --debug
 ```
 
@@ -156,7 +156,7 @@ The default user `ubuntu` does not have access to the Docker socket. Fix this wi
 Once your GPU-enabled Dagger runner is configured, use the following Dagger Function to test if Dagger has access to the GPU:
 
 ```shell
-dagger -m github.com/samalba/dagger-modules/nvidia-gpu call has-gpu
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu api call has-gpu
 ```
 
 If the GPU is properly configured, this Dagger Function returns `true`.
@@ -164,7 +164,7 @@ If the GPU is properly configured, this Dagger Function returns `true`.
 Here's a more complex Dagger Function:
 
 ```shell
-dagger -m github.com/samalba/dagger-modules/nvidia-gpu call ollama-run --prompt "What color is the sky?"
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu api call ollama-run --prompt "What color is the sky?"
 ```
 
 This Dagger Function sets up an Ollama server, pulls a model, and prompts it with a question. It returns the response query from the prompt passed as argument.
