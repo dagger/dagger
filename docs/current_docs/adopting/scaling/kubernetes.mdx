@@ -193,7 +193,7 @@ export _EXPERIMENTAL_DAGGER_RUNNER_HOST
 Finally, run an operation that shows the kernel info of the Kubernetes node where this Dagger Engine runs:
 
 ```shell
-dagger query <<EOF
+dagger api query <<EOF
 {
     container {
         from(address:"alpine") {

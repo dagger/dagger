@@ -440,6 +440,54 @@ region = "us-west-2"
 	})
 }
 
+// TestWorkspaceSettingsListValues locks in how list settings reach a module's
+// constructor: TOML arrays deliver their elements as-is, comma-separated
+// strings split into elements, and JSON-array writes through `dagger settings`
+// round-trip to the same list.
+func (WorkspaceSuite) TestWorkspaceSettingsListValues(ctx context.Context, t *testctx.T) {
+	const vitestConfig = `[modules.vitest]
+source = "modules/vitest"
+entrypoint = true
+
+[modules.vitest.settings]
+failFast = false
+retries = 0
+`
+
+	t.Run("TOML array settings deliver their elements to the constructor", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig+`tags = ["smoke", "regression"]
+`, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "tags", "--json")
+		require.NoError(t, err)
+		require.JSONEq(t, `["smoke", "regression"]`, strings.TrimSpace(string(out)))
+	})
+
+	t.Run("comma-separated string settings deliver the same list", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig+`tags = "smoke,regression"
+`, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "tags", "--json")
+		require.NoError(t, err)
+		require.JSONEq(t, `["smoke", "regression"]`, strings.TrimSpace(string(out)))
+	})
+
+	t.Run("JSON array writes round-trip through settings to the constructor", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "tags", `["!docs","!integration"]`)
+		require.NoError(t, err)
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.vitest.settings.tags")
+		require.NoError(t, err)
+		require.Equal(t, "[!docs, !integration]", strings.TrimSpace(string(out)))
+
+		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "tags", "--json")
+		require.NoError(t, err)
+		require.JSONEq(t, `["!docs", "!integration"]`, strings.TrimSpace(string(out)))
+	})
+}
+
 // TestWorkspaceSettingsRemoteWorkspace covers settings discovery against a
 // remote workspace selected with -W: local module sources must resolve from
 // the cloned workspace tree instead of requiring a host path.

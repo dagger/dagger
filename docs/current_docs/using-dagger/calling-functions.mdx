@@ -9,10 +9,8 @@ description: "Call module functions directly and chain them into pipelines"
 `dagger check`, `dagger generate`, and `dagger up` are conveniences built on top of the underlying primitive: calling a module's functions. When you need something those verbs don't cover, call functions directly.
 
 ```shell
-dagger call jest test
+dagger api call jest test
 ```
-
-`dagger call` is a top-level shortcut for `dagger api call`.
 
 ## Discover functions
 
@@ -31,7 +29,7 @@ dagger api functions jest
 Every function and its arguments are also visible through `--help`:
 
 ```shell
-dagger call jest --help
+dagger api call jest --help
 ```
 
 ## Pass arguments
@@ -39,13 +37,13 @@ dagger call jest --help
 Arguments are flags on the function that accepts them:
 
 ```shell
-dagger call jest --package-manager=yarn test
+dagger api call jest --package-manager=yarn test
 ```
 
 Secrets are passed the same way, via provider URIs — see [Secrets](../adopting/secrets.mdx):
 
 ```shell
-dagger call deploy --token=env:DEPLOY_TOKEN
+dagger api call deploy --token=env:DEPLOY_TOKEN
 ```
 
 ## Chain functions
@@ -53,7 +51,7 @@ dagger call deploy --token=env:DEPLOY_TOKEN
 Functions interconnect into a pipeline. Each function returns an object, and the next function is called on that result:
 
 ```shell
-dagger -m core call container \
+dagger -m core api call container \
   from --address=alpine \
   with-exec --args=echo,hello \
   stdout
@@ -64,11 +62,11 @@ dagger -m core call container \
 By default the result is printed to your terminal. Format it as JSON:
 
 ```shell
-dagger call jest test --json
+dagger api call jest test --json
 ```
 
 Or save a returned file or directory to the host:
 
 ```shell
-dagger call build --output=./dist
+dagger api call build --output=./dist
 ```
