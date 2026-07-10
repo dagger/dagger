@@ -196,7 +196,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return this workspace with a configuration value written.").
 			Args(
 				dagql.Arg("key").Doc("Dotted key path."),
-				dagql.Arg("value").Doc("Value to set."),
+				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
+				dagql.Arg("values").Doc("List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.NodeFunc("withoutConfigValue", s.withoutConfigValue).

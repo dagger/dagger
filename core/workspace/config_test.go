@@ -428,34 +428,14 @@ func TestWriteConfigValue(t *testing.T) {
 		require.Equal(t, "cmd/ci.go", cfg.Env["ci"].Modules["greeter"].Settings["entrypoint"])
 	})
 
-	t.Run("writes JSON array values as native arrays", func(t *testing.T) {
-		t.Parallel()
-
-		data, err := WriteConfigValue(nil, "modules.greeter.settings.lint", `["!docs","!x"]`)
-		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.settings.counts", `[1, 2]`)
-		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.settings.flags", `[true, false]`)
-		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.settings.ratios", `[0.5, 1.5]`)
-		require.NoError(t, err)
-
-		cfg, err := ParseConfig(data)
-		require.NoError(t, err)
-		require.Equal(t, map[string]any{
-			"lint":   []any{"!docs", "!x"},
-			"counts": []any{int64(1), int64(2)},
-			"flags":  []any{true, false},
-			"ratios": []any{0.5, 1.5},
-		}, cfg.Modules["greeter"].Settings)
-	})
-
-	t.Run("bracketed non-JSON values keep string handling", func(t *testing.T) {
+	t.Run("bracketed values keep string handling instead of JSON parsing", func(t *testing.T) {
 		t.Parallel()
 
 		data, err := WriteConfigValue(nil, "modules.greeter.settings.glob", `[abc]*`)
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.settings.globs", `[a]*,[b]*`)
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "modules.greeter.settings.lint", `["!docs","!x"]`)
 		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
@@ -463,7 +443,29 @@ func TestWriteConfigValue(t *testing.T) {
 		require.Equal(t, map[string]any{
 			"glob":  "[abc]*",
 			"globs": []any{"[a]*", "[b]*"},
+			"lint":  []any{`["!docs"`, `"!x"]`},
 		}, cfg.Modules["greeter"].Settings)
+	})
+
+	t.Run("WriteConfigValues stores elements verbatim as native arrays", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValues(nil, "modules.greeter.settings.lint", []string{"!docs", "!x"})
+		require.NoError(t, err)
+		data, err = WriteConfigValues(data, "modules.greeter.settings.tags", []string{"a,b", `["c"]`, "", "true", "42"})
+		require.NoError(t, err)
+		data, err = WriteConfigValues(data, "env.ci.modules.greeter.settings.lint", []string{"ci-only"})
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{
+			"lint": []any{"!docs", "!x"},
+			"tags": []any{"a,b", `["c"]`, "", "true", "42"},
+		}, cfg.Modules["greeter"].Settings)
+		require.Equal(t, map[string]any{
+			"lint": []any{"ci-only"},
+		}, cfg.Env["ci"].Modules["greeter"].Settings)
 	})
 
 	t.Run("writes module skip fields", func(t *testing.T) {

@@ -1,9 +1,7 @@
 package workspace
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -632,6 +630,21 @@ func readMissingConfigDefault(tree *toml.Tree, parts []string) (string, bool) {
 
 // WriteConfigValue writes a typed value to config TOML at the given dotted key.
 func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte, error) {
+	return writeConfigValueAtKey(existingData, key, func(parts []string) any {
+		return parseValueString(parts, rawValue)
+	})
+}
+
+// WriteConfigValues writes a string-array value to config TOML at the given
+// dotted key. Elements are stored verbatim, with no comma-splitting or type
+// auto-detection.
+func WriteConfigValues(existingData []byte, key string, values []string) ([]byte, error) {
+	return writeConfigValueAtKey(existingData, key, func([]string) any {
+		return values
+	})
+}
+
+func writeConfigValueAtKey(existingData []byte, key string, valueFor func(parts []string) any) ([]byte, error) {
 	if key == "" {
 		return nil, fmt.Errorf("key is required for writing")
 	}
@@ -651,8 +664,7 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 		cfg = &Config{}
 	}
 
-	value := parseValueString(parts, rawValue)
-	if err := setConfigValue(cfg, parts, value); err != nil {
+	if err := setConfigValue(cfg, parts, valueFor(parts)); err != nil {
 		return nil, err
 	}
 
@@ -1267,9 +1279,6 @@ func parseValueString(parts []string, rawValue string) any {
 	if value, err := strconv.ParseFloat(rawValue, 64); err == nil {
 		return value
 	}
-	if values, ok := parseJSONArrayValue(rawValue); ok {
-		return values
-	}
 	if strings.Contains(rawValue, ",") {
 		items := strings.Split(rawValue, ",")
 		values := make([]string, len(items))
@@ -1280,39 +1289,4 @@ func parseValueString(parts []string, rawValue string) any {
 	}
 
 	return rawValue
-}
-
-// parseJSONArrayValue parses a JSON array of scalars into TOML-typed values.
-// Non-JSON values (e.g. glob patterns like "[abc]*") report false so callers
-// fall back to plain string handling.
-func parseJSONArrayValue(rawValue string) ([]any, bool) {
-	trimmed := strings.TrimSpace(rawValue)
-	if !strings.HasPrefix(trimmed, "[") {
-		return nil, false
-	}
-	dec := json.NewDecoder(strings.NewReader(trimmed))
-	dec.UseNumber()
-	var values []any
-	if err := dec.Decode(&values); err != nil {
-		return nil, false
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return nil, false
-	}
-	for i, item := range values {
-		switch v := item.(type) {
-		case string, bool:
-		case json.Number:
-			if n, err := strconv.ParseInt(v.String(), 10, 64); err == nil {
-				values[i] = n
-			} else if f, err := v.Float64(); err == nil {
-				values[i] = f
-			} else {
-				return nil, false
-			}
-		default:
-			return nil, false
-		}
-	}
-	return values, true
 }
