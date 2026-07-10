@@ -56,7 +56,7 @@ func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*M
 	return nil
 }
 
-func (ms *mockServer) EnsureWorkspaceModules(context.Context, []string) error {
+func (ms *mockServer) EnsureWorkspaceModules(context.Context, []string, bool) error {
 	return nil
 }
 
