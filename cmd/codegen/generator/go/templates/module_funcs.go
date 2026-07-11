@@ -73,6 +73,17 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		}
 	}
 
+	if v, ok := docPragmas["agent"]; ok {
+		if v == nil {
+			spec.isAgent = true
+		} else {
+			spec.isAgent, ok = v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("agent pragma %q, must be a valid boolean", v)
+			}
+		}
+	}
+
 	if v, ok := docPragmas["deprecated"]; ok {
 		if v == nil {
 			spec.deprecated = nil
@@ -155,6 +166,7 @@ type funcTypeSpec struct {
 	isCheck     bool
 	isGenerator bool
 	isUp        bool
+	isAgent     bool
 
 	argSpecs []paramSpec
 
@@ -219,6 +231,9 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	}
 	if spec.isUp {
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithUp").Call()
+	}
+	if spec.isAgent {
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithAgent").Call()
 	}
 
 	for _, argSpec := range spec.argSpecs {
