@@ -277,6 +277,11 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
+		dagql.Func("agents", s.agents).
+			Doc("Return all agent middlewares from modules loaded in the workspace.").
+			Args(
+				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
+			),
 		migrateField,
 	}.Install(srv)
 
@@ -2107,6 +2112,56 @@ func (s *workspaceSchema) services(
 	}
 
 	return &core.UpGroup{Ups: allUps}, nil
+}
+
+func (s *workspaceSchema) agents(
+	ctx context.Context,
+	parent *core.Workspace,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.AgentGroup, error) {
+	if isSyntheticWorkspace(parent) {
+		return &core.AgentGroup{}, nil
+	}
+
+	include := workspaceIncludePatterns(args.Include)
+
+	ctx, err := s.withWorkspaceClientContext(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+		return nil, err
+	}
+	mods, err := currentWorkspacePrimaryModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var allAgents []*core.Agent
+	for _, mod := range mods {
+		agentGroup, err := core.NewAgentGroup(ctx, mod, nil)
+		if err != nil {
+			return nil, fmt.Errorf("agents from module %q: %w", mod.Self().Name(), err)
+		}
+		reparentWorkspaceTreeRoot(agentGroup.Node, mod.Self().Name())
+		filtered, err := filterNodesByInclude(
+			ctx,
+			agentGroup.Agents,
+			include,
+			func(agent *core.Agent) *core.ModTreeNode { return agent.Node },
+			func(agent *core.Agent) string { return agent.Name() },
+			"agent",
+		)
+		if err != nil {
+			return nil, err
+		}
+		allAgents = append(allAgents, filtered...)
+	}
+
+	return &core.AgentGroup{Agents: allAgents}, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {

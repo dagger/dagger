@@ -142,6 +142,43 @@ func (m *MCP) loadObjectTools(_ context.Context, srv *dagql.Server, allTools *LL
 	return nil
 }
 
+// ToolNameCollisions reports, per tool name, the bound-object type names that
+// each contribute a tool of that name — but only for names contributed by more
+// than one bound object. On such a collision the last withTools binding wins
+// (loadObjectTools order); the report lets callers warn about the shadowing when
+// composing several agents' toolsets onto one LLM (hack/designs/workspace-agents.md §3).
+func (m *MCP) ToolNameCollisions(ctx context.Context) (map[string][]string, error) {
+	srv, err := m.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	schema := srv.Schema()
+
+	m.mu.Lock()
+	bindings := slices.Clone(m.boundTools)
+	m.mu.Unlock()
+
+	contributors := map[string][]string{}
+	for _, b := range bindings {
+		tools, err := m.toolsForBoundObject(srv, schema, b)
+		if err != nil {
+			return nil, err
+		}
+		typeName := b.Object.Type().Name()
+		for _, t := range tools {
+			contributors[t.Name] = append(contributors[t.Name], typeName)
+		}
+	}
+
+	collisions := map[string][]string{}
+	for name, types := range contributors {
+		if len(types) > 1 {
+			collisions[name] = types
+		}
+	}
+	return collisions, nil
+}
+
 // toolsForBoundObject generates the tools for a single bound object: one per
 // eligible field of its schema type.
 func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b boundTool) ([]LLMTool, error) {
@@ -191,6 +228,12 @@ func objectToolEligible(field *ast.FieldDefinition, except []string) bool {
 		return false
 	}
 	if field.Directives.ForName("deprecated") != nil {
+		return false
+	}
+	// An @agent method is the composition entrypoint (base: LLM!): LLM!; it is
+	// never itself a tool, so hide it without requiring authors to add it to
+	// `except` by hand.
+	if field.Directives.ForName("agent") != nil {
 		return false
 	}
 	for _, arg := range field.Arguments {

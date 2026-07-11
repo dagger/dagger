@@ -45,6 +45,9 @@ type Function struct {
 	// IsUp indicates whether this function returns a service to be started with `dagger up`
 	IsUp bool
 
+	// IsAgent indicates whether this function is an agent middleware (base: LLM!): LLM!
+	IsAgent bool
+
 	// OriginalName of the parent object
 	ParentOriginalName string
 
@@ -174,6 +177,11 @@ func (fn *Function) Directives() []*ast.Directive {
 	if fn.IsUp {
 		directives = append(directives, &ast.Directive{
 			Name: "up",
+		})
+	}
+	if fn.IsAgent {
+		directives = append(directives, &ast.Directive{
+			Name: "agent",
 		})
 	}
 	hasNonDefaultCachePolicy := (fn.CachePolicy != "" && fn.CachePolicy != FunctionCachePolicyDefault)
@@ -366,6 +374,12 @@ func (fn *Function) WithGenerator() *Function {
 func (fn *Function) WithUp() *Function {
 	fn = fn.Clone()
 	fn.IsUp = true
+	return fn
+}
+
+func (fn *Function) WithAgent() *Function {
+	fn = fn.Clone()
+	fn.IsAgent = true
 	return fn
 }
 
@@ -2691,6 +2705,7 @@ type persistedFunction struct {
 	IsCheck            bool                `json:"isCheck,omitempty"`
 	IsGenerator        bool                `json:"isGenerator,omitempty"`
 	IsUp               bool                `json:"isUp,omitempty"`
+	IsAgent            bool                `json:"isAgent,omitempty"`
 	ParentOriginalName string              `json:"parentOriginalName,omitempty"`
 	OriginalName       string              `json:"originalName,omitempty"`
 }
@@ -2867,6 +2882,7 @@ func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*p
 		IsCheck:            fn.IsCheck,
 		IsGenerator:        fn.IsGenerator,
 		IsUp:               fn.IsUp,
+		IsAgent:            fn.IsAgent,
 		ParentOriginalName: fn.ParentOriginalName,
 		OriginalName:       fn.OriginalName,
 	}
@@ -2915,6 +2931,7 @@ func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persist
 		IsCheck:            fn.IsCheck,
 		IsGenerator:        fn.IsGenerator,
 		IsUp:               fn.IsUp,
+		IsAgent:            fn.IsAgent,
 		ParentOriginalName: fn.ParentOriginalName,
 		OriginalName:       fn.OriginalName,
 	}
