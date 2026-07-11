@@ -155,6 +155,14 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		},
 	},
 	{
+		Name:        "agent",
+		Description: dagql.FormatDescription(`Indicates that this function is an agent middleware, composed by dagger agent.`),
+		Args:        dagql.NewInputSpecs(), // none
+		Locations: []dagql.DirectiveLocation{
+			dagql.DirectiveLocationFieldDefinition,
+		},
+	},
+	{
 		Name:        "cache",
 		Description: dagql.FormatDescription(`Controls the caching behavior of a function.`),
 		Args: dagql.NewInputSpecs(
@@ -474,6 +482,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withUp", s.functionWithUp).
 			Doc(`Returns the function with a flag indicating it returns a service for dagger up.`),
+
+		dagql.Func("withAgent", s.functionWithAgent).
+			Doc(`Returns the function with a flag indicating it is an agent middleware.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
@@ -1590,6 +1601,10 @@ func (s *moduleSchema) functionAsConstructor(ctx context.Context, fn *core.Funct
 
 func (s *moduleSchema) functionWithUp(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
 	return fn.WithUp(), nil
+}
+
+func (s *moduleSchema) functionWithAgent(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithAgent(), nil
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
