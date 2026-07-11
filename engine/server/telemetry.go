@@ -415,10 +415,7 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 func (ps clientSpans) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientSpans) Shutdown(context.Context) error       { return nil }
 
-func (ps *PubSub) Logs(client *daggerClient) interface {
-	sdklog.Exporter
-	sdklog.Processor
-} {
+func (ps *PubSub) Logs(client *daggerClient) sdklog.Exporter {
 	return clientLogs{
 		client: client,
 	}
@@ -426,23 +423,6 @@ func (ps *PubSub) Logs(client *daggerClient) interface {
 
 type clientLogs struct {
 	client *daggerClient
-}
-
-var _ sdklog.Processor = clientLogs{}
-
-func (ps clientLogs) OnEmit(ctx context.Context, rec *sdklog.Record) error {
-	insert, err := insertLogRecordParam(rec)
-	if err != nil {
-		return fmt.Errorf("prepare log record %v: %w", rec, err)
-	}
-
-	db, err := ps.client.TelemetryDB(ctx)
-	if err != nil {
-		return fmt.Errorf("get telemetry db: %w", err)
-	}
-	defer db.Close()
-	_, err = db.InsertLog(ctx, *insert)
-	return err
 }
 
 var _ sdklog.Exporter = clientLogs{}
@@ -475,9 +455,8 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	return nil
 }
 
-func (ps clientLogs) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }
-func (ps clientLogs) ForceFlush(ctx context.Context) error                   { return nil }
-func (ps clientLogs) Shutdown(context.Context) error                         { return nil }
+func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
+func (ps clientLogs) Shutdown(context.Context) error       { return nil }
 
 func insertLogRecordParam(rec *sdklog.Record) (*clientdb.InsertLogParams, error) {
 	traceID := rec.TraceID().String()
