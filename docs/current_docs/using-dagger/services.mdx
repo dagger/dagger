@@ -36,6 +36,33 @@ Service containers have three key properties:
 - **Just-in-time lifecycle.** Services start when first needed, are de-duplicated if multiple clients request the same service, and stop when no longer referenced.
 - **Health checks.** Services are health-checked before clients can connect. No race conditions between service startup and test execution.
 
+## Wiring a service into another module
+
+Generic modules can compose through workspace settings: if a module's constructor accepts an optional `Service`, you can wire another module's service into it with a plain **module reference** — no glue module required.
+
+For example, a `docusaurus` module knows how to serve a documentation site, and a `playwright` module knows how to run browser tests against any web app it's given. Connect them in `dagger.toml`:
+
+```toml
+[modules.docusaurus]
+source = "github.com/example/docusaurus@v1.0"
+
+[modules.playwright]
+source = "github.com/example/playwright@v1.0"
+
+[modules.playwright.settings]
+app = "docusaurus:serve"
+```
+
+The setting is just a `<module>:<function>` string: the leading segment is a module's install name — the `[modules.X]` key in the same `dagger.toml` — and the rest names a zero-arg function on it. Any function returning a matching type works; the value it returns is injected. For a service, `dagger up -l` is a convenient place to discover and copy a service's path, but the path is valid because it resolves to a `Service`, not because the function is listed there. When `playwright` is constructed, Dagger resolves the reference and passes the service as the `app` argument.
+
+This also works for `Container` constructor arguments: point the setting at any module function that returns a `Container`, for example to share a common base image across modules.
+
+Because a module reference is an ordinary address string, the same value works as a CLI flag — no `dagger.toml` entry required:
+
+```shell
+dagger call playwright --app=docusaurus:serve test
+```
+
 ## Container-to-host networking
 
 A service defined in a module can be exposed to your local machine:
