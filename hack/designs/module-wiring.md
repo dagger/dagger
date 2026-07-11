@@ -296,6 +296,25 @@ This is precisely why the present design leaves *two* syntactic spaces unclaimed
   and the `sites[docs]` bracket-collection syntax were dropped: both squatted on space
   the coordinate design needs.)
 
+Within the table space, one carve-out is reserved now: **table keys beginning with
+`_` are directives, never dimensions**. Dimension names derive from type names, which
+never start with `_`, so the two can coexist without collision. The first planned
+directive is `_from`, the explicit reference form for settings whose type can also
+hold a literal (`String`, `Int`, `Bool`, …), where a bare value must always mean the
+literal:
+
+```toml
+[modules.go.settings]
+goVersion = "1.26.0"                        # literal, always
+goVersion = { _from = "monorepo:goVersion" }  # explicit reference (future)
+```
+
+`_from` is also planned to work on object-typed settings as an explicit alias for
+the bare string form, so one spelling works everywhere and the bare string is sugar
+where it is unambiguous. Note there is no commit-on-match for literal-capable
+settings at all: installing a module can never change the meaning of a bare literal
+value.
+
 ### Today's `"foo:bar"` reinterpreted forward
 
 Today's `"<module>:<function>"` string is read forward as the `<type>:<field>`
