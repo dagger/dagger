@@ -761,7 +761,15 @@ func (srv *Server) initializeDaggerClient(
 	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		sdklog.WithProcessor(logs),
+		// NOTE: a synchronous processor here would do one SQLite write per
+		// record on the emitting goroutine; with enough concurrent emitters
+		// they all pile up on the DB's write lock (each busy-waiting in a
+		// syscall that pins an OS thread), which can exhaust the runtime's
+		// thread limit.
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(
+			logs,
+			sdklog.WithExportInterval(telemetry.NearlyImmediate),
+		)),
 	}
 
 	const metricReaderInterval = 5 * time.Second
@@ -783,7 +791,10 @@ func (srv *Server) initializeDaggerClient(
 			),
 		))
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			clientLogs{client: parent},
+			sdklog.NewBatchProcessor(
+				srv.telemetryPubSub.Logs(parent),
+				sdklog.WithExportInterval(telemetry.NearlyImmediate),
+			),
 		))
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
