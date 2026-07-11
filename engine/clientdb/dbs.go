@@ -99,6 +99,12 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 		if err != nil {
 			return nil, fmt.Errorf("open %s: %w", connURL, err)
 		}
+		// SQLite allows only one writer at a time, and modernc.org/sqlite's
+		// busy handler waits by sleeping in a raw nanosleep syscall, which
+		// pins an OS thread per waiting connection. Cap the pool at a single
+		// connection so concurrent queries queue cheaply in database/sql
+		// instead of busy-waiting against each other in SQLite.
+		sqlDB.SetMaxOpenConns(1)
 		if err := sqlDB.Ping(); err != nil {
 			return nil, fmt.Errorf("ping %s: %w", connURL, err)
 		}
