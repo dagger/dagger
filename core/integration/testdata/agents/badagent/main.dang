@@ -1,0 +1,7 @@
+"""A deliberately malformed agent module (extra required arg) for validation tests."""
+type Badagent {
+  """@agent with an extra required arg, which the contract forbids."""
+  agent(base: LLM!, extra: String!): LLM! @agent {
+    base.withSystemPrompt(extra)
+  }
+}
