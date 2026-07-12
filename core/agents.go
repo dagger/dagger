@@ -20,6 +20,15 @@ type Agent struct {
 type AgentGroup struct {
 	Node   *ModTreeNode `json:"node"`
 	Agents []*Agent     `json:"agents"`
+
+	// BoundWorkspace is the Workspace this group was rolled up from — the one
+	// `Workspace.agents` was called on, including any overlay edits. Compose
+	// threads it into the context (WorkspaceToContext) so each @agent leaf's
+	// auto-injected Workspace! (and any currentWorkspace read, e.g. a project-
+	// context scan) resolves against it, rather than the session's frozen current
+	// workspace. Transient (not persisted): it is re-established when `agents`
+	// re-runs on replay.
+	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
 func NewAgentGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*AgentGroup, error) {
@@ -59,6 +68,13 @@ func (r *AgentGroup) List() []*Agent {
 // Each leaf is invoked with base explicitly set to the running accumulator; the
 // composed LLM's ID records the full chain and replays deterministically.
 func (r *AgentGroup) Compose(ctx context.Context, base dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+	// Compose the agents against the workspace this group was rolled up from, so
+	// each @agent leaf's auto-injected Workspace! and any currentWorkspace read
+	// resolve against BoundWorkspace, not the frozen session workspace.
+	if r.BoundWorkspace.Self() != nil {
+		ctx = WorkspaceToContext(ctx, r.BoundWorkspace)
+	}
+
 	acc := base
 	for _, agent := range r.Agents {
 		next, err := agent.Node.RunAgent(ctx, acc)

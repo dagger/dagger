@@ -256,7 +256,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Current location within the workspace root.",
 				`The workspace root is returned as "/".`,
 				"Relative paths in workspace APIs resolve from here."),
-		dagql.Func("checks", s.checks).
+		dagql.NodeFunc("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
@@ -267,17 +267,17 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions").
 					View(AfterVersion("v0.21.4")),
 			),
-		dagql.Func("generators", s.generators).
+		dagql.NodeFunc("generators", s.generators).
 			Doc("Return all generators from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include generators matching the specified patterns"),
 			),
-		dagql.Func("services", s.services).
+		dagql.NodeFunc("services", s.services).
 			Doc("Return all services from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
-		dagql.Func("agents", s.agents).
+		dagql.NodeFunc("agents", s.agents).
 			Doc("Return all agent middlewares from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
@@ -420,6 +420,15 @@ func (s *workspaceSchema) currentWorkspace(
 	parent dagql.ObjectResult[*core.Query],
 	_ struct{},
 ) (inst dagql.ObjectResult[*core.Workspace], _ error) {
+	// Prefer a Workspace explicitly bound into the context (an LLM operating on
+	// its own, possibly overlaid, Workspace; a generator/check group threading
+	// the workspace it was rolled up from) over the session's frozen current
+	// workspace, so module tools observe edits the agent has applied. This
+	// mirrors loadWorkspaceArg's preference for the bound workspace.
+	if boundWS, ok := core.WorkspaceFromContext(ctx); ok {
+		return boundWS, nil
+	}
+
 	ws, err := parent.Self().Server.CurrentWorkspace(ctx)
 	if err != nil {
 		return inst, err
@@ -1770,7 +1779,7 @@ func isWorkspaceBasename(name string) bool {
 
 func (s *workspaceSchema) checks(
 	ctx context.Context,
-	parent *core.Workspace,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include      dagql.Optional[dagql.ArrayInput[dagql.String]]
 		Skip         dagql.Optional[dagql.ArrayInput[dagql.String]]
@@ -1778,6 +1787,7 @@ func (s *workspaceSchema) checks(
 		OnlyGenerate dagql.Optional[dagql.Boolean]
 	},
 ) (*core.CheckGroup, error) {
+	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) {
 		return &core.CheckGroup{}, nil
 	}
@@ -1863,7 +1873,7 @@ func (s *workspaceSchema) checks(
 		allChecks = append(allChecks, filtered...)
 	}
 
-	return &core.CheckGroup{Checks: allChecks}, nil
+	return &core.CheckGroup{Checks: allChecks, BoundWorkspace: parentResult}, nil
 }
 
 type workspaceGeneratorModule struct {
@@ -1898,11 +1908,12 @@ func selectVisibleGeneratorModules(entries []workspaceGeneratorModule) []workspa
 
 func (s *workspaceSchema) generators(
 	ctx context.Context,
-	parent *core.Workspace,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.GeneratorGroup, error) {
+	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) {
 		return &core.GeneratorGroup{}, nil
 	}
@@ -2018,16 +2029,17 @@ func (s *workspaceSchema) generators(
 		allGenerators = append(allGenerators, filtered...)
 	}
 
-	return &core.GeneratorGroup{Generators: allGenerators}, nil
+	return &core.GeneratorGroup{Generators: allGenerators, BoundWorkspace: parentResult}, nil
 }
 
 func (s *workspaceSchema) services(
 	ctx context.Context,
-	parent *core.Workspace,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.UpGroup, error) {
+	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) {
 		return &core.UpGroup{}, nil
 	}
@@ -2111,16 +2123,17 @@ func (s *workspaceSchema) services(
 		}
 	}
 
-	return &core.UpGroup{Ups: allUps}, nil
+	return &core.UpGroup{Ups: allUps, BoundWorkspace: parentResult}, nil
 }
 
 func (s *workspaceSchema) agents(
 	ctx context.Context,
-	parent *core.Workspace,
+	parentResult dagql.ObjectResult[*core.Workspace],
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
 	},
 ) (*core.AgentGroup, error) {
+	parent := parentResult.Self()
 	if isSyntheticWorkspace(parent) {
 		return &core.AgentGroup{}, nil
 	}
@@ -2161,7 +2174,7 @@ func (s *workspaceSchema) agents(
 		allAgents = append(allAgents, filtered...)
 	}
 
-	return &core.AgentGroup{Agents: allAgents}, nil
+	return &core.AgentGroup{Agents: allAgents, BoundWorkspace: parentResult}, nil
 }
 
 func workspaceIncludePatterns(includeArg dagql.Optional[dagql.ArrayInput[dagql.String]]) []string {
