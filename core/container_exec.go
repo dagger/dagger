@@ -2090,6 +2090,20 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
 		}
 
+		// Workspace is runtime/session context, so keep it off persisted exec state:
+		// read the caller's bound Workspace off the context (carried here by
+		// ContainerRuntime.Call) and thread it to the nested client.
+		var workspaceContext dagql.ObjectResult[*Workspace]
+		if state.FunctionCall != nil {
+			ws, ok, err := WorkspaceFromContext(ctx)
+			if err != nil {
+				return fmt.Errorf("resolve exec workspace context: %w", err)
+			}
+			if ok {
+				workspaceContext = ws
+			}
+		}
+
 		execErrCh := make(chan error, 1)
 		go func() {
 			execErrCh <- engineClient.Run(
@@ -2106,6 +2120,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				nestedClientMetadata,
 				state.ModuleContext,
 				state.FunctionCall,
+				workspaceContext,
 			)
 		}()
 

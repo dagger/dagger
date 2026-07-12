@@ -1416,7 +1416,9 @@ func (src *ModuleSource) LoadContextDir(
 	//
 	// NOTE: this applies unilaterally, whether the module was loaded from Host,
 	// Git, or a Directory.
-	if ws, ok := WorkspaceFromContext(ctx); ok {
+	if ws, ok, wsErr := WorkspaceFromContext(ctx); wsErr != nil {
+		return inst, fmt.Errorf("resolve bound workspace: %w", wsErr)
+	} else if ok {
 		inst, err = src.loadContextFromWorkspace(ctx, dag, ws, path, filterInputs)
 	} else {
 		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
