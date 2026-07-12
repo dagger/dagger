@@ -852,6 +852,7 @@ func (svc *Service) startContainer(
 			nestedClientMetadata,
 			svc.ModuleContext,
 			nil,
+			nil,
 		)
 		runErr <- err
 	}()

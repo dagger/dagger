@@ -1,0 +1,9 @@
+type Wsdep {
+  """
+  Read input.txt from this module's own auto-injected Workspace! and return it.
+  The caller does not pass a workspace; Dagger auto-injects one here.
+  """
+  readInput(ws: Workspace!): String! {
+    ws.file("input.txt").contents
+  }
+}
