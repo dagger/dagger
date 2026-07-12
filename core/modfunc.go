@@ -890,6 +890,17 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		fnCall.parentTyped = obj
 	}
 
+	// Carry the caller's bound Workspace into the nested client session that runs
+	// the function body, so a module function calling another module resolves the
+	// caller's Workspace (via the WorkspaceFromContext server-side fallback) rather
+	// than the frozen session workspace. Nil for ordinary, non-bound calls.
+	var workspaceContext dagql.ObjectResult[*Workspace]
+	if ws, ok, err := WorkspaceFromContext(ctx); err != nil {
+		return nil, fmt.Errorf("resolve function workspace context: %w", err)
+	} else if ok {
+		workspaceContext = ws
+	}
+
 	// hide all this internal plumbing making up the call
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -899,7 +910,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	err = runtime.Call(ctx, &execMD, fnCall, fn.mod)
+	err = runtime.Call(ctx, &execMD, fnCall, fn.mod, workspaceContext)
 	returned, returnedSet, returnStateErr := fnCall.returnResult()
 	if returnStateErr != nil {
 		return nil, returnStateErr
@@ -1255,7 +1266,9 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	// Prefer a Workspace explicitly bound into the context (an LLM bound via
 	// withWorkspace) over the ambient currentWorkspace, so the agent's
 	// Workspace-typed args resolve against its own workspace.
-	if boundWS, ok := WorkspaceFromContext(ctx); ok {
+	if boundWS, ok, err := WorkspaceFromContext(ctx); err != nil {
+		return nil, fmt.Errorf("resolve bound workspace: %w", err)
+	} else if ok {
 		wsID, err := boundWS.ID()
 		if err != nil {
 			return nil, fmt.Errorf("get bound workspace ID: %w", err)
