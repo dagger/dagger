@@ -206,6 +206,7 @@ type frontendPretty struct {
 	spanTrees      map[dagui.SpanID]*SpanTreeView
 	topTrees       []*SpanTreeView // top-level tree views, ordered
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
+	durationViews  map[dagui.SpanID]*DurationView
 
 	// per-span inline log components. A LogsView owns the fetch (on mount) and
 	// the render of a span's inline logs, so the expensive Vterm.View() is
@@ -320,6 +321,13 @@ type SpanTreeView struct {
 	// occurrence of a span tree. They are keyed by the status span ID because a
 	// row can also summarize running effect spans in its title.
 	statusSpinners map[dagui.SpanID]*tuist.Spinner
+
+	// durationViews are inline, self-updating duration components owned by this
+	// rendered occurrence of a span tree, keyed by span ID (a row can summarize
+	// running effect spans in its title). Like statusSpinners they are only
+	// mounted while a span is running, so their ticker keeps the elapsed
+	// duration fresh even on rows without a status spinner (e.g. LLM messages).
+	durationViews map[dagui.SpanID]*DurationView
 
 	// childrenGapPrefix is the prefix for gap lines between this node's
 	// children. It shows all ancestor bars + this node's own bar column.
@@ -582,6 +590,67 @@ func (fe *frontendPretty) getOrCreateSpanTreeInScope(spanID dagui.SpanID, scope 
 type statusIconHost interface {
 	RenderChildInline(tuist.Context, tuist.Component) string
 	spinnerForStatus(dagui.SpanID) *tuist.Spinner
+	durationForStatus(dagui.SpanID) *DurationView
+}
+
+// durationTickInterval is how often a running span's DurationView re-renders.
+// FormatDuration shows tenths of a second (%.1fs) under a minute, so ~100ms
+// keeps the ticking duration visually smooth without excess repaints.
+const durationTickInterval = 100 * time.Millisecond
+
+// DurationView is a self-updating component that renders a span's elapsed
+// activity duration. It mirrors the status spinner's lifecycle: it is only
+// mounted while the span is running, so its OnMount ticker re-renders on an
+// interval and marks itself dirty. Because Compo.Update propagates upward, each
+// tick re-runs the owning SpanTreeView's Render -- rebuilding the title line
+// with a fresh clock -- so the duration stays live.
+//
+// This is what keeps durations fresh on rows that have no status spinner to
+// drive re-renders, notably LLM message spans (renderStepTitle skips the status
+// icon for LLMRole spans), whose duration would otherwise freeze at whatever
+// time the title was last rendered.
+type DurationView struct {
+	tuist.Compo
+
+	profile termenv.Profile
+
+	// span is refreshed by the owner before each render so the view always
+	// reads the current activity/running state.
+	span *dagui.Span
+}
+
+// OnMount starts the tick loop. The goroutine is bounded by ctx.Done(), which
+// fires when the view is dismounted -- i.e. when the span stops running and the
+// owner falls back to static duration text, stopping the ticks.
+func (d *DurationView) OnMount(ctx tuist.Context) {
+	ticker := time.NewTicker(durationTickInterval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ctx.Dispatch(func() { d.Update() })
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+func (d *DurationView) Render(ctx tuist.Context) {
+	if d.span == nil {
+		ctx.Line("")
+		return
+	}
+	buf := new(strings.Builder)
+	out := NewOutput(buf, termenv.WithProfile(d.profile))
+	dur := out.String(dagui.FormatDuration(d.span.Activity.Duration(time.Now())))
+	if d.span.IsRunningOrEffectsRunning() {
+		dur = dur.Foreground(termenv.ANSIYellow)
+	} else {
+		dur = dur.Faint()
+	}
+	ctx.Line(dur.String())
 }
 
 func (fe *frontendPretty) newStatusSpinner() *tuist.Spinner {
@@ -602,6 +671,18 @@ func (fe *frontendPretty) spinnerForStatus(spanID dagui.SpanID) *tuist.Spinner {
 	return sp
 }
 
+func (fe *frontendPretty) durationForStatus(spanID dagui.SpanID) *DurationView {
+	if fe.durationViews == nil {
+		fe.durationViews = make(map[dagui.SpanID]*DurationView)
+	}
+	dv, ok := fe.durationViews[spanID]
+	if !ok {
+		dv = &DurationView{profile: fe.profile}
+		fe.durationViews[spanID] = dv
+	}
+	return dv
+}
+
 func (s *SpanTreeView) spinnerForStatus(spanID dagui.SpanID) *tuist.Spinner {
 	if s.statusSpinners == nil {
 		s.statusSpinners = make(map[dagui.SpanID]*tuist.Spinner)
@@ -613,6 +694,19 @@ func (s *SpanTreeView) spinnerForStatus(spanID dagui.SpanID) *tuist.Spinner {
 	}
 	return sp
 }
+
+func (s *SpanTreeView) durationForStatus(spanID dagui.SpanID) *DurationView {
+	if s.durationViews == nil {
+		s.durationViews = make(map[dagui.SpanID]*DurationView)
+	}
+	dv, ok := s.durationViews[spanID]
+	if !ok {
+		dv = &DurationView{profile: s.fe.profile}
+		s.durationViews[spanID] = dv
+	}
+	return dv
+}
+
 
 func (fe *frontendPretty) SetClient(client *dagger.Client) {
 	fe.dispatch(func() {
@@ -5326,7 +5420,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 	if span != nil && !abridged {
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
-		r.renderDuration(out, span, !empty)
+		fe.renderDurationDynamic(ctx, out, r, span, statusHost, !empty)
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUpSpans {
@@ -5708,6 +5802,25 @@ func (fe *frontendPretty) renderStatusIcon(ctx tuist.Context, out TermOutput, ro
 	icon, _ := fe.statusIcon(ctx, host, row.Span)
 	statusIcon := out.String(icon).Foreground(statusColor(row.Span))
 	fmt.Fprint(out, statusIcon.String())
+}
+
+// renderDurationDynamic renders a span's duration. While the span is running
+// (and outside the final, non-interactive render) it goes through a
+// self-updating DurationView child, so the duration keeps ticking even on rows
+// with no status spinner to drive re-renders -- notably LLM message spans. Once
+// the span stops running the child is no longer rendered (and so dismounts,
+// stopping its ticker) and the final duration is written as static text.
+func (fe *frontendPretty) renderDurationDynamic(ctx tuist.Context, out TermOutput, r *renderer, span *dagui.Span, host statusIconHost, space bool) {
+	if !fe.finalRender && host != nil && span.IsRunningOrEffectsRunning() {
+		if space {
+			fmt.Fprint(out, out.String(" "))
+		}
+		dv := host.durationForStatus(span.ID)
+		dv.span = span
+		fmt.Fprint(out, host.RenderChildInline(ctx, dv))
+		return
+	}
+	r.renderDuration(out, span, space)
 }
 
 func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {

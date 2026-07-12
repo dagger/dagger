@@ -31,6 +31,12 @@ Examples:
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
 `,
 	Args: cobra.ArbitraryArgs,
+	Annotations: map[string]string{
+		// Drop into the same interactive prompt mode as `dagger shell`, so keep
+		// completed conversation items in scrollback rather than GC'ing them
+		// (verbosity 0 prunes completed spans after GCThreshold).
+		showFinalProgressKey: "true",
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(
 			cmd.Context(),
