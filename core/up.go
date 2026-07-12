@@ -20,6 +20,14 @@ type Up struct {
 type UpGroup struct {
 	Node *ModTreeNode `json:"node"`
 	Ups  []*Up        `json:"ups"`
+
+	// BoundWorkspace is the Workspace this group was rolled up from — the one
+	// `Workspace.services` was called on, including any overlay edits. Run threads
+	// it into the context (WorkspaceToContext) so each service leaf's auto-injected
+	// Workspace! (and any currentWorkspace read) resolves against it, rather than
+	// the session's frozen current workspace. Transient (not persisted): it is
+	// re-established when `services` re-runs on replay.
+	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
 func NewUpGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*UpGroup, error) {
@@ -62,6 +70,14 @@ func (ug *UpGroup) List() []*Up {
 // immediately without leaving sibling goroutines hanging forever.
 func (ug *UpGroup) Run(ctx context.Context) (*UpGroup, error) {
 	ug = ug.Clone()
+
+	// Run the services against the workspace this group was rolled up from, so
+	// overlay edits applied since the session loaded are visible to each service
+	// (its auto-injected Workspace! and any currentWorkspace read resolve against
+	// BoundWorkspace, not the frozen session workspace).
+	if ug.BoundWorkspace.Self() != nil {
+		ctx = WorkspaceToContext(ctx, ug.BoundWorkspace)
+	}
 
 	if err := ug.checkPortCollisions(ctx); err != nil {
 		return nil, err

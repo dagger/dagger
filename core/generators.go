@@ -80,6 +80,14 @@ type GeneratorGroup struct {
 	// an unscoped 'dagger generate' (empty when strict, or when every module
 	// loaded). Surfaced on the API so the CLI can warn and honor --require-load.
 	LoadFailures []string `json:"loadFailures,omitempty"`
+
+	// BoundWorkspace is the Workspace this group was rolled up from — the one
+	// `Workspace.generators` was called on, including any overlay edits. Run
+	// threads it into the context (WorkspaceToContext) so each generator leaf's
+	// auto-injected Workspace! (and any currentWorkspace read) resolves against
+	// it, rather than the session's frozen current workspace. Transient (not
+	// persisted): it is re-established when `generators` re-runs on replay.
+	BoundWorkspace dagql.ObjectResult[*Workspace] `json:"-"`
 }
 
 var _ dagql.PersistedObject = (*Generator)(nil)
@@ -143,6 +151,14 @@ func (gg *GeneratorGroup) List(ctx context.Context) []*Generator {
 // Run all the generators in the group
 func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 	gg = gg.Clone()
+
+	// Run the generators against the workspace this group was rolled up from, so
+	// overlay edits applied since the session loaded are visible to each
+	// generator (its auto-injected Workspace! and any currentWorkspace read
+	// resolve against BoundWorkspace, not the frozen session workspace).
+	if gg.BoundWorkspace.Self() != nil {
+		ctx = WorkspaceToContext(ctx, gg.BoundWorkspace)
+	}
 
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, generator := range gg.Generators {
