@@ -225,6 +225,8 @@ type ModuleConfigUserFields struct {
 // the current TOML schema. They survive on this struct only for back-compat
 // reading of legacy dagger.json. Writes to current TOML omit them; writes to
 // legacy JSON preserve them (the legacy format is not being rewritten).
+// Runtime config like goprivate lives in the workspace settings namespace
+// instead (dagger.toml [modules.<name>.settings]).
 type SDK struct {
 	Source string `json:"source" toml:"source"`
 	Pin    string `json:"pin,omitempty" toml:"pin,omitempty"`

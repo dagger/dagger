@@ -123,7 +123,25 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 
 	wsCfg := compatWorkspace.WorkspaceConfig()
 	if needsProjectModuleMigration && compatWorkspace.MainModule != nil {
-		wsCfg.Modules[cfg.Name] = compatWorkspace.MainModule.Entry
+		entry := compatWorkspace.MainModule.Entry
+		// Legacy sdk.config keys the engine consumes at install time
+		// (goprivate) move into the module's workspace settings namespace;
+		// dagger-module.toml no longer carries sdk config.
+		if cfg.SDK != nil {
+			for _, name := range RuntimeSettingNamesForSDK(cfg.SDK.Source) {
+				value, ok := cfg.SDK.Config[name] //nolint:staticcheck // deprecated; migration reads legacy JSON config
+				if !ok {
+					continue
+				}
+				if entry.Settings == nil {
+					entry.Settings = map[string]any{}
+				}
+				if _, exists := entry.Settings[name]; !exists {
+					entry.Settings[name] = value
+				}
+			}
+		}
+		wsCfg.Modules[cfg.Name] = entry
 	}
 
 	// Surface the legacy module's SDK ref as a workspace module installed

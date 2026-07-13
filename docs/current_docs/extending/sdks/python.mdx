@@ -597,6 +597,17 @@ class MyModule:
 
 See [Designing for composability](../type-system/designing-for-composability.mdx).
 
+## Private git dependencies
+
+Dependencies on private git repositories over HTTPS work out of the box:
+
+```toml
+[project]
+dependencies = ["mylib @ git+https://gitlab.example.com/acme/mylib.git@v1.2.0"]
+```
+
+The install authenticates with your own git credentials — if `git clone` works on your machine, so does the dependency. Credentials are used on demand during the install and are never stored in the container or its cache.
+
 ## Regenerate bindings
 
 The generated client (the `sdk/` directory and `dagger`/`dag` types) reflects the engine API plus your dependencies. Regenerate it after changing dependencies or the required engine version. `mod generate` returns a changeset:

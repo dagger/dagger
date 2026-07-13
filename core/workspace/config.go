@@ -36,6 +36,41 @@ type PortMapping struct {
 	BackendPort    int    `json:"backendPort" toml:"backendPort"`
 }
 
+// runtimeSettingNamesBySDK maps a builtin SDK name to the module setting keys
+// consumed by that SDK's engine-side runtime install (via the module source's
+// SDK config) rather than by the module's constructor. They share the
+// [modules.<name>.settings] namespace with constructor-arg settings, so a key
+// is only reserved for the SDK that consumes it: other SDKs keep the same
+// name free for their own constructor args.
+var runtimeSettingNamesBySDK = map[string][]string{"go": {"goprivate"}}
+
+// RuntimeSettingNamesForSDK returns the runtime setting keys consumed by the
+// given SDK source ref (builtin name, optionally version-suffixed).
+func RuntimeSettingNamesForSDK(sdkSource string) []string {
+	name, _, _ := strings.Cut(sdkSource, "@")
+	return runtimeSettingNamesBySDK[name]
+}
+
+// RuntimeSettingsJSON extracts the runtime settings consumed by the given SDK
+// from a module settings map, JSON-encoded for the module source's
+// _withRuntimeSettings field. Returns "" when the SDK consumes none.
+func RuntimeSettingsJSON(sdkSource string, settings map[string]any) (string, error) {
+	runtimeSettings := map[string]any{}
+	for _, name := range RuntimeSettingNamesForSDK(sdkSource) {
+		if value, ok := settings[name]; ok {
+			runtimeSettings[name] = value
+		}
+	}
+	if len(runtimeSettings) == 0 {
+		return "", nil
+	}
+	out, err := json.Marshal(runtimeSettings)
+	if err != nil {
+		return "", fmt.Errorf("encoding runtime settings: %w", err)
+	}
+	return string(out), nil
+}
+
 // ModuleEntry represents a single module entry in the workspace config.
 type ModuleEntry struct {
 	Source            string         `json:"source" toml:"source"`

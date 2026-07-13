@@ -16,12 +16,14 @@ type NodeRuntime struct {
 	introspectionJSON *dagger.File
 	cfg               *moduleConfig
 	ctr               *dagger.Container
+	gitCredentials    *dagger.Socket
 }
 
 func NewNodeRuntime(
 	cfg *moduleConfig,
 	sdkSourceDir *dagger.Directory,
 	introspectionJSON *dagger.File,
+	gitCredentials *dagger.Socket,
 ) *NodeRuntime {
 	ctr := dag.
 		Container().
@@ -40,6 +42,7 @@ func NewNodeRuntime(
 		introspectionJSON: introspectionJSON,
 		cfg:               cfg,
 		ctr:               ctr,
+		gitCredentials:    gitCredentials,
 	}
 }
 
@@ -100,6 +103,7 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		if err != nil {
 			return err
 		}
+		runtimeWithPkgJSON.ctr = withGitCredentials(runtimeWithPkgJSON.ctr, n.gitCredentials)
 
 		pkgManager := runtimeWithPkgJSON.createPkgManagerCtr()
 
@@ -107,8 +111,13 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 			withSetupPackageManager().
 			withInstalledDependencies().
 			sync(ctx)
+		if err != nil {
+			return err
+		}
+		// user code runs in this container: scrub the credential socket
+		runtimeWithDep.ctr = withoutGitCredentials(runtimeWithDep.ctr, n.gitCredentials)
 
-		return err
+		return nil
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -146,6 +155,9 @@ func (n *NodeRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error
 	if err != nil {
 		return nil, err
 	}
+	// lock file generation resolves git dependencies too; only files are
+	// extracted from this container, so no scrub is needed
+	runtime.ctr = withGitCredentials(runtime.ctr, n.gitCredentials)
 
 	pkgManager := runtime.createPkgManagerCtr()
 

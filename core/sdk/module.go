@@ -19,6 +19,12 @@ type module struct {
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory]
 	rawConfig                map[string]any
 
+	// builtin is true when the SDK module was loaded from the engine image
+	// (loadBuiltinSDK) rather than from a git/local source. Only builtin
+	// runtimes are trusted with a git-credential socket during dependency
+	// installs.
+	builtin bool
+
 	funcs map[string]*core.Function
 }
 
@@ -33,12 +39,14 @@ func newModuleSDK(
 	sdkModMeta dagql.ObjectResult[*core.Module],
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
+	builtin bool,
 ) (*module, error) {
 	sdk := &module{
 		root:                     root,
 		mod:                      sdkModMeta,
 		optionalFullSDKSourceDir: optionalFullSDKSourceDir,
 		rawConfig:                rawConfig,
+		builtin:                  builtin,
 		funcs:                    listImplementedFunctions(sdkModMeta.Self()),
 	}
 

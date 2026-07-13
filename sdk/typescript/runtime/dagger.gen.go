@@ -218,7 +218,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
 				}
 			}
-			return (*TypescriptSdk).Codegen(&parent, ctx, modSource, introspectionJson)
+			var gitCredentials *dagger.Socket
+			if inputArgs["gitCredentials"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitCredentials"]), &gitCredentials)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitCredentials", err))
+				}
+			}
+			return (*TypescriptSdk).Codegen(&parent, ctx, modSource, introspectionJson, gitCredentials)
 		case "GenerateClient":
 			var parent TypescriptSdk
 			err = json.Unmarshal(parentJSON, &parent)
@@ -267,7 +274,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg introspectionJSON", err))
 				}
 			}
-			return (*TypescriptSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson)
+			var gitCredentials *dagger.Socket
+			if inputArgs["gitCredentials"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitCredentials"]), &gitCredentials)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitCredentials", err))
+				}
+			}
+			return (*TypescriptSdk).ModuleRuntime(&parent, ctx, modSource, introspectionJson, gitCredentials)
 		case "ModuleTypes":
 			var parent TypescriptSdk
 			err = json.Unmarshal(parentJSON, &parent)

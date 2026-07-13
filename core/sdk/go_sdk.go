@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
 )
@@ -713,7 +715,90 @@ func (sdk *goSDK) moduleDependencyConfigSelectors(ctx context.Context) ([]dagql.
 	}
 	selectors = append(selectors, setSSHAuthSelectors...)
 
-	return selectors, unsetSSHAuthSelectors, nil
+	setGitCredSelectors, unsetGitCredSelectors, err := sdk.gitCredentialSelectors(ctx, config)
+	if err != nil {
+		return nil, nil, err
+	}
+	selectors = append(selectors, setGitCredSelectors...)
+
+	return selectors, append(unsetSSHAuthSelectors, unsetGitCredSelectors...), nil
+}
+
+// goSDKGitCredentialSockPath is where the git-credential socket is mounted in
+// the dependency install container; removed before user code runs.
+const goSDKGitCredentialSockPath = "/tmp/dagger-git-credential.sock"
+
+// gitCredentialHostsFromGoPrivate derives the socket's exact-host allowlist
+// from GOPRIVATE-style patterns (e.g. "github.com/myorg/*,gitlab.example.com").
+// Patterns with a wildcard in the host component are skipped: the socket only
+// does exact-host matching.
+func gitCredentialHostsFromGoPrivate(goPrivate string) []string {
+	var hosts []string
+	for pattern := range strings.SplitSeq(goPrivate, ",") {
+		host, _, _ := strings.Cut(strings.TrimSpace(pattern), "/")
+		if host == "" {
+			continue
+		}
+		if strings.Contains(host, "*") {
+			slog.Warn("git credential forwarding skips GOPRIVATE pattern with wildcard host (exact-host allowlist only)", "pattern", strings.TrimSpace(pattern))
+			continue
+		}
+		hosts = append(hosts, host)
+	}
+	return core.NormalizeGitCredentialHosts(hosts)
+}
+
+// gitCredentialSelectors makes the host's git credential helper available to
+// the dependency install (`go mod tidy` during codegen) for the hosts named
+// by the goprivate sdk config: it mounts a git-credential socket and points
+// git at the engine-injected helper. The unset selectors scrub the socket and
+// its git config before user code runs. Known limitation: any GIT_CONFIG_*
+// env the base image sets is masked during the install and dropped by the
+// scrub (file-based git config is untouched).
+func (sdk *goSDK) gitCredentialSelectors(ctx context.Context, config goSDKConfig) (set, unset []dagql.Selector, rerr error) {
+	hosts := gitCredentialHostsFromGoPrivate(config.GoPrivate)
+	if len(hosts) == 0 {
+		return nil, nil, nil
+	}
+
+	sockID, err := mintGitCredentialSocket(ctx, sdk.root, hosts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	set = []dagql.Selector{{
+		Field: "withUnixSocket",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(goSDKGitCredentialSockPath)},
+			{Name: "source", Value: sockID},
+		},
+	}}
+	unset = []dagql.Selector{{
+		Field: "withoutUnixSocket",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(goSDKGitCredentialSockPath)},
+		},
+	}}
+	for _, env := range [][2]string{
+		{"GIT_CONFIG_COUNT", "1"},
+		{"GIT_CONFIG_KEY_0", "credential.helper"},
+		{"GIT_CONFIG_VALUE_0", distconsts.GitCredentialHelperInContainerPath + " " + goSDKGitCredentialSockPath},
+	} {
+		set = append(set, dagql.Selector{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString(env[0])},
+				{Name: "value", Value: dagql.NewString(env[1])},
+			},
+		})
+		unset = append(unset, dagql.Selector{
+			Field: "withoutEnvVariable",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString(env[0])},
+			},
+		})
+	}
+	return set, unset, nil
 }
 
 func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container], error) {

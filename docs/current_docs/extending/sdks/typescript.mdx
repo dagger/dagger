@@ -895,6 +895,25 @@ Commit the lockfile so builds are reproducible. Bun and Deno manage dependencies
 through their own native tooling; the module code and decorators are identical
 across runtimes — only dependency installation and lockfiles differ.
 
+### Private git dependencies
+
+Dependencies on private git repositories over HTTPS work out of the box on the
+Node and Bun runtimes (Deno has no git dependency support):
+
+```json
+"dependencies": {
+  "mylib": "git+https://gitlab.example.com/acme/mylib.git#v1.2.0"
+}
+```
+
+The install authenticates with your own git credentials — if `git clone` works
+on your machine, so does the dependency. Credentials are used on demand during
+the install and are never stored in the container or its cache.
+
+One exception: Bun fetches github.com dependencies through the GitHub API
+instead of git, so private GitHub repositories don't get these credentials on
+the Bun runtime — use the Node runtime for those.
+
 ### Editor type resolution
 
 Because `tsconfig.json` maps `@dagger.io/dagger` to the local `./sdk/index.ts`,

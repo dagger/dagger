@@ -46,20 +46,29 @@ func (sdk *runtimeModule) Runtime(
 		return nil, fmt.Errorf("failed to get schema introspection json ID during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
 
+	runtimeArgs := []dagql.NamedInput{
+		{
+			Name:  "modSource",
+			Value: dagql.NewID[*core.ModuleSource](sourceID),
+		},
+		{
+			Name:  "introspectionJson",
+			Value: dagql.NewID[*core.File](schemaJSONFileID),
+		},
+	}
+	gitCredInput, err := sdk.mod.gitCredentialsInput(ctx, dag, "moduleRuntime", source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare git credentials for sdk module %s runtime: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	if gitCredInput != nil {
+		runtimeArgs = append(runtimeArgs, *gitCredInput)
+	}
+
 	var inst dagql.ObjectResult[*core.Container]
 	err = dag.Select(ctx, sdkInst.sdk, &inst,
 		dagql.Selector{
 			Field: "moduleRuntime",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "modSource",
-					Value: dagql.NewID[*core.ModuleSource](sourceID),
-				},
-				{
-					Name:  "introspectionJson",
-					Value: dagql.NewID[*core.File](schemaJSONFileID),
-				},
-			},
+			Args:  runtimeArgs,
 		},
 		dagql.Selector{
 			Field: "withWorkdir",
@@ -73,6 +82,14 @@ func (sdk *runtimeModule) Runtime(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk moduleRuntime: %w", err)
+	}
+
+	// backstop: user code runs in this container, so a leaky runtime must
+	// fail closed rather than expose the credential socket
+	for _, sock := range inst.Self().Sockets {
+		if sock.Source.Self() != nil && sock.Source.Self().Kind == core.SocketKindGitCredential {
+			return nil, fmt.Errorf("sdk module %s returned a runtime container that still mounts the git-credential socket", sdk.mod.mod.Self().Name())
+		}
 	}
 	return &core.ContainerRuntime{Container: inst}, nil
 }
