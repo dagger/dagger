@@ -200,14 +200,10 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 		return false, nil
 	}
 
-	exportPath, err := currentWorkspaceExportPath(ctx, ws)
-	if err != nil {
-		return false, err
-	}
-	// handleChangesetResponseAt owns the apply prompt via a huh form when
+	// handleWorkspaceResponse owns the apply prompt via a huh form when
 	// autoApply is false — we don't run our own confirm() here, otherwise
 	// the user would face two prompts back-to-back for the same action.
-	if _, err := handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath); err != nil {
+	if _, err := handleWorkspaceResponse(ctx, dag, ws.WithChanges(changes), autoApply); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -230,14 +226,21 @@ func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagg
 		return err
 	}
 
+	fixes := planMigratedSDKFixups(cfg)
+	if len(fixes) == 0 {
+		return nil
+	}
+	updated := ws
+	for _, fix := range fixes {
+		updated = updated.
+			WithConfigValue("modules."+fix.ModuleName+".source", fix.Ref).
+			WithConfigValue("modules."+fix.ModuleName+".as-sdk.name", fix.SDKName)
+	}
+	if err := updated.Export(ctx); err != nil {
+		return err
+	}
 	out := cmd.OutOrStdout()
-	for _, fix := range planMigratedSDKFixups(cfg) {
-		if _, err := ws.ConfigWrite(ctx, "modules."+fix.ModuleName+".source", fix.Ref); err != nil {
-			return fmt.Errorf("set %s SDK source: %w", fix.SDKName, err)
-		}
-		if _, err := ws.ConfigWrite(ctx, "modules."+fix.ModuleName+".as-sdk.name", fix.SDKName); err != nil {
-			return fmt.Errorf("set %s SDK name: %w", fix.SDKName, err)
-		}
+	for _, fix := range fixes {
 		fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
 	}
 	return nil
@@ -335,10 +338,8 @@ func confirmInstallRecommended(ctx context.Context, cmd *cobra.Command, recs []r
 	return install, nil
 }
 
-// currentWorkspaceExportPath returns the host filesystem path the current
-// workspace should write to when applying a Changeset. Used by the migrate
-// step (was previously in the dedicated migrate.go before that file was
-// removed in the workspace slim-down).
+// currentWorkspaceExportPath derives the local workspace root from its file
+// address and workspace-relative cwd.
 func currentWorkspaceExportPath(ctx context.Context, ws *dagger.Workspace) (string, error) {
 	cwd, err := ws.Cwd(ctx)
 	if err != nil {

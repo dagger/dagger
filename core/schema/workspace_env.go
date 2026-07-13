@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -14,11 +13,8 @@ func (s *workspaceSchema) envList(
 	parent *core.Workspace,
 	_ struct{},
 ) (dagql.Array[dagql.String], error) {
-	if isSyntheticWorkspace(parent) {
-		return dagql.Array[dagql.String]{}, nil
-	}
 	if parent.ConfigFile == "" {
-		return nil, fmt.Errorf("no dagger.toml found in workspace")
+		return dagql.Array[dagql.String]{}, nil
 	}
 
 	cfg, err := readWorkspaceConfig(ctx, parent)
@@ -34,52 +30,7 @@ func (s *workspaceSchema) envList(
 	return out, nil
 }
 
-type workspaceEnvMutationArgs struct {
+type workspaceConfigEnvArgs struct {
 	Name string
 	Here bool `default:"false"`
-}
-
-func (s *workspaceSchema) envCreate(
-	ctx context.Context,
-	parent *core.Workspace,
-	args workspaceEnvMutationArgs,
-) (dagql.String, error) {
-	if args.Name == "" {
-		return "", fmt.Errorf("environment name is required")
-	}
-	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
-	if err != nil {
-		return "", err
-	}
-
-	if workspace.EnsureEnv(cfg, args.Name) {
-		if err := writeWorkspaceConfig(ctx, parent, cfg); err != nil {
-			return "", err
-		}
-	}
-
-	return dagql.String(args.Name), nil
-}
-
-func (s *workspaceSchema) envRemove(
-	ctx context.Context,
-	parent *core.Workspace,
-	args workspaceEnvMutationArgs,
-) (dagql.String, error) {
-	if args.Name == "" {
-		return "", fmt.Errorf("environment name is required")
-	}
-	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigMustExist, args.Here)
-	if err != nil {
-		return "", err
-	}
-
-	if err := workspace.RemoveEnv(cfg, args.Name); err != nil {
-		return "", err
-	}
-	if err := writeWorkspaceConfig(ctx, parent, cfg); err != nil {
-		return "", err
-	}
-
-	return dagql.String(args.Name), nil
 }

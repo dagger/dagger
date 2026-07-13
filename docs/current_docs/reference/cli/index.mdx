@@ -1837,10 +1837,9 @@ to add more choices.
 For example, after `dagger sdk install go`, run
 `dagger module init go myapp`.
 
-The CLI is a thin wrapper around the engine's Workspace.moduleInit. The
-engine validates that &lt;sdk&gt; is installed as an SDK in dagger.toml, plans the
-workspace changes, and returns a Changeset that the CLI previews and applies
-through the standard changeset apply flow.
+The CLI is a thin wrapper around the engine's Workspace.withInitModule. The
+engine validates that &lt;sdk&gt; is installed as an SDK in dagger.toml and returns
+an updated workspace that the CLI previews and exports.
 
 What the engine does (atomically, in one Changeset):
   1. Resolves &lt;sdk&gt; to an installed SDK entry and requires its as-sdk marker.

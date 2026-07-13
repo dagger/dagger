@@ -883,6 +883,12 @@ class Binding(Type):
         _ctx = self._select("asWorkspaceModuleSetting", _args)
         return WorkspaceModuleSetting(_ctx)
 
+    def as_workspace_sdk(self) -> "WorkspaceSDK":
+        """Retrieve the binding value, as type WorkspaceSDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceSDK", _args)
+        return WorkspaceSDK(_ctx)
+
     async def digest(self) -> str:
         """Returns the digest of the binding value
 
@@ -7982,6 +7988,49 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withWorkspaceOutput", _args)
+        return Env(_ctx)
+
+    def with_workspace_sdk_input(
+        self,
+        name: str,
+        value: "WorkspaceSDK",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceSDK in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceSDK value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceSDKInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_sdk_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceSDK output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceSDKOutput", _args)
         return Env(_ctx)
 
     def without_outputs(self) -> Self:
@@ -15716,17 +15765,9 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
-    def changes(self, other: Self) -> Changeset:
-        """Return the changes from another workspace to this workspace.
-
-        Parameters
-        ----------
-        other:
-            Workspace to compare from.
-        """
-        _args = [
-            Arg("other", other),
-        ]
+    def changes(self) -> Changeset:
+        """Return this workspace's pending overlay changes."""
+        _args: list[Arg] = []
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
 
@@ -15761,51 +15802,6 @@ class Workspace(Type):
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
-
-    def client_generate(self) -> Changeset:
-        """Regenerate all generated API clients registered in workspace config
-        and return the resulting Changeset.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("clientGenerate", _args)
-        return Changeset(_ctx)
-
-    def client_init(
-        self,
-        path: str,
-        sdk: str,
-        module: str,
-        *,
-        here: bool | None = False,
-        args: JSON | None = None,
-    ) -> Changeset:
-        """Plan the workspace changes for initializing a generated API client:
-        generated client files at `path` plus a [[modules.<sdk-name>.as-
-        sdk.clients]] entry in dagger.toml. Returns the resulting Changeset
-        for the caller to preview and apply.
-
-        Parameters
-        ----------
-        path:
-            Workspace-relative output directory for the generated client.
-        sdk:
-            Workspace SDK name or module entry name to use.
-        module:
-            Workspace-relative path or canonical ref for the module the client
-            binds to.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-        args:
-        """
-        _args = [
-            Arg("path", path),
-            Arg("sdk", sdk),
-            Arg("module", module),
-            Arg("here", here, False),
-            Arg("args", args, None),
-        ]
-        _ctx = self._select("clientInit", _args)
-        return Changeset(_ctx)
 
     async def config_file(self) -> str:
         """Selected native workspace config file relative to the workspace root,
@@ -15862,47 +15858,6 @@ class Workspace(Type):
             Arg("key", key, ""),
         ]
         _ctx = self._select("configRead", _args)
-        return await _ctx.execute(str)
-
-    async def config_write(
-        self,
-        key: str,
-        value: str,
-        *,
-        here: bool | None = False,
-    ) -> str:
-        """Write a configuration value to dagger.toml.
-
-        Parameters
-        ----------
-        key:
-            Dotted key path (e.g. modules.greeter.source).
-        value:
-            Value to set. Bools, integers, and comma-separated arrays are
-            auto-detected.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("key", key),
-            Arg("value", value),
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("configWrite", _args)
         return await _ctx.execute(str)
 
     async def cwd(self) -> str:
@@ -15967,42 +15922,6 @@ class Workspace(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    async def env_create(
-        self,
-        name: str,
-        *,
-        here: bool | None = False,
-    ) -> str:
-        """Create a named workspace environment if it does not already exist.
-
-        Parameters
-        ----------
-        name:
-            Environment name.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("name", name),
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("envCreate", _args)
-        return await _ctx.execute(str)
-
     async def env_list(self) -> list[str]:
         """List named environments defined in the workspace configuration.
 
@@ -16024,27 +15943,14 @@ class Workspace(Type):
         _ctx = self._select("envList", _args)
         return await _ctx.execute(list[str])
 
-    async def env_remove(
-        self,
-        name: str,
-        *,
-        here: bool | None = False,
-    ) -> str:
-        """Remove a named workspace environment.
-
-        Parameters
-        ----------
-        name:
-            Environment name.
-        here:
-            Write to the workspace config directory at the workspace cwd.
+    async def export(self) -> Void:
+        """Write this workspace's pending changes to its local Git workspace.
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        Void
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
 
         Raises
         ------
@@ -16053,12 +15959,9 @@ class Workspace(Type):
         QueryError
             If the API returns an error.
         """
-        _args = [
-            Arg("name", name),
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("envRemove", _args)
-        return await _ctx.execute(str)
+        _args: list[Arg] = []
+        _ctx = self._select("export", _args)
+        await _ctx.execute()
 
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
@@ -16177,86 +16080,6 @@ class Workspace(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def init(self, *, here: bool | None = False) -> str:
-        """Initialize workspace config, creating dagger.toml.
-
-        Parameters
-        ----------
-        here:
-            Create the workspace config directory at the workspace cwd instead
-            of using the default write target.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("init", _args)
-        return await _ctx.execute(str)
-
-    async def install(
-        self,
-        ref: str,
-        *,
-        name: str | None = "",
-        here: bool | None = False,
-        as_sdk: bool | None = False,
-        as_sdk_name: str | None = "",
-    ) -> str:
-        """Install a module into the workspace, writing dagger.toml to the host.
-
-        Parameters
-        ----------
-        ref:
-            Module reference to install.
-        name:
-            Override name for the installed module entry.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-        as_sdk:
-            Mark the install as an SDK (writes the `[modules.<name>.as-sdk]`
-            marker that dispatches `dagger module init <sdk>` and `dagger api
-            client init <sdk>`).
-        as_sdk_name:
-            User-facing SDK name to persist under `[modules.<name>.as-sdk]
-            name = ...`.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("ref", ref),
-            Arg("name", name, ""),
-            Arg("here", here, False),
-            Arg("asSdk", as_sdk, False),
-            Arg("asSdkName", as_sdk_name, ""),
-        ]
-        _ctx = self._select("install", _args)
-        return await _ctx.execute(str)
-
     def migrate(self) -> "WorkspaceMigration":
         """Plan the explicit migration needed for the current workspace.
 
@@ -16267,66 +16090,45 @@ class Workspace(Type):
         _ctx = self._select("migrate", _args)
         return WorkspaceMigration(_ctx)
 
-    def module_init(
-        self,
-        name: str,
-        *,
-        sdk: str | None = "",
-        path: str | None = "",
-        source: str | None = "",
-        include: list[str] | None = None,
-        here: bool | None = False,
-        args: JSON | None = None,
-    ) -> Changeset:
-        """Plan the workspace changes for initializing a new module: dagger-
-        module.toml + SDK codegen output at `path`, the authoring entry under
-        [[modules.<sdk>.as-sdk.modules]], and (when path defaults)
-        [modules.<name>]. The SDK must already be installed as an SDK. Returns
-        the resulting Changeset for the caller to preview and apply.
+    def module(self, name: str) -> "WorkspaceModule":
+        """Return a module defined in the workspace configuration.
 
         Parameters
         ----------
         name:
-            Name of the new module.
-        sdk:
-            Workspace SDK name or module entry name to use.
-        path:
-            Workspace-relative path for the new module. Defaults to
-            ".dagger/modules/<name>"; using the default also installs the
-            module in [modules.<name>].
-        source:
-            Source subpath within the new module.
-        include:
-            Additional include patterns for the module.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-        args:
+            Module name to inspect.
         """
         _args = [
             Arg("name", name),
-            Arg("sdk", sdk, ""),
-            Arg("path", path, ""),
-            Arg("source", source, ""),
-            Arg("include", [] if include is None else include, []),
-            Arg("here", here, False),
-            Arg("args", args, None),
         ]
-        _ctx = self._select("moduleInit", _args)
-        return Changeset(_ctx)
+        _ctx = self._select("module", _args)
+        return WorkspaceModule(_ctx)
 
-    async def module_list(self, *, module: str | None = "") -> list["WorkspaceModule"]:
-        """List modules defined in the workspace configuration.
+    async def modules(self) -> list["WorkspaceModule"]:
+        """List modules defined in the workspace configuration."""
+        _args: list[Arg] = []
+        _ctx = self._select("modules", _args)
+        return await _ctx.execute_object_list(WorkspaceModule)
+
+    def sdk(self, name: str) -> "WorkspaceSDK":
+        """An installed SDK, by name.
 
         Parameters
         ----------
-        module:
-            Optional module alias to inspect.
+        name:
+            SDK name to look up.
         """
         _args = [
-            Arg("module", module, ""),
+            Arg("name", name),
         ]
-        _ctx = self._select("moduleList", _args)
-        return await _ctx.execute_object_list(WorkspaceModule)
+        _ctx = self._select("sdk", _args)
+        return WorkspaceSDK(_ctx)
+
+    async def sdks(self) -> list["WorkspaceSDK"]:
+        """Installed SDKs."""
+        _args: list[Arg] = []
+        _ctx = self._select("sdks", _args)
+        return await _ctx.execute_object_list(WorkspaceSDK)
 
     def services(
         self,
@@ -16346,56 +16148,6 @@ class Workspace(Type):
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
 
-    async def uninstall(
-        self,
-        name: str,
-        *,
-        here: bool | None = False,
-    ) -> str:
-        """Uninstall a module from the workspace, writing dagger.toml to the
-        host.
-
-        Parameters
-        ----------
-        name:
-            Name of the installed module entry to remove.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("name", name),
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("uninstall", _args)
-        return await _ctx.execute(str)
-
-    def update(self) -> Changeset:
-        """Refresh workspace-managed state and return the resulting changeset.
-
-        Currently this refreshes existing lockfile entries only.
-
-        .. caution::
-            Experimental: Experimental workspace update API currently
-            refreshes existing lockfile entries only.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("update", _args)
-        return Changeset(_ctx)
-
     def with_changes(self, changes: Changeset) -> Self:
         """Return this workspace with a changeset applied, without mutating the
         source.
@@ -16409,6 +16161,157 @@ class Workspace(Type):
             Arg("changes", changes),
         ]
         _ctx = self._select("withChanges", _args)
+        return Workspace(_ctx)
+
+    def with_config_env(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a named config environment created.
+
+        Parameters
+        ----------
+        name:
+            Environment name.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withConfigEnv", _args)
+        return Workspace(_ctx)
+
+    def with_config_value(
+        self,
+        key: str,
+        value: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a configuration value written.
+
+        Parameters
+        ----------
+        key:
+            Dotted key path.
+        value:
+            Value to set.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("key", key),
+            Arg("value", value),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withConfigValue", _args)
+        return Workspace(_ctx)
+
+    def with_init_client(
+        self,
+        path: str,
+        sdk: str,
+        module: str,
+        *,
+        args: JSON | None = None,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a generated API client initialized.
+
+        Parameters
+        ----------
+        path:
+            Workspace-relative output directory for the generated client.
+        sdk:
+            Workspace SDK name or module entry name to use.
+        module:
+            Workspace-relative path or canonical ref for the module the client
+            binds to.
+        args:
+            SDK-specific init arguments.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sdk", sdk),
+            Arg("module", module),
+            Arg("args", args, None),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withInitClient", _args)
+        return Workspace(_ctx)
+
+    def with_init_module(
+        self,
+        name: str,
+        sdk: str,
+        *,
+        path: str | None = "",
+        source: str | None = "",
+        include: list[str] | None = None,
+        args: JSON | None = None,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a new module initialized.
+
+        Parameters
+        ----------
+        name:
+            Name of the new module.
+        sdk:
+            Workspace SDK name or module entry name to use.
+        path:
+            Workspace-relative path for the new module.
+        source:
+            Source subpath within the new module.
+        include:
+            Additional include patterns for the module.
+        args:
+            SDK-specific init arguments.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("sdk", sdk),
+            Arg("path", path, ""),
+            Arg("source", source, ""),
+            Arg("include", [] if include is None else include, []),
+            Arg("args", args, None),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withInitModule", _args)
+        return Workspace(_ctx)
+
+    def with_module(
+        self,
+        ref: str,
+        *,
+        name: str | None = "",
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a module installed in its config.
+
+        Parameters
+        ----------
+        ref:
+            Module reference to install.
+        name:
+            Override name for the installed module entry.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("ref", ref),
+            Arg("name", name, ""),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withModule", _args)
         return Workspace(_ctx)
 
     def with_new_directory(self, path: str, source: Directory) -> Self:
@@ -16456,6 +16359,109 @@ class Workspace(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
+        return Workspace(_ctx)
+
+    def with_sdk(
+        self,
+        ref: str,
+        *,
+        name: str | None = "",
+        here: bool | None = False,
+        as_sdk_name: str | None = "",
+    ) -> Self:
+        """Return this workspace with an SDK installed in its config.
+
+        Parameters
+        ----------
+        ref:
+            SDK module reference to install.
+        name:
+            Override name for the installed SDK entry.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        as_sdk_name:
+            User-facing SDK name to persist under `[modules.<name>.as-sdk]
+            name = ...`.
+        """
+        _args = [
+            Arg("ref", ref),
+            Arg("name", name, ""),
+            Arg("here", here, False),
+            Arg("asSdkName", as_sdk_name, ""),
+        ]
+        _ctx = self._select("withSDK", _args)
+        return Workspace(_ctx)
+
+    def with_updated_lock(self) -> Self:
+        """Return this workspace with refreshed lockfile state."""
+        _args: list[Arg] = []
+        _ctx = self._select("withUpdatedLock", _args)
+        return Workspace(_ctx)
+
+    def without_config_env(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a named config environment removed.
+
+        Parameters
+        ----------
+        name:
+            Environment name.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withoutConfigEnv", _args)
+        return Workspace(_ctx)
+
+    def without_module(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a module removed from its config.
+
+        Parameters
+        ----------
+        name:
+            Name of the installed module entry to remove.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withoutModule", _args)
+        return Workspace(_ctx)
+
+    def without_sdk(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with an SDK removed from its config.
+
+        Parameters
+        ----------
+        name:
+            Name of the installed SDK entry to remove.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withoutSDK", _args)
         return Workspace(_ctx)
 
     def with_(self, cb: Callable[["Workspace"], "Workspace"]) -> "Workspace":
@@ -16858,6 +16864,94 @@ class WorkspaceModuleSetting(Type):
         return await _ctx.execute(str)
 
 
+@typecheck
+class WorkspaceSDK(Type):
+    """An installed SDK: a module marked for scaffolding other modules and
+    clients."""
+
+    async def clients(self) -> list[WorkspaceModule]:
+        """Clients generated with this SDK."""
+        _args: list[Arg] = []
+        _ctx = self._select("clients", _args)
+        return await _ctx.execute_object_list(WorkspaceModule)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceSDK.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def modules(self) -> list[WorkspaceModule]:
+        """Modules authored with this SDK."""
+        _args: list[Arg] = []
+        _ctx = self._select("modules", _args)
+        return await _ctx.execute_object_list(WorkspaceModule)
+
+    async def name(self) -> str:
+        """The user-facing SDK name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def ref(self) -> str:
+        """The module reference this SDK was installed from.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("ref", _args)
+        return await _ctx.execute(str)
+
+
 class Client(Query):
     """The Dagger client.
 
@@ -16968,5 +17062,6 @@ __all__ = [
     "WorkspaceMigrationStep",
     "WorkspaceModule",
     "WorkspaceModuleSetting",
+    "WorkspaceSDK",
     "dag",
 ]

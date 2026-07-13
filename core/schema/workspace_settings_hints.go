@@ -15,52 +15,29 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-func (s *workspaceSchema) collectWorkspaceSettingsHints(
+func collectWorkspaceSettingsHintsFromSource(
 	ctx context.Context,
-	ws *core.Workspace,
-	refs map[string]string,
+	name string,
+	source dagql.ObjectResult[*core.ModuleSource],
 ) map[string][]workspace.ConstructorArgHint {
-	if len(refs) == 0 {
-		return nil
-	}
-
-	ctx, srv, err := workspaceSettingsHintIntrospectionContext(ctx, ws)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		slog.Warn("could not prepare workspace settings hints", "error", err)
 		return nil
 	}
-
-	names := make([]string, 0, len(refs))
-	for name := range refs {
-		names = append(names, name)
+	var mod dagql.ObjectResult[*core.Module]
+	if err := srv.Select(ctx, source, &mod, dagql.Selector{Field: "asModule"}); err != nil {
+		slog.Warn("could not introspect constructor args for workspace settings hints",
+			"module", name,
+			"error", err,
+		)
+		return nil
 	}
-	sort.Strings(names)
-
-	hints := make(map[string][]workspace.ConstructorArgHint, len(refs))
-	for _, name := range names {
-		ref := refs[name]
-		if ref == "" {
-			continue
-		}
-
-		constructorHints, err := introspectConstructorArgs(ctx, srv, ref)
-		if err != nil {
-			slog.Warn("could not introspect constructor args for workspace settings hints",
-				"module", name,
-				"ref", ref,
-				"error", err,
-			)
-			continue
-		}
-		if len(constructorHints) > 0 {
-			hints[name] = constructorHints
-		}
-	}
-
+	hints := constructorHintsFromModule(mod.Self())
 	if len(hints) == 0 {
 		return nil
 	}
-	return hints
+	return map[string][]workspace.ConstructorArgHint{name: hints}
 }
 
 func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(

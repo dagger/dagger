@@ -380,6 +380,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type WorkspaceSDK
+     */
+    public function asWorkspaceSDK(): WorkspaceSDK
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspaceSDK');
+        return new \Dagger\WorkspaceSDK($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the digest of the binding value
      */
     public function digest(): string

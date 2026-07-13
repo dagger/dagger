@@ -928,6 +928,37 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 // so callers can print follow-up guidance only when files were written (not on
 // a no-op or a declined preview).
 func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response any, autoApply bool, exportPath string) (applied bool, rerr error) {
+	return handleChangesetResponseWithApply(ctx, dag, response, autoApply, func(ctx context.Context, changeset *dagger.Changeset) error {
+		_, err := changeset.Export(ctx, exportPath)
+		return err
+	})
+}
+
+func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, workspace *dagger.Workspace, autoApply bool) (bool, error) {
+	workspace, err := materializeWorkspace(ctx, dag, workspace)
+	if err != nil {
+		return false, err
+	}
+	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(), autoApply, func(ctx context.Context, _ *dagger.Changeset) error {
+		return workspace.Export(ctx)
+	})
+}
+
+func materializeWorkspace(ctx context.Context, dag *dagger.Client, workspace *dagger.Workspace) (*dagger.Workspace, error) {
+	id, err := workspace.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagger.Ref[*dagger.Workspace](dag, id), nil
+}
+
+func handleChangesetResponseWithApply(
+	ctx context.Context,
+	dag *dagger.Client,
+	response any,
+	autoApply bool,
+	apply func(context.Context, *dagger.Changeset) error,
+) (applied bool, rerr error) {
 	changeset, err := toChangeset(dag, response)
 	if err != nil {
 		return false, err
@@ -976,7 +1007,7 @@ func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response
 
 	ctx, span := Tracer().Start(ctx, "applying changes")
 	defer telemetry.EndWithCause(span, &rerr)
-	if _, err := changeset.Export(ctx, exportPath); err != nil {
+	if err := apply(ctx, changeset); err != nil {
 		return false, err
 	}
 	return true, nil

@@ -14,9 +14,24 @@ import (
 )
 
 const workspaceSettingsQuery = `
-query WorkspaceSettings($module: String!) {
+query WorkspaceSettings {
   currentWorkspace {
-    moduleList(module: $module) {
+    modules {
+      name
+      settings {
+        key
+        value
+        description
+      }
+    }
+  }
+}
+`
+
+const workspaceModuleSettingsQuery = `
+query WorkspaceModuleSettings($module: String!) {
+  currentWorkspace {
+    module(name: $module) {
       name
       settings {
         key
@@ -78,8 +93,9 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			_, err = state.Workspace.ConfigWrite(ctx, workspaceSettingConfigKey(setting.Module, setting.Key), args[2], dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
-			return err
+			return state.Workspace.
+				WithConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), args[2], dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).
+				Export(ctx)
 		default:
 			return fmt.Errorf("expected 0-3 arguments, got %d", len(args))
 		}
@@ -100,25 +116,38 @@ type workspaceSettingsState struct {
 }
 
 func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string) (*workspaceSettingsState, error) {
-	var res struct {
-		CurrentWorkspace struct {
-			ModuleList []struct {
-				Name     string
-				Settings []workspaceSetting
+	type settingsModule struct {
+		Name     string
+		Settings []workspaceSetting
+	}
+	var modules []settingsModule
+	if moduleName == "" {
+		var res struct {
+			CurrentWorkspace struct {
+				Modules []settingsModule
 			}
 		}
-	}
-	if err := dag.Do(ctx, &dagger.Request{
-		Query:     workspaceSettingsQuery,
-		Variables: map[string]any{"module": moduleName},
-	}, &dagger.Response{
-		Data: &res,
-	}); err != nil {
-		return nil, err
+		if err := dag.Do(ctx, &dagger.Request{Query: workspaceSettingsQuery}, &dagger.Response{Data: &res}); err != nil {
+			return nil, err
+		}
+		modules = res.CurrentWorkspace.Modules
+	} else {
+		var res struct {
+			CurrentWorkspace struct {
+				Module settingsModule
+			}
+		}
+		if err := dag.Do(ctx, &dagger.Request{
+			Query:     workspaceModuleSettingsQuery,
+			Variables: map[string]any{"module": moduleName},
+		}, &dagger.Response{Data: &res}); err != nil {
+			return nil, err
+		}
+		modules = []settingsModule{res.CurrentWorkspace.Module}
 	}
 
 	settings := make([]workspaceSetting, 0)
-	for _, module := range res.CurrentWorkspace.ModuleList {
+	for _, module := range modules {
 		for _, setting := range module.Settings {
 			setting.Module = module.Name
 			settings = append(settings, setting)

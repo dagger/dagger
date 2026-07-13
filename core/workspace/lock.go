@@ -3,6 +3,7 @@ package workspace
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/dagger/dagger/util/lockfile"
 )
@@ -84,6 +85,7 @@ type LookupEntry struct {
 
 // Lock is the workspace lockfile wrapper.
 type Lock struct {
+	mu   sync.RWMutex
 	file *lockfile.Lockfile
 }
 
@@ -103,7 +105,12 @@ func NewLock() *Lock {
 
 // Marshal serializes lock entries.
 func (l *Lock) Marshal() ([]byte, error) {
-	if l == nil || l.file == nil {
+	if l == nil {
+		return nil, fmt.Errorf("nil lock")
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.file == nil {
 		return nil, fmt.Errorf("nil lock")
 	}
 	return l.file.Marshal()
@@ -112,7 +119,7 @@ func (l *Lock) Marshal() ([]byte, error) {
 // Clone returns a deep copy of the lock.
 func (l *Lock) Clone() (*Lock, error) {
 	cloned := NewLock()
-	if l == nil || l.file == nil {
+	if l == nil {
 		return cloned, nil
 	}
 	if err := cloned.Merge(l); err != nil {
@@ -123,10 +130,16 @@ func (l *Lock) Clone() (*Lock, error) {
 
 // Merge applies all entries from other onto l.
 func (l *Lock) Merge(other *Lock) error {
-	if l == nil || l.file == nil {
+	if l == nil {
 		return fmt.Errorf("nil lock")
 	}
-	if other == nil || other.file == nil {
+	l.mu.RLock()
+	initialized := l.file != nil
+	l.mu.RUnlock()
+	if !initialized {
+		return fmt.Errorf("nil lock")
+	}
+	if other == nil {
 		return nil
 	}
 	entries, err := other.Entries()
@@ -143,7 +156,12 @@ func (l *Lock) Merge(other *Lock) error {
 
 // GetLookup retrieves the lock result for a generic lookup tuple.
 func (l *Lock) GetLookup(namespace, operation string, inputs []any) (LookupResult, bool, error) {
-	if l == nil || l.file == nil {
+	if l == nil {
+		return LookupResult{}, false, nil
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.file == nil {
 		return LookupResult{}, false, nil
 	}
 	value, policy, ok := l.file.Get(namespace, operation, inputs)
@@ -159,7 +177,7 @@ func (l *Lock) GetLookup(namespace, operation string, inputs []any) (LookupResul
 
 // SetLookup sets the lock result for a generic lookup tuple.
 func (l *Lock) SetLookup(namespace, operation string, inputs []any, result LookupResult) error {
-	if l == nil || l.file == nil {
+	if l == nil {
 		return fmt.Errorf("nil lock")
 	}
 	if result.Value == "" {
@@ -168,12 +186,22 @@ func (l *Lock) SetLookup(namespace, operation string, inputs []any, result Looku
 	if !isValidLockPolicy(result.Policy) {
 		return fmt.Errorf("invalid lock policy %q", result.Policy)
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return fmt.Errorf("nil lock")
+	}
 	return l.file.Set(namespace, operation, inputs, result.Value, string(result.Policy))
 }
 
 // DeleteLookup removes a generic lookup tuple entry.
 func (l *Lock) DeleteLookup(namespace, operation string, inputs []any) bool {
-	if l == nil || l.file == nil {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
 		return false
 	}
 	return l.file.Delete(namespace, operation, inputs)
@@ -181,7 +209,12 @@ func (l *Lock) DeleteLookup(namespace, operation string, inputs []any) bool {
 
 // Entries returns a deterministic snapshot of all lookup entries.
 func (l *Lock) Entries() ([]LookupEntry, error) {
-	if l == nil || l.file == nil {
+	if l == nil {
+		return nil, nil
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.file == nil {
 		return nil, nil
 	}
 
