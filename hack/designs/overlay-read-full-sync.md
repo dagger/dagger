@@ -1,7 +1,7 @@
 # Overlay read root forces a full Host.directory sync
 
 **Status:** re-implemented 2026-07-10 on the rebased branch, against the updated
-#13600 snapshot (`757ddc16f workspace overlay and export`). The original two-commit
+\#13600 snapshot (`757ddc16f workspace overlay and export`). The original two-commit
 implementation (`8e2ffa59e9` sparse diff + `9c4f9bfa5d` read-root drop) was dropped
 during the rebase and re-expressed as one commit in upstream's new overlay model —
 see "Re-implementation on the updated #13600" below. One test in the suite —
@@ -73,7 +73,7 @@ diff workspace overlays against a sparse base`) landed. On this repo that's ~11s
 
 ## How I found it — the trace
 
-```
+```console
 ./bin/dagger trace -vvvvvvvvv 104de731955ae21d2f1f4280105da61d --span 6945fc5a8a735870
 ```
 
@@ -93,7 +93,7 @@ What the trace showed:
 - The full sync is in the **`Workspace.withChanges`** that applies the edit's
   `Changeset` to the workspace overlay (11.4s):
 
-  ```
+  ```text
   Workspace.withChanges(changes: …edit…): Workspace!            11.4s
   ├╴ Host.directory(path: ".../llm-workspace"): Directory!      11.4s   ← NO include
   │  ╰╴ uploading /home/vito/src/dagger/llm-workspace (bin, cmd, core, sdk, …)
@@ -186,7 +186,7 @@ Add a host-overlay case **before** the generic `SourceDirectory()` branch (which
 longer fires for host overlays anyway) and before the pristine-host branch (which
 would silently ignore edits). For a read of `(resolvedPath, filter, gitignore)`:
 
-```
+```text
 requested = filter.Include re-rooted under resolvedPath      // "src" + ["foo.go"] → ["src/foo.go"]
             (no includes && resolvedPath != "." → ["<resolvedPath>", "<resolvedPath>/**"])
             (no includes && resolvedPath == "." → no include arg: full host — legitimate)
@@ -283,7 +283,7 @@ host overlays with no Root:
   pre-existing `TestWorkspaceSDKReadersUseStagedOverlay` deadlock described at the
   bottom of this doc, so ALWAYS narrow with `--run` and EXCLUDE that test):
 
-  ```
+  ```console
   dagger --x-release 1.0.0-beta.6 call engine-dev test \
     --run 'TestWorkspaceAPI/(TestHostWorkspaceOverlayAndExport|TestHostWorkspaceSparseOverlayDiff|TestWorkspaceConfigBuildersStageOverlay|TestHostWorkspaceFunctionalOverlayAPIsChain)' \
     --pkg ./core/integration --test-verbose
@@ -303,7 +303,7 @@ host overlays with no Root:
 
 ## Reproduce
 
-```
+```console
 go build -o ./bin/dagger ./cmd/dagger/          # rebuild CLI
 # (after schema changes also redeploy the engine: hack/dev)
 dagger -W <repo> -m ./modules/doug2 call agent  # LLM shell with doug2 tools: read/write/edit/todoWrite
@@ -398,7 +398,7 @@ run), `/tmp/nested-engine-goroutines2.txt` (solo, with fix),
 `/tmp/control-goroutines.txt` (solo, control without fix) — all show one stuck
 goroutine:
 
-```
+```text
 ensurePersistedHitValueLoaded  cache_persistence_import.go:567  [select, N minutes]
 lookupCacheForRequest          cache_egraph.go:915
 attachResult                   cache.go:1983
