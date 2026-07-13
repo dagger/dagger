@@ -2616,10 +2616,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 
 	clientGeneratorImpl, ok := sdk.AsClientGenerator()
 	if !ok {
-		if srcInst.Self() == nil || srcInst.Self().SDK == nil {
-			return genDirInst, fmt.Errorf("module source has no SDK configured")
-		}
-		return genDirInst, ErrSDKClientGeneratorNotImplemented{SDK: srcInst.Self().SDK.Source}
+		return genDirInst, ErrSDKClientGeneratorNotImplemented{SDK: clientGeneratorConfig.Generator}
 	}
 
 	requiredClientGenerationFiles, err := clientGeneratorImpl.RequiredClientGenerationFiles(ctx)

@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -49,14 +50,25 @@ func (s *moduleSchema) currentModuleAsSDK(
 		sdkName = name
 	}
 
+	// as-sdk paths are stored relative to the config file's directory (like
+	// module sources), while API consumers expect workspace-root-relative
+	// paths; resolve before exposing them. Client module refs resolve the
+	// same way when local, and pass through verbatim otherwise.
+	configDir, err := workspaceConfigDirectory(ws)
+	if err != nil {
+		return nil, err
+	}
+
 	result := &core.CurrentModuleAsSDK{Name: sdkName}
 	for _, mod := range entry.AsSDK.Modules {
-		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: mod.Path})
+		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{
+			Path: filepath.Clean(filepath.Join(configDir, mod.Path)),
+		})
 	}
 	for _, client := range entry.AsSDK.Clients {
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
-			Path:   client.Path,
-			Module: client.Module,
+			Path:   filepath.Clean(filepath.Join(configDir, client.Path)),
+			Module: workspace.ResolveModuleEntrySource(configDir, client.Module),
 			Pin:    client.Pin,
 		})
 	}

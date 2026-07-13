@@ -15787,12 +15787,13 @@ class Workspace(Type):
         Parameters
         ----------
         path:
-            Workspace-relative output directory for the generated client.
+            Output directory for the generated client: relative paths resolve
+            from the caller cwd, absolute paths from the workspace root.
         sdk:
             Workspace SDK name or module entry name to use.
         module:
-            Workspace-relative path or canonical ref for the module the client
-            binds to.
+            Module the client binds to: a canonical ref, or a local path
+            resolved from the caller cwd.
         here:
             Write to the workspace config directory at the workspace cwd.
         args:
@@ -16291,7 +16292,8 @@ class Workspace(Type):
         sdk:
             Workspace SDK name or module entry name to use.
         path:
-            Workspace-relative path for the new module. Defaults to
+            Path for the new module: relative paths resolve from the caller
+            cwd, absolute paths from the workspace root. Defaults to
             ".dagger/modules/<name>"; using the default also installs the
             module in [modules.<name>].
         source:

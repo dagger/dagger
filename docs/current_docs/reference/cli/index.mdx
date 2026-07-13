@@ -231,6 +231,9 @@ Initialize a generated API client at &lt;path&gt;.
 &lt;sdk&gt; is an SDK installed in this workspace. Run `dagger sdk install <sdk>`
 to add more choices.
 
+&lt;path&gt; and a local &lt;module&gt; resolve from the current directory; absolute
+paths resolve from the workspace root.
+
 The engine resolves &lt;sdk&gt; from dagger.toml, validates that it is installed as an
 SDK, plans the generated files and workspace config change, then returns a
 Changeset that the CLI previews and applies through the standard preview/apply
@@ -1851,9 +1854,10 @@ What the engine does (atomically, in one Changeset):
   4. When --path is the default (.dagger/modules/&lt;name&gt;), also installs
      the new module as [modules.&lt;name&gt;] so it's callable here.
 
---path defaults to .dagger/modules/&lt;name&gt;. Custom paths skip the
-[modules.&lt;name&gt;] install (the user is managing workspace layout
-explicitly).
+--path defaults to .dagger/modules/&lt;name&gt;. Relative paths resolve from the
+current directory; absolute paths resolve from the workspace root. Custom
+paths skip the [modules.&lt;name&gt;] install (the user is managing workspace
+layout explicitly).
 
 ```
 dagger module init <sdk> <name> [flags]
@@ -1868,7 +1872,7 @@ dagger module init go myapp
 ### Options
 
 ```
-      --path string   Module path relative to the workspace root (default: .dagger/modules/<name>)
+      --path string   Module path relative to the current directory; absolute paths resolve from the workspace root (default: .dagger/modules/<name>)
 ```
 
 ### Options inherited from parent commands

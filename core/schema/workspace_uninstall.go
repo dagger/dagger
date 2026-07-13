@@ -80,7 +80,9 @@ func removeSDKManagedModuleReference(cfg *workspace.Config, configDir string, en
 		}
 
 		sdkEntry.AsSDK.Modules = slices.DeleteFunc(sdkEntry.AsSDK.Modules, func(mod workspace.SDKManagedModule) bool {
-			if filepath.ToSlash(filepath.Clean(mod.Path)) == sourcePath {
+			// as-sdk module paths are config-dir-relative, like module entry
+			// sources; resolve both sides before comparing.
+			if filepath.ToSlash(filepath.Clean(filepath.Join(configDir, mod.Path))) == sourcePath {
 				removed = true
 				return true
 			}

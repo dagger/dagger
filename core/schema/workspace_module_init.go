@@ -18,9 +18,11 @@ import (
 // Workspace.moduleInit. The redesigned shape returns a Changeset rather
 // than applying immediately; callers preview and apply via the standard
 // changeset path. The SelfCalls arg is gone (the feature graduated to a
-// runtime-capability check), and Path is new (workspace-relative, defaults
-// to .dagger/modules/<name>). SDK is the user-facing SDK name from
-// [modules.<name>.as-sdk] or the module entry name, not a module source ref.
+// runtime-capability check), and Path is new (following the workspace path
+// contract: relative paths resolve from the caller cwd, absolute paths from
+// the workspace root; defaults to .dagger/modules/<name>). SDK is the
+// user-facing SDK name from [modules.<name>.as-sdk] or the module entry
+// name, not a module source ref.
 type workspaceModuleInitArgs struct {
 	Name    string
 	SDK     string    `default:""`
@@ -67,25 +69,37 @@ func (s *workspaceSchema) moduleInit(
 		return res, fmt.Errorf("SDK name is required")
 	}
 
-	// Resolve the workspace-relative path for the new module. Empty = default
-	// layout; we treat that as the signal to auto-install in [modules.*].
-	relPath := args.Path
-	usingDefaultPath := relPath == ""
+	// Resolve the module path per the workspace path contract: relative paths
+	// resolve from the caller cwd, absolute paths from the workspace root.
+	// Empty = default layout; we treat that as the signal to auto-install in
+	// [modules.*]. relPath is workspace-root-relative from here on.
+	pathArg := args.Path
+	usingDefaultPath := pathArg == ""
 	if usingDefaultPath {
-		relPath = filepath.Join(".dagger", "modules", args.Name)
+		pathArg = filepath.Join(".dagger", "modules", args.Name)
 	}
-	relPath = filepath.Clean(relPath)
-	if filepath.IsAbs(relPath) {
-		return res, fmt.Errorf("--path %q must be workspace-relative, not absolute", args.Path)
-	}
-	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
-		return res, fmt.Errorf("--path %q must not escape the workspace root", args.Path)
+	relPath, err := resolveWorkspacePath(pathArg, parent.Cwd)
+	if err != nil {
+		return res, fmt.Errorf("--path %q: %w", args.Path, err)
 	}
 
 	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigMustExist, args.Here)
 	if err != nil {
 		return res, err
 	}
+	configRelPath, err := workspaceConfigFile(parent)
+	if err != nil {
+		return res, err
+	}
+	// Paths recorded in dagger.toml are relative to the config file's
+	// directory (see workspace.ResolveModuleEntrySource); relPath is
+	// workspace-root-relative, so convert before writing entries.
+	configDir := filepath.Dir(configRelPath)
+	entryPath, err := filepath.Rel(configDir, relPath)
+	if err != nil {
+		return res, fmt.Errorf("module path %q relative to config directory %q: %w", relPath, configDir, err)
+	}
+	entryPath = filepath.Clean(entryPath)
 	if cfg.Modules == nil {
 		cfg.Modules = map[string]workspace.ModuleEntry{}
 	}
@@ -96,7 +110,8 @@ func (s *workspaceSchema) moduleInit(
 
 	// Reject name conflicts in installed modules and reject path conflicts
 	// across any SDK's authored modules. Two SDKs claiming the same path is
-	// a corruption we shouldn't silently extend.
+	// a corruption we shouldn't silently extend. Existing as-sdk paths are
+	// config-dir-relative, so compare in workspace-root coordinates.
 	if _, exists := cfg.Modules[args.Name]; exists {
 		return res, fmt.Errorf("module %q is already installed in this workspace", args.Name)
 	}
@@ -105,13 +120,13 @@ func (s *workspaceSchema) moduleInit(
 			continue
 		}
 		for _, m := range installed.AsSDK.Modules {
-			if m.Path == relPath {
-				return res, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", relPath, installedName)
+			if filepath.Clean(filepath.Join(configDir, m.Path)) == relPath {
+				return res, fmt.Errorf("a module is already authored at %q under modules.%s.as-sdk", m.Path, installedName)
 			}
 		}
 	}
 
-	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: relPath})
+	sdkEntry.AsSDK.Modules = append(sdkEntry.AsSDK.Modules, workspace.SDKManagedModule{Path: entryPath})
 	cfg.Modules[sdkName] = sdkEntry
 
 	// Resolve which engine runtime ref the new module should declare. The
@@ -126,7 +141,7 @@ func (s *workspaceSchema) moduleInit(
 	}
 
 	if usingDefaultPath {
-		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: relPath}
+		cfg.Modules[args.Name] = workspace.ModuleEntry{Source: entryPath}
 	}
 
 	// Render new dagger.toml bytes through the format-preserving editor.
@@ -147,12 +162,7 @@ func (s *workspaceSchema) moduleInit(
 	// they can never collide on a shared path ("added in both changesets").
 	// The diff is workspace-root-relative because the moduleSource is
 	// constructed against the local workspace context.
-	moduleDiff, err := s.workspaceModuleInitConfigDiff(ctx, args, relPath, runtimeRef)
-	if err != nil {
-		return res, err
-	}
-
-	configRelPath, err := workspaceConfigFile(parent)
+	moduleDiff, err := s.workspaceModuleInitConfigDiff(ctx, args, parent.Cwd, relPath, runtimeRef)
 	if err != nil {
 		return res, err
 	}
@@ -202,6 +212,14 @@ func (s *workspaceSchema) moduleInit(
 		return res, err
 	}
 	sdkChanges, err := moduleInitializer.InitModule(ctx, workspaceObj, args.Name, relPath, sdkArgs)
+	if err != nil {
+		return res, fmt.Errorf("sdk module init: %w", err)
+	}
+	// SDK initModule implementations return changesets in caller-cwd
+	// coordinates (standalone clients apply changesets relative to their
+	// cwd), while engineChanges and the final export target are rooted at
+	// the workspace root. Re-root before validating and merging.
+	sdkChanges, err = rerootChangesetAtWorkspaceRoot(ctx, sdkChanges, parent.Cwd)
 	if err != nil {
 		return res, fmt.Errorf("sdk module init: %w", err)
 	}
@@ -275,6 +293,7 @@ func validateSDKInitChangesetOwnership(
 func (s *workspaceSchema) workspaceModuleInitConfigDiff(
 	ctx context.Context,
 	args workspaceModuleInitArgs,
+	cwd string,
 	relPath string,
 	runtimeRef string,
 ) (dagql.ObjectResult[*core.Directory], error) {
@@ -284,7 +303,14 @@ func (s *workspaceSchema) workspaceModuleInitConfigDiff(
 		return res, fmt.Errorf("dagql server: %w", err)
 	}
 
-	baseSelector := workspaceModuleInitSourceSelector(relPath)
+	// moduleSource resolves local refs against the caller's host cwd, while
+	// relPath is workspace-root-relative; convert so the source lands at
+	// relPath within the workspace context.
+	callerRelPath, err := filepath.Rel(cleanWorkspaceRelPath(cwd), relPath)
+	if err != nil {
+		return res, fmt.Errorf("module path %q relative to cwd %q: %w", relPath, cwd, err)
+	}
+	baseSelector := workspaceModuleInitSourceSelector(callerRelPath)
 
 	var configExists dagql.Boolean
 	if err := srv.Select(ctx, srv.Root(), &configExists,

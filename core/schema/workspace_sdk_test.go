@@ -92,7 +92,7 @@ func TestRemoveClientEntryAtPathPreservesSDKMarker(t *testing.T) {
 		},
 	}
 
-	removeClientEntryAtPath(cfg, "./lib/client")
+	removeClientEntryAtPath(cfg, ".", "./lib/client")
 
 	entry := cfg.Modules["go"]
 	require.NotNil(t, entry.AsSDK)
