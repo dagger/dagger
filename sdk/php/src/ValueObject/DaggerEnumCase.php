@@ -21,7 +21,7 @@ final readonly class DaggerEnumCase
     {
         return new self(
             name: $case->getName(),
-            value: (string) $case->getBackingValue(),
+            value: $case->getName(),
             description: (current($case
                 ->getAttributes(Attribute\Doc::class)) ?: null)
                 ?->newInstance()

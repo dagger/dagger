@@ -231,7 +231,7 @@ class NewCodegenVisitor extends CodeWriter
             } elseif ($unwrapped->isEnum()) {
                 $enumClass = $this->formatPhpFqcn($this->formatPhpClassName($unwrapped->leafName()));
                 $method->addBody(
-                    'return ' . $enumClass . '::from((string)$this->queryLeaf($leafQueryBuilder, ?));',
+                    'return constant(\'' . $enumClass . '::\'.(string)$this->queryLeaf($leafQueryBuilder, ?));',
                     [$field->name]
                 );
             } elseif ($unwrapped->isVoid()) {

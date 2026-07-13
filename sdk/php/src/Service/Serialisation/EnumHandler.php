@@ -54,7 +54,7 @@ final readonly class EnumHandler implements SubscribingHandlerInterface
         array $type,
         Context $context,
     ): ?BackedEnum {
-        if ($name === null) {
+        if ($name === null || '' === $name) {
             return null;
         }
 
