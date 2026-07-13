@@ -258,7 +258,12 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	// Use stdin only when no file paths are provided
 	if len(args) == 0 {
 		// Example: `dagger shell`
-		if isatty.IsTerminal(os.Stdin.Fd()) {
+		//
+		// Go interactive when stdin is a terminal, or when the TUI console
+		// (DAGGER_TUI_CONSOLE) is serving the prompt over HTTP -- there the
+		// input arrives via injected keys, not stdin, so there's no stdin tty
+		// to detect, but the REPL/prompt is exactly what we want to drive.
+		if isatty.IsTerminal(os.Stdin.Fd()) || os.Getenv("DAGGER_TUI_CONSOLE") != "" {
 			return h.runInteractive(ctx)
 		}
 		// Example: `echo 'container | workdir' | dagger shell`
