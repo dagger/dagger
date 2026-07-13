@@ -267,7 +267,6 @@ func init() {
 	}
 }
 
-
 func (s *LLMSession) updateLLM(llm *dagger.LLM) error {
 	s.llm = llm
 

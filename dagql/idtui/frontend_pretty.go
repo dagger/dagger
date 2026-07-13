@@ -708,7 +708,6 @@ func (s *SpanTreeView) durationForStatus(spanID dagui.SpanID) *DurationView {
 	return dv
 }
 
-
 func (fe *frontendPretty) SetClient(client *dagger.Client) {
 	fe.dispatch(func() {
 		fe.dag = client
