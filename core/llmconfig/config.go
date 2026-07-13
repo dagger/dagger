@@ -162,7 +162,7 @@ func Remove() error {
 func RefreshOAuthTokensIfNeeded() error {
 	cfg, err := Load()
 	if err != nil || cfg == nil {
-		return nil // No config or error loading is OK
+		return nil //nolint:nilerr // a missing or unreadable config is non-fatal here
 	}
 
 	var changed bool

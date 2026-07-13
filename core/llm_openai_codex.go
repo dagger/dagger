@@ -161,11 +161,11 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 			e := event.AsResponseCompleted()
 			resp := e.Response
 			if resp.Usage.InputTokens > 0 {
-				usage.InputTokens = int64(resp.Usage.InputTokens)
+				usage.InputTokens = resp.Usage.InputTokens
 				inputTokens.Record(ctx, usage.InputTokens, metric.WithAttributes(attrs...))
 			}
 			if resp.Usage.OutputTokens > 0 {
-				usage.OutputTokens = int64(resp.Usage.OutputTokens)
+				usage.OutputTokens = resp.Usage.OutputTokens
 				outputTokens.Record(ctx, usage.OutputTokens, metric.WithAttributes(attrs...))
 			}
 			usage.TotalTokens = usage.InputTokens + usage.OutputTokens

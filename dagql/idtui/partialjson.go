@@ -23,6 +23,8 @@ type parsedField struct {
 //
 // This is intentionally simple and only handles the subset of JSON that
 // LLM tool call arguments produce.
+//
+//nolint:gocyclo // streaming JSON tokenizer; a flat state machine is clearest here
 func partialJSONFields(s string) []parsedField {
 	var result []parsedField
 	i := 0
@@ -92,8 +94,7 @@ func partialJSONFields(s string) []parsedField {
 
 	// Skip a JSON value (string, number, object, array, bool, null).
 	// Returns true if the value was fully consumed, false if truncated.
-	var skipValue func() bool
-	skipValue = func() bool {
+	skipValue := func() bool {
 		skip()
 		if i >= n {
 			return false
@@ -205,9 +206,7 @@ func partialJSONFields(s string) []parsedField {
 				} else {
 					// Non-string element — not a string array, skip the whole thing
 					i = saveI
-					if !skipValue() {
-						// truncated
-					}
+					skipValue()
 					complete = false
 					elems = nil
 					break
@@ -216,11 +215,9 @@ func partialJSONFields(s string) []parsedField {
 			if complete && len(elems) > 0 {
 				result = append(result, parsedField{Key: key, Value: strings.Join(elems, " "), Complete: true})
 			}
-		} else {
-			// Other value — skip it
-			if !skipValue() {
-				break
-			}
+		} else if !skipValue() {
+			// Other value — skip it; stop if truncated.
+			break
 		}
 
 		// Skip comma
