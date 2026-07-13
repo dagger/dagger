@@ -203,9 +203,10 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b bound
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
 			// A method that mutates state — returning the bound object's own type
-			// (rebinds it) or a Changeset (overlays the workspace) — is destructive
-			// and must run sequentially; everything else is read-only.
-			ReadOnly: retType != typeName && retType != "Changeset",
+			// (rebinds it), a Changeset (overlays the workspace), or a Workspace
+			// (replaces it) — is destructive and must run sequentially; everything
+			// else is read-only.
+			ReadOnly: retType != typeName && retType != "Changeset" && retType != "Workspace",
 			Call:     m.callObjectMethod(srv, typeName, field),
 		})
 	}
@@ -440,13 +441,15 @@ func buildObjectMethodSelector(srv *dagql.Server, recvType dagql.ObjectType, fie
 // routeObjectMethodResult renders a method's result for the model, per the
 // return-type table in hack/designs/workspace-agents.md:
 //   - Changeset: overlay onto the workspace, return the patch summary.
+//   - Workspace: replace the current workspace, return the diff summary.
 //   - the bound object's own type: rebind it as the new state, return its print.
 //   - any other object: sync it, return its print (else a type description).
 //   - Void/null: return its print, else "(done)".
 //   - scalar/list/record: return the value.
 func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, typeName string, val dagql.AnyResult) (any, error) {
-	// A Changeset overlays onto the workspace and returns a patch summary. step()
-	// persists the resulting workspace via a withWorkspace selector.
+	// A Changeset overlays onto the workspace (and a Workspace replaces it),
+	// returning a patch summary. step() persists the resulting workspace via a
+	// withWorkspace selector.
 	if handled, out, err := m.applyStateReturn(ctx, srv, val); handled {
 		return out, err
 	}
