@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +35,22 @@ func requireSamePaths(t *testing.T, beforeDir, afterDir string) *ChangesetPaths 
 	require.ElementsMatch(t, gitPaths.Removed, deltaPaths.Removed, "Removed")
 	require.ElementsMatch(t, gitPaths.AllRemoved, deltaPaths.AllRemoved, "AllRemoved")
 	require.Equal(t, gitPaths.Renamed, deltaPaths.Renamed, "Renamed")
+
+	// The stats-less variant stages fewer files but must report the same paths.
+	deltaPathsNoStats, _, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, false)
+	require.NoError(t, err)
+	require.Equal(t, deltaPaths, deltaPathsNoStats, "withStats=false paths")
+
+	// The IsEmpty fast path must agree with whether git sees any file-level
+	// change (renames included; directory-only changes don't count).
+	isFile := func(p string) bool { return !strings.HasSuffix(p, "/") }
+	gitEmpty := len(gitPaths.Modified) == 0 &&
+		!slices.ContainsFunc(gitPaths.Added, isFile) &&
+		!slices.ContainsFunc(gitPaths.AllRemoved, isFile)
+	deltaEmpty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir)
+	require.NoError(t, err)
+	require.Equal(t, gitEmpty, deltaEmpty, "IsEmpty")
+
 	return deltaPaths
 }
 
@@ -190,6 +208,27 @@ func TestChangesetDeltaMatchesGit(t *testing.T) {
 
 		requireSamePaths(t, before, after)
 		requireSameNumStat(t, before, after)
+	})
+
+	t.Run("identical trees", func(t *testing.T) {
+		before := t.TempDir()
+		after := t.TempDir()
+		writeDeltaTestFile(t, before, "a.txt", "same\n")
+		writeDeltaTestFile(t, after, "a.txt", "same\n")
+		writeDeltaTestFile(t, before, "sub/b.txt", "b\n")
+		writeDeltaTestFile(t, after, "sub/b.txt", "b\n")
+
+		requireSamePaths(t, before, after)
+	})
+
+	t.Run("added empty dir only", func(t *testing.T) {
+		before := t.TempDir()
+		after := t.TempDir()
+		writeDeltaTestFile(t, before, "a.txt", "same\n")
+		writeDeltaTestFile(t, after, "a.txt", "same\n")
+		require.NoError(t, os.MkdirAll(filepath.Join(after, "empty"), 0o755))
+
+		requireSamePaths(t, before, after)
 	})
 
 	t.Run("rename with modification stays paired like git", func(t *testing.T) {

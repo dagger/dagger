@@ -489,13 +489,9 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 
 	var isEmpty bool
 	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		paths, _, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, false)
+		empty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir)
 		if err == nil {
-			// Like `git diff --quiet`, only file-level changes count;
-			// directory-only changes (e.g. an added empty dir) don't.
-			isEmpty = len(paths.Modified) == 0 &&
-				!slices.ContainsFunc(paths.Added, isFilePath) &&
-				!slices.ContainsFunc(paths.AllRemoved, isFilePath)
+			isEmpty = empty
 			return nil
 		}
 		slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)

@@ -70,8 +70,14 @@ func computeChangesetPathsDelta(ctx context.Context, beforeDir, afterDir string,
 		tmpBefore := filepath.Join(tmpRoot, "before")
 		tmpAfter := filepath.Join(tmpRoot, "after")
 
-		beforePaths := slices.Clone(modified)
-		afterPaths := slices.Clone(modified)
+		// Modified files exist at the same path on both sides, so they can
+		// never participate in rename pairing; stage them only when numstat
+		// needs their content.
+		var beforePaths, afterPaths []string
+		if materializeModified {
+			beforePaths = slices.Clone(modified)
+			afterPaths = slices.Clone(modified)
+		}
 		if detectRenames {
 			beforePaths = append(beforePaths, delta.removedFiles...)
 			afterPaths = append(afterPaths, delta.addedFiles...)
@@ -252,52 +258,86 @@ func verifyModifiedFiles(ctx context.Context, beforeDir, afterDir string, candid
 		if err := ctx.Err(); err != nil {
 			return nil, context.Cause(ctx)
 		}
-		beforePath := filepath.Join(beforeDir, rel)
-		afterPath := filepath.Join(afterDir, rel)
-		beforeFi, err := os.Lstat(beforePath)
-		if err != nil {
-			return nil, fmt.Errorf("stat %s: %w", beforePath, err)
-		}
-		afterFi, err := os.Lstat(afterPath)
-		if err != nil {
-			return nil, fmt.Errorf("stat %s: %w", afterPath, err)
-		}
-		if gitFileMode(beforeFi) != gitFileMode(afterFi) {
-			modified = append(modified, rel)
-			continue
-		}
-		if beforeFi.Mode()&os.ModeSymlink != 0 {
-			beforeTarget, err := os.Readlink(beforePath)
-			if err != nil {
-				return nil, fmt.Errorf("readlink %s: %w", beforePath, err)
-			}
-			afterTarget, err := os.Readlink(afterPath)
-			if err != nil {
-				return nil, fmt.Errorf("readlink %s: %w", afterPath, err)
-			}
-			if beforeTarget != afterTarget {
-				modified = append(modified, rel)
-			}
-			continue
-		}
-		if !beforeFi.Mode().IsRegular() || !afterFi.Mode().IsRegular() {
-			// Sockets, devices, etc.: metadata differs, so report the change.
-			modified = append(modified, rel)
-			continue
-		}
-		if beforeFi.Size() != afterFi.Size() {
-			modified = append(modified, rel)
-			continue
-		}
-		same, err := fileContentsEqual(beforePath, afterPath)
+		changed, err := modifiedFileDiffers(beforeDir, afterDir, rel)
 		if err != nil {
 			return nil, err
 		}
-		if !same {
+		if changed {
 			modified = append(modified, rel)
 		}
 	}
 	return modified, nil
+}
+
+// modifiedFileDiffers reports whether a single metadata-suspect candidate's
+// git-visible mode or content actually differ between the two trees.
+func modifiedFileDiffers(beforeDir, afterDir, rel string) (bool, error) {
+	beforePath := filepath.Join(beforeDir, rel)
+	afterPath := filepath.Join(afterDir, rel)
+	beforeFi, err := os.Lstat(beforePath)
+	if err != nil {
+		return false, fmt.Errorf("stat %s: %w", beforePath, err)
+	}
+	afterFi, err := os.Lstat(afterPath)
+	if err != nil {
+		return false, fmt.Errorf("stat %s: %w", afterPath, err)
+	}
+	if gitFileMode(beforeFi) != gitFileMode(afterFi) {
+		return true, nil
+	}
+	if beforeFi.Mode()&os.ModeSymlink != 0 {
+		beforeTarget, err := os.Readlink(beforePath)
+		if err != nil {
+			return false, fmt.Errorf("readlink %s: %w", beforePath, err)
+		}
+		afterTarget, err := os.Readlink(afterPath)
+		if err != nil {
+			return false, fmt.Errorf("readlink %s: %w", afterPath, err)
+		}
+		return beforeTarget != afterTarget, nil
+	}
+	if !beforeFi.Mode().IsRegular() || !afterFi.Mode().IsRegular() {
+		// Sockets, devices, etc.: metadata differs, so report the change.
+		return true, nil
+	}
+	if beforeFi.Size() != afterFi.Size() {
+		return true, nil
+	}
+	same, err := fileContentsEqual(beforePath, afterPath)
+	if err != nil {
+		return false, err
+	}
+	return !same, nil
+}
+
+// changesetDeltaIsEmpty reports whether the two trees differ in any
+// git-visible file, without staging files or running git. Like
+// `git diff --quiet`, only file-level changes count; directory-only changes
+// (e.g. an added empty dir) don't. Added or removed files prove the changeset
+// non-empty regardless of how git would pair them into renames, and
+// metadata-suspect files are verified by content with an early exit on the
+// first real difference.
+func changesetDeltaIsEmpty(ctx context.Context, beforeDir, afterDir string) (bool, error) {
+	delta, err := collectChangesetDelta(ctx, beforeDir, afterDir)
+	if err != nil {
+		return false, fmt.Errorf("collect delta: %w", err)
+	}
+	if len(delta.addedFiles) > 0 || len(delta.removedFiles) > 0 {
+		return false, nil
+	}
+	for _, rel := range delta.modifiedCandidates {
+		if err := ctx.Err(); err != nil {
+			return false, context.Cause(ctx)
+		}
+		changed, err := modifiedFileDiffers(beforeDir, afterDir, rel)
+		if err != nil {
+			return false, fmt.Errorf("verify modified file: %w", err)
+		}
+		if changed {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // gitFileMode maps a file's mode onto the modes git tracks: symlink, and
@@ -454,10 +494,4 @@ func countGitLines(path string) (lines int, ok bool, _ error) {
 		lines++
 	}
 	return lines, true, nil
-}
-
-// isFilePath reports whether a ChangesetPaths entry refers to a file;
-// directory entries carry a trailing "/".
-func isFilePath(p string) bool {
-	return !strings.HasSuffix(p, "/")
 }
