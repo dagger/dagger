@@ -918,25 +918,24 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 // = all); the rest stay pending for a later request or resolver. Loading is
 // additive, so narrowing is deferral, not exclusion. Mutex+flags (not
 // sync.Once) keep transient failures retriable.
-func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule) error {
-	return srv.ensureModulesLoadedMode(ctx, client, filter, false)
-}
-
-// ensureModulesLoadedMode loads the demanded pending modules. With bestEffort,
-// a module that fails to load is skipped with a warning instead of failing the
-// whole batch: the demanding operation (dagger generate) may be exactly what
-// repairs it — e.g. a dagger-module.toml module whose committed generated
-// files don't exist yet, which loads only after its SDK generator runs.
-func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool) error {
+//
+// With bestEffort, a module that fails to load is skipped with a warning
+// instead of failing the whole batch: the demanding operation (dagger generate)
+// may be exactly what repairs it — e.g. a dagger-module.toml module whose
+// committed generated files don't exist yet, which loads only after its SDK
+// generator runs. The skipped modules' failure messages are returned so the
+// caller can surface them (e.g. GeneratorGroup.loadFailures). Genuine engine
+// errors (batch resolution, arbitration, serving) stay fatal regardless.
+func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool) (loadFailures []string, _ error) {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
 
 	if err := srv.ensureExtraModulesLoadedLocked(ctx, client); err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(client.pendingModules) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	demand := client.pendingModules
@@ -950,11 +949,12 @@ func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerCl
 	}
 
 	// A failed module stays pending; surface its recorded error rather than
-	// reloading it. Best-effort loads skip it instead.
+	// reloading it. Best-effort loads skip it instead, collecting its message.
 	if bestEffort {
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
-			if _, ok := client.failedModules[moduleProgressName(mod)]; ok {
+			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
+				loadFailures = append(loadFailures, err.Error())
 				continue
 			}
 			kept = append(kept, mod)
@@ -963,24 +963,24 @@ func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerCl
 	} else {
 		for _, mod := range demand {
 			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-				return err
+				return nil, err
 			}
 		}
 	}
 	if len(demand) == 0 {
-		return nil
+		return loadFailures, nil
 	}
 
 	// Wait for the client's session attachables to be available.
 	// Transient failure — allow retry on next request.
 	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
-		return fmt.Errorf("waiting for client session attachables: %w", err)
+		return nil, fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
 	loads := gatherModuleLoadRequests(demand, nil)
 	resolvedLoads, resolveErrs, err := srv.resolveModuleLoadBatch(ctx, client, loads)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var firstErr error
 	okLoads := make([]moduleLoadRequest, 0, len(loads))
@@ -994,6 +994,7 @@ func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerCl
 				msg := fmt.Sprintf("Skipping module %q for this operation: %v", moduleProgressName(load.mod), resolveErrs[i])
 				console(ctx, "%s", msg)
 				slog.Warn(msg)
+				loadFailures = append(loadFailures, loadErr.Error())
 				continue
 			}
 			if firstErr == nil {
@@ -1006,22 +1007,22 @@ func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerCl
 		served = append(served, load.mod)
 	}
 	if firstErr != nil {
-		return firstErr
+		return nil, firstErr
 	}
 
 	loads, resolvedLoads = dedupeResolvedModuleLoads(okLoads, okResolved)
 	if err := client.arbitrateAmbientEntrypoints(loads, resolvedLoads); err != nil {
-		return err
+		return nil, err
 	}
 
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 	if err := srv.serveResolvedModuleLoadsLocked(client, loads, resolvedLoads); err != nil {
-		return err
+		return nil, err
 	}
 	client.markEntrypointServed(resolvedLoads)
 	client.removePendingModules(served)
-	return nil
+	return loadFailures, nil
 }
 
 // ensureExtraModulesLoadedLocked loads -m modules. They are explicitly
@@ -1181,12 +1182,13 @@ func (client *daggerClient) removePendingModules(served []pendingModule) {
 // EnsureWorkspaceModules loads the pending workspace modules a selector
 // resolver (checks/generators/services) demands. Those fields validate against
 // the core schema, so loading waits until resolution where include is native.
-// With bestEffort, modules that fail to load are skipped with a warning
-// instead of failing the operation (see ensureModulesLoadedMode).
-func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) error {
+// With bestEffort, modules that fail to load are skipped with a warning instead
+// of failing the operation, and their failure messages are returned for the
+// caller to surface (see ensureModulesLoadedMode).
+func (srv *Server) EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) ([]string, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return srv.ensureModulesLoadedMode(ctx, client, func(mods []pendingModule) []pendingModule {
 		// runs under client.modulesMu, which also guards servedWorkspaceModuleNames

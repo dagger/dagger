@@ -438,6 +438,43 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 		require.NoError(t, err)
 		require.Contains(t, out, `Skipping module "bad"`)
 	})
+
+	t.Run("unscoped generate runs healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {
+		// -l only lists; this exercises the run+apply path. The broken module is
+		// reported as a warning, but the healthy `good` generator still runs and
+		// applies -- it writes generated.txt with a known marker.
+		ctr := base.With(daggerExec("generate", "-y", "--progress=plain"))
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "no changes to apply")
+		// The best-effort skip warning is asserted on the -l list path above; in
+		// run mode the output is zoomed to the generators span, so this subtest
+		// proves the behavioral outcome instead: the healthy generator applies.
+		// grep -rl exits non-zero if the marker was never written, so NoError
+		// proves the healthy generator applied.
+		_, err = ctr.WithExec([]string{"grep", "-rl", "hello from good", "."}).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("--require-load makes a load failure fatal", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("generate", "-l", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "require-load")
+	})
+
+	t.Run("--require-load also catches an explicitly-selected unloadable module", func(ctx context.Context, t *testctx.T) {
+		// Loading is best-effort even for an explicit selector, so naming the
+		// broken module no longer aborts by itself; --require-load is what turns
+		// its load failure into a hard error.
+		out, err := base.
+			With(daggerExecFail("generate", "bad", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "require-load")
+		require.Contains(t, out, "modules/bad")
+	})
 }
 
 // TestWorkspaceCheckNarrowsToRequestedModule mirrors

@@ -18,7 +18,8 @@ import (
 )
 
 var (
-	generateListMode bool
+	generateListMode    bool
+	generateRequireLoad bool
 )
 
 //go:embed generators.graphql
@@ -26,6 +27,7 @@ var loadGeneratorsQuery string
 
 func init() {
 	generateCmd.Flags().BoolVarP(&generateListMode, "list", "l", false, "List available generators")
+	generateCmd.Flags().BoolVar(&generateRequireLoad, "require-load", false, "Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)")
 }
 
 var generateCmd = &cobra.Command{
@@ -56,6 +58,19 @@ Examples:
 				} else {
 					generators = ws.Generators()
 				}
+				// The engine already warns per skipped module (best-effort load);
+				// --require-load turns those tolerated failures fatal before
+				// running or applying anything. An explicit selector fails hard
+				// and surfaces its error from this fetch.
+				if generateRequireLoad {
+					loadFailures, err := generatorGroupLoadFailures(ctx, dag, args)
+					if err != nil {
+						return err
+					}
+					if len(loadFailures) > 0 {
+						return fmt.Errorf("%d workspace module(s) failed to load (--require-load): %s", len(loadFailures), strings.Join(loadFailures, ", "))
+					}
+				}
 				if generateListMode {
 					return listGenerators(ctx, dag, generators, cmd)
 				}
@@ -63,6 +78,40 @@ Examples:
 			},
 		)
 	},
+}
+
+// generatorGroupLoadFailures reads the best-effort per-module load failures for
+// the given include patterns. It roots the query at currentWorkspace — a core
+// root field the request peek recognizes as demanding no modules — so this
+// fetch never re-triggers a strict entrypoint load. Resolving generators still
+// performs the best-effort module load, so the returned messages cover both the
+// ambient demand and any explicitly-selected module that could not load, which
+// --require-load then turns fatal.
+func generatorGroupLoadFailures(ctx context.Context, dag *dagger.Client, include []string) ([]string, error) {
+	var res struct {
+		CurrentWorkspace struct {
+			Generators struct {
+				LoadFailures []string
+			}
+		}
+	}
+	err := dag.Do(ctx, &dagger.Request{
+		Query: `query GeneratorGroupLoadFailures($include: [String!]) {
+  currentWorkspace {
+    generators(include: $include) {
+      loadFailures
+    }
+  }
+}`,
+		OpName:    "GeneratorGroupLoadFailures",
+		Variables: map[string]any{"include": include},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.CurrentWorkspace.Generators.LoadFailures, nil
 }
 
 func loadGeneratorGroupInfo(ctx context.Context, dag *dagger.Client, generatorGroup *dagger.GeneratorGroup) (*GeneratorGroupInfo, error) {

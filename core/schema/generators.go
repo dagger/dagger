@@ -32,6 +32,11 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("onConflict").Doc(`Strategy to apply on conflicts between generators`),
 			),
+
+		dagql.Func("loadFailures", s.loadFailures).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`Load failures tolerated while collecting the generators.`,
+				`Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.`),
 	}.Install(srv)
 
 	dagql.Fields[*core.Generator]{
@@ -60,6 +65,10 @@ func (s generatorsSchema) Install(srv *dagql.Server) {
 
 func (s generatorsSchema) list(ctx context.Context, parent *core.GeneratorGroup, args struct{}) ([]*core.Generator, error) {
 	return parent.List(ctx), nil
+}
+
+func (s generatorsSchema) loadFailures(_ context.Context, parent *core.GeneratorGroup, args struct{}) ([]string, error) {
+	return parent.LoadFailures, nil
 }
 
 func (s generatorsSchema) run(ctx context.Context, parent *core.GeneratorGroup, args struct{}) (*core.GeneratorGroup, error) {
