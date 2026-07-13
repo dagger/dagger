@@ -1,2 +1,5 @@
 CHANGELOG.md
 docs/versioned_docs/**
+
+# Session handoff doc (scaffolding, not user-facing).
+HANDOFF.md
