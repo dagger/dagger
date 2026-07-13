@@ -481,8 +481,8 @@ func (mode LLMMessageRole) ToLiteral() call.Literal {
 	return LLMMessageRoles.Literal(mode)
 }
 
-func (role LLMMessageRole) String() string {
-	return string(role)
+func (mode LLMMessageRole) String() string {
+	return string(mode)
 }
 
 // LLMToolCall is kept as a convenience type for the MCP layer and provider
@@ -1324,7 +1324,7 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 
 // Return the last message sent by the agent
 func (llm *LLM) LastReply() (string, bool) {
-	var reply string = "(no reply)"
+	reply := "(no reply)"
 	var foundReply bool
 	for _, msg := range llm.Messages {
 		if msg.Role != LLMMessageRoleAssistant {
@@ -1380,6 +1380,7 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	return llm.step(ctx, inst)
 }
 
+//nolint:gocyclo // the step retry/error/streaming loop reads clearer as one function
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	llm = llm.Clone()
 
@@ -1670,7 +1671,7 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 				// Context was cancelled (user interrupt). Return the last
 				// successfully recorded state so that the prompt and any prior
 				// progress are preserved in history.
-				return inst, nil
+				return inst, nil //nolint:nilerr // interrupt: preserve last state, no error
 			}
 			// Handle persistent error after all retries failed.
 			return inst, err

@@ -109,7 +109,6 @@ func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error
 	return ms.functionCall, nil
 }
 
-
 func (ms *mockServer) CurrentServedDeps(context.Context) (*SchemaBuilder, error) {
 	return NewSchemaBuilder(nil, nil), nil
 }
