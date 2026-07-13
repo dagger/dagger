@@ -649,6 +649,56 @@ func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIgnoreForPath(t *testing.T) {
+	t.Run("root keeps configured patterns", func(t *testing.T) {
+		require.Equal(t,
+			[]string{"ignored/**", "sub/generated/**", "*.log"},
+			workspaceIgnoreForPath([]string{"ignored/**", "sub/generated/**", "*.log"}, "."),
+		)
+	})
+
+	t.Run("subdirectory uses relative matching patterns", func(t *testing.T) {
+		require.Equal(t,
+			[]string{"generated/**", "*.log", "**/cache/**", "!keep.log", "*"},
+			workspaceIgnoreForPath([]string{
+				"sub/generated/**",
+				"other/generated/**",
+				"*.log",
+				"**/cache/**",
+				"!sub/keep.log",
+				"sub",
+			}, "sub"),
+		)
+	})
+
+	t.Run("nested subdirectory trims workspace prefix", func(t *testing.T) {
+		require.Equal(t,
+			[]string{"*.pb.go"},
+			workspaceIgnoreForPath([]string{"services/api/*.pb.go", "services/web/*.pb.go"}, filepath.Join("services", "api")),
+		)
+	})
+
+	t.Run("ancestor directory ignore covers nested requests", func(t *testing.T) {
+		require.Equal(t,
+			[]string{"*", "*", "!keep.txt"},
+			workspaceIgnoreForPath([]string{"sub", "sub/**", "!sub/nested/keep.txt"}, filepath.Join("sub", "nested")),
+		)
+	})
+}
+
+func TestWorkspaceFilterWithIgnore(t *testing.T) {
+	ws := &core.Workspace{}
+	ws.SetIgnorePatterns([]string{"sub/generated/**"})
+
+	filter := workspaceFilterWithIgnore(ws, "sub", core.CopyFilter{
+		Include: []string{"*.go"},
+		Exclude: []string{"*.tmp"},
+	})
+
+	require.Equal(t, []string{"*.go"}, filter.Include)
+	require.Equal(t, []string{"*.tmp", "generated/**"}, filter.Exclude)
+}
+
 func modTreeNode(parts ...string) *core.ModTreeNode {
 	parent := &core.ModTreeNode{}
 	for _, part := range parts {

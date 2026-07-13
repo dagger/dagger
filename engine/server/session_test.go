@@ -673,6 +673,38 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Equal(t, map[string]any{"message": "hello"}, pending[1].ConfigDefaults)
 }
 
+func TestWorkspaceConfigIgnorePatterns(t *testing.T) {
+	t.Parallel()
+
+	t.Run("root config keeps patterns as written", func(t *testing.T) {
+		t.Parallel()
+
+		got := workspaceConfigIgnorePatterns(&workspace.Workspace{
+			ConfigFile: workspace.ConfigFileName,
+		}, &workspace.Config{
+			Ignore: []string{"ignored/**", "!ignored/keep"},
+		})
+
+		require.Equal(t, []string{"ignored/**", "!ignored/keep"}, got)
+	})
+
+	t.Run("nested config resolves patterns from config directory", func(t *testing.T) {
+		t.Parallel()
+
+		got := workspaceConfigIgnorePatterns(&workspace.Workspace{
+			ConfigFile: filepath.Join("services", "api", workspace.ConfigFileName),
+		}, &workspace.Config{
+			Ignore: []string{"generated/**", "!generated/keep.txt", "../outside", "/absolute", "**/cache/**"},
+		})
+
+		require.Equal(t, []string{
+			filepath.ToSlash(filepath.Join("services", "api", "generated", "**")),
+			"!" + filepath.ToSlash(filepath.Join("services", "api", "generated", "keep.txt")),
+			filepath.ToSlash(filepath.Join("services", "api", "**", "cache", "**")),
+		}, got)
+	})
+}
+
 // TestModuleResolutionFromSubdirectory verifies that module source paths from
 // dagger.json are resolved relative to the config file location, not the
 // client's working directory. When a client connects from sdk/go/, a module

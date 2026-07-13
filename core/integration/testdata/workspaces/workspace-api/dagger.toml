@@ -1,3 +1,5 @@
+ignore = ["ignored/**", "sub/secret.txt"]
+
 [modules.reader]
 source = ".dagger/modules/reader"
 
@@ -30,3 +32,6 @@ source = ".dagger/modules/abs-rel"
 
 [modules.finder]
 source = ".dagger/modules/finder"
+
+[modules.ignored-reader]
+source = ".dagger/modules/ignored-reader"
