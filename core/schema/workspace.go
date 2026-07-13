@@ -44,6 +44,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Workspace]{
 		dagql.Func("__workspaceModule", s.workspaceModule).
 			View(AfterVersion("v1.0.0-0")),
+		dagql.Func("__workspaceSDK", s.workspaceSDK).
+			View(AfterVersion("v1.0.0-0")),
 		dagql.Func("path", s.legacyPath).
 			View(BeforeVersion("v1.0.0-0")).
 			Doc("Workspace directory path relative to the workspace boundary."),

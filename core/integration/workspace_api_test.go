@@ -760,6 +760,93 @@ source = "go"
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func (WorkspaceAPISuite) TestWorkspaceSDKsHaveDistinctIdentity(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.toml"), []byte(`[modules.alpha]
+source = "sdk-alpha"
+
+[modules.alpha.as-sdk]
+name = "alpha-sdk"
+
+[[modules.alpha.as-sdk.modules]]
+path = "modules/alpha"
+
+[[modules.alpha.as-sdk.clients]]
+path = "clients/alpha"
+module = "github.com/example/alpha"
+pin = "deadbeef"
+
+[modules.beta]
+source = "sdk-beta"
+
+[modules.beta.as-sdk]
+name = "beta-sdk"
+
+[[modules.beta.as-sdk.modules]]
+path = "modules/beta"
+
+[[modules.beta.as-sdk.clients]]
+path = "clients/beta"
+module = "github.com/example/beta"
+`), 0o644))
+
+	queryPath := writeQueryDoc(t, workdir, "sdk-identities.graphql", `{
+  currentWorkspace {
+    sdks {
+      id
+      name
+      ref
+      modules { name source }
+      clients { name source }
+    }
+  }
+}
+`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			SDKs []struct {
+				ID      string `json:"id"`
+				Name    string `json:"name"`
+				Ref     string `json:"ref"`
+				Modules []struct {
+					Name   string `json:"name"`
+					Source string `json:"source"`
+				} `json:"modules"`
+				Clients []struct {
+					Name   string `json:"name"`
+					Source string `json:"source"`
+				} `json:"clients"`
+			} `json:"sdks"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal(out, &got))
+	require.Len(t, got.CurrentWorkspace.SDKs, 2)
+	alpha, beta := got.CurrentWorkspace.SDKs[0], got.CurrentWorkspace.SDKs[1]
+	require.NotEmpty(t, alpha.ID)
+	require.NotEmpty(t, beta.ID)
+	require.NotEqual(t, alpha.ID, beta.ID)
+	require.Equal(t, "alpha-sdk", alpha.Name)
+	require.Equal(t, "sdk-alpha", alpha.Ref)
+	require.Len(t, alpha.Modules, 1)
+	require.Len(t, alpha.Clients, 1)
+	require.Equal(t, "alpha", alpha.Modules[0].Name)
+	require.Equal(t, "modules/alpha", alpha.Modules[0].Source)
+	require.Equal(t, "clients/alpha", alpha.Clients[0].Name)
+	require.Equal(t, "github.com/example/alpha@deadbeef", alpha.Clients[0].Source)
+	require.Equal(t, "beta-sdk", beta.Name)
+	require.Equal(t, "sdk-beta", beta.Ref)
+	require.Len(t, beta.Modules, 1)
+	require.Len(t, beta.Clients, 1)
+	require.Equal(t, "beta", beta.Modules[0].Name)
+	require.Equal(t, "modules/beta", beta.Modules[0].Source)
+	require.Equal(t, "clients/beta", beta.Clients[0].Name)
+	require.Equal(t, "github.com/example/beta", beta.Clients[0].Source)
+}
+
 func (WorkspaceAPISuite) TestWorkspaceExportFailureBySource(ctx context.Context, t *testctx.T) {
 	t.Run("rootless local", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()

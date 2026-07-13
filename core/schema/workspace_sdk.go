@@ -40,7 +40,7 @@ func (s *workspaceSchema) sdks(
 	}
 	sdks.Sort()
 
-	return workspaceSDKResults(ctx, sdks)
+	return workspaceSDKResults(ctx, parent, sdks)
 }
 
 func (s *workspaceSchema) sdk(
@@ -73,7 +73,7 @@ func (s *workspaceSchema) sdk(
 	if err != nil {
 		return dagql.ObjectResult[*core.WorkspaceSDK]{}, err
 	}
-	result, err := workspaceSDKResults(ctx, core.WorkspaceSDKs{
+	result, err := workspaceSDKResults(ctx, parent, core.WorkspaceSDKs{
 		workspaceSDKFromEntry(configDir, moduleName, entry),
 	})
 	if err != nil {
@@ -82,20 +82,85 @@ func (s *workspaceSchema) sdk(
 	return result[0], nil
 }
 
-func workspaceSDKResults(ctx context.Context, sdks core.WorkspaceSDKs) (dagql.ObjectResultArray[*core.WorkspaceSDK], error) {
+func workspaceSDKResults(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	sdks core.WorkspaceSDKs,
+) (dagql.ObjectResultArray[*core.WorkspaceSDK], error) {
 	results := make(dagql.ObjectResultArray[*core.WorkspaceSDK], 0, len(sdks))
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, sdk := range sdks {
-		result, err := dagql.NewObjectResultForCurrentCall(ctx, srv, sdk)
-		if err != nil {
-			return nil, fmt.Errorf("workspace SDK %q: %w", sdk.Name, err)
+		moduleNames := make(dagql.ArrayInput[dagql.String], len(sdk.Modules))
+		moduleSources := make(dagql.ArrayInput[dagql.String], len(sdk.Modules))
+		for i, module := range sdk.Modules {
+			moduleNames[i] = dagql.String(module.Name)
+			moduleSources[i] = dagql.String(module.Source)
+		}
+		clientNames := make(dagql.ArrayInput[dagql.String], len(sdk.Clients))
+		clientSources := make(dagql.ArrayInput[dagql.String], len(sdk.Clients))
+		for i, client := range sdk.Clients {
+			clientNames[i] = dagql.String(client.Name)
+			clientSources[i] = dagql.String(client.Source)
+		}
+
+		var result dagql.ObjectResult[*core.WorkspaceSDK]
+		if err := srv.Select(ctx, parent, &result, dagql.Selector{
+			Field: "__workspaceSDK",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(sdk.Name)},
+				{Name: "ref", Value: dagql.String(sdk.Ref)},
+				{Name: "moduleNames", Value: moduleNames},
+				{Name: "moduleSources", Value: moduleSources},
+				{Name: "clientNames", Value: clientNames},
+				{Name: "clientSources", Value: clientSources},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("workspace SDK list: create SDK %q: %w", sdk.Name, err)
 		}
 		results = append(results, result)
 	}
 	return results, nil
+}
+
+func (s *workspaceSchema) workspaceSDK(
+	_ context.Context,
+	_ *core.Workspace,
+	args struct {
+		Name          string
+		Ref           string
+		ModuleNames   []string `default:"[]"`
+		ModuleSources []string `default:"[]"`
+		ClientNames   []string `default:"[]"`
+		ClientSources []string `default:"[]"`
+	},
+) (*core.WorkspaceSDK, error) {
+	if len(args.ModuleNames) != len(args.ModuleSources) {
+		return nil, fmt.Errorf("workspace SDK %q: module names and sources have different lengths", args.Name)
+	}
+	if len(args.ClientNames) != len(args.ClientSources) {
+		return nil, fmt.Errorf("workspace SDK %q: client names and sources have different lengths", args.Name)
+	}
+
+	sdk := &core.WorkspaceSDK{
+		Name: args.Name,
+		Ref:  args.Ref,
+	}
+	for i, name := range args.ModuleNames {
+		sdk.Modules = append(sdk.Modules, &core.WorkspaceModule{
+			Name:   name,
+			Source: args.ModuleSources[i],
+		})
+	}
+	for i, name := range args.ClientNames {
+		sdk.Clients = append(sdk.Clients, &core.WorkspaceModule{
+			Name:   name,
+			Source: args.ClientSources[i],
+		})
+	}
+	return sdk, nil
 }
 
 func workspaceSDKFromEntry(configDir, moduleName string, entry workspace.ModuleEntry) *core.WorkspaceSDK {
