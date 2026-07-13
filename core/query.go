@@ -89,8 +89,10 @@ type Server interface {
 
 	// Load pending workspace modules on demand; include narrows to the modules
 	// its patterns name ("module" or "module:item"), empty or unrecognized
-	// loads all.
-	EnsureWorkspaceModules(ctx context.Context, include []string) error
+	// loads all. With bestEffort, modules that fail to load are skipped with a
+	// warning instead of failing the operation — for operations like generate
+	// that may be exactly what repairs the failing module.
+	EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) error
 
 	// A snapshot of the current workspace lockfile for ambient live locking.
 	// Returns ok=false when lock-backed workspace access is unavailable.

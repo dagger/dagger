@@ -335,6 +335,7 @@ func New(
   "engineVersion": "v0.20.1",
   "sdk": {"source": "go"},
   "source": ".dagger",
+  "codegen": {"automaticGitignore": false},
   "toolchains": [
     {"name": "defaults", "source": "./toolchain"}
   ],
@@ -346,7 +347,12 @@ func New(
 				WithDirectory(".dagger", c.Host().Directory(mainModuleSrc)).
 				WithDirectory("toolchain", c.Host().Directory(toolchainSrc)).
 				WithNewFile("dagger.json", legacyConfig)
-		}).With(daggerExec("setup", "--auto-apply"))
+		},
+			// The fixture's committed generated files predate this engine. The
+			// migrated module is dagger-module.toml and builds from them as-is,
+			// so refresh them with the current engine's codegen.
+			materializeModuleFiles("."),
+		).With(daggerExec("setup", "--auto-apply"))
 
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)

@@ -53,7 +53,7 @@ func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Wor
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string) error {
+func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string, bool) error {
 	return nil
 }
 

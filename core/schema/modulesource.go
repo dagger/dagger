@@ -2452,6 +2452,20 @@ func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
 	return src.Self().SelfCallsEnabled()
 }
 
+// ignoresGeneratedPath reports whether an ignore entry points at or inside a
+// VCS-generated path, e.g. ignore "/sdk" against generated "sdk/**".
+func ignoresGeneratedPath(ignore string, generated []string) bool {
+	ignore = strings.TrimPrefix(ignore, "/")
+	for _, gen := range generated {
+		gen = strings.TrimPrefix(gen, "/")
+		gen = strings.TrimSuffix(gen, "/**")
+		if ignore == gen || strings.HasPrefix(ignore, gen+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
@@ -2480,8 +2494,6 @@ func (s *moduleSourceSchema) runCodegen(
 	genDirInst := generatedCode.Code
 
 	// update .gitattributes in the generated context directory
-	// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
-	//nolint:dupl
 	if len(generatedCode.VCSGeneratedPaths) > 0 {
 		gitAttrsPath := filepath.Join(srcInst.Self().SourceSubpath, ".gitattributes")
 		var gitAttrsContents []byte
@@ -2534,9 +2546,15 @@ func (s *moduleSourceSchema) runCodegen(
 	if srcInst.Self().CodegenConfig != nil && srcInst.Self().CodegenConfig.AutomaticGitignore != nil {
 		writeGitignore = *srcInst.Self().CodegenConfig.AutomaticGitignore
 	}
-	// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
-	//nolint:dupl
-	if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
+	vcsIgnoredPaths := generatedCode.VCSIgnoredPaths
+	if srcInst.Self().ConfigFilename == modules.Filename {
+		// toml modules build from committed generated files: gitignoring them
+		// would filter them out of the local module context.
+		vcsIgnoredPaths = slices.DeleteFunc(slices.Clone(vcsIgnoredPaths), func(ignore string) bool {
+			return ignoresGeneratedPath(ignore, generatedCode.VCSGeneratedPaths)
+		})
+	}
+	if writeGitignore && len(vcsIgnoredPaths) > 0 {
 		gitIgnorePath := filepath.Join(srcInst.Self().SourceSubpath, ".gitignore")
 		var gitIgnoreContents []byte
 		var gitIgnoreFile dagql.ObjectResult[*core.File]
@@ -2557,7 +2575,7 @@ func (s *moduleSourceSchema) runCodegen(
 				gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
 			}
 		}
-		for _, fileName := range generatedCode.VCSIgnoredPaths {
+		for _, fileName := range vcsIgnoredPaths {
 			if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
 				continue
 			}

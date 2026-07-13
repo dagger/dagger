@@ -379,6 +379,7 @@ main()
 					With(nonNestedDevEngine(c)).
 					With(clientGeneratorModule("client-test", clientGeneratorSDKClientFor(tc.generator, defaultGenDir))).
 					With(clientGeneratorLocalDepModule()).
+					With(materializeModuleFiles("dep")).
 					With(tc.setup).
 					With(daggerExec("generate", "-y"))
 
@@ -435,6 +436,7 @@ func (t *Test) Hello(ctx context.Context) (string, error) {
 	return dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
 }
 					`).
+						With(materializeModuleFiles(".")).
 						With(withGoSetup(`package main
 
 import (
@@ -1616,6 +1618,7 @@ func (t *Test) Message() string {
 	return t.Greeting + ", world!"
 }
 `).
+		With(materializeModuleFiles(".")).
 		// Ensure the module compiles
 		With(daggerNonNestedExec("api", "functions")).
 		// Generate the Go client. withGoSetup is not used because the
@@ -1810,6 +1813,7 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			With(nonNestedDevEngine(c)).
 			With(clientGeneratorModuleVersion("test", "v0.19.9", clientGeneratorSDKClientFor("go", defaultGenDir))).
+			With(materializeModuleFiles(".")).
 			With(daggerExec("generate", "-y"))
 
 		// Mount SDK for go generator tests so SDK replace directives work
@@ -1866,6 +1870,7 @@ func (ClientGeneratorTest) TestEngineVersionPinning(ctx context.Context, t *test
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			With(nonNestedDevEngine(c)).
 			With(clientGeneratorModuleVersion("test", "v0.19.8", clientGeneratorSDKClientFor("go", defaultGenDir))).
+			With(materializeModuleFiles(".")).
 			With(daggerExec("generate", "-y"))
 
 		initialGoModContents, err := moduleSrc.
@@ -1958,6 +1963,12 @@ func clientGeneratorGitWorkspaceRoot() dagger.WithContainerFunc {
 			WithExec([]string{"apk", "add", "git"}).
 			WithExec([]string{"git", "init"})
 	}
+}
+
+// materializeModuleFiles runs codegen and exports the module's generated
+// files into the container: toml modules don't regenerate at runtime.
+func materializeModuleFiles(refString string) dagger.WithContainerFunc {
+	return daggerQuery(`{moduleSource(refString:%q){generatedContextDirectory{export(path:".")}}}`, refString)
 }
 
 func clientGeneratorGoModule(name string, clients ...clientGeneratorSDKClient) dagger.WithContainerFunc {
@@ -2136,6 +2147,7 @@ func (ClientGeneratorTest) TestClientParity(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
 		With(clientGeneratorGoModule("test", clientGeneratorSDKClientFor("go", defaultGenDir))).
+		With(materializeModuleFiles(".")).
 		With(daggerExec("generate", "-y"))
 
 	// Verify generated client has GraphQLClient, QueryBuilder, and Do methods
