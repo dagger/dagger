@@ -107,10 +107,11 @@ func renderUnifiedLine(out TermOutput, dl diffLine, pair *diffLine, width int) s
 	var styled string
 	if pair != nil {
 		pairedContent := expandTabs(pair.Content, diffTabWidth)
-		if dl.Kind == diffRemoved {
+		switch dl.Kind {
+		case diffRemoved:
 			oldRanges, _ := intralineRanges(content, pairedContent)
 			styled = applyIntralineColor(out, content, oldRanges, lineColor)
-		} else if dl.Kind == diffAdded {
+		case diffAdded:
 			_, newRanges := intralineRanges(pairedContent, content)
 			styled = applyIntralineColor(out, content, newRanges, lineColor)
 		}

@@ -17,7 +17,7 @@ const (
 	// Claude Code OAuth configuration
 	oauthClientID    = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	oauthAuthorize   = "https://claude.ai/oauth/authorize"
-	oauthTokenURL    = "https://console.anthropic.com/v1/oauth/token"
+	oauthTokenURL    = "https://console.anthropic.com/v1/oauth/token" //nolint:gosec // OAuth token endpoint URL, not a credential
 	oauthRedirectURI = "https://console.anthropic.com/oauth/code/callback"
 	oauthScopes      = "org:create_api_key user:profile user:inference"
 	oauthProfileURL  = "https://api.anthropic.com/api/oauth/profile"

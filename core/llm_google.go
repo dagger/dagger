@@ -68,6 +68,7 @@ func (c *GenaiClient) convertToolsToGenai(tools []LLMTool) ([]*genai.Tool, error
 	}, nil
 }
 
+//nolint:gocyclo // straight-line translation of message blocks to genai parts
 func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
 	// Build a map from CallID to ToolName so that tool result blocks (which
 	// only carry CallID) can recover the function name that Google's

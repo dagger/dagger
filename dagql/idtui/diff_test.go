@@ -181,7 +181,7 @@ func terminalRenderWidth(s string) int {
 		if s[i] == '\x1b' {
 			// Skip ANSI escape sequence.
 			j := i + 1
-			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+			for j < len(s) && (s[j] < 'A' || s[j] > 'Z') && (s[j] < 'a' || s[j] > 'z') {
 				j++
 			}
 			if j < len(s) {

@@ -16,7 +16,7 @@ const (
 	// OpenAI Codex OAuth configuration
 	openaiClientID    = "app_EMoamEEZ73f0CkXaXp7hrann"
 	openaiAuthorize   = "https://auth.openai.com/oauth/authorize"
-	openaiTokenURL    = "https://auth.openai.com/oauth/token"
+	openaiTokenURL    = "https://auth.openai.com/oauth/token" //nolint:gosec // OAuth token endpoint URL, not a credential
 	openaiRedirectURI = "http://localhost:1455/auth/callback"
 	openaiScopes      = "openid profile email offline_access"
 )
