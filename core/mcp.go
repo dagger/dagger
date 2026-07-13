@@ -386,21 +386,68 @@ func displayArgs(args any) string {
 }
 
 // applyStateReturn implements the state-mutation convention shared by tool calls
-// and Dang eval results: returning a Changeset overlays it onto the bound
-// workspace (via Workspace.withChanges, yielding a new immutable overlay
-// Workspace) so the agent's edits accumulate across turns, and summarizes the
-// patch. step() persists the resulting workspace via a withWorkspace selector so
-// the overlay survives history rebuilds. It reports handled=false for any other
-// value so the caller can fall through to normal object/scalar output.
+// and Dang eval results. Two kinds of value advance the agent's workspace:
+//
+//   - a Changeset overlays onto the bound workspace (via Workspace.withChanges,
+//     yielding a new immutable overlay Workspace) so the agent's edits accumulate
+//     across turns.
+//   - a Workspace *replaces* the bound one — a tool that produces a whole new
+//     workspace (e.g. a checkout or install) makes it the agent's current
+//     workspace, mirroring the Changeset convention.
+//
+// Either way it summarizes the resulting patch. step() persists the new workspace
+// via a withWorkspace selector so the change survives history rebuilds. It reports
+// handled=false for any other value so the caller can fall through to normal
+// object/scalar output.
 func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql.Typed) (handled bool, out string, err error) {
-	changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val)
-	if !ok {
-		return false, "", nil
+	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
+		if err := m.applyChangeset(ctx, srv, changes); err != nil {
+			return true, "", err
+		}
+		return true, m.summarizePatch(ctx, srv, changes), nil
 	}
-	if err := m.applyChangeset(ctx, srv, changes); err != nil {
-		return true, "", err
+	if ws, ok := dagql.UnwrapAs[dagql.ObjectResult[*Workspace]](val); ok {
+		out, err := m.rebindWorkspace(ctx, srv, ws)
+		return true, out, err
 	}
-	return true, m.summarizePatch(ctx, srv, changes), nil
+	return false, "", nil
+}
+
+// rebindWorkspace makes a tool-returned Workspace the LLM's current workspace,
+// the sibling of applyChangeset for the replace (rather than overlay) case. It
+// summarizes the diff from the previous workspace so the model sees what the tool
+// changed, reusing the Changeset patch summary.
+func (m *MCP) rebindWorkspace(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace]) (string, error) {
+	prev := m.workspace
+	m.workspace = ws
+	if prev.Self() == nil {
+		// No prior workspace to diff against (e.g. the LLM was unbound); just adopt
+		// it without a patch summary.
+		return "Set the current workspace.", nil
+	}
+	before, err := workspaceRoot(ctx, srv, prev)
+	if err != nil {
+		return "", err
+	}
+	after, err := workspaceRoot(ctx, srv, ws)
+	if err != nil {
+		return "", err
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return "", err
+	}
+	var changes dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, after, &changes, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
+		},
+	}); err != nil {
+		return "", err
+	}
+	return m.summarizePatch(ctx, srv, changes), nil
 }
 
 // applyChangeset overlays a Changeset onto the bound workspace and updates
@@ -430,8 +477,14 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 // workspaceDirectory returns the bound workspace's root directory, for
 // operations (like external MCP-server sync) that need a plain Directory.
 func (m *MCP) workspaceDirectory(ctx context.Context, srv *dagql.Server) (dagql.ObjectResult[*Directory], error) {
+	return workspaceRoot(ctx, srv, m.workspace)
+}
+
+// workspaceRoot returns the given workspace's root directory as a plain
+// Directory, e.g. for diffing two workspaces.
+func workspaceRoot(ctx context.Context, srv *dagql.Server, ws dagql.ObjectResult[*Workspace]) (dagql.ObjectResult[*Directory], error) {
 	var dir dagql.ObjectResult[*Directory]
-	err := srv.Select(ctx, m.workspace, &dir, dagql.Selector{
+	err := srv.Select(ctx, ws, &dir, dagql.Selector{
 		View:  srv.View,
 		Field: "directory",
 		Args: []dagql.NamedInput{
