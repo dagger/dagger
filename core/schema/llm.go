@@ -21,6 +21,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc(`Initialize a Large Language Model (LLM)`).
 			Args(
 				dagql.Arg("model").Doc("Model to use"),
+				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM").
+					View(BeforeVersion("v1.0.0-0")),
 			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
@@ -30,7 +32,11 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("return the provider used by the llm"),
 		dagql.Func("history", s.history).
 			Doc("return the llm message history"),
+		dagql.Func("messages", s.messages).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("The full message history."),
 		dagql.Func("serializeHistory", s.serializeHistory).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)"),
 		dagql.Func("historyJSON", s.historyJSON).
 			View(AllVersion).
@@ -79,6 +85,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("prompt").Doc("The system prompt to send"),
 			),
 		dagql.Func("withResponse", s.withResponse).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Append an assistant response to the message history").
 			Args(
 				dagql.Arg("content").Doc("The response content"),
@@ -89,6 +96,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("totalTokens").Doc("Total tokens consumed by this response"),
 			),
 		dagql.Func("withToolCall", s.withToolCall).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Append a tool call to the last assistant message").
 			Args(
 				dagql.Arg("call").Doc("The unique ID for this tool call"),
@@ -96,6 +104,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("arguments").Doc("The arguments to pass to the tool"),
 			),
 		dagql.Func("withToolResponse", s.withToolResponse).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Append a tool response to the message history").
 			Args(
 				dagql.Arg("call").Doc("The ID of the tool call this is responding to"),
@@ -103,12 +112,14 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
 			),
 		dagql.Func("withObject", s.withObject).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Track an object so the LLM can reference it in subsequent tool calls.").
 			Args(
 				dagql.Arg("tag").Doc("Arbitrary string tag for the object, typically in TypeName#Number format"),
 				dagql.Arg("object").Doc("The object to track, as a generic ID"),
 			),
 		dagql.Func("withMaxTokens", s.withMaxTokens).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Set the maximum number of output tokens the model may generate per API call").
 			Args(
 				dagql.Arg("tokens").Doc("The maximum number of output tokens (0 to use provider defaults)"),
@@ -136,12 +147,14 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		}).
 			Doc("synchronize LLM state"),
 		dagql.NodeFunc("replay", s.replay).
+			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
 			Doc("Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation"),
 		dagql.NodeFunc("loop", s.loop).
 			Doc("Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn").
 			Args(
-				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls"),
+				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls").
+					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.Func("hasPrompt", s.hasPrompt).
 			Doc("Indicates whether there are any queued prompts or tool results to send to the model"),
@@ -157,12 +170,18 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("returns the token usage of the current state"),
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
+	// The content-block message model is only visible to v1+ module views;
+	// installing the classes with a view gate also gates their generated
+	// ID/load fields and Env/Binding extensions.
+	srv.InstallObject(dagql.NewClass[*core.LLMMessage](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.LLMContentBlock](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.LLMToolCall](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.LLMMessage]{}.Install(srv)
 	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
 	dagql.Fields[*core.LLMToolCall]{}.Install(srv)
-	core.LLMMessageRoles.Install(srv)
-	core.LLMContentBlockKinds.Install(srv)
-	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv)
+	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
+	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
+	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
 }
 
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
@@ -372,12 +391,26 @@ func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	Model dagql.Optional[dagql.String]
+	// Legacy cap on API calls, only exposed to pre-v1 module views; v1+
+	// callers pass maxAPICalls to loop() instead.
+	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
 }) (*core.LLM, error) {
 	var model string
 	if args.Model.Valid {
 		model = args.Model.Value.String()
 	}
-	return parent.NewLLM(ctx, model)
+	llm, err := parent.NewLLM(ctx, model)
+	if err != nil {
+		return nil, err
+	}
+	if args.MaxAPICalls.Valid && args.MaxAPICalls.Value.Int() > 0 {
+		llm = llm.WithMaxAPICalls(args.MaxAPICalls.Value.Int())
+	}
+	return llm, nil
+}
+
+func (s *llmSchema) messages(_ context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMMessage, error) {
+	return llm.Messages, nil
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {

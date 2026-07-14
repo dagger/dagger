@@ -140,15 +140,17 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctrFn := func(llmFlags string) dagger.WithContainerFunc {
-		return daggerShell(fmt.Sprintf(`llm %s | with-env $(env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop | with-prompt "now tell me the value of TERM" | historyJSON`, llmFlags))
+	// maxAPICalls is a loop() argument: the limit caps the loop invocation
+	// rather than the LLM as a whole.
+	ctrFn := func(llmFlags, loopFlags string) dagger.WithContainerFunc {
+		return daggerShell(fmt.Sprintf(`llm %s | with-env $(env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | historyJSON`, llmFlags, loopFlags))
 	}
 
 	recording := "llmtest/api-limit.golden"
 	if golden.FlagUpdate() {
 		out, err := daggerCliBase(t, c).
 			With(daggerForwardSecrets(c)).
-			With(ctrFn("")).
+			With(ctrFn("", "")).
 			Stdout(ctx)
 		require.NoError(t, err)
 
@@ -162,10 +164,10 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 
 	replayData, err := os.ReadFile(recording)
 	require.NoError(t, err)
-	llmFlags := fmt.Sprintf("--max-api-calls=1 --model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
+	llmFlags := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
 
 	_, err = daggerCliBase(t, c).
-		With(ctrFn(llmFlags)).
+		With(ctrFn(llmFlags, "--max-api-calls=1")).
 		Stdout(ctx)
 	requireErrOut(t, err, "reached API call limit: 1")
 }

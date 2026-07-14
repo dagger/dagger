@@ -85,7 +85,10 @@ func resolveModelAlias(maybeAlias string) string {
 type LLM struct {
 	// The full message history, exposed over the API as first-class content
 	// blocks so that conversations can be queried and branched.
-	Messages []*LLMMessage `field:"true" doc:"The full message history."`
+	//
+	// Installed as a version-gated field in core/schema/llm.go rather than via
+	// a `field:"true"` tag, since struct tag fields cannot carry a view filter.
+	Messages []*LLMMessage
 
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
@@ -101,6 +104,11 @@ type LLM struct {
 	// maxTokens limits the number of output tokens the model may generate
 	// per API call. Zero means use provider defaults.
 	maxTokens int
+
+	// maxAPICalls caps the number of API calls per loop when loop() itself
+	// doesn't specify a cap. Zero means no cap. Only set via the legacy
+	// llm(maxAPICalls:) argument, kept for pre-v1 module views.
+	maxAPICalls int
 }
 
 type LLMEndpoint struct {
@@ -1199,6 +1207,15 @@ func (llm *LLM) WithMaxTokens(tokens int) *LLM {
 	return llm
 }
 
+// WithMaxAPICalls sets a default cap on the number of API calls per loop,
+// used when loop() doesn't specify its own cap. Kept for the legacy
+// llm(maxAPICalls:) argument exposed to pre-v1 module views.
+func (llm *LLM) WithMaxAPICalls(calls int) *LLM {
+	llm = llm.Clone()
+	llm.maxAPICalls = calls
+	return llm
+}
+
 // Disable the default system prompt
 func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 	llm = llm.Clone()
@@ -1523,6 +1540,11 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls int) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
+	}
+
+	if maxAPICalls <= 0 {
+		// fall back to the legacy llm(maxAPICalls:) cap, if one was set
+		maxAPICalls = llm.maxAPICalls
 	}
 
 	var apiCalls int
