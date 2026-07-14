@@ -26,7 +26,7 @@ func (m *GoProgrammer) Save(
 	ctx context.Context,
 	assignment string,
 ) (dagger.JSON, error) {
-	return m.llm(assignment).HistoryJSON(ctx)
+	return m.llm(assignment).Loop().HistoryJSON(ctx)
 }
 
 func (m *GoProgrammer) llm(
