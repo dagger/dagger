@@ -427,16 +427,16 @@ func (LLMMessageRole) Type() *ast.Type {
 	}
 }
 
-func (mode LLMMessageRole) TypeDescription() string {
+func (role LLMMessageRole) TypeDescription() string {
 	return "The role that generated a message."
 }
 
-func (mode LLMMessageRole) Decoder() dagql.InputDecoder {
+func (role LLMMessageRole) Decoder() dagql.InputDecoder {
 	return LLMMessageRoles
 }
 
-func (mode LLMMessageRole) ToLiteral() call.Literal {
-	return LLMMessageRoles.Literal(mode)
+func (role LLMMessageRole) ToLiteral() call.Literal {
+	return LLMMessageRoles.Literal(role)
 }
 
 func (role LLMMessageRole) String() string {
@@ -1244,7 +1244,7 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 
 // Return the last message sent by the agent
 func (llm *LLM) LastReply() (string, bool) {
-	var reply string = "(no reply)"
+	reply := "(no reply)"
 	var foundReply bool
 	for _, msg := range llm.Messages {
 		if msg.Role != LLMMessageRoleAssistant {
@@ -1302,12 +1302,6 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	llm = llm.Clone()
 
-	b := backoff.NewExponentialBackOff()
-	// Sane defaults (ideally not worth extra knobs)
-	b.InitialInterval = 1 * time.Second
-	b.MaxInterval = 30 * time.Second
-	b.MaxElapsedTime = 2 * time.Minute
-
 	tools, err := llm.mcp.Tools(ctx)
 	if err != nil {
 		return inst, err
@@ -1317,16 +1311,6 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	if err != nil {
 		return inst, err
 	}
-
-	var newMessages []*LLMMessage
-	for _, msg := range slices.Backward(messagesToSend) {
-		if msg.Role == LLMMessageRoleAssistant || msg.IsToolResult() {
-			// only display messages appended since the last response
-			break
-		}
-		newMessages = append(newMessages, msg)
-	}
-	slices.Reverse(newMessages)
 
 	// Compute the LLM call digest for prompt/response span metadata. inst.ID()
 	// is the LLM state entering step() (typically ends in withPrompt). Its
@@ -1338,44 +1322,9 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		llmCallDigest = id.Digest().String()
 	}
 
-	for _, msg := range newMessages {
-		emitMessageSpan(ctx, msg, llmCallDigest)
-	}
+	emitNewMessageSpans(ctx, messagesToSend, llmCallDigest)
 
-	var res *LLMResponse
-
-	ep, err := llm.Endpoint(ctx)
-	if err != nil {
-		return inst, err
-	}
-	client := ep.Client
-	err = backoff.Retry(func() error {
-		var sendErr error
-		// The provider streams this turn's content into its own per-block display
-		// spans (thinking, response, tool calls); it sets the call digest on them
-		// so the TUI can branch from a span, and ends them (or the loop does for
-		// text/thinking spans, once tool results are applied).
-		res, sendErr = client.SendQuery(ctx, messagesToSend, tools, &LLMCallOpts{
-			MaxTokens:  llm.maxTokens,
-			CallDigest: llmCallDigest,
-		})
-		if sendErr != nil {
-			var finished *ModelFinishedError
-			if errors.As(sendErr, &finished) {
-				// Don't retry if the model finished explicitly, treat as permanent.
-				return backoff.Permanent(sendErr)
-			}
-			if !client.IsRetryable(sendErr) {
-				// Maybe an invalid request - give up.
-				return backoff.Permanent(sendErr)
-			}
-			// Log retry attempts? Maybe with increasing severity?
-			// For now, just return the error to signal backoff to retry.
-			return sendErr
-		}
-		// Success, stop retrying
-		return nil
-	}, backoff.WithContext(b, ctx))
+	res, err := llm.sendQueryWithRetry(ctx, messagesToSend, tools, llmCallDigest)
 	if err != nil {
 		return inst, err
 	}
@@ -1385,77 +1334,11 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		return inst, err
 	}
 
-	var sels []dagql.Selector
-	{
-		// Build content block input objects for the withResponse selector.
-		// An InputObject's fields are only populated by decoding a map through
-		// its Decoder; a bare struct literal leaves them nil and panics when the
-		// selector is serialized to a call literal. Decode from a map, mirroring
-		// the pattern in core/schema/address.go. Field keys are the GraphQL arg
-		// names (lowerCamel), and values must be types each field's decoder
-		// accepts (enum → name string, JSON → string). "arguments" is always
-		// present (empty decodes to nil and is skipped) since JSON is non-null.
-		contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
-		for i, block := range res.Content {
-			decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
-				"kind":      string(block.Kind),
-				"text":      block.Text,
-				"callId":    block.CallID,
-				"toolName":  block.ToolName,
-				"arguments": string(block.Arguments),
-				"errored":   block.Errored,
-				"signature": block.Signature,
-			})
-			if err != nil {
-				return inst, fmt.Errorf("decode content block %d input: %w", i, err)
-			}
-			input, ok := decoded.(dagql.InputObject[LLMContentBlockInput])
-			if !ok {
-				return inst, fmt.Errorf("decode content block %d input: unexpected type %T", i, decoded)
-			}
-			contentInputs[i] = input
-		}
-		args := []dagql.NamedInput{
-			{
-				Name:  "content",
-				Value: contentInputs,
-			},
-		}
-		if res.TokenUsage.InputTokens != 0 {
-			args = append(args, dagql.NamedInput{
-				Name:  "inputTokens",
-				Value: dagql.NewInt(res.TokenUsage.InputTokens),
-			})
-		}
-		if res.TokenUsage.OutputTokens != 0 {
-			args = append(args, dagql.NamedInput{
-				Name:  "outputTokens",
-				Value: dagql.NewInt(res.TokenUsage.OutputTokens),
-			})
-		}
-		if res.TokenUsage.CachedTokenReads != 0 {
-			args = append(args, dagql.NamedInput{
-				Name:  "cachedTokenReads",
-				Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
-			})
-		}
-		if res.TokenUsage.CachedTokenWrites != 0 {
-			args = append(args, dagql.NamedInput{
-				Name:  "cachedTokenWrites",
-				Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
-			})
-		}
-		if res.TokenUsage.TotalTokens != 0 {
-			args = append(args, dagql.NamedInput{
-				Name:  "totalTokens",
-				Value: dagql.NewInt(res.TokenUsage.TotalTokens),
-			})
-		}
-		sels = append(sels, dagql.Selector{
-			Field: "withResponse",
-			Args:  args,
-		})
+	responseSel, err := responseSelector(res)
+	if err != nil {
+		return inst, err
 	}
+	sels := []dagql.Selector{responseSel}
 	// Extract tool calls from response content blocks for the MCP layer.
 	var toolCalls []*LLMToolCall
 	for _, block := range res.Content {
@@ -1534,6 +1417,146 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	return stepped, nil
 }
 
+// emitNewMessageSpans emits display spans for the messages appended since the
+// last response (the new prompt or tool results), so the TUI shows what is
+// being submitted this turn.
+func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDigest string) {
+	var newMessages []*LLMMessage
+	for _, msg := range slices.Backward(messages) {
+		if msg.Role == LLMMessageRoleAssistant || msg.IsToolResult() {
+			// only display messages appended since the last response
+			break
+		}
+		newMessages = append(newMessages, msg)
+	}
+	slices.Reverse(newMessages)
+	for _, msg := range newMessages {
+		emitMessageSpan(ctx, msg, llmCallDigest)
+	}
+}
+
+// sendQueryWithRetry submits the conversation to the model's endpoint,
+// retrying retryable provider failures with exponential backoff.
+func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, tools []LLMTool, llmCallDigest string) (*LLMResponse, error) {
+	b := backoff.NewExponentialBackOff()
+	// Sane defaults (ideally not worth extra knobs)
+	b.InitialInterval = 1 * time.Second
+	b.MaxInterval = 30 * time.Second
+	b.MaxElapsedTime = 2 * time.Minute
+
+	ep, err := llm.Endpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	client := ep.Client
+
+	var res *LLMResponse
+	err = backoff.Retry(func() error {
+		var sendErr error
+		// The provider streams this turn's content into its own per-block display
+		// spans (thinking, response, tool calls); it sets the call digest on them
+		// so the TUI can branch from a span, and ends them (or the loop does for
+		// text/thinking spans, once tool results are applied).
+		res, sendErr = client.SendQuery(ctx, messages, tools, &LLMCallOpts{
+			MaxTokens:  llm.maxTokens,
+			CallDigest: llmCallDigest,
+		})
+		if sendErr != nil {
+			var finished *ModelFinishedError
+			if errors.As(sendErr, &finished) {
+				// Don't retry if the model finished explicitly, treat as permanent.
+				return backoff.Permanent(sendErr)
+			}
+			if !client.IsRetryable(sendErr) {
+				// Maybe an invalid request - give up.
+				return backoff.Permanent(sendErr)
+			}
+			// Log retry attempts? Maybe with increasing severity?
+			// For now, just return the error to signal backoff to retry.
+			return sendErr
+		}
+		// Success, stop retrying
+		return nil
+	}, backoff.WithContext(b, ctx))
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// responseSelector builds the withResponse selector that records the model's
+// reply - its content blocks and token usage - as a new node in the LLM DAG.
+func responseSelector(res *LLMResponse) (dagql.Selector, error) {
+	// Build content block input objects for the withResponse selector.
+	// An InputObject's fields are only populated by decoding a map through
+	// its Decoder; a bare struct literal leaves them nil and panics when the
+	// selector is serialized to a call literal. Decode from a map, mirroring
+	// the pattern in core/schema/address.go. Field keys are the GraphQL arg
+	// names (lowerCamel), and values must be types each field's decoder
+	// accepts (enum → name string, JSON → string). "arguments" is always
+	// present (empty decodes to nil and is skipped) since JSON is non-null.
+	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
+	for i, block := range res.Content {
+		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
+			"kind":      string(block.Kind),
+			"text":      block.Text,
+			"callId":    block.CallID,
+			"toolName":  block.ToolName,
+			"arguments": string(block.Arguments),
+			"errored":   block.Errored,
+			"signature": block.Signature,
+		})
+		if err != nil {
+			return dagql.Selector{}, fmt.Errorf("decode content block %d input: %w", i, err)
+		}
+		input, ok := decoded.(dagql.InputObject[LLMContentBlockInput])
+		if !ok {
+			return dagql.Selector{}, fmt.Errorf("decode content block %d input: unexpected type %T", i, decoded)
+		}
+		contentInputs[i] = input
+	}
+	args := []dagql.NamedInput{
+		{
+			Name:  "content",
+			Value: contentInputs,
+		},
+	}
+	if res.TokenUsage.InputTokens != 0 {
+		args = append(args, dagql.NamedInput{
+			Name:  "inputTokens",
+			Value: dagql.NewInt(res.TokenUsage.InputTokens),
+		})
+	}
+	if res.TokenUsage.OutputTokens != 0 {
+		args = append(args, dagql.NamedInput{
+			Name:  "outputTokens",
+			Value: dagql.NewInt(res.TokenUsage.OutputTokens),
+		})
+	}
+	if res.TokenUsage.CachedTokenReads != 0 {
+		args = append(args, dagql.NamedInput{
+			Name:  "cachedTokenReads",
+			Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
+		})
+	}
+	if res.TokenUsage.CachedTokenWrites != 0 {
+		args = append(args, dagql.NamedInput{
+			Name:  "cachedTokenWrites",
+			Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
+		})
+	}
+	if res.TokenUsage.TotalTokens != 0 {
+		args = append(args, dagql.NamedInput{
+			Name:  "totalTokens",
+			Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+		})
+	}
+	return dagql.Selector{
+		Field: "withResponse",
+		Args:  args,
+	}, nil
+}
+
 // Loop sends the context to the LLM endpoint, processes replies and tool calls,
 // and continues in a loop until the model ends its turn (no more prompts) or
 // the API call cap is reached.
@@ -1558,7 +1581,10 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 				// the LLM along.
 				if newLLM, interjected, interjectErr := llm.Interject(ctx, inst); interjectErr != nil {
 					if ctx.Err() != nil {
-						return inst, nil
+						// Context was cancelled (user interrupt). Return the last
+						// successfully recorded state so that the prompt and any
+						// prior progress are preserved in history.
+						return inst, nil //nolint:nilerr // deliberate: interrupts are not errors
 					}
 					return inst, interjectErr
 				} else if interjected {
@@ -1589,7 +1615,7 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 				// Context was cancelled (user interrupt). Return the last
 				// successfully recorded state so that the prompt and any prior
 				// progress are preserved in history.
-				return inst, nil
+				return inst, nil //nolint:nilerr // deliberate: interrupts are not errors
 			}
 			// Handle persistent error after all retries failed.
 			return inst, err
