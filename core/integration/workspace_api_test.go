@@ -12,6 +12,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -338,6 +339,23 @@ func (WorkspaceAPISuite) TestWorkspaceSearch(ctx context.Context, t *testctx.T) 
 			"file-paths",
 		)).Stdout(ctx)
 		require.Error(t, err, "search paths outside the workspace must be rejected")
+	})
+
+	// Regression test: the grep fallback must apply limit to files-only results.
+	t.Run("grep fallback honors files only limit", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceFixture(t, c, "workspace-api").
+			WithExec([]string{"apk", "add", "grep"})
+		for i := range 5 {
+			ctr = ctr.WithNewFile(fmt.Sprintf("match-%d.txt", i), "grep-fallback-repro\n")
+		}
+		out, err := ctr.With(daggerCall(
+			"files-searcher",
+			"--pattern=grep-fallback-repro",
+			"--limit=2",
+			"files",
+		)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Len(t, strings.Split(strings.TrimSpace(out), "\n"), 2)
 	})
 }
 
