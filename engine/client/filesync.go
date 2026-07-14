@@ -716,6 +716,9 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 			// Strip leading "./" if present
 			line = strings.TrimPrefix(line, "./")
 			results = append(results, engine.LocalSearchResult{FilePath: line})
+			if opts.Limit != nil && len(results) >= *opts.Limit {
+				break
+			}
 		}
 	} else {
 		// Parse grep -rnb output: file:line:offset:content
