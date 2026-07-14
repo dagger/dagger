@@ -152,6 +152,15 @@ type Binding implements Node {
   """Retrieve the binding value, as type JSONValue"""
   asJSONValue: JSONValue!
 
+  """Retrieve the binding value, as type LLMContentBlock"""
+  asLLMContentBlock: LLMContentBlock!
+
+  """Retrieve the binding value, as type LLMMessage"""
+  asLLMMessage: LLMMessage!
+
+  """Retrieve the binding value, as type LLMToolCall"""
+  asLLMToolCall: LLMToolCall!
+
   """Retrieve the binding value, as type Module"""
   asModule: Module!
 
@@ -3038,6 +3047,71 @@ type Env implements Node {
     description: String!
   ): Env!
 
+  """Create or update a binding of type LLMContentBlock in the environment"""
+  withLLMContentBlockInput(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMContentBlock value to assign to the binding"""
+    value: ID! @expectedType(name: "LLMContentBlock")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired LLMContentBlock output to be assigned in the environment
+  """
+  withLLMContentBlockOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type LLMMessage in the environment"""
+  withLLMMessageInput(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMMessage value to assign to the binding"""
+    value: ID! @expectedType(name: "LLMMessage")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired LLMMessage output to be assigned in the environment"""
+  withLLMMessageOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type LLMToolCall in the environment"""
+  withLLMToolCallInput(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMToolCall value to assign to the binding"""
+    value: ID! @expectedType(name: "LLMToolCall")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired LLMToolCall output to be assigned in the environment"""
+  withLLMToolCallOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """
   Sets the main module for this environment (the project being worked on)
 
@@ -4550,13 +4624,29 @@ type LLM implements Node & Syncer {
   """
   Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
   """
-  loop: LLM!
+  loop(
+    """Cap the number of API calls"""
+    maxAPICalls: Int
+  ): LLM!
+
+  """The full message history."""
+  messages: [LLMMessage!]!
 
   """return the model used by the llm"""
   model: String!
 
   """return the provider used by the llm"""
   provider: String!
+
+  """
+  Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+  """
+  replay: ID! @expectedType(name: "LLM")
+
+  """
+  return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+  """
+  serializeHistory: String!
 
   """
   Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
@@ -4599,10 +4689,29 @@ type LLM implements Node & Syncer {
     service: ID! @expectedType(name: "Service")
   ): LLM!
 
+  """
+  Set the maximum number of output tokens the model may generate per API call
+  """
+  withMaxTokens(
+    """The maximum number of output tokens (0 to use provider defaults)"""
+    tokens: Int!
+  ): LLM!
+
   """swap out the llm model"""
   withModel(
     """The model to use"""
     model: String!
+  ): LLM!
+
+  """Track an object so the LLM can reference it in subsequent tool calls."""
+  withObject(
+    """
+    Arbitrary string tag for the object, typically in TypeName#Number format
+    """
+    tag: String!
+
+    """The object to track, as a generic ID"""
+    object: ID!
   ): LLM!
 
   """append a prompt to the llm context"""
@@ -4617,6 +4726,27 @@ type LLM implements Node & Syncer {
     file: ID! @expectedType(name: "File")
   ): LLM!
 
+  """Append an assistant response to the message history"""
+  withResponse(
+    """The response content"""
+    content: [LLMContentBlockInput!]!
+
+    """Uncached input tokens sent"""
+    inputTokens: Int = 0
+
+    """Tokens received from the model, including text and tool calls"""
+    outputTokens: Int = 0
+
+    """Cached input tokens read"""
+    cachedTokenReads: Int = 0
+
+    """Cached input tokens written"""
+    cachedTokenWrites: Int = 0
+
+    """Total tokens consumed by this response"""
+    totalTokens: Int = 0
+  ): LLM!
+
   """
   Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
   """
@@ -4628,6 +4758,30 @@ type LLM implements Node & Syncer {
     prompt: String!
   ): LLM!
 
+  """Append a tool call to the last assistant message"""
+  withToolCall(
+    """The unique ID for this tool call"""
+    call: String!
+
+    """The name of the tool to call"""
+    tool: String!
+
+    """The arguments to pass to the tool"""
+    arguments: JSON!
+  ): LLM!
+
+  """Append a tool response to the message history"""
+  withToolResponse(
+    """The ID of the tool call this is responding to"""
+    call: String!
+
+    """The response content from the tool"""
+    content: String!
+
+    """Whether the tool call resulted in an error"""
+    errored: Boolean!
+  ): LLM!
+
   """Disable the default system prompt"""
   withoutDefaultSystemPrompt: LLM!
 
@@ -4636,6 +4790,83 @@ type LLM implements Node & Syncer {
 
   """Clear the system prompts, leaving only the default system prompt"""
   withoutSystemPrompts: LLM!
+}
+
+type LLMContentBlock implements Node {
+  arguments: JSON!
+
+  callId: String!
+
+  errored: Boolean!
+
+  """A unique identifier for this LLMContentBlock."""
+  id: ID!
+
+  kind: LLMContentBlockKind!
+
+  text: String!
+
+  toolName: String!
+}
+
+"""A content block within an LLM message."""
+input LLMContentBlockInput {
+  """The kind of content block."""
+  kind: LLMContentBlockKind!
+
+  """Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."""
+  text: String = ""
+
+  """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
+  callId: String = ""
+
+  """The name of the tool to call (for TOOL_CALL kind)."""
+  toolName: String = ""
+
+  """The arguments to pass to the tool (for TOOL_CALL kind)."""
+  arguments: JSON!
+
+  """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
+  errored: Boolean = false
+
+  """Provider-specific opaque data (e.g. Anthropic thinking signature)."""
+  signature: String = ""
+}
+
+"""The kind of content in a message block."""
+enum LLMContentBlockKind {
+  """Plain text content."""
+  TEXT
+
+  """Model thinking/reasoning content (e.g. Anthropic extended thinking)."""
+  THINKING
+
+  """A tool/function call from the model."""
+  TOOL_CALL
+
+  """A tool/function result."""
+  TOOL_RESULT
+}
+
+type LLMMessage implements Node {
+  content: [LLMContentBlock!]!
+
+  """A unique identifier for this LLMMessage."""
+  id: ID!
+
+  role: LLMMessageRole!
+}
+
+"""The role that generated a message."""
+enum LLMMessageRole {
+  """A user prompt or tool response."""
+  USER
+
+  """A reply from the model."""
+  ASSISTANT
+
+  """A system prompt."""
+  SYSTEM
 }
 
 type LLMTokenUsage implements Node {
@@ -4651,6 +4882,11 @@ type LLMTokenUsage implements Node {
   outputTokens: Int!
 
   totalTokens: Int!
+}
+
+type LLMToolCall implements Node {
+  """A unique identifier for this LLMToolCall."""
+  id: ID!
 }
 
 """A simple key value object that represents a label."""
@@ -5433,9 +5669,6 @@ type Query implements Node {
   llm(
     """Model to use"""
     model: String
-
-    """Cap the number of API calls for this LLM"""
-    maxAPICalls: Int
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
 
   """Create a new module."""
