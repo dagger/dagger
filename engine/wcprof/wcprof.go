@@ -259,6 +259,9 @@ type Event struct {
 	ClassID  uint32
 	IdentID  uint32
 	ClientID uint32
+	// MetaID is an interned op-metadata string (currently the canonical
+	// scalar JSON-array encoding of a user exec's scrubbed argv), 0 when none.
+	MetaID uint32
 
 	StartNS int64
 	EndNS   int64
@@ -281,6 +284,7 @@ type openOp struct {
 	classID  uint32
 	identID  uint32
 	clientID uint32
+	metaID   uint32
 	parentID uint64
 	startNS  int64
 }

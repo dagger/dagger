@@ -596,6 +596,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 		DoNotCache:           field.Spec.DoNotCache != "",
 		IsPersistable:        field.Spec.IsPersistable,
 		PassthroughTelemetry: field.Spec.PassthroughTelemetry,
+		// The immediate receiver's type name is free here (r is the receiver);
+		// core.AroundFunc reads it to make the static profile-skip decision without
+		// an egraphMu receiver-resolution lookup per call.
+		ReceiverTypeName: r.class.inner.Type().Name(),
 	}
 	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
 		slog.Warn("failed to get client metadata from context for call", "err", err)

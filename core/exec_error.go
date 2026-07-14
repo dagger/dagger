@@ -65,7 +65,8 @@ func execErrorFromMetaRef(
 
 	spanCtx := origin
 	if !spanCtx.IsValid() {
-		spanCtx = trace.SpanContextFromContext(ctx)
+		// User-facing origin: never a profiling span (see dagql.MarkProfilingSpan).
+		spanCtx = dagql.UserFacingSpanContext(ctx)
 	}
 
 	execErr := &ExecError{
@@ -109,7 +110,11 @@ func functionCallReturnedError(
 		}
 	}
 	if !originCtx.IsValid() {
-		originCtx = trace.SpanContextFromContext(ctx)
+		// User-facing origin: the resolver runs on the call_exec twin's context,
+		// but attribution must name a span frontends render (see
+		// dagql.MarkProfilingSpan) — otherwise the CLI prints a redundant
+		// trailing Error: block and the fn's logs detach from its row.
+		originCtx = dagql.UserFacingSpanContext(ctx)
 	}
 	if originCtx.IsValid() && len(telemetry.ParseErrorOrigins(dagErr.Message)) == 0 {
 		dagErr.Message = telemetry.TrackOrigin(errors.New(dagErr.Message), originCtx).Error()

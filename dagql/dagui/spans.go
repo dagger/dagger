@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -334,6 +335,42 @@ type SpanSnapshot struct {
 type SpanLink struct {
 	SpanContext SpanContext
 	Purpose     string
+
+	// Wait-edge metadata, present when Purpose is LinkPurposeWait: the window
+	// during which the linking span was provably blocked on the link target,
+	// and why.
+	WaitReason string    `json:",omitempty"`
+	WaitStart  time.Time `json:",omitempty"`
+	WaitEnd    time.Time `json:",omitempty"`
+}
+
+// ProcessAttribute ingests one OTel link attribute. Wait timestamps are
+// absolute Unix nanoseconds encoded as decimal strings (chosen so they
+// round-trip bit-exact through JSON attribute maps).
+func (link *SpanLink) ProcessAttribute(name string, val any) {
+	str, ok := val.(string)
+	if !ok {
+		return
+	}
+	switch name {
+	case telemetry.LinkPurposeAttr:
+		link.Purpose = str
+	case telemetryattrs.WcprofWaitReasonAttr:
+		link.WaitReason = str
+	case telemetryattrs.WcprofWaitStartUnixNanoAttr:
+		if ns, err := strconv.ParseInt(str, 10, 64); err == nil {
+			link.WaitStart = time.Unix(0, ns)
+		}
+	case telemetryattrs.WcprofWaitEndUnixNanoAttr:
+		if ns, err := strconv.ParseInt(str, 10, 64); err == nil {
+			link.WaitEnd = time.Unix(0, ns)
+		}
+	}
+}
+
+// IsWait reports whether the link is a well-formed wait edge.
+func (link *SpanLink) IsWait() bool {
+	return link.Purpose == telemetryattrs.LinkPurposeWait && link.WaitEnd.After(link.WaitStart)
 }
 
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint: gocyclo

@@ -126,8 +126,10 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// don't send along any stubs; let the client-side create its own stubs
 			return false
 		}
-		if filter == nil || filter[span.ParentID] {
-			// include subscribed (or all) spans
+		if filter == nil || filter[span.ParentID] || filter[span.ID] {
+			// include subscribed (or all) spans, and updates to spans that
+			// were explicitly subscribed themselves (e.g. time-breakdown support
+			// spans whose parents aren't subscribed)
 			return true
 		}
 		if span.IsFailedOrCausedFailure() {
@@ -442,19 +444,12 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanData.Status = span.Status()
 	spanData.Links = make([]SpanLink, len(span.Links()))
 	for i, link := range span.Links() {
-		var purpose string
-		for _, linkAttr := range link.Attributes {
-			if linkAttr.Key == telemetry.LinkPurposeAttr {
-				purpose = linkAttr.Value.AsString()
-				break
-			}
+		spanData.Links[i].SpanContext = SpanContext{
+			TraceID: TraceID{link.SpanContext.TraceID()},
+			SpanID:  SpanID{link.SpanContext.SpanID()},
 		}
-		spanData.Links[i] = SpanLink{
-			SpanContext: SpanContext{
-				TraceID: TraceID{link.SpanContext.TraceID()},
-				SpanID:  SpanID{link.SpanContext.SpanID()},
-			},
-			Purpose: purpose,
+		for _, linkAttr := range link.Attributes {
+			spanData.Links[i].ProcessAttribute(string(linkAttr.Key), linkAttr.Value.AsString())
 		}
 	}
 

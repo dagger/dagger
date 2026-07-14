@@ -2,6 +2,7 @@ package wcprof
 
 import (
 	"context"
+	"encoding/json"
 )
 
 type opCtxKey struct{}
@@ -72,6 +73,7 @@ type Op struct {
 	classID     uint32
 	identID     uint32
 	clientID    uint32
+	metaID      uint32
 	startNS     int64
 	outcomeHint Outcome
 }
@@ -84,6 +86,27 @@ type OpOpts struct {
 	ClientID string
 	// ResultID may be set at Begin time when already known.
 	WorkType WorkType
+	// Argv is the user command for a container-exec op (already scrubbed and
+	// bounded by the caller). The recorder marshals it to the canonical scalar
+	// JSON-array string and interns it as the op's MetaID, so offline analysis
+	// can rank the exec by its real command. Empty for non-exec ops.
+	Argv []string
+}
+
+// internArgv marshals argv to the canonical scalar JSON-array string and interns
+// it, returning the interned string id (0 when empty or on a marshal error —
+// never a partial or panicking emit). The OTel source marshals the SAME scrubbed
+// slice the same way (engine/engineutil/otelprof.go), so both sources carry a
+// byte-identical encoding and reconstruct an identical argv (cross-source parity).
+func (r *Recorder) internArgv(argv []string) uint32 {
+	if len(argv) == 0 {
+		return 0
+	}
+	b, err := json.Marshal(argv)
+	if err != nil {
+		return 0
+	}
+	return r.Intern(string(b))
 }
 
 // BeginOp starts recording an operation. It returns a derived context that
@@ -104,6 +127,7 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 		classID:  r.Intern(class),
 		identID:  r.Intern(opts.Ident),
 		clientID: r.Intern(opts.ClientID),
+		metaID:   r.internArgv(opts.Argv),
 		startNS:  r.Now(),
 	}
 	sh := r.shardFor(op.id)
@@ -114,6 +138,7 @@ func BeginOp(ctx context.Context, kind OpKind, class string, opts OpOpts) (conte
 		classID:  op.classID,
 		identID:  op.identID,
 		clientID: op.clientID,
+		metaID:   op.metaID,
 		parentID: op.parentID,
 		startNS:  op.startNS,
 	}
@@ -191,6 +216,7 @@ func (op *Op) EndWithResult(outcome Outcome, resultID uint64) {
 		ClassID:  op.classID,
 		IdentID:  op.identID,
 		ClientID: op.clientID,
+		MetaID:   op.metaID,
 		StartNS:  op.startNS,
 		EndNS:    op.r.Now(),
 	})
@@ -292,6 +318,7 @@ func RecordOp(ctx context.Context, kind OpKind, class string, opts OpOpts, start
 		ClassID:  r.Intern(class),
 		IdentID:  r.Intern(opts.Ident),
 		ClientID: r.Intern(opts.ClientID),
+		MetaID:   r.internArgv(opts.Argv),
 		StartNS:  startNS,
 		EndNS:    endNS,
 	})

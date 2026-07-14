@@ -34,6 +34,7 @@ type DumpOpenOp struct {
 	ClassID  uint32 `json:"class_id,omitempty"`
 	IdentID  uint32 `json:"ident_id,omitempty"`
 	ClientID uint32 `json:"client_id,omitempty"`
+	MetaID   uint32 `json:"meta_id,omitempty"`
 	StartNS  int64  `json:"start_ns"`
 }
 
@@ -54,6 +55,7 @@ type DumpEvent struct {
 	ClassID  uint32 `json:"c,omitempty"`
 	IdentID  uint32 `json:"i,omitempty"`
 	ClientID uint32 `json:"cl,omitempty"`
+	MetaID   uint32 `json:"m,omitempty"`
 
 	StartNS int64 `json:"s"`
 	EndNS   int64 `json:"d"`
@@ -82,6 +84,7 @@ func toDumpEvent(ev Event) DumpEvent {
 		ClassID:  ev.ClassID,
 		IdentID:  ev.IdentID,
 		ClientID: ev.ClientID,
+		MetaID:   ev.MetaID,
 		StartNS:  ev.StartNS,
 		EndNS:    ev.EndNS,
 	}
@@ -131,6 +134,7 @@ func (r *Recorder) WriteDump(w io.Writer, flush bool) error {
 				ClassID:  oo.classID,
 				IdentID:  oo.identID,
 				ClientID: oo.clientID,
+				MetaID:   oo.metaID,
 				StartNS:  oo.startNS,
 			})
 		}

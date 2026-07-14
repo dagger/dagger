@@ -29,6 +29,16 @@ func AroundFunc(
 	if req == nil || req.ResultCall == nil {
 		return ctx, dagql.NoopDone
 	}
+	// Static, debug-independent profiling-skip classification, SEPARATE from the
+	// introspectionInfo UI decision below. Stamp it onto the call frame BEFORE the
+	// IsSkipped early return so inherited-skip descendants (under a typedef-loading
+	// hideCtx) are still classified by their OWN recipe: a reflection-receiver call
+	// is skipped, while real shared work (clone / dep-load, whose receiver is NOT a
+	// reflection type) stays profiled. The bit homes on the frame so it travels
+	// through clone()/fork()/persistence; only cache.go's OTel emit gates read it
+	// (native wcprof keeps full detail). ReceiverTypeName was stamped lookup-free at
+	// the object call site.
+	req.ResultCall.ProfileSkip = profileSkip(req.ReceiverTypeName, req.Field)
 	if dagql.IsSkipped(ctx) {
 		return ctx, dagql.NoopDone
 	}
@@ -352,6 +362,114 @@ func isIntrospection(ctx context.Context, frame *dagql.ResultCall) bool {
 	return introspection
 }
 
+// introspectionRootFields are the Query-level root fields that begin an
+// introspection / schema-reflection query. Extracted to a shared constant so the
+// UI suppression decision (introspectionInfo) and the profiling decision
+// (profileSkip) can never diverge on the root set.
+var introspectionRootFields = map[string]struct{}{
+	"__schema":            {},
+	"__schemaJSONFile":    {},
+	"__schemaVersion":     {},
+	"currentTypeDefs":     {},
+	"currentModule":       {},
+	"currentFunctionCall": {},
+	"function":            {},
+	"typeDef":             {},
+	"sourceMap":           {},
+	"__loadInputTypeDef":  {},
+	"__function":          {},
+	"__functionArg":       {},
+	"__functionArgExact":  {},
+	"__fieldTypeDef":      {},
+	"__fieldTypeDefExact": {},
+	"__enumMemberTypeDef": {},
+	"__enumValueTypeDef":  {},
+	"__listTypeDef":       {},
+	"__objectTypeDef":     {},
+	"__interfaceTypeDef":  {},
+	"__inputTypeDef":      {},
+	"__scalarTypeDef":     {},
+	"__enumTypeDef":       {},
+}
+
+// reflectionTypeNames are the GraphQL type-system reflection object types. EVERY
+// field on these is type-system metadata — accessors (as*/args/typeDef/functions/
+// fields/returnType/elementTypeDef/members), builders (with*), and internal (__*)
+// — none does container/exec/module-load work (audited against
+// core/schema/module.go). The slow part of module *loading* lives on non-reflection
+// receivers (Query.moduleSource, ModuleSource.asModule) and stays profiled.
+//
+// These are SCHEMA type names — what r.class.inner.Type().Name() reports at the
+// call site, which is what ReceiverTypeName carries. That matters for the enum
+// member type: its Go type is *core.EnumMemberTypeDef, but its schema name is the
+// legacy "EnumValueTypeDef" (core/typedef.go EnumMemberTypeDef.Type(): a preserved
+// legacy name since types can't be renamed). We list BOTH so the predicate is
+// robust to either surfacing; the live schema name is EnumValueTypeDef.
+//
+// NAME TRAP — deliberately NOT here: FunctionCall (returnValue/returnError are real
+// DoNotCache work; profiling it is correct), SourceMap, and FunctionCallArgValue.
+// Skipping FunctionCall by name would silently coarsen real work.
+var reflectionTypeNames = map[string]struct{}{
+	"Function":          {},
+	"FunctionArg":       {},
+	"TypeDef":           {},
+	"ObjectTypeDef":     {},
+	"InterfaceTypeDef":  {},
+	"InputTypeDef":      {},
+	"FieldTypeDef":      {},
+	"ListTypeDef":       {},
+	"ScalarTypeDef":     {},
+	"EnumTypeDef":       {},
+	"EnumMemberTypeDef": {}, // Go type name (defensive; not the live schema name)
+	"EnumValueTypeDef":  {}, // legacy schema name actually surfaced for enum members
+}
+
+// profileSkip reports whether the wcprof OTel second source must skip profiling
+// this call. Native wcprof is opt-in / dev-only, off the volume-constrained
+// always-on path, and its value is full detail — so it keeps profiling this class
+// and is NOT gated by this predicate. It targets the reflection / schema-walk class
+// that normal telemetry already hides and that, when profiled by the OTel source,
+// emits a call_exec + publishResult pair per cache miss, dominating OTel volume on
+// a module-load workload (the regression that overflows the BatchSpanProcessor and
+// drops the parent/target spans the offline analyzer's structural gate hard-fails on).
+//
+// It is a pure function of the recipe (immediate receiver type name + field, both
+// in the call digest), so a call and any caller that singleflights it agree by
+// construction — which is what lets the loader/replay stay UNCHANGED (no inference;
+// the engine just emits a smaller, self-consistent graph). The decision is stamped
+// onto the call frame (ResultCall.ProfileSkip) and travels with it through
+// clone/fork/persistence, so derived (nth-element), adopted, copied and imported
+// results carry it without a per-site provenance audit.
+//
+// It is deliberately:
+//   - DEBUG-INDEPENDENT (unlike introspectionInfo's debug-gated receiver-type
+//     cases), so the volume amplifier never returns in the very mode used to
+//     capture a trace for debugging; and
+//   - SEPARATE from introspectionInfo (the UI/normal-telemetry decision), which is
+//     left untouched. The OTel profiler may therefore skip MORE than the UI
+//     suppresses: a directly-called reflection accessor (outside a typedef-loading
+//     hideCtx) keeps its normal dag.call UI span — which the OTel loader classifies
+//     as a coarse "call" op — while the OTel source skips only its call_exec. That
+//     is correct and by design: the profiler ADDS spans and never SUBTRACTS UI
+//     spans. Native keeps the full op, so this is NOT source-parity and isn't meant
+//     to be — the cross-source oracle compares only the non-reflection classes
+//     (native carries reflection detail the OTel source intentionally lacks). In
+//     practice these accessors are ~always under a hideCtx (no dag.call op at all),
+//     so the divergence is empirically nil.
+func profileSkip(receiverTypeName, field string) bool {
+	if _, ok := reflectionTypeNames[receiverTypeName]; ok {
+		return true
+	}
+	// Root introspection entry points live on Query (receiverTypeName == "Query");
+	// "" defensively covers a receiver-less synthetic root frame.
+	if receiverTypeName == "Query" || receiverTypeName == "" {
+		if _, ok := introspectionRootFields[field]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dagql.ResultCall) {
 	if frame == nil {
 		return false, nil
@@ -361,34 +479,10 @@ func introspectionInfo(ctx context.Context, frame *dagql.ResultCall) (bool, *dag
 	var immediateReceiver *dagql.ResultCall
 	for cur != nil {
 		if cur.Receiver == nil {
-			switch cur.Field {
-			case "__schema",
-				"__schemaJSONFile",
-				"__schemaVersion",
-				"currentTypeDefs",
-				"currentModule",
-				"currentFunctionCall",
-				"function",
-				"typeDef",
-				"sourceMap",
-				"__loadInputTypeDef",
-				"__function",
-				"__functionArg",
-				"__functionArgExact",
-				"__fieldTypeDef",
-				"__fieldTypeDefExact",
-				"__enumMemberTypeDef",
-				"__enumValueTypeDef",
-				"__listTypeDef",
-				"__objectTypeDef",
-				"__interfaceTypeDef",
-				"__inputTypeDef",
-				"__scalarTypeDef",
-				"__enumTypeDef":
+			if _, ok := introspectionRootFields[cur.Field]; ok {
 				return true, immediateReceiver
-			default:
-				return false, immediateReceiver
 			}
+			return false, immediateReceiver
 		}
 
 		receiver, err := cur.ReceiverCall(ctx)
