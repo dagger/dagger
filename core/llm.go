@@ -529,8 +529,8 @@ func (role LLMMessageRole) ToLiteral() call.Literal {
 	return LLMMessageRoles.Literal(role)
 }
 
-func (mode LLMMessageRole) String() string {
-	return string(mode)
+func (role LLMMessageRole) String() string {
+	return string(role)
 }
 
 // LLMToolCall is kept as a convenience type for the MCP layer and provider
@@ -1402,7 +1402,6 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	return llm.step(ctx, inst, maxTokens)
 }
 
-//nolint:gocyclo // the step retry/error/streaming loop reads clearer as one function
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	llm = llm.Clone()
 

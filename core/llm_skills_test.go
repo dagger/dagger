@@ -62,8 +62,7 @@ func TestSkillFilePath(t *testing.T) {
 		{"reference/../SKILL.md", "SKILL.md"},         // collapses to a safe path
 		{"../../../reference/x.md", "reference/x.md"}, // never escapes upward
 	} {
-		got, err := skillFilePath(tc.in)
-		require.NoError(t, err)
+		got := skillFilePath(tc.in)
 		require.Equal(t, tc.want, got, "input %q", tc.in)
 	}
 }

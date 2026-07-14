@@ -199,7 +199,7 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	if ret.Optional ||
 		ret.Kind != TypeDefKindObject ||
 		ret.AsObject.Value.Self().Name != "LLM" {
-		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the shape agent(base: LLM!): LLM!",
+		return fmt.Errorf("object %q function %q is marked @agent but does not return LLM!; @agent functions must have the agent(base: LLM!): LLM! shape",
 			obj.OriginalName, fn.OriginalName)
 	}
 	baseExempted := false
@@ -1263,6 +1263,7 @@ func (mod *Module) validateTypeDef(ctx context.Context, typeDef dagql.ObjectResu
 	return nil
 }
 
+//nolint:gocyclo // one validation pass per field kind; splitting it obscures the checklist
 func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.ObjectResult[*TypeDef], state *moduleValidationState) error {
 	// check whether this is a pre-existing object from core or another module
 	modType, ok, err := mod.lookupValidationModType(ctx, typeDef, state)

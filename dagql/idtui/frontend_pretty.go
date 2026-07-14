@@ -397,7 +397,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	titleBuf := new(strings.Builder)
 	titleOut := NewOutput(titleBuf, termenv.WithProfile(s.fe.profile))
 	r.indentFunc = s.indentFunc(titleOut)
-	s.fe.renderStep(ctx, titleOut, r, row, "", s, visualFocused)
+	s.fe.renderStep(ctx, titleOut, r, row, s, visualFocused)
 	titleText := titleBuf.String()
 	if titleText != "" {
 		titleLines := strings.Split(strings.TrimSuffix(titleText, "\n"), "\n")
@@ -2362,7 +2362,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
-		}, "", fe, false)
+		}, fe, false)
 		titleOut := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
 		for _, line := range strings.Split(strings.TrimSuffix(zoomBuf.String(), "\n"), "\n") {
 			if ctx.Width > 0 {
@@ -2460,6 +2460,8 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 // (non-interactive) render: the overall verdict header, the root cause, the
 // checks breakdown, tests, and re-run suggestions -- no live-TUI chrome or
 // truncation. r is the renderer Render already built for this frame.
+//
+//nolint:gocyclo // one section per report concern; splitting obscures the layout
 func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
 	pol := fe.renderPolicy()
@@ -2484,7 +2486,7 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
-		}, "", fe, false)
+		}, fe, false)
 		linesFromView(ctx, zoomBuf.String())
 		ctx.Line("") // separate the header from its content
 	}
@@ -3029,6 +3031,7 @@ func (fe *frontendPretty) formHeight() int {
 	return strings.Count(view, "\n") + 2 // +1 for the view line, +1 for the spacer
 }
 
+//nolint:gocyclo // sequential view-rebuild steps; splitting obscures the order dependencies
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.viewDirty = false // clear in case called directly from event handlers
 	fe.promoteChecksLocked()
@@ -5491,8 +5494,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 	return nil
 }
 
-func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) error {
-	fmt.Fprint(out, prefix)
+func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, statusHost statusIconHost, focused bool) error {
 	r.fancyIndent(out, row, false, true)
 
 	if row.Span.LLMRole != "" {
@@ -5508,7 +5510,7 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 		fmt.Fprint(out, " ")
 	}
 
-	if err := fe.renderStepTitle(ctx, out, r, row, prefix, statusHost, focused, false); err != nil {
+	if err := fe.renderStepTitle(ctx, out, r, row, "", statusHost, focused, false); err != nil {
 		return err
 	}
 

@@ -64,7 +64,7 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 	buf := new(strings.Builder)
 	rowOut := NewOutput(buf, termenv.WithProfile(fe.profile))
 	row := &dagui.TraceRow{Span: node.Span, Expanded: true}
-	_ = fe.renderStep(ctx, rowOut, r, row, "", fe, false)
+	_ = fe.renderStep(ctx, rowOut, r, row, fe, false)
 
 	// Prompt/thinking/response spans (Message != "") render their content via
 	// renderStep -> renderStepLogs. Tool-call display spans carry their arguments
