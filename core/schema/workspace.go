@@ -300,6 +300,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
 		dagql.NodeFunc("agents", s.agents).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Return all agent middlewares from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include agents matching the specified patterns"),
