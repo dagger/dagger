@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
@@ -416,6 +417,36 @@ func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) e
 // searchHostPath runs ripgrep (or falls back to grep) on the host filesystem
 // and returns structured search results.
 func searchHostPath(ctx context.Context, root string, opts *engine.LocalSearchOpts) ([]engine.LocalSearchResult, error) {
+	// Validate and normalize explicit search paths so they can't escape root,
+	// the same way Directory.search does.
+	for i, p := range opts.Paths {
+		// If absolute, make it relative to the root
+		cleaned := p
+		if filepath.IsAbs(cleaned) {
+			cleaned = strings.TrimPrefix(cleaned, "/")
+		}
+
+		// Clean the path (e.g., remove ../, ./, etc.)
+		cleaned = filepath.Clean(cleaned)
+
+		// Check if the normalized path would escape the root
+		if !filepath.IsLocal(cleaned) {
+			return nil, fmt.Errorf("path cannot escape search root: %s", p)
+		}
+
+		// Resolve symlinks scoped to root so a symlinked path operand can't
+		// point outside the root either.
+		resolved, err := containerdfs.RootPath(root, cleaned)
+		if err != nil {
+			return nil, fmt.Errorf("resolve search path %q: %w", p, err)
+		}
+		rel, err := filepath.Rel(root, resolved)
+		if err != nil {
+			return nil, fmt.Errorf("resolve search path %q: %w", p, err)
+		}
+		opts.Paths[i] = rel
+	}
+
 	rgPath, err := exec.LookPath("rg")
 	if err == nil {
 		return searchWithRipgrep(ctx, root, rgPath, opts)
