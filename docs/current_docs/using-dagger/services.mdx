@@ -36,6 +36,27 @@ Service containers have three key properties:
 - **Just-in-time lifecycle.** Services start when first needed, are de-duplicated if multiple clients request the same service, and stop when no longer referenced.
 - **Health checks.** Services are health-checked before clients can connect. No race conditions between service startup and test execution.
 
+## Wiring a service into another module
+
+Generic modules can compose through workspace settings: if a module's constructor accepts an optional `Service`, you can wire another module's service into it with a **function reference** — no glue module required.
+
+For example, a `docusaurus` module knows how to serve a documentation site, and a `playwright` module knows how to run browser tests against any web app it's given. Connect them in `dagger.toml`:
+
+```toml
+[modules.docusaurus]
+source = "github.com/example/docusaurus@v1.0"
+
+[modules.playwright]
+source = "github.com/example/playwright@v1.0"
+
+[modules.playwright.settings]
+app = { from = "docusaurus:serve" }
+```
+
+The `from` value is a `<module>:<function>` path — the same string shown by `dagger up -l`. When `playwright` is constructed, Dagger resolves the reference and passes the service as the `app` argument.
+
+This also works for `Container` constructor arguments: point `from` at any workspace module function that returns a `Container`, for example to share a common base image across modules.
+
 ## Container-to-host networking
 
 A service defined in a module can be exposed to your local machine:

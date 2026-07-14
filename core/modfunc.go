@@ -245,7 +245,7 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		}
 		updatedArgRes := currentArgRes
 		argTypeDef := currentArgRes.Self().TypeDef.Self()
-		if argDefault.IsObject() || (argDefault.IsList() &&
+		if argDefault.IsFunctionRef() || argDefault.IsObject() || (argDefault.IsList() &&
 			argTypeDef != nil &&
 			argTypeDef.Kind == TypeDefKindList &&
 			argTypeDef.AsList.Valid &&
@@ -374,7 +374,7 @@ func (udp *UserDefaultPrimitive) DagqlInput() (dagql.Input, error) {
 
 func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *UserDefault {
 	return &UserDefault{
-		UserDefaultPrimitive{
+		UserDefaultPrimitive: UserDefaultPrimitive{
 			Function:  fn,
 			Arg:       arg,
 			UserInput: userInput,
@@ -384,6 +384,46 @@ func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *Us
 
 type UserDefault struct {
 	UserDefaultPrimitive
+
+	// FunctionRef is the colon-separated path to a workspace module function
+	// whose return value should be injected as this arg's default — a +up
+	// function for Service args, or a Container-returning function for
+	// Container args. Set when the workspace config contains
+	// { from = "<module>:<function>" } for this arg.
+	FunctionRef string
+}
+
+func (ud *UserDefault) IsFunctionRef() bool {
+	return ud.FunctionRef != ""
+}
+
+// resolveFunctionRef evaluates the workspace module function referenced by
+// ud.FunctionRef (e.g. "docusaurus:serve") on the dagql server and returns
+// the ID of the object it produces (a Service, Container, etc).
+func (ud *UserDefault) resolveFunctionRef(ctx context.Context) (any, error) {
+	parts := strings.Split(ud.FunctionRef, ":")
+	if len(parts) < 2 {
+		return nil, ud.errorf(nil, "invalid function reference %q: expected <module>:<function>", ud.FunctionRef)
+	}
+
+	srv := dagql.CurrentDagqlServer(ctx)
+
+	// Build selectors: first the module name, then each subsequent function name.
+	selectors := make([]dagql.Selector, len(parts))
+	for i, part := range parts {
+		selectors[i] = dagql.Selector{Field: gqlFieldName(part)}
+	}
+
+	var svcResult dagql.AnyObjectResult
+	if err := srv.Select(ctx, srv.Root(), &svcResult, selectors...); err != nil {
+		return nil, ud.errorf(err, "resolve function reference %q", ud.FunctionRef)
+	}
+
+	id, err := svcResult.Select(ctx, srv, dagql.Selector{Field: "id"})
+	if err != nil {
+		return nil, ud.errorf(err, "get ID from function reference %q", ud.FunctionRef)
+	}
+	return id.Unwrap(), nil
 }
 
 func (ud *UserDefault) DisplayInput() string {
@@ -412,7 +452,7 @@ func (ud *UserDefault) IsList() bool {
 }
 
 func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, error) {
-	if !ud.IsObject() &&
+	if !ud.IsFunctionRef() && !ud.IsObject() &&
 		(!ud.IsList() ||
 			!ud.Arg.TypeDef.Self().AsList.Valid ||
 			ud.Arg.TypeDef.Self().AsList.Value.Self() == nil ||
@@ -435,6 +475,12 @@ func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, er
 }
 
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
+	// Function reference: resolve by evaluating the referenced function on the
+	// referenced workspace module via the dagql server.
+	if ud.IsFunctionRef() {
+		return ud.resolveFunctionRef(ctx)
+	}
+
 	if !ud.IsObject() && !ud.IsList() {
 		return ud.UserDefaultPrimitive.Value()
 	}
@@ -512,7 +558,7 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 }
 
 func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.Input, error) {
-	if !ud.IsObject() && !ud.IsList() {
+	if !ud.IsFunctionRef() && !ud.IsObject() && !ud.IsList() {
 		return nil, ud.errorf(nil, "DagqlID(): primitive type has no ID")
 	}
 	value, err := ud.Value(ctx)
@@ -575,6 +621,12 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	if fn.mod.Self().WorkspaceConfig != nil && isConstructor {
 		val, ok := lookupConfigCaseInsensitive(fn.mod.Self().WorkspaceConfig, arg.Self().OriginalName, arg.Self().Name)
 		if ok {
+			// Check for function reference: { from = "<module>:<function>" }
+			if ref, ok := extractFunctionRef(val); ok {
+				ud := fn.newUserDefault(arg.Self(), ref)
+				ud.FunctionRef = ref
+				return ud, true, nil
+			}
 			return fn.newUserDefault(arg.Self(), configValueToString(val)), true, nil
 		}
 		// Not in workspace config — only fall through to .env if enabled
@@ -1371,4 +1423,23 @@ func configValueToString(v any) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+// extractFunctionRef checks if a config value is a function reference of the
+// form { from = "<module>:<function>" }. Returns the reference path and true
+// if it matches, or ("", false) otherwise.
+func extractFunctionRef(val any) (string, bool) {
+	m, ok := val.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	from, ok := m["from"]
+	if !ok {
+		return "", false
+	}
+	ref, ok := from.(string)
+	if !ok || ref == "" {
+		return "", false
+	}
+	return ref, true
 }
