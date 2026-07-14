@@ -8,24 +8,27 @@ func TestCodexCatalog(t *testing.T) {
 		t.Fatal("expected openai-codex models, got none")
 	}
 
-	// Current Codex-with-ChatGPT models no longer contain "codex" in their IDs,
-	// so the catalog must not be derived by filtering on that substring.
+	// The Codex option is sourced from catwalk's OpenAI catalog. Current
+	// Codex-with-ChatGPT models no longer contain "codex" in their IDs, so the
+	// catalog must include them (it is not filtered on that substring), and each
+	// carries the reasoning metadata catwalk provides.
 	byID := map[string]ModelInfo{}
 	for _, m := range models {
 		byID[m.ID] = m
 	}
 	for _, want := range []string{"gpt-5.5", "gpt-5.4", "gpt-5.4-mini"} {
-		if _, ok := byID[want]; !ok {
+		m, ok := byID[want]
+		if !ok {
 			t.Errorf("expected Codex catalog to include %q", want)
+			continue
+		}
+		if !m.CanReason || len(m.ReasoningLevels) == 0 {
+			t.Errorf("%q should carry catwalk reasoning metadata, got %+v", want, m)
 		}
 	}
 
-	// The retired unversioned gpt-5-codex must not be offered.
-	if _, ok := byID["gpt-5-codex"]; ok {
-		t.Error("retired gpt-5-codex should not be in the Codex catalog")
-	}
-
-	if got := DefaultModelForProvider("openai-codex"); got != "gpt-5.5" {
-		t.Errorf("default Codex model = %q, want gpt-5.5", got)
+	// The default follows catwalk and must be one of the catalog's models.
+	if def := DefaultModelForProvider("openai-codex"); byID[def].ID == "" {
+		t.Errorf("default Codex model %q not in catalog", def)
 	}
 }
