@@ -208,9 +208,10 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 			model := "replay/" + base64.StdEncoding.EncodeToString(replayData)
 
 			t.Run("call", func(ctx context.Context, t *testctx.T) {
+				// run drives the replayed conversation and returns the final
+				// main.go contents from the LLM's workspace.
 				cmd := []string{"--model=" + model, "run"}
 				cmd = append(cmd, flags...)
-				cmd = append(cmd, "file", "--path=main.go", "contents")
 				out, err := ctr.With(daggerCallAt(".", cmd...)).Stdout(ctx)
 				require.NoError(t, err)
 				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
@@ -222,7 +223,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 					flags = append(flags, flag.ToShell()...)
 				}
 				out, err := ctr.
-					With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | run %s | file main.go | contents`, model, strings.Join(flags, " ")))).
+					With(daggerShellAt(".", fmt.Sprintf(`. --model="%s" | run %s`, model, strings.Join(flags, " ")))).
 					Stdout(ctx)
 				require.NoError(t, err)
 				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
