@@ -80,6 +80,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the workspace root.`),
 			),
 		dagql.NodeFunc("glob", s.glob).
+			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
 			Doc(`Returns a list of files and directories that match the given pattern.`,
 				`Patterns match paths relative to the workspace root.`).
@@ -87,6 +88,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
 			),
 		dagql.NodeFunc("search", s.search).
+			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
 			Doc(
 				`Searches for content matching the given regular expression or literal string.`,
