@@ -127,6 +127,13 @@ type Server struct {
 
 	telemetryPubSub *PubSub
 
+	// wcprofSpanCount declares, per trace, how many engine spans the engine emitted
+	// — the producer half of the wcprof completeness checksum, so the
+	// loader can refuse a trace that silently dropped a leaf span. Registered on
+	// every per-client tracer provider (shared instance) so nested-client spans
+	// count into the same trace.
+	wcprofSpanCount *wcprofSpanCounter
+
 	coreSchemaBase   *schema.CoreSchemaBase
 	coreSchemaBaseMu sync.Mutex
 
@@ -251,6 +258,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
 	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
 	srv.telemetryPubSub = NewPubSub(srv)
+	srv.wcprofSpanCount = newWcprofSpanCounter()
 
 	//
 	// setup config derived from engine config

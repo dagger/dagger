@@ -185,6 +185,23 @@ type ResultCall struct {
 	Args           []*ResultCallArg   `json:"args,omitempty"`
 	ImplicitInputs []*ResultCallArg   `json:"implicitInputs,omitempty"`
 
+	// ProfileSkip records that the wcprof OTel second source must NOT profile this
+	// call: the reflection / schema-walk class that normal telemetry already hides
+	// and that, when profiled, dominates OTel volume on a module-load workload.
+	// (Native wcprof is opt-in/dev-only and keeps full detail — it ignores this bit.) It is set once, before the frame is
+	// used, by core.AroundFunc from the static profileSkip(receiverType, field)
+	// predicate, and it travels with the frame through clone()/fork() and JSON
+	// persistence — so every singleflight joiner, every derived (nth-element) child,
+	// every adopted/copied/imported result carries the producer's decision without a
+	// per-site provenance audit. It is a pure function of the recipe, so it is
+	// EXCLUDED from every digest (recipeDigest / contentPreferredDigest /
+	// selfDigestAndInputRefs / callPB / recipeID) — two frames with the same recipe
+	// necessarily agree on it, so excluding it is consistent, and it must never enter
+	// callKey/callDigest/concurrencyKey. Only the OTel emit gates in cache.go read it;
+	// native wcprof is opt-in/dev-only and keeps full detail (not gated). See
+	// profileSkip in core/telemetry.go.
+	ProfileSkip bool `json:"profileSkip,omitempty"`
+
 	// recipeDigest is memoized once the frame has reached its finalized
 	// semantic shape. Do not mutate the frame after calling RecipeDigest.
 	recipeDigestOnce sync.Once
@@ -219,6 +236,7 @@ func (frame *ResultCall) clone() *ResultCall {
 		ExtraDigests: slices.Clone(frame.ExtraDigests),
 		Receiver:     frame.Receiver.clone(),
 		Module:       frame.Module.clone(),
+		ProfileSkip:  frame.ProfileSkip,
 	}
 	if len(frame.Args) > 0 {
 		cp.Args = make([]*ResultCallArg, 0, len(frame.Args))
@@ -252,6 +270,11 @@ func (frame *ResultCall) fork() *ResultCall {
 		Module:         frame.Module,
 		Args:           slices.Clone(frame.Args),
 		ImplicitInputs: slices.Clone(frame.ImplicitInputs),
+		// ProfileSkip is a pure function of the recipe, so a derived (nth-element)
+		// fork inherits the producer's decision; the element's own immediate
+		// receiver is the list (not a reflection type), so recomputing here would
+		// wrongly profile a reflection-list walk — inheritance is the correct rule.
+		ProfileSkip: frame.ProfileSkip,
 	}
 }
 
