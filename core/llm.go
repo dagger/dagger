@@ -1302,6 +1302,14 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	llm = llm.Clone()
 
+	// Snapshot the object registry before anything can ingest into this step's
+	// transient MCP clone - building the tool list already registers env input
+	// objects. Everything ingested during the step must be re-registered onto
+	// the materialized state via withObject, or later steps will re-ingest it
+	// under a fresh tag, corrupting the tag counter and aliasing existing tags
+	// to the wrong objects.
+	snapshot := llm.mcp.Snapshot()
+
 	tools, err := llm.mcp.Tools(ctx)
 	if err != nil {
 		return inst, err
@@ -1350,7 +1358,6 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			})
 		}
 	}
-	snapshot := llm.mcp.Snapshot()
 	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays) {
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResponse",

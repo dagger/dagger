@@ -2503,11 +2503,19 @@ func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Diges
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	typeName := id.Type().NamedType()
+	stable := stableIDDigest(id)
 	llmID, ok := m.idByHash[hash]
+	if !ok {
+		// The recipe digest misses for objects that were re-registered onto
+		// materialized LLM state by WithObject, which only knows the object's
+		// ID; recognize them by the same stable ID digest it keys with, so a
+		// re-ingested object keeps its tag instead of claiming a fresh number
+		// (and colliding with tags handed out in earlier steps).
+		llmID, ok = m.idByHash[stable]
+	}
 	if !ok {
 		m.typeCounts[typeName]++
 		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
-		m.idByHash[hash] = llmID
 		m.idByLLMID[llmID] = id
 		m.objsByID[llmID] = func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error) {
 			return &Binding{
@@ -2518,6 +2526,8 @@ func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Diges
 			}, nil
 		}
 	}
+	m.idByHash[hash] = llmID
+	m.idByHash[stable] = llmID
 	return llmID, nil
 }
 
@@ -2563,7 +2573,13 @@ func (m *MCP) WithObject(llmID string, anyID dagql.AnyID) *MCP {
 	defer m.mu.Unlock()
 	typeName := id.Type().NamedType()
 	hash := stableIDDigest(id)
-	if _, ok := m.idByHash[hash]; !ok {
+	// Keep the tag counter at or ahead of any re-registered TypeName#N tag so
+	// later ingestions can never claim a number this tag already occupies.
+	if _, numStr, found := strings.Cut(llmID, "#"); found {
+		if n, err := strconv.Atoi(numStr); err == nil && n > m.typeCounts[typeName] {
+			m.typeCounts[typeName] = n
+		}
+	} else if _, ok := m.idByHash[hash]; !ok {
 		m.typeCounts[typeName]++
 	}
 	m.idByHash[hash] = llmID
