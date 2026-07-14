@@ -311,22 +311,19 @@ func decodeThoughtSignature(signature string) []byte {
 	return sig
 }
 
-// thinkingConfig maps the endpoint's ThinkingMode/ThinkingBudget onto Gemini's
-// thinking configuration. It returns nil (thinking disabled) unless a mode is
-// set. When enabled, thought summaries are requested so they can be captured
-// and round-tripped; a positive budget caps the thinking tokens (otherwise the
-// model thinks dynamically).
+// thinkingConfig maps the endpoint's ReasoningEffort onto Gemini's thinking
+// configuration. It returns nil (thinking disabled) unless an effort is set.
+// When enabled, the level is passed straight through as Gemini's thinking_level
+// and thought summaries are requested so they can be captured and round-tripped.
 func (c *GenaiClient) thinkingConfig() *genai.ThinkingConfig {
-	switch c.endpoint.ThinkingMode {
-	case "", "disabled", "none":
+	effort := c.endpoint.ReasoningEffort
+	if effort == "" || effort == "none" {
 		return nil
 	}
-	cfg := &genai.ThinkingConfig{IncludeThoughts: true}
-	if c.endpoint.ThinkingBudget > 0 {
-		budget := int32(c.endpoint.ThinkingBudget)
-		cfg.ThinkingBudget = &budget
+	return &genai.ThinkingConfig{
+		IncludeThoughts: true,
+		ThinkingLevel:   genai.ThinkingLevel(strings.ToUpper(effort)),
 	}
-	return cfg
 }
 
 var _ LLMClient = (*GenaiClient)(nil)

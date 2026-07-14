@@ -118,9 +118,9 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	}
 
 	// Configure reasoning effort if specified
-	if c.endpoint.ThinkingMode != "" {
+	if effort := c.endpoint.ReasoningEffort; effort != "" && effort != "none" {
 		params.Reasoning = shared.ReasoningParam{
-			Effort:  shared.ReasoningEffort(c.endpoint.ThinkingMode),
+			Effort:  shared.ReasoningEffort(effort),
 			Summary: shared.ReasoningSummaryConcise,
 		}
 	}

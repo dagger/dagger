@@ -51,30 +51,28 @@ func TestLlmConfig(t *testing.T) {
 	srv := newCoreDagqlServerForTest(t, q)
 
 	vars := map[string]string{
-		"file://.env":                      "",
-		"env://ANTHROPIC_API_KEY":          "anthropic-api-key",
-		"env://ANTHROPIC_BASE_URL":         "anthropic-base-url",
-		"env://ANTHROPIC_MODEL":            "anthropic-model",
-		"env://ANTHROPIC_AUTH_TOKEN":       "anthropic-auth-token",
-		"env://ANTHROPIC_THINKING_MODE":    "anthropic-thinking-mode",
-		"env://ANTHROPIC_THINKING_BUDGET":  "12000",
-		"env://OPENAI_API_KEY":             "openai-api-key",
-		"env://OPENAI_AZURE_VERSION":       "openai-azure-version",
-		"env://OPENAI_BASE_URL":            "openai-base-url",
-		"env://OPENAI_MODEL":               "openai-model",
-		"env://OPENAI_DISABLE_STREAMING":   "t",
-		"env://OPENAI_CODEX_AUTH_TOKEN":    "openai-codex-auth-token",
-		"env://OPENAI_CODEX_MODEL":         "openai-codex-model",
-		"env://OPENAI_CODEX_THINKING_MODE": "openai-codex-thinking-mode",
-		"env://GEMINI_API_KEY":             "gemini-api-key",
-		"env://GEMINI_BASE_URL":            "gemini-base-url",
-		"env://GEMINI_MODEL":               "gemini-model",
-		"env://GEMINI_THINKING_MODE":       "gemini-thinking-mode",
-		"env://GEMINI_THINKING_BUDGET":     "8000",
-		"env://LOCAL_BASE_URL":             "local-base-url",
-		"env://LOCAL_MODEL":                "local-model",
-		"env://LOCAL_API_COMPAT":           "openai",
-		"env://LOCAL_API_KEY":              "local-api-key",
+		"file://.env":                         "",
+		"env://ANTHROPIC_API_KEY":             "anthropic-api-key",
+		"env://ANTHROPIC_BASE_URL":            "anthropic-base-url",
+		"env://ANTHROPIC_MODEL":               "anthropic-model",
+		"env://ANTHROPIC_AUTH_TOKEN":          "anthropic-auth-token",
+		"env://ANTHROPIC_REASONING_EFFORT":    "anthropic-reasoning-effort",
+		"env://OPENAI_API_KEY":                "openai-api-key",
+		"env://OPENAI_AZURE_VERSION":          "openai-azure-version",
+		"env://OPENAI_BASE_URL":               "openai-base-url",
+		"env://OPENAI_MODEL":                  "openai-model",
+		"env://OPENAI_DISABLE_STREAMING":      "t",
+		"env://OPENAI_CODEX_AUTH_TOKEN":       "openai-codex-auth-token",
+		"env://OPENAI_CODEX_MODEL":            "openai-codex-model",
+		"env://OPENAI_CODEX_REASONING_EFFORT": "openai-codex-reasoning-effort",
+		"env://GEMINI_API_KEY":                "gemini-api-key",
+		"env://GEMINI_BASE_URL":               "gemini-base-url",
+		"env://GEMINI_MODEL":                  "gemini-model",
+		"env://GEMINI_REASONING_EFFORT":       "gemini-reasoning-effort",
+		"env://LOCAL_BASE_URL":                "local-base-url",
+		"env://LOCAL_MODEL":                   "local-model",
+		"env://LOCAL_API_COMPAT":              "openai",
+		"env://LOCAL_API_KEY":                 "local-api-key",
 	}
 
 	dagql.Fields[LLMTestQuery]{
@@ -107,15 +105,13 @@ func TestLlmConfig(t *testing.T) {
 	assert.True(t, r.OpenAIDisableStreaming)
 	assert.Equal(t, "openai-codex-auth-token", r.OpenAICodexAuthToken)
 	assert.Equal(t, "openai-codex-model", r.OpenAICodexModel)
-	assert.Equal(t, "openai-codex-thinking-mode", r.OpenAICodexThinkingMode)
+	assert.Equal(t, "openai-codex-reasoning-effort", r.OpenAICodexReasoningEffort)
 	assert.Equal(t, "anthropic-auth-token", r.AnthropicAuthToken)
-	assert.Equal(t, "anthropic-thinking-mode", r.AnthropicThinkingMode)
-	assert.Equal(t, int64(12000), r.AnthropicThinkingBudget)
+	assert.Equal(t, "anthropic-reasoning-effort", r.AnthropicReasoningEffort)
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
-	assert.Equal(t, "gemini-thinking-mode", r.GeminiThinkingMode)
-	assert.Equal(t, int64(8000), r.GeminiThinkingBudget)
+	assert.Equal(t, "gemini-reasoning-effort", r.GeminiReasoningEffort)
 	assert.Equal(t, "local-base-url", r.LocalBaseURL)
 	assert.Equal(t, "local-model", r.LocalModel)
 	assert.Equal(t, "openai", r.LocalAPICompat)

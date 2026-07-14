@@ -55,15 +55,10 @@ type Provider struct {
 	TokenExpiry      int64  `toml:"token_expiry,omitempty"`      // Unix timestamp (ms) when access token expires
 	SubscriptionType string `toml:"subscription_type,omitempty"` // "pro", "max", "team", "enterprise"
 
-	// ThinkingMode controls extended thinking / reasoning effort.
-	// Values are provider-specific reasoning levels from catwalk
-	// (e.g. "low", "medium", "high", "adaptive").
-	ThinkingMode string `toml:"thinking_mode,omitempty"`
-
-	// ThinkingBudget is the maximum number of thinking tokens per turn, for
-	// providers that accept an explicit budget (Anthropic, Google). Zero means
-	// use a provider-specific default.
-	ThinkingBudget int64 `toml:"thinking_budget,omitempty"`
+	// ReasoningEffort is the reasoning level for the provider's model, taken
+	// from the model's catwalk reasoning_levels (e.g. "low", "medium", "high").
+	// Empty disables reasoning.
+	ReasoningEffort string `toml:"reasoning_effort,omitempty"`
 
 	// APICompat selects which API protocol to use for custom/local endpoints.
 	// Values: "openai" (OpenAI-compatible) or "anthropic" (Anthropic-compatible).

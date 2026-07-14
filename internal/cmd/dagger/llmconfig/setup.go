@@ -228,7 +228,7 @@ func setupAPIKeyProvider(ctx context.Context, ph PromptHandler, provider string)
 		return nil, "", err
 	}
 
-	if err := promptThinkingConfig(ctx, ph, provider, selectedModel, providerCfg); err != nil {
+	if err := promptReasoningEffort(ctx, ph, provider, selectedModel, providerCfg); err != nil {
 		return nil, "", err
 	}
 
@@ -563,7 +563,7 @@ func setupClaudeCodeOAuth(ctx context.Context, ph PromptHandler) (string, *Provi
 		return "", nil, "", err
 	}
 
-	if err := promptThinkingConfig(ctx, ph, "anthropic", selectedModel, providerCfg); err != nil {
+	if err := promptReasoningEffort(ctx, ph, "anthropic", selectedModel, providerCfg); err != nil {
 		return "", nil, "", err
 	}
 
@@ -695,7 +695,7 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (string, *Prov
 		return "", nil, "", err
 	}
 
-	if err := promptThinkingConfig(ctx, ph, "openai-codex", selectedModel, providerCfg); err != nil {
+	if err := promptReasoningEffort(ctx, ph, "openai-codex", selectedModel, providerCfg); err != nil {
 		return "", nil, "", err
 	}
 
@@ -795,19 +795,23 @@ func promptModelSelection(ctx context.Context, ph PromptHandler, provider, defau
 	return selected, nil
 }
 
-// promptThinkingConfig asks the user whether to enable extended thinking / reasoning.
-// The available options are driven by the model's ReasoningLevels from catwalk.
-func promptThinkingConfig(ctx context.Context, ph PromptHandler, provider, model string, cfg *Provider) error {
+// promptReasoningEffort asks the user which reasoning effort to use. The
+// available options are the model's reasoning levels from catwalk.
+func promptReasoningEffort(ctx context.Context, ph PromptHandler, provider, model string, cfg *Provider) error {
 	m, found := ModelByID(provider, model)
 	if !found || !m.CanReason {
 		return nil
 	}
 
-	// Build options from the model's reasoning levels.
+	// Build options from the model's reasoning levels. Catwalk's own "none"
+	// level is folded into the explicit "Off" entry.
 	opts := []huh.Option[string]{
-		huh.NewOption("Off (default)", ""),
+		huh.NewOption("Off", ""),
 	}
 	for _, level := range m.ReasoningLevels {
+		if level == "none" {
+			continue
+		}
 		label := strings.ToUpper(level[:1]) + level[1:]
 		if level == m.DefaultReasoningEffort {
 			label += " (model default)"
@@ -815,22 +819,22 @@ func promptThinkingConfig(ctx context.Context, ph PromptHandler, provider, model
 		opts = append(opts, huh.NewOption(label, level))
 	}
 
-	var mode string
+	var effort string
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Height(max(len(opts)+2, 6)).
-				Title("Reasoning / thinking").
+				Title("Reasoning effort").
 				Description("Controls how much the model reasons before responding.").
 				Options(opts...).
-				Value(&mode),
+				Value(&effort),
 		),
 	)
 	if err := checkAbort(ph.HandleForm(ctx, form)); err != nil {
 		return err
 	}
 
-	cfg.ThinkingMode = mode
+	cfg.ReasoningEffort = effort
 	return nil
 }
 

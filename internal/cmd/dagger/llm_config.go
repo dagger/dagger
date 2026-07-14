@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -59,12 +58,6 @@ func applyLLMConfigEnv() {
 		}
 		os.Setenv(key, val)
 	}
-	setThinking := func(modeKey, budgetKey string, p llmconfig.Provider) {
-		setIfEmpty(modeKey, p.ThinkingMode)
-		if p.ThinkingBudget > 0 {
-			setIfEmpty(budgetKey, strconv.FormatInt(p.ThinkingBudget, 10))
-		}
-	}
 	// Honor the configured default model (`dagger llm set-default`), which lives
 	// in cfg.LLM.DefaultModel/DefaultProvider rather than any provider's own
 	// p.Model. The engine's router picks a model from the per-provider *_MODEL
@@ -98,11 +91,11 @@ func applyLLMConfigEnv() {
 			switch name {
 			case "anthropic":
 				setIfEmpty("ANTHROPIC_AUTH_TOKEN", p.AuthToken)
-				setThinking("ANTHROPIC_THINKING_MODE", "ANTHROPIC_THINKING_BUDGET", p)
+				setIfEmpty("ANTHROPIC_REASONING_EFFORT", p.ReasoningEffort)
 			case "openai-codex":
 				setIfEmpty("OPENAI_CODEX_AUTH_TOKEN", p.AuthToken)
 				setIfEmpty("OPENAI_CODEX_MODEL", p.Model)
-				setIfEmpty("OPENAI_CODEX_THINKING_MODE", p.ThinkingMode)
+				setIfEmpty("OPENAI_CODEX_REASONING_EFFORT", p.ReasoningEffort)
 			}
 			continue
 		}
@@ -111,7 +104,7 @@ func applyLLMConfigEnv() {
 			setIfEmpty("ANTHROPIC_API_KEY", p.APIKey)
 			setIfEmpty("ANTHROPIC_BASE_URL", p.BaseURL)
 			setIfEmpty("ANTHROPIC_MODEL", p.Model)
-			setThinking("ANTHROPIC_THINKING_MODE", "ANTHROPIC_THINKING_BUDGET", p)
+			setIfEmpty("ANTHROPIC_REASONING_EFFORT", p.ReasoningEffort)
 		case "openai":
 			setIfEmpty("OPENAI_API_KEY", p.APIKey)
 			setIfEmpty("OPENAI_BASE_URL", p.BaseURL)
@@ -120,7 +113,7 @@ func applyLLMConfigEnv() {
 			setIfEmpty("GEMINI_API_KEY", p.APIKey)
 			setIfEmpty("GEMINI_BASE_URL", p.BaseURL)
 			setIfEmpty("GEMINI_MODEL", p.Model)
-			setThinking("GEMINI_THINKING_MODE", "GEMINI_THINKING_BUDGET", p)
+			setIfEmpty("GEMINI_REASONING_EFFORT", p.ReasoningEffort)
 		case "openrouter":
 			// OpenRouter is OpenAI-compatible; route it through the OpenAI vars.
 			setIfEmpty("OPENAI_API_KEY", p.APIKey)

@@ -245,40 +245,24 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		maxTokens = int64(opts.MaxTokens)
 	}
 
-	// Configure extended thinking / reasoning, if requested. Anthropic requires
-	// MaxTokens to leave room for the thinking budget on top of the reply, so we
-	// bump it when necessary.
-	var thinkingConfig anthropic.ThinkingConfigParamUnion
-	switch c.endpoint.ThinkingMode {
-	case "", "disabled", "none":
-		// thinking disabled
-	case "adaptive":
-		thinkingConfig = anthropic.ThinkingConfigParamUnion{
-			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
-		}
+	// Configure reasoning effort, if requested. Anthropic takes the level
+	// straight through as output_config.effort; leave room for reasoning tokens
+	// on top of the reply so the answer isn't truncated.
+	var outputConfig anthropic.OutputConfigParam
+	if effort := c.endpoint.ReasoningEffort; effort != "" && effort != "none" {
+		outputConfig.Effort = anthropic.OutputConfigEffort(effort)
 		if maxTokens < 16384 {
 			maxTokens = 16384
-		}
-	default:
-		// Any other mode (e.g. "enabled", "low"/"medium"/"high") enables thinking
-		// with an explicit token budget.
-		budget := c.endpoint.ThinkingBudget
-		if budget < 1024 {
-			budget = 10000
-		}
-		thinkingConfig = anthropic.ThinkingConfigParamOfEnabled(budget)
-		if maxTokens < budget+1024 {
-			maxTokens = budget + 1024
 		}
 	}
 
 	params := anthropic.MessageNewParams{
-		Model:     c.endpoint.Model,
-		MaxTokens: maxTokens,
-		Messages:  messages,
-		Tools:     toolsConfig,
-		System:    systemPrompts,
-		Thinking:  thinkingConfig,
+		Model:        c.endpoint.Model,
+		MaxTokens:    maxTokens,
+		Messages:     messages,
+		Tools:        toolsConfig,
+		System:       systemPrompts,
+		OutputConfig: outputConfig,
 	}
 
 	// Start a streaming request.

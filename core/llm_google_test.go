@@ -20,27 +20,25 @@ func TestDecodeThoughtSignature(t *testing.T) {
 }
 
 func TestGenaiThinkingConfig(t *testing.T) {
-	newClient := func(mode string, budget int64) *GenaiClient {
-		return &GenaiClient{endpoint: &LLMEndpoint{ThinkingMode: mode, ThinkingBudget: budget}}
+	newClient := func(effort string) *GenaiClient {
+		return &GenaiClient{endpoint: &LLMEndpoint{ReasoningEffort: effort}}
 	}
 
-	// Disabled modes yield no config.
-	for _, mode := range []string{"", "disabled", "none"} {
-		assert.Nil(t, newClient(mode, 0).thinkingConfig(), "mode %q should disable thinking", mode)
+	// Empty / "none" effort yields no config.
+	for _, effort := range []string{"", "none"} {
+		assert.Nil(t, newClient(effort).thinkingConfig(), "effort %q should disable thinking", effort)
 	}
 
-	// Any other mode requests thought summaries.
-	cfg := newClient("high", 0).thinkingConfig()
+	// A real effort requests thought summaries and maps to Gemini's uppercase
+	// thinking level.
+	cfg := newClient("high").thinkingConfig()
 	require.NotNil(t, cfg)
 	assert.True(t, cfg.IncludeThoughts)
-	assert.Nil(t, cfg.ThinkingBudget, "no budget means dynamic thinking")
+	assert.Equal(t, genai.ThinkingLevelHigh, cfg.ThinkingLevel)
 
-	// A positive budget is passed through.
-	cfg = newClient("enabled", 4096).thinkingConfig()
+	cfg = newClient("low").thinkingConfig()
 	require.NotNil(t, cfg)
-	assert.True(t, cfg.IncludeThoughts)
-	require.NotNil(t, cfg.ThinkingBudget)
-	assert.Equal(t, int32(4096), *cfg.ThinkingBudget)
+	assert.Equal(t, genai.ThinkingLevelLow, cfg.ThinkingLevel)
 }
 
 // TestGenaiThinkingRoundTrip exercises the send path: a captured thinking block
