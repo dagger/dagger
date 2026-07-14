@@ -1,0 +1,8 @@
+type FilesSearcher {
+  pub files: [String!]!
+
+  new(ws: Workspace!, pattern: String!, globs: [String!], limit: Int! = 1000) {
+    self.files = ws.search(pattern: pattern, filesOnly: true, globs: globs, limit: limit).{{filePath}}.map { r => r.filePath }
+    self
+  }
+}

@@ -16177,6 +16177,39 @@ pub struct WorkspaceGeneratorsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceSearchOpts<'a> {
+    /// Allow the . pattern to match newlines in multiline mode.
+    #[builder(setter(into, strip_option), default)]
+    pub dotall: Option<bool>,
+    /// Only return matching files, not lines and content
+    #[builder(setter(into, strip_option), default)]
+    pub files_only: Option<bool>,
+    /// Glob patterns to match (e.g., "*.md")
+    #[builder(setter(into, strip_option), default)]
+    pub globs: Option<Vec<&'a str>>,
+    /// Enable case-insensitive matching.
+    #[builder(setter(into, strip_option), default)]
+    pub insensitive: Option<bool>,
+    /// Limit the number of results to return
+    #[builder(setter(into, strip_option), default)]
+    pub limit: Option<isize>,
+    /// Interpret the pattern as a literal string instead of a regular expression.
+    #[builder(setter(into, strip_option), default)]
+    pub literal: Option<bool>,
+    /// Enable searching across multiple lines.
+    #[builder(setter(into, strip_option), default)]
+    pub multiline: Option<bool>,
+    /// Directory or file paths to search
+    #[builder(setter(into, strip_option), default)]
+    pub paths: Option<Vec<&'a str>>,
+    /// Skip hidden files (files starting with .).
+    #[builder(setter(into, strip_option), default)]
+    pub skip_hidden: Option<bool>,
+    /// Honor .gitignore, .ignore, and .rgignore files.
+    #[builder(setter(into, strip_option), default)]
+    pub skip_ignored: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceServicesOpts<'a> {
     /// Only include services matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -16527,6 +16560,17 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Returns a list of files and directories that match the given pattern.
+    /// Patterns match paths relative to the workspace root.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - Pattern to match (e.g., "*.md").
+    pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("glob");
+        query = query.arg("pattern", pattern.into());
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this Workspace.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
@@ -16600,6 +16644,93 @@ impl Workspace {
                     .select("node")
                     .arg("id", &id.0)
                     .inline_fragment("WorkspaceSDK"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Searches for content matching the given regular expression or literal string.
+    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+    /// Runs ripgrep on the client host, falling back to grep if unavailable.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn search(
+        &self,
+        pattern: impl Into<String>,
+    ) -> Result<Vec<SearchResult>, DaggerError> {
+        let mut query = self.selection.select("search");
+        query = query.arg("pattern", pattern.into());
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| SearchResult {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("SearchResult"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Searches for content matching the given regular expression or literal string.
+    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+    /// Runs ripgrep on the client host, falling back to grep if unavailable.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn search_opts<'a>(
+        &self,
+        pattern: impl Into<String>,
+        opts: WorkspaceSearchOpts<'a>,
+    ) -> Result<Vec<SearchResult>, DaggerError> {
+        let mut query = self.selection.select("search");
+        query = query.arg("pattern", pattern.into());
+        if let Some(paths) = opts.paths {
+            query = query.arg("paths", paths);
+        }
+        if let Some(globs) = opts.globs {
+            query = query.arg("globs", globs);
+        }
+        if let Some(literal) = opts.literal {
+            query = query.arg("literal", literal);
+        }
+        if let Some(multiline) = opts.multiline {
+            query = query.arg("multiline", multiline);
+        }
+        if let Some(dotall) = opts.dotall {
+            query = query.arg("dotall", dotall);
+        }
+        if let Some(insensitive) = opts.insensitive {
+            query = query.arg("insensitive", insensitive);
+        }
+        if let Some(skip_ignored) = opts.skip_ignored {
+            query = query.arg("skipIgnored", skip_ignored);
+        }
+        if let Some(skip_hidden) = opts.skip_hidden {
+            query = query.arg("skipHidden", skip_hidden);
+        }
+        if let Some(files_only) = opts.files_only {
+            query = query.arg("filesOnly", files_only);
+        }
+        if let Some(limit) = opts.limit {
+            query = query.arg("limit", limit);
+        }
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| SearchResult {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("SearchResult"),
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())

@@ -16308,6 +16308,19 @@ func (r *Workspace) Git() *WorkspaceGit {
 	}
 }
 
+// Returns a list of files and directories that match the given pattern.
+//
+// Patterns match paths relative to the workspace root.
+func (r *Workspace) Glob(ctx context.Context, pattern string) ([]string, error) {
+	q := r.query.Select("glob")
+	q = q.Arg("pattern", pattern)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // A unique identifier for this Workspace.
 func (r *Workspace) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
@@ -16434,6 +16447,110 @@ func (r *Workspace) Sdks(ctx context.Context) ([]WorkspaceSDK, error) {
 		return out
 	}
 	var response []sdks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// WorkspaceSearchOpts contains options for Workspace.Search
+type WorkspaceSearchOpts struct {
+	// Directory or file paths to search
+	Paths []string
+	// Glob patterns to match (e.g., "*.md")
+	Globs []string
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	Insensitive bool
+	// Honor .gitignore, .ignore, and .rgignore files.
+	SkipIgnored bool
+	// Skip hidden files (files starting with .).
+	SkipHidden bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+//
+// Runs ripgrep on the client host, falling back to grep if unavailable.
+func (r *Workspace) Search(ctx context.Context, pattern string, opts ...WorkspaceSearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `insensitive` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Insensitive) {
+			q = q.Arg("insensitive", opts[i].Insensitive)
+		}
+		// `skipIgnored` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipIgnored) {
+			q = q.Arg("skipIgnored", opts[i].SkipIgnored)
+		}
+		// `skipHidden` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipHidden) {
+			q = q.Arg("skipHidden", opts[i].SkipHidden)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id ID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "SearchResult")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
 
 	q = q.Bind(&response)
 

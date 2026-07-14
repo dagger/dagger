@@ -16052,6 +16052,36 @@ class Workspace(Type):
         _ctx = self._select("git", _args)
         return WorkspaceGit(_ctx)
 
+    async def glob(self, pattern: str) -> list[str]:
+        """Returns a list of files and directories that match the given pattern.
+
+        Patterns match paths relative to the workspace root.
+
+        Parameters
+        ----------
+        pattern:
+            Pattern to match (e.g., "*.md").
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("pattern", pattern),
+        ]
+        _ctx = self._select("glob", _args)
+        return await _ctx.execute(list[str])
+
     async def id(self) -> str:
         """A unique identifier for this Workspace.
 
@@ -16129,6 +16159,71 @@ class Workspace(Type):
         _args: list[Arg] = []
         _ctx = self._select("sdks", _args)
         return await _ctx.execute_object_list(WorkspaceSDK)
+
+    async def search(
+        self,
+        pattern: str,
+        *,
+        paths: list[str] | None = None,
+        globs: list[str] | None = None,
+        literal: bool | None = False,
+        multiline: bool | None = False,
+        dotall: bool | None = False,
+        insensitive: bool | None = False,
+        skip_ignored: bool | None = False,
+        skip_hidden: bool | None = False,
+        files_only: bool | None = False,
+        limit: int | None = None,
+    ) -> list[SearchResult]:
+        """Searches for content matching the given regular expression or literal
+        string.
+
+        Uses Rust regex syntax; escape literal ., [, ], {, }, | with
+        backslashes.
+
+        Runs ripgrep on the client host, falling back to grep if unavailable.
+
+        Parameters
+        ----------
+        pattern:
+            The text to match.
+        paths:
+            Directory or file paths to search
+        globs:
+            Glob patterns to match (e.g., "*.md")
+        literal:
+            Interpret the pattern as a literal string instead of a regular
+            expression.
+        multiline:
+            Enable searching across multiple lines.
+        dotall:
+            Allow the . pattern to match newlines in multiline mode.
+        insensitive:
+            Enable case-insensitive matching.
+        skip_ignored:
+            Honor .gitignore, .ignore, and .rgignore files.
+        skip_hidden:
+            Skip hidden files (files starting with .).
+        files_only:
+            Only return matching files, not lines and content
+        limit:
+            Limit the number of results to return
+        """
+        _args = [
+            Arg("pattern", pattern),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("globs", [] if globs is None else globs, []),
+            Arg("literal", literal, False),
+            Arg("multiline", multiline, False),
+            Arg("dotall", dotall, False),
+            Arg("insensitive", insensitive, False),
+            Arg("skipIgnored", skip_ignored, False),
+            Arg("skipHidden", skip_hidden, False),
+            Arg("filesOnly", files_only, False),
+            Arg("limit", limit, None),
+        ]
+        _ctx = self._select("search", _args)
+        return await _ctx.execute_object_list(SearchResult)
 
     def services(
         self,
