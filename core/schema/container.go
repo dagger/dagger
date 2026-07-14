@@ -2612,20 +2612,20 @@ type containerWithMountedPathDockerfileCompatArgs struct {
 	ReadOnly   bool   `default:"false"`
 }
 
-func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedPathDockerfileCompatArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedPathDockerfileCompatArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return inst, fmt.Errorf("failed to get server: %w", err)
 	}
 
 	dir, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	ctr, _, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	target := absPath(parent.Self().Config.WorkingDir, args.Path)
@@ -2642,7 +2642,50 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 		Readonly:        args.ReadOnly,
 		DirectorySource: new(core.LazyAccessor[*core.Directory, *core.Container]),
 	})
-	return ctr, nil
+
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	if err != nil {
+		return inst, err
+	}
+
+	// The mount's effect is fully determined by the parent container, the target/readOnly config,
+	// and the content at sourcePath, so key on those instead — mirroring BuildKit's
+	// content-checksummed bind-mount cache keys.
+	parentDgst, err := parent.ContentPreferredDigest(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: parent digest: %w", err)
+	}
+	dagqlCache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := dagqlCache.Evaluate(ctx, dir); err != nil {
+		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: evaluate source: %w", err)
+	}
+	srcSnapshot, err := dir.Self().Snapshot.GetOrEval(ctx, dir.Result)
+	if err != nil {
+		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: source snapshot: %w", err)
+	}
+	srcRoot, err := dir.Self().Dir.GetOrEval(ctx, dir.Result)
+	if err != nil {
+		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: source path: %w", err)
+	}
+	srcHash := "empty"
+	if srcSnapshot != nil {
+		dgst, err := core.GetContentHashFromFile(ctx, srcSnapshot, path.Join(srcRoot, args.SourcePath))
+		if err != nil {
+			return inst, fmt.Errorf("failed to content hash dockerfile bind mount at %q: %w", args.SourcePath, err)
+		}
+		srcHash = string(dgst)
+	}
+	return inst.WithContentDigest(ctx, hashutil.HashStrings(
+		"__withMountedPathDockerfileCompat",
+		string(parentDgst),
+		target,
+		args.SourcePath,
+		strconv.FormatBool(args.ReadOnly),
+		srcHash,
+	))
 }
 
 type containerWithMountedCacheArgs struct {

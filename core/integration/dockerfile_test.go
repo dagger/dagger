@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1320,4 +1321,44 @@ ADD --unpack=false archive.tar /out/
 		require.NoError(t, err)
 		require.False(t, found)
 	})
+}
+
+// TestDockerBuildContextChangeLayerCache verifies that COPY/ADD steps (and
+// anything downstream of them) keep their layer cache when files in the build
+// context that the COPY does not select are modified.
+func (DockerfileSuite) TestDockerBuildContextChangeLayerCache(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "app"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app", "main.txt"), []byte("v1"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "unrelated.txt"), []byte("one"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(`FROM `+alpineImage+`
+COPY app /app
+RUN head -c16 /dev/urandom | sha256sum > /copy-stamp
+RUN --mount=type=bind,source=app/main.txt,target=/mnt/main.txt head -c16 /dev/urandom | sha256sum > /bind-stamp
+`), 0o644))
+
+	// Use a fresh client per build: host.directory is cached per session, and
+	// the scenario being modeled is successive pipeline runs (one session
+	// each) against the same engine.
+	stamps := func() (string, string) {
+		c := connect(ctx, t)
+		defer c.Close()
+		ctr := c.Host().Directory(dir).DockerBuild()
+		copyStamp, err := ctr.File("/copy-stamp").Contents(ctx)
+		require.NoError(t, err)
+		bindStamp, err := ctr.File("/bind-stamp").Contents(ctx)
+		require.NoError(t, err)
+		return copyStamp, bindStamp
+	}
+
+	copyStamp1, bindStamp1 := stamps()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "unrelated.txt"), []byte("two"), 0o644))
+	copyStamp2, bindStamp2 := stamps()
+	require.Equal(t, copyStamp1, copyStamp2, "unrelated context change invalidated COPY layer cache")
+	require.Equal(t, bindStamp1, bindStamp2, "unrelated context change invalidated bind-mount RUN layer cache")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app", "main.txt"), []byte("v2"), 0o644))
+	copyStamp3, _ := stamps()
+	require.NotEqual(t, copyStamp1, copyStamp3, "COPY'd content change did not invalidate downstream RUN")
 }
