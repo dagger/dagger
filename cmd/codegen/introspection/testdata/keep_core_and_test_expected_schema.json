@@ -682,6 +682,154 @@
           "directives": []
         },
         {
+          "name": "asSub1",
+          "description": "Retrieve the binding value, as type Sub1",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Sub1"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "3"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "asSub1Obj",
+          "description": "Retrieve the binding value, as type Sub1Obj",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Sub1Obj"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "9"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "asSub2",
+          "description": "Retrieve the binding value, as type Sub2",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Sub2"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub2\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub2/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "3"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "asSub2Obj",
+          "description": "Retrieve the binding value, as type Sub2Obj",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Sub2Obj"
+            }
+          },
+          "args": [],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub2\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub2/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "9"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "name": "asTest",
           "description": "Retrieve the binding value, as type Test",
           "type": {
@@ -818,7 +966,7 @@
           "directives": null
         }
       ],
-      "possibleTypes": null,
+      "possibleTypes": [],
       "directives": []
     },
     {
@@ -11251,6 +11399,610 @@
           "directives": []
         },
         {
+          "name": "withSub1Input",
+          "description": "Create or update a binding of type Sub1 in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The Sub1 value to assign to the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "The purpose of the input",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "3"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub1ObjInput",
+          "description": "Create or update a binding of type Sub1Obj in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The Sub1Obj value to assign to the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "The purpose of the input",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "9"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub1ObjOutput",
+          "description": "Declare a desired Sub1Obj output to be assigned in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "A description of the desired value of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "9"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub1Output",
+          "description": "Declare a desired Sub1 output to be assigned in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "A description of the desired value of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub1\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub1/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "3"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub2Input",
+          "description": "Create or update a binding of type Sub2 in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The Sub2 value to assign to the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "The purpose of the input",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub2\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub2/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "3"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub2ObjInput",
+          "description": "Create or update a binding of type Sub2Obj in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "value",
+              "description": "The Sub2Obj value to assign to the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "The purpose of the input",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub2\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub2/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "9"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub2ObjOutput",
+          "description": "Declare a desired Sub2Obj output to be assigned in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "A description of the desired value of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub2\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub2/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "9"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "withSub2Output",
+          "description": "Declare a desired Sub2 output to be assigned in the environment",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Env"
+            }
+          },
+          "args": [
+            {
+              "name": "name",
+              "description": "The name of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            },
+            {
+              "name": "description",
+              "description": "A description of the desired value of the binding",
+              "defaultValue": null,
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              },
+              "directives": [],
+              "isDeprecated": false,
+              "deprecationReason": null
+            }
+          ],
+          "isDeprecated": false,
+          "deprecationReason": null,
+          "directives": [
+            {
+              "name": "sourceMap",
+              "args": [
+                {
+                  "name": "module",
+                  "value": "\"sub2\""
+                },
+                {
+                  "name": "filename",
+                  "value": "\"core/integration/testdata/modules/go/namespacing/sub2/main.go\""
+                },
+                {
+                  "name": "line",
+                  "value": "3"
+                },
+                {
+                  "name": "column",
+                  "value": "6"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "name": "withTestInput",
           "description": "Create or update a binding of type Test in the environment",
           "type": {
@@ -11589,7 +12341,7 @@
           "directives": null
         }
       ],
-      "possibleTypes": null,
+      "possibleTypes": [],
       "directives": []
     },
     {
