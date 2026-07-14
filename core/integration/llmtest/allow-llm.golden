@@ -1,17 +1,27 @@
 [
   {
-    "role": "user",
-    "content": "greet me"
+    "role": "USER",
+    "content": [
+      {
+        "kind": "TEXT",
+        "text": "greet me"
+      }
+    ]
   },
   {
-    "role": "assistant",
-    "content": "Hello! 👋 Welcome! \n\nI'm here to help you work with the tool system. I can read logs from executions and check user-provided values. \n\nI see you've provided a cache-busting string value (UUID: 5273d910-f7d8-40c0-ae1d-e7c50000cb52), though it sounds like that's just for system purposes rather than something you need help with directly.\n\nHow can I assist you today? Would you like me to read some logs or help you with something else?",
+    "role": "ASSISTANT",
+    "content": [
+      {
+        "kind": "TEXT",
+        "text": "Hello! 👋 Welcome! I'm here to help you with various tools and functions. How can I assist you today?\n\nI see you have a cache-busting value provided (7b9874f3-5dc4-40ea-8e22-acb468b1dbb9), and I have access to some tools including:\n- An LLM test module\n- Log reading capabilities\n- User-provided values access\n\nIs there something specific you'd like me to help you with?"
+      }
+    ],
     "token_usage": {
-      "input_tokens": 937,
-      "output_tokens": 125,
+      "input_tokens": 1024,
+      "output_tokens": 113,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 1062
+      "total_tokens": 1137
     }
   }
 ]

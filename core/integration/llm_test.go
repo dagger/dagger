@@ -25,8 +25,14 @@ import (
 	"gotest.tools/v3/golden"
 )
 
-/* NOTE: To update golden test examples, run e.g.:
-dagger call test update --pkg=./core/integration --run="TestLLM" --env-file=file://$PWD/.env -o .
+/* NOTE: To update golden test examples, run the tests on the host against a
+dev engine (so -update writes the goldens back into the worktree), with an env
+file containing live provider credentials:
+
+	env DAGGER_LLM_TEST_ENV=$PWD/.env ./hack/with-dev go test ./core/integration/ -run TestLLM -count=1 -update
+
+(engine-dev test --update runs -update inside the test container and discards
+the recorded goldens.)
 */
 
 type LLMSuite struct{}
@@ -381,7 +387,11 @@ func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program 
 
 func daggerForwardSecrets(dag *dagger.Client) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithMountedSecret(".env", dag.Secret("file:///dagger.env"))
+		envPath := os.Getenv("DAGGER_LLM_TEST_ENV")
+		if envPath == "" {
+			envPath = "/dagger.env"
+		}
+		return ctr.WithMountedSecret(".env", dag.Secret("file://"+envPath))
 	}
 
 	// 	return func(ctr *dagger.Container) *dagger.Container {
