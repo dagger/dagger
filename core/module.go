@@ -144,16 +144,6 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 	return nil, false
 }
 
-func functionRequiresArgs(fn *Function) bool {
-	for _, argRes := range fn.Args {
-		arg := argRes.Self()
-		if argRequired(arg) {
-			return true
-		}
-	}
-	return false
-}
-
 // argRequired reports whether an argument must be supplied by the caller.
 // NOTE: we count on user defaults already merged in the schema at this point.
 func argRequired(arg *FunctionArg) bool {
@@ -218,10 +208,11 @@ func validateAgentFunction(obj *ObjectTypeDef, fn *Function) error {
 	return nil
 }
 
-// functionRequiresArgsExceptAgentBase is like functionRequiresArgs, but for an
-// @agent function it exempts a single required LLM! argument — the base the
-// compose fold supplies explicitly (hack/designs/workspace-agents.md §3). Any *other* required
-// argument still disqualifies the function from no-arg enumeration.
+// functionRequiresArgsExceptAgentBase reports whether a function has required
+// arguments, except that for an @agent function it exempts a single required
+// LLM! argument — the base the compose fold supplies explicitly
+// (hack/designs/workspace-agents.md §3). Any *other* required argument still
+// disqualifies the function from no-arg enumeration.
 func functionRequiresArgsExceptAgentBase(fn *Function) bool {
 	baseExempted := false
 	for _, argRes := range fn.Args {
