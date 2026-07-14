@@ -151,7 +151,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 
 	case opts.GlobPattern != "":
 		// Walk the directory and match files against the glob pattern
-		matches, err := globHostPath(absPath, opts.GlobPattern)
+		matches, err := globHostPath(ctx, absPath, opts.GlobPattern)
 		if err != nil {
 			return fmt.Errorf("glob: %w", err)
 		}
@@ -761,7 +761,7 @@ func searchWithGrep(ctx context.Context, root string, opts *engine.LocalSearchOp
 // globHostPath walks the directory at root and returns paths matching the
 // given glob pattern. The returned paths are relative to root and use forward
 // slashes. Directories are suffixed with "/".
-func globHostPath(root string, pattern string) ([]string, error) {
+func globHostPath(ctx context.Context, root string, pattern string) ([]string, error) {
 	pat, err := patternmatcher.NewPattern(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("invalid glob pattern: %w", err)
@@ -789,6 +789,9 @@ func globHostPath(root string, pattern string) ([]string, error) {
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, prevErr error) error {
 		if prevErr != nil {
 			return prevErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
 		rel, err := filepath.Rel(root, path)
