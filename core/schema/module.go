@@ -272,6 +272,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Type:       nodeInterfaceType{},
 			Args:       dagql.NewInputSpecs(),
 			DoNotCache: "Depends on the ambient module function call context.",
+			ViewFilter: AfterVersion("v1.0.0-0"),
 		},
 		func(ctx context.Context, _ dagql.AnyResult, _ map[string]dagql.Input) (dagql.AnyResult, error) {
 			query, err := core.CurrentQuery(ctx)
@@ -488,6 +489,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Returns the function with a flag indicating it returns a service for dagger up.`),
 
 		dagql.Func("withAgent", s.functionWithAgent).
+			View(AfterVersion("v1.0.0-0")).
 			Doc(`Returns the function with a flag indicating it is an agent middleware.`),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).

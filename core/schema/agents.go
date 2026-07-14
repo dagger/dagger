@@ -12,6 +12,11 @@ type agentsSchema struct{}
 var _ SchemaResolvers = &agentsSchema{}
 
 func (s agentsSchema) Install(srv *dagql.Server) {
+	// Agents are v1+ API surface; installing the classes with a view gate also
+	// gates their generated ID/load fields.
+	srv.InstallObject(dagql.NewClass[*core.AgentGroup](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.Agent](srv).View(AfterVersion("v1.0.0-0")))
+
 	dagql.Fields[*core.AgentGroup]{
 		dagql.Func("list", s.list).
 			Doc("Return a list of individual agents and their details"),

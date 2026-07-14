@@ -50,11 +50,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("lastReply", s.lastReply).
 			Doc("The text of the model's most recent reply."),
 		dagql.Func("withWorkspace", s.withWorkspace).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.").
 			Args(
 				dagql.Arg("workspace").Doc("The workspace to work in."),
 			),
 		dagql.Func("workspace", s.workspace).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
@@ -181,6 +183,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("tokenUsage", s.tokenUsage).
 			Doc("The cumulative token usage, summed across every API call in the conversation."),
 		dagql.Func("contextTokens", s.contextTokens).
+			View(AfterVersion("v1.0.0-0")).
 			Doc("estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session"),
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
