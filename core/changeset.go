@@ -636,7 +636,12 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer patchFile.Close()
 
-				cmd := exec.CommandContext(ctx, "git", "diff", "--binary", "--no-prefix", "--no-index", "a", "b")
+				// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
+				// from the ---/+++ lines but not from rename from/to lines, so a
+				// rename entry makes the patch unapplyable ("inconsistent old
+				// filename"). Emitting renames as delete+add avoids the mismatch;
+				// with --binary the result is identical.
+				cmd := exec.CommandContext(ctx, "git", "diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b")
 				cmd.Dir = root
 				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
 				cmd.Stderr = stdio.Stderr
