@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/cleanups"
 )
 

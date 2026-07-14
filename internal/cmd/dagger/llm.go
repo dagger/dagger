@@ -23,11 +23,11 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/llmconfig"
 	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
