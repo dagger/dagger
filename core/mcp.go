@@ -1070,7 +1070,6 @@ func toolErrorMessage(err error) string {
 }
 
 func (m *MCP) loadBuiltins(srv *dagql.Server, allTools *LLMToolSet) {
-
 	allTools.Add(LLMTool{
 		Name: "ReadLogs",
 		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines." + "\n" +

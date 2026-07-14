@@ -5,8 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -254,17 +252,6 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	}
 
 	return s, nil
-}
-
-var dbg *log.Logger
-
-func init() {
-	if fn := os.Getenv("DAGUI_DEBUG"); fn != "" {
-		debugFile, _ := os.Create(fn)
-		dbg = log.New(debugFile, "", 0)
-	} else {
-		dbg = log.New(io.Discard, "", 0)
-	}
 }
 
 func (s *LLMSession) updateLLM(llm *dagger.LLM) error {
