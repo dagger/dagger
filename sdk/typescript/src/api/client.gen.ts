@@ -2781,6 +2781,63 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceSearchOpts = {
+  /**
+   * Directory or file paths to search
+   */
+  paths?: string[]
+
+  /**
+   * Glob patterns to match (e.g., "*.md")
+   */
+  globs?: string[]
+
+  /**
+   * The text to match.
+   */
+  pattern: string
+
+  /**
+   * Interpret the pattern as a literal string instead of a regular expression.
+   */
+  literal?: boolean
+
+  /**
+   * Enable searching across multiple lines.
+   */
+  multiline?: boolean
+
+  /**
+   * Allow the . pattern to match newlines in multiline mode.
+   */
+  dotall?: boolean
+
+  /**
+   * Enable case-insensitive matching.
+   */
+  insensitive?: boolean
+
+  /**
+   * Honor .gitignore, .ignore, and .rgignore files.
+   */
+  skipIgnored?: boolean
+
+  /**
+   * Skip hidden files (files starting with .).
+   */
+  skipHidden?: boolean
+
+  /**
+   * Only return matching files, not lines and content
+   */
+  filesOnly?: boolean
+
+  /**
+   * Limit the number of results to return
+   */
+  limit?: number
+}
+
 export type WorkspaceServicesOpts = {
   /**
    * Only include services matching the specified patterns
@@ -15246,6 +15303,20 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Returns a list of files and directories that match the given pattern.
+   *
+   * Patterns match paths relative to the workspace root.
+   * @param pattern Pattern to match (e.g., "*.md").
+   */
+  glob = async (pattern: string): Promise<string[]> => {
+    const ctx = this._ctx.select("glob", { pattern })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Plan the explicit migration needed for the current workspace.
    *
    * The returned plan has an empty changeset and no steps when no migration is needed.
@@ -15305,6 +15376,38 @@ export class Workspace extends BaseClient {
 
     return response.map(
       (r) => new WorkspaceSDK(ctx.copy().selectNode(r.id, "WorkspaceSDK")),
+    )
+  }
+
+  /**
+   * Searches for content matching the given regular expression or literal string.
+   *
+   * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+   *
+   * Runs ripgrep on the client host, falling back to grep if unavailable.
+   * @param opts.paths Directory or file paths to search
+   * @param opts.globs Glob patterns to match (e.g., "*.md")
+   * @param opts.pattern The text to match.
+   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
+   * @param opts.multiline Enable searching across multiple lines.
+   * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
+   * @param opts.insensitive Enable case-insensitive matching.
+   * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
+   * @param opts.skipHidden Skip hidden files (files starting with .).
+   * @param opts.filesOnly Only return matching files, not lines and content
+   * @param opts.limit Limit the number of results to return
+   */
+  search = async (opts?: WorkspaceSearchOpts): Promise<SearchResult[]> => {
+    type search = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("search", { ...opts }).select("id")
+
+    const response: Awaited<search[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new SearchResult(ctx.copy().selectNode(r.id, "SearchResult")),
     )
   }
 

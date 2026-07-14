@@ -6830,6 +6830,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::glob",
+			"p": "Dagger/Workspace.html#method_glob",
+			"d": "<p>Returns a list of files and directories that match the given pattern.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::id",
 			"p": "Dagger/Workspace.html#method_id",
 			"d": "<p>A unique identifier for this Workspace.</p>"
@@ -6863,6 +6869,12 @@
 			"n": "Dagger\\Workspace::sdks",
 			"p": "Dagger/Workspace.html#method_sdks",
 			"d": "<p>Installed SDKs.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::search",
+			"p": "Dagger/Workspace.html#method_search",
+			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
 		},
 		{
 			"t": "M",

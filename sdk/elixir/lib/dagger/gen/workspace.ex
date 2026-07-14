@@ -227,6 +227,19 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Returns a list of files and directories that match the given pattern.
+
+  Patterns match paths relative to the workspace root.
+  """
+  @spec glob(t(), String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  def glob(%__MODULE__{} = workspace, pattern) do
+    query_builder =
+      workspace.query_builder |> QB.select("glob") |> QB.put_arg("pattern", pattern)
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this Workspace.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
@@ -321,6 +334,57 @@ defmodule Dagger.Workspace do
              |> QB.select("node")
              |> QB.put_arg("id", id)
              |> QB.inline_fragment("WorkspaceSDK"),
+           client: workspace.client
+         }
+       end}
+    end
+  end
+
+  @doc """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+
+  Runs ripgrep on the client host, falling back to grep if unavailable.
+  """
+  @spec search(t(), String.t(), [
+          {:paths, [String.t()]},
+          {:globs, [String.t()]},
+          {:literal, boolean() | nil},
+          {:multiline, boolean() | nil},
+          {:dotall, boolean() | nil},
+          {:insensitive, boolean() | nil},
+          {:skip_ignored, boolean() | nil},
+          {:skip_hidden, boolean() | nil},
+          {:files_only, boolean() | nil},
+          {:limit, integer() | nil}
+        ]) :: {:ok, [Dagger.SearchResult.t()]} | {:error, term()}
+  def search(%__MODULE__{} = workspace, pattern, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("search")
+      |> QB.put_arg("pattern", pattern)
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("globs", optional_args[:globs])
+      |> QB.maybe_put_arg("literal", optional_args[:literal])
+      |> QB.maybe_put_arg("multiline", optional_args[:multiline])
+      |> QB.maybe_put_arg("dotall", optional_args[:dotall])
+      |> QB.maybe_put_arg("insensitive", optional_args[:insensitive])
+      |> QB.maybe_put_arg("skipIgnored", optional_args[:skip_ignored])
+      |> QB.maybe_put_arg("skipHidden", optional_args[:skip_hidden])
+      |> QB.maybe_put_arg("filesOnly", optional_args[:files_only])
+      |> QB.maybe_put_arg("limit", optional_args[:limit])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.SearchResult{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("SearchResult"),
            client: workspace.client
          }
        end}

@@ -192,6 +192,18 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Returns a list of files and directories that match the given pattern.
+     *
+     * Patterns match paths relative to the workspace root.
+     */
+    public function glob(string $pattern): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('glob');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        return (array)$this->queryLeaf($leafQueryBuilder, 'glob');
+    }
+
+    /**
      * A unique identifier for this Workspace.
      */
     public function id(): Id
@@ -247,6 +259,61 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sdks');
         return (array)$this->queryLeaf($leafQueryBuilder, 'sdks');
+    }
+
+    /**
+     * Searches for content matching the given regular expression or literal string.
+     *
+     * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+     *
+     * Runs ripgrep on the client host, falling back to grep if unavailable.
+     */
+    public function search(
+        string $pattern,
+        ?array $paths = [],
+        ?array $globs = [],
+        ?bool $literal = false,
+        ?bool $multiline = false,
+        ?bool $dotall = false,
+        ?bool $insensitive = false,
+        ?bool $skipIgnored = false,
+        ?bool $skipHidden = false,
+        ?bool $filesOnly = false,
+        ?int $limit = null,
+    ): array {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $globs) {
+        $leafQueryBuilder->setArgument('globs', $globs);
+        }
+        if (null !== $literal) {
+        $leafQueryBuilder->setArgument('literal', $literal);
+        }
+        if (null !== $multiline) {
+        $leafQueryBuilder->setArgument('multiline', $multiline);
+        }
+        if (null !== $dotall) {
+        $leafQueryBuilder->setArgument('dotall', $dotall);
+        }
+        if (null !== $insensitive) {
+        $leafQueryBuilder->setArgument('insensitive', $insensitive);
+        }
+        if (null !== $skipIgnored) {
+        $leafQueryBuilder->setArgument('skipIgnored', $skipIgnored);
+        }
+        if (null !== $skipHidden) {
+        $leafQueryBuilder->setArgument('skipHidden', $skipHidden);
+        }
+        if (null !== $filesOnly) {
+        $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
+        }
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
     }
 
     /**
