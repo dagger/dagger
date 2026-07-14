@@ -1117,14 +1117,6 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (r
 	return results, nil
 }
 
-// maxConcurrentResolvers bounds parallel resolution within a single pool.
-// Each level of a query gets its own pool, so this caps fan-out width per
-// node (e.g. one goroutine per list element or sibling selection), not the
-// total goroutine count for a request. Without a bound, a single query
-// selecting into a large list can spawn tens of thousands of goroutines at
-// once, overwhelming downstream resources (telemetry, syscalls, memory).
-const maxConcurrentResolvers = 100
-
 // Resolve resolves the given selections on the given object.
 //
 // Each selection is resolved in parallel, and the results are returned in a
@@ -1151,7 +1143,7 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 	results := new(sync.Map)
 
-	pool := pool.New().WithErrors().WithMaxGoroutines(maxConcurrentResolvers)
+	pool := pool.New().WithErrors()
 	objectType := self.ObjectType()
 	for _, sel := range sels {
 		pool.Go(func() error {
@@ -2167,7 +2159,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 			}
 		} else {
 			// Has subselections - resolve in parallel
-			p := pool.New().WithErrors().WithMaxGoroutines(maxConcurrentResolvers)
+			p := pool.New().WithErrors()
 			for nth := 1; nth <= length; nth++ {
 				p.Go(func() error {
 					elemVal, err := s.loadNthValue(ctx, val, nth, false)
