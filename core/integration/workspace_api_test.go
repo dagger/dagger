@@ -328,6 +328,17 @@ func (WorkspaceAPISuite) TestWorkspaceSearch(ctx context.Context, t *testctx.T) 
 		lines := strings.Split(strings.TrimSpace(out), "\n")
 		require.Len(t, lines, 5)
 	})
+
+	t.Run("reject paths outside workspace", func(ctx context.Context, t *testctx.T) {
+		ctr := base.WithNewFile("/secret.txt", "workspace-boundary-repro\n")
+		_, err := ctr.With(daggerCall(
+			"searcher",
+			"--pattern=workspace-boundary-repro",
+			"--paths=../secret.txt",
+			"file-paths",
+		)).Stdout(ctx)
+		require.Error(t, err, "search paths outside the workspace must be rejected")
+	})
 }
 
 func (WorkspaceAPISuite) TestRootlessCurrentWorkspace(ctx context.Context, t *testctx.T) {
