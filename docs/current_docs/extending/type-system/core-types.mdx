@@ -71,14 +71,6 @@ A proposed diff against a directory or workspace. See [Changesets](../../using-d
 - **Return** whenever a function edits source — codegen, formatting, dependency bumps. The change becomes reviewable and composable instead of a silent write.
 - **Avoid** mutating the caller's files directly. A `Changeset` keeps the module's effects explicit and auditable.
 
-### `Env`
-
-A set of typed inputs and outputs that can pass through a workflow, including to an LLM. See [`Env`](../types/env.mdx).
-
-- **Accept** when a function bundles several typed resources to hand to a model or a downstream step.
-- **Return** when a function assembles that context for a caller to extend.
-- **Avoid** flattening structured context into a single string blob.
-
 ### `LLM`
 
 Model interaction when enabled for a module. See [`LLM`](../types/llm.mdx).

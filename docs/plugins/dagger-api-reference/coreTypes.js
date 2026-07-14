@@ -17,7 +17,6 @@ module.exports = [
   "Secret",
   "CacheVolume",
   "GitRepository",
-  "Env",
   "LLM",
   "Changeset",
   "Workspace",
