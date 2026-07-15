@@ -2217,6 +2217,13 @@ type Directory implements Exportable & Node & Syncer {
     @@\n-Hello\n+World\n").
     """
     patch: String!
+
+    """
+    How to handle hunks that no longer apply to the target content: fail
+    (default), or apply what fits and leave git-style conflict markers where it
+    doesn't.
+    """
+    onConflict: PatchConflict = FAIL
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """
@@ -2225,6 +2232,13 @@ type Directory implements Exportable & Node & Syncer {
   withPatchFile(
     """File containing the patch to apply"""
     patch: ID! @expectedType(name: "File")
+
+    """
+    How to handle hunks that no longer apply to the target content: fail
+    (default), or apply what fits and leave git-style conflict markers where it
+    doesn't.
+    """
+    onConflict: PatchConflict = FAIL
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """Return a snapshot with a symlink"""
@@ -4310,6 +4324,17 @@ type ObjectTypeDef implements Node {
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
   sourceModuleName: String!
+}
+
+"""How to handle patch hunks that no longer apply to the target content."""
+enum PatchConflict {
+  """Fail the operation if any part of the patch does not apply."""
+  FAIL
+
+  """
+  Apply the hunks that fit and insert conflict markers where hunks no longer match, instead of failing.
+  """
+  LEAVE_CONFLICT_MARKERS
 }
 
 """Key value object that represents a pipeline label."""

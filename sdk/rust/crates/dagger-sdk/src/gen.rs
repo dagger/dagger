@@ -4814,6 +4814,18 @@ pub struct DirectoryWithNewFileOpts {
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithPatchOpts {
+    /// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<PatchConflict>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithPatchFileOpts {
+    /// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+    #[builder(setter(into, strip_option), default)]
+    pub on_conflict: Option<PatchConflict>,
+}
 impl IntoID<Id> for Directory {
     fn into_id(
         self,
@@ -5687,9 +5699,32 @@ impl Directory {
     /// # Arguments
     ///
     /// * `patch` - Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_patch(&self, patch: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withPatch");
         query = query.arg("patch", patch.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory with the given Git-compatible patch applied.
+    ///
+    /// # Arguments
+    ///
+    /// * `patch` - Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_patch_opts(
+        &self,
+        patch: impl Into<String>,
+        opts: DirectoryWithPatchOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("withPatch");
+        query = query.arg("patch", patch.into());
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -5701,6 +5736,7 @@ impl Directory {
     /// # Arguments
     ///
     /// * `patch` - File containing the patch to apply
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_patch_file(&self, patch: impl IntoID<Id>) -> Directory {
         let mut query = self.selection.select("withPatchFile");
         query = query.arg_lazy(
@@ -5710,6 +5746,34 @@ impl Directory {
                 Box::pin(async move { patch.into_id().await.unwrap().quote() })
             }),
         );
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory with the given Git-compatible patch file applied.
+    ///
+    /// # Arguments
+    ///
+    /// * `patch` - File containing the patch to apply
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_patch_file_opts(
+        &self,
+        patch: impl IntoID<Id>,
+        opts: DirectoryWithPatchFileOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("withPatchFile");
+        query = query.arg_lazy(
+            "patch",
+            Box::new(move || {
+                let patch = patch.clone();
+                Box::pin(async move { patch.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(on_conflict) = opts.on_conflict {
+            query = query.arg("onConflict", on_conflict);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -15793,6 +15857,13 @@ pub enum NetworkProtocol {
     Tcp,
     #[serde(rename = "UDP")]
     Udp,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum PatchConflict {
+    #[serde(rename = "FAIL")]
+    Fail,
+    #[serde(rename = "LEAVE_CONFLICT_MARKERS")]
+    LeaveConflictMarkers,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum RegistryProtocol {
