@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"slices"
@@ -1621,6 +1622,13 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 // responseSelector builds the withResponse selector that records the model's
 // reply - its content blocks and token usage - as a new node in the LLM DAG.
 func responseSelector(res *LLMResponse) (dagql.Selector, error) {
+	return responseSelectorFromBlocks(res.Content, res.TokenUsage)
+}
+
+// responseSelectorFromBlocks builds a withResponse selector from raw content
+// blocks and token usage. Used for fresh responses (responseSelector) and for
+// re-emitting recorded assistant messages (WithResetWorkspace).
+func responseSelectorFromBlocks(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage) (dagql.Selector, error) {
 	// Build content block input objects for the withResponse selector.
 	// An InputObject's fields are only populated by decoding a map through
 	// its Decoder; a bare struct literal leaves them nil and panics when the
@@ -1631,8 +1639,8 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 	// to nil and is omitted from the literal entirely, so the field must have
 	// a default tag or reloading the serialized ID fails with "missing
 	// required input field".
-	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
-	for i, block := range res.Content {
+	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(blocks))
+	for i, block := range blocks {
 		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
 			"kind":      string(block.Kind),
 			"text":      block.Text,
@@ -1657,34 +1665,34 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 			Value: contentInputs,
 		},
 	}
-	if res.TokenUsage.InputTokens != 0 {
+	if tokenUsage.InputTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "inputTokens",
-			Value: dagql.NewInt(res.TokenUsage.InputTokens),
+			Value: dagql.NewInt(tokenUsage.InputTokens),
 		})
 	}
-	if res.TokenUsage.OutputTokens != 0 {
+	if tokenUsage.OutputTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "outputTokens",
-			Value: dagql.NewInt(res.TokenUsage.OutputTokens),
+			Value: dagql.NewInt(tokenUsage.OutputTokens),
 		})
 	}
-	if res.TokenUsage.CachedTokenReads != 0 {
+	if tokenUsage.CachedTokenReads != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "cachedTokenReads",
-			Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
+			Value: dagql.NewInt(tokenUsage.CachedTokenReads),
 		})
 	}
-	if res.TokenUsage.CachedTokenWrites != 0 {
+	if tokenUsage.CachedTokenWrites != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "cachedTokenWrites",
-			Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
+			Value: dagql.NewInt(tokenUsage.CachedTokenWrites),
 		})
 	}
-	if res.TokenUsage.TotalTokens != 0 {
+	if tokenUsage.TotalTokens != 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "totalTokens",
-			Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+			Value: dagql.NewInt(tokenUsage.TotalTokens),
 		})
 	}
 	return dagql.Selector{
@@ -2043,6 +2051,153 @@ func (llm *LLM) WithWorkspace(ws dagql.ObjectResult[*Workspace]) *LLM {
 
 func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 	return llm.mcp.workspace
+}
+
+// WithResetWorkspace returns a new LLM whose recipe is re-emitted as a flat,
+// data-only chain rooted at Query.llm: the conversation, model, config, MCP
+// servers, and tool bindings are replayed as selectors, and the workspace
+// binding is reset to its base — dropping the Changeset overlays accumulated
+// from workspace-mutating tool calls.
+//
+// This exists for session persistence. After the workspace's changes are
+// exported to disk (Workspace.export), the overlay derivations in the LLM's
+// recipe describe edits that are already applied: replaying them on a later
+// load fails (e.g. withReplaced no longer finds its search text) or silently
+// re-applies them. Resetting re-roots the recipe at the live workspace, whose
+// on-disk content the export just made equal to the overlay result. It also
+// keeps persisted IDs (globalID) from growing with every recorded edit.
+//
+// The re-emitted recipe carries exactly the state that survives a save/load
+// round trip (selector-expressible state); transient state such as open MCP
+// sessions or the last tool result is not carried, same as save/load.
+func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[*LLM], _ error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	// The llm(maxAPICalls:) legacy knob is deliberately not carried: it is only
+	// settable through pre-v1 views, and this field only exists in v1+.
+	root := dagql.Selector{Field: "llm"}
+	if llm.model != "" {
+		root.Args = append(root.Args, dagql.NamedInput{
+			Name:  "model",
+			Value: dagql.Opt(dagql.NewString(llm.model)),
+		})
+	}
+	sels := []dagql.Selector{root}
+
+	if llm.disableDefaultSystemPrompt {
+		sels = append(sels, dagql.Selector{Field: "withoutDefaultSystemPrompt"})
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(llm.mcp.mcpServers)) {
+		cfg := llm.mcp.mcpServers[name]
+		svcID, err := cfg.Service.ID()
+		if err != nil {
+			return res, fmt.Errorf("mcp server %q service ID: %w", name, err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withMCPServer",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.NewString(name)},
+				{Name: "service", Value: dagql.NewID[*Service](svcID)},
+			},
+		})
+	}
+
+	bindings, err := llm.mcp.BoundToolBindings()
+	if err != nil {
+		return res, fmt.Errorf("bound tool bindings: %w", err)
+	}
+	for _, b := range bindings {
+		sels = append(sels, dagql.Selector{
+			Field: "withTools",
+			Args: []dagql.NamedInput{
+				{Name: "object", Value: dagql.NewAnyID(b.ID)},
+				{Name: "except", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(b.Except...))},
+			},
+		})
+	}
+
+	// Reset the workspace binding to its base by stripping the trailing
+	// withChanges overlays from the workspace's recipe. If the base is the
+	// bare currentWorkspace call, omit the selector entirely: llm() binds the
+	// current workspace imperatively (see NewLLM), so the re-emitted recipe
+	// re-resolves the live workspace on every replay, exactly like a fresh
+	// session. An explicitly bound workspace stays pinned via its (base) ID.
+	if llm.mcp.workspace.Self() != nil {
+		wsID, err := llm.mcp.workspace.RecipeID(ctx)
+		if err != nil {
+			return res, fmt.Errorf("workspace recipe ID: %w", err)
+		}
+		for wsID.Field() == "withChanges" && wsID.Receiver() != nil {
+			wsID = wsID.Receiver()
+		}
+		if wsID.Field() != "currentWorkspace" || wsID.Receiver() != nil {
+			sels = append(sels, dagql.Selector{
+				Field: "withWorkspace",
+				Args: []dagql.NamedInput{
+					{Name: "workspace", Value: dagql.NewID[*Workspace](wsID)},
+				},
+			})
+		}
+	}
+
+	// Replay the conversation in message order. Every message shape the engine
+	// can produce maps to a selector; anything else is an error rather than
+	// silent data loss.
+	for i, msg := range llm.Messages {
+		switch msg.Role {
+		case LLMMessageRoleSystem:
+			sels = append(sels, dagql.Selector{
+				Field: "withSystemPrompt",
+				Args: []dagql.NamedInput{
+					{Name: "prompt", Value: dagql.NewString(msg.TextContent())},
+				},
+			})
+		case LLMMessageRoleAssistant:
+			var usage LLMTokenUsage
+			if msg.TokenUsage != nil {
+				usage = *msg.TokenUsage
+			}
+			sel, err := responseSelectorFromBlocks(msg.Content, usage)
+			if err != nil {
+				return res, fmt.Errorf("message %d: %w", i, err)
+			}
+			sels = append(sels, sel)
+		case LLMMessageRoleUser:
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentToolResult:
+					sels = append(sels, dagql.Selector{
+						Field: "withToolResponse",
+						Args: []dagql.NamedInput{
+							{Name: "call", Value: dagql.NewString(block.CallID)},
+							{Name: "content", Value: dagql.NewString(block.Text)},
+							{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
+						},
+					})
+				case LLMContentText:
+					sels = append(sels, dagql.Selector{
+						Field: "withPrompt",
+						Args: []dagql.NamedInput{
+							{Name: "prompt", Value: dagql.NewString(block.Text)},
+						},
+					})
+				default:
+					return res, fmt.Errorf("message %d: cannot re-emit %s block in a %s message", i, block.Kind, msg.Role)
+				}
+			}
+		default:
+			return res, fmt.Errorf("message %d: cannot re-emit role %q", i, msg.Role)
+		}
+	}
+
+	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
+		return res, fmt.Errorf("re-emit session recipe: %w", err)
+	}
+	return res, nil
 }
 
 // A variable in the LLM environment

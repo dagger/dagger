@@ -425,6 +425,19 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	if err := s.llm.Workspace().Export(ctx); err != nil {
 		return err
 	}
+	// The exported edits now live on disk, so reset the LLM's workspace
+	// binding to its base: the persisted recipe (globalID) must stop replaying
+	// the applied overlays, since re-deriving them against the updated files on
+	// a later session load fails (withReplaced no longer finds its search
+	// text) or silently re-applies them. Sync eagerly so a failed reset
+	// surfaces here rather than corrupting later saves.
+	reset, err := s.llm.WithResetWorkspace().Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("reset workspace after export: %w", err)
+	}
+	if err := s.updateLLM(reset); err != nil {
+		return err
+	}
 	return s.updateChangesPreview(s.llm)
 }
 

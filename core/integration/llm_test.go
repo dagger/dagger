@@ -575,3 +575,62 @@ func (LLMSuite) TestPortableIDWithResponse(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hello world", reply)
 }
+
+// TestWithResetWorkspace verifies that withResetWorkspace re-emits the session
+// as a flat, data-only recipe: the conversation survives byte-for-byte, but
+// the workspace overlays recorded during the session (withWorkspace nodes with
+// withChanges derivations) are dropped, so a persisted globalID no longer
+// replays workspace edits when loaded. This is what makes ctrl+s (export +
+// reset) durable: replaying an edit chain against already-updated files fails
+// with "search string not found" or silently re-applies.
+func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	llm := c.LLM().
+		WithModel("openai/gpt-4o").
+		WithSystemPrompt("be helpful").
+		WithPrompt("hello").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: dagger.JSON(`{"path":"/x"}`)},
+		}).
+		WithToolResponse("call_1", "file contents", false)
+
+	// Overlay a changeset onto the LLM's workspace, mimicking what a
+	// workspace-mutating tool call records mid-session.
+	base := c.Directory().WithNewFile("a.txt", "before")
+	edited := base.WithNewFile("a.txt", "after")
+	llmEdited := llm.WithWorkspace(llm.Workspace().WithChanges(edited.Changes(base)))
+
+	reset := llmEdited.WithResetWorkspace()
+
+	// The conversation is preserved exactly.
+	origHist, err := llmEdited.History(ctx)
+	require.NoError(t, err)
+	resetHist, err := reset.History(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, resetHist)
+
+	// The persisted recipe is flat: no withResetWorkspace node, and no
+	// workspace rebind carrying overlay derivations on the spine.
+	globalID, err := reset.GlobalID(ctx)
+	require.NoError(t, err)
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(string(globalID)))
+	for cur := gid; cur != nil; cur = cur.Receiver() {
+		require.NotEqual(t, "withResetWorkspace", cur.Field(),
+			"reset must re-emit the recipe, not append to it")
+		require.NotEqual(t, "withWorkspace", cur.Field(),
+			"a currentWorkspace-based binding must be dropped from the recipe "+
+				"so replay re-resolves the live workspace")
+	}
+
+	// The reset session reloads with the conversation intact.
+	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
+	reply, err := reloaded.LastReply(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello world", reply)
+	reloadedHist, err := reloaded.History(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, reloadedHist)
+}
