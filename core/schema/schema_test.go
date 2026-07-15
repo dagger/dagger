@@ -2,14 +2,98 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 )
+
+func TestSchemaJSONScrubbing(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "schema-scrubbing-client",
+		SessionID: "schema-scrubbing-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "")
+	require.NoError(t, err)
+
+	fullJSON, err := getSchemaJSON(nil, nil, dag.View, dag)
+	require.NoError(t, err)
+	full := decodeSchemaResponse(t, fullJSON)
+	require.NotNil(t, schemaField(full.Schema.Query(), "directory"))
+	require.NotNil(t, full.Schema.Types.Get("Directory"))
+	require.NotNil(t, full.Schema.Types.Get("ID"))
+
+	t.Run("individual field", func(t *testing.T) {
+		scrubbedJSON, err := getSchemaJSON(nil, []string{"Query.directory"}, dag.View, dag)
+		require.NoError(t, err)
+		require.NotEqual(t, fullJSON, scrubbedJSON)
+
+		scrubbed := decodeSchemaResponse(t, scrubbedJSON)
+		require.Nil(t, schemaField(scrubbed.Schema.Query(), "directory"))
+		require.NotNil(t, scrubbed.Schema.Types.Get("Directory"))
+		require.NotNil(t, scrubbed.Schema.Types.Get("ID"))
+	})
+
+	t.Run("different fields", func(t *testing.T) {
+		directoryJSON, err := getSchemaJSON(nil, []string{"Query.directory"}, dag.View, dag)
+		require.NoError(t, err)
+		versionJSON, err := getSchemaJSON(nil, []string{"Query.version"}, dag.View, dag)
+		require.NoError(t, err)
+		require.NotEqual(t, directoryJSON, versionJSON)
+
+		versionScrubbed := decodeSchemaResponse(t, versionJSON)
+		require.NotNil(t, schemaField(versionScrubbed.Schema.Query(), "directory"))
+		require.Nil(t, schemaField(versionScrubbed.Schema.Query(), "version"))
+	})
+
+	t.Run("whole type", func(t *testing.T) {
+		scrubbedJSON, err := getSchemaJSON([]string{"Host"}, nil, dag.View, dag)
+		require.NoError(t, err)
+		scrubbed := decodeSchemaResponse(t, scrubbedJSON)
+
+		require.Nil(t, scrubbed.Schema.Types.Get("Host"))
+		require.Nil(t, schemaField(scrubbed.Schema.Query(), "host"))
+		require.NotNil(t, schemaField(scrubbed.Schema.Query(), "directory"))
+	})
+
+	t.Run("invalid field", func(t *testing.T) {
+		_, err := getSchemaJSON(nil, []string{"directory"}, dag.View, dag)
+		require.EqualError(t, err, `invalid hidden field "directory": expected Type.field`)
+	})
+}
+
+func decodeSchemaResponse(t *testing.T, data []byte) *codegenintrospection.Response {
+	t.Helper()
+	var response codegenintrospection.Response
+	require.NoError(t, json.Unmarshal(data, &response))
+	require.NotNil(t, response.Schema)
+	return &response
+}
+
+func schemaField(typ *codegenintrospection.Type, name string) *codegenintrospection.Field {
+	if typ == nil {
+		return nil
+	}
+	for _, field := range typ.Fields {
+		if field.Name == name {
+			return field
+		}
+	}
+	return nil
+}
 
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()

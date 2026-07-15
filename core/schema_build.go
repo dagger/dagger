@@ -135,21 +135,29 @@ func installModules(
 	return nil
 }
 
-func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenTypes []string) (dagql.Result[*File], error) {
-	var schemaJSONFile dagql.Result[*File]
-	if err := dag.Select(ctx, dag.Root(), &schemaJSONFile,
-		dagql.Selector{
-			Field: "__schemaJSONFile",
-			// Programmatic selectors do not inherit the server view, but this file's
-			// contents include __schemaVersion and must match the module's view.
-			View: dag.View,
-			Args: []dagql.NamedInput{
-				{
-					Name:  "hiddenTypes",
-					Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
-				},
+func schemaJSONFileSelector(view call.View, hiddenTypes, hiddenFields []string) dagql.Selector {
+	return dagql.Selector{
+		Field: "__schemaJSONFile",
+		// Programmatic selectors do not inherit the server view, but this file's
+		// contents include __schemaVersion and must match the module's view.
+		View: view,
+		Args: []dagql.NamedInput{
+			{
+				Name:  "hiddenTypes",
+				Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenTypes...)),
+			},
+			{
+				Name:  "hiddenFields",
+				Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(hiddenFields...)),
 			},
 		},
+	}
+}
+
+func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenTypes, hiddenFields []string) (dagql.Result[*File], error) {
+	var schemaJSONFile dagql.Result[*File]
+	if err := dag.Select(ctx, dag.Root(), &schemaJSONFile,
+		schemaJSONFileSelector(dag.View, hiddenTypes, hiddenFields),
 	); err != nil {
 		return schemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
 	}
