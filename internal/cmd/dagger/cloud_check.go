@@ -1,11 +1,14 @@
 package daggercmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dagger/dagger/core/gitref"
 )
 
 var cloudCheckCmd = &cobra.Command{
@@ -31,10 +34,12 @@ var cloudCheckOffCmd = &cobra.Command{
 	RunE:  runCloudCheckSet(false),
 }
 
+var cloudCheckListFailed bool
+
 var cloudCheckListCmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list [version]",
 	Short: "List Cloud-side checks for this workspace",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runCloudCheckList,
 }
 
@@ -46,6 +51,7 @@ var cloudCheckStatusCmd = &cobra.Command{
 }
 
 func init() {
+	cloudCheckListCmd.Flags().BoolVar(&cloudCheckListFailed, "failed", false, "Only list failed checks")
 	cloudCheckCmd.AddCommand(cloudCheckOnCmd, cloudCheckOffCmd, cloudCheckListCmd, cloudCheckStatusCmd)
 	cloudCmd.AddCommand(cloudCheckCmd)
 }
@@ -97,30 +103,76 @@ func runCloudCheckStatus(cmd *cobra.Command, _ []string) error {
 	return err
 }
 
-func runCloudCheckList(cmd *cobra.Command, _ []string) error {
-	remote, _, err := selectedRemoteWorkspaceAddress(cmd.Context(), "cloud check list")
+func runCloudCheckList(cmd *cobra.Command, args []string) error {
+	remote, address, err := selectedRemoteWorkspaceAddress(cmd.Context(), "cloud check list")
 	if err != nil {
 		return err
 	}
-
-	state := ""
-	if s, ok, err := loadWorkspaceAutocheckState(cmd.Context(), remote); err != nil {
-		if !errors.Is(err, errCloudNotAuthenticated) {
-			return err
+	if len(args) > 0 {
+		remote.Version = args[0]
+		address = gitref.RefString(remote.CloneRef, remote.Path, remote.Version)
+	}
+	rows, err := loadWorkspaceModuleCheckRows(cmd.Context(), remote)
+	if errors.Is(err, errCloudNotAuthenticated) {
+		return fmt.Errorf("not authenticated; run 'dagger cloud login' to view Cloud checks")
+	}
+	if err != nil {
+		return err
+	}
+	grouped := groupCloudListRows(rows, []string{"check"})
+	if cloudCheckListFailed {
+		failed := grouped[:0]
+		for _, row := range grouped {
+			if row.Result == "red" {
+				failed = append(failed, row)
+			}
 		}
-		state = "(login required)"
-	} else if ok {
-		state = workspaceAutocheckStateString(s)
-	} else {
-		state = "unconfigured"
+		grouped = failed
 	}
+	if len(grouped) == 0 {
+		what := "Cloud checks"
+		if cloudCheckListFailed {
+			what = "failed Cloud checks"
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "No %s found for %s.\n", what, address)
+		return err
+	}
+	renderCloudCheckList(cmd, grouped)
+	return nil
+}
 
+// renderCloudCheckList is renderCloudList specialized for the check list:
+// one row per check, with the result shown as an emoji.
+func renderCloudCheckList(cmd *cobra.Command, rows []groupedCloudListRow) {
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tREMOTE\tSTATE"); err != nil {
-		return err
+	fmt.Fprintln(w, "CHECK\tRESULT\tUPDATED")
+	for _, row := range rows {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", dash(row.Values["check"]), cloudResultEmoji(row.Result), relativeTime(row.UpdatedAt))
 	}
-	if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", "autocheck", remote.CloneRef, state); err != nil {
-		return err
+	_ = w.Flush()
+}
+
+// loadWorkspaceModuleCheckRows fetches the Cloud checks recorded for the
+// workspace's module ref at the selected version, searching the user's orgs
+// (orgs matching the repo owner first) and returning the first org's matches.
+func loadWorkspaceModuleCheckRows(ctx context.Context, remote workspaceRemoteAddress) ([]cloudCheckRow, error) {
+	client, _, err := cloudCLI.cloudClientWithLogin(ctx, false)
+	if err != nil {
+		return nil, err
 	}
-	return w.Flush()
+	user, err := client.User(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgs, _ := orderCloudOrgsForRepos(user.Orgs, []string{remote.CloneRef})
+	for _, org := range orgs {
+		commits, err := client.ModuleChecks(ctx, org.Name, remote.BaseAddress, remote.Version)
+		if err != nil {
+			return nil, err
+		}
+		if rows := cloudCheckRows(org.Name, commits); len(rows) > 0 {
+			return rows, nil
+		}
+	}
+	return nil, nil
 }
