@@ -94,14 +94,16 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// Save writes config to disk with proper permissions (0600).
+// Save writes the [llm] section to disk with proper permissions (0600). The
+// config file is shared with other subsystems, so the section is merged into
+// the existing document rather than replacing the whole file.
 func (c *Config) Save() error {
 	// Create directory if needed
 	if err := os.MkdirAll(ConfigRoot, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Lock file for atomic writes
+	// Lock file for atomic read-modify-write
 	lockFile := ConfigFile + ".lock"
 	lock := flock.New(lockFile)
 	if err := lock.Lock(); err != nil {
@@ -114,18 +116,51 @@ func (c *Config) Save() error {
 		c.LLM.Providers = make(map[string]Provider)
 	}
 
-	// Marshal to TOML
+	doc, err := loadDocument()
+	if err != nil {
+		return err
+	}
+
+	// Marshal the [llm] section and graft it onto the existing document.
 	data, err := toml.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
+	llmDoc, err := toml.LoadBytes(data)
+	if err != nil {
+		return fmt.Errorf("failed to reparse config: %w", err)
+	}
+	doc.Set("llm", llmDoc.Get("llm"))
+
+	out, err := doc.ToTomlString()
+	if err != nil {
+		return fmt.Errorf("failed to serialize config: %w", err)
+	}
 
 	// Write with 0600 permissions
-	if err := os.WriteFile(ConfigFile, data, 0600); err != nil {
+	if err := os.WriteFile(ConfigFile, []byte(out), 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
+}
+
+// loadDocument parses the existing config file into a TOML document,
+// returning an empty document if the file does not exist.
+func loadDocument() (*toml.Tree, error) {
+	data, err := os.ReadFile(ConfigFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			data = nil
+		} else {
+			return nil, fmt.Errorf("failed to read config file: %w", err)
+		}
+	}
+	doc, err := toml.LoadBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+	return doc, nil
 }
 
 // ConfigExists checks if config file exists.
@@ -143,10 +178,43 @@ func LLMConfigured() bool {
 	return len(cfg.LLM.Providers) > 0
 }
 
-// Remove deletes the config file.
+// Remove deletes the [llm] section from the config file. Other sections are
+// preserved; the file itself is only removed once nothing else remains.
 func Remove() error {
-	if err := os.Remove(ConfigFile); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove config file: %w", err)
+	if _, err := os.Stat(ConfigFile); os.IsNotExist(err) {
+		return nil
+	}
+
+	lockFile := ConfigFile + ".lock"
+	lock := flock.New(lockFile)
+	if err := lock.Lock(); err != nil {
+		return fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer lock.Unlock()
+
+	doc, err := loadDocument()
+	if err != nil {
+		return err
+	}
+	if doc.Has("llm") {
+		if err := doc.Delete("llm"); err != nil {
+			return fmt.Errorf("failed to delete llm section: %w", err)
+		}
+	}
+
+	if len(doc.Keys()) == 0 {
+		if err := os.Remove(ConfigFile); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove config file: %w", err)
+		}
+		return nil
+	}
+
+	out, err := doc.ToTomlString()
+	if err != nil {
+		return fmt.Errorf("failed to serialize config: %w", err)
+	}
+	if err := os.WriteFile(ConfigFile, []byte(out), 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	return nil
 }

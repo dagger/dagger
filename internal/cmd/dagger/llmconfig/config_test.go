@@ -374,3 +374,70 @@ func TestConfigEmptyProviders(t *testing.T) {
 		t.Errorf("Providers map should be empty, got %d providers", len(loaded.LLM.Providers))
 	}
 }
+
+func TestConfigPreservesOtherSections(t *testing.T) {
+	tempDir := t.TempDir()
+
+	origConfigRoot := ConfigRoot
+	origConfigFile := ConfigFile
+	t.Cleanup(func() {
+		ConfigRoot = origConfigRoot
+		ConfigFile = origConfigFile
+	})
+
+	ConfigRoot = filepath.Join(tempDir, "dagger")
+	ConfigFile = filepath.Join(ConfigRoot, ConfigFileName)
+
+	if err := os.MkdirAll(ConfigRoot, 0755); err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+	if err := os.WriteFile(ConfigFile, []byte("[other]\nkey = \"value\"\n"), 0600); err != nil {
+		t.Fatalf("Failed to write existing config: %v", err)
+	}
+
+	cfg := &Config{
+		LLM: LLMConfig{
+			DefaultProvider: "anthropic",
+			Providers: map[string]Provider{
+				"anthropic": {APIKey: "sk-ant-test", Enabled: true},
+			},
+		},
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	data, err := os.ReadFile(ConfigFile)
+	if err != nil {
+		t.Fatalf("ReadFile() failed: %v", err)
+	}
+	tree, err := toml.LoadBytes(data)
+	if err != nil {
+		t.Fatalf("File is not valid TOML: %v", err)
+	}
+	if got := tree.Get("other.key"); got != "value" {
+		t.Errorf("Save() lost [other] section: other.key = %v", got)
+	}
+	if got := tree.Get("llm.default_provider"); got != "anthropic" {
+		t.Errorf("Save() did not write [llm] section: default_provider = %v", got)
+	}
+
+	// Removing the LLM config must only drop [llm], not the file.
+	if err := Remove(); err != nil {
+		t.Fatalf("Remove() failed: %v", err)
+	}
+	data, err = os.ReadFile(ConfigFile)
+	if err != nil {
+		t.Fatalf("ReadFile() after Remove() failed: %v", err)
+	}
+	tree, err = toml.LoadBytes(data)
+	if err != nil {
+		t.Fatalf("File is not valid TOML after Remove(): %v", err)
+	}
+	if got := tree.Get("other.key"); got != "value" {
+		t.Errorf("Remove() lost [other] section: other.key = %v", got)
+	}
+	if tree.Has("llm") {
+		t.Error("Remove() left the [llm] section behind")
+	}
+}
