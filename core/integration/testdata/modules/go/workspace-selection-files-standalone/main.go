@@ -12,8 +12,8 @@ func (m *Files) ReadWorkspaceArg(ctx context.Context, workspace *dagger.Workspac
 	return workspace.File("marker.txt").Contents(ctx)
 }
 
-func (m *Files) ReadCurrentWorkspace(ctx context.Context) (string, error) {
-	return dag.CurrentWorkspace().File("marker.txt").Contents(ctx)
+func (m *Files) ReadDeclaredWorkspace(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+	return workspace.File("marker.txt").Contents(ctx)
 }
 
 func (m *Files) ChangeWorkspaceArg(workspace *dagger.Workspace) *dagger.Changeset {
@@ -22,9 +22,9 @@ func (m *Files) ChangeWorkspaceArg(workspace *dagger.Workspace) *dagger.Changese
 	return after.Changes(before)
 }
 
-func (m *Files) ChangeCurrentWorkspace() *dagger.Changeset {
-	before := dag.CurrentWorkspace().Directory(".")
-	after := before.WithNewFile("current-workspace.txt", "changed through current workspace")
+func (m *Files) ChangeDeclaredWorkspace(workspace *dagger.Workspace) *dagger.Changeset {
+	before := workspace.Directory(".")
+	after := before.WithNewFile("declared-workspace.txt", "changed through declared workspace")
 	return after.Changes(before)
 }
 

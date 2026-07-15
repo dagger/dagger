@@ -266,7 +266,7 @@ func (r *Release) generatedFileChanges(path, contents string) *dagger.Changeset 
 }
 
 func (r *Release) releaseSource(include ...string) *dagger.Directory {
-	return dag.CurrentWorkspace().Directory("/", dagger.WorkspaceDirectoryOpts{
+	return r.Workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
 		Include: include,
 	})
 }

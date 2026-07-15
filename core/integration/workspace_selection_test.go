@@ -161,8 +161,8 @@ func (m *Files) ReadWorkspaceArg(ctx context.Context, workspace *dagger.Workspac
 	return workspace.File("marker.txt").Contents(ctx)
 }
 
-func (m *Files) ReadCurrentWorkspace(ctx context.Context) (string, error) {
-	return dag.CurrentWorkspace().File("marker.txt").Contents(ctx)
+func (m *Files) ReadDeclaredWorkspace(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+	return workspace.File("marker.txt").Contents(ctx)
 }
 
 func (m *Files) ChangeWorkspaceArg(workspace *dagger.Workspace) *dagger.Changeset {
@@ -171,9 +171,9 @@ func (m *Files) ChangeWorkspaceArg(workspace *dagger.Workspace) *dagger.Changese
 	return after.Changes(before)
 }
 
-func (m *Files) ChangeCurrentWorkspace() *dagger.Changeset {
-	before := dag.CurrentWorkspace().Directory(".")
-	after := before.WithNewFile("current-workspace.txt", "changed through current workspace")
+func (m *Files) ChangeDeclaredWorkspace(workspace *dagger.Workspace) *dagger.Changeset {
+	before := workspace.Directory(".")
+	after := before.WithNewFile("declared-workspace.txt", "changed through declared workspace")
 	return after.Changes(before)
 }
 
@@ -537,7 +537,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		require.NoError(t, err)
 		require.Equal(t, want, strings.TrimSpace(string(out)))
 
-		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-current-workspace")...)
+		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-declared-workspace")...)
 		require.NoError(t, err)
 		require.Equal(t, want, strings.TrimSpace(string(out)))
 	}
@@ -549,7 +549,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		require.Error(t, err)
 		require.Contains(t, strings.ToLower(string(out)+err.Error()), "workspace")
 
-		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-current-workspace")...)
+		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-declared-workspace")...)
 		require.Error(t, err)
 		require.Contains(t, strings.ToLower(string(out)+err.Error()), "workspace")
 	}
@@ -570,10 +570,10 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 				want:     "changed through workspace arg",
 			},
 			{
-				name:     "Changeset from dag.CurrentWorkspace",
-				args:     []string{"change-current-workspace"},
-				hostFile: "current-workspace.txt",
-				want:     "changed through current workspace",
+				name:     "Changeset from declared Workspace",
+				args:     []string{"change-declared-workspace"},
+				hostFile: "declared-workspace.txt",
+				want:     "changed through declared workspace",
 			},
 		}
 

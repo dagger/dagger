@@ -512,7 +512,7 @@ func New(ws *dagger.Workspace) *MyModule {
 `FindUp` walks up from a start path (relative paths resolve from the workspace cwd; pass `dagger.WorkspaceFindUpOpts{From: "..."}` to change it) and returns the absolute workspace path of the first match, stopping at the workspace boundary. Use it to locate a project root marker such as `package.json` or `go.mod`.
 
 :::tip
-A function that doesn't take a `*dagger.Workspace` argument can still reach the current workspace through the client with `dag.CurrentWorkspace()`, which returns the same `*dagger.Workspace` type.
+To use the current workspace, declare a `*dagger.Workspace` argument on the module constructor or function. Dagger injects it automatically and omits it from the CLI arguments.
 :::
 
 ### Secrets

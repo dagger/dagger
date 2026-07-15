@@ -16,6 +16,10 @@ const ModuleName = "daggercore"
 
 var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 
+var FieldsToIgnoreForModuleIntrospection = []string{
+	"Query.currentWorkspace",
+}
+
 type coreSchemaForker interface {
 	ForkSchema(context.Context, *Query, call.View) (*dagql.Server, error)
 }
@@ -152,11 +156,16 @@ func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenT
 }
 
 func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context) (dagql.Result[*File], error) {
+	hiddenTypes, hiddenFields := moduleIntrospectionScrubConfig()
+	return b.SchemaIntrospectionJSONFile(ctx, hiddenTypes, hiddenFields)
+}
+
+func moduleIntrospectionScrubConfig() ([]string, []string) {
 	hiddenTypes := append([]string{}, TypesToIgnoreForModuleIntrospection...)
 	for _, typed := range TypesHiddenFromModuleSDKs {
 		hiddenTypes = append(hiddenTypes, typed.Type().Name())
 	}
-	return b.SchemaIntrospectionJSONFile(ctx, hiddenTypes, nil)
+	return hiddenTypes, append([]string{}, FieldsToIgnoreForModuleIntrospection...)
 }
 
 func (b *SchemaBuilder) SchemaIntrospectionJSONFileForClient(ctx context.Context) (dagql.Result[*File], error) {

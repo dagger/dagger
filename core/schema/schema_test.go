@@ -81,6 +81,37 @@ func TestSchemaJSONScrubbing(t *testing.T) {
 	require.NotNil(t, full.Schema.Types.Get("Workspace"))
 	require.NotNil(t, full.Schema.Types.Get("ID"))
 	requireWorkspaceArgument(t, full.Schema)
+	require.NotNil(t, full.Schema.Types.Get("Host"))
+	require.NotNil(t, schemaField(full.Schema.Query(), "host"))
+
+	t.Run("module and client policies", func(t *testing.T) {
+		moduleHiddenTypes := append([]string{}, core.TypesToIgnoreForModuleIntrospection...)
+		for _, typed := range core.TypesHiddenFromModuleSDKs {
+			moduleHiddenTypes = append(moduleHiddenTypes, typed.Type().Name())
+		}
+		moduleJSON, err := getSchemaJSON(
+			moduleHiddenTypes,
+			core.FieldsToIgnoreForModuleIntrospection,
+			dag.View,
+			dag,
+		)
+		require.NoError(t, err)
+		require.NotEqual(t, fullJSON, moduleJSON)
+
+		moduleSchema := decodeSchemaResponse(t, moduleJSON)
+		require.Nil(t, schemaField(moduleSchema.Schema.Query(), "currentWorkspace"))
+		require.NotNil(t, moduleSchema.Schema.Types.Get("Workspace"))
+		require.NotNil(t, moduleSchema.Schema.Types.Get("ID"))
+		requireWorkspaceArgument(t, moduleSchema.Schema)
+		require.Nil(t, moduleSchema.Schema.Types.Get("Host"))
+		require.Nil(t, schemaField(moduleSchema.Schema.Query(), "host"))
+
+		clientSchema := decodeSchemaResponse(t, fullJSON)
+		require.NotNil(t, schemaField(clientSchema.Schema.Query(), "currentWorkspace"))
+		require.NotNil(t, clientSchema.Schema.Types.Get("Workspace"))
+		require.NotNil(t, clientSchema.Schema.Types.Get("Host"))
+		require.NotNil(t, schemaField(clientSchema.Schema.Query(), "host"))
+	})
 
 	t.Run("individual field", func(t *testing.T) {
 		scrubbedJSON, err := getSchemaJSON(nil, []string{"Query.currentWorkspace"}, dag.View, dag)
