@@ -390,6 +390,115 @@ region = "us-west-2"
 	})
 }
 
+// TestWorkspaceSettingsUnsetSemantics defines how settings are removed. Unset
+// mutates the selected scope's stored settings, mirroring writes: base scope
+// without --env, that environment's overlay with --env.
+func (WorkspaceSuite) TestWorkspaceSettingsUnsetSemantics(ctx context.Context, t *testctx.T) {
+	t.Run("base-scope unset removes the stored setting and keeps the rest", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "modules/aws"
+
+[modules.aws.settings]
+format = "json"
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region", "--unset")
+		require.NoError(t, err)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Modules["aws"].Settings, "region")
+		require.Equal(t, "json", cfg.Modules["aws"].Settings["format"])
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.aws.settings.region")
+		require.Error(t, err)
+		requireErrOut(t, err, `key "modules.aws.settings.region" is not set`)
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Empty(t, strings.TrimSpace(string(out)))
+	})
+
+	t.Run("env-scoped unset removes only the overlay value and leaves base intact", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "modules/aws"
+
+[modules.aws.settings]
+region = "us-west-2"
+
+[env.ci.modules.aws.settings]
+region = "us-east-1"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region", "--unset")
+		require.NoError(t, err)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.Equal(t, "us-west-2", cfg.Modules["aws"].Settings["region"])
+		require.Contains(t, cfg.Env, "ci")
+		require.NotContains(t, cfg.Env["ci"].Modules, "aws")
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--env=ci", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
+	})
+
+	t.Run("unset requires exactly MODULE and KEY", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "modules/aws"
+
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "--unset")
+		require.Error(t, err)
+		requireErrOut(t, err, "--unset requires MODULE and KEY arguments")
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region", "value", "--unset")
+		require.Error(t, err)
+		requireErrOut(t, err, "--unset requires MODULE and KEY arguments")
+	})
+
+	t.Run("unset rejects unknown settings and errors when the setting is not stored", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "modules/aws"
+
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "missing", "--unset")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "aws" has no setting "missing"`)
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "format", "--unset")
+		require.Error(t, err)
+		requireErrOut(t, err, `key "modules.aws.settings.format" is not set`)
+	})
+
+	t.Run("raw config unset removes any settings key", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "modules/aws"
+
+[modules.aws.settings]
+region = "us-west-2"
+stale = "left over"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.aws.settings.stale", "-u")
+		require.NoError(t, err)
+
+		cfg := readInstalledWorkspaceConfig(t, workdir)
+		require.NotContains(t, cfg.Modules["aws"].Settings, "stale")
+		require.Equal(t, "us-west-2", cfg.Modules["aws"].Settings["region"])
+
+		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "--unset")
+		require.Error(t, err)
+		requireErrOut(t, err, "--unset requires a KEY argument")
+	})
+}
+
 // TestWorkspaceSettingsConfigProjection locks in that `dagger settings` is an
 // ergonomic, typed projection over workspace config rather than a second
 // storage system with independent semantics.

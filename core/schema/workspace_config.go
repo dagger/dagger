@@ -221,6 +221,11 @@ type workspaceConfigValueArgs struct {
 	Here  bool `default:"false"`
 }
 
+type workspaceConfigKeyArgs struct {
+	Key  string
+	Here bool `default:"false"`
+}
+
 func selectedWorkspaceEnv(ctx context.Context) (string, bool) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil || clientMetadata.WorkspaceEnv == nil || *clientMetadata.WorkspaceEnv == "" {

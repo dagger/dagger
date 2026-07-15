@@ -620,6 +620,25 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with a configuration value removed.
+
+  Errors when the key is not currently set.
+  """
+  @spec without_config_value(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()
+  def without_config_value(%__MODULE__{} = workspace, key, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("withoutConfigValue")
+      |> QB.put_arg("key", key)
+      |> QB.maybe_put_arg("here", optional_args[:here])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a module removed from its config.
   """
   @spec without_module(t(), String.t(), [{:here, boolean() | nil}]) :: Dagger.Workspace.t()

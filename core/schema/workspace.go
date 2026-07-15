@@ -199,6 +199,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("value").Doc("Value to set."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
+		dagql.NodeFunc("withoutConfigValue", s.withoutConfigValue).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a configuration value removed.",
+				"Errors when the key is not currently set.").
+			Args(
+				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.settings.greeting)."),
+				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+			),
 		dagql.NodeFunc("withConfigEnv", s.withConfigEnv).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a named config environment created.").

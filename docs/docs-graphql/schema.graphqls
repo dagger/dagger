@@ -6456,6 +6456,19 @@ type Workspace implements Node {
     here: Boolean = false
   ): Workspace!
 
+  """
+  Return this workspace with a configuration value removed.
+
+  Errors when the key is not currently set.
+  """
+  withoutConfigValue(
+    """Dotted key path (e.g. modules.greeter.settings.greeting)."""
+    key: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): Workspace!
+
   """Return this workspace with a module removed from its config."""
   withoutModule(
     """Name of the installed module entry to remove."""

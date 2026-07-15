@@ -16515,6 +16515,30 @@ class Workspace(Type):
         _ctx = self._select("withoutConfigEnv", _args)
         return Workspace(_ctx)
 
+    def without_config_value(
+        self,
+        key: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a configuration value removed.
+
+        Errors when the key is not currently set.
+
+        Parameters
+        ----------
+        key:
+            Dotted key path (e.g. modules.greeter.settings.greeting).
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("key", key),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withoutConfigValue", _args)
+        return Workspace(_ctx)
+
     def without_module(
         self,
         name: str,

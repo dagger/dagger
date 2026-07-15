@@ -56,17 +56,24 @@ func init() {
 	addWorkspaceHereFlag(settingsCmd)
 }
 
+var workspaceSettingsUnset bool
+
 func newSettingsCmd(hidden bool) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:    "settings [module] [key] [value]",
-		Short:  "Get or set module settings (use --env for an env overlay)",
+		Short:  "Get, set, or unset module settings (use --env for an env overlay)",
 		Hidden: hidden,
 		Args:   cobra.MaximumNArgs(3),
 		RunE:   runWorkspaceSettings,
 	}
+	cmd.Flags().BoolVarP(&workspaceSettingsUnset, "unset", "u", false, "Remove the setting from workspace config")
+	return cmd
 }
 
 func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
+	if workspaceSettingsUnset && len(args) != 2 {
+		return fmt.Errorf("--unset requires MODULE and KEY arguments")
+	}
 	return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 		moduleName := ""
 		if len(args) > 0 {
@@ -76,6 +83,16 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName)
 		if err != nil {
 			return err
+		}
+
+		if workspaceSettingsUnset {
+			setting, err := state.lookupSetting(args[1])
+			if err != nil {
+				return err
+			}
+			return state.Workspace.
+				WithoutConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), dagger.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).
+				Export(ctx)
 		}
 
 		switch len(args) {

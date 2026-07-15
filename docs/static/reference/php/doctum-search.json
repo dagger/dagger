@@ -6950,6 +6950,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withoutConfigValue",
+			"p": "Dagger/Workspace.html#method_withoutConfigValue",
+			"d": "<p>Return this workspace with a configuration value removed.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withoutModule",
 			"p": "Dagger/Workspace.html#method_withoutModule",
 			"d": "<p>Return this workspace with a module removed from its config.</p>"

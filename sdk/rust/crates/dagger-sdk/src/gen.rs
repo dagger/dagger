@@ -16288,6 +16288,12 @@ pub struct WorkspaceWithoutConfigEnvOpts {
     pub here: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithoutConfigValueOpts {
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithoutModuleOpts {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
@@ -17160,6 +17166,45 @@ impl Workspace {
     ) -> Workspace {
         let mut query = self.selection.select("withoutConfigEnv");
         query = query.arg("name", name.into());
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a configuration value removed.
+    /// Errors when the key is not currently set.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Dotted key path (e.g. modules.greeter.settings.greeting).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_config_value(&self, key: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutConfigValue");
+        query = query.arg("key", key.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a configuration value removed.
+    /// Errors when the key is not currently set.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Dotted key path (e.g. modules.greeter.settings.greeting).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_config_value_opts(
+        &self,
+        key: impl Into<String>,
+        opts: WorkspaceWithoutConfigValueOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withoutConfigValue");
+        query = query.arg("key", key.into());
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
