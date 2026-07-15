@@ -5045,11 +5045,25 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	}
 }
 
+// DirectoryWithPatchOpts contains options for Directory.WithPatch
+type DirectoryWithPatchOpts struct {
+	// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+	//
+	// Default: FAIL
+	OnConflict PatchConflict
+}
+
 // Retrieves this directory with the given Git-compatible patch applied.
 //
 // Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Directory) WithPatch(patch string) *Directory {
+func (r *Directory) WithPatch(patch string, opts ...DirectoryWithPatchOpts) *Directory {
 	q := r.query.Select("withPatch")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
 	q = q.Arg("patch", patch)
 
 	return &Directory{
@@ -5057,12 +5071,26 @@ func (r *Directory) WithPatch(patch string) *Directory {
 	}
 }
 
+// DirectoryWithPatchFileOpts contains options for Directory.WithPatchFile
+type DirectoryWithPatchFileOpts struct {
+	// How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+	//
+	// Default: FAIL
+	OnConflict PatchConflict
+}
+
 // Retrieves this directory with the given Git-compatible patch file applied.
 //
 // Experimental: This API is highly experimental and may be removed or replaced entirely.
-func (r *Directory) WithPatchFile(patch *File) *Directory {
+func (r *Directory) WithPatchFile(patch *File, opts ...DirectoryWithPatchFileOpts) *Directory {
 	assertNotNil("patch", patch)
 	q := r.query.Select("withPatchFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `onConflict` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnConflict) {
+			q = q.Arg("onConflict", opts[i].OnConflict)
+		}
+	}
 	q = q.Arg("patch", patch)
 
 	return &Directory{
@@ -17966,6 +17994,63 @@ const (
 	NetworkProtocolTcp NetworkProtocol = "TCP"
 
 	NetworkProtocolUdp NetworkProtocol = "UDP"
+)
+
+// How to handle patch hunks that no longer apply to the target content.
+type PatchConflict string
+
+func (PatchConflict) IsEnum() {}
+
+func (v PatchConflict) Name() string {
+	switch v {
+	case PatchConflictFail:
+		return "FAIL"
+	case PatchConflictLeaveConflictMarkers:
+		return "LEAVE_CONFLICT_MARKERS"
+	default:
+		return ""
+	}
+}
+
+func (v PatchConflict) Value() string {
+	return string(v)
+}
+
+func (v *PatchConflict) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *PatchConflict) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "FAIL":
+		*v = PatchConflictFail
+	case "LEAVE_CONFLICT_MARKERS":
+		*v = PatchConflictLeaveConflictMarkers
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Fail the operation if any part of the patch does not apply.
+	PatchConflictFail PatchConflict = "FAIL"
+
+	// Apply the hunks that fit and insert conflict markers where hunks no longer match, instead of failing.
+	PatchConflictLeaveConflictMarkers PatchConflict = "LEAVE_CONFLICT_MARKERS"
 )
 
 // Transport protocol to use for registry operations.

@@ -215,6 +215,17 @@ class NetworkProtocol(Enum):
     UDP = "UDP"
 
 
+class PatchConflict(Enum):
+    """How to handle patch hunks that no longer apply to the target
+    content."""
+
+    FAIL = "FAIL"
+    """Fail the operation if any part of the patch does not apply."""
+
+    LEAVE_CONFLICT_MARKERS = "LEAVE_CONFLICT_MARKERS"
+    """Apply the hunks that fit and insert conflict markers where hunks no longer match, instead of failing."""
+
+
 class RegistryProtocol(Enum):
     """Transport protocol to use for registry operations."""
 
@@ -5321,7 +5332,12 @@ class Directory(Type):
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)
 
-    def with_patch(self, patch: str) -> Self:
+    def with_patch(
+        self,
+        patch: str,
+        *,
+        on_conflict: PatchConflict | None = PatchConflict.FAIL,
+    ) -> Self:
         """Retrieves this directory with the given Git-compatible patch applied.
 
         .. caution::
@@ -5334,14 +5350,24 @@ class Directory(Type):
             Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex
             1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1
             +1,1 @@\n-Hello\n+World\n").
+        on_conflict:
+            How to handle hunks that no longer apply to the target content:
+            fail (default), or apply what fits and leave git-style conflict
+            markers where it doesn't.
         """
         _args = [
             Arg("patch", patch),
+            Arg("onConflict", on_conflict, PatchConflict.FAIL),
         ]
         _ctx = self._select("withPatch", _args)
         return Directory(_ctx)
 
-    def with_patch_file(self, patch: "File") -> Self:
+    def with_patch_file(
+        self,
+        patch: "File",
+        *,
+        on_conflict: PatchConflict | None = PatchConflict.FAIL,
+    ) -> Self:
         """Retrieves this directory with the given Git-compatible patch file
         applied.
 
@@ -5353,9 +5379,14 @@ class Directory(Type):
         ----------
         patch:
             File containing the patch to apply
+        on_conflict:
+            How to handle hunks that no longer apply to the target content:
+            fail (default), or apply what fits and leave git-style conflict
+            markers where it doesn't.
         """
         _args = [
             Arg("patch", patch),
+            Arg("onConflict", on_conflict, PatchConflict.FAIL),
         ]
         _ctx = self._select("withPatchFile", _args)
         return Directory(_ctx)
@@ -18035,6 +18066,7 @@ __all__ = [
     "NetworkProtocol",
     "Node",
     "ObjectTypeDef",
+    "PatchConflict",
     "PipelineLabel",
     "Platform",
     "Port",

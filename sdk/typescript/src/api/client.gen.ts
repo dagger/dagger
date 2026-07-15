@@ -1351,6 +1351,20 @@ export type DirectoryWithNewFileOpts = {
   permissions?: number
 }
 
+export type DirectoryWithPatchOpts = {
+  /**
+   * How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   */
+  onConflict?: PatchConflict
+}
+
+export type DirectoryWithPatchFileOpts = {
+  /**
+   * How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
+   */
+  onConflict?: PatchConflict
+}
+
 export type EngineCacheEntrySetOpts = {
   key?: string
 }
@@ -2308,6 +2322,50 @@ export function NetworkProtocolNameToValue(name: string): NetworkProtocol {
       return NetworkProtocol.Udp
     default:
       return name as NetworkProtocol
+  }
+}
+/**
+ * How to handle patch hunks that no longer apply to the target content.
+ */
+export enum PatchConflict {
+  /**
+   * Fail the operation if any part of the patch does not apply.
+   */
+  Fail = "FAIL",
+
+  /**
+   * Apply the hunks that fit and insert conflict markers where hunks no longer match, instead of failing.
+   */
+  LeaveConflictMarkers = "LEAVE_CONFLICT_MARKERS",
+}
+
+/**
+ * Utility function to convert a PatchConflict value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function PatchConflictValueToName(value: PatchConflict): string {
+  switch (value) {
+    case PatchConflict.Fail:
+      return "FAIL"
+    case PatchConflict.LeaveConflictMarkers:
+      return "LEAVE_CONFLICT_MARKERS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a PatchConflict name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function PatchConflictNameToValue(name: string): PatchConflict {
+  switch (name) {
+    case "FAIL":
+      return PatchConflict.Fail
+    case "LEAVE_CONFLICT_MARKERS":
+      return PatchConflict.LeaveConflictMarkers
+    default:
+      return name as PatchConflict
   }
 }
 export type PipelineLabel = {
@@ -6420,20 +6478,41 @@ export class Directory extends BaseClient {
   /**
    * Retrieves this directory with the given Git-compatible patch applied.
    * @param patch Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
+   * @param opts.onConflict How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
    * @experimental
    */
-  withPatch = (patch: string): Directory => {
-    const ctx = this._ctx.select("withPatch", { patch })
+  withPatch = (patch: string, opts?: DirectoryWithPatchOpts): Directory => {
+    const metadata = {
+      onConflict: { is_enum: true, value_to_name: PatchConflictValueToName },
+    }
+
+    const ctx = this._ctx.select("withPatch", {
+      patch,
+      ...opts,
+      __metadata: metadata,
+    })
     return new Directory(ctx)
   }
 
   /**
    * Retrieves this directory with the given Git-compatible patch file applied.
    * @param patch File containing the patch to apply
+   * @param opts.onConflict How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.
    * @experimental
    */
-  withPatchFile = (patch: File): Directory => {
-    const ctx = this._ctx.select("withPatchFile", { patch })
+  withPatchFile = (
+    patch: File,
+    opts?: DirectoryWithPatchFileOpts,
+  ): Directory => {
+    const metadata = {
+      onConflict: { is_enum: true, value_to_name: PatchConflictValueToName },
+    }
+
+    const ctx = this._ctx.select("withPatchFile", {
+      patch,
+      ...opts,
+      __metadata: metadata,
+    })
     return new Directory(ctx)
   }
 
