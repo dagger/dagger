@@ -848,8 +848,13 @@ func getSessionDir() (string, error) {
 	}
 
 	sessionDir := filepath.Join(stateHome, "dagger", "llm-sessions")
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+	if err := os.MkdirAll(sessionDir, 0700); err != nil {
 		return "", fmt.Errorf("failed to create session directory: %w", err)
+	}
+	// Sessions contain prompts and history-bearing LLM IDs; keep the
+	// directory private even if an older version created it more openly.
+	if err := os.Chmod(sessionDir, 0700); err != nil {
+		return "", fmt.Errorf("failed to restrict session directory permissions: %w", err)
 	}
 
 	return sessionDir, nil
@@ -899,8 +904,13 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 	}
 
 	sessionFile := filepath.Join(sessionDir, sessionID+".json")
-	if err := os.WriteFile(sessionFile, jsonData, 0644); err != nil {
+	if err := os.WriteFile(sessionFile, jsonData, 0600); err != nil {
 		return sessionID, fmt.Errorf("failed to write session file: %w", err)
+	}
+	// WriteFile only applies the mode on creation; fix up files written more
+	// openly by an older version.
+	if err := os.Chmod(sessionFile, 0600); err != nil {
+		return sessionID, fmt.Errorf("failed to restrict session file permissions: %w", err)
 	}
 
 	slog.Debug("auto-saved LLM session", "id", sessionID, "name", initialPrompt, "file", sessionFile)
