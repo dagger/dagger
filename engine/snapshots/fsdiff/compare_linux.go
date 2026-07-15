@@ -23,6 +23,15 @@ func samePathInfo(
 		return true, nil
 	}
 
+	if comparison == CompareInodeThenContent && sameInode(f1, f2) {
+		// Two mounts of snapshots sharing a lineage report different st_dev,
+		// so os.SameFile misses files that resolve to the same backing
+		// inode. Both trees live on the same backing filesystem and
+		// snapshots are immutable, so an equal inode (with matching type,
+		// size, and mtime) means the same file.
+		return true, nil
+	}
+
 	if !compareSysStat(f1.Sys(), f2.Sys()) {
 		return false, nil
 	}
@@ -60,7 +69,7 @@ func samePathInfo(
 			return compareFileContent(p1, p2)
 		}
 		return true, nil
-	case CompareContentOnMetadataMatch:
+	case CompareContentOnMetadataMatch, CompareInodeThenContent:
 		if (f1.Mode() & os.ModeSymlink) == os.ModeSymlink {
 			return compareSymlinkTarget(p1, p2)
 		}
@@ -71,6 +80,21 @@ func samePathInfo(
 	default:
 		return false, fmt.Errorf("unknown diff comparison mode %d", comparison)
 	}
+}
+
+func sameInode(f1, f2 os.FileInfo) bool {
+	s1, ok := f1.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false
+	}
+	s2, ok := f2.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false
+	}
+	return s1.Ino == s2.Ino &&
+		f1.Mode()&os.ModeType == f2.Mode()&os.ModeType &&
+		f1.Size() == f2.Size() &&
+		f1.ModTime().Equal(f2.ModTime())
 }
 
 func compareSysStat(s1, s2 interface{}) bool {
