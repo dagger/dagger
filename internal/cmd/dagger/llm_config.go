@@ -80,6 +80,18 @@ func applyLLMConfigEnv() {
 			setIfEmpty("LOCAL_MODEL", cfg.LLM.DefaultModel)
 		}
 	}
+	// The openai and openrouter providers share the OPENAI_* variables. Pick a
+	// single owner for that slot — the default provider if it is one of them,
+	// otherwise openai — so map iteration order can't pair one provider's key
+	// with the other's base URL.
+	openAISlotOwner := ""
+	for _, name := range []string{"openai", "openrouter"} {
+		if p, ok := cfg.LLM.Providers[name]; ok && p.Enabled {
+			if openAISlotOwner == "" || name == cfg.LLM.DefaultProvider {
+				openAISlotOwner = name
+			}
+		}
+	}
 	for name, p := range cfg.LLM.Providers {
 		if !p.Enabled {
 			continue
@@ -106,6 +118,9 @@ func applyLLMConfigEnv() {
 			setIfEmpty("ANTHROPIC_MODEL", p.Model)
 			setIfEmpty("ANTHROPIC_REASONING_EFFORT", p.ReasoningEffort)
 		case "openai":
+			if name != openAISlotOwner {
+				continue
+			}
 			setIfEmpty("OPENAI_API_KEY", p.APIKey)
 			setIfEmpty("OPENAI_BASE_URL", p.BaseURL)
 			setIfEmpty("OPENAI_MODEL", p.Model)
@@ -116,7 +131,11 @@ func applyLLMConfigEnv() {
 			setIfEmpty("GEMINI_REASONING_EFFORT", p.ReasoningEffort)
 		case "openrouter":
 			// OpenRouter is OpenAI-compatible; route it through the OpenAI vars.
+			if name != openAISlotOwner {
+				continue
+			}
 			setIfEmpty("OPENAI_API_KEY", p.APIKey)
+			setIfEmpty("OPENAI_MODEL", p.Model)
 			base := p.BaseURL
 			if base == "" {
 				base = "https://openrouter.ai/api/v1"
