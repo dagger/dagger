@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -748,10 +749,76 @@ func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
 		slog.Warn("failed to replay session history", "error", err)
 	}
 
+	// Restoring a session replays any un-flushed workspace edits as recorded
+	// patches; hunks that no longer fit the live files degrade to conflict
+	// markers (onConflict: LEAVE_CONFLICT_MARKERS). The model's history
+	// describes a workspace that is now partially fiction, so tell it what
+	// needs resolving rather than letting it stumble over the markers.
+	if cue := conflictMarkerCue(ctx, loadedLLM); cue != "" {
+		loadedLLM = loadedLLM.WithSystemPrompt(cue)
+	}
+
 	if err := s.updateLLM(loadedLLM); err != nil {
 		return err
 	}
 	return s.updateStatusLine(loadedLLM)
+}
+
+// conflictMarkerCue reports whether restoring the session left conflict
+// markers in the workspace overlay, returning a system-prompt cue listing the
+// affected files, or "" when restoration was clean.
+//
+// Only files touched by the overlay can carry restore-time markers (they are
+// produced by replaying the recorded patches), so the search is scoped to the
+// overlay changeset's added and modified paths — which also makes this free
+// for sessions that flushed their changes before saving: the changeset is
+// empty and nothing is searched. Best-effort throughout; a failed check must
+// not block loading the session.
+func conflictMarkerCue(ctx context.Context, llm *dagger.LLM) string {
+	changes := llm.Workspace().Changes()
+	added, err := changes.AddedPaths(ctx)
+	if err != nil {
+		slog.Debug("skipping conflict-marker check", "error", err)
+		return ""
+	}
+	modified, err := changes.ModifiedPaths(ctx)
+	if err != nil {
+		slog.Debug("skipping conflict-marker check", "error", err)
+		return ""
+	}
+	paths := append(added, modified...)
+	if len(paths) == 0 {
+		return ""
+	}
+	results, err := changes.After().Search(ctx, "<<<<<<< workspace", dagger.DirectorySearchOpts{
+		Literal:   true,
+		FilesOnly: true,
+		Paths:     paths,
+	})
+	if err != nil {
+		slog.Debug("skipping conflict-marker check", "error", err)
+		return ""
+	}
+	files := make([]string, 0, len(results))
+	seen := map[string]bool{}
+	for _, res := range results {
+		fp, err := res.FilePath(ctx)
+		if err != nil || seen[fp] {
+			continue
+		}
+		seen[fp] = true
+		files = append(files, fp)
+	}
+	if len(files) == 0 {
+		return ""
+	}
+	sort.Strings(files)
+	return fmt.Sprintf(
+		"While restoring this session, some of your earlier edits no longer applied cleanly to the "+
+			"workspace and were left as conflict markers (\"<<<<<<< workspace\" ... \">>>>>>> patch\") in: %s. "+
+			"The workspace content may differ from what the conversation above describes. "+
+			"Review these files and resolve the markers before continuing.",
+		strings.Join(files, ", "))
 }
 
 // ListSessions returns saved sessions sorted by creation time (newest first,
