@@ -1640,7 +1640,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() {
+	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() || fe.db.HasGenerateReport() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
@@ -2297,6 +2297,12 @@ func (fe *frontendPretty) renderFinalReport(ctx tuist.Context, r *renderer) {
 	var renderedRows bool
 	if checkLines := fe.checksReport(ctx, r, zoomed); len(checkLines) > 0 {
 		ctx.Lines(checkLines...)
+		renderedRows = true
+	} else if genLines := fe.generateReport(ctx, r, zoomed); len(genLines) > 0 {
+		// A successful `dagger generate` that skipped an unloadable module:
+		// surface the skips in their own persisted section instead of the raw
+		// progress tree, which collapses on exit 0.
+		ctx.Lines(genLines...)
 		renderedRows = true
 	} else if !rootCauseRendered || fe.Verbosity >= dagui.ShowCompletedVerbosity {
 		// Only fall back to the raw progress tree when there's nothing better.

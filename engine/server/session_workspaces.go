@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/parallel"
 )
@@ -1590,13 +1591,16 @@ func moduleLoadJobName(load moduleLoadRequest) string {
 // that did not pass — a concise red row with the error nested — instead of a
 // verbose console line. Reveal lifts it into the primary view (e.g. the zoomed
 // generators span) and the roll-up attrs collapse the load's internal spans so
-// the row stays terse.
+// the row stays terse. GenerateSkippedAttr collects it into the persisted
+// "SKIPPED MODULES" final report so it survives the live tree collapsing when
+// generate exits 0.
 func reportSkippedModule(ctx context.Context, name string, cause error) {
 	_, span := core.Tracer(ctx).Start(ctx, name,
 		telemetry.Reveal(),
 		trace.WithAttributes(
 			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+			attribute.Bool(telemetryattrs.GenerateSkippedAttr, true),
 		),
 	)
 	telemetry.EndWithCause(span, &cause)

@@ -3,6 +3,13 @@ package telemetryattrs
 const (
 	UIResumeOutputAttr = "dagger.io/ui.resume.output"
 
+	// GenerateSkippedAttr marks a span reporting a workspace module that
+	// best-effort `dagger generate` skipped because it could not be loaded. The
+	// TUI collects these into a persisted "SKIPPED MODULES" final-report section
+	// (like a check that did not pass) so they survive the live tree collapsing
+	// on a successful run. (bool)
+	GenerateSkippedAttr = "dagger.io/generate.skipped"
+
 	// DagBlockedAttr marks a lazy-evaluation resume span that aborted because a
 	// prerequisite result's evaluation failed, rather than because the result's
 	// own deferred work failed. The UI treats a blocked resumption as if the
