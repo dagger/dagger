@@ -384,7 +384,8 @@ var llmSetDefaultCmd = &cobra.Command{
 		}
 
 		// Verify provider exists
-		if _, ok := cfg.LLM.Providers[provider]; !ok {
+		providerCfg, ok := cfg.LLM.Providers[provider]
+		if !ok {
 			return fmt.Errorf("provider %q not configured, run 'dagger llm add-key %s' first",
 				provider, provider)
 		}
@@ -392,6 +393,16 @@ var llmSetDefaultCmd = &cobra.Command{
 		cfg.LLM.DefaultProvider = provider
 		if len(args) > 1 {
 			cfg.LLM.DefaultModel = args[1]
+		} else {
+			// Don't carry the previous provider's model over: it would be
+			// exported as this provider's model and prefix routing could send
+			// requests back to the old provider. Prefer the provider's own
+			// configured model, then its catalog default; otherwise clear it.
+			model := providerCfg.Model
+			if model == "" {
+				model = llmconfig.DefaultModelForProvider(provider)
+			}
+			cfg.LLM.DefaultModel = model
 		}
 
 		if err := cfg.Save(); err != nil {
@@ -399,8 +410,8 @@ var llmSetDefaultCmd = &cobra.Command{
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "%s Default provider set to: %s\n", idtui.IconSuccess, provider)
-		if len(args) > 1 {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s Default model set to: %s\n", idtui.IconSuccess, args[1])
+		if cfg.LLM.DefaultModel != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s Default model set to: %s\n", idtui.IconSuccess, cfg.LLM.DefaultModel)
 		}
 		return nil
 	},
