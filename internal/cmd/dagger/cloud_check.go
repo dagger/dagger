@@ -54,10 +54,16 @@ func init() {
 // the selected remote. The optional name arg is accepted but not used —
 // today's underlying API only models a single autocheck per remote.
 func runCloudCheckSet(enabled bool) func(cmd *cobra.Command, args []string) error {
-	return func(cmd *cobra.Command, _ []string) error {
-		remote, _, err := selectedRemoteWorkspaceAddress(cmd.Context(), "cloud check")
-		if err != nil {
-			return err
+	return func(cmd *cobra.Command, args []string) error {
+		var remote workspaceRemoteAddress
+		if len(args) > 0 {
+			remote.CloneRef = args[0]
+		} else {
+			var err error
+			remote, _, err = selectedRemoteWorkspaceAddress(cmd.Context(), "cloud check")
+			if err != nil {
+				return err
+			}
 		}
 		state, err := setWorkspaceAutocheckState(cmd.Context(), remote, enabled)
 		if errors.Is(err, errCloudNotAuthenticated) {
