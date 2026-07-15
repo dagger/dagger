@@ -210,10 +210,17 @@ func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*Ch
 		renamedOld = append(renamedOld, oldPath)
 	}
 
+	// Sort to match computeChangesetPathsDelta: both paths must emit one
+	// canonical order, or which order a caller observes silently depends on
+	// whether the metadata delta walk succeeded on the underlying mounts.
 	allRemoved := slices.Concat(fc.Removed, renamedOld, removedDirs)
+	slices.Sort(allRemoved)
+	added := slices.Concat(fc.Added, renamedNew, addedDirs)
+	slices.Sort(added)
+	slices.Sort(fc.Modified)
 
 	return &ChangesetPaths{
-		Added:      slices.Concat(fc.Added, renamedNew, addedDirs),
+		Added:      added,
 		Modified:   fc.Modified,
 		Removed:    collapseChildPaths(allRemoved),
 		AllRemoved: allRemoved,
