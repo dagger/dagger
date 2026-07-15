@@ -497,6 +497,10 @@ type Myapp {
 		require.NoError(t, err)
 		require.Contains(t, wsOut, `[modules.dagger-dang-sdk]`)
 		require.Contains(t, wsOut, `path = "libs/foo"`)
+		// The runtime is resolved to its real ref, matching `dagger sdk install`,
+		// not left as the bare "dang" short name.
+		require.Contains(t, wsOut, `source = "github.com/dagger/dang-sdk"`)
+		require.NotContains(t, wsOut, `source = "dang"`)
 
 		// The converted dependency loads from its own runtime field.
 		callOut, err := ctr.With(daggerCallAt("libs/foo", "message")).Stdout(ctx)
@@ -532,6 +536,72 @@ type Myapp {
 			_, err = ctr.WithExec([]string{"test", "!", "-e", dir + "/dagger.json"}).Sync(ctx)
 			require.NoError(t, err, "%s legacy config should be removed", dir)
 		}
+	})
+
+	t.Run("nested workspace plan resolves its SDK installs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		// A globbed .dagger/modules/tool config that itself must-migrate (its
+		// source is a non-root subdir) becomes its OWN workspace plan, with its
+		// own dagger.toml — separate from the top-level workspace the setup
+		// command runs in. Its SDK install (and any it owns for discovered deps)
+		// must still be resolved to a real ref, even though it lives in a config
+		// the current-workspace fixup pass doesn't read. The tool uses `php`,
+		// whose sdks.json ref (github.com/dagger/php-sdk) differs from the
+		// engine-side runtime mapping, so this also pins that the CLI registry —
+		// what `dagger sdk install` uses — wins for these nested configs.
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("ci/main.dang", "\ntype Myapp {\n  pub greet: String! { \"hi\" }\n}\n").
+				WithNewFile(".dagger/modules/tool/dagger.json", `{"name":"tool","sdk":{"source":"php"},"source":"src","dependencies":[{"name":"helper","source":"./helper"}]}`).
+				WithNewFile(".dagger/modules/tool/src/index.php", "<?php\n").
+				With(legacyDangModule(".dagger/modules/tool/helper", "helper", "Helper", "help"))
+		}).With(daggerExec("setup", "--auto-apply"))
+
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		nested, err := ctr.WithExec([]string{"cat", ".dagger/modules/tool/dagger.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		// The tool's own runtime resolves to its sdks.json ref (CLI registry),
+		// and the discovered helper's dang runtime resolves too.
+		require.Contains(t, nested, `source = "github.com/dagger/php-sdk"`, nested)
+		require.Contains(t, nested, `source = "github.com/dagger/dang-sdk"`, nested)
+		require.NotContains(t, nested, `source = "php"`, nested)
+	})
+
+	t.Run("pre-existing nested workspace config is left untouched", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		// A pre-existing dagger.toml under tools/ makes tools/ its own workspace,
+		// which migration treats as an ownership boundary and does not touch. SDK
+		// resolution must respect that boundary too: a bare short-name install
+		// there is not a migration artifact and must not be rewritten, even though
+		// "go" would otherwise resolve through sdks.json.
+		preExisting := `[modules.local-go]
+source = "go"
+
+[modules.local-go.as-sdk]
+name = "my-go"
+`
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("ci/main.dang", "\ntype Myapp {\n  pub greet: String! { \"hi\" }\n}\n").
+				WithNewFile("tools/dagger.toml", preExisting)
+		}).With(daggerExec("setup", "--auto-apply"))
+
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		after, err := ctr.WithExec([]string{"cat", "tools/dagger.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, preExisting, after, "pre-existing nested workspace config must not be rewritten")
 	})
 
 	t.Run("diamond dependency is migrated once", func(ctx context.Context, t *testctx.T) {
