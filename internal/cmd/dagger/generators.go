@@ -58,17 +58,18 @@ Examples:
 				} else {
 					generators = ws.Generators()
 				}
-				// The engine already warns per skipped module (best-effort load);
-				// --require-load turns those tolerated failures fatal before
-				// running or applying anything. An explicit selector fails hard
-				// and surfaces its error from this fetch.
+				// Loading is best-effort: a module that fails to load is skipped
+				// and surfaced in telemetry (engine-side, rendered like a check
+				// that did not pass) while the rest still generate. --require-load
+				// opts back into strict: fail before running or applying if any
+				// workspace module could not be loaded.
 				if generateRequireLoad {
 					loadFailures, err := generatorGroupLoadFailures(ctx, dag, args)
 					if err != nil {
 						return err
 					}
 					if len(loadFailures) > 0 {
-						return fmt.Errorf("%d workspace module(s) failed to load (--require-load): %s", len(loadFailures), strings.Join(loadFailures, ", "))
+						return fmt.Errorf("%d workspace module(s) could not be loaded (--require-load)", len(loadFailures))
 					}
 				}
 				if generateListMode {

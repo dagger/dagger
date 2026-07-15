@@ -12,6 +12,8 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	"github.com/iancoleman/strcase"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -991,9 +993,7 @@ func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerCl
 			loadErr := moduleLoadErr(load, resolveErrs[i])
 			client.recordFailedModule(load.mod, loadErr)
 			if bestEffort {
-				msg := fmt.Sprintf("Skipping module %q for this operation: %v", moduleProgressName(load.mod), resolveErrs[i])
-				console(ctx, "%s", msg)
-				slog.Warn(msg)
+				reportSkippedModule(ctx, moduleProgressName(load.mod), loadErr)
 				loadFailures = append(loadFailures, loadErr.Error())
 				continue
 			}
@@ -1583,6 +1583,23 @@ func moduleLoadJobName(load moduleLoadRequest) string {
 		prefix = "load extra module: "
 	}
 	return prefix + moduleProgressName(load.mod)
+}
+
+// reportSkippedModule surfaces a best-effort load failure as its own span,
+// named by the module and marked failed, so the TUI renders it like a check
+// that did not pass — a concise red row with the error nested — instead of a
+// verbose console line. Reveal lifts it into the primary view (e.g. the zoomed
+// generators span) and the roll-up attrs collapse the load's internal spans so
+// the row stays terse.
+func reportSkippedModule(ctx context.Context, name string, cause error) {
+	_, span := core.Tracer(ctx).Start(ctx, name,
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIRollUpLogsAttr, true),
+			attribute.Bool(telemetry.UIRollUpSpansAttr, true),
+		),
+	)
+	telemetry.EndWithCause(span, &cause)
 }
 
 func moduleLoadErr(load moduleLoadRequest, err error) error {
