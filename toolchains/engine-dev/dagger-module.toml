@@ -1,0 +1,33 @@
+name = "engine-dev"
+engineVersion = "v0.21.7"
+include = ["../../engine/distconsts/**/*", "../../sdk/typescript/runtime/**/*", "../../go.mod", "../../go.sum", "../../util/parallel"]
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "alpine"
+  source = "../../modules/alpine"
+
+[[dependencies]]
+  name = "codegen"
+  source = "../../cmd/codegen"
+
+[[dependencies]]
+  name = "dagger-cli"
+  source = "../cli-dev"
+
+[[dependencies]]
+  name = "go"
+  source = "../go"
+
+[[dependencies]]
+  name = "wolfi"
+  source = "../../modules/wolfi"
+
+[[dependencies]]
+  name = "notify"
+  source = "notify"
+
+[codegen]
+  automaticGitignore = false
