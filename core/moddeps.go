@@ -143,12 +143,12 @@ func (b *SchemaBuilder) Schema(ctx context.Context) (*dagql.Server, error) {
 	return srv, nil
 }
 
-func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes []string) (dagql.Result[*File], error) {
+func (b *SchemaBuilder) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes, hiddenFields []string) (dagql.Result[*File], error) {
 	dag, err := b.Schema(ctx)
 	if err != nil {
 		return dagql.Result[*File]{}, err
 	}
-	return schemaJSONFileFromServer(ctx, dag, hiddenTypes)
+	return schemaJSONFileFromServer(ctx, dag, hiddenTypes, hiddenFields)
 }
 
 func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context) (dagql.Result[*File], error) {
@@ -156,11 +156,11 @@ func (b *SchemaBuilder) SchemaIntrospectionJSONFileForModule(ctx context.Context
 	for _, typed := range TypesHiddenFromModuleSDKs {
 		hiddenTypes = append(hiddenTypes, typed.Type().Name())
 	}
-	return b.SchemaIntrospectionJSONFile(ctx, hiddenTypes)
+	return b.SchemaIntrospectionJSONFile(ctx, hiddenTypes, nil)
 }
 
 func (b *SchemaBuilder) SchemaIntrospectionJSONFileForClient(ctx context.Context) (dagql.Result[*File], error) {
-	return b.SchemaIntrospectionJSONFile(ctx, []string{})
+	return b.SchemaIntrospectionJSONFile(ctx, nil, nil)
 }
 
 func (b *SchemaBuilder) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*TypeDef], error) {
