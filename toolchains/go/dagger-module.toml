@@ -1,0 +1,13 @@
+name = "go"
+engineVersion = "v0.21.7"
+include = ["../../go.sum", "../../go.mod", "../../util/parallel"]
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "wolfi"
+  source = "../../modules/wolfi"
+
+[codegen]
+  automaticGitignore = false

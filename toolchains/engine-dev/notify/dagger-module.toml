@@ -1,0 +1,9 @@
+name = "notify"
+engineVersion = "v0.21.7"
+disableDefaultFunctionCaching = true
+
+[runtime]
+  source = "go"
+
+[codegen]
+  automaticGitignore = false
