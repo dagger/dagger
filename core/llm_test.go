@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openai/openai-go"
@@ -389,4 +390,24 @@ GEMINI_MODEL=gemini-model`, nil
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
+}
+
+func TestWithToolCallDoesNotMutateReceiver(t *testing.T) {
+	base := &LLM{
+		mcp:         newMCP(dagql.ObjectResult[*Env]{}),
+		endpointMtx: &sync.Mutex{},
+	}
+	base = base.WithPrompt("hi").WithResponse([]*LLMContentBlock{{
+		Kind: LLMContentText,
+		Text: "hello",
+	}}, LLMTokenUsage{})
+
+	branched := base.WithToolCall("call-1", "someTool", JSON(`{}`))
+
+	baseLast := base.Messages[len(base.Messages)-1]
+	assert.Len(t, baseLast.Content, 1)
+
+	branchedLast := branched.Messages[len(branched.Messages)-1]
+	assert.Len(t, branchedLast.Content, 2)
+	assert.Equal(t, "call-1", branchedLast.Content[1].CallID)
 }

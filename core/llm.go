@@ -295,6 +295,11 @@ func (*LLMContentBlock) Type() *ast.Type {
 	}
 }
 
+func (b *LLMContentBlock) Clone() *LLMContentBlock {
+	cp := *b
+	return &cp
+}
+
 // LLMContentBlockInput is the input object type for creating content blocks.
 type LLMContentBlockInput struct {
 	Kind      LLMContentBlockKind `doc:"The kind of content block."`
@@ -343,6 +348,15 @@ func (*LLMMessage) Type() *ast.Type {
 		NamedType: "LLMMessage",
 		NonNull:   true,
 	}
+}
+
+func (m *LLMMessage) Clone() *LLMMessage {
+	cp := *m
+	cp.Content = make([]*LLMContentBlock, len(m.Content))
+	for i, block := range m.Content {
+		cp.Content[i] = block.Clone()
+	}
+	return &cp
 }
 
 // TextContent returns the concatenation of all text blocks in this message.
@@ -951,6 +965,9 @@ func (*LLM) Type() *ast.Type {
 
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
+	// The messages themselves stay shared with the receiver and any other
+	// clones, so they must be treated as immutable: copy-on-write via
+	// LLMMessage.Clone before modifying one (see WithToolCall).
 	cp.Messages = slices.Clone(cp.Messages)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpoint = llm.endpoint
@@ -1125,15 +1142,19 @@ func (llm *LLM) WithResponse(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage
 // WithToolCall appends a tool call to the last assistant message in the history.
 func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
 	llm = llm.Clone()
-	// Find the last assistant message and append the tool call block to it
+	// Find the last assistant message and append the tool call block to it,
+	// copying the message first: messages are shared across clones, so
+	// mutating it in place would edit ancestor/sibling histories too.
 	for i := len(llm.Messages) - 1; i >= 0; i-- {
 		if llm.Messages[i].Role == LLMMessageRoleAssistant {
-			llm.Messages[i].Content = append(llm.Messages[i].Content, &LLMContentBlock{
+			msg := llm.Messages[i].Clone()
+			msg.Content = append(msg.Content, &LLMContentBlock{
 				Kind:      LLMContentToolCall,
 				CallID:    callID,
 				ToolName:  tool,
 				Arguments: arguments,
 			})
+			llm.Messages[i] = msg
 			break
 		}
 	}
