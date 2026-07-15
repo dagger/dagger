@@ -443,14 +443,17 @@ defmodule Dagger.Workspace do
   @doc """
   Return this workspace with a configuration value written.
   """
-  @spec with_config_value(t(), String.t(), String.t(), [{:here, boolean() | nil}]) ::
-          Dagger.Workspace.t()
+  @spec with_config_value(t(), String.t(), String.t(), [
+          {:values, [String.t()]},
+          {:here, boolean() | nil}
+        ]) :: Dagger.Workspace.t()
   def with_config_value(%__MODULE__{} = workspace, key, value, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("withConfigValue")
       |> QB.put_arg("key", key)
       |> QB.put_arg("value", value)
+      |> QB.maybe_put_arg("values", optional_args[:values])
       |> QB.maybe_put_arg("here", optional_args[:here])
 
     %Dagger.Workspace{

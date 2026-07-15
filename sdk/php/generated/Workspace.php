@@ -354,11 +354,14 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     /**
      * Return this workspace with a configuration value written.
      */
-    public function withConfigValue(string $key, string $value, ?bool $here = false): Workspace
+    public function withConfigValue(string $key, string $value, ?array $values = null, ?bool $here = false): Workspace
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConfigValue');
         $innerQueryBuilder->setArgument('key', $key);
         $innerQueryBuilder->setArgument('value', $value);
+        if (null !== $values) {
+        $innerQueryBuilder->setArgument('values', $values);
+        }
         if (null !== $here) {
         $innerQueryBuilder->setArgument('here', $here);
         }

@@ -7082,6 +7082,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\WorkspaceModuleSetting::isList",
+			"p": "Dagger/WorkspaceModuleSetting.html#method_isList",
+			"d": "<p>Whether the setting accepts a list of values.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\WorkspaceModuleSetting::key",
 			"p": "Dagger/WorkspaceModuleSetting.html#method_key",
 			"d": "<p>The setting key.</p>"

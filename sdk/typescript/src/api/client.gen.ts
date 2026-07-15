@@ -2854,6 +2854,11 @@ export type WorkspaceWithConfigEnvOpts = {
 
 export type WorkspaceWithConfigValueOpts = {
   /**
+   * List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+   */
+  values?: string[]
+
+  /**
    * Write to the workspace config directory at the workspace cwd.
    */
   here?: boolean
@@ -15465,7 +15470,8 @@ export class Workspace extends BaseClient {
   /**
    * Return this workspace with a configuration value written.
    * @param key Dotted key path.
-   * @param value Value to set.
+   * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+   * @param opts.values List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
   withConfigValue = (
@@ -15940,6 +15946,7 @@ export class WorkspaceModule extends BaseClient {
 export class WorkspaceModuleSetting extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
+  private readonly _isList?: boolean = undefined
   private readonly _key?: string = undefined
   private readonly _value?: string = undefined
 
@@ -15950,6 +15957,7 @@ export class WorkspaceModuleSetting extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _description?: string,
+    _isList?: boolean,
     _key?: string,
     _value?: string,
   ) {
@@ -15957,6 +15965,7 @@ export class WorkspaceModuleSetting extends BaseClient {
 
     this._id = _id
     this._description = _description
+    this._isList = _isList
     this._key = _key
     this._value = _value
   }
@@ -15987,6 +15996,21 @@ export class WorkspaceModuleSetting extends BaseClient {
     const ctx = this._ctx.select("description")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the setting accepts a list of values.
+   */
+  isList = async (): Promise<boolean> => {
+    if (this._isList) {
+      return this._isList
+    }
+
+    const ctx = this._ctx.select("isList")
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
