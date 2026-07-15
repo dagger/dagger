@@ -236,6 +236,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A module that uses @defaultPath and calls another module.\nThis is the \"middle\" module in the nested call chain.\n").
+			WithObject(
+				dag.TypeDef().WithObject("NestedContextMiddle", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 13, 6)}).
+					WithFunction(
+						dag.Function("ReadMarker",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Call the leaf module to read the marker. If env workspace propagation works\ncorrectly, the leaf module should receive the same workspace context.").
+							WithSourceMap(dag.SourceMap("main.go", 37, 1))).
+					WithFunction(
+						dag.Function("UpdateMarker",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Update the content of the marker file.").
+							WithSourceMap(dag.SourceMap("main.go", 27, 1)).
+							WithArg("value", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 27, 44)})).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("NestedContextMiddle")).
+							WithSourceMap(dag.SourceMap("main.go", 17, 1)).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 19, 2), DefaultPath: "/"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

@@ -1767,7 +1767,8 @@ func (s *workspaceSchema) checks(
 		noGenerate = true
 	}
 
-	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+	// check is strict: a module that can't load is a failure, by design.
+	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
 		return nil, err
 	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
@@ -1881,9 +1882,12 @@ func (s *workspaceSchema) generators(
 
 	// Best-effort: generate is often what repairs a module that can't load —
 	// e.g. a dagger-module.toml module whose committed generated files don't
-	// exist yet gets them from its SDK's generator. A module that fails to
-	// load is skipped with a warning instead of failing the whole run.
-	if err := ensureWorkspaceModulesLoaded(ctx, include, true); err != nil {
+	// exist yet gets them from its SDK's generator. A module that fails to load
+	// is skipped with a warning instead of failing the whole run, and its
+	// failure message is carried on loadFailures so the CLI can honor
+	// --require-load.
+	loadFailures, err := ensureWorkspaceModulesLoaded(ctx, include, true)
+	if err != nil {
 		return nil, err
 	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
@@ -1983,7 +1987,7 @@ func (s *workspaceSchema) generators(
 		allGenerators = append(allGenerators, filtered...)
 	}
 
-	return &core.GeneratorGroup{Generators: allGenerators}, nil
+	return &core.GeneratorGroup{Generators: allGenerators, LoadFailures: loadFailures}, nil
 }
 
 func (s *workspaceSchema) services(
@@ -2004,7 +2008,8 @@ func (s *workspaceSchema) services(
 		return nil, err
 	}
 
-	if err := ensureWorkspaceIncludeModulesLoaded(ctx, include); err != nil {
+	// up is strict: a module that can't load is a failure, by design.
+	if _, err := ensureWorkspaceModulesLoaded(ctx, include, false); err != nil {
 		return nil, err
 	}
 	mods, err := currentWorkspacePrimaryModules(ctx)
@@ -2161,17 +2166,15 @@ func matchWorkspaceIncludePath(
 	return false, nil
 }
 
-// ensureWorkspaceIncludeModulesLoaded loads the workspace modules the include
-// patterns demand (all when they don't narrow). Selector fields validate
-// against the core schema, so loading can wait until resolution.
-func ensureWorkspaceIncludeModulesLoaded(ctx context.Context, include []string) error {
-	return ensureWorkspaceModulesLoaded(ctx, include, false)
-}
-
-func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, bestEffort bool) error {
+// ensureWorkspaceModulesLoaded loads the workspace modules the include patterns
+// demand (all when they don't narrow). Selector fields validate against the
+// core schema, so loading can wait until resolution. With bestEffort, per-module
+// load failures are collected and returned instead of aborting (used by unscoped
+// 'dagger generate'); the check/up resolvers pass false to stay strict.
+func ensureWorkspaceModulesLoaded(ctx context.Context, include []string, bestEffort bool) ([]string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return query.Server.EnsureWorkspaceModules(ctx, include, bestEffort)
 }

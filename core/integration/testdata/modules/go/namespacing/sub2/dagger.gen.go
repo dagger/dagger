@@ -241,6 +241,22 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Sub2", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 3, 6)}).
+					WithFunction(
+						dag.Function("Fn",
+							dag.TypeDef().WithObject("Sub2Obj")).
+							WithSourceMap(dag.SourceMap("main.go", 5, 1)).
+							WithArg("s", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 5, 19)}))).
+			WithObject(
+				dag.TypeDef().WithObject("Sub2Obj", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 9, 6)}).
+					WithFunction(
+						dag.Function("GetBar",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 13, 1))).
+					WithField("bar", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 10, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

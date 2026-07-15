@@ -427,16 +427,57 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 		require.NotContains(t, out, "intentionally invalid")
 	})
 
-	t.Run("generating across all modules skips the broken module with a warning", func(ctx context.Context, t *testctx.T) {
-		// Generator enumeration loads modules best-effort: the broken module
-		// is still loaded (unlike the narrowed cases above, which never touch
-		// it) but its failure surfaces as a warning instead of failing the
-		// run — running generate may be exactly what repairs it.
+	t.Run("listing across all modules enumerates the healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {
+		// Enumerating all generators loads modules best-effort: the broken
+		// module is still loaded (unlike the narrowed cases above, which never
+		// touch it) but its failure is tolerated, so listing still succeeds and
+		// shows the healthy generator instead of aborting. The skip itself is
+		// surfaced as a span on the run path (asserted below), not in the list
+		// table.
 		out, err := base.
 			With(daggerExec("generate", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `Skipping module "bad"`)
+		require.Contains(t, out, "good:generate")
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("unscoped generate runs healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {
+		// -l only lists; this exercises the run+apply path. The broken module is
+		// reported as a skipped-module span, but the healthy `good` generator
+		// still runs and applies -- it writes generated.txt with a known marker.
+		ctr := base.With(daggerExec("generate", "-y", "--progress=plain"))
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "no changes to apply")
+		// In run mode the output is zoomed to the generators span; the
+		// skipped-module span is revealed into that view so the user still sees
+		// it (its load error names the broken module).
+		require.Contains(t, out, "modules/bad")
+		// grep -rl exits non-zero if the marker was never written, so NoError
+		// proves the healthy generator applied.
+		_, err = ctr.WithExec([]string{"grep", "-rl", "hello from good", "."}).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("--require-load makes a load failure fatal", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("generate", "-l", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "require-load")
+	})
+
+	t.Run("--require-load also catches an explicitly-selected unloadable module", func(ctx context.Context, t *testctx.T) {
+		// Loading is best-effort even for an explicit selector, so naming the
+		// broken module no longer aborts by itself; --require-load is what turns
+		// its load failure into a hard error.
+		out, err := base.
+			With(daggerExecFail("generate", "bad", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "require-load")
+		require.Contains(t, out, "modules/bad")
 	})
 }
 

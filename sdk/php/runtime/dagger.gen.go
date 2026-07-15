@@ -278,6 +278,35 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Runtime module for the PHP SDK\n").
+			WithObject(
+				dag.TypeDef().WithObject("PhpSdk", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 23, 6)}).
+					WithFunction(
+						dag.Function("Codegen",
+							dag.TypeDef().WithObject("GeneratedCode")).
+							WithSourceMap(dag.SourceMap("main.go", 42, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 44, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 45, 2)})).
+					WithFunction(
+						dag.Function("CodegenBase",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 67, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 69, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 70, 2)})).
+					WithFunction(
+						dag.Function("ModuleRuntime",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 159, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 161, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 162, 2)})).
+					WithField("SourceDir", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 24, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("PhpSdk")).
+							WithSourceMap(dag.SourceMap("main.go", 27, 1)).
+							WithArg("sdkSourceDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Directory with the PHP SDK source code.", SourceMap: dag.SourceMap("main.go", 32, 2), DefaultPath: "/sdk/php", Ignore: []string{"**", "!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"}}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

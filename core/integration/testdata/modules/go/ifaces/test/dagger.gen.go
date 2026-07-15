@@ -1291,6 +1291,351 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Test", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 10, 6)}).
+					WithFunction(
+						dag.Function("Bool",
+							dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)).
+							WithSourceMap(dag.SourceMap("main.go", 121, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 121, 42)})).
+					WithFunction(
+						dag.Function("BoolList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind))).
+							WithSourceMap(dag.SourceMap("main.go", 129, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 129, 46)})).
+					WithFunction(
+						dag.Function("DepIfaceStr",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 238, 1))).
+					WithFunction(
+						dag.Function("DepWithIface",
+							dag.TypeDef().WithObject("Test")).
+							WithSourceMap(dag.SourceMap("main.go", 219, 1)).
+							WithArg("iface", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 219, 50)})).
+					WithFunction(
+						dag.Function("DynamicOtherIfaceByIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 191, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 191, 66)})).
+					WithFunction(
+						dag.Function("DynamicOtherIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 182, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 182, 59)})).
+					WithFunction(
+						dag.Function("IfaceListArgs",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithSourceMap(dag.SourceMap("main.go", 195, 1)).
+							WithArg("ifaces", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("CustomIface")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 195, 51)}).
+							WithArg("otherIfaces", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 195, 73)})).
+					WithFunction(
+						dag.Function("Int",
+							dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)).
+							WithSourceMap(dag.SourceMap("main.go", 105, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 105, 41)})).
+					WithFunction(
+						dag.Function("IntList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind))).
+							WithSourceMap(dag.SourceMap("main.go", 113, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 113, 45)})).
+					WithFunction(
+						dag.Function("Obj",
+							dag.TypeDef().WithObject("Directory")).
+							WithSourceMap(dag.SourceMap("main.go", 137, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 137, 20)})).
+					WithFunction(
+						dag.Function("ObjList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Directory"))).
+							WithSourceMap(dag.SourceMap("main.go", 153, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 153, 45)})).
+					WithFunction(
+						dag.Function("OtherIface",
+							dag.TypeDef().WithInterface("OtherIface")).
+							WithSourceMap(dag.SourceMap("main.go", 169, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 169, 27)})).
+					WithFunction(
+						dag.Function("ParentIfaceFields",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithSourceMap(dag.SourceMap("main.go", 267, 1))).
+					WithFunction(
+						dag.Function("ReturnCustomObj",
+							dag.TypeDef().WithObject("CustomObj")).
+							WithSourceMap(dag.SourceMap("main.go", 315, 1)).
+							WithArg("ifaces", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("CustomIface")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 315, 32)}).
+							WithArg("otherIfaces", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 315, 54)})).
+					WithFunction(
+						dag.Function("SelfIface",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 161, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 161, 26)})).
+					WithFunction(
+						dag.Function("SelfIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("CustomIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 165, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 165, 51)})).
+					WithFunction(
+						dag.Function("StaticOtherIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 173, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 173, 58)})).
+					WithFunction(
+						dag.Function("Str",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 80, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 80, 41)})).
+					WithFunction(
+						dag.Function("StrList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithSourceMap(dag.SourceMap("main.go", 97, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 97, 45)})).
+					WithFunction(
+						dag.Function("Void",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 76, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 76, 42)})).
+					WithFunction(
+						dag.Function("WithBool",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 125, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 125, 46)}).
+							WithArg("boolArg", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 125, 68)})).
+					WithFunction(
+						dag.Function("WithBoolList",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 133, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 133, 50)}).
+							WithArg("boolList", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 133, 72)})).
+					WithFunction(
+						dag.Function("WithIface",
+							dag.TypeDef().WithObject("Test")).
+							WithSourceMap(dag.SourceMap("main.go", 214, 1)).
+							WithArg("iface", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 214, 26)})).
+					WithFunction(
+						dag.Function("WithIfaceList",
+							dag.TypeDef().WithObject("Test")).
+							WithSourceMap(dag.SourceMap("main.go", 252, 1)).
+							WithArg("ifaces", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("CustomIface")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 252, 30)})).
+					WithFunction(
+						dag.Function("WithInt",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 109, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 109, 45)}).
+							WithArg("intArg", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 109, 67)})).
+					WithFunction(
+						dag.Function("WithIntList",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 117, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 117, 49)}).
+							WithArg("intList", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 117, 71)})).
+					WithFunction(
+						dag.Function("WithObj",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 141, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 141, 24)}).
+							WithArg("objArg", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 141, 46)})).
+					WithFunction(
+						dag.Function("WithObjList",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 157, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 157, 49)}).
+							WithArg("objList", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Directory")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 157, 71)})).
+					WithFunction(
+						dag.Function("WithOptionalPragmaIface",
+							dag.TypeDef().WithObject("Test")).
+							WithSourceMap(dag.SourceMap("main.go", 242, 1)).
+							WithArg("iface", dag.TypeDef().WithInterface("CustomIface").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 244, 2)})).
+					WithFunction(
+						dag.Function("WithOptionalPragmaObj",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 145, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 146, 2)}).
+							WithArg("objArg", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 148, 2)})).
+					WithFunction(
+						dag.Function("WithOptionalPragmaStr",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 88, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 90, 2)}).
+							WithArg("strArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 92, 2)})).
+					WithFunction(
+						dag.Function("WithOtherIface",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 178, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 178, 52)}).
+							WithArg("other", dag.TypeDef().WithInterface("OtherIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 178, 74)})).
+					WithFunction(
+						dag.Function("WithOtherIfaceByIface",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 187, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 187, 59)}).
+							WithArg("other", dag.TypeDef().WithInterface("OtherIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 187, 81)})).
+					WithFunction(
+						dag.Function("WithOtherIfaceList",
+							dag.TypeDef().WithObject("Test")).
+							WithSourceMap(dag.SourceMap("main.go", 257, 1)).
+							WithArg("ifaces", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 257, 35)})).
+					WithFunction(
+						dag.Function("WithPrivateIface",
+							dag.TypeDef().WithObject("Test")).
+							WithSourceMap(dag.SourceMap("main.go", 262, 1)).
+							WithArg("iface", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 262, 33)})).
+					WithFunction(
+						dag.Function("WithStr",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 84, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 84, 45)}).
+							WithArg("strArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 84, 67)})).
+					WithFunction(
+						dag.Function("WithStrList",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 101, 1)).
+							WithArg("ifaceArg", dag.TypeDef().WithInterface("CustomIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 101, 49)}).
+							WithArg("strList", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 101, 71)})).
+					WithField("IfaceField", dag.TypeDef().WithInterface("CustomIface"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 11, 2)}).
+					WithField("IfaceFieldNeverSet", dag.TypeDef().WithInterface("CustomIface"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 16, 2)}).
+					WithField("IfaceListField", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("CustomIface")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 21, 2)}).
+					WithField("OtherIfaceListField", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 22, 2)})).
+			WithInterface(
+				dag.TypeDef().WithInterface("CustomIface", dagger.TypeDefWithInterfaceOpts{SourceMap: dag.SourceMap("main.go", 25, 6)}).
+					WithFunction(
+						dag.Function("Bool",
+							dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)).
+							WithSourceMap(dag.SourceMap("main.go", 44, 6))).
+					WithFunction(
+						dag.Function("BoolList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind))).
+							WithSourceMap(dag.SourceMap("main.go", 46, 10))).
+					WithFunction(
+						dag.Function("DynamicOtherIfaceByIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 68, 30))).
+					WithFunction(
+						dag.Function("DynamicOtherIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 65, 23))).
+					WithFunction(
+						dag.Function("Int",
+							dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)).
+							WithSourceMap(dag.SourceMap("main.go", 39, 5))).
+					WithFunction(
+						dag.Function("IntList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind))).
+							WithSourceMap(dag.SourceMap("main.go", 41, 9))).
+					WithFunction(
+						dag.Function("Obj",
+							dag.TypeDef().WithObject("Directory")).
+							WithSourceMap(dag.SourceMap("main.go", 49, 5))).
+					WithFunction(
+						dag.Function("ObjList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Directory"))).
+							WithSourceMap(dag.SourceMap("main.go", 55, 9))).
+					WithFunction(
+						dag.Function("OtherIface",
+							dag.TypeDef().WithInterface("OtherIface")).
+							WithSourceMap(dag.SourceMap("main.go", 61, 12))).
+					WithFunction(
+						dag.Function("SelfIface",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 58, 11))).
+					WithFunction(
+						dag.Function("SelfIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("CustomIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 59, 15))).
+					WithFunction(
+						dag.Function("StaticOtherIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("OtherIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 62, 22))).
+					WithFunction(
+						dag.Function("Str",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 29, 5))).
+					WithFunction(
+						dag.Function("StrList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithSourceMap(dag.SourceMap("main.go", 36, 9))).
+					WithFunction(
+						dag.Function("Void",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 27, 6))).
+					WithFunction(
+						dag.Function("WithBool",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 45, 10)).
+							WithArg("boolArg", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 45, 32)})).
+					WithFunction(
+						dag.Function("WithBoolList",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 47, 14)).
+							WithArg("boolListArg", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 47, 36)})).
+					WithFunction(
+						dag.Function("WithInt",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 40, 9)).
+							WithArg("intArg", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 40, 31)})).
+					WithFunction(
+						dag.Function("WithIntList",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 42, 13)).
+							WithArg("intListArg", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 42, 35)})).
+					WithFunction(
+						dag.Function("WithObj",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 50, 9)).
+							WithArg("objArg", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 50, 10)})).
+					WithFunction(
+						dag.Function("WithObjList",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 56, 13)).
+							WithArg("objListArg", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Directory")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 56, 35)})).
+					WithFunction(
+						dag.Function("WithOptionalPragmaObj",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 51, 23)).
+							WithArg("objArg", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 53, 3)})).
+					WithFunction(
+						dag.Function("WithOptionalPragmaStr",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 31, 23)).
+							WithArg("strArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 34, 3)})).
+					WithFunction(
+						dag.Function("WithOtherIface",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 64, 16)).
+							WithArg("other", dag.TypeDef().WithInterface("OtherIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 64, 17)})).
+					WithFunction(
+						dag.Function("WithOtherIfaceByIface",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 67, 23)).
+							WithArg("other", dag.TypeDef().WithInterface("OtherIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 67, 24)})).
+					WithFunction(
+						dag.Function("WithStr",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 30, 9)).
+							WithArg("strArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 30, 31)})).
+					WithFunction(
+						dag.Function("WithStrList",
+							dag.TypeDef().WithInterface("CustomIface")).
+							WithSourceMap(dag.SourceMap("main.go", 37, 13)).
+							WithArg("strListArg", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 37, 35)}))).
+			WithInterface(
+				dag.TypeDef().WithInterface("OtherIface", dagger.TypeDefWithInterfaceOpts{SourceMap: dag.SourceMap("main.go", 71, 6)}).
+					WithFunction(
+						dag.Function("Foo",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 73, 5)))).
+			WithObject(
+				dag.TypeDef().WithObject("CustomObj", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 300, 6)}).
+					WithField("Iface", dag.TypeDef().WithInterface("CustomIface"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 301, 2)}).
+					WithField("IfaceList", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("CustomIface")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 302, 2)}).
+					WithField("Other", dag.TypeDef().WithObject("OtherCustomObj"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 303, 2)}).
+					WithField("OtherPtr", dag.TypeDef().WithObject("OtherCustomObj"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 304, 2)}).
+					WithField("OtherList", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("OtherCustomObj")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 305, 2)}).
+					WithField("OtherPtrList", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("OtherCustomObj")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 306, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("OtherCustomObj", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 309, 6)}).
+					WithField("Iface", dag.TypeDef().WithInterface("CustomIface"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 310, 2)}).
+					WithField("IfaceList", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("CustomIface")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 311, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

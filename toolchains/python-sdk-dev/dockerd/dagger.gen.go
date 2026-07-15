@@ -230,6 +230,24 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Utility for running dockerd in Dagger\n\nA utility module for configuring a dockerd service in your Dagger pipeline\n").
+			WithObject(
+				dag.TypeDef().WithObject("Dockerd", dagger.TypeDefWithObjectOpts{Description: "Module for running docker in dagger", SourceMap: dag.SourceMap("main.go", 14, 6)}).
+					WithFunction(
+						dag.Function("Attach",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Attach a dockerd service to a container").
+							WithSourceMap(dag.SourceMap("main.go", 17, 1)).
+							WithArg("container", dag.TypeDef().WithObject("Container"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 19, 2)}).
+							WithArg("dockerVersion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 22, 2), DefaultValue: dagger.JSON("\"24.0\"")})).
+					WithFunction(
+						dag.Function("Service",
+							dag.TypeDef().WithObject("Service")).
+							WithDescription("Get a Service container running dockerd").
+							WithSourceMap(dag.SourceMap("main.go", 39, 1)).
+							WithArg("dockerVersion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 42, 2), DefaultValue: dagger.JSON("\"24.0\"")}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

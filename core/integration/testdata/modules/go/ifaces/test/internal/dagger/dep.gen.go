@@ -160,11 +160,11 @@ func (r *Query) Dep() *Dep { // dep (../../../../../../../../../core/integration
 type DepCustomIface struct { // dep (../../../../../../../../../core/integration/testdata/modules/go/ifaces/test/dep/main.go:12:6)
 	query *querybuilder.Selection
 
-	bool *bool
-	id   *DepCustomIfaceID
-	int  *int
-	str  *string
-	void *Void
+	bool_ *bool
+	id    *DepCustomIfaceID
+	int_  *int
+	str   *string
+	void  *Void
 }
 
 type DepCustomIfaceClient = DepCustomIface
@@ -176,8 +176,8 @@ func (r *DepCustomIface) WithGraphQLQuery(q *querybuilder.Selection) *DepCustomI
 }
 
 func (r *DepCustomIface) Bool(ctx context.Context) (bool, error) { // dep (../../../../../../../../../core/integration/testdata/modules/go/ifaces/test/dep/main.go:31:6)
-	if r.bool != nil {
-		return *r.bool, nil
+	if r.bool_ != nil {
+		return *r.bool_, nil
 	}
 	q := r.query.Select("bool")
 
@@ -285,8 +285,8 @@ func (r *DepCustomIface) UnmarshalJSON(bs []byte) error {
 }
 
 func (r *DepCustomIface) Int(ctx context.Context) (int, error) { // dep (../../../../../../../../../core/integration/testdata/modules/go/ifaces/test/dep/main.go:26:5)
-	if r.int != nil {
-		return *r.int, nil
+	if r.int_ != nil {
+		return *r.int_, nil
 	}
 	q := r.query.Select("int")
 

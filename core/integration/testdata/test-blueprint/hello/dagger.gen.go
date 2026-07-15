@@ -277,6 +277,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Hello", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 9, 6)}).
+					WithFunction(
+						dag.Function("AppConfig",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("This should return the target module's name, not Hello's").
+							WithSourceMap(dag.SourceMap("main.go", 28, 1)).
+							WithArg("config", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 31, 2), DefaultPath: "./app-config.txt"})).
+					WithFunction(
+						dag.Function("BlueprintConfig",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("This should read Hello's own config file").
+							WithSourceMap(dag.SourceMap("main.go", 23, 1))).
+					WithFunction(
+						dag.Function("ConfigurableMessage",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 15, 1)).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 17, 2), DefaultValue: dagger.JSON("\"hello\"")})).
+					WithFunction(
+						dag.Function("Greet",
+							dag.TypeDef().WithObject("Greetings")).
+							WithSourceMap(dag.SourceMap("main.go", 36, 1))).
+					WithFunction(
+						dag.Function("Message",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 11, 1)))).
+			WithObject(
+				dag.TypeDef().WithObject("Greetings", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 40, 6)}).
+					WithFunction(
+						dag.Function("Planet",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 42, 1)).
+							WithArg("planet", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 44, 2), DefaultValue: dagger.JSON("\"Earth\"")}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

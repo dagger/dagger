@@ -488,6 +488,100 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A workspace for managing and running LLM evaluations.\n\nThis module provides the core workspace functionality for running evaluations\nagainst various AI models, managing system prompts, and analyzing results.\n\nIt is intended for internal use within the Evaluator.\n").
+			WithObject(
+				dag.TypeDef().WithObject("EvalWorkspace", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 25, 6)}).
+					WithFunction(
+						dag.Function("Backoff",
+							dag.TypeDef().WithObject("EvalWorkspace")).
+							WithDescription("Backoff sleeps for the given duration in seconds.\n\nUse this if you're getting rate limited and have nothing better to do.").
+							WithSourceMap(dag.SourceMap("main.go", 94, 1)).
+							WithArg("seconds", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{Description: "Number of seconds to sleep.", SourceMap: dag.SourceMap("main.go", 96, 2)})).
+					WithFunction(
+						dag.Function("EvalNames",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithDescription("The list of possible evals you can run.").
+							WithSourceMap(dag.SourceMap("main.go", 121, 1))).
+					WithFunction(
+						dag.Function("Evaluate",
+							dag.TypeDef().WithObject("AttemptsReport")).
+							WithDescription("Run an evaluation and return its report.").
+							WithSourceMap(dag.SourceMap("main.go", 180, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The evaluation to run. For a list of possible values, call evalNames.", SourceMap: dag.SourceMap("main.go", 183, 2)}).
+							WithArg("model", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The model to evaluate.", SourceMap: dag.SourceMap("main.go", 186, 2), DefaultValue: dagger.JSON("\"\"")}).
+							WithArg("attempts", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "The number of attempts to evaluate across. Has a sane default per-provider.", SourceMap: dag.SourceMap("main.go", 189, 2)})).
+					WithFunction(
+						dag.Function("KnownModels",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithDescription("The list of models that you can run evaluations against.").
+							WithSourceMap(dag.SourceMap("main.go", 135, 1))).
+					WithFunction(
+						dag.Function("WithEval",
+							dag.TypeDef().WithObject("EvalWorkspace")).
+							WithDescription("Register an eval to perform.").
+							WithSourceMap(dag.SourceMap("main.go", 103, 1)).
+							WithArg("eval", dag.TypeDef().WithInterface("Eval"), dagger.FunctionWithArgOpts{Description: "The evaluation to add to the workspace.", SourceMap: dag.SourceMap("main.go", 105, 2)})).
+					WithFunction(
+						dag.Function("WithEvals",
+							dag.TypeDef().WithObject("EvalWorkspace")).
+							WithDescription("Register evals to perform.").
+							WithSourceMap(dag.SourceMap("main.go", 112, 1)).
+							WithArg("evals", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("Eval")), dagger.FunctionWithArgOpts{Description: "The list of evaluations to add to the workspace.", SourceMap: dag.SourceMap("main.go", 114, 2)})).
+					WithFunction(
+						dag.Function("WithFinding",
+							dag.TypeDef().WithObject("EvalWorkspace")).
+							WithDescription("Record an interesting finding after performing evaluations.").
+							WithSourceMap(dag.SourceMap("main.go", 140, 1)).
+							WithArg("finding", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The finding or observation to record.", SourceMap: dag.SourceMap("main.go", 142, 2)})).
+					WithFunction(
+						dag.Function("WithSystemPrompt",
+							dag.TypeDef().WithObject("EvalWorkspace")).
+							WithDescription("Set the system prompt for future evaluations.").
+							WithSourceMap(dag.SourceMap("main.go", 69, 1)).
+							WithArg("prompt", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The system prompt to use for evaluations.", SourceMap: dag.SourceMap("main.go", 71, 2)})).
+					WithFunction(
+						dag.Function("WithSystemPromptFile",
+							dag.TypeDef().WithObject("EvalWorkspace")).
+							WithDescription("Set the system prompt for future evaluations.").
+							WithSourceMap(dag.SourceMap("main.go", 78, 1)).
+							WithArg("file", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{Description: "The file containing the system prompt to use.", SourceMap: dag.SourceMap("main.go", 81, 2)})).
+					WithFunction(
+						dag.Function("WithoutDefaultSystemPrompt",
+							dag.TypeDef().WithObject("EvalWorkspace")).
+							WithDescription("Set the system prompt for future evaluations.").
+							WithSourceMap(dag.SourceMap("main.go", 63, 1))).
+					WithField("SystemPrompt", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The current system prompt.", SourceMap: dag.SourceMap("main.go", 30, 2)}).
+					WithField("DisableDefaultSystemPrompt", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "Whether to disable Dagger's built-in system prompt.", SourceMap: dag.SourceMap("main.go", 33, 2)}).
+					WithField("Evals", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("Eval")), dagger.TypeDefWithFieldOpts{Description: "Evaluations to perform.", SourceMap: dag.SourceMap("main.go", 36, 2)}).
+					WithField("Findings", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Observations made throughout running evaluations.", SourceMap: dag.SourceMap("main.go", 39, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("AttemptsReport", dagger.TypeDefWithObjectOpts{Description: "AttemptsReport contains the aggregated results from multiple evaluation attempts.", SourceMap: dag.SourceMap("main.go", 168, 6)}).
+					WithField("Report", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 169, 2)}).
+					WithField("SuccessRate", dag.TypeDef().WithKind(dagger.TypeDefKindFloatKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 170, 2)}).
+					WithField("SucceededAttempts", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 171, 2)}).
+					WithField("TotalAttempts", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 172, 2)}).
+					WithField("InputTokens", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 173, 2)}).
+					WithField("OutputTokens", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 174, 2)}).
+					WithField("CachedTokenReads", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 175, 2)}).
+					WithField("CachedTokenWrites", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 176, 2)})).
+			WithInterface(
+				dag.TypeDef().WithInterface("Eval", dagger.TypeDefWithInterfaceOpts{Description: "Eval represents a single evaluation that can be run against an LLM.\n\nImplementations must provide a name, a method to generate a prompt,\nand a check function to validate the LLM's response.", SourceMap: dag.SourceMap("main.go", 46, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 49, 7)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 49, 29)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 47, 6))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("main.go", 48, 8)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 48, 9)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

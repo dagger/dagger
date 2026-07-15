@@ -236,6 +236,30 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Hello", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 8, 6)}).
+					WithFunction(
+						dag.Function("BlueprintConfig",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("This should read Hello's own config file").
+							WithSourceMap(dag.SourceMap("main.go", 26, 1))).
+					WithFunction(
+						dag.Function("FieldConfig",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("This should return the target module's name, not Hello's").
+							WithSourceMap(dag.SourceMap("main.go", 31, 1))).
+					WithFunction(
+						dag.Function("Message",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 21, 1))).
+					WithField("Config", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 9, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Hello")).
+							WithSourceMap(dag.SourceMap("main.go", 12, 1)).
+							WithArg("config", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 14, 2), DefaultPath: "./app-config.txt"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

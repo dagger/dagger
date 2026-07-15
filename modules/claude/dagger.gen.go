@@ -243,6 +243,29 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Claude Code agent module, using Claude Code directly as an MCP server.\n").
+			WithObject(
+				dag.TypeDef().WithObject("Claude", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 9, 6)}).
+					WithFunction(
+						dag.Function("Agent",
+							dag.TypeDef().WithObject("LLM")).
+							WithDescription("Returns an LLM with Claude Code installed as an MCP server.").
+							WithSourceMap(dag.SourceMap("main.go", 28, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 30, 2)})).
+					WithFunction(
+						dag.Function("Dev",
+							dag.TypeDef().WithObject("LLM")).
+							WithDescription("An entrypoint for starting Claude from the CLI with an arbitrary source\ndirectory.").
+							WithSourceMap(dag.SourceMap("main.go", 48, 1)).
+							WithArg("source", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 48, 22)})).
+					WithField("Sandbox", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 10, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Claude")).
+							WithSourceMap(dag.SourceMap("main.go", 13, 1)).
+							WithArg("sandbox", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 15, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

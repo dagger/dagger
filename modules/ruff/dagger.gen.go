@@ -434,6 +434,85 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Ruff", dagger.TypeDefWithObjectOpts{Description: "Ruff is a fast Python linter implemented in Rust", SourceMap: dag.SourceMap("main.go", 14, 6)}).
+					WithFunction(
+						dag.Function("Lint",
+							dag.TypeDef().WithObject("LintRun")).
+							WithDescription("Lint a Python codebase").
+							WithSourceMap(dag.SourceMap("main.go", 17, 1)).
+							WithArg("source", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{Description: "The Python source directory to lint", SourceMap: dag.SourceMap("main.go", 19, 2)}))).
+			WithObject(
+				dag.TypeDef().WithObject("LintRun", dagger.TypeDefWithObjectOpts{Description: "The result of running the Ruff lint tool", SourceMap: dag.SourceMap("main.go", 27, 6)}).
+					WithFunction(
+						dag.Function("Assert",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Return an error if the lint run reported issues of severity \"error\"").
+							WithSourceMap(dag.SourceMap("main.go", 60, 1))).
+					WithFunction(
+						dag.Function("ErrorCount",
+							dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)).
+							WithDescription("Return the number of linting errors reported by this run").
+							WithSourceMap(dag.SourceMap("main.go", 97, 1))).
+					WithFunction(
+						dag.Function("Issues",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Issue"))).
+							WithDescription("Return a list of issues produced by the lint run").
+							WithSourceMap(dag.SourceMap("main.go", 51, 1))).
+					WithFunction(
+						dag.Function("Report",
+							dag.TypeDef().WithObject("File")).
+							WithDescription("Return a JSON report file for this run").
+							WithSourceMap(dag.SourceMap("main.go", 33, 1))).
+					WithFunction(
+						dag.Function("Summary",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Return a text summary of the lint run").
+							WithSourceMap(dag.SourceMap("main.go", 76, 1))).
+					WithFunction(
+						dag.Function("WarningCount",
+							dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)).
+							WithDescription("Return the number of non-error linting issues reported by this run").
+							WithSourceMap(dag.SourceMap("main.go", 113, 1)))).
+			WithObject(
+				dag.TypeDef().WithObject("Issue", dagger.TypeDefWithObjectOpts{Description: "An individual issue in a Ruff lint report", SourceMap: dag.SourceMap("main.go", 147, 6)}).
+					WithFunction(
+						dag.Function("Filename",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 159, 1))).
+					WithFunction(
+						dag.Function("IsError",
+							dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)).
+							WithDescription("Return true if this linting issue is considered an error\nNote: this always returns true, because ruff doesn't have a concept of issue severity").
+							WithSourceMap(dag.SourceMap("main.go", 130, 1))).
+					WithFunction(
+						dag.Function("Summary",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 165, 1))).
+					WithField("cell", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 148, 2)}).
+					WithField("code", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 149, 2)}).
+					WithField("end_location", dag.TypeDef().WithObject("Location"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 150, 2)}).
+					WithField("fix", dag.TypeDef().WithObject("Fix"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 152, 2)}).
+					WithField("location", dag.TypeDef().WithObject("Location"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 153, 2)}).
+					WithField("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 154, 2)}).
+					WithField("noqa_row", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 155, 2)}).
+					WithField("url", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 156, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("Location", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 174, 6)}).
+					WithField("column", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 175, 2)}).
+					WithField("row", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 176, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("Fix", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 179, 6)}).
+					WithField("applicability", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 180, 2)}).
+					WithField("edits", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Edit")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 181, 2)}).
+					WithField("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 182, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("Edit", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 185, 6)}).
+					WithField("content", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 186, 2)}).
+					WithField("end_location", dag.TypeDef().WithObject("Location"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 187, 2)}).
+					WithField("location", dag.TypeDef().WithObject("Location"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 188, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

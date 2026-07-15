@@ -1163,6 +1163,340 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Evals", dagger.TypeDefWithObjectOpts{Description: "Dagger's eval suite.", SourceMap: dag.SourceMap("main.go", 21, 6)}).
+					WithFunction(
+						dag.Function("Basic",
+							dag.TypeDef().WithObject("Basic")).
+							WithDescription("Test basic prompting.").
+							WithSourceMap(dag.SourceMap("basic.go", 14, 1))).
+					WithFunction(
+						dag.Function("BuildMulti",
+							dag.TypeDef().WithObject("BuildMulti")).
+							WithDescription("Test the model's ability to pass objects around to one another and execute a\nseries of operations given at once.").
+							WithSourceMap(dag.SourceMap("build_multi.go", 16, 1))).
+					WithFunction(
+						dag.Function("BuildMultiNoVar",
+							dag.TypeDef().WithObject("BuildMultiNoVar")).
+							WithDescription("BuildMultiNoVar is like BuildMulti but without explicitly referencing the\nrelevant objects, leaving the LLM to figure it out.").
+							WithSourceMap(dag.SourceMap("build_multi_no_var.go", 14, 1))).
+					WithFunction(
+						dag.Function("BuildMultiStatic",
+							dag.TypeDef().WithObject("BuildMultiStatic")).
+							WithDescription("Test that BuildMulti works when configured with a static tool calling scheme.").
+							WithSourceMap(dag.SourceMap("static.go", 8, 1))).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Run the Dagger evals across the major model providers.").
+							WithSourceMap(dag.SourceMap("main.go", 35, 1)).
+							WithArg("evals", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run particular evals, or all evals if unspecified.", SourceMap: dag.SourceMap("main.go", 39, 2)}).
+							WithArg("models", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run particular models, or all models if unspecified.", SourceMap: dag.SourceMap("main.go", 42, 2)})).
+					WithFunction(
+						dag.Function("CoreAPI",
+							dag.TypeDef().WithObject("CoreAPI")).
+							WithDescription("Test that the model is conscious of a \"current state\" without needing\nexplicit prompting.").
+							WithSourceMap(dag.SourceMap("core_api.go", 14, 1))).
+					WithFunction(
+						dag.Function("EnvPropagation",
+							dag.TypeDef().WithObject("EnvPropagation")).
+							WithDescription("Test that @defaultPath propagates through nested module calls.").
+							WithSourceMap(dag.SourceMap("env_propagation.go", 13, 1))).
+					WithFunction(
+						dag.Function("LifeAlert",
+							dag.TypeDef().WithObject("LifeAlert")).
+							WithDescription("Test manual intervention allowing the prompt to succeed.").
+							WithSourceMap(dag.SourceMap("life_alert.go", 14, 1))).
+					WithFunction(
+						dag.Function("ModelContextProtocol",
+							dag.TypeDef().WithObject("ModelContextProtocol")).
+							WithDescription("Test MCP server usage by setting up Claude Code MCP server and making edits.").
+							WithSourceMap(dag.SourceMap("mcp_server.go", 13, 1))).
+					WithFunction(
+						dag.Function("ModuleDependencies",
+							dag.TypeDef().WithObject("ModuleDependencies")).
+							WithDescription("Test that the model is conscious of a \"current state\" without needing\nexplicit prompting.").
+							WithSourceMap(dag.SourceMap("module_dependencies.go", 14, 1))).
+					WithFunction(
+						dag.Function("NestedObjects",
+							dag.TypeDef().WithObject("NestedObjects")).
+							WithDescription("Test that the LLM can navigate nested module objects that contain\ncontainers, without dumping huge objects in responses.\n\nThis tests the fixes in commits:\n- 515031643b2e103156940498ecc1f94d5a0b7598 (skip object fields to avoid dumping huge objects)\n- 2420106614e8058bf7d3c045f3c42f742d9926f7 (expose tools for object field accessors)").
+							WithSourceMap(dag.SourceMap("nested_objects.go", 18, 1))).
+					WithFunction(
+						dag.Function("ReadImplicitVars",
+							dag.TypeDef().WithObject("ReadImplicitVars")).
+							WithDescription("Test that the LLM is able to access the content of variables without the user\nhaving to expand them in the prompt.").
+							WithSourceMap(dag.SourceMap("read_implicit_vars.go", 14, 1))).
+					WithFunction(
+						dag.Function("Responses",
+							dag.TypeDef().WithObject("Responses")).
+							WithDescription("Test various response types.").
+							WithSourceMap(dag.SourceMap("responses.go", 14, 1))).
+					WithFunction(
+						dag.Function("UndoChanges",
+							dag.TypeDef().WithObject("UndoChanges")).
+							WithDescription("Test the model's eagerness to switch to prior states instead of mutating the\ncurrent state to undo past actions.").
+							WithSourceMap(dag.SourceMap("undo_changes.go", 15, 1))).
+					WithFunction(
+						dag.Function("WorkspacePattern",
+							dag.TypeDef().WithObject("WorkspacePattern")).
+							WithDescription("Test the common workspace pattern.").
+							WithSourceMap(dag.SourceMap("workspace_pattern.go", 15, 1))).
+					WithFunction(
+						dag.Function("Writable",
+							dag.TypeDef().WithObject("Writable")).
+							WithDescription("Test various response types.").
+							WithSourceMap(dag.SourceMap("writable.go", 13, 1))).
+					WithField("Docs", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 22, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Evals")).
+							WithSourceMap(dag.SourceMap("main.go", 25, 1)).
+							WithArg("docs", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 27, 2), DefaultPath: "/core/llm_docs.md"}))).
+			WithObject(
+				dag.TypeDef().WithObject("Basic", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("basic.go", 18, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("basic.go", 29, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("basic.go", 29, 44)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("basic.go", 20, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("basic.go", 24, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("basic.go", 24, 24)}))).
+			WithObject(
+				dag.TypeDef().WithObject("BuildMulti", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("build_multi.go", 20, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("build_multi.go", 47, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("build_multi.go", 47, 49)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("build_multi.go", 22, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("build_multi.go", 26, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("build_multi.go", 26, 29)}))).
+			WithObject(
+				dag.TypeDef().WithObject("BuildMultiNoVar", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("build_multi_no_var.go", 18, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("build_multi_no_var.go", 47, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("build_multi_no_var.go", 47, 54)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("build_multi_no_var.go", 20, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("build_multi_no_var.go", 24, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("build_multi_no_var.go", 24, 34)}))).
+			WithObject(
+				dag.TypeDef().WithObject("BuildMultiStatic", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("static.go", 14, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("build_multi.go", 47, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("build_multi.go", 47, 49)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("static.go", 18, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("static.go", 22, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("static.go", 22, 35)})).
+					WithField("BuildMulti", dag.TypeDef().WithObject("BuildMulti"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("static.go", 15, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("CoreAPI", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("core_api.go", 18, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("core_api.go", 31, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("core_api.go", 31, 46)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("core_api.go", 20, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("core_api.go", 24, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("core_api.go", 24, 26)}))).
+			WithObject(
+				dag.TypeDef().WithObject("EnvPropagation", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("env_propagation.go", 17, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("env_propagation.go", 39, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("env_propagation.go", 39, 53)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("env_propagation.go", 19, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("env_propagation.go", 23, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("env_propagation.go", 23, 33)}))).
+			WithObject(
+				dag.TypeDef().WithObject("LifeAlert", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("life_alert.go", 18, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("life_alert.go", 33, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("life_alert.go", 33, 48)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("life_alert.go", 20, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("life_alert.go", 24, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("life_alert.go", 24, 28)}))).
+			WithObject(
+				dag.TypeDef().WithObject("ModelContextProtocol", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("mcp_server.go", 17, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("mcp_server.go", 48, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("mcp_server.go", 48, 59)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("mcp_server.go", 19, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("mcp_server.go", 23, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("mcp_server.go", 23, 39)}))).
+			WithObject(
+				dag.TypeDef().WithObject("ModuleDependencies", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("module_dependencies.go", 18, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("module_dependencies.go", 37, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("module_dependencies.go", 37, 57)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("module_dependencies.go", 20, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("module_dependencies.go", 24, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("module_dependencies.go", 24, 58)}))).
+			WithObject(
+				dag.TypeDef().WithObject("NestedObjects", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("nested_objects.go", 22, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("nested_objects.go", 40, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("nested_objects.go", 40, 52)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("nested_objects.go", 24, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("nested_objects.go", 28, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("nested_objects.go", 28, 32)}))).
+			WithObject(
+				dag.TypeDef().WithObject("ReadImplicitVars", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("read_implicit_vars.go", 20, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("read_implicit_vars.go", 41, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("read_implicit_vars.go", 41, 55)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("read_implicit_vars.go", 24, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("read_implicit_vars.go", 28, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("read_implicit_vars.go", 28, 35)})).
+					WithField("WeirdText", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("read_implicit_vars.go", 21, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("Responses", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("responses.go", 18, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("responses.go", 49, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("responses.go", 49, 48)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("responses.go", 20, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("responses.go", 24, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("responses.go", 24, 28)}))).
+			WithObject(
+				dag.TypeDef().WithObject("UndoChanges", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("undo_changes.go", 19, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("undo_changes.go", 38, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("undo_changes.go", 38, 50)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("undo_changes.go", 21, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("undo_changes.go", 25, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("undo_changes.go", 25, 30)}))).
+			WithObject(
+				dag.TypeDef().WithObject("WorkspacePattern", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("workspace_pattern.go", 19, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("workspace_pattern.go", 36, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workspace_pattern.go", 36, 55)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("workspace_pattern.go", 21, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("workspace_pattern.go", 25, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workspace_pattern.go", 25, 35)}))).
+			WithObject(
+				dag.TypeDef().WithObject("Writable", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("writable.go", 17, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("writable.go", 36, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("writable.go", 36, 47)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("writable.go", 19, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("writable.go", 23, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("writable.go", 23, 27)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

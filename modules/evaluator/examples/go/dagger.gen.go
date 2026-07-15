@@ -236,6 +236,24 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Examples for the Evaluator module\n").
+			WithObject(
+				dag.TypeDef().WithObject("Examples", dagger.TypeDefWithObjectOpts{Description: "A dev environment for the Dagger Engine", SourceMap: dag.SourceMap("main.go", 11, 6)}).
+					WithFunction(
+						dag.Function("Evaluator_RunMyEvals",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Run the Dagger evals across the major model providers.").
+							WithSourceMap(dag.SourceMap("main.go", 26, 1)).
+							WithArg("evals", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run particular evals, or all evals if unspecified.", SourceMap: dag.SourceMap("main.go", 30, 2)}).
+							WithArg("models", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run particular models, or all models if unspecified.", SourceMap: dag.SourceMap("main.go", 33, 2)})).
+					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 12, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Examples")).
+							WithSourceMap(dag.SourceMap("main.go", 15, 1)).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 18, 2), DefaultPath: "/"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

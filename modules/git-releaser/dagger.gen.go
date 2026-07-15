@@ -327,6 +327,39 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("GitReleaser", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 13, 6)}).
+					WithFunction(
+						dag.Function("DryRun",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Execute a dry-run release,\nto verify that a release is possible without actually completing it").
+							WithSourceMap(dag.SourceMap("main.go", 29, 1)).
+							WithArg("sourceRepo", dag.TypeDef().WithObject("GitRepository"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 31, 2)}).
+							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 32, 2)}).
+							WithArg("destRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 33, 2)}).
+							WithArg("destTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 35, 2)}).
+							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 36, 2)}).
+							WithArg("callback", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 37, 2)})).
+					WithFunction(
+						dag.Function("Release",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Execute a source release from a git repository").
+							WithSourceMap(dag.SourceMap("main.go", 54, 1)).
+							WithArg("sourceRepo", dag.TypeDef().WithObject("GitRepository"), dagger.FunctionWithArgOpts{Description: "The git repository to release from", SourceMap: dag.SourceMap("main.go", 57, 2)}).
+							WithArg("sourceTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Local tag to release from", SourceMap: dag.SourceMap("main.go", 59, 2)}).
+							WithArg("destRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Git remote to push the release to", SourceMap: dag.SourceMap("main.go", 61, 2)}).
+							WithArg("destTag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Remote tag to release to", SourceMap: dag.SourceMap("main.go", 63, 2)}).
+							WithArg("sourcePath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Optionally publish only a subdirectory", SourceMap: dag.SourceMap("main.go", 65, 2)}).
+							WithArg("callback", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Python script executed by git-filter-repo\nSee https://github.com/newren/git-filter-repo/blob/main/Documentation/converting-from-filter-branch.md#cheat-sheet-additional-conversion-examples", SourceMap: dag.SourceMap("main.go", 68, 2)}).
+							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Github authentication token", SourceMap: dag.SourceMap("main.go", 70, 2)}).
+							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Execute a dry run without actually releasing", SourceMap: dag.SourceMap("main.go", 72, 2)})).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("GitReleaser")).
+							WithSourceMap(dag.SourceMap("main.go", 17, 1)).
+							WithArg("alpineVersion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 20, 2), DefaultValue: dagger.JSON("\"3.22.1\"")}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

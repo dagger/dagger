@@ -71,6 +71,29 @@ func (db *DB) HasChecks() bool {
 	return false
 }
 
+func (db *DB) HasGenerateReport() bool {
+	for _, span := range db.Spans.Order {
+		if span.GenerateSkipped {
+			return true
+		}
+	}
+	return false
+}
+
+// SkippedModuleSpans returns the spans reporting workspace modules that
+// best-effort generate skipped because they could not be loaded, in encounter
+// order. The final report renders these as a persisted "SKIPPED MODULES"
+// section so they survive the live tree collapsing on a successful run.
+func (db *DB) SkippedModuleSpans() []*Span {
+	var out []*Span
+	for _, span := range db.Spans.Order {
+		if span.GenerateSkipped {
+			out = append(out, span)
+		}
+	}
+	return out
+}
+
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
 		BySpan: make(map[SpanID]*TraceTree),

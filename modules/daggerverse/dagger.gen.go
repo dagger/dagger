@@ -248,6 +248,24 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Daggerverse", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 13, 6)}).
+					WithFunction(
+						dag.Function("DeployPreviewWithDaggerMain",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Deploy preview environment running Dagger main: dagger call --github-token=env:GITHUB_PAT deploy-preview-with-dagger-main").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 62, 1)).
+							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 64, 2)}).
+							WithArg("githubAssignee", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 67, 2)})).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Daggerverse")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 25, 1)).
+							WithArg("githubToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{Description: "GitHub Personal Access Token which access to dagger/dagger.io repo", SourceMap: dag.SourceMap("main.go", 28, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

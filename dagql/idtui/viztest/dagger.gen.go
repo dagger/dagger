@@ -796,6 +796,345 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Viztest", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 20, 6)}).
+					WithFunction(
+						dag.Function("Accounting",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Accounting returns a container that sleeps for 1 second and then sleeps for\n2 seconds.\n\nIt can be used to test UI cues for tracking down the place where a slow\noperation is configured, which is more interesting than the place where it\nis un-lazied when you're trying to figure out where to optimize.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 424, 1))).
+					WithFunction(
+						dag.Function("Add",
+							dag.TypeDef().WithObject("Viztest")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 441, 1)).
+							WithArg("diff", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 444, 2), DefaultValue: dagger.JSON("1")})).
+					WithFunction(
+						dag.Function("CachedExecService",
+							dag.TypeDef().WithObject("Service")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 501, 1))).
+					WithFunction(
+						dag.Function("CachedExecs",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 515, 1))).
+					WithFunction(
+						dag.Function("CallBubblingDep",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 779, 1))).
+					WithFunction(
+						dag.Function("CallFailingDep",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 774, 1))).
+					WithFunction(
+						dag.Function("Changeset",
+							dag.TypeDef().WithObject("Changeset")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 178, 1))).
+					WithFunction(
+						dag.Function("Colors16",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 610, 1))).
+					WithFunction(
+						dag.Function("Colors256",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 626, 1))).
+					WithFunction(
+						dag.Function("CountFiles",
+							dag.TypeDef().WithObject("Viztest")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 451, 1)).
+							WithArg("dir", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 451, 50)})).
+					WithFunction(
+						dag.Function("CustomSpan",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 278, 1))).
+					WithFunction(
+						dag.Function("DeepSleep",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("DeepSleep sleeps forever.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 434, 1))).
+					WithFunction(
+						dag.Function("DiskMetrics",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 687, 1))).
+					WithFunction(
+						dag.Function("DockerBuild",
+							dag.TypeDef().WithObject("Container")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 653, 1))).
+					WithFunction(
+						dag.Function("DockerBuildCached",
+							dag.TypeDef().WithObject("Container")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 643, 1))).
+					WithFunction(
+						dag.Function("DockerBuildFail",
+							dag.TypeDef().WithObject("Container")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 665, 1))).
+					WithFunction(
+						dag.Function("Echo",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 393, 1)).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 393, 43)})).
+					WithFunction(
+						dag.Function("Encapsulate",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Encapsulate calls a failing function, but ultimately succeeds.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 44, 1))).
+					WithFunction(
+						dag.Function("ExecService",
+							dag.TypeDef().WithObject("Service")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 539, 1))).
+					WithFunction(
+						dag.Function("FailEffect",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("FailEffect returns a function whose effects will fail when it runs.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 94, 1))).
+					WithFunction(
+						dag.Function("FailEncapsulated",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Demonstrate that error logs are not hoisted as long as their enclosing span\ndid not fail, and how UNSET spans interact with the hoisting logic.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 52, 1))).
+					WithFunction(
+						dag.Function("FailLog",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("FailLog runs a container that logs a message and then fails.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 467, 1))).
+					WithFunction(
+						dag.Function("FailLogNative",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("FailLogNative prints a message and then returns an error.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 478, 1))).
+					WithFunction(
+						dag.Function("FailMulti",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("FailMulti bubbles up two error origins.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 102, 1))).
+					WithFunction(
+						dag.Function("FailSlow",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("FailSlow fails after waiting for a certain amount of time.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 486, 1)).
+							WithArg("after", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 489, 2), DefaultValue: dagger.JSON("\"10\"")})).
+					WithFunction(
+						dag.Function("GitReadme",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 704, 1)).
+							WithArg("remote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 704, 48)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 704, 63)})).
+					WithFunction(
+						dag.Function("HTTPReadme",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 711, 1)).
+							WithArg("remote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 711, 49)}).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 711, 64)})).
+					WithFunction(
+						dag.Function("HelloWorld",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("HelloWorld returns the string \"Hello, world!\"").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 30, 1))).
+					WithFunction(
+						dag.Function("List",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 695, 1)).
+							WithArg("dir", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 695, 43)})).
+					WithFunction(
+						dag.Function("LogStderr",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 461, 1))).
+					WithFunction(
+						dag.Function("LogStdout",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 165, 1))).
+					WithFunction(
+						dag.Function("LogWithChildren",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 806, 1))).
+					WithFunction(
+						dag.Function("ManyLines",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 194, 1)).
+							WithArg("n", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 194, 27)})).
+					WithFunction(
+						dag.Function("ManySpans",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 327, 1)).
+							WithArg("n", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 329, 2)}).
+							WithArg("delayMs", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 331, 2), DefaultValue: dagger.JSON("0")})).
+					WithFunction(
+						dag.Function("ModuleTypeReturnFail",
+							dag.TypeDef().WithObject("ModuleTypeReturn")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 676, 1))).
+					WithFunction(
+						dag.Function("NestedCalls",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 742, 1))).
+					WithFunction(
+						dag.Function("NoExecService",
+							dag.TypeDef().WithObject("Service")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 580, 1))).
+					WithFunction(
+						dag.Function("ObjectLists",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 729, 1))).
+					WithFunction(
+						dag.Function("PartialProgress",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("PartialProgress emits synthetic streaming-progress log records (the\ndagger.io/progress.* convention) with hard-coded values that never reach\ncompletion, so the final frame deterministically renders partially filled\nbraille bars: complete, in-flight at various fractions, untouched, and\nindeterminate (unknown total). A child span overflows the per-row item\ncap to exercise +N truncation.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 207, 1))).
+					WithFunction(
+						dag.Function("PathArgs",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 761, 1)).
+							WithArg("file", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 763, 2)}).
+							WithArg("dir", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 764, 2)}).
+							WithArg("contextFile", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 766, 2), DefaultPath: "main.go"}).
+							WithArg("contextDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 768, 2), DefaultPath: "."})).
+					WithFunction(
+						dag.Function("Pending",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 598, 1))).
+					WithFunction(
+						dag.Function("PrimaryLines",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 185, 1)).
+							WithArg("n", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 185, 30)})).
+					WithFunction(
+						dag.Function("RevealAndLog",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 314, 1))).
+					WithFunction(
+						dag.Function("RevealedSpans",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 285, 1))).
+					WithFunction(
+						dag.Function("SameDiffClients",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 410, 1)).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 410, 54)})).
+					WithFunction(
+						dag.Function("ServiceErrorAttribution",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("ServiceErrorAttribution binds a container to a service that logs and then\nexits non-zero, exercising service-exit failure attribution back to the\n.asService call that returned it.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 563, 1))).
+					WithFunction(
+						dag.Function("Spam",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("LogThroughput logs the current time in a tight loop.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 36, 1))).
+					WithFunction(
+						dag.Function("StreamingChunks",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Continuously prints batches of logs on an interval (default 1 per second).").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 368, 1)).
+							WithArg("batchSize", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 372, 2), DefaultValue: dagger.JSON("1")}).
+							WithArg("delayMs", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 375, 2), DefaultValue: dagger.JSON("1000")})).
+					WithFunction(
+						dag.Function("StreamingLogs",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Continuously prints batches of logs on an interval (default 1 per second).").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 342, 1)).
+							WithArg("batchSize", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 346, 2), DefaultValue: dagger.JSON("1")}).
+							WithArg("delayMs", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 349, 2), DefaultValue: dagger.JSON("1000")})).
+					WithFunction(
+						dag.Function("Terminal",
+							dag.TypeDef().WithObject("Container")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 170, 1))).
+					WithFunction(
+						dag.Function("TestSummary",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("TestSummary emits a deterministic OpenTelemetry test summary.").
+							WithCachePolicy(dagger.FunctionCachePolicyNever).
+							WithSourceMap(dag.SourceMap("main.go", 133, 1)).
+							WithCheck()).
+					WithFunction(
+						dag.Function("TraceFunctionCalls",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 784, 1))).
+					WithFunction(
+						dag.Function("TraceRemoteFunctionCalls",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 800, 1))).
+					WithFunction(
+						dag.Function("TransientProgress",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("TransientProgress runs a long-lived \"syncing layers\" span (collapsed by\ndefault, so its descendants' progress rolls up onto its row) containing\na storm of transfers that complete instantly and one that stays in\nflight. Exercises the roll-up's quick-transfer fold: the quick ones\nnever earn a live row and merge into one summary line in the final\nreport (\"1 transfer, 3 fetches ...\"), while the in-flight transfer\nappears live once it's been active past the threshold and keeps its own\nrow in the report.").
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 251, 1))).
+					WithFunction(
+						dag.Function("Uppercase",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 401, 1)).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 401, 48)})).
+					WithFunction(
+						dag.Function("UseCachedExecService",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 528, 1))).
+					WithFunction(
+						dag.Function("UseExecService",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 549, 1))).
+					WithFunction(
+						dag.Function("UseNoExecService",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 588, 1))).
+					WithField("Num", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 21, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("ModuleTypeReturn", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 24, 6)}).
+					WithField("Container", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 25, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

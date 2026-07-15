@@ -9998,6 +9998,33 @@ class GeneratorGroup(Type):
         _ctx = self._select("list", _args)
         return await _ctx.execute_object_list(Generator)
 
+    async def load_failures(self) -> list[str]:
+        """Load failures tolerated while collecting the generators.
+
+        Empty unless a workspace module could not be loaded during an unscoped
+        'dagger generate' (no selector), where load failures are tolerated so
+        the modules that do load still generate. Each entry is a human-
+        readable error message. An explicit selector keeps failing hard
+        instead.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("loadFailures", _args)
+        return await _ctx.execute(list[str])
+
     def run(self) -> Self:
         """Execute all selected generators"""
         _args: list[Arg] = []

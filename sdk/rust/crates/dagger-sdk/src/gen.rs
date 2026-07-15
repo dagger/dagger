@@ -10662,6 +10662,12 @@ impl GeneratorGroup {
             })
             .collect())
     }
+    /// Load failures tolerated while collecting the generators.
+    /// Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
+    pub async fn load_failures(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("loadFailures");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Execute all selected generators
     pub fn run(&self) -> GeneratorGroup {
         let query = self.selection.select("run");

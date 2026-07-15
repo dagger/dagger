@@ -648,6 +648,149 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A Dagger module for evaluating and improving LLM performance across multiple models.\n\nThe Evaluator provides a comprehensive framework for testing AI models against\ncustom evaluations, analyzing failures, and iteratively refining system prompts\nto improve performance. It supports parallel execution across multiple models,\nautomatic prompt optimization, and detailed reporting with telemetry integration.\n\nKey features:\n- Run evaluations across multiple AI models in parallel\n- Automatically analyze failures and generate improved system prompts\n- Export results to CSV format for further analysis\n- Compare evaluation results between different runs\n- Integrated with Dagger's telemetry for detailed tracing\n\nMore info: https://dagger.io/blog/evals-as-code\n").
+			WithObject(
+				dag.TypeDef().WithObject("Evaluator", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 32, 6)}).
+					WithFunction(
+						dag.Function("Compare",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Compare two CSV evaluation reports and generate an analysis.\n\nThis function takes two CSV files containing evaluation results (typically from\ndifferent runs or with different system prompts) and generates a detailed\ncomparison report. The comparison includes success rate changes, token usage\ndifferences, and trace links for debugging.\n\nThe generated report is analyzed by an LLM to provide insights into the differences\nand their potential causes.").
+							WithSourceMap(dag.SourceMap("csv.go", 86, 1)).
+							WithArg("before", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{Description: "The CSV file containing the baseline evaluation results.", SourceMap: dag.SourceMap("csv.go", 89, 2)}).
+							WithArg("after", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{Description: "The CSV file containing the new evaluation results to compare against.", SourceMap: dag.SourceMap("csv.go", 91, 2)})).
+					WithFunction(
+						dag.Function("EvalsAcrossModels",
+							dag.TypeDef().WithObject("EvalsAcrossModels")).
+							WithDescription("Run evals across models.\n\nModels run in parallel, and evals run in series, with all attempts in\nparallel.").
+							WithSourceMap(dag.SourceMap("main.go", 156, 1)).
+							WithArg("evals", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Evals to run. Defaults to all.", SourceMap: dag.SourceMap("main.go", 160, 2)}).
+							WithArg("models", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Models to run evals across. Defaults to all.", SourceMap: dag.SourceMap("main.go", 163, 2)}).
+							WithArg("attempts", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Attempts to run each eval. Defaults to a per-provider value.", SourceMap: dag.SourceMap("main.go", 166, 2)})).
+					WithFunction(
+						dag.Function("Explore",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithDescription("Explore evaluations across models to identify patterns and issues.\n\nThis function uses an LLM agent to act as a quality assurance engineer,\nautomatically running evaluations across different models and identifying\ninteresting patterns. It focuses on finding evaluations that work on some\nmodels but fail on others, helping to identify model-specific weaknesses\nor strengths.\n\nThe agent will avoid re-running evaluations that fail consistently across\nall models, but will retry evaluations that show partial success to gather\nmore insights.").
+							WithSourceMap(dag.SourceMap("main.go", 390, 1))).
+					WithFunction(
+						dag.Function("GenerateSystemPrompt",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Generate a new system prompt based on the provided documentation.\n\nThis function uses an LLM to analyze the documentation and generate a system\nprompt that captures the key rules and principles. The process involves first\ninterpreting the documentation to extract all inferable rules, then crafting\na focused system prompt that provides proper framing without being overly\nverbose or turning into meaningless word salad.\n\nThe generated prompt aims to establish foundation and context while allowing\nthe model flexibility to apply the guidelines appropriately.").
+							WithSourceMap(dag.SourceMap("main.go", 414, 1))).
+					WithFunction(
+						dag.Function("Iterate",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Iterate runs all evals across all models in a loop until all of the evals\nsucceed, analyzing the failures and generating a new system prompt to\ncourse-correct.").
+							WithSourceMap(dag.SourceMap("main.go", 431, 1))).
+					WithFunction(
+						dag.Function("WithDocs",
+							dag.TypeDef().WithObject("Evaluator")).
+							WithDescription("Set the documentation content that the system prompt should enforce.\n\nThis documentation serves as the reference material that evaluations will test\nagainst. The system prompt should guide the model to follow the principles and\npatterns defined in this documentation.").
+							WithSourceMap(dag.SourceMap("main.go", 117, 1)).
+							WithArg("prompt", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The documentation content as a string.", SourceMap: dag.SourceMap("main.go", 119, 2)})).
+					WithFunction(
+						dag.Function("WithDocsFile",
+							dag.TypeDef().WithObject("Evaluator")).
+							WithDescription("Set the documentation file that the system prompt should enforce.\n\nThis allows you to load documentation from an external file. The documentation\nserves as the reference material for what behavior the evaluations should test,\nand the system prompt should guide the model to follow these principles.").
+							WithSourceMap(dag.SourceMap("main.go", 129, 1)).
+							WithArg("file", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{Description: "The file containing the documentation to reference.", SourceMap: dag.SourceMap("main.go", 131, 2)})).
+					WithFunction(
+						dag.Function("WithEval",
+							dag.TypeDef().WithObject("Evaluator")).
+							WithDescription("WithEval adds a single evaluation to the evaluator.").
+							WithSourceMap(dag.SourceMap("main.go", 139, 1)).
+							WithArg("eval", dag.TypeDef().WithInterface("Eval"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 139, 30)})).
+					WithFunction(
+						dag.Function("WithEvals",
+							dag.TypeDef().WithObject("Evaluator")).
+							WithDescription("WithEvals adds multiple evaluations to the evaluator.").
+							WithSourceMap(dag.SourceMap("main.go", 145, 1)).
+							WithArg("evals", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("Eval")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 145, 31)})).
+					WithFunction(
+						dag.Function("WithSystemPrompt",
+							dag.TypeDef().WithObject("Evaluator")).
+							WithDescription("Set a system prompt to be provided to all evaluations.\n\nThe system prompt provides foundational instructions and context that will be\napplied to every evaluation run. This helps ensure consistent behavior across\nall models and evaluations.").
+							WithSourceMap(dag.SourceMap("main.go", 79, 1)).
+							WithArg("prompt", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The system prompt text to use for all evaluations.", SourceMap: dag.SourceMap("main.go", 81, 2)})).
+					WithFunction(
+						dag.Function("WithSystemPromptFile",
+							dag.TypeDef().WithObject("Evaluator")).
+							WithDescription("Set a system prompt from a file to be provided to all evaluations.\n\nThis allows you to load a system prompt from an external file, which is useful\nfor managing longer prompts or when the prompt content is maintained separately\nfrom your code.").
+							WithSourceMap(dag.SourceMap("main.go", 91, 1)).
+							WithArg("file", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{Description: "The file containing the system prompt to use for all evaluations.", SourceMap: dag.SourceMap("main.go", 93, 2)})).
+					WithFunction(
+						dag.Function("WithoutDefaultSystemPrompt",
+							dag.TypeDef().WithObject("Evaluator")).
+							WithDescription("Disable Dagger's built-in system prompt.\n\nYou probably don't need to use this - Dagger's system prompt provides the\nfundamentals for how the agent interacts with Dagger objects. This is\nprimarily exposed so that we (Dagger) can iteratively test the default system\nprompt itself.").
+							WithSourceMap(dag.SourceMap("main.go", 106, 1))).
+					WithField("Docs", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{Description: "The documentation that defines expected model behavior and serves as the reference for evaluations.", SourceMap: dag.SourceMap("main.go", 34, 2)}).
+					WithField("SystemPrompt", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{Description: "A system prompt file that will be applied to all evaluations to provide consistent guidance.", SourceMap: dag.SourceMap("main.go", 37, 2)}).
+					WithField("DisableDefaultSystemPrompt", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "Whether to disable Dagger's built-in default system prompt (usually not recommended).", SourceMap: dag.SourceMap("main.go", 40, 2)}).
+					WithField("EvaluatorModel", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The AI model to use for the evaluator agent that performs analysis and prompt generation.", SourceMap: dag.SourceMap("main.go", 43, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Evaluator")).
+							WithSourceMap(dag.SourceMap("main.go", 51, 1)).
+							WithArg("model", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "The AI model name to use for the evaluator agent (e.g., \"gpt-4o\", \"claude-sonnet-4-5\").\nIf not specified, uses the default model configured in the environment.", SourceMap: dag.SourceMap("main.go", 55, 2)}))).
+			WithObject(
+				dag.TypeDef().WithObject("EvalsAcrossModels", dagger.TypeDefWithObjectOpts{Description: "EvalsAcrossModels represents the results of running evaluations across multiple models.", SourceMap: dag.SourceMap("main.go", 258, 6)}).
+					WithFunction(
+						dag.Function("AnalyzeAndGenerateSystemPrompt",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("AnalyzeAndGenerateSystemPrompt performs comprehensive failure analysis and generates an improved system prompt.\n\nThis function implements a sophisticated multi-stage analysis process:\n\n 1. **Report Generation**: Collects all evaluation reports from different models and\n    organizes them for analysis, providing a comprehensive view of successes and failures.\n\n 2. **Initial Analysis**: Generates a summary of current understanding, grading overall\n    results and focusing on failure patterns. Uses specific examples from reports to\n    support the analysis.\n\n 3. **Cross-Reference Analysis**: Compares the analysis against the original documentation\n    and system prompt, suggesting improvements without over-specializing for specific\n    evaluations. Focuses on deeper, systemic issues rather than superficial fixes.\n\n 4. **Success Pattern Analysis**: Compares successful results with failed ones to identify\n    what made the successful cases work. Extracts generalizable principles from the\n    documentation and prompts that led to success.\n\n 5. **Prompt Generation**: Creates a new system prompt incorporating all insights,\n    focusing on incremental improvements rather than complete rewrites unless absolutely\n    necessary.\n\nThe process emphasizes finding general, root-cause issues over specific evaluation\nfailures, ensuring that improvements help broadly rather than just fixing individual\ntest cases.").
+							WithSourceMap(dag.SourceMap("main.go", 341, 1))).
+					WithFunction(
+						dag.Function("CSV",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("CSV exports evaluation results to CSV format for analysis and comparison.\n\nThis function generates a CSV representation of all evaluation results across\nmodels, including performance metrics, token usage, and trace information for\ndebugging. The CSV includes the following columns:\n\n- model: The name of the AI model tested\n- eval: The name of the evaluation that was run\n- input_tokens: Number of input tokens used\n- output_tokens: Number of output tokens generated\n- total_attempts: Total number of evaluation attempts made\n- success_rate: Success rate as a decimal (0.0 to 1.0)\n- trace_id: Unique identifier for the trace\n- model_span_id: Span ID for the model execution\n- eval_span_id: Span ID for the specific evaluation\n\nThe CSV format makes it easy to import results into spreadsheet applications,\ndatabases, or data analysis tools for further processing.").
+							WithSourceMap(dag.SourceMap("csv.go", 38, 1)).
+							WithArg("noHeader", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{Description: "Don't include a header row in the CSV output.", SourceMap: dag.SourceMap("csv.go", 41, 2), DefaultValue: dagger.JSON("false")})).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 305, 1))).
+					WithField("TraceID", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 259, 2)}).
+					WithField("ModelResults", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("ModelResult")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 260, 2)})).
+			WithInterface(
+				dag.TypeDef().WithInterface("Eval", dagger.TypeDefWithInterfaceOpts{Description: "Eval represents a single evaluation that can be run against an LLM.\n\nImplementations must provide a name, a prompt to test, and a check function\nto validate the LLM's response.", SourceMap: dag.SourceMap("main.go", 66, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 69, 7)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 69, 29)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 67, 6))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("main.go", 68, 8)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 68, 9)}))).
+			WithObject(
+				dag.TypeDef().WithObject("ModelResult", dagger.TypeDefWithObjectOpts{Description: "ModelResult represents the evaluation results for a single model.", SourceMap: dag.SourceMap("main.go", 267, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 292, 1))).
+					WithField("ModelName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 268, 2)}).
+					WithField("SpanID", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 269, 2)}).
+					WithField("EvalReports", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("EvalResult")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 270, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("EvalResult", dagger.TypeDefWithObjectOpts{Description: "EvalResult represents the results of a single evaluation.", SourceMap: dag.SourceMap("main.go", 274, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 285, 1))).
+					WithField("Name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 275, 2)}).
+					WithField("SpanID", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 276, 2)}).
+					WithField("Error", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 277, 2)}).
+					WithField("Report", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 278, 2)}).
+					WithField("SuccessRate", dag.TypeDef().WithKind(dagger.TypeDefKindFloatKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 279, 2)}).
+					WithField("TotalAttempts", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 280, 2)}).
+					WithField("InputTokens", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 281, 2)}).
+					WithField("OutputTokens", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 282, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

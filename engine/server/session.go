@@ -1813,7 +1813,8 @@ func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *dagge
 			}
 		}
 	}
-	return srv.ensureModulesLoaded(ctx, client, filter)
+	_, err := srv.ensureModulesLoadedMode(ctx, client, filter, false)
+	return err
 }
 
 func (client *daggerClient) hasPendingWorkspaceModules() bool {

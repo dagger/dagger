@@ -9683,6 +9683,18 @@ func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
 	return convert(response), nil
 }
 
+// Load failures tolerated while collecting the generators.
+//
+// Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
+func (r *GeneratorGroup) LoadFailures(ctx context.Context) ([]string, error) {
+	q := r.query.Select("loadFailures")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Execute all selected generators
 func (r *GeneratorGroup) Run() *GeneratorGroup {
 	q := r.query.Select("run")

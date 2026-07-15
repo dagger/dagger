@@ -222,6 +222,21 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A module that reads from a directory with @defaultPath.\nThis is the \"leaf\" module in the nested call chain.\n").
+			WithObject(
+				dag.TypeDef().WithObject("NestedContextLeaf", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 10, 6)}).
+					WithFunction(
+						dag.Function("ReadMarker",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Read a marker file from the source directory.").
+							WithSourceMap(dag.SourceMap("main.go", 24, 1))).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("NestedContextLeaf")).
+							WithSourceMap(dag.SourceMap("main.go", 14, 1)).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 16, 2), DefaultPath: "/"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

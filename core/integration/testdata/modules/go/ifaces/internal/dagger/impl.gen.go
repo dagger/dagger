@@ -79,11 +79,11 @@ func (r *Env) WithImplOutput(name string, description string) *Env { // impl (..
 type Impl struct { // impl (../../../../../../../../core/integration/testdata/modules/go/ifaces/impl/main.go:30:6)
 	query *querybuilder.Selection
 
-	bool *bool
-	id   *ImplID
-	int  *int
-	str  *string
-	void *Void
+	bool_ *bool
+	id    *ImplID
+	int_  *int
+	str   *string
+	void  *Void
 }
 type WithImplFunc func(r *Impl) *Impl
 
@@ -101,8 +101,8 @@ func (r *Impl) WithGraphQLQuery(q *querybuilder.Selection) *Impl {
 }
 
 func (r *Impl) Bool(ctx context.Context) (bool, error) { // impl (../../../../../../../../core/integration/testdata/modules/go/ifaces/impl/main.go:37:2)
-	if r.bool != nil {
-		return *r.bool, nil
+	if r.bool_ != nil {
+		return *r.bool_, nil
 	}
 	q := r.query.Select("bool")
 
@@ -225,8 +225,8 @@ func (r *Impl) UnmarshalJSON(bs []byte) error {
 }
 
 func (r *Impl) Int(ctx context.Context) (int, error) { // impl (../../../../../../../../core/integration/testdata/modules/go/ifaces/impl/main.go:34:2)
-	if r.int != nil {
-		return *r.int, nil
+	if r.int_ != nil {
+		return *r.int_, nil
 	}
 	q := r.query.Select("int")
 
