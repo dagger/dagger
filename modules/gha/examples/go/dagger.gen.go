@@ -237,6 +237,40 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Examples", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 7, 6)}).
+					WithFunction(
+						dag.Function("GhaConcurrency",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Limit per-PR concurrency for expensive test pipelines").
+							WithSourceMap(dag.SourceMap("main.go", 27, 1))).
+					WithFunction(
+						dag.Function("GhaCustomModule",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Compose a pipeline from an external module, instead of the one embedded in the repo.").
+							WithSourceMap(dag.SourceMap("main.go", 53, 1))).
+					WithFunction(
+						dag.Function("GhaGithubContext",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Access github context information magically injected as env variables").
+							WithSourceMap(dag.SourceMap("main.go", 40, 1))).
+					WithFunction(
+						dag.Function("GhaOnPullRequest",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Call integration tests on pull requests").
+							WithSourceMap(dag.SourceMap("main.go", 89, 1))).
+					WithFunction(
+						dag.Function("GhaOnPush",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Build and publish a container on push").
+							WithSourceMap(dag.SourceMap("main.go", 66, 1))).
+					WithFunction(
+						dag.Function("GhaSecrets",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Access Github secrets").
+							WithSourceMap(dag.SourceMap("main.go", 10, 1)))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

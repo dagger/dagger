@@ -937,6 +937,151 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Manage Github Actions configurations with Dagger\n\nDaggerizing your CI makes your YAML configurations smaller, but they still exist,\nand they're still a pain to maintain by hand.\n\nThis module aims to finish the job, by letting you generate your remaining\nYAML configuration from a Dagger pipeline, written in your favorite language.\n").
+			WithObject(
+				dag.TypeDef().WithObject("Gha", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 12, 6)}).
+					WithFunction(
+						dag.Function("Generate",
+							dag.TypeDef().WithObject("Directory")).
+							WithSourceMap(dag.SourceMap("main.go", 31, 1)).
+							WithArg("directory", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 33, 2)}).
+							WithArg("asJSON", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 35, 2)}).
+							WithArg("fileExtension", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 38, 2), DefaultValue: dagger.JSON("\".gen.yml\"")})).
+					WithFunction(
+						dag.Function("Job",
+							dag.TypeDef().WithObject("Job")).
+							WithSourceMap(dag.SourceMap("job.go", 51, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("job.go", 52, 2)}).
+							WithArg("command", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("job.go", 53, 2)}).
+							WithArg("condition", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Only run the job if this condition expression succeeds.", SourceMap: dag.SourceMap("job.go", 57, 2)}).
+							WithArg("setupCommands", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Additional commands to run before the main one.", SourceMap: dag.SourceMap("job.go", 61, 2)}).
+							WithArg("teardownCommands", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Additional commands to run after the main one.", SourceMap: dag.SourceMap("job.go", 64, 2)}).
+							WithArg("publicToken", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Public Dagger Cloud token, for open-source projects. DO NOT PASS YOUR PRIVATE DAGGER CLOUD TOKEN!\nThis is for a special \"public\" token which can safely be shared publicly.\nTo get one, contact support@dagger.io", SourceMap: dag.SourceMap("job.go", 70, 2)}).
+							WithArg("stopEngine", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Explicitly stop the dagger engine after completing the workflow.", SourceMap: dag.SourceMap("job.go", 73, 2)}).
+							WithArg("timeoutMinutes", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "The maximum number of minutes to run the workflow before killing the process", SourceMap: dag.SourceMap("job.go", 76, 2)}).
+							WithArg("debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run the workflow in debug mode", SourceMap: dag.SourceMap("job.go", 79, 2)}).
+							WithArg("secrets", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Github secrets to inject into the workflow environment.\nFor each secret, an env variable with the same name is created.\nExample: [\"PROD_DEPLOY_TOKEN\", \"PRIVATE_SSH_KEY\"]", SourceMap: dag.SourceMap("job.go", 84, 2)}).
+							WithArg("env", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger secret URIs to load and assign as env variables.\nExample: [\"OPENAI_API_KEY=op://CI/openai-api-key\"]", SourceMap: dag.SourceMap("job.go", 88, 2)}).
+							WithArg("runner", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dispatch jobs to the given runner\nExample: [\"ubuntu-latest\"]", SourceMap: dag.SourceMap("job.go", 92, 2)}).
+							WithArg("module", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "The Dagger module to load", SourceMap: dag.SourceMap("job.go", 95, 2)}).
+							WithArg("daggerVersion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger version to run this workflow", SourceMap: dag.SourceMap("job.go", 98, 2)}).
+							WithArg("cloudEngine", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "cloudEngine indicates whether to use Dagger Cloud Engine to run this workflow.", SourceMap: dag.SourceMap("job.go", 101, 2)})).
+					WithFunction(
+						dag.Function("WithWorkflow",
+							dag.TypeDef().WithObject("Gha")).
+							WithSourceMap(dag.SourceMap("workflow.go", 50, 1)).
+							WithArg("workflow", dag.TypeDef().WithObject("Workflow"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 50, 30)})).
+					WithFunction(
+						dag.Function("Workflow",
+							dag.TypeDef().WithObject("Workflow")).
+							WithDescription("Add a workflow").
+							WithSourceMap(dag.SourceMap("workflow.go", 65, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Workflow name", SourceMap: dag.SourceMap("workflow.go", 67, 2)}).
+							WithArg("pullRequestConcurrency", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Configure this workflow's concurrency for each PR.\nThis is triggered when the workflow is scheduled concurrently on the same PR.\n  - allow: all instances are allowed to run concurrently\n  - queue: new instances are queued, and run sequentially\n  - preempt: new instances run immediately, older ones are canceled\nPossible values: \"allow\", \"preempt\", \"queue\"", SourceMap: dag.SourceMap("workflow.go", 75, 2)}).
+							WithArg("noDispatch", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Disable manual \"dispatch\" of this workflow", SourceMap: dag.SourceMap("workflow.go", 78, 2)}).
+							WithArg("permissions", dag.TypeDef().WithListOf(dag.TypeDef().WithEnum("Permission")).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Permissions to grant the workflow", SourceMap: dag.SourceMap("workflow.go", 81, 2)}).
+							WithArg("onIssueComment", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run the workflow on any issue comment activity", SourceMap: dag.SourceMap("workflow.go", 84, 2)}).
+							WithArg("onIssueCommentCreated", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 86, 2)}).
+							WithArg("onIssueCommentEdited", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 88, 2)}).
+							WithArg("onIssueCommentDeleted", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 90, 2)}).
+							WithArg("onPullRequest", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run the workflow on any pull request activity", SourceMap: dag.SourceMap("workflow.go", 93, 2)}).
+							WithArg("onPullRequestBranches", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 95, 2)}).
+							WithArg("onPullRequestPaths", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 97, 2)}).
+							WithArg("onPullRequestAssigned", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 99, 2)}).
+							WithArg("onPullRequestUnassigned", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 101, 2)}).
+							WithArg("onPullRequestLabeled", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 103, 2)}).
+							WithArg("onPullRequestUnlabeled", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 105, 2)}).
+							WithArg("onPullRequestOpened", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 107, 2)}).
+							WithArg("onPullRequestEdited", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 109, 2)}).
+							WithArg("onPullRequestClosed", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 111, 2)}).
+							WithArg("onPullRequestReopened", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 113, 2)}).
+							WithArg("onPullRequestSynchronize", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 115, 2)}).
+							WithArg("onPullRequestConvertedToDraft", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 117, 2)}).
+							WithArg("onPullRequestLocked", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 119, 2)}).
+							WithArg("onPullRequestUnlocked", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 121, 2)}).
+							WithArg("onPullRequestEnqueued", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 123, 2)}).
+							WithArg("onPullRequestDequeued", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 125, 2)}).
+							WithArg("onPullRequestMilestoned", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 127, 2)}).
+							WithArg("onPullRequestDemilestoned", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 129, 2)}).
+							WithArg("onPullRequestReadyForReview", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 131, 2)}).
+							WithArg("onPullRequestReviewRequested", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 133, 2)}).
+							WithArg("onPullRequestReviewRequestRemoved", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 135, 2)}).
+							WithArg("onPullRequestAutoMergeEnabled", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 137, 2)}).
+							WithArg("onPullRequestAutoMergeDisabled", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 139, 2)}).
+							WithArg("onPush", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run the workflow on any git push", SourceMap: dag.SourceMap("workflow.go", 142, 2)}).
+							WithArg("onPushTags", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run the workflow on git push to the specified tags", SourceMap: dag.SourceMap("workflow.go", 145, 2)}).
+							WithArg("onPushBranches", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run the workflow on git push to the specified branches", SourceMap: dag.SourceMap("workflow.go", 148, 2)}).
+							WithArg("onPushPaths", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run the workflow only if the paths match", SourceMap: dag.SourceMap("workflow.go", 151, 2)}).
+							WithArg("onSchedule", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Run the workflow at a schedule time", SourceMap: dag.SourceMap("workflow.go", 154, 2)})).
+					WithField("Workflows", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Workflow")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 13, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Gha")).
+							WithSourceMap(dag.SourceMap("main.go", 21, 1)).
+							WithArg("jobDefaults", dag.TypeDef().WithObject("Job").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 22, 2)}).
+							WithArg("workflowDefaults", dag.TypeDef().WithObject("Workflow").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 23, 2)}))).
+			WithObject(
+				dag.TypeDef().WithObject("Job", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("job.go", 11, 6)}).
+					WithField("Name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("job.go", 12, 2)}).
+					WithField("Command", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("job.go", 13, 2)}).
+					WithField("Condition", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "Make the job conditional on an expression", SourceMap: dag.SourceMap("job.go", 16, 2)}).
+					WithField("SetupCommands", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Additional commands to run before the main one", SourceMap: dag.SourceMap("job.go", 19, 2)}).
+					WithField("TeardownCommands", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Additional commands to run after the main one", SourceMap: dag.SourceMap("job.go", 21, 2)}).
+					WithField("TimeoutMinutes", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{Description: "The maximum number of minutes to run the workflow before killing the process", SourceMap: dag.SourceMap("job.go", 24, 2)}).
+					WithField("Debug", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "Run the workflow in debug mode", SourceMap: dag.SourceMap("job.go", 26, 2)}).
+					WithField("Secrets", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Github secrets to inject into the workflow environment.\nFor each secret, an env variable with the same name is created.\nExample: [\"PROD_DEPLOY_TOKEN\", \"PRIVATE_SSH_KEY\"]", SourceMap: dag.SourceMap("job.go", 30, 2)}).
+					WithField("Env", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Lines to append to .env.\nExample: [\"OPENAI_API_KEY=op://CI/openai-api-key\"]", SourceMap: dag.SourceMap("job.go", 33, 2)}).
+					WithField("Runner", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{Description: "Dispatch jobs to the given runner\nExample: [\"ubuntu-latest\"]", SourceMap: dag.SourceMap("job.go", 36, 2)}).
+					WithField("Module", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "The Dagger module to load", SourceMap: dag.SourceMap("job.go", 38, 2)}).
+					WithField("DaggerVersion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "Dagger version to run this workflow", SourceMap: dag.SourceMap("job.go", 40, 2)}).
+					WithField("PublicToken", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{Description: "Public Dagger Cloud token, for open-source projects. DO NOT PASS YOUR PRIVATE DAGGER CLOUD TOKEN!\nThis is for a special \"public\" token which can safely be shared publicly.\nTo get one, contact support@dagger.io", SourceMap: dag.SourceMap("job.go", 44, 2)}).
+					WithField("CloudEngine", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "CloudEngine indicates whether to use Dagger Cloud Engine to run this workflow.", SourceMap: dag.SourceMap("job.go", 46, 2)}).
+					WithField("StopEngine", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "Explicitly stop the dagger engine after completing the workflow.", SourceMap: dag.SourceMap("job.go", 48, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("Workflow", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("workflow.go", 12, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Check that the workflow is valid, in a best effort way").
+							WithSourceMap(dag.SourceMap("workflow.go", 34, 1)).
+							WithArg("repo", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 37, 2), DefaultPath: "/"})).
+					WithFunction(
+						dag.Function("WithJob",
+							dag.TypeDef().WithObject("Workflow")).
+							WithSourceMap(dag.SourceMap("workflow.go", 28, 1)).
+							WithArg("job", dag.TypeDef().WithObject("Job"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("workflow.go", 28, 28)})).
+					WithField("Name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("workflow.go", 13, 2)}).
+					WithField("Jobs", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Job")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("workflow.go", 14, 2)})).
+			WithEnum(
+				dag.TypeDef().WithEnum("Permission", dagger.TypeDefWithEnumOpts{SourceMap: dag.SourceMap("permissions.go", 9, 6)}).
+					WithEnumMember("ReadActions", dagger.TypeDefWithEnumMemberOpts{Value: "read_actions", SourceMap: dag.SourceMap("permissions.go", 74, 2)}).
+					WithEnumMember("ReadChecks", dagger.TypeDefWithEnumMemberOpts{Value: "read_checks", SourceMap: dag.SourceMap("permissions.go", 83, 2)}).
+					WithEnumMember("ReadContents", dagger.TypeDefWithEnumMemberOpts{Value: "read_contents", SourceMap: dag.SourceMap("permissions.go", 72, 2)}).
+					WithEnumMember("ReadDeployments", dagger.TypeDefWithEnumMemberOpts{Value: "read_deployments", SourceMap: dag.SourceMap("permissions.go", 76, 2)}).
+					WithEnumMember("ReadDiscussions", dagger.TypeDefWithEnumMemberOpts{Value: "read_discussions", SourceMap: dag.SourceMap("permissions.go", 84, 2)}).
+					WithEnumMember("ReadIDToken", dagger.TypeDefWithEnumMemberOpts{Value: "read_id_token", SourceMap: dag.SourceMap("permissions.go", 79, 2)}).
+					WithEnumMember("ReadIssues", dagger.TypeDefWithEnumMemberOpts{Value: "read_issues", SourceMap: dag.SourceMap("permissions.go", 73, 2)}).
+					WithEnumMember("ReadMetadata", dagger.TypeDefWithEnumMemberOpts{Value: "read_metadata", SourceMap: dag.SourceMap("permissions.go", 82, 2)}).
+					WithEnumMember("ReadPackages", dagger.TypeDefWithEnumMemberOpts{Value: "read_packages", SourceMap: dag.SourceMap("permissions.go", 75, 2)}).
+					WithEnumMember("ReadPages", dagger.TypeDefWithEnumMemberOpts{Value: "read_pages", SourceMap: dag.SourceMap("permissions.go", 78, 2)}).
+					WithEnumMember("ReadPullRequests", dagger.TypeDefWithEnumMemberOpts{Value: "read_pull_requests", SourceMap: dag.SourceMap("permissions.go", 77, 2)}).
+					WithEnumMember("ReadRepositoryProjects", dagger.TypeDefWithEnumMemberOpts{Value: "read_repository_projects", SourceMap: dag.SourceMap("permissions.go", 80, 2)}).
+					WithEnumMember("ReadStatuses", dagger.TypeDefWithEnumMemberOpts{Value: "read_statuses", SourceMap: dag.SourceMap("permissions.go", 81, 2)}).
+					WithEnumMember("WriteActions", dagger.TypeDefWithEnumMemberOpts{Value: "write_actions", SourceMap: dag.SourceMap("permissions.go", 87, 2)}).
+					WithEnumMember("WriteChecks", dagger.TypeDefWithEnumMemberOpts{Value: "write_checks", SourceMap: dag.SourceMap("permissions.go", 96, 2)}).
+					WithEnumMember("WriteContents", dagger.TypeDefWithEnumMemberOpts{Value: "write_contents", SourceMap: dag.SourceMap("permissions.go", 85, 2)}).
+					WithEnumMember("WriteDeployments", dagger.TypeDefWithEnumMemberOpts{Value: "write_deployments", SourceMap: dag.SourceMap("permissions.go", 89, 2)}).
+					WithEnumMember("WriteDiscussions", dagger.TypeDefWithEnumMemberOpts{Value: "write_discussions", SourceMap: dag.SourceMap("permissions.go", 97, 2)}).
+					WithEnumMember("WriteIDToken", dagger.TypeDefWithEnumMemberOpts{Value: "write_id_token", SourceMap: dag.SourceMap("permissions.go", 92, 2)}).
+					WithEnumMember("WriteIssues", dagger.TypeDefWithEnumMemberOpts{Value: "write_issues", SourceMap: dag.SourceMap("permissions.go", 86, 2)}).
+					WithEnumMember("WriteMetadata", dagger.TypeDefWithEnumMemberOpts{Value: "write_metadata", SourceMap: dag.SourceMap("permissions.go", 95, 2)}).
+					WithEnumMember("WritePackages", dagger.TypeDefWithEnumMemberOpts{Value: "write_packages", SourceMap: dag.SourceMap("permissions.go", 88, 2)}).
+					WithEnumMember("WritePages", dagger.TypeDefWithEnumMemberOpts{Value: "write_pages", SourceMap: dag.SourceMap("permissions.go", 91, 2)}).
+					WithEnumMember("WritePullRequests", dagger.TypeDefWithEnumMemberOpts{Value: "write_pull_requests", SourceMap: dag.SourceMap("permissions.go", 90, 2)}).
+					WithEnumMember("WriteRepositoryProjects", dagger.TypeDefWithEnumMemberOpts{Value: "write_repository_projects", SourceMap: dag.SourceMap("permissions.go", 93, 2)}).
+					WithEnumMember("WriteStatuses", dagger.TypeDefWithEnumMemberOpts{Value: "write_statuses", SourceMap: dag.SourceMap("permissions.go", 94, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

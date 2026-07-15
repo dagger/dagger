@@ -352,6 +352,62 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("ElixirSdk", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 49, 6)}).
+					WithFunction(
+						dag.Function("Base",
+							dag.TypeDef().WithObject("ElixirSdk")).
+							WithSourceMap(dag.SourceMap("main.go", 136, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 136, 26)}).
+							WithArg("subPath", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 136, 58)})).
+					WithFunction(
+						dag.Function("Codegen",
+							dag.TypeDef().WithObject("GeneratedCode")).
+							WithSourceMap(dag.SourceMap("main.go", 89, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 91, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 92, 2)})).
+					WithFunction(
+						dag.Function("Common",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 115, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 116, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 117, 2)})).
+					WithFunction(
+						dag.Function("GenerateCode",
+							dag.TypeDef().WithObject("Directory")).
+							WithSourceMap(dag.SourceMap("main.go", 222, 1)).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 222, 34)})).
+					WithFunction(
+						dag.Function("ModuleRuntime",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 57, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 59, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 60, 2)})).
+					WithFunction(
+						dag.Function("WithDaggerCodegen",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 215, 1))).
+					WithFunction(
+						dag.Function("WithNewElixirPackage",
+							dag.TypeDef().WithObject("ElixirSdk")).
+							WithDescription("Generate a new Elixir package named by `modName`. This step will ignored if the\npackage already generated.").
+							WithSourceMap(dag.SourceMap("main.go", 146, 1)).
+							WithArg("modName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 146, 63)})).
+					WithFunction(
+						dag.Function("WithSDK",
+							dag.TypeDef().WithObject("ElixirSdk")).
+							WithDescription("Generate the SDK into the container.").
+							WithSourceMap(dag.SourceMap("main.go", 202, 1)).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 202, 29)})).
+					WithField("SdkSourceDir", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 50, 2)}).
+					WithField("Container", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 52, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("ElixirSdk")).
+							WithSourceMap(dag.SourceMap("main.go", 33, 1)).
+							WithArg("sdkSourceDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Directory with the Elixir SDK source code.", SourceMap: dag.SourceMap("main.go", 38, 2), DefaultPath: "/sdk/elixir", Ignore: []string{"**", "!LICENSE", "!lib/**/*.ex", "!.formatter.exs", "!mix.exs", "!mix.lock", "!dagger_codegen/lib/**/*.ex", "!dagger_codegen/mix.exs", "!dagger_codegen/mix.lock"}}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

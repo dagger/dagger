@@ -236,6 +236,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("FactsWorkspace", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 5, 6)}).
+					WithFunction(
+						dag.Function("NextFact",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Find the next available fact.").
+							WithSourceMap(dag.SourceMap("main.go", 30, 1))).
+					WithFunction(
+						dag.Function("Record",
+							dag.TypeDef().WithObject("FactsWorkspace")).
+							WithDescription("Record an interesting fact.").
+							WithSourceMap(dag.SourceMap("main.go", 17, 1)).
+							WithArg("fact", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 17, 33)})).
+					WithField("Facts", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 6, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("FactsWorkspace")).
+							WithSourceMap(dag.SourceMap("main.go", 9, 1)).
+							WithArg("buster", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "A dummy arg just to prevent deduping telemetry across attempts.", SourceMap: dag.SourceMap("main.go", 11, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

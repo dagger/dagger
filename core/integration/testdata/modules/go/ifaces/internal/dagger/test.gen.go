@@ -120,10 +120,10 @@ func (r *Query) Test() *Test { // test (../../../../../../../../core/integration
 type Test struct { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:10:6)
 	query *querybuilder.Selection
 
-	bool        *bool
+	bool_       *bool
 	depIfaceStr *string
 	id          *TestID
-	int         *int
+	int_        *int
 	str         *string
 	void        *Void
 }
@@ -144,8 +144,8 @@ func (r *Test) WithGraphQLQuery(q *querybuilder.Selection) *Test {
 
 func (r *Test) Bool(ctx context.Context, ifaceArg *TestCustomIface) (bool, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:121:1)
 	assertNotNil("ifaceArg", ifaceArg)
-	if r.bool != nil {
-		return *r.bool, nil
+	if r.bool_ != nil {
+		return *r.bool_, nil
 	}
 	q := r.query.Select("bool")
 	q = q.Arg("ifaceArg", ifaceArg)
@@ -335,8 +335,8 @@ func (r *Test) IfaceListField(ctx context.Context) ([]*TestCustomIface, error) {
 
 func (r *Test) Int(ctx context.Context, ifaceArg *TestCustomIface) (int, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:105:1)
 	assertNotNil("ifaceArg", ifaceArg)
-	if r.int != nil {
-		return *r.int, nil
+	if r.int_ != nil {
+		return *r.int_, nil
 	}
 	q := r.query.Select("int")
 	q = q.Arg("ifaceArg", ifaceArg)
@@ -1032,11 +1032,11 @@ func (r *TestOtherCustomObj) AsNode() Node {
 type TestCustomIface struct { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:25:6)
 	query *querybuilder.Selection
 
-	bool *bool
-	id   *TestCustomIfaceID
-	int  *int
-	str  *string
-	void *Void
+	bool_ *bool
+	id    *TestCustomIfaceID
+	int_  *int
+	str   *string
+	void  *Void
 }
 
 type TestCustomIfaceClient = TestCustomIface
@@ -1048,8 +1048,8 @@ func (r *TestCustomIface) WithGraphQLQuery(q *querybuilder.Selection) *TestCusto
 }
 
 func (r *TestCustomIface) Bool(ctx context.Context) (bool, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:44:6)
-	if r.bool != nil {
-		return *r.bool, nil
+	if r.bool_ != nil {
+		return *r.bool_, nil
 	}
 	q := r.query.Select("bool")
 
@@ -1157,8 +1157,8 @@ func (r *TestCustomIface) UnmarshalJSON(bs []byte) error {
 }
 
 func (r *TestCustomIface) Int(ctx context.Context) (int, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:39:5)
-	if r.int != nil {
-		return *r.int, nil
+	if r.int_ != nil {
+		return *r.int_, nil
 	}
 	q := r.query.Select("int")
 

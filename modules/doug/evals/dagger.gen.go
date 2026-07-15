@@ -277,6 +277,43 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Evals", dagger.TypeDefWithObjectOpts{Description: "Doug's eval suite.", SourceMap: dag.SourceMap("main.go", 11, 6)}).
+					WithFunction(
+						dag.Function("AndOperator",
+							dag.TypeDef().WithObject("AndOperator")).
+							WithDescription("Test the Doug coding agent.").
+							WithSourceMap(dag.SourceMap("and_operator.go", 14, 1))).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 13, 1))).
+					WithFunction(
+						dag.Function("Iterate",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 30, 1)))).
+			WithObject(
+				dag.TypeDef().WithObject("AndOperator", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("and_operator.go", 18, 6)}).
+					WithFunction(
+						dag.Function("Check",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("and_operator.go", 41, 1)).
+							WithArg("prompt", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("and_operator.go", 41, 50)})).
+					WithFunction(
+						dag.Function("Name",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("and_operator.go", 20, 1))).
+					WithFunction(
+						dag.Function("Prompt",
+							dag.TypeDef().WithObject("LLM")).
+							WithSourceMap(dag.SourceMap("and_operator.go", 30, 1)).
+							WithArg("base", dag.TypeDef().WithObject("LLM"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("and_operator.go", 30, 30)})).
+					WithFunction(
+						dag.Function("Source",
+							dag.TypeDef().WithObject("Directory")).
+							WithSourceMap(dag.SourceMap("and_operator.go", 24, 1)))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

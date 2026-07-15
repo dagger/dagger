@@ -243,6 +243,26 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("GoProgrammer", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 8, 6)}).
+					WithFunction(
+						dag.Function("Run",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 18, 1)).
+							WithArg("assignment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 19, 2)})).
+					WithFunction(
+						dag.Function("Save",
+							dag.TypeDef().WithScalar("JSON")).
+							WithDescription("this is a hack at least until we can return the LLM type to have a better way to save/replay history").
+							WithSourceMap(dag.SourceMap("main.go", 25, 1)).
+							WithArg("assignment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 27, 2)})).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("GoProgrammer")).
+							WithSourceMap(dag.SourceMap("main.go", 12, 1)).
+							WithArg("model", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 13, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

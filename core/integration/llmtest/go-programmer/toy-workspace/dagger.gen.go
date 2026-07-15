@@ -236,6 +236,31 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("ToyWorkspace", dagger.TypeDefWithObjectOpts{Description: "A toy workspace that can edit files and run 'go build'", SourceMap: dag.SourceMap("main.go", 9, 6)}).
+					WithFunction(
+						dag.Function("Build",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Build the code at the current directory in the workspace").
+							WithSourceMap(dag.SourceMap("main.go", 39, 1))).
+					WithFunction(
+						dag.Function("Read",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Read a file").
+							WithSourceMap(dag.SourceMap("main.go", 28, 1))).
+					WithFunction(
+						dag.Function("Write",
+							dag.TypeDef().WithObject("ToyWorkspace")).
+							WithDescription("Write a file").
+							WithSourceMap(dag.SourceMap("main.go", 33, 1)).
+							WithArg("content", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 33, 29)})).
+					WithField("Container", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{Description: "The workspace's container state.", SourceMap: dag.SourceMap("main.go", 12, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("ToyWorkspace")).
+							WithSourceMap(dag.SourceMap("main.go", 15, 1)))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

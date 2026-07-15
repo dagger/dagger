@@ -236,6 +236,22 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("OnlyRuntime", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 8, 6)}).
+					WithFunction(
+						dag.Function("ModuleRuntime",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 21, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 23, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 24, 2)})).
+					WithField("Src", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 9, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("OnlyRuntime")).
+							WithSourceMap(dag.SourceMap("main.go", 12, 1)).
+							WithArg("sdkSrc", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 14, 2), DefaultPath: "./src"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

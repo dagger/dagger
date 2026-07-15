@@ -351,6 +351,59 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Defaults", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 41, 6)}).
+					WithFunction(
+						dag.Function("Capitalize",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Capitalize a string").
+							WithSourceMap(dag.SourceMap("main.go", 91, 1)).
+							WithArg("s", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 91, 31)})).
+					WithFunction(
+						dag.Function("ListSecrets",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithSourceMap(dag.SourceMap("main.go", 64, 1))).
+					WithFunction(
+						dag.Function("ListString",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithSourceMap(dag.SourceMap("main.go", 60, 1))).
+					WithFunction(
+						dag.Function("Ls",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithDescription("List the contents of a directory").
+							WithSourceMap(dag.SourceMap("main.go", 78, 1)).
+							WithArg("dir", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 78, 44)})).
+					WithFunction(
+						dag.Function("LsText",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithDescription("List the contents of text files in a directory (with an ignore applied)").
+							WithSourceMap(dag.SourceMap("main.go", 83, 1)).
+							WithArg("dir", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 85, 2), Ignore: []string{"**", "!**/*.txt", "!**/*.md"}})).
+					WithFunction(
+						dag.Function("Message",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 51, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 54, 2), DefaultValue: dagger.JSON("\"world\"")})).
+					WithField("Greeting", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 42, 2)}).
+					WithField("Dir", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 43, 2)}).
+					WithField("File", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 44, 2)}).
+					WithField("Password", dag.TypeDef().WithObject("Secret"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 45, 2)}).
+					WithField("Docs", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 46, 2)}).
+					WithField("List", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 47, 2)}).
+					WithField("ListSecret", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Secret")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 48, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Defaults")).
+							WithSourceMap(dag.SourceMap("main.go", 11, 1)).
+							WithArg("greeting", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 13, 2), DefaultValue: dagger.JSON("\"hello\"")}).
+							WithArg("dir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 15, 2), DefaultPath: "."}).
+							WithArg("password", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 17, 2)}).
+							WithArg("file", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 19, 2)}).
+							WithArg("docs", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 22, 2), Ignore: []string{"*", "!**/*.txt", "!**/*.md"}}).
+							WithArg("list", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 25, 2)}).
+							WithArg("secrets", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Secret")).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 28, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

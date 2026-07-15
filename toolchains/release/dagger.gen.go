@@ -742,6 +742,171 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A module that encodes the official release process of the Dagger Engine\n").
+			WithObject(
+				dag.TypeDef().WithObject("Release", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 21, 6)}).
+					WithFunction(
+						dag.Function("DocsTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate docs files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 34, 1)).
+							WithGenerator()).
+					WithFunction(
+						dag.Function("ElixirSdkTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate Elixir SDK files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 129, 1)).
+							WithGenerator()).
+					WithFunction(
+						dag.Function("GetMaintainers",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("changie.go", 24, 1)).
+							WithArg("githubOrgName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("changie.go", 27, 2)}).
+							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("changie.go", 28, 2)})).
+					WithFunction(
+						dag.Function("GoSdkTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate Go SDK files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 70, 1)).
+							WithGenerator()).
+					WithFunction(
+						dag.Function("HelmTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate Helm chart files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 50, 1)).
+							WithGenerator()).
+					WithFunction(
+						dag.Function("JavaSdkTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate Java SDK files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 198, 1)).
+							WithGenerator()).
+					WithFunction(
+						dag.Function("Notify",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 464, 1)).
+							WithArg("repository", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "GitHub repository URL", SourceMap: dag.SourceMap("main.go", 467, 2)}).
+							WithArg("target", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The target tag for the release\ne.g. sdk/typescript/v0.14.0", SourceMap: dag.SourceMap("main.go", 470, 2)}).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Name of the component to release", SourceMap: dag.SourceMap("main.go", 472, 2)}).
+							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Discord webhook", SourceMap: dag.SourceMap("main.go", 475, 2)}).
+							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Whether to perform a dry run without creating the release", SourceMap: dag.SourceMap("main.go", 479, 2)})).
+					WithFunction(
+						dag.Function("PhpSdkTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate PHP SDK files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 116, 1)).
+							WithGenerator()).
+					WithFunction(
+						dag.Function("Publish",
+							dag.TypeDef().WithObject("ReleaseReport")).
+							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
+							WithSourceMap(dag.SourceMap("main.go", 103, 1)).
+							WithArg("tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 105, 2)}).
+							WithArg("commit", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 106, 2)}).
+							WithArg("dryRun", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 108, 2)}).
+							WithArg("registryImage", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 110, 2)}).
+							WithArg("registryUsername", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 111, 2)}).
+							WithArg("registryPassword", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 112, 2)}).
+							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 114, 2)}).
+							WithArg("githubOrgName", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 115, 2)}).
+							WithArg("githubHost", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 116, 2)}).
+							WithArg("githubCaCert", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 117, 2)}).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 119, 2)}).
+							WithArg("netlifyAPIURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 120, 2)}).
+							WithArg("pypiToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 121, 2)}).
+							WithArg("pypiRepo", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 122, 2)}).
+							WithArg("pypiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 123, 2)}).
+							WithArg("npmToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 124, 2)}).
+							WithArg("npmRegistryURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 125, 2)}).
+							WithArg("hexAPIKey", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 126, 2)}).
+							WithArg("hexAPIURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 127, 2)}).
+							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 128, 2)}).
+							WithArg("cargoRegistryIndex", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 129, 2)}).
+							WithArg("goSdkDestRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 130, 2)}).
+							WithArg("phpSdkDestRemote", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 131, 2)}).
+							WithArg("awsAccessKeyID", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 133, 2)}).
+							WithArg("awsSecretAccessKey", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 134, 2)}).
+							WithArg("awsRegion", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 135, 2)}).
+							WithArg("awsBucket", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 136, 2)}).
+							WithArg("awsCloudfrontDistribution", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 137, 2)}).
+							WithArg("awsEndpointURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 138, 2)}).
+							WithArg("artefactsFQDN", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 139, 2)}).
+							WithArg("helmRegistry", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 141, 2)}).
+							WithArg("discordWebhook", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 143, 2)})).
+					WithFunction(
+						dag.Function("PublishWithMockEndpoints",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Exercise the release publish path against local mock endpoints.").
+							WithSourceMap(dag.SourceMap("publish_check.go", 59, 1)).
+							WithCheck().
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Source tree to publish. The check commits this exact tree to a local git\nservice and invokes release through a nested engine using that git ref.", SourceMap: dag.SourceMap("publish_check.go", 65, 2), DefaultPath: "/"})).
+					WithFunction(
+						dag.Function("PythonSdkTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate Python SDK files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 88, 1)).
+							WithGenerator()).
+					WithFunction(
+						dag.Function("RustSdkTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate Rust SDK files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 149, 1)).
+							WithGenerator()).
+					WithFunction(
+						dag.Function("TestLocalRelease",
+							dag.TypeDef().WithObject("ReleaseTest")).
+							WithDescription("Create a fake release a run checks to catch potential breaking changes.").
+							WithSourceMap(dag.SourceMap("tests.go", 14, 1)).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "Current engine version. The test runs the next patch (vX.Y.Z+1) on top.", SourceMap: dag.SourceMap("tests.go", 17, 2)})).
+					WithFunction(
+						dag.Function("TypescriptSdkTargetVersion",
+							dag.TypeDef().WithObject("Changeset")).
+							WithDescription("Regenerate TypeScript SDK files that reference the target Dagger Engine version.").
+							WithSourceMap(dag.SourceMap("generate.go", 101, 1)).
+							WithGenerator())).
+			WithObject(
+				dag.TypeDef().WithObject("ReleaseReport", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 23, 6)}).
+					WithFunction(
+						dag.Function("Markdown",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 54, 1))).
+					WithField("Ref", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 24, 2)}).
+					WithField("Commit", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 25, 2)}).
+					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 26, 2)}).
+					WithField("Date", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 28, 2)}).
+					WithField("Artifacts", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("ReleaseReportArtifact")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 30, 2)}).
+					WithField("FollowUps", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("ReleaseReportFollowUp")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 31, 2)}).
+					WithField("Errors", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Error")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 33, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("ReleaseTest", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("tests.go", 30, 6)}).
+					WithFunction(
+						dag.Function("ExistingModule",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Test calling an existing module with basic commands.").
+							WithSourceMap(dag.SourceMap("tests.go", 69, 1)).
+							WithCheck().
+							WithArg("testdata", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("tests.go", 73, 2), DefaultPath: "/toolchains/release/testdata/module"})).
+					WithFunction(
+						dag.Function("NewModule",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Test scaffolding a new module via the Go SDK and executing basic commands.\n\nThis installs the Go SDK, uses `dagger module init` with the legacy template\n(the classic ContainerEcho/GrepDir example) to scaffold a module, then calls\nthe generated module. Workspace discovery resolves through a .git boundary,\nso the working directory is initialized as a repo first.").
+							WithSourceMap(dag.SourceMap("tests.go", 41, 1)).
+							WithCheck()).
+					WithField("Container", dag.TypeDef().WithObject("Container"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("tests.go", 31, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("ReleaseReportArtifact", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 36, 6)}).
+					WithField("Name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 37, 2)}).
+					WithField("Tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 38, 2)}).
+					WithField("Link", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 39, 2)}).
+					WithField("Errors", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Error")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 41, 2)})).
+			WithObject(
+				dag.TypeDef().WithObject("ReleaseReportFollowUp", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 46, 6)}).
+					WithField("Name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 47, 2)}).
+					WithField("Link", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 48, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}
