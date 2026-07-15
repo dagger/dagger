@@ -456,7 +456,15 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	if m.workspace.Self() == nil {
 		return fmt.Errorf("cannot apply changes: no workspace bound")
 	}
-	changesID, err := changes.ID()
+	normalized, err := normalizeChangesetToPatch(ctx, srv, changes)
+	if err != nil {
+		// Fall back to the raw changeset: normalization is a durability
+		// upgrade for saved sessions, not a correctness requirement for the
+		// live one.
+		slog.Warn("failed to normalize changeset to patch form", "error", err)
+		normalized = changes
+	}
+	changesID, err := normalized.ID()
 	if err != nil {
 		return fmt.Errorf("get changeset ID: %w", err)
 	}
@@ -472,6 +480,64 @@ func (m *MCP) applyChangeset(ctx context.Context, srv *dagql.Server, changes dag
 	}
 	m.workspace = newWS
 	return nil
+}
+
+// normalizeChangesetToPatch rewrites a changeset into pure patch data:
+// after = before.withPatch(patch, onConflict: LEAVE_CONFLICT_MARKERS),
+// changes = after.changes(from: before).
+//
+// A tool-built changeset's After is an operation chain (e.g.
+// File.withReplaced) rooted at live workspace reads. Replaying those
+// operations when a saved session is loaded fails once the files have moved
+// on (the search text is gone), or silently re-applies them when it hasn't.
+// Capturing the patch now — while the content the operations ran against is
+// known — makes the recorded overlay pure data, and its replay a tolerant
+// application: hunks that fit apply, hunks that don't leave conflict markers
+// for the agent to resolve.
+func normalizeChangesetToPatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+	var patchText string
+	if err := srv.Select(ctx, changes, &patchText, dagql.Selector{
+		View:  srv.View,
+		Field: "asPatch",
+	}, dagql.Selector{
+		View:  srv.View,
+		Field: "contents",
+	}); err != nil {
+		return changes, fmt.Errorf("render changeset as patch: %w", err)
+	}
+	if patchText == "" {
+		return changes, nil
+	}
+	before := changes.Self().Before
+	if before.Self() == nil {
+		return changes, fmt.Errorf("changeset has no before directory")
+	}
+	beforeID, err := before.ID()
+	if err != nil {
+		return changes, err
+	}
+	var patched dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, before, &patched, dagql.Selector{
+		View:  srv.View,
+		Field: "withPatch",
+		Args: []dagql.NamedInput{
+			{Name: "patch", Value: dagql.NewString(patchText)},
+			{Name: "onConflict", Value: PatchConflictLeaveMarkers},
+		},
+	}); err != nil {
+		return changes, fmt.Errorf("apply patch to before: %w", err)
+	}
+	var normalized dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, patched, &normalized, dagql.Selector{
+		View:  srv.View,
+		Field: "changes",
+		Args: []dagql.NamedInput{
+			{Name: "from", Value: dagql.NewID[*Directory](beforeID)},
+		},
+	}); err != nil {
+		return changes, fmt.Errorf("rebuild changeset from patch: %w", err)
+	}
+	return normalized, nil
 }
 
 // workspaceDirectory returns the bound workspace's root directory, for
