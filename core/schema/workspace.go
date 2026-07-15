@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -976,6 +977,8 @@ func (s *workspaceSchema) search(
 
 	if ws.HostPath() == "" {
 		// No host boundary: search the workspace's in-engine root filesystem.
+		// Overlay edits are already visible here: value/git overlays surface
+		// the changeset's after-tree as the source directory.
 		rootfs, err := workspaceRootfs(ws)
 		if err != nil {
 			return nil, err
@@ -987,6 +990,30 @@ func (s *workspaceSchema) search(
 		return dagql.Array[*core.SearchResult](results), nil
 	}
 
+	results, err := s.searchHost(ctx, ws, args)
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+
+	if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
+		overlayResults, err := s.overlaySearchResults(ctx, ws, args)
+		if err != nil {
+			return nil, fmt.Errorf("search: %w", err)
+		}
+		results = mergeOverlaySearchResults(results, overlayResults, ws.OverlayPathTouched, args.Limit)
+	}
+
+	emitSearchResults(ctx, results, args.FilesOnly)
+	return dagql.Array[*core.SearchResult](results), nil
+}
+
+// searchHost runs the search client-side against the workspace's host path
+// and converts the results, without emitting them to span stdio.
+func (s *workspaceSchema) searchHost(
+	ctx context.Context,
+	ws *core.Workspace,
+	args workspaceSearchArgs,
+) ([]*core.SearchResult, error) {
 	ctx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
 		return nil, err
@@ -1015,12 +1042,8 @@ func (s *workspaceSchema) search(
 		Globs:       args.Globs,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
+		return nil, err
 	}
-
-	// Convert engine.LocalSearchResult to core.SearchResult and emit OTel logs
-	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
-	defer stdio.Close()
 
 	results := make([]*core.SearchResult, len(localResults))
 	for i, lr := range localResults {
@@ -1038,8 +1061,92 @@ func (s *workspaceSchema) search(
 			})
 		}
 		results[i] = result
+	}
+	return results, nil
+}
 
-		if args.FilesOnly {
+// overlaySearchResults searches the overlay's delta root — the accumulated
+// edits applied to an empty base, which holds the full after-state of every
+// touched path. The sparse delta lacks paths that only exist host-side, so
+// explicit search paths are applied as a post-filter instead of being passed
+// to ripgrep (which errors on missing path operands).
+func (s *workspaceSchema) overlaySearchResults(
+	ctx context.Context,
+	ws *core.Workspace,
+	args workspaceSearchArgs,
+) ([]*core.SearchResult, error) {
+	delta, ok := ws.OverlayDeltaRoot()
+	if !ok || delta.Self() == nil {
+		return nil, nil
+	}
+	opts := args.SearchOpts
+	opts.Limit = nil // the limit caps the merged results, not each side
+	results, err := delta.Self().Search(ctx, delta, opts, false, nil, args.Globs)
+	if err != nil {
+		return nil, fmt.Errorf("overlay: %w", err)
+	}
+	if len(args.Paths) == 0 {
+		return results, nil
+	}
+	scoped := results[:0]
+	for _, r := range results {
+		if searchPathInScopes(r.FilePath, args.Paths) {
+			scoped = append(scoped, r)
+		}
+	}
+	return scoped, nil
+}
+
+// mergeOverlaySearchResults combines host and overlay search results with
+// per-file replacement: the overlay's view wins for every path its edits
+// touch, so modified files don't surface stale host lines and removed files
+// drop out entirely. The merged set is sorted for determinism and capped at
+// limit when set.
+func mergeOverlaySearchResults(
+	host, overlay []*core.SearchResult,
+	touched func(string) bool,
+	limit *int,
+) []*core.SearchResult {
+	merged := make([]*core.SearchResult, 0, len(host)+len(overlay))
+	for _, r := range host {
+		if !touched(r.FilePath) {
+			merged = append(merged, r)
+		}
+	}
+	merged = append(merged, overlay...)
+	sort.SliceStable(merged, func(i, j int) bool {
+		if merged[i].FilePath != merged[j].FilePath {
+			return merged[i].FilePath < merged[j].FilePath
+		}
+		return merged[i].LineNumber < merged[j].LineNumber
+	})
+	if limit != nil && *limit >= 0 && len(merged) > *limit {
+		merged = merged[:*limit]
+	}
+	return merged
+}
+
+// searchPathInScopes reports whether a result path falls under any of the
+// requested search paths (matching a file itself or anything beneath a
+// directory).
+func searchPathInScopes(filePath string, scopes []string) bool {
+	fp := path.Clean(filepath.ToSlash(filePath))
+	for _, scope := range scopes {
+		sc := path.Clean(strings.TrimPrefix(filepath.ToSlash(scope), "/"))
+		if sc == "." || fp == sc || strings.HasPrefix(fp, sc+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// emitSearchResults writes search results to the span's stdio so they show up
+// in progress output (and are visible to an LLM driving the search).
+func emitSearchResults(ctx context.Context, results []*core.SearchResult, filesOnly bool) {
+	stdio := telemetry.SpanStdio(ctx, core.InstrumentationLibrary)
+	defer stdio.Close()
+	for _, result := range results {
+		if filesOnly {
 			fmt.Fprintln(stdio.Stdout, result.FilePath)
 		} else {
 			ensureLn := result.MatchedLines
@@ -1049,8 +1156,6 @@ func (s *workspaceSchema) search(
 			fmt.Fprintf(stdio.Stdout, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
 		}
 	}
-
-	return dagql.Array[*core.SearchResult](results), nil
 }
 
 type workspaceGlobArgs struct {
@@ -1065,21 +1170,28 @@ func (s *workspaceSchema) glob(
 	ws := parent.Self()
 
 	if ws.HostPath() != "" {
-		ctx, err := s.withWorkspaceClientContext(ctx, ws)
+		hostCtx, err := s.withWorkspaceClientContext(ctx, ws)
 		if err != nil {
 			return nil, err
 		}
-		query, err := core.CurrentQuery(ctx)
+		query, err := core.CurrentQuery(hostCtx)
 		if err != nil {
 			return nil, err
 		}
-		bk, err := query.Engine(ctx)
+		bk, err := query.Engine(hostCtx)
 		if err != nil {
 			return nil, fmt.Errorf("buildkit: %w", err)
 		}
-		matches, err := bk.GlobCallerHostPath(ctx, ws.HostPath(), args.Pattern)
+		matches, err := bk.GlobCallerHostPath(hostCtx, ws.HostPath(), args.Pattern)
 		if err != nil {
 			return nil, fmt.Errorf("glob: %w", err)
+		}
+		if _, ok := ws.OverlayChanges(); ok && ws.ClientLocalBase() {
+			overlayMatches, err := s.overlayGlobMatches(ctx, ws, args.Pattern)
+			if err != nil {
+				return nil, fmt.Errorf("glob: %w", err)
+			}
+			matches = mergeOverlayGlobMatches(matches, overlayMatches, ws.OverlayPathTouched)
 		}
 		return dagql.NewStringArray(matches...), nil
 	}
@@ -1102,6 +1214,66 @@ func (s *workspaceSchema) glob(
 		return nil, fmt.Errorf("glob: %w", err)
 	}
 	return matches, nil
+}
+
+// overlayGlobMatches runs the glob against the overlay's delta root — the
+// accumulated edits applied to an empty base, which holds the full
+// after-state of every touched path.
+func (s *workspaceSchema) overlayGlobMatches(
+	ctx context.Context,
+	ws *core.Workspace,
+	pattern string,
+) ([]string, error) {
+	delta, ok := ws.OverlayDeltaRoot()
+	if !ok || delta.Self() == nil {
+		return nil, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var matches dagql.Array[dagql.String]
+	if err := srv.Select(ctx, delta, &matches, dagql.Selector{
+		Field: "glob",
+		Args: []dagql.NamedInput{
+			{Name: "pattern", Value: dagql.NewString(pattern)},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("overlay: %w", err)
+	}
+	out := make([]string, len(matches))
+	for i, m := range matches {
+		out[i] = string(m)
+	}
+	return out, nil
+}
+
+// mergeOverlayGlobMatches combines host and overlay glob matches with
+// per-path replacement: the overlay's view wins for every path its edits
+// touch, so removed paths drop out and added ones come from the delta.
+// Parent directories of touched files exist in both trees and dedup to the
+// host's entry. The merged set is sorted for determinism.
+func mergeOverlayGlobMatches(host, overlay []string, touched func(string) bool) []string {
+	seen := make(map[string]bool, len(host)+len(overlay))
+	merged := make([]string, 0, len(host)+len(overlay))
+	add := func(m string) {
+		key := path.Clean(filepath.ToSlash(m))
+		if !seen[key] {
+			seen[key] = true
+			merged = append(merged, m)
+		}
+	}
+	for _, m := range host {
+		if touched(m) {
+			continue
+		}
+		add(m)
+	}
+	for _, m := range overlay {
+		add(m)
+	}
+	sort.Strings(merged)
+	return merged
 }
 
 type workspaceWithNewDirectoryArgs struct {
