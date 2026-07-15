@@ -3374,6 +3374,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\CurrentModuleAsSDKClient::moduleSource",
+			"p": "Dagger/CurrentModuleAsSDKClient.html#method_moduleSource",
+			"d": "<p>The resolved module source this client is bound to, including its dependency closure and pinned version.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CurrentModuleAsSDKClient::path",
 			"p": "Dagger/CurrentModuleAsSDKClient.html#method_path",
 			"d": "<p>Workspace-root-relative path of the generated client.</p>"
@@ -5819,6 +5825,12 @@
 			"n": "Dagger\\ModuleSource::blueprint",
 			"p": "Dagger/ModuleSource.html#method_blueprint",
 			"d": "<p>The blueprint referenced by the module source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::clientSchemaIntrospectionJSON",
+			"p": "Dagger/ModuleSource.html#method_clientSchemaIntrospectionJSON",
+			"d": "<p>The client-facing introspection schema JSON file for this module source.</p>"
 		},
 		{
 			"t": "M",
