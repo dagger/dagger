@@ -26,11 +26,21 @@ func workspaceMigrationModuleConfigConversions(
 		if compatWorkspace == nil || compatWorkspace.Config == nil {
 			continue
 		}
-		if compatWorkspace.MustMigrateToWorkspaceConfig() {
-			continue
-		}
-		if compatWorkspace.Config.SDK != nil && !workspaceMigrationProjectRootInDefaultModules(compatWorkspace.ProjectRoot) {
-			continue
+		if compatWorkspace.DiscoveredLocalModule {
+			// A discovered local toolchain/dependency converts in place even
+			// when its source is a non-root subdir (a normal toolchain would
+			// otherwise be treated as workspace-shaped). Only a genuine nested
+			// workspace (its own toolchains/blueprint) is left as legacy.
+			if workspace.HasOwnWorkspaceSemantics(compatWorkspace.Config) {
+				continue
+			}
+		} else {
+			if compatWorkspace.MustMigrateToWorkspaceConfig() {
+				continue
+			}
+			if compatWorkspace.Config.SDK != nil && !workspaceMigrationProjectRootInDefaultModules(compatWorkspace.ProjectRoot) {
+				continue
+			}
 		}
 		if compatWorkspace.ProjectRoot == "" {
 			return nil, fmt.Errorf("legacy module config project root is required")

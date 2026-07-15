@@ -40,6 +40,52 @@ func migrationSDKInstallName(sdkRef string) string {
 	return name
 }
 
+// AddMigratedModuleSDK records, in a workspace config, the SDK/runtime a
+// migrated module uses: modulePath is added to the as-sdk managed-module list
+// of the install that exposes sdkSource. An existing as-sdk install for the
+// same runtime source is reused (so several locally-referenced modules sharing
+// a runtime collapse to one [modules.<sdk>] entry); otherwise a new one is
+// created, matching how the root module's SDK is recorded. This keeps every
+// locally-defined module's runtime installed and pinned in the workspace.
+func AddMigratedModuleSDK(wsCfg *Config, sdkSource, modulePath string) {
+	if wsCfg == nil || sdkSource == "" {
+		return
+	}
+	if wsCfg.Modules == nil {
+		wsCfg.Modules = map[string]ModuleEntry{}
+	}
+
+	// Reuse the existing as-sdk install for this runtime, if any, so the same
+	// runtime is not installed twice under different names.
+	for name, entry := range wsCfg.Modules {
+		if entry.AsSDK != nil && entry.Source == sdkSource {
+			entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
+			wsCfg.Modules[name] = entry
+			return
+		}
+	}
+
+	sdkName := migrationSDKInstallName(sdkSource)
+	sdkIsBuiltin := sdkmeta.IsBuiltin(ConventionalSDKShortName(sdkSource))
+	entry, exists := wsCfg.Modules[sdkName]
+	// A builtin SDK's legacy source (e.g. "go") is a runtime name, not a
+	// module source, so an existing same-named module is never the same
+	// install. For external/custom SDKs the source is a real ref/path, so
+	// reuse the entry only when it matches; otherwise don't clobber it.
+	if exists && (sdkIsBuiltin || entry.Source != sdkSource) {
+		sdkName = uniqueModuleName(wsCfg.Modules, sdkName)
+		exists = false
+	}
+	if !exists {
+		entry = ModuleEntry{Source: sdkSource}
+	}
+	if entry.AsSDK == nil {
+		entry.AsSDK = &ModuleAsSDK{}
+	}
+	entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
+	wsCfg.Modules[sdkName] = entry
+}
+
 // uniqueModuleName returns base if free, otherwise base with a numeric suffix,
 // so a migrated SDK install never silently overwrites an unrelated module that
 // happens to share its name.
@@ -134,28 +180,7 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	// [modules.<sdk>.as-sdk.*]. This is the file-format catch-up for the
 	// runtime/SDK split.
 	if hasSDK {
-		sdkName := migrationSDKInstallName(cfg.SDK.Source)
-		sdkIsBuiltin := sdkmeta.IsBuiltin(ConventionalSDKShortName(cfg.SDK.Source))
-		entry, exists := wsCfg.Modules[sdkName]
-		// A builtin SDK's legacy source (e.g. "go") is a runtime name, not a
-		// module source, so an existing same-named module is never the same
-		// install. For external/custom SDKs the source is a real ref/path, so
-		// reuse the entry only when it matches; otherwise don't clobber it.
-		if exists && (sdkIsBuiltin || entry.Source != cfg.SDK.Source) {
-			sdkName = uniqueModuleName(wsCfg.Modules, sdkName)
-			exists = false
-		}
-		if !exists {
-			entry = ModuleEntry{Source: cfg.SDK.Source}
-		}
-		if needsProjectModuleMigration {
-			if entry.AsSDK == nil {
-				entry.AsSDK = &ModuleAsSDK{}
-			}
-			modulePath := filepath.Join(LockDirName, "modules", cfg.Name)
-			entry.AsSDK.Modules = append(entry.AsSDK.Modules, SDKManagedModule{Path: modulePath})
-		}
-		wsCfg.Modules[sdkName] = entry
+		AddMigratedModuleSDK(wsCfg, cfg.SDK.Source, filepath.Join(LockDirName, "modules", cfg.Name))
 	}
 	workspaceConfigData, err := renderMigrationWorkspaceConfig(wsCfg, compatWorkspace.MainModule)
 	if err != nil {
