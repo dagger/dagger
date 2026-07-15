@@ -456,3 +456,28 @@ func (LLMSuite) TestGlobalIDPortable(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, origModel, reloadedModel)
 }
+
+// TestGlobalIDWithResponse verifies that a conversation containing assistant
+// content blocks survives the globalID round trip. Empty "arguments" on a
+// non-tool-call block decodes to nil and is dropped from the serialized ID
+// literal; reloading used to fail with `missing required input field
+// "arguments"`, which broke resume for every saved session with a reply.
+func (LLMSuite) TestGlobalIDWithResponse(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	llm := c.LLM().
+		WithModel("openai/gpt-4o").
+		WithPrompt("hello").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: dagger.JSON(`{"path":"/x"}`)},
+		})
+
+	globalID, err := llm.GlobalID(ctx)
+	require.NoError(t, err)
+
+	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
+	reply, err := reloaded.LastReply(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello world", reply)
+}

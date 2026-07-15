@@ -308,7 +308,7 @@ type LLMContentBlockInput struct {
 	Text      string              `doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)." default:""`
 	CallID    string              `doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)." default:""`
 	ToolName  string              `doc:"The name of the tool to call (for TOOL_CALL kind)." default:""`
-	Arguments JSON                `doc:"The arguments to pass to the tool (for TOOL_CALL kind)."`
+	Arguments JSON                `doc:"The arguments to pass to the tool (for TOOL_CALL kind)." default:""`
 	Errored   bool                `doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)." default:"false"`
 	Signature string              `doc:"Provider-specific opaque data (e.g. Anthropic thinking signature)." default:""`
 }
@@ -1491,8 +1491,10 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 	// selector is serialized to a call literal. Decode from a map, mirroring
 	// the pattern in core/schema/address.go. Field keys are the GraphQL arg
 	// names (lowerCamel), and values must be types each field's decoder
-	// accepts (enum → name string, JSON → string). "arguments" is always
-	// present (empty decodes to nil and is skipped) since JSON is non-null.
+	// accepts (enum → name string, JSON → string). Empty "arguments" decodes
+	// to nil and is omitted from the literal entirely, so the field must have
+	// a default tag or reloading the serialized ID fails with "missing
+	// required input field".
 	contentInputs := make(dagql.ArrayInput[dagql.InputObject[LLMContentBlockInput]], len(res.Content))
 	for i, block := range res.Content {
 		decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{

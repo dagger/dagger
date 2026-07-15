@@ -236,6 +236,26 @@ func TestContentBlockInputRoundTrip(t *testing.T) {
 	assert.Equal(t, "call_1", arr[1].Value.CallID)
 	assert.Equal(t, "read", arr[1].Value.ToolName)
 	assert.Equal(t, JSON(`{"path":"/x"}`), arr[1].Value.Arguments)
+
+	// Regression: empty "arguments" decodes to nil and is dropped from the
+	// serialized literal, so reloading a saved ID decodes a map with no
+	// "arguments" key at all. That must not fail as a missing required field
+	// (it did, breaking session reload for every non-tool-call block).
+	decoded, err := (dagql.InputObject[LLMContentBlockInput]{}).Decoder().DecodeInput(map[string]any{
+		"kind":      string(LLMContentText),
+		"text":      "reloaded",
+		"callId":    "",
+		"toolName":  "",
+		"errored":   false,
+		"signature": "",
+	})
+	assert.NoError(t, err)
+	input, ok := decoded.(dagql.InputObject[LLMContentBlockInput])
+	assert.True(t, ok)
+	assert.Equal(t, LLMContentText, input.Value.Kind)
+	assert.Equal(t, "reloaded", input.Value.Text)
+	assert.Nil(t, input.Value.Arguments)
+	assert.NotPanics(t, func() { _ = input.ToLiteral() })
 }
 
 func TestLLMErrorMessage(t *testing.T) {
