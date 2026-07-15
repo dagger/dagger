@@ -869,7 +869,10 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 		return existingUUID, err
 	}
 
-	llmID, err := s.llm.ID(ctx)
+	// Persist the portable, self-contained (recipe-form) ID rather than the
+	// default runtime handle, which is an engine-local reference that cannot be
+	// resolved once this session's engine is gone.
+	llmID, err := s.llm.GlobalID(ctx)
 	if err != nil {
 		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
 	}
