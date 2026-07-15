@@ -58,6 +58,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("workspace", s.workspace).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return the workspace the LLM is bound to."),
+		dagql.NodeFunc("withResetWorkspace", s.withResetWorkspace).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return a new LLM with the workspace reset to its base, dropping any accumulated changes. "+
+				"The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, "+
+				"so a persisted session (globalID) no longer replays workspace edits when loaded. "+
+				"Use after exporting changes (Workspace.export) so a resumed session continues from the "+
+				"workspace's on-disk state."),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
 			Args(
@@ -223,6 +230,10 @@ func (s *llmSchema) workspace(ctx context.Context, llm *core.LLM, args struct{})
 		return res, fmt.Errorf("no workspace is bound to this LLM (no current workspace in this context)")
 	}
 	return ws, nil
+}
+
+func (s *llmSchema) withResetWorkspace(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.ObjectResult[*core.LLM], error) {
+	return self.Self().WithResetWorkspace(ctx)
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
