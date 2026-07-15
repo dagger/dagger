@@ -1078,7 +1078,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsChain(ctx context
 				}
 			}`,
 			variables:  map[string]any{"source": sourceID},
-			wantOutput: `{"currentWorkspace":{"withNewDirectory":{"changes":{"addedPaths":["dir/nested.txt","dir/"]}}}}`,
+			wantOutput: `{"currentWorkspace":{"withNewDirectory":{"changes":{"addedPaths":["dir/","dir/nested.txt"]}}}}`,
 		},
 		{
 			name: "withChanges",
