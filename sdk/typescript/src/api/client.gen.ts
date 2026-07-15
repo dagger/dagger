@@ -30,6 +30,13 @@ export type AddressFileOpts = {
   noCache?: boolean
 }
 
+export type AgentGroupComposeOpts = {
+  /**
+   * The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
+   */
+  base?: LLM
+}
+
 export type BuildArg = {
   /**
    * The build argument name.
@@ -1356,25 +1363,6 @@ export type EngineCachePruneOpts = {
   targetSpace?: string
 }
 
-export type EnvChecksOpts = {
-  /**
-   * Only include checks matching the specified patterns
-   */
-  include?: string[]
-
-  /**
-   * When true, only return annotated check functions; exclude generate-as-checks
-   */
-  noGenerate?: boolean
-}
-
-export type EnvServicesOpts = {
-  /**
-   * Only include services matching the specified patterns
-   */
-  include?: string[]
-}
-
 export type EnvFileGetOpts = {
   /**
    * Return the value exactly as written to the file. No quote removal or variable expansion
@@ -1981,6 +1969,13 @@ export type LLMWithResponseOpts = {
   totalTokens?: number
 }
 
+export type LLMWithToolsOpts = {
+  /**
+   * Method names to exclude from the toolset (e.g. constructors, entrypoints).
+   */
+  except?: string[]
+}
+
 export type LLMContentBlockInput = {
   /**
    * The arguments to pass to the tool (for TOOL_CALL kind).
@@ -2372,18 +2367,6 @@ export type ClientCurrentTypeDefsOpts = {
    * Core types (Container, Directory, etc.) are kept so return types and method chaining still work.
    */
   hideCore?: boolean
-}
-
-export type ClientEnvOpts = {
-  /**
-   * Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
-   */
-  privileged?: boolean
-
-  /**
-   * Allow new outputs to be declared and saved in the environment
-   */
-  writable?: boolean
 }
 
 export type ClientEnvFileOpts = {
@@ -2930,6 +2913,13 @@ export function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type WorkspaceAgentsOpts = {
+  /**
+   * Only include agents matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type WorkspaceChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -3308,38 +3298,24 @@ export class Address extends BaseClient {
   }
 }
 
-export class Binding extends BaseClient {
+export class Agent extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _asString?: string = undefined
-  private readonly _digest?: string = undefined
-  private readonly _isNull?: boolean = undefined
+  private readonly _description?: string = undefined
   private readonly _name?: string = undefined
-  private readonly _typeName?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(
-    ctx?: Context,
-    _id?: ID,
-    _asString?: string,
-    _digest?: string,
-    _isNull?: boolean,
-    _name?: string,
-    _typeName?: string,
-  ) {
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
     super(ctx)
 
     this._id = _id
-    this._asString = _asString
-    this._digest = _digest
-    this._isNull = _isNull
+    this._description = _description
     this._name = _name
-    this._typeName = _typeName
   }
 
   /**
-   * A unique identifier for this Binding.
+   * A unique identifier for this Agent.
    */
   id = async (): Promise<ID> => {
     if (this._id) {
@@ -3354,278 +3330,14 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type Address
+   * The description of the agent
    */
-  asAddress = (): Address => {
-    const ctx = this._ctx.select("asAddress")
-    return new Address(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CacheVolume
-   */
-  asCacheVolume = (): CacheVolume => {
-    const ctx = this._ctx.select("asCacheVolume")
-    return new CacheVolume(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Changeset
-   */
-  asChangeset = (): Changeset => {
-    const ctx = this._ctx.select("asChangeset")
-    return new Changeset(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Check
-   */
-  asCheck = (): Check => {
-    const ctx = this._ctx.select("asCheck")
-    return new Check(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CheckGroup
-   */
-  asCheckGroup = (): CheckGroup => {
-    const ctx = this._ctx.select("asCheckGroup")
-    return new CheckGroup(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Cloud
-   */
-  asCloud = (): Cloud => {
-    const ctx = this._ctx.select("asCloud")
-    return new Cloud(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Container
-   */
-  asContainer = (): Container => {
-    const ctx = this._ctx.select("asContainer")
-    return new Container(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CurrentModuleAsSDK
-   */
-  asCurrentModuleAsSDK = (): CurrentModuleAsSDK => {
-    const ctx = this._ctx.select("asCurrentModuleAsSDK")
-    return new CurrentModuleAsSDK(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CurrentModuleAsSDKClient
-   */
-  asCurrentModuleAsSDKClient = (): CurrentModuleAsSDKClient => {
-    const ctx = this._ctx.select("asCurrentModuleAsSDKClient")
-    return new CurrentModuleAsSDKClient(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type CurrentModuleAsSDKModule
-   */
-  asCurrentModuleAsSDKModule = (): CurrentModuleAsSDKModule => {
-    const ctx = this._ctx.select("asCurrentModuleAsSDKModule")
-    return new CurrentModuleAsSDKModule(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type DiffStat
-   */
-  asDiffStat = (): DiffStat => {
-    const ctx = this._ctx.select("asDiffStat")
-    return new DiffStat(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Directory
-   */
-  asDirectory = (): Directory => {
-    const ctx = this._ctx.select("asDirectory")
-    return new Directory(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Env
-   */
-  asEnv = (): Env => {
-    const ctx = this._ctx.select("asEnv")
-    return new Env(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type EnvFile
-   */
-  asEnvFile = (): EnvFile => {
-    const ctx = this._ctx.select("asEnvFile")
-    return new EnvFile(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type File
-   */
-  asFile = (): File => {
-    const ctx = this._ctx.select("asFile")
-    return new File(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Generator
-   */
-  asGenerator = (): Generator => {
-    const ctx = this._ctx.select("asGenerator")
-    return new Generator(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type GeneratorGroup
-   */
-  asGeneratorGroup = (): GeneratorGroup => {
-    const ctx = this._ctx.select("asGeneratorGroup")
-    return new GeneratorGroup(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type GitRef
-   */
-  asGitRef = (): GitRef => {
-    const ctx = this._ctx.select("asGitRef")
-    return new GitRef(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type GitRepository
-   */
-  asGitRepository = (): GitRepository => {
-    const ctx = this._ctx.select("asGitRepository")
-    return new GitRepository(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type HTTPState
-   */
-  asHTTPState = (): HTTPState => {
-    const ctx = this._ctx.select("asHTTPState")
-    return new HTTPState(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type JSONValue
-   */
-  asJSONValue = (): JSONValue => {
-    const ctx = this._ctx.select("asJSONValue")
-    return new JSONValue(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type LLMContentBlock
-   */
-  asLLMContentBlock = (): LLMContentBlock => {
-    const ctx = this._ctx.select("asLLMContentBlock")
-    return new LLMContentBlock(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type LLMMessage
-   */
-  asLLMMessage = (): LLMMessage => {
-    const ctx = this._ctx.select("asLLMMessage")
-    return new LLMMessage(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Module
-   */
-  asModule = (): Module_ => {
-    const ctx = this._ctx.select("asModule")
-    return new Module_(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type ModuleConfigClient
-   */
-  asModuleConfigClient = (): ModuleConfigClient => {
-    const ctx = this._ctx.select("asModuleConfigClient")
-    return new ModuleConfigClient(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type ModuleSource
-   */
-  asModuleSource = (): ModuleSource => {
-    const ctx = this._ctx.select("asModuleSource")
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Schema
-   */
-  asSchema = (): Schema => {
-    const ctx = this._ctx.select("asSchema")
-    return new Schema(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type SearchResult
-   */
-  asSearchResult = (): SearchResult => {
-    const ctx = this._ctx.select("asSearchResult")
-    return new SearchResult(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type SearchSubmatch
-   */
-  asSearchSubmatch = (): SearchSubmatch => {
-    const ctx = this._ctx.select("asSearchSubmatch")
-    return new SearchSubmatch(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Secret
-   */
-  asSecret = (): Secret => {
-    const ctx = this._ctx.select("asSecret")
-    return new Secret(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Service
-   */
-  asService = (): Service => {
-    const ctx = this._ctx.select("asService")
-    return new Service(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Socket
-   */
-  asSocket = (): Socket => {
-    const ctx = this._ctx.select("asSocket")
-    return new Socket(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Stat
-   */
-  asStat = (): Stat => {
-    const ctx = this._ctx.select("asStat")
-    return new Stat(ctx)
-  }
-
-  /**
-   * Returns the binding's string value
-   */
-  asString = async (): Promise<string> => {
-    if (this._asString) {
-      return this._asString
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
     }
 
-    const ctx = this._ctx.select("asString")
+    const ctx = this._ctx.select("description")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -3633,109 +3345,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type Up
-   */
-  asUp = (): Up => {
-    const ctx = this._ctx.select("asUp")
-    return new Up(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type UpGroup
-   */
-  asUpGroup = (): UpGroup => {
-    const ctx = this._ctx.select("asUpGroup")
-    return new UpGroup(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type Workspace
-   */
-  asWorkspace = (): Workspace => {
-    const ctx = this._ctx.select("asWorkspace")
-    return new Workspace(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceGit
-   */
-  asWorkspaceGit = (): WorkspaceGit => {
-    const ctx = this._ctx.select("asWorkspaceGit")
-    return new WorkspaceGit(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceMigration
-   */
-  asWorkspaceMigration = (): WorkspaceMigration => {
-    const ctx = this._ctx.select("asWorkspaceMigration")
-    return new WorkspaceMigration(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceMigrationStep
-   */
-  asWorkspaceMigrationStep = (): WorkspaceMigrationStep => {
-    const ctx = this._ctx.select("asWorkspaceMigrationStep")
-    return new WorkspaceMigrationStep(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceModule
-   */
-  asWorkspaceModule = (): WorkspaceModule => {
-    const ctx = this._ctx.select("asWorkspaceModule")
-    return new WorkspaceModule(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceModuleSetting
-   */
-  asWorkspaceModuleSetting = (): WorkspaceModuleSetting => {
-    const ctx = this._ctx.select("asWorkspaceModuleSetting")
-    return new WorkspaceModuleSetting(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type WorkspaceSDK
-   */
-  asWorkspaceSDK = (): WorkspaceSDK => {
-    const ctx = this._ctx.select("asWorkspaceSDK")
-    return new WorkspaceSDK(ctx)
-  }
-
-  /**
-   * Returns the digest of the binding value
-   */
-  digest = async (): Promise<string> => {
-    if (this._digest) {
-      return this._digest
-    }
-
-    const ctx = this._ctx.select("digest")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Returns true if the binding is null
-   */
-  isNull = async (): Promise<boolean> => {
-    if (this._isNull) {
-      return this._isNull
-    }
-
-    const ctx = this._ctx.select("isNull")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Returns the binding name
+   * Return the fully qualified name of the agent
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -3750,18 +3360,74 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Returns the binding type
+   * The original module in which the agent has been defined
    */
-  typeName = async (): Promise<string> => {
-    if (this._typeName) {
-      return this._typeName
-    }
+  originalModule = (): Module_ => {
+    const ctx = this._ctx.select("originalModule")
+    return new Module_(ctx)
+  }
 
-    const ctx = this._ctx.select("typeName")
+  /**
+   * The path of the agent within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
 
-    const response: Awaited<string> = await ctx.execute()
+    const response: Awaited<string[]> = await ctx.execute()
 
     return response
+  }
+}
+
+export class AgentGroup extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this AgentGroup.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+   * @param opts.base The base LLM to compose onto. Defaults to a fresh workspace-bound LLM.
+   */
+  compose = (opts?: AgentGroupComposeOpts): LLM => {
+    const ctx = this._ctx.select("compose", { ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Return a list of individual agents and their details
+   */
+  list = async (): Promise<Agent[]> => {
+    type list = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map((r) => new Agent(ctx.copy().selectNode(r.id, "Agent")))
   }
 }
 
@@ -7471,1419 +7137,6 @@ export class EnumValueTypeDef extends BaseClient {
   }
 }
 
-export class Env extends BaseClient {
-  private readonly _id?: ID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this Env.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Return the check with the given name from the installed modules. Must match exactly one check.
-   * @param name The name of the check to retrieve
-   * @experimental
-   */
-  check = (name: string): Check => {
-    const ctx = this._ctx.select("check", { name })
-    return new Check(ctx)
-  }
-
-  /**
-   * Return all checks defined by the installed modules
-   * @param opts.include Only include checks matching the specified patterns
-   * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
-   * @experimental
-   */
-  checks = (opts?: EnvChecksOpts): CheckGroup => {
-    const ctx = this._ctx.select("checks", { ...opts })
-    return new CheckGroup(ctx)
-  }
-
-  /**
-   * Retrieves an input binding by name
-   */
-  input = (name: string): Binding => {
-    const ctx = this._ctx.select("input", { name })
-    return new Binding(ctx)
-  }
-
-  /**
-   * Returns all input bindings provided to the environment
-   */
-  inputs = async (): Promise<Binding[]> => {
-    type inputs = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("inputs").select("id")
-
-    const response: Awaited<inputs[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new Binding(ctx.copy().selectNode(r.id, "Binding")),
-    )
-  }
-
-  /**
-   * Retrieves an output binding by name
-   */
-  output = (name: string): Binding => {
-    const ctx = this._ctx.select("output", { name })
-    return new Binding(ctx)
-  }
-
-  /**
-   * Returns all declared output bindings for the environment
-   */
-  outputs = async (): Promise<Binding[]> => {
-    type outputs = {
-      id: ID
-    }
-
-    const ctx = this._ctx.select("outputs").select("id")
-
-    const response: Awaited<outputs[]> = await ctx.execute()
-
-    return response.map(
-      (r) => new Binding(ctx.copy().selectNode(r.id, "Binding")),
-    )
-  }
-
-  /**
-   * Return all services defined by the installed modules
-   * @param opts.include Only include services matching the specified patterns
-   * @experimental
-   */
-  services = (opts?: EnvServicesOpts): UpGroup => {
-    const ctx = this._ctx.select("services", { ...opts })
-    return new UpGroup(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Address in the environment
-   * @param name The name of the binding
-   * @param value The Address value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withAddressInput = (
-    name: string,
-    value: Address,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withAddressInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Address output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withAddressOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withAddressOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CacheVolume in the environment
-   * @param name The name of the binding
-   * @param value The CacheVolume value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCacheVolumeInput = (
-    name: string,
-    value: CacheVolume,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCacheVolumeInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CacheVolume output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCacheVolumeOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Changeset in the environment
-   * @param name The name of the binding
-   * @param value The Changeset value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withChangesetInput = (
-    name: string,
-    value: Changeset,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withChangesetInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Changeset output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withChangesetOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withChangesetOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CheckGroup in the environment
-   * @param name The name of the binding
-   * @param value The CheckGroup value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCheckGroupInput = (
-    name: string,
-    value: CheckGroup,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCheckGroupInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CheckGroup output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCheckGroupOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCheckGroupOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Check in the environment
-   * @param name The name of the binding
-   * @param value The Check value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCheckInput = (name: string, value: Check, description: string): Env => {
-    const ctx = this._ctx.select("withCheckInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Check output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCheckOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCheckOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Cloud in the environment
-   * @param name The name of the binding
-   * @param value The Cloud value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCloudInput = (name: string, value: Cloud, description: string): Env => {
-    const ctx = this._ctx.select("withCloudInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Cloud output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCloudOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCloudOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Container in the environment
-   * @param name The name of the binding
-   * @param value The Container value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withContainerInput = (
-    name: string,
-    value: Container,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withContainerInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Container output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withContainerOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withContainerOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Installs the current module into the environment, exposing its functions to the model
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   */
-  withCurrentModule = (): Env => {
-    const ctx = this._ctx.select("withCurrentModule")
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CurrentModuleAsSDKClient in the environment
-   * @param name The name of the binding
-   * @param value The CurrentModuleAsSDKClient value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCurrentModuleAsSDKClientInput = (
-    name: string,
-    value: CurrentModuleAsSDKClient,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKClientInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCurrentModuleAsSDKClientOutput = (
-    name: string,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKClientOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CurrentModuleAsSDK in the environment
-   * @param name The name of the binding
-   * @param value The CurrentModuleAsSDK value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCurrentModuleAsSDKInput = (
-    name: string,
-    value: CurrentModuleAsSDK,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type CurrentModuleAsSDKModule in the environment
-   * @param name The name of the binding
-   * @param value The CurrentModuleAsSDKModule value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withCurrentModuleAsSDKModuleInput = (
-    name: string,
-    value: CurrentModuleAsSDKModule,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKModuleInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCurrentModuleAsSDKModuleOutput = (
-    name: string,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKModuleOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired CurrentModuleAsSDK output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withCurrentModuleAsSDKOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withCurrentModuleAsSDKOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type DiffStat in the environment
-   * @param name The name of the binding
-   * @param value The DiffStat value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withDiffStatInput = (
-    name: string,
-    value: DiffStat,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withDiffStatInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired DiffStat output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withDiffStatOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withDiffStatOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Directory in the environment
-   * @param name The name of the binding
-   * @param value The Directory value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withDirectoryInput = (
-    name: string,
-    value: Directory,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withDirectoryInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Directory output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withDirectoryOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withDirectoryOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type EnvFile in the environment
-   * @param name The name of the binding
-   * @param value The EnvFile value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withEnvFileInput = (
-    name: string,
-    value: EnvFile,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withEnvFileInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired EnvFile output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withEnvFileOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withEnvFileOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Env in the environment
-   * @param name The name of the binding
-   * @param value The Env value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withEnvInput = (name: string, value: Env, description: string): Env => {
-    const ctx = this._ctx.select("withEnvInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Env output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withEnvOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withEnvOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type File in the environment
-   * @param name The name of the binding
-   * @param value The File value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withFileInput = (name: string, value: File, description: string): Env => {
-    const ctx = this._ctx.select("withFileInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired File output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withFileOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withFileOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GeneratorGroup in the environment
-   * @param name The name of the binding
-   * @param value The GeneratorGroup value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withGeneratorGroupInput = (
-    name: string,
-    value: GeneratorGroup,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withGeneratorGroupInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired GeneratorGroup output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withGeneratorGroupOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withGeneratorGroupOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Generator in the environment
-   * @param name The name of the binding
-   * @param value The Generator value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withGeneratorInput = (
-    name: string,
-    value: Generator,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withGeneratorInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Generator output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withGeneratorOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withGeneratorOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GitRef in the environment
-   * @param name The name of the binding
-   * @param value The GitRef value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withGitRefInput = (name: string, value: GitRef, description: string): Env => {
-    const ctx = this._ctx.select("withGitRefInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired GitRef output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withGitRefOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withGitRefOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type GitRepository in the environment
-   * @param name The name of the binding
-   * @param value The GitRepository value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withGitRepositoryInput = (
-    name: string,
-    value: GitRepository,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withGitRepositoryInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired GitRepository output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withGitRepositoryOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withGitRepositoryOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type HTTPState in the environment
-   * @param name The name of the binding
-   * @param value The HTTPState value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withHTTPStateInput = (
-    name: string,
-    value: HTTPState,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withHTTPStateInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired HTTPState output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withHTTPStateOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withHTTPStateOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type JSONValue in the environment
-   * @param name The name of the binding
-   * @param value The JSONValue value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withJSONValueInput = (
-    name: string,
-    value: JSONValue,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withJSONValueInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired JSONValue output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withJSONValueOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withJSONValueOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type LLMContentBlock in the environment
-   * @param name The name of the binding
-   * @param value The LLMContentBlock value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withLLMContentBlockInput = (
-    name: string,
-    value: LLMContentBlock,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withLLMContentBlockInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLMContentBlock output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMContentBlockOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMContentBlockOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type LLMMessage in the environment
-   * @param name The name of the binding
-   * @param value The LLMMessage value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withLLMMessageInput = (
-    name: string,
-    value: LLMMessage,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withLLMMessageInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLMMessage output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMMessageOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMMessageOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Sets the main module for this environment (the project being worked on)
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   */
-  withMainModule = (module_: Module_): Env => {
-    const ctx = this._ctx.select("withMainModule", {
-      module: module_,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Installs a module into the environment, exposing its functions to the model
-   *
-   * Contextual path arguments will be populated using the environment's workspace.
-   * @deprecated Use withMainModule instead
-   */
-  withModule = (module_: Module_): Env => {
-    const ctx = this._ctx.select("withModule", {
-      module: module_,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ModuleConfigClient in the environment
-   * @param name The name of the binding
-   * @param value The ModuleConfigClient value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withModuleConfigClientInput = (
-    name: string,
-    value: ModuleConfigClient,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withModuleConfigClientInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired ModuleConfigClient output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withModuleConfigClientOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withModuleConfigClientOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Module in the environment
-   * @param name The name of the binding
-   * @param value The Module value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withModuleInput = (
-    name: string,
-    value: Module_,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withModuleInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Module output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withModuleOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withModuleOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type ModuleSource in the environment
-   * @param name The name of the binding
-   * @param value The ModuleSource value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withModuleSourceInput = (
-    name: string,
-    value: ModuleSource,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withModuleSourceInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired ModuleSource output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withModuleSourceOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withModuleSourceOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Schema in the environment
-   * @param name The name of the binding
-   * @param value The Schema value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSchemaInput = (name: string, value: Schema, description: string): Env => {
-    const ctx = this._ctx.select("withSchemaInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Schema output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSchemaOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSchemaOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type SearchResult in the environment
-   * @param name The name of the binding
-   * @param value The SearchResult value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSearchResultInput = (
-    name: string,
-    value: SearchResult,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withSearchResultInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired SearchResult output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSearchResultOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSearchResultOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type SearchSubmatch in the environment
-   * @param name The name of the binding
-   * @param value The SearchSubmatch value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSearchSubmatchInput = (
-    name: string,
-    value: SearchSubmatch,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withSearchSubmatchInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired SearchSubmatch output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSearchSubmatchOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSearchSubmatchOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Secret in the environment
-   * @param name The name of the binding
-   * @param value The Secret value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSecretInput = (name: string, value: Secret, description: string): Env => {
-    const ctx = this._ctx.select("withSecretInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Secret output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSecretOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSecretOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Service in the environment
-   * @param name The name of the binding
-   * @param value The Service value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withServiceInput = (
-    name: string,
-    value: Service,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withServiceInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Service output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withServiceOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withServiceOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Socket in the environment
-   * @param name The name of the binding
-   * @param value The Socket value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withSocketInput = (name: string, value: Socket, description: string): Env => {
-    const ctx = this._ctx.select("withSocketInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Socket output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withSocketOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withSocketOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Stat in the environment
-   * @param name The name of the binding
-   * @param value The Stat value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withStatInput = (name: string, value: Stat, description: string): Env => {
-    const ctx = this._ctx.select("withStatInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Stat output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withStatOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withStatOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Provides a string input binding to the environment
-   * @param name The name of the binding
-   * @param value The string value to assign to the binding
-   * @param description The description of the input
-   */
-  withStringInput = (name: string, value: string, description: string): Env => {
-    const ctx = this._ctx.select("withStringInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declares a desired string output binding
-   * @param name The name of the binding
-   * @param description The description of the output
-   */
-  withStringOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withStringOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type UpGroup in the environment
-   * @param name The name of the binding
-   * @param value The UpGroup value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withUpGroupInput = (
-    name: string,
-    value: UpGroup,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withUpGroupInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired UpGroup output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withUpGroupOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withUpGroupOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Up in the environment
-   * @param name The name of the binding
-   * @param value The Up value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withUpInput = (name: string, value: Up, description: string): Env => {
-    const ctx = this._ctx.select("withUpInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Up output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withUpOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withUpOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Returns a new environment with the provided workspace
-   * @param workspace The directory to set as the host filesystem
-   */
-  withWorkspace = (workspace: Directory): Env => {
-    const ctx = this._ctx.select("withWorkspace", { workspace })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceGit in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceGit value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceGitInput = (
-    name: string,
-    value: WorkspaceGit,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceGitInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceGit output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceGitOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceGitOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type Workspace in the environment
-   * @param name The name of the binding
-   * @param value The Workspace value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceInput = (
-    name: string,
-    value: Workspace,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceMigration in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceMigration value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceMigrationInput = (
-    name: string,
-    value: WorkspaceMigration,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceMigrationInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceMigration output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceMigrationOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceMigrationOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceMigrationStep in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceMigrationStep value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceMigrationStepInput = (
-    name: string,
-    value: WorkspaceMigrationStep,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceMigrationStepInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceMigrationStep output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceMigrationStepOutput = (
-    name: string,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceMigrationStepOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceModule in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceModule value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceModuleInput = (
-    name: string,
-    value: WorkspaceModule,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceModuleInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceModule output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceModuleOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceModuleOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceModuleSetting in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceModuleSetting value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceModuleSettingInput = (
-    name: string,
-    value: WorkspaceModuleSetting,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceModuleSettingInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceModuleSetting output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceModuleSettingOutput = (
-    name: string,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceModuleSettingOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired Workspace output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Create or update a binding of type WorkspaceSDK in the environment
-   * @param name The name of the binding
-   * @param value The WorkspaceSDK value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withWorkspaceSDKInput = (
-    name: string,
-    value: WorkspaceSDK,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withWorkspaceSDKInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired WorkspaceSDK output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withWorkspaceSDKOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withWorkspaceSDKOutput", {
-      name,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Returns a new environment without any outputs
-   */
-  withoutOutputs = (): Env => {
-    const ctx = this._ctx.select("withoutOutputs")
-    return new Env(ctx)
-  }
-  workspace = (): Directory => {
-    const ctx = this._ctx.select("workspace")
-    return new Directory(ctx)
-  }
-
-  /**
-   * Call the provided function with current Env.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: Env) => Env) => {
-    return arg(this)
-  }
-}
-
 /**
  * A collection of environment variables.
  */
@@ -9783,6 +8036,14 @@ export class Function_ extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Returns the function with a flag indicating it is an agent middleware.
+   */
+  withAgent = (): Function_ => {
+    const ctx = this._ctx.select("withAgent")
+    return new Function_(ctx)
   }
 
   /**
@@ -11544,6 +9805,7 @@ export class JSONValue extends BaseClient {
  */
 export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _contextTokens?: number = undefined
   private readonly _contextWindow?: number = undefined
   private readonly _hasPending?: boolean = undefined
   private readonly _lastReply?: string = undefined
@@ -11561,6 +9823,7 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _contextTokens?: number,
     _contextWindow?: number,
     _hasPending?: boolean,
     _lastReply?: string,
@@ -11575,6 +9838,7 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._contextTokens = _contextTokens
     this._contextWindow = _contextWindow
     this._hasPending = _hasPending
     this._lastReply = _lastReply
@@ -11603,11 +9867,18 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * returns the type of the current state
+   * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
    */
-  bindResult = (name: string): Binding => {
-    const ctx = this._ctx.select("bindResult", { name })
-    return new Binding(ctx)
+  contextTokens = async (): Promise<number> => {
+    if (this._contextTokens) {
+      return this._contextTokens
+    }
+
+    const ctx = this._ctx.select("contextTokens")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -11623,14 +9894,6 @@ export class LLM extends BaseClient {
     const response: Awaited<number> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * return the LLM's current environment
-   */
-  env = (): Env => {
-    const ctx = this._ctx.select("env")
-    return new Env(ctx)
   }
 
   /**
@@ -11814,29 +10077,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Return a new LLM with the specified function no longer exposed as a tool
-   * @param typeName The type name whose function will be blocked
-   * @param function The function to block
-   *
-   * Will be converted to lowerCamelCase if necessary.
-   */
-  withBlockedFunction = (typeName: string, function_: string): LLM => {
-    const ctx = this._ctx.select("withBlockedFunction", {
-      typeName,
-      function: function_,
-    })
-    return new LLM(ctx)
-  }
-
-  /**
-   * allow the LLM to interact with an environment via MCP
-   */
-  withEnv = (env: Env): LLM => {
-    const ctx = this._ctx.select("withEnv", { env })
-    return new LLM(ctx)
-  }
-
-  /**
    * Add an external MCP server to the LLM
    * @param name The name of the MCP server
    * @param service The MCP service to run and communicate with over stdio
@@ -11853,16 +10093,6 @@ export class LLM extends BaseClient {
    */
   withModel = (model: string, opts?: LLMWithModelOpts): LLM => {
     const ctx = this._ctx.select("withModel", { model, ...opts })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Track an object so the LLM can reference it in subsequent tool calls.
-   * @param tag Arbitrary string tag for the object, typically in TypeName#Number format
-   * @param object The object to track, as a generic ID
-   */
-  withObject = (tag: string, object: ID): LLM => {
-    const ctx = this._ctx.select("withObject", { tag, object })
     return new LLM(ctx)
   }
 
@@ -11885,6 +10115,14 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.
+   */
+  withResetWorkspace = (): LLM => {
+    const ctx = this._ctx.select("withResetWorkspace")
+    return new LLM(ctx)
+  }
+
+  /**
    * Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
    * @param content The response content
    * @param opts.inputTokens Uncached input tokens sent
@@ -11898,14 +10136,6 @@ export class LLM extends BaseClient {
     opts?: LLMWithResponseOpts,
   ): LLM => {
     const ctx = this._ctx.select("withResponse", { content, ...opts })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
-   */
-  withStaticTools = (): LLM => {
-    const ctx = this._ctx.select("withStaticTools")
     return new LLM(ctx)
   }
 
@@ -11926,6 +10156,25 @@ export class LLM extends BaseClient {
    */
   withToolResult = (callId: string, content: string, errored: boolean): LLM => {
     const ctx = this._ctx.select("withToolResult", { callId, content, errored })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
+   * @param object The object whose methods become tools.
+   * @param opts.except Method names to exclude from the toolset (e.g. constructors, entrypoints).
+   */
+  withTools = (object: Node, opts?: LLMWithToolsOpts): LLM => {
+    const ctx = this._ctx.select("withTools", { object, ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
+   * @param workspace The workspace to work in.
+   */
+  withWorkspace = (workspace: Workspace): LLM => {
+    const ctx = this._ctx.select("withWorkspace", { workspace })
     return new LLM(ctx)
   }
 
@@ -11951,6 +10200,14 @@ export class LLM extends BaseClient {
   withoutSystemPrompts = (): LLM => {
     const ctx = this._ctx.select("withoutSystemPrompts")
     return new LLM(ctx)
+  }
+
+  /**
+   * Return the workspace the LLM is bound to.
+   */
+  workspace = (): Workspace => {
+    const ctx = this._ctx.select("workspace")
+    return new Workspace(ctx)
   }
 
   /**
@@ -13923,19 +12180,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Returns the current environment
-   *
-   * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-   *
-   * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-   * @experimental
-   */
-  currentEnv = (): Env => {
-    const ctx = this._ctx.select("currentEnv")
-    return new Env(ctx)
-  }
-
-  /**
    * The FunctionCall context that the SDK caller is currently executing in.
    *
    * If the caller is not currently executing in a function, this will return an error.
@@ -13951,6 +12195,14 @@ export class Client extends BaseClient {
   currentModule = (): CurrentModule => {
     const ctx = this._ctx.select("currentModule")
     return new CurrentModule(ctx)
+  }
+
+  /**
+   * The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+   */
+  currentNode = (): Node => {
+    const ctx = this._ctx.select("currentNode")
+    return new _NodeClient(ctx)
   }
 
   /**
@@ -14010,17 +12262,6 @@ export class Client extends BaseClient {
   engine = (): Engine => {
     const ctx = this._ctx.select("engine")
     return new Engine(ctx)
-  }
-
-  /**
-   * Initializes a new environment
-   * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
-   * @param opts.writable Allow new outputs to be declared and saved in the environment
-   * @experimental
-   */
-  env = (opts?: ClientEnvOpts): Env => {
-    const ctx = this._ctx.select("env", { ...opts })
-    return new Env(ctx)
   }
 
   /**
@@ -15812,6 +14053,15 @@ export class Workspace extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Return all agent middlewares from modules loaded in the workspace.
+   * @param opts.include Only include agents matching the specified patterns
+   */
+  agents = (opts?: WorkspaceAgentsOpts): AgentGroup => {
+    const ctx = this._ctx.select("agents", { ...opts })
+    return new AgentGroup(ctx)
   }
 
   /**

@@ -1,3 +1,8 @@
+"""
+Indicates that this function is an agent middleware, composed by dagger agent.
+"""
+directive @agent on FIELD_DEFINITION
+
 """Controls the caching behavior of a function."""
 directive @cache(
   """The cache policy to use."""
@@ -88,150 +93,37 @@ type Address implements Node {
   value: String!
 }
 
-type Binding implements Node {
-  """Retrieve the binding value, as type Address"""
-  asAddress: Address!
+type Agent implements Node {
+  """The description of the agent"""
+  description: String!
 
-  """Retrieve the binding value, as type CacheVolume"""
-  asCacheVolume: CacheVolume!
-
-  """Retrieve the binding value, as type Changeset"""
-  asChangeset: Changeset!
-
-  """Retrieve the binding value, as type Check"""
-  asCheck: Check!
-
-  """Retrieve the binding value, as type CheckGroup"""
-  asCheckGroup: CheckGroup!
-
-  """Retrieve the binding value, as type Cloud"""
-  asCloud: Cloud!
-
-  """Retrieve the binding value, as type Container"""
-  asContainer: Container!
-
-  """Retrieve the binding value, as type CurrentModuleAsSDK"""
-  asCurrentModuleAsSDK: CurrentModuleAsSDK!
-
-  """Retrieve the binding value, as type CurrentModuleAsSDKClient"""
-  asCurrentModuleAsSDKClient: CurrentModuleAsSDKClient!
-
-  """Retrieve the binding value, as type CurrentModuleAsSDKModule"""
-  asCurrentModuleAsSDKModule: CurrentModuleAsSDKModule!
-
-  """Retrieve the binding value, as type DiffStat"""
-  asDiffStat: DiffStat!
-
-  """Retrieve the binding value, as type Directory"""
-  asDirectory: Directory!
-
-  """Retrieve the binding value, as type Env"""
-  asEnv: Env!
-
-  """Retrieve the binding value, as type EnvFile"""
-  asEnvFile: EnvFile!
-
-  """Retrieve the binding value, as type File"""
-  asFile: File!
-
-  """Retrieve the binding value, as type Generator"""
-  asGenerator: Generator!
-
-  """Retrieve the binding value, as type GeneratorGroup"""
-  asGeneratorGroup: GeneratorGroup!
-
-  """Retrieve the binding value, as type GitRef"""
-  asGitRef: GitRef!
-
-  """Retrieve the binding value, as type GitRepository"""
-  asGitRepository: GitRepository!
-
-  """Retrieve the binding value, as type HTTPState"""
-  asHTTPState: HTTPState!
-
-  """Retrieve the binding value, as type JSONValue"""
-  asJSONValue: JSONValue!
-
-  """Retrieve the binding value, as type LLMContentBlock"""
-  asLLMContentBlock: LLMContentBlock!
-
-  """Retrieve the binding value, as type LLMMessage"""
-  asLLMMessage: LLMMessage!
-
-  """Retrieve the binding value, as type Module"""
-  asModule: Module!
-
-  """Retrieve the binding value, as type ModuleConfigClient"""
-  asModuleConfigClient: ModuleConfigClient!
-
-  """Retrieve the binding value, as type ModuleSource"""
-  asModuleSource: ModuleSource!
-
-  """Retrieve the binding value, as type Schema"""
-  asSchema: Schema!
-
-  """Retrieve the binding value, as type SearchResult"""
-  asSearchResult: SearchResult!
-
-  """Retrieve the binding value, as type SearchSubmatch"""
-  asSearchSubmatch: SearchSubmatch!
-
-  """Retrieve the binding value, as type Secret"""
-  asSecret: Secret!
-
-  """Retrieve the binding value, as type Service"""
-  asService: Service!
-
-  """Retrieve the binding value, as type Socket"""
-  asSocket: Socket!
-
-  """Retrieve the binding value, as type Stat"""
-  asStat: Stat
-
-  """Returns the binding's string value"""
-  asString: String
-
-  """Retrieve the binding value, as type Up"""
-  asUp: Up!
-
-  """Retrieve the binding value, as type UpGroup"""
-  asUpGroup: UpGroup!
-
-  """Retrieve the binding value, as type Workspace"""
-  asWorkspace: Workspace!
-
-  """Retrieve the binding value, as type WorkspaceGit"""
-  asWorkspaceGit: WorkspaceGit!
-
-  """Retrieve the binding value, as type WorkspaceMigration"""
-  asWorkspaceMigration: WorkspaceMigration!
-
-  """Retrieve the binding value, as type WorkspaceMigrationStep"""
-  asWorkspaceMigrationStep: WorkspaceMigrationStep!
-
-  """Retrieve the binding value, as type WorkspaceModule"""
-  asWorkspaceModule: WorkspaceModule!
-
-  """Retrieve the binding value, as type WorkspaceModuleSetting"""
-  asWorkspaceModuleSetting: WorkspaceModuleSetting!
-
-  """Retrieve the binding value, as type WorkspaceSDK"""
-  asWorkspaceSDK: WorkspaceSDK!
-
-  """Returns the digest of the binding value"""
-  digest: String!
-
-  """A unique identifier for this Binding."""
+  """A unique identifier for this Agent."""
   id: ID!
 
-  """Returns true if the binding is null"""
-  isNull: Boolean!
-
-  """Returns the binding name"""
+  """Return the fully qualified name of the agent"""
   name: String!
 
-  """Returns the binding type"""
-  typeName: String!
+  """The original module in which the agent has been defined"""
+  originalModule: Module!
+
+  """The path of the agent within its module"""
+  path: [String!]!
+}
+
+type AgentGroup implements Node {
+  """
+  Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.
+  """
+  compose(
+    """The base LLM to compose onto. Defaults to a fresh workspace-bound LLM."""
+    base: ID @expectedType(name: "LLM")
+  ): LLM!
+
+  """A unique identifier for this AgentGroup."""
+  id: ID!
+
+  """Return a list of individual agents and their details"""
+  list: [Agent!]!
 }
 
 """Key value object that represents a build argument."""
@@ -2539,1029 +2431,6 @@ type EnumValueTypeDef implements Node {
   value: String!
 }
 
-type Env implements Node {
-  """
-  Return the check with the given name from the installed modules. Must match exactly one check.
-  """
-  check(
-    """The name of the check to retrieve"""
-    name: String!
-  ): Check! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
-
-  """Return all checks defined by the installed modules"""
-  checks(
-    """Only include checks matching the specified patterns"""
-    include: [String!]
-
-    """
-    When true, only return annotated check functions; exclude generate-as-checks
-    """
-    noGenerate: Boolean
-  ): CheckGroup! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
-
-  """A unique identifier for this Env."""
-  id: ID!
-
-  """Retrieves an input binding by name"""
-  input(name: String!): Binding!
-
-  """Returns all input bindings provided to the environment"""
-  inputs: [Binding!]!
-
-  """Retrieves an output binding by name"""
-  output(name: String!): Binding!
-
-  """Returns all declared output bindings for the environment"""
-  outputs: [Binding!]!
-
-  """Return all services defined by the installed modules"""
-  services(
-    """Only include services matching the specified patterns"""
-    include: [String!]
-  ): UpGroup! @experimental(reason: "Services API is highly experimental and may be removed or replaced entirely.")
-
-  """Create or update a binding of type Address in the environment"""
-  withAddressInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Address value to assign to the binding"""
-    value: ID! @expectedType(name: "Address")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Address output to be assigned in the environment"""
-  withAddressOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type CacheVolume in the environment"""
-  withCacheVolumeInput(
-    """The name of the binding"""
-    name: String!
-
-    """The CacheVolume value to assign to the binding"""
-    value: ID! @expectedType(name: "CacheVolume")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired CacheVolume output to be assigned in the environment"""
-  withCacheVolumeOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Changeset in the environment"""
-  withChangesetInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Changeset value to assign to the binding"""
-    value: ID! @expectedType(name: "Changeset")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Changeset output to be assigned in the environment"""
-  withChangesetOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type CheckGroup in the environment"""
-  withCheckGroupInput(
-    """The name of the binding"""
-    name: String!
-
-    """The CheckGroup value to assign to the binding"""
-    value: ID! @expectedType(name: "CheckGroup")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired CheckGroup output to be assigned in the environment"""
-  withCheckGroupOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Check in the environment"""
-  withCheckInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Check value to assign to the binding"""
-    value: ID! @expectedType(name: "Check")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Check output to be assigned in the environment"""
-  withCheckOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Cloud in the environment"""
-  withCloudInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Cloud value to assign to the binding"""
-    value: ID! @expectedType(name: "Cloud")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Cloud output to be assigned in the environment"""
-  withCloudOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Container in the environment"""
-  withContainerInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Container value to assign to the binding"""
-    value: ID! @expectedType(name: "Container")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Container output to be assigned in the environment"""
-  withContainerOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """
-  Installs the current module into the environment, exposing its functions to the model
-
-  Contextual path arguments will be populated using the environment's workspace.
-  """
-  withCurrentModule: Env!
-
-  """
-  Create or update a binding of type CurrentModuleAsSDKClient in the environment
-  """
-  withCurrentModuleAsSDKClientInput(
-    """The name of the binding"""
-    name: String!
-
-    """The CurrentModuleAsSDKClient value to assign to the binding"""
-    value: ID! @expectedType(name: "CurrentModuleAsSDKClient")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired CurrentModuleAsSDKClient output to be assigned in the environment
-  """
-  withCurrentModuleAsSDKClientOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """
-  Create or update a binding of type CurrentModuleAsSDK in the environment
-  """
-  withCurrentModuleAsSDKInput(
-    """The name of the binding"""
-    name: String!
-
-    """The CurrentModuleAsSDK value to assign to the binding"""
-    value: ID! @expectedType(name: "CurrentModuleAsSDK")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Create or update a binding of type CurrentModuleAsSDKModule in the environment
-  """
-  withCurrentModuleAsSDKModuleInput(
-    """The name of the binding"""
-    name: String!
-
-    """The CurrentModuleAsSDKModule value to assign to the binding"""
-    value: ID! @expectedType(name: "CurrentModuleAsSDKModule")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired CurrentModuleAsSDKModule output to be assigned in the environment
-  """
-  withCurrentModuleAsSDKModuleOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired CurrentModuleAsSDK output to be assigned in the environment
-  """
-  withCurrentModuleAsSDKOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type DiffStat in the environment"""
-  withDiffStatInput(
-    """The name of the binding"""
-    name: String!
-
-    """The DiffStat value to assign to the binding"""
-    value: ID! @expectedType(name: "DiffStat")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired DiffStat output to be assigned in the environment"""
-  withDiffStatOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Directory in the environment"""
-  withDirectoryInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Directory value to assign to the binding"""
-    value: ID! @expectedType(name: "Directory")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Directory output to be assigned in the environment"""
-  withDirectoryOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type EnvFile in the environment"""
-  withEnvFileInput(
-    """The name of the binding"""
-    name: String!
-
-    """The EnvFile value to assign to the binding"""
-    value: ID! @expectedType(name: "EnvFile")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired EnvFile output to be assigned in the environment"""
-  withEnvFileOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Env in the environment"""
-  withEnvInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Env value to assign to the binding"""
-    value: ID! @expectedType(name: "Env")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Env output to be assigned in the environment"""
-  withEnvOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type File in the environment"""
-  withFileInput(
-    """The name of the binding"""
-    name: String!
-
-    """The File value to assign to the binding"""
-    value: ID! @expectedType(name: "File")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired File output to be assigned in the environment"""
-  withFileOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type GeneratorGroup in the environment"""
-  withGeneratorGroupInput(
-    """The name of the binding"""
-    name: String!
-
-    """The GeneratorGroup value to assign to the binding"""
-    value: ID! @expectedType(name: "GeneratorGroup")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired GeneratorGroup output to be assigned in the environment
-  """
-  withGeneratorGroupOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Generator in the environment"""
-  withGeneratorInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Generator value to assign to the binding"""
-    value: ID! @expectedType(name: "Generator")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Generator output to be assigned in the environment"""
-  withGeneratorOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type GitRef in the environment"""
-  withGitRefInput(
-    """The name of the binding"""
-    name: String!
-
-    """The GitRef value to assign to the binding"""
-    value: ID! @expectedType(name: "GitRef")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired GitRef output to be assigned in the environment"""
-  withGitRefOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type GitRepository in the environment"""
-  withGitRepositoryInput(
-    """The name of the binding"""
-    name: String!
-
-    """The GitRepository value to assign to the binding"""
-    value: ID! @expectedType(name: "GitRepository")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired GitRepository output to be assigned in the environment
-  """
-  withGitRepositoryOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type HTTPState in the environment"""
-  withHTTPStateInput(
-    """The name of the binding"""
-    name: String!
-
-    """The HTTPState value to assign to the binding"""
-    value: ID! @expectedType(name: "HTTPState")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired HTTPState output to be assigned in the environment"""
-  withHTTPStateOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type JSONValue in the environment"""
-  withJSONValueInput(
-    """The name of the binding"""
-    name: String!
-
-    """The JSONValue value to assign to the binding"""
-    value: ID! @expectedType(name: "JSONValue")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired JSONValue output to be assigned in the environment"""
-  withJSONValueOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type LLMContentBlock in the environment"""
-  withLLMContentBlockInput(
-    """The name of the binding"""
-    name: String!
-
-    """The LLMContentBlock value to assign to the binding"""
-    value: ID! @expectedType(name: "LLMContentBlock")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired LLMContentBlock output to be assigned in the environment
-  """
-  withLLMContentBlockOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type LLMMessage in the environment"""
-  withLLMMessageInput(
-    """The name of the binding"""
-    name: String!
-
-    """The LLMMessage value to assign to the binding"""
-    value: ID! @expectedType(name: "LLMMessage")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired LLMMessage output to be assigned in the environment"""
-  withLLMMessageOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """
-  Sets the main module for this environment (the project being worked on)
-
-  Contextual path arguments will be populated using the environment's workspace.
-  """
-  withMainModule(module: ID! @expectedType(name: "Module")): Env!
-
-  """
-  Installs a module into the environment, exposing its functions to the model
-
-  Contextual path arguments will be populated using the environment's workspace.
-  """
-  withModule(module: ID! @expectedType(name: "Module")): Env! @deprecated(reason: "Use withMainModule instead")
-
-  """
-  Create or update a binding of type ModuleConfigClient in the environment
-  """
-  withModuleConfigClientInput(
-    """The name of the binding"""
-    name: String!
-
-    """The ModuleConfigClient value to assign to the binding"""
-    value: ID! @expectedType(name: "ModuleConfigClient")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired ModuleConfigClient output to be assigned in the environment
-  """
-  withModuleConfigClientOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Module in the environment"""
-  withModuleInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Module value to assign to the binding"""
-    value: ID! @expectedType(name: "Module")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Module output to be assigned in the environment"""
-  withModuleOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type ModuleSource in the environment"""
-  withModuleSourceInput(
-    """The name of the binding"""
-    name: String!
-
-    """The ModuleSource value to assign to the binding"""
-    value: ID! @expectedType(name: "ModuleSource")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired ModuleSource output to be assigned in the environment
-  """
-  withModuleSourceOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Schema in the environment"""
-  withSchemaInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Schema value to assign to the binding"""
-    value: ID! @expectedType(name: "Schema")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Schema output to be assigned in the environment"""
-  withSchemaOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type SearchResult in the environment"""
-  withSearchResultInput(
-    """The name of the binding"""
-    name: String!
-
-    """The SearchResult value to assign to the binding"""
-    value: ID! @expectedType(name: "SearchResult")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired SearchResult output to be assigned in the environment
-  """
-  withSearchResultOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type SearchSubmatch in the environment"""
-  withSearchSubmatchInput(
-    """The name of the binding"""
-    name: String!
-
-    """The SearchSubmatch value to assign to the binding"""
-    value: ID! @expectedType(name: "SearchSubmatch")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired SearchSubmatch output to be assigned in the environment
-  """
-  withSearchSubmatchOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Secret in the environment"""
-  withSecretInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Secret value to assign to the binding"""
-    value: ID! @expectedType(name: "Secret")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Secret output to be assigned in the environment"""
-  withSecretOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Service in the environment"""
-  withServiceInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Service value to assign to the binding"""
-    value: ID! @expectedType(name: "Service")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Service output to be assigned in the environment"""
-  withServiceOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Socket in the environment"""
-  withSocketInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Socket value to assign to the binding"""
-    value: ID! @expectedType(name: "Socket")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Socket output to be assigned in the environment"""
-  withSocketOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Stat in the environment"""
-  withStatInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Stat value to assign to the binding"""
-    value: ID! @expectedType(name: "Stat")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Stat output to be assigned in the environment"""
-  withStatOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Provides a string input binding to the environment"""
-  withStringInput(
-    """The name of the binding"""
-    name: String!
-
-    """The string value to assign to the binding"""
-    value: String!
-
-    """The description of the input"""
-    description: String!
-  ): Env!
-
-  """Declares a desired string output binding"""
-  withStringOutput(
-    """The name of the binding"""
-    name: String!
-
-    """The description of the output"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type UpGroup in the environment"""
-  withUpGroupInput(
-    """The name of the binding"""
-    name: String!
-
-    """The UpGroup value to assign to the binding"""
-    value: ID! @expectedType(name: "UpGroup")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired UpGroup output to be assigned in the environment"""
-  withUpGroupOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Up in the environment"""
-  withUpInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Up value to assign to the binding"""
-    value: ID! @expectedType(name: "Up")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Up output to be assigned in the environment"""
-  withUpOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Returns a new environment with the provided workspace"""
-  withWorkspace(
-    """The directory to set as the host filesystem"""
-    workspace: ID! @expectedType(name: "Directory")
-  ): Env!
-
-  """Create or update a binding of type WorkspaceGit in the environment"""
-  withWorkspaceGitInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceGit value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceGit")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceGit output to be assigned in the environment
-  """
-  withWorkspaceGitOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type Workspace in the environment"""
-  withWorkspaceInput(
-    """The name of the binding"""
-    name: String!
-
-    """The Workspace value to assign to the binding"""
-    value: ID! @expectedType(name: "Workspace")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Create or update a binding of type WorkspaceMigration in the environment
-  """
-  withWorkspaceMigrationInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceMigration value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceMigration")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceMigration output to be assigned in the environment
-  """
-  withWorkspaceMigrationOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """
-  Create or update a binding of type WorkspaceMigrationStep in the environment
-  """
-  withWorkspaceMigrationStepInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceMigrationStep value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceMigrationStep")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceMigrationStep output to be assigned in the environment
-  """
-  withWorkspaceMigrationStepOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type WorkspaceModule in the environment"""
-  withWorkspaceModuleInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceModule value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceModule")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceModule output to be assigned in the environment
-  """
-  withWorkspaceModuleOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """
-  Create or update a binding of type WorkspaceModuleSetting in the environment
-  """
-  withWorkspaceModuleSettingInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceModuleSetting value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceModuleSetting")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceModuleSetting output to be assigned in the environment
-  """
-  withWorkspaceModuleSettingOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Declare a desired Workspace output to be assigned in the environment"""
-  withWorkspaceOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Create or update a binding of type WorkspaceSDK in the environment"""
-  withWorkspaceSDKInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceSDK value to assign to the binding"""
-    value: ID! @expectedType(name: "WorkspaceSDK")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceSDK output to be assigned in the environment
-  """
-  withWorkspaceSDKOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
-  """Returns a new environment without any outputs"""
-  withoutOutputs: Env!
-
-  workspace: Directory!
-}
-
 """A collection of environment variables."""
 type EnvFile implements Node {
   """Return as a file"""
@@ -3923,6 +2792,9 @@ type Function implements Node {
   If this function is provided by a module, the name of the module. Unset otherwise.
   """
   sourceModuleName: String!
+
+  """Returns the function with a flag indicating it is an agent middleware."""
+  withAgent: Function!
 
   """Returns the function with the provided argument"""
   withArg(
@@ -4575,16 +3447,16 @@ A conversation with a large language model (LLM): queue prompts, expose tools,
 and step the model until it completes its turn.
 """
 type LLM implements Node & Syncer {
-  """returns the type of the current state"""
-  bindResult(name: String!): Binding
+  """
+  estimated number of tokens currently occupying the context window; unlike
+  tokenUsage this is not cumulative over the session
+  """
+  contextTokens: Int!
 
   """
   The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
   """
   contextWindow: Int
-
-  """return the LLM's current environment"""
-  env: Env!
 
   """
   Fork the conversation, so that otherwise-identical follow-ups evaluate
@@ -4682,24 +3554,6 @@ type LLM implements Node & Syncer {
   """
   transcript: String!
 
-  """
-  Return a new LLM with the specified function no longer exposed as a tool
-  """
-  withBlockedFunction(
-    """The type name whose function will be blocked"""
-    typeName: String!
-
-    """
-    The function to block
-
-    Will be converted to lowerCamelCase if necessary.
-    """
-    function: String!
-  ): LLM!
-
-  """allow the LLM to interact with an environment via MCP"""
-  withEnv(env: ID! @expectedType(name: "Env")): LLM!
-
   """Add an external MCP server to the LLM"""
   withMCPServer(
     """The name of the MCP server"""
@@ -4725,17 +3579,6 @@ type LLM implements Node & Syncer {
     provider: String
   ): LLM!
 
-  """Track an object so the LLM can reference it in subsequent tool calls."""
-  withObject(
-    """
-    Arbitrary string tag for the object, typically in TypeName#Number format
-    """
-    tag: String!
-
-    """The object to track, as a generic ID"""
-    object: ID!
-  ): LLM!
-
   """Queue a user prompt, to be sent to the model on the next step or loop."""
   withPrompt(
     """The prompt to send"""
@@ -4747,6 +3590,16 @@ type LLM implements Node & Syncer {
     """The file to read the prompt from"""
     file: ID! @expectedType(name: "File")
   ): LLM!
+
+  """
+  Return a new LLM with the workspace reset to its base, dropping any
+  accumulated changes. The conversation and configuration are re-emitted as a
+  flat recipe bound to the live workspace, so a persisted session (globalID) no
+  longer replays workspace edits when loaded. Use after exporting changes
+  (Workspace.export) so a resumed session continues from the workspace's on-disk
+  state.
+  """
+  withResetWorkspace: LLM!
 
   """
   Append an assistant response to the message history without calling the model,
@@ -4773,11 +3626,6 @@ type LLM implements Node & Syncer {
   ): LLM!
 
   """
-  Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
-  """
-  withStaticTools: LLM!
-
-  """
   Add a system prompt, instructing the model across the whole conversation.
   """
   withSystemPrompt(
@@ -4797,6 +3645,29 @@ type LLM implements Node & Syncer {
     errored: Boolean!
   ): LLM!
 
+  """
+  Expose an object's methods as tools. Every eligible method of the bound object
+  becomes a tool; a tool that returns this object's own type replaces it as the
+  new state. Repeatable to bind several objects.
+  """
+  withTools(
+    """The object whose methods become tools."""
+    object: ID! @expectedType(name: "Node")
+
+    """
+    Method names to exclude from the toolset (e.g. constructors, entrypoints).
+    """
+    except: [String!] = []
+  ): LLM!
+
+  """
+  Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
+  """
+  withWorkspace(
+    """The workspace to work in."""
+    workspace: ID! @expectedType(name: "Workspace")
+  ): LLM!
+
   """Disable the default system prompt"""
   withoutDefaultSystemPrompt: LLM!
 
@@ -4807,6 +3678,9 @@ type LLM implements Node & Syncer {
   Clear the user-added system prompts, keeping only the default system prompt.
   """
   withoutSystemPrompts: LLM!
+
+  """Return the workspace the LLM is bound to."""
+  workspace: Workspace!
 }
 
 """A single piece of content within an LLM message."""
@@ -5533,21 +4407,6 @@ type Query implements Node {
   ): Container!
 
   """
-  Returns the current environment
-
-  When called from a function invoked via an LLM tool call, this will be the
-  LLM's current environment, including any modifications made through calling
-  tools. Env values returned by functions become the new environment for
-  subsequent calls, and Changeset values returned by functions are applied to
-  the environment's workspace.
-
-  When called from a module function outside of an LLM, this returns an Env with
-  the current module installed, and with the current module's source directory
-  as its workspace.
-  """
-  currentEnv: Env! @experimental(reason: "Programmatic env access is speculative and might be replaced.")
-
-  """
   The FunctionCall context that the SDK caller is currently executing in.
 
   If the caller is not currently executing in a function, this will return an error.
@@ -5556,6 +4415,13 @@ type Query implements Node {
 
   """The module currently being served in the session, if any."""
   currentModule: CurrentModule!
+
+  """
+  The object that received the current module function call, as a Node. Errors
+  when there is no current call, or the call is top-level (e.g. a module
+  constructor).
+  """
+  currentNode: Node!
 
   """
   The TypeDef representations of the objects currently being served in the session.
@@ -5586,17 +4452,6 @@ type Query implements Node {
 
   """The Dagger engine container configuration and state"""
   engine: Engine!
-
-  """Initializes a new environment"""
-  env(
-    """
-    Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
-    """
-    privileged: Boolean = false
-
-    """Allow new outputs to be declared and saved in the environment"""
-    writable: Boolean = false
-  ): Env! @experimental(reason: "Environments are not yet stabilized")
 
   """Initialize an environment file"""
   envFile(
@@ -6406,6 +5261,12 @@ type Workspace implements Node {
   Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
   """
   address: String!
+
+  """Return all agent middlewares from modules loaded in the workspace."""
+  agents(
+    """Only include agents matching the specified patterns"""
+    include: [String!]
+  ): AgentGroup!
 
   """Return this workspace's pending overlay changes."""
   changes: Changeset!

@@ -11845,6 +11845,18 @@ class LLM(Type):
         _ctx = self._select("withPromptFile", _args)
         return LLM(_ctx)
 
+    def with_reset_workspace(self) -> Self:
+        """Return a new LLM with the workspace reset to its base, dropping any
+        accumulated changes. The conversation and configuration are re-emitted
+        as a flat recipe bound to the live workspace, so a persisted session
+        (globalID) no longer replays workspace edits when loaded. Use after
+        exporting changes (Workspace.export) so a resumed session continues
+        from the workspace's on-disk state.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withResetWorkspace", _args)
+        return LLM(_ctx)
+
     def with_response(
         self,
         content: list[LLMContentBlockInput],

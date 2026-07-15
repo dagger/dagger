@@ -9913,6 +9913,15 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	}
 }
 
+// Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.
+func (r *LLM) WithResetWorkspace() *LLM {
+	q := r.query.Select("withResetWorkspace")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // LLMWithResponseOpts contains options for LLM.WithResponse
 type LLMWithResponseOpts struct {
 	// Uncached input tokens sent
