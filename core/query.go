@@ -174,6 +174,13 @@ type Server interface {
 	// Flush telemetry for all clients in the current session.
 	FlushSessionTelemetry(ctx context.Context) error
 
+	// SessionScopedContext returns a context that lives for the remainder of
+	// the current client's session: it is detached from the given context's
+	// cancellation and is canceled when the session begins closing. Use it
+	// for background work that serves the session as a whole rather than a
+	// single call.
+	SessionScopedContext(ctx context.Context) (context.Context, error)
+
 	// Open a client's telemetry database.
 	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error)
 

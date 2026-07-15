@@ -142,6 +142,10 @@ func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error
 	return nil
 }
 
+func (s *currentTypeDefsTestServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
+	return context.WithoutCancel(ctx), nil
+}
+
 func (s *currentTypeDefsTestServer) ClientTelemetry(context.Context, string, string) (*clientdb.DB, error) {
 	return nil, nil
 }

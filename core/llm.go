@@ -132,14 +132,10 @@ type LLMEndpoint struct {
 	// thinking_level). Empty or "none" disables reasoning.
 	ReasoningEffort string
 
-	// tunnel holds a running container-to-host tunnel for local endpoints,
-	// forwarding the endpoint's traffic through the client's session. Nil for
-	// non-local providers.
-	tunnel *localTunnel
-
 	// dial overrides how the endpoint's HTTP client opens connections. Set
-	// for local endpoints so traffic routes through the tunnel while BaseURL
-	// keeps the original host for TLS verification/SNI and the Host header.
+	// for local endpoints so traffic routes through a container-to-host
+	// tunnel (forwarding through the client's session) while BaseURL keeps
+	// the original host for TLS verification/SNI and the Host header.
 	dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
@@ -1014,12 +1010,16 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 		if err != nil {
 			return nil, fmt.Errorf("local LLM: parent client metadata: %w", err)
 		}
-		tunnelCtx := engine.ContextWithClientMetadata(ctx, parentClient)
-		tunnel, err := setupLocalTunnel(tunnelCtx, endpoint)
+		// The tunnel serves the endpoint beyond this call, so scope it to the
+		// client's session: it shuts down when the session closes.
+		sessionCtx, err := query.Server.SessionScopedContext(ctx)
 		if err != nil {
+			return nil, fmt.Errorf("local LLM: session context: %w", err)
+		}
+		tunnelCtx := engine.ContextWithClientMetadata(sessionCtx, parentClient)
+		if err := setupLocalTunnel(tunnelCtx, endpoint); err != nil {
 			return nil, fmt.Errorf("setup local LLM tunnel: %w", err)
 		}
-		endpoint.tunnel = tunnel
 		switch router.LocalAPICompat {
 		case "openai":
 			endpoint.Client = newOpenAIClient(endpoint, "", false)

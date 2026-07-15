@@ -2404,6 +2404,17 @@ func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID st
 	return conn, true, nil
 }
 
+// SessionScopedContext returns a context that lives for the remainder of the
+// current client's session: it is detached from the given context's
+// cancellation and is canceled when the session begins closing.
+func (srv *Server) SessionScopedContext(ctx context.Context) (context.Context, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.withClosingCancel(context.WithoutCancel(ctx)), nil
+}
+
 func (srv *Server) sessionMainClientConn(ctx context.Context, sess *daggerSession) (*grpc.ClientConn, error) {
 	_ = ctx
 	if sess == nil {
