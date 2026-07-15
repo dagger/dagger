@@ -1,0 +1,65 @@
+name = "release"
+engineVersion = "v0.21.7"
+include = ["../../go.mod", "../../go.sum"]
+
+[runtime]
+  source = "go"
+
+[[dependencies]]
+  name = "changelog"
+  source = "../changelog"
+
+[[dependencies]]
+  name = "cli-dev"
+  source = "../cli-dev"
+
+[[dependencies]]
+  name = "docs-dev"
+  source = "../docs-dev"
+
+[[dependencies]]
+  name = "dotnet-sdk-dev"
+  source = "../dotnet-sdk-dev"
+
+[[dependencies]]
+  name = "engine-dev"
+  source = "../engine-dev"
+
+[[dependencies]]
+  name = "gh"
+  source = "gh"
+
+[[dependencies]]
+  name = "go-sdk-dev"
+  source = "../go-sdk-dev"
+
+[[dependencies]]
+  name = "notify"
+  source = "../engine-dev/notify"
+
+[[dependencies]]
+  name = "php-sdk-dev"
+  source = "../php-sdk-dev"
+
+[[dependencies]]
+  name = "python-sdk-dev"
+  source = "../python-sdk-dev"
+
+[[dependencies]]
+  name = "elixir-sdk-dev"
+  source = "../elixir-sdk-dev"
+
+[[dependencies]]
+  name = "rust-sdk-dev"
+  source = "../rust-sdk-dev"
+
+[[dependencies]]
+  name = "typescript-sdk-dev"
+  source = "../typescript-sdk-dev"
+
+[[dependencies]]
+  name = "wolfi"
+  source = "../../modules/wolfi"
+
+[codegen]
+  automaticGitignore = false
