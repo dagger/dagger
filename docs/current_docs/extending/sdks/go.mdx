@@ -85,7 +85,7 @@ my-module/
 ├── main.go                       # your code
 ├── dagger.gen.go                 # generated: top-level helpers
 ├── .gitattributes                # marks generated files for linguist
-├── .gitignore                    # ignores generated files by default
+├── .gitignore                    # ignores local-only files such as .env
 └── internal/
     └── dagger/                   # generated: the typed Dagger client
         ├── dagger.gen.go
@@ -93,7 +93,7 @@ my-module/
 ```
 
 :::note
-`dagger module init` writes `dagger-module.toml` and `main.go` and updates the workspace config. The first [binding regeneration](#regenerate-bindings-and-generated-files) produces the Go module files and generated client; generated code paths are git-ignored by default.
+`dagger module init` writes `dagger-module.toml` and `main.go` and updates the workspace config. After accepting those changes, run `dagger generate` once to create `go.mod`, `go.sum`, and the generated Go files shown above. Commit the generated Go files along with the rest of the module. Dagger needs the generated client to load the module, both from your local checkout and from a Git reference.
 :::
 
 The module config records the runtime separately from the SDK that authors it:
@@ -711,7 +711,7 @@ A Go module uses generated code alongside your handwritten `main.go`:
 - `internal/dagger/` — the typed Dagger client, including `dag`, all core types (`Container`, `Directory`, …), every dependency's functions, and the `XxxOpts` option structs
 - `internal/telemetry/` — supporting generated code when required
 
-These files are generated, not authored. The generated `.gitignore` excludes them by default, and `.gitattributes` marks them as `linguist-generated` for repositories that choose to commit them:
+You do not edit these files by hand, but you do commit them. Dagger does not regenerate them when it loads a module configured with `dagger-module.toml`, including a module installed from Git. If required generated files are missing, the module cannot load. The generated `.gitattributes` marks them as `linguist-generated`:
 
 ```text title=".gitattributes"
 /dagger.gen.go linguist-generated
@@ -728,18 +728,16 @@ dagger generate
 
 `dagger generate` discovers and runs every generator in the workspace; for modules registered under the Go SDK, that includes binding regeneration.
 
+Apply and commit the resulting changeset. This keeps the generated client in sync with the functions and dependencies available to your module.
+
 :::note
 A `.dagger-go-sdk-skip-generate` marker in a module or one of its ancestors skips Go binding regeneration for that module.
 :::
 
 :::tip
-Generated SDK files are git-ignored by default. To commit them instead, opt out of automatic gitignore management in `dagger-module.toml`:
+Generated SDK bindings are not added to `.gitignore`; commit them with your module.
 
-```toml
-[codegen]
-automaticGitignore = false
-```
-
+By default, Dagger still adds local-only files such as `.env` to `.gitignore`. Set `codegen.automaticGitignore = false` only if you want to manage all `.gitignore` entries yourself.
 :::
 
 ## Engine version
@@ -942,7 +940,7 @@ jobs:
 
 ## IDE setup, `go.mod` and `go.work`
 
-`init` generates a `go.mod` (and `go.sum`) scoped to your module so the generated client resolves. If the module lives in a sub-directory of a larger Go project, this separate module can confuse IDE tooling.
+The first `dagger generate` creates a `go.mod` and `go.sum` inside your Dagger module. These files tell Go which dependencies the generated client needs. If the Dagger module lives inside a larger Go project, the additional `go.mod` can make an editor choose the wrong Go module for a file.
 
 Two options:
 
@@ -974,9 +972,13 @@ The Go SDK attaches source maps to type and function definitions — `./path/to/
 
 A Go SDK module is distributed as a Git repository. There is no build artifact to publish — consumers fetch the source by reference.
 
-1. **Choose a generated-file policy.** Generated files are git-ignored by default. If you set `codegen.automaticGitignore = false`, commit `dagger.gen.go` and `internal/` with each change.
-2. **Version with Git tags.** Releases are Git refs. Tag a release (e.g. `v1.2.0`) and consumers pin it with `@v1.2.0` in the reference.
-3. **Pin a sensible engine version.** Use `dagger module engine require` so consumers know which engine your module targets.
+Recommended release checklist:
+
+1. **Pin the engine version.** Use `dagger module engine require <version>` to set the oldest engine version your module supports.
+2. **Commit the generated bindings.** Run `dagger generate`, review the changes, and commit the generated files with your module.
+3. **Version with Git tags.** Tag a release (for example, `v1.2.0`) and push it. Consumers can pin that version with `@v1.2.0`.
+
+Before publishing, run `dagger check --generate` to confirm that the committed bindings are up to date.
 
 Consumers can install your module into a workspace with:
 
