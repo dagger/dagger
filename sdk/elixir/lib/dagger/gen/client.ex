@@ -102,28 +102,6 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Returns the current environment
-
-  When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
-
-  When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
-
-  > #### Experimental {: .warning}
-  >
-  > "Programmatic env access is speculative and might be replaced."
-  """
-  @spec current_env(t()) :: Dagger.Env.t()
-  def current_env(%__MODULE__{} = client) do
-    query_builder =
-      client.query_builder |> QB.select("currentEnv")
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc """
   The FunctionCall context that the SDK caller is currently executing in.
 
   If the caller is not currently executing in a function, this will return an error.
@@ -148,6 +126,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("currentModule")
 
     %Dagger.CurrentModule{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).
+  """
+  @spec current_node(t()) :: Dagger.Node.t()
+  def current_node(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("currentNode")
+
+    %Dagger.Node{
       query_builder: query_builder,
       client: client.client
     }
@@ -235,27 +227,6 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("engine")
 
     %Dagger.Engine{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc """
-  Initializes a new environment
-
-  > #### Experimental {: .warning}
-  >
-  > "Environments are not yet stabilized"
-  """
-  @spec env(t(), [{:privileged, boolean() | nil}, {:writable, boolean() | nil}]) :: Dagger.Env.t()
-  def env(%__MODULE__{} = client, optional_args \\ []) do
-    query_builder =
-      client.query_builder
-      |> QB.select("env")
-      |> QB.maybe_put_arg("privileged", optional_args[:privileged])
-      |> QB.maybe_put_arg("writable", optional_args[:writable])
-
-    %Dagger.Env{
       query_builder: query_builder,
       client: client.client
     }

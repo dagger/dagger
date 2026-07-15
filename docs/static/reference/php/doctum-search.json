@@ -5688,6 +5688,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::withResetWorkspace",
+			"p": "Dagger/LLM.html#method_withResetWorkspace",
+			"d": "<p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::withResponse",
 			"p": "Dagger/LLM.html#method_withResponse",
 			"d": "<p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p>"

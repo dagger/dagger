@@ -396,6 +396,16 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_withResetWorkspace">withResetWorkspace</a>()
+        
+                                            <p><p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_withResponse">withResponse</a>(array $content, int|null $inputTokens = 0, int|null $outputTokens = 0, int|null $cachedTokenReads = 0, int|null $cachedTokenWrites = 0, int|null $totalTokens = 0)
         
                                             <p><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></p>                </div>
@@ -1492,8 +1502,45 @@
 
             </div>
                     <div class="method-item">
+<<<<<<< HEAD
                     <h3 id="method_withResponse">
         <div class="location">at line 270</div>
+=======
+                    <h3 id="method_withResetWorkspace">
+        <div class="location">at line 228</div>
+>>>>>>> f14236166 (chore: regen docs + sdks)
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>withResetWorkspace</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withResponse">
+        <div class="location">at line 237</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withResponse</strong>(array $content, int|null $inputTokens = 0, int|null $outputTokens = 0, int|null $cachedTokenReads = 0, int|null $cachedTokenWrites = 0, int|null $totalTokens = 0)
         </code>
@@ -1592,7 +1639,11 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSystemPrompt">
+<<<<<<< HEAD
         <div class="location">at line 310</div>
+=======
+        <div class="location">at line 268</div>
+>>>>>>> f14236166 (chore: regen docs + sdks)
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withSystemPrompt</strong>(string $prompt)
         </code>
@@ -1634,7 +1685,11 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withToolResult">
+<<<<<<< HEAD
         <div class="location">at line 320</div>
+=======
+        <div class="location">at line 278</div>
+>>>>>>> f14236166 (chore: regen docs + sdks)
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withToolResult</strong>(string $callId, string $content, bool $errored)
         </code>
@@ -1685,8 +1740,102 @@
 
             </div>
                     <div class="method-item">
+<<<<<<< HEAD
                     <h3 id="method_withoutDefaultSystemPrompt">
         <div class="location">at line 332</div>
+=======
+                    <h3 id="method_withTools">
+        <div class="location">at line 290</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>withTools</strong>(<a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a> $object, array|null $except = [])
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a></td>
+                <td>$object</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$except</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withWorkspace">
+        <div class="location">at line 303</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>withWorkspace</strong>(<a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> $workspace)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></td>
+                <td>$workspace</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withoutDefaultSystemPrompt">
+        <div class="location">at line 313</div>
+>>>>>>> f14236166 (chore: regen docs + sdks)
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutDefaultSystemPrompt</strong>()
         </code>
@@ -1718,7 +1867,11 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutMessageHistory">
+<<<<<<< HEAD
         <div class="location">at line 341</div>
+=======
+        <div class="location">at line 322</div>
+>>>>>>> f14236166 (chore: regen docs + sdks)
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutMessageHistory</strong>()
         </code>
@@ -1750,7 +1903,11 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutSystemPrompts">
+<<<<<<< HEAD
         <div class="location">at line 350</div>
+=======
+        <div class="location">at line 331</div>
+>>>>>>> f14236166 (chore: regen docs + sdks)
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutSystemPrompts</strong>()
         </code>
@@ -1780,6 +1937,41 @@
     </div>
 
             </div>
+<<<<<<< HEAD
+=======
+                    <div class="method-item">
+                    <h3 id="method_workspace">
+        <div class="location">at line 340</div>
+        <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
+    <strong>workspace</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return the workspace the LLM is bound to.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+>>>>>>> f14236166 (chore: regen docs + sdks)
             </div>
 
     

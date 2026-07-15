@@ -16,17 +16,14 @@ defmodule Dagger.LLM do
   @type t() :: %__MODULE__{}
 
   @doc """
-  returns the type of the current state
+  estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
   """
-  @spec bind_result(t(), String.t()) :: Dagger.Binding.t() | nil
-  def bind_result(%__MODULE__{} = llm, name) do
+  @spec context_tokens(t()) :: {:ok, integer()} | {:error, term()}
+  def context_tokens(%__MODULE__{} = llm) do
     query_builder =
-      llm.query_builder |> QB.select("bindResult") |> QB.put_arg("name", name)
+      llm.query_builder |> QB.select("contextTokens")
 
-    %Dagger.Binding{
-      query_builder: query_builder,
-      client: llm.client
-    }
+    Client.execute(llm.client, query_builder)
   end
 
   @doc """
@@ -38,20 +35,6 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("contextWindow")
 
     Client.execute(llm.client, query_builder)
-  end
-
-  @doc """
-  return the LLM's current environment
-  """
-  @spec env(t()) :: Dagger.Env.t()
-  def env(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("env")
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: llm.client
-    }
   end
 
   @doc """
@@ -270,37 +253,6 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Return a new LLM with the specified function no longer exposed as a tool
-  """
-  @spec with_blocked_function(t(), String.t(), String.t()) :: Dagger.LLM.t()
-  def with_blocked_function(%__MODULE__{} = llm, type_name, function) do
-    query_builder =
-      llm.query_builder
-      |> QB.select("withBlockedFunction")
-      |> QB.put_arg("typeName", type_name)
-      |> QB.put_arg("function", function)
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
-  allow the LLM to interact with an environment via MCP
-  """
-  @spec with_env(t(), Dagger.Env.t()) :: Dagger.LLM.t()
-  def with_env(%__MODULE__{} = llm, env) do
-    query_builder =
-      llm.query_builder |> QB.select("withEnv") |> QB.put_arg("env", Dagger.ID.id!(env))
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
   Add an external MCP server to the LLM
   """
   @spec with_mcp_server(t(), String.t(), Dagger.Service.t()) :: Dagger.LLM.t()
@@ -327,23 +279,6 @@ defmodule Dagger.LLM do
       |> QB.select("withModel")
       |> QB.put_arg("model", model)
       |> QB.maybe_put_arg("provider", optional_args[:provider])
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
-  Track an object so the LLM can reference it in subsequent tool calls.
-  """
-  @spec with_object(t(), String.t(), String.t()) :: Dagger.LLM.t()
-  def with_object(%__MODULE__{} = llm, tag, object) do
-    query_builder =
-      llm.query_builder
-      |> QB.select("withObject")
-      |> QB.put_arg("tag", tag)
-      |> QB.put_arg("object", object)
 
     %Dagger.LLM{
       query_builder: query_builder,
@@ -380,6 +315,20 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Return a new LLM with the workspace reset to its base, dropping any accumulated changes. The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, so a persisted session (globalID) no longer replays workspace edits when loaded. Use after exporting changes (Workspace.export) so a resumed session continues from the workspace's on-disk state.
+  """
+  @spec with_reset_workspace(t()) :: Dagger.LLM.t()
+  def with_reset_workspace(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("withResetWorkspace")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
   """
   @spec with_response(t(), [Dagger.LLMContentBlockInput.t()], [
@@ -399,20 +348,6 @@ defmodule Dagger.LLM do
       |> QB.maybe_put_arg("cachedTokenReads", optional_args[:cached_token_reads])
       |> QB.maybe_put_arg("cachedTokenWrites", optional_args[:cached_token_writes])
       |> QB.maybe_put_arg("totalTokens", optional_args[:total_tokens])
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
-  Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
-  """
-  @spec with_static_tools(t()) :: Dagger.LLM.t()
-  def with_static_tools(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("withStaticTools")
 
     %Dagger.LLM{
       query_builder: query_builder,
@@ -445,6 +380,39 @@ defmodule Dagger.LLM do
       |> QB.put_arg("callId", call_id)
       |> QB.put_arg("content", content)
       |> QB.put_arg("errored", errored)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
+  """
+  @spec with_tools(t(), Dagger.Node.t(), [{:except, [String.t()]}]) :: Dagger.LLM.t()
+  def with_tools(%__MODULE__{} = llm, object, optional_args \\ []) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withTools")
+      |> QB.put_arg("object", Dagger.ID.id!(object))
+      |> QB.maybe_put_arg("except", optional_args[:except])
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
+  """
+  @spec with_workspace(t(), Dagger.Workspace.t()) :: Dagger.LLM.t()
+  def with_workspace(%__MODULE__{} = llm, workspace) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withWorkspace")
+      |> QB.put_arg("workspace", Dagger.ID.id!(workspace))
 
     %Dagger.LLM{
       query_builder: query_builder,
@@ -489,6 +457,20 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("withoutSystemPrompts")
 
     %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Return the workspace the LLM is bound to.
+  """
+  @spec workspace(t()) :: Dagger.Workspace.t()
+  def workspace(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("workspace")
+
+    %Dagger.Workspace{
       query_builder: query_builder,
       client: llm.client
     }
