@@ -20,6 +20,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
 	"github.com/creack/pty"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/golden"
@@ -416,4 +417,42 @@ func daggerForwardSecrets(dag *dagger.Client) dagger.WithContainerFunc {
 
 	//		return ctr
 	//	}
+}
+
+// TestGlobalIDPortable verifies that llm.globalID returns a portable,
+// recipe-form ID that node() can resolve in any session, whereas llm.id
+// returns an engine-local runtime handle. `dagger llm` session save/resume
+// persists globalID; persisting id used to fail on resume with "missing shared
+// result" once the original engine was gone.
+func (LLMSuite) TestGlobalIDPortable(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	llm := c.LLM().
+		WithModel("openai/gpt-4o").
+		WithSystemPrompt("you are a helpful assistant").
+		WithPrompt("hello")
+
+	globalID, err := llm.GlobalID(ctx)
+	require.NoError(t, err)
+	handleID, err := llm.ID(ctx)
+	require.NoError(t, err)
+
+	// globalID must be a self-contained recipe, not an engine-local handle.
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(string(globalID)))
+	require.False(t, gid.IsHandle(), "globalID must be recipe-form, got a runtime handle")
+
+	// id is the runtime handle that does not survive across engines: this is
+	// exactly the engineResult(N) reference that broke session resume.
+	hid := new(call.ID)
+	require.NoError(t, hid.Decode(string(handleID)))
+	require.True(t, hid.IsHandle(), "id is expected to be a runtime handle")
+
+	// globalID resolves via node() and reconstructs the same conversation.
+	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
+	reloadedModel, err := reloaded.Model(ctx)
+	require.NoError(t, err)
+	origModel, err := llm.Model(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origModel, reloadedModel)
 }

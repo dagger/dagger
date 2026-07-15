@@ -146,6 +146,18 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return dagql.NewID[*core.LLM](id), nil
 		}).
 			Doc("synchronize LLM state"),
+		dagql.NodeFunc("globalID", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (dagql.AnyID, error) {
+			id, err := self.RecipeID(ctx)
+			if err != nil {
+				return dagql.AnyID{}, err
+			}
+			return dagql.NewAnyID(id), nil
+		}).
+			View(AfterVersion("v1.0.0-0")).
+			DoNotCache("An ID describes the current attached result and must not be served from cache.").
+			Doc("A portable, self-contained ID for this LLM that node() can resolve in any session. " +
+				"Unlike id, which may return an engine-local runtime handle valid only within the current session, " +
+				"this returns the recipe form suitable for persisting and later restoring the conversation."),
 		dagql.NodeFunc("replay", s.replay).
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerCallInput).
