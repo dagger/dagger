@@ -1565,6 +1565,46 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	t.Run("onConflict LEAVE_CONFLICT_MARKERS", func(ctx context.Context, t *testctx.T) {
+		// The patch expects "Hello, World!" in hello.txt, but the content has
+		// drifted; other.txt still matches. This is the session-resume shape:
+		// a recorded patch replayed against files that moved on.
+		dir := c.Directory().
+			WithNewFile("hello.txt", "Hello, Drifted!\n").
+			WithNewFile("other.txt", "unchanged\n")
+
+		patch := `--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-Hello, World!
++Hello, Dagger!
+--- a/other.txt
++++ b/other.txt
+@@ -1 +1 @@
+-unchanged
++updated
+`
+
+		// The default (FAIL) rejects the whole patch on the drifted hunk.
+		_, err := dir.WithPatch(patch).Sync(ctx)
+		require.Error(t, err)
+
+		// LEAVE_CONFLICT_MARKERS applies what fits and marks what doesn't.
+		patched := dir.WithPatch(patch, dagger.DirectoryWithPatchOpts{
+			OnConflict: dagger.PatchConflictLeaveConflictMarkers,
+		})
+		content, err := patched.File("hello.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, content, "<<<<<<< workspace")
+		require.Contains(t, content, "Hello, Dagger!")
+		require.Contains(t, content, "Hello, Drifted!")
+		require.Contains(t, content, ">>>>>>> patch")
+
+		other, err := patched.File("other.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "updated\n", other)
+	})
+
 	t.Run("basic patch application", func(ctx context.Context, t *testctx.T) {
 		// Create a directory with a simple file
 		dir := c.Directory().
