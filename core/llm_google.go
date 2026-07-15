@@ -29,7 +29,7 @@ func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	ctx := context.Background() // FIXME: should we wire this through from somewhere else?
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:     endpoint.Key,
-		HTTPClient: newLLMOTelHTTPClient("google"),
+		HTTPClient: endpoint.otelHTTPClient("google"),
 	})
 	if err != nil {
 		return nil, err

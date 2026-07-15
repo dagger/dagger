@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"slices"
 	"sort"
@@ -135,6 +136,11 @@ type LLMEndpoint struct {
 	// forwarding the endpoint's traffic through the client's session. Nil for
 	// non-local providers.
 	tunnel *localTunnel
+
+	// dial overrides how the endpoint's HTTP client opens connections. Set
+	// for local endpoints so traffic routes through the tunnel while BaseURL
+	// keeps the original host for TLS verification/SNI and the Host header.
+	dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 type LLMProvider string
@@ -1001,8 +1007,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 
 	// A local endpoint is reachable from the client's host, not necessarily the
 	// engine (which may run in a container or on another host). Tunnel its
-	// traffic through the client's session, then rebuild the client against the
-	// rewritten (loopback) base URL.
+	// traffic through the client's session, then rebuild the client so it
+	// dials through the tunnel.
 	if endpoint.Provider == Local {
 		parentClient, err := query.NonModuleParentClientMetadata(ctx)
 		if err != nil {

@@ -46,7 +46,7 @@ func newOpenAICodexClient(endpoint *LLMEndpoint) *OpenAICodexClient {
 	opts = append(opts, option.WithHeader("originator", "dagger"))
 	opts = append(opts, option.WithHeader("User-Agent", "dagger"))
 
-	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai-codex")))
+	opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai-codex")))
 
 	svc := responses.NewResponseService(opts...)
 	return &OpenAICodexClient{svc: svc, endpoint: endpoint}

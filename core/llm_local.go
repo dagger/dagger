@@ -32,9 +32,11 @@ func (t *localTunnel) Stop() {
 	t.listener.Close()
 }
 
-// setupLocalTunnel opens a loopback listener in the engine process, rewrites
-// endpoint.BaseURL to point at it, and forwards every accepted connection to
-// the endpoint's original host:port through the client's session.
+// setupLocalTunnel opens a loopback listener in the engine process, sets
+// endpoint.dial to connect through it, and forwards every accepted connection
+// to the endpoint's original host:port through the client's session.
+// endpoint.BaseURL is left untouched so TLS verification/SNI and the HTTP
+// Host header keep using the original host.
 //
 // The tunnel's lifetime is decoupled from ctx: it must stay alive for as long
 // as the endpoint is in use, not just for the call that created it. The caller
@@ -90,9 +92,13 @@ func setupLocalTunnel(ctx context.Context, endpoint *LLMEndpoint) (*localTunnel,
 	tunnelCtx, tunnelCancel := context.WithCancel(context.WithoutCancel(ctx))
 	go runLocalTunnel(tunnelCtx, listener, sock)
 
-	// Point the endpoint at the tunnel, preserving the scheme.
-	u.Host = tunnelAddr
-	endpoint.BaseURL = u.String()
+	// Route the endpoint's connections through the tunnel. The request URL
+	// stays the original one, so certificates and virtual-hosted endpoints
+	// keep working.
+	var dialer net.Dialer
+	endpoint.dial = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, tunnelAddr)
+	}
 
 	return &localTunnel{listener: listener, cancel: tunnelCancel}, nil
 }

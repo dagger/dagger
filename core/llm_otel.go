@@ -18,10 +18,19 @@ import (
 // maxBodyCapture is the maximum number of bytes to capture from request/response bodies.
 const maxBodyCapture = 256 * 1024 // 256 KiB
 
-// newLLMOTelHTTPClient wraps an http.Client with the OTel tracing transport.
-func newLLMOTelHTTPClient(provider string) *http.Client {
+// otelHTTPClient wraps an http.Client with the OTel tracing transport. When
+// the endpoint has a dial override (local endpoints tunneled through the
+// client's session), connections go through it while requests keep using
+// BaseURL's host for TLS verification/SNI and the Host header.
+func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
+	var base http.RoundTripper
+	if endpoint.dial != nil {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.DialContext = endpoint.dial
+		base = transport
+	}
 	return &http.Client{
-		Transport: newLLMOTelTransport(nil, provider),
+		Transport: newLLMOTelTransport(base, provider),
 	}
 }
 

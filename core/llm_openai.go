@@ -28,7 +28,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 		if endpoint.Key != "" {
 			opts = append(opts, azure.WithAPIKey(endpoint.Key))
 		}
-		opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai-azure")))
+		opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai-azure")))
 		c := openai.NewClient(opts...)
 		return &OpenAIClient{client: c, endpoint: endpoint}
 	}
@@ -40,7 +40,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
 
-	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("openai")))
+	opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("openai")))
 	c := openai.NewClient(opts...)
 	return &OpenAIClient{client: c, endpoint: endpoint, disableStreaming: disableStreaming}
 }

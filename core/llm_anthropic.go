@@ -39,7 +39,7 @@ func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
-	opts = append(opts, option.WithHTTPClient(newLLMOTelHTTPClient("anthropic")))
+	opts = append(opts, option.WithHTTPClient(endpoint.otelHTTPClient("anthropic")))
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
 		client:   &client,
