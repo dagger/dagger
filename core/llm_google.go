@@ -141,6 +141,12 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 				}
 				content.Parts = append(content.Parts, &genai.Part{
 					FunctionResponse: &genai.FunctionResponse{
+						// ID pairs this result with its call. Parallel calls to the
+						// same tool share a Name, so without the ID Gemini can only
+						// match by position — and CallBatch returns results grouped
+						// by category, not in call order. Echoing the CallID keeps
+						// the association unambiguous.
+						ID:   block.CallID,
 						Name: toolName,
 						// Genai expects a json format response
 						Response: map[string]any{
@@ -154,7 +160,13 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 				if text == "" {
 					text = " "
 				}
-				content.Parts = append(content.Parts, &genai.Part{Text: text})
+				// A text-answer part may carry a thought signature (when the turn
+				// ends in text rather than a tool call); replay it so Gemini can
+				// resume the reasoning chain.
+				content.Parts = append(content.Parts, &genai.Part{
+					Text:             text,
+					ThoughtSignature: decodeThoughtSignature(block.Signature),
+				})
 			case LLMContentToolCall:
 				var args map[string]any
 				if len(block.Arguments) > 0 {
@@ -164,6 +176,10 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 				}
 				part := &genai.Part{
 					FunctionCall: &genai.FunctionCall{
+						// Replay the CallID as the function-call ID so its result
+						// (which echoes the same ID) can be matched back to it
+						// unambiguously, even for parallel calls to the same tool.
+						ID:   block.CallID,
 						Name: block.ToolName,
 						Args: args,
 					},
@@ -214,9 +230,42 @@ func (c *GenaiClient) processStreamResponse(
 		dp.Close(textIdx)
 		dp.Close(thinkingIdx)
 	}()
+
+	// Consecutive text/thinking parts are accumulated into a single block so a
+	// streamed answer or thought summary isn't split across dozens of blocks.
+	// Each accumulator also tracks the last thought signature seen for its run,
+	// so a per-part signature isn't lost; the run is flushed (emitted as a
+	// block) when the part kind changes or the stream ends, keeping blocks in
+	// the order the model produced them and each carrying its own signature.
 	var textContent strings.Builder
+	var textSig string
 	var thinkingContent strings.Builder
 	var thinkingSig string
+	flushText := func() {
+		if textContent.Len() == 0 && textSig == "" {
+			return
+		}
+		contentBlocks = append(contentBlocks, &LLMContentBlock{
+			Kind:      LLMContentText,
+			Text:      textContent.String(),
+			Signature: textSig,
+		})
+		textContent.Reset()
+		textSig = ""
+	}
+	flushThinking := func() {
+		if thinkingContent.Len() == 0 && thinkingSig == "" {
+			return
+		}
+		contentBlocks = append(contentBlocks, &LLMContentBlock{
+			Kind:      LLMContentThinking,
+			Text:      thinkingContent.String(),
+			Signature: thinkingSig,
+		})
+		thinkingContent.Reset()
+		thinkingSig = ""
+	}
+
 	for res, err := range stream {
 		if err != nil {
 			if apiErr, ok := err.(*apierror.APIError); ok {
@@ -250,50 +299,53 @@ func (c *GenaiClient) processStreamResponse(
 				// accumulate it (and its signature) separately from the reply so
 				// it round-trips but doesn't pollute the visible response.
 				// Checked before part.Text because thought parts carry text too.
+				flushText()
 				fmt.Fprint(dp.StartThinking(thinkingIdx).Stdio.Stdout, part.Text)
 				thinkingContent.WriteString(part.Text)
 				if sig != "" {
 					thinkingSig = sig
 				}
 			case part.FunctionCall != nil:
+				flushThinking()
+				flushText()
 				x := part.FunctionCall
 				args, err := json.Marshal(x.Args)
 				if err != nil {
 					return contentBlocks, tokenUsage, fmt.Errorf("failed to marshal tool call arguments: %w", err)
 				}
+				toolSeq++
+				// Gemini's function calls carry an optional unique ID; the
+				// Developer API usually leaves it empty. Without a unique CallID,
+				// parallel calls to the same tool would share one (the tool name)
+				// and collide in the display map and result association, so fall
+				// back to a per-call synthesized ID.
+				callID := x.ID
+				if callID == "" {
+					callID = fmt.Sprintf("%s-%d", x.Name, toolSeq)
+				}
 				contentBlocks = append(contentBlocks, &LLMContentBlock{
 					Kind:      LLMContentToolCall,
-					CallID:    x.Name,
+					CallID:    callID,
 					ToolName:  x.Name,
 					Arguments: JSON(args),
 					Signature: sig,
 				})
-				toolSeq++
-				dp.EmitToolCall(toolSeq, x.Name, x.Name, string(args))
+				dp.EmitToolCall(toolSeq, callID, x.Name, string(args))
 			case part.Text != "":
+				flushThinking()
 				fmt.Fprint(dp.StartText(textIdx).MarkdownW, part.Text)
 				textContent.WriteString(part.Text)
+				if sig != "" {
+					textSig = sig
+				}
 			default:
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
 			}
 		}
 	}
-	// Prepend the accumulated text as a single TEXT block, ahead of tool calls.
-	if textContent.Len() > 0 {
-		contentBlocks = append([]*LLMContentBlock{{
-			Kind: LLMContentText,
-			Text: textContent.String(),
-		}}, contentBlocks...)
-	}
-	// Prepend accumulated thinking ahead of everything else, matching the order
-	// the model produced it (thinking precedes the reply and tool calls).
-	if thinkingContent.Len() > 0 || thinkingSig != "" {
-		contentBlocks = append([]*LLMContentBlock{{
-			Kind:      LLMContentThinking,
-			Text:      thinkingContent.String(),
-			Signature: thinkingSig,
-		}}, contentBlocks...)
-	}
+	// Flush any trailing accumulated thinking/text.
+	flushThinking()
+	flushText()
 	return contentBlocks, tokenUsage, nil
 }
 
