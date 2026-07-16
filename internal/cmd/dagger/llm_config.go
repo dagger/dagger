@@ -354,9 +354,14 @@ var llmRemoveKeyCmd = &cobra.Command{
 
 		delete(cfg.LLM.Providers, provider)
 
-		// If this was the default provider, clear it
+		// If this was the default provider, clear it along with the default
+		// model. The model belongs to the removed provider; leaving it set would
+		// bind it to whatever provider becomes default next, so applyLLMConfigEnv
+		// would export e.g. OPENAI_MODEL=claude-sonnet-4.5. (llmSetDefaultCmd
+		// clears/rebinds the model for the same reason.)
 		if cfg.LLM.DefaultProvider == provider {
 			cfg.LLM.DefaultProvider = ""
+			cfg.LLM.DefaultModel = ""
 		}
 
 		if err := cfg.Save(); err != nil {
