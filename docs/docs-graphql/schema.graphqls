@@ -4903,6 +4903,11 @@ type LLMMessage implements Node {
 
   """The role that produced this message."""
   role: LLMMessageRole!
+
+  """
+  Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+  """
+  tokenUsage: LLMTokenUsage!
 }
 
 """The role that generated a message."""

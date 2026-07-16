@@ -12709,6 +12709,15 @@ impl LlmMessage {
         let query = self.selection.select("role");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+    pub fn token_usage(&self) -> LlmTokenUsage {
+        let query = self.selection.select("tokenUsage");
+        LlmTokenUsage {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 impl Node for LlmMessage {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {

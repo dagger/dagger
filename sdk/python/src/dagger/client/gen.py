@@ -12219,6 +12219,14 @@ class LLMMessage(Type):
         _ctx = self._select("role", _args)
         return await _ctx.execute(LLMMessageRole)
 
+    def token_usage(self) -> "LLMTokenUsage":
+        """Token usage reported by the provider for the API call that produced
+        this message; all zeros except on assistant responses.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("tokenUsage", _args)
+        return LLMTokenUsage(_ctx)
+
 
 @typecheck
 class LLMTokenUsage(Type):

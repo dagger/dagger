@@ -11936,6 +11936,15 @@ func (r *LLMMessage) Role(ctx context.Context) (LLMMessageRole, error) {
 	return response, q.Execute(ctx)
 }
 
+// Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+func (r *LLMMessage) TokenUsage() *LLMTokenUsage {
+	q := r.query.Select("tokenUsage")
+
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
 // AsNode returns this LLMMessage as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *LLMMessage) AsNode() Node {

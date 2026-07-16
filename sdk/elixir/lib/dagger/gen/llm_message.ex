@@ -62,6 +62,20 @@ defmodule Dagger.LLMMessage do
       error -> error
     end
   end
+
+  @doc """
+  Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+  """
+  @spec token_usage(t()) :: Dagger.LLMTokenUsage.t()
+  def token_usage(%__MODULE__{} = llm_message) do
+    query_builder =
+      llm_message.query_builder |> QB.select("tokenUsage")
+
+    %Dagger.LLMTokenUsage{
+      query_builder: query_builder,
+      client: llm_message.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.LLMMessage do

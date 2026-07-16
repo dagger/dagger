@@ -5762,6 +5762,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLMMessage::tokenUsage",
+			"p": "Dagger/LLMMessage.html#method_tokenUsage",
+			"d": "<p>Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLMTokenUsage::cachedTokenReads",
 			"p": "Dagger/LLMTokenUsage.html#method_cachedTokenReads",
 			"d": "<p>Input tokens served from the provider's prompt cache.</p>"

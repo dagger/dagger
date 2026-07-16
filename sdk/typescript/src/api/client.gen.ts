@@ -12202,6 +12202,14 @@ export class LLMMessage extends BaseClient {
 
     return LLMMessageRoleNameToValue(response)
   }
+
+  /**
+   * Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+   */
+  tokenUsage = (): LLMTokenUsage => {
+    const ctx = this._ctx.select("tokenUsage")
+    return new LLMTokenUsage(ctx)
+  }
 }
 
 /**

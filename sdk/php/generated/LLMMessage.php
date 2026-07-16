@@ -39,4 +39,13 @@ class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('role');
         return \Dagger\LLMMessageRole::from((string)$this->queryLeaf($leafQueryBuilder, 'role'));
     }
+
+    /**
+     * Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+     */
+    public function tokenUsage(): LLMTokenUsage
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tokenUsage');
+        return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }
