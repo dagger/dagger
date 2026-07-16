@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"dagger/service-ref-consumer/internal/dagger"
 )
@@ -38,6 +39,18 @@ func (m *ServiceRefConsumer) ContainerProvidedBy(ctx context.Context) (string, e
 		return "none", nil
 	}
 	return m.Base.EnvVariable(ctx, "PROVIDED_BY")
+}
+
+// CheckService passes only when a Service was provided, used to test that
+// settings-wired constructor args resolve under `dagger check` (both filtered
+// and unfiltered) — checks run through the ModTree path, not the client's
+// session schema, which historically broke module-ref resolution.
+// +check
+func (m *ServiceRefConsumer) CheckService() error {
+	if m.App == nil {
+		return fmt.Errorf("no service provided")
+	}
+	return nil
 }
 
 // Returns a Container, used to test wiring this module's function output into

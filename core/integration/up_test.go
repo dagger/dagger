@@ -253,6 +253,39 @@ source = "../service-ref-consumer"
 		require.Contains(t, out, "true")
 	})
 
+	t.Run("service ref via settings under check", func(ctx context.Context, t *testctx.T) {
+		// Checks run through the ModTree path (standalone per-module dagql
+		// servers), not the caller's session schema, so settings-wired
+		// constructor args must resolve against the schema served to the main
+		// client (see UserDefault.Value in core/modfunc.go). The consumer's
+		// check-service check passes only when the wired service arrived.
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.app = "hello-with-services:web"
+`)
+
+		// Unfiltered: every workspace module loads before the check runs.
+		out, err := ctr.
+			With(daggerExec("check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "check-service")
+
+		// Filtered: only the named module loads up front; the referenced
+		// module (hello-with-services) must be demand-loaded when the wiring
+		// resolves (see demandLoadInstalledModule in core/schema/address.go).
+		out, err = ctr.
+			With(daggerExec("check", "service-ref-consumer:check-service")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "check-service")
+	})
+
 	t.Run("commit-on-match is a hard error", func(ctx context.Context, t *testctx.T) {
 		// Once the first segment names an installed module, the ref is committed:
 		// an unknown function is a hard error and must NOT fall back to pulling an

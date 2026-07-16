@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -68,7 +69,29 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 	// Select. If it is not installed, this is not a module ref.
 	spec, exists := root.ObjectType().FieldSpec(moduleField, srv.View)
 	if !exists {
-		return false, nil
+		// The name may be an installed workspace module that was not loaded
+		// for this command: selector verbs (`dagger check <mod>:<item>`)
+		// narrow module loading to the modules their patterns name, so a
+		// module referenced only through another module's wiring is never
+		// loaded. When the workspace config installs a module by this name,
+		// demand-load it and retry against the refreshed client schema.
+		// Loading is gated on config membership, so image refs (postgres:16)
+		// never trigger module loads.
+		refreshed, installed, loadErr := demandLoadInstalledModule(ctx, module)
+		if !installed {
+			return false, nil
+		}
+		if loadErr != nil {
+			// Committed: the workspace installs this module, so the string is
+			// a module ref and the load failure is the real error.
+			return true, fmt.Errorf("resolve module reference %q: load module %q: %w", addr, module, loadErr)
+		}
+		srv = refreshed
+		root = srv.Root()
+		spec, exists = root.ObjectType().FieldSpec(moduleField, srv.View)
+		if !exists {
+			return false, nil
+		}
 	}
 	// Core Query fields (host, git, secret, engine, container, http, module, ...)
 	// share the Query root's namespace with module entrypoints, but only
@@ -127,6 +150,78 @@ func resolveModuleRef(ctx context.Context, addr string, dest any) (matched bool,
 		return true, fmt.Errorf("resolve module reference %q (module %q): %w", addr, module, err)
 	}
 	return true, nil
+}
+
+// demandLoadInstalledModule loads and serves the named workspace module when
+// the workspace config installs it but the current command has not loaded it
+// (selector verbs narrow module loading to the modules their patterns name).
+//
+// Returns installed=false when the name is not an installed workspace module —
+// the caller's normal address decoding should run unchanged. When installed,
+// err reports the load outcome and srv is the refreshed schema served to the
+// current client (which now carries the module as a root field).
+func demandLoadInstalledModule(ctx context.Context, name string) (srv *dagql.Server, installed bool, err error) {
+	// The lookups below deliberately discard their errors: any failure to see
+	// the workspace from here means the string cannot be a demand-loadable
+	// module ref, and the caller's normal address decoding should run.
+	q, _ := core.CurrentQuery(ctx)
+	if q == nil {
+		return nil, false, nil
+	}
+	ws, _ := q.Server.CurrentWorkspace(ctx)
+	if ws == nil {
+		return nil, false, nil
+	}
+	// Only the workspace-owning client may trigger module loads from address
+	// resolution. A module client must never demand-load workspace siblings
+	// into its own session — modules only see their declared dependencies,
+	// and this gate keeps a bare string from becoming a capability grant.
+	md, _ := engine.ClientMetadataFromContext(ctx)
+	if md == nil || md.ClientID != ws.ClientID {
+		return nil, false, nil
+	}
+	cfg, _ := workspaceConfigWithCompatFallback(ctx, ws)
+	if cfg == nil {
+		return nil, false, nil
+	}
+	want := strcase.ToKebab(name)
+	isEntrypoint := false
+	for installedName, entry := range cfg.Modules {
+		if strcase.ToKebab(installedName) == want {
+			installed = true
+			isEntrypoint = entry.Entrypoint
+			break
+		}
+	}
+	if !installed {
+		return nil, false, nil
+	}
+	// An entrypoint module's functions are hoisted onto the Query root and no
+	// module field is served for it, so a <module>:<function> reference can
+	// never resolve. Committed: report that directly instead of loading the
+	// module only to miss the retry and fall back to the generic address error.
+	if isEntrypoint {
+		return nil, true, fmt.Errorf("module %q is the workspace entrypoint; its functions are hoisted to the root and cannot be referenced as %q", name, name+":<function>")
+	}
+	// Strict (non-best-effort) load: the consumer's constructor requires this
+	// module, so a load failure is that resolution's real error. This does not
+	// undo best-effort operations like `dagger generate`: their own initial
+	// best-effort pass records a failed module, EnsureWorkspaceModules returns
+	// the recorded error here without reloading, and ModTree runs nodes
+	// without fail-fast — so only the node that genuinely needs the broken
+	// module fails, and repair generators keep running.
+	if _, err := q.Server.EnsureWorkspaceModules(ctx, []string{name}, false); err != nil {
+		return nil, true, err
+	}
+	deps, err := q.Server.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, true, err
+	}
+	srv, err = deps.Schema(ctx)
+	if err != nil {
+		return nil, true, err
+	}
+	return srv, true, nil
 }
 
 // isBareRefShaped reports whether addr looks like it was intended as a bare
