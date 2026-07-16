@@ -2171,9 +2171,9 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 				switch block.Kind {
 				case LLMContentToolResult:
 					sels = append(sels, dagql.Selector{
-						Field: "withToolResponse",
+						Field: "withToolResult",
 						Args: []dagql.NamedInput{
-							{Name: "call", Value: dagql.NewString(block.CallID)},
+							{Name: "callId", Value: dagql.NewString(block.CallID)},
 							{Name: "content", Value: dagql.NewString(block.Text)},
 							{Name: "errored", Value: dagql.NewBoolean(block.Errored)},
 						},

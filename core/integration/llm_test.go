@@ -594,7 +594,7 @@ func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
 			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: dagger.JSON(`{"path":"/x"}`)},
 		}).
-		WithToolResponse("call_1", "file contents", false)
+		WithToolResult("call_1", "file contents", false)
 
 	// Overlay a changeset onto the LLM's workspace, mimicking what a
 	// workspace-mutating tool call records mid-session.
@@ -605,15 +605,15 @@ func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
 	reset := llmEdited.WithResetWorkspace()
 
 	// The conversation is preserved exactly.
-	origHist, err := llmEdited.History(ctx)
+	origHist, err := llmEdited.Transcript(ctx)
 	require.NoError(t, err)
-	resetHist, err := reset.History(ctx)
+	resetHist, err := reset.Transcript(ctx)
 	require.NoError(t, err)
 	require.Equal(t, origHist, resetHist)
 
 	// The persisted recipe is flat: no withResetWorkspace node, and no
 	// workspace rebind carrying overlay derivations on the spine.
-	globalID, err := reset.GlobalID(ctx)
+	globalID, err := reset.PortableID(ctx)
 	require.NoError(t, err)
 	gid := new(call.ID)
 	require.NoError(t, gid.Decode(string(globalID)))
@@ -630,7 +630,7 @@ func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
 	reply, err := reloaded.LastReply(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", reply)
-	reloadedHist, err := reloaded.History(ctx)
+	reloadedHist, err := reloaded.Transcript(ctx)
 	require.NoError(t, err)
 	require.Equal(t, origHist, reloadedHist)
 }
