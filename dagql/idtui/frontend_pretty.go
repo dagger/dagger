@@ -1131,8 +1131,16 @@ func (fe *frontendPretty) handlePromptForm(form *huh.Form, result func(*huh.Form
 	fe.formSpacer = &blankLine{}
 	wrap := fe.formWrap
 	fe.formWrap.OnQuit(func() {
-		result(fe.formModel)
+		// Remove this form BEFORE invoking result: the callback may
+		// synchronously install a replacement form (e.g. branch()'s "custom
+		// prompt" path chains a second form via handlePromptForm), which
+		// reassigns fe.formWrap/fe.formModel/fe.formSpacer. Removing afterwards
+		// would then see the replacement, hit removeForm's guard and no-op,
+		// leaking this form (and its spacer) on screen. Capture the model first
+		// since removeForm nils fe.formModel.
+		model := fe.formModel
 		fe.removeForm(wrap)
+		result(model)
 	})
 	// Insert before keymapBar
 	fe.tui.RemoveChild(fe.keymapBar)
