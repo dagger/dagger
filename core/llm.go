@@ -1010,7 +1010,7 @@ func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	// The messages themselves stay shared with the receiver and any other
 	// clones, so they must be treated as immutable: copy-on-write via
-	// LLMMessage.Clone before modifying one (see WithToolCall).
+	// LLMMessage.Clone before modifying one.
 	cp.Messages = slices.Clone(cp.Messages)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpoint = llm.endpoint
@@ -1187,28 +1187,6 @@ func (llm *LLM) WithResponse(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage
 		Content:    blocks,
 		TokenUsage: &tokenUsage,
 	})
-	return llm
-}
-
-// WithToolCall appends a tool call to the last assistant message in the history.
-func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
-	llm = llm.Clone()
-	// Find the last assistant message and append the tool call block to it,
-	// copying the message first: messages are shared across clones, so
-	// mutating it in place would edit ancestor/sibling histories too.
-	for i := len(llm.Messages) - 1; i >= 0; i-- {
-		if llm.Messages[i].Role == LLMMessageRoleAssistant {
-			msg := llm.Messages[i].Clone()
-			msg.Content = append(msg.Content, &LLMContentBlock{
-				Kind:      LLMContentToolCall,
-				CallID:    callID,
-				ToolName:  tool,
-				Arguments: arguments,
-			})
-			llm.Messages[i] = msg
-			break
-		}
-	}
 	return llm
 }
 

@@ -97,14 +97,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("cachedTokenWrites").Doc("Cached input tokens written"),
 				dagql.Arg("totalTokens").Doc("Total tokens consumed by this response"),
 			),
-		dagql.Func("withToolCall", s.withToolCall).
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.").
-			Args(
-				dagql.Arg("callId").Doc("The unique ID for this tool call"),
-				dagql.Arg("toolName").Doc("The name of the tool to call"),
-				dagql.Arg("arguments").Doc("The arguments to pass to the tool, JSON-encoded"),
-			),
 		dagql.Func("withToolResult", s.withToolResult).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Append the result of a tool call to the message history.").
@@ -298,14 +290,6 @@ func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct
 		CachedTokenWrites: args.CachedTokenWrites,
 		TotalTokens:       args.TotalTokens,
 	}), nil
-}
-
-func (s *llmSchema) withToolCall(ctx context.Context, llm *core.LLM, args struct {
-	CallID    string `name:"callId"`
-	ToolName  string
-	Arguments core.JSON
-}) (*core.LLM, error) {
-	return llm.WithToolCall(args.CallID, args.ToolName, args.Arguments), nil
 }
 
 func (s *llmSchema) withToolResult(ctx context.Context, llm *core.LLM, args struct {
