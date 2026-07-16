@@ -30,6 +30,9 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("return the model used by the llm"),
 		dagql.Func("provider", s.provider).
 			Doc("return the provider used by the llm"),
+		dagql.Func("contextWindow", s.contextWindow).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("The model's total context window in tokens, from the model catalog (0 if unknown)"),
 		dagql.Func("history", s.history).
 			Doc("return the llm message history"),
 		dagql.Func("messages", s.messages).
@@ -222,6 +225,14 @@ func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (st
 		return "", err
 	}
 	return ep.Model, nil
+}
+
+func (s *llmSchema) contextWindow(ctx context.Context, llm *core.LLM, args struct{}) (int, error) {
+	ep, err := llm.Endpoint(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return int(ep.ContextWindow), nil
 }
 
 func (s *llmSchema) provider(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
