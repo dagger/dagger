@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -27,18 +26,15 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"gotest.tools/v3/golden"
 )
 
-/* NOTE: To update golden test examples, run the tests on the host against a
-dev engine (so -update writes the goldens back into the worktree), with an env
-file containing live provider credentials:
-
-	env DAGGER_LLM_TEST_ENV=$PWD/.env ./hack/with-dev go test ./core/integration/ -run TestLLM -count=1 -update
-
-(engine-dev test --update runs -update inside the test container and discards
-the recorded goldens.)
-*/
+/* NOTE: These tests use canned conversations rather than live providers: each
+test constructs the exact message history it needs through the LLM API itself
+(withPrompt/withResponse/withToolResult), exports it with the same messages
+selection a real recording would use, and replays it via a replay/ model (see
+cannedReplayModel). Deriving the recording from the engine on every run keeps
+it in lockstep with the export/decode format by construction — there are no
+stored recordings to go stale, and no API keys are needed. */
 
 type LLMSuite struct{}
 
@@ -50,6 +46,9 @@ type LLMTestCase struct {
 	Ref   string
 	Name  string
 	Flags []LLMTestCaseFlag
+	// Conversation constructs the canned message history this case replays,
+	// through the LLM API itself (no live provider).
+	Conversation func(*dagger.Client) *dagger.LLM
 }
 
 type LLMTestCaseFlag struct {
@@ -124,9 +123,9 @@ func messagesGolden(t *testctx.T, queryOutput string, path string) []byte {
 	return data
 }
 
-// recordMessages runs a raw GraphQL query that drives a conversation against
-// live providers and renders the messages export at the given gjson path as a
-// replay recording. The query should select messages{llmMessagesSelection}.
+// recordMessages runs a raw GraphQL query that drives a conversation and
+// renders the messages export at the given gjson path as a replay recording.
+// The query should select messages{llmMessagesSelection}.
 func recordMessages(t *testctx.T, c *dagger.Client, query string, vars map[string]any, path string) []byte {
 	t.Helper()
 	var opts *testutil.QueryOptions
@@ -140,12 +139,20 @@ func recordMessages(t *testctx.T, c *dagger.Client, query string, vars map[strin
 	return messagesGolden(t, string(raw), path)
 }
 
-func writeRecording(t *testctx.T, path string, data []byte) {
+// cannedReplayModel derives a replay/ model from a conversation constructed
+// through the LLM API itself (withPrompt/withResponse/withToolResult) — no
+// live provider involved. The recording round-trips through the same messages
+// export a real conversation would use, so its shape cannot drift from what
+// the replay decoder expects: both come from the engine under test.
+func cannedReplayModel(ctx context.Context, t *testctx.T, c *dagger.Client, llm *dagger.LLM) string {
 	t.Helper()
-	if dir := filepath.Dir(path); dir != "." {
-		require.NoError(t, os.MkdirAll(dir, 0755))
-	}
-	require.NoError(t, os.WriteFile(path, data, 0644))
+	llmID, err := llm.ID(ctx)
+	require.NoError(t, err)
+	recording := recordMessages(t, c,
+		fmt.Sprintf(`query($llm: ID!){node(id:$llm){... on LLM{messages{%s}}}}`, llmMessagesSelection),
+		map[string]any{"llm": llmID},
+		"node.messages")
+	return "replay/" + base64.StdEncoding.EncodeToString(recording)
 }
 
 func (flag LLMTestCaseFlag) ToCall() []string {
@@ -170,6 +177,39 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 					Value: "write a hello world program",
 				},
 			},
+			// Mirrors the conversation GoProgrammer.drive starts: the first
+			// user message must match the module's withPrompt text byte for
+			// byte (the replayer diffs TEXT blocks), while tool results are
+			// placeholders — the real read/write/build tools run during
+			// replay and their live results flow through.
+			Conversation: func(c *dagger.Client) *dagger.LLM {
+				return c.LLM().
+					WithPrompt("You are an expert go programmer. You have access to a workspace.\n"+
+						"Use the read, write, build tools to complete the following assignment.\n"+
+						"Do not try to access the container directly.\n"+
+						"Don't stop until your code builds.\n"+
+						"\n"+
+						"Assignment: write a hello world program\n").
+					WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindText, Text: "Let me check the current main.go first."},
+						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read"},
+					}).
+					WithToolResult("call_1", `workspace file "main.go": stat main.go: no such file or directory`, true).
+					WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindText, Text: "No main.go yet, so I'll write a hello world program."},
+						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "write",
+							Arguments: dagger.JSON(`{"content":"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello, World!\")\n}\n"}`)},
+					}).
+					WithToolResult("call_2", "", false).
+					WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindText, Text: "Now let me build it to make sure it compiles."},
+						{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_3", ToolName: "build"},
+					}).
+					WithToolResult("call_3", "", false).
+					WithResponse([]dagger.LLMContentBlockInput{
+						{Kind: dagger.LLMContentBlockKindText, Text: "Done: main.go builds and prints Hello, World!"},
+					})
+			},
 		},
 	}
 	for _, tc := range tcs {
@@ -187,25 +227,7 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 				flags = append(flags, flag.ToCall()...)
 			}
 
-			recording := fmt.Sprintf("llmtest/%s.golden", tc.Name)
-			if golden.FlagUpdate() {
-				var args []string
-				for _, flag := range tc.Flags {
-					args = append(args, fmt.Sprintf("%s: %q", flag.Key, flag.Value))
-				}
-				out, err := ctr.
-					With(daggerForwardSecrets(c)).
-					With(daggerQueryAt(".", `{agent(%s){messages{%s}}}`,
-						strings.Join(args, ", "), llmMessagesSelection)).
-					Stdout(ctx)
-				require.NoError(t, err)
-
-				writeRecording(t, recording, messagesGolden(t, out, "agent.messages"))
-			}
-
-			replayData, err := os.ReadFile(recording)
-			require.NoError(t, err)
-			model := "replay/" + base64.StdEncoding.EncodeToString(replayData)
+			model := cannedReplayModel(ctx, t, c, tc.Conversation(c))
 
 			t.Run("call", func(ctx context.Context, t *testctx.T) {
 				// run drives the replayed conversation and returns the final
@@ -243,31 +265,24 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 		return daggerShell(fmt.Sprintf(`llm %s | with-tools $(container | from alpine) | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | transcript`, llmFlags, loopFlags))
 	}
 
-	recording := "llmtest/api-limit.golden"
-	if golden.FlagUpdate() {
-		// Drive the same conversation as the shell pipeline below, minus the
-		// step limit, and export its messages as the recording.
-		ctrRes, err := testutil.QueryWithClient[struct {
-			Container struct {
-				From struct {
-					ID string
-				}
-			}
-		}](c, t, `{container{from(address:"alpine"){id}}}`, nil)
-		require.NoError(t, err)
+	// One tool-call turn: step 1 answers with the envVariable call (which
+	// really dispatches against the bound alpine container), leaving its
+	// result pending, so a --max-steps=1 loop trips the limit before the
+	// closing text turn.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("tell me the value of PATH").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindThinking, Text: "Retrieving the PATH environment variable."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "envVariable",
+				Arguments: dagger.JSON(`{"name":"PATH"}`)},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "The value of PATH is /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin."},
+		}))
+	llmFlags := fmt.Sprintf("--model=%q", model)
 
-		out := recordMessages(t, c,
-			fmt.Sprintf(`query($ctr: ID!){llm{withTools(object:$ctr){withPrompt(prompt:"tell me the value of PATH"){loop{withPrompt(prompt:"now tell me the value of TERM"){messages{%s}}}}}}}`, llmMessagesSelection),
-			map[string]any{"ctr": ctrRes.Container.From.ID},
-			"llm.withTools.withPrompt.loop.withPrompt.messages")
-		writeRecording(t, recording, out)
-	}
-
-	replayData, err := os.ReadFile(recording)
-	require.NoError(t, err)
-	llmFlags := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
-
-	_, err = daggerCliBase(t, c).
+	_, err := daggerCliBase(t, c).
 		With(ctrFn(llmFlags, "--max-steps=1")).
 		Stdout(ctx)
 	requireErrOut(t, err, "reached step limit: 1")
@@ -276,24 +291,14 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	recording := "llmtest/allow-llm.golden"
-	if golden.FlagUpdate() {
-		// shared recording amongst subtests, they all drive the same conversation
-		out, err := daggerCliBase(t, c).
-			With(daggerForwardSecrets(c)).
-			WithExec([]string{"dagger", "query", "-m", directModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
-				Stdin: fmt.Sprintf(`{agent(stringArg:"greet me", cacheBuster:%q){messages{%s}}}`,
-					identity.NewID(), llmMessagesSelection),
-				ExperimentalPrivilegedNesting: true,
-			}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		writeRecording(t, recording, messagesGolden(t, out, "agent.messages"))
-	}
-
-	replayData, err := os.ReadFile(recording)
-	require.NoError(t, err)
-	modelFlag := fmt.Sprintf("--model=replay/%s", base64.StdEncoding.EncodeToString(replayData))
+	// A canned conversation shared amongst subtests: they all drive the same
+	// "greet me" prompt through the llm/direct module.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("greet me").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Hello! How can I help you today?"},
+		}))
+	modelFlag := "--model=" + model
 
 	t.Run("allowed calls", func(ctx context.Context, t *testctx.T) {
 		tcs := []struct {
@@ -477,39 +482,6 @@ func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program 
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Regexp(t, re, out)
-}
-
-func daggerForwardSecrets(dag *dagger.Client) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		envPath := os.Getenv("DAGGER_LLM_TEST_ENV")
-		if envPath == "" {
-			envPath = "/dagger.env"
-		}
-		return ctr.WithMountedSecret(".env", dag.Secret("file://"+envPath))
-	}
-
-	// 	return func(ctr *dagger.Container) *dagger.Container {
-	// 		propagate := func(env string) {
-	// 			if v, ok := os.LookupEnv(env); ok {
-	// 				ctr = ctr.WithSecretVariable(env, dag.SetSecret(env, v))
-	// 			}
-	// 		}
-
-	// 		propagate("ANTHROPIC_API_KEY")
-	// 		propagate("ANTHROPIC_BASE_URL")
-	// 		propagate("ANTHROPIC_MODEL")
-
-	// 		propagate("OPENAI_API_KEY")
-	// 		propagate("OPENAI_AZURE_VERSION")
-	// 		propagate("OPENAI_BASE_URL")
-	// 		propagate("OPENAI_MODEL")
-
-	// 		propagate("GEMINI_API_KEY")
-	// 		propagate("GEMINI_BASE_URL")
-	// 		propagate("GEMINI_MODEL")
-
-	//		return ctr
-	//	}
 }
 
 // TestPortableID verifies that llm.portableID returns a portable,
