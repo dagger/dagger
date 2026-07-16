@@ -1933,6 +1933,18 @@ export type LLMLoopOpts = {
    * Cap the number of API calls
    */
   maxAPICalls?: number
+
+  /**
+   * Cap the model's output tokens on each API call made during this loop (0 to use the model's default)
+   */
+  maxTokens?: number
+}
+
+export type LLMStepOpts = {
+  /**
+   * Cap the model's output tokens for this API call (0 to use the model's default)
+   */
+  maxTokens?: number
 }
 
 export type LLMWithResponseOpts = {
@@ -11678,6 +11690,7 @@ export class LLM extends BaseClient {
   /**
    * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
    * @param opts.maxAPICalls Cap the number of API calls
+   * @param opts.maxTokens Cap the model's output tokens on each API call made during this loop (0 to use the model's default)
    */
   loop = (opts?: LLMLoopOpts): LLM => {
     const ctx = this._ctx.select("loop", { ...opts })
@@ -11759,9 +11772,10 @@ export class LLM extends BaseClient {
 
   /**
    * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+   * @param opts.maxTokens Cap the model's output tokens for this API call (0 to use the model's default)
    */
-  step = async (): Promise<LLM> => {
-    const ctx = this._ctx.select("step")
+  step = async (opts?: LLMStepOpts): Promise<LLM> => {
+    const ctx = this._ctx.select("step", { ...opts })
 
     const response: Awaited<ID> = await ctx.execute()
 
@@ -11832,15 +11846,6 @@ export class LLM extends BaseClient {
    */
   withMCPServer = (name: string, service: Service): LLM => {
     const ctx = this._ctx.select("withMCPServer", { name, service })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Set the maximum number of output tokens the model may generate per API call
-   * @param tokens The maximum number of output tokens (0 to use provider defaults)
-   */
-  withMaxTokens = (tokens: number): LLM => {
-    const ctx = this._ctx.select("withMaxTokens", { tokens })
     return new LLM(ctx)
   }
 

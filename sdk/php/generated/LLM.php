@@ -96,11 +96,14 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
      */
-    public function loop(?int $maxAPICalls = null): LLM
+    public function loop(?int $maxAPICalls = null, ?int $maxTokens = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loop');
         if (null !== $maxAPICalls) {
         $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
+        }
+        if (null !== $maxTokens) {
+        $innerQueryBuilder->setArgument('maxTokens', $maxTokens);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -154,9 +157,12 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     /**
      * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
      */
-    public function step(): LLM
+    public function step(?int $maxTokens = null): LLM
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('step');
+        if (null !== $maxTokens) {
+        $leafQueryBuilder->setArgument('maxTokens', $maxTokens);
+        }
         $this->queryLeaf($leafQueryBuilder, 'step');
         return $this;
     }
@@ -218,16 +224,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCPServer');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('service', $service);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set the maximum number of output tokens the model may generate per API call
-     */
-    public function withMaxTokens(int $tokens): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMaxTokens');
-        $innerQueryBuilder->setArgument('tokens', $tokens);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

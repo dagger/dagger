@@ -4611,6 +4611,11 @@ type LLM implements Node & Syncer {
   loop(
     """Cap the number of API calls"""
     maxAPICalls: Int
+
+    """
+    Cap the model's output tokens on each API call made during this loop (0 to use the model's default)
+    """
+    maxTokens: Int
   ): LLM!
 
   """The full message history."""
@@ -4635,7 +4640,12 @@ type LLM implements Node & Syncer {
   """
   Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
   """
-  step: ID! @expectedType(name: "LLM")
+  step(
+    """
+    Cap the model's output tokens for this API call (0 to use the model's default)
+    """
+    maxTokens: Int
+  ): ID! @expectedType(name: "LLM")
 
   """synchronize LLM state"""
   sync: ID! @expectedType(name: "LLM")
@@ -4671,14 +4681,6 @@ type LLM implements Node & Syncer {
 
     """The MCP service to run and communicate with over stdio"""
     service: ID! @expectedType(name: "Service")
-  ): LLM!
-
-  """
-  Set the maximum number of output tokens the model may generate per API call
-  """
-  withMaxTokens(
-    """The maximum number of output tokens (0 to use provider defaults)"""
-    tokens: Int!
   ): LLM!
 
   """swap out the llm model"""

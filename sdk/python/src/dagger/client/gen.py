@@ -11563,6 +11563,7 @@ class LLM(Type):
         self,
         *,
         max_api_calls: int | None = None,
+        max_tokens: int | None = None,
     ) -> Self:
         """Submit the queued prompt, evaluate any tool calls, queue their
         results, and keep going until the model ends its turn
@@ -11571,9 +11572,13 @@ class LLM(Type):
         ----------
         max_api_calls:
             Cap the number of API calls
+        max_tokens:
+            Cap the model's output tokens on each API call made during this
+            loop (0 to use the model's default)
         """
         _args = [
             Arg("maxAPICalls", max_api_calls, None),
+            Arg("maxTokens", max_tokens, None),
         ]
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
@@ -11662,9 +11667,15 @@ class LLM(Type):
         _ctx = self._select("serializeHistory", _args)
         return await _ctx.execute(str)
 
-    async def step(self) -> Self:
+    async def step(self, *, max_tokens: int | None = None) -> Self:
         """Submit the queued prompt or tool call results, evaluate any tool
         calls, and queue their results
+
+        Parameters
+        ----------
+        max_tokens:
+            Cap the model's output tokens for this API call (0 to use the
+            model's default)
 
         Raises
         ------
@@ -11673,7 +11684,9 @@ class LLM(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("maxTokens", max_tokens, None),
+        ]
         return await self._ctx.execute_sync(self, "step", _args)
 
     async def sync(self) -> Self:
@@ -11761,21 +11774,6 @@ class LLM(Type):
             Arg("service", service),
         ]
         _ctx = self._select("withMCPServer", _args)
-        return LLM(_ctx)
-
-    def with_max_tokens(self, tokens: int) -> Self:
-        """Set the maximum number of output tokens the model may generate per API
-        call
-
-        Parameters
-        ----------
-        tokens:
-            The maximum number of output tokens (0 to use provider defaults)
-        """
-        _args = [
-            Arg("tokens", tokens),
-        ]
-        _ctx = self._select("withMaxTokens", _args)
         return LLM(_ctx)
 
     def with_model(self, model: str) -> Self:

@@ -5624,12 +5624,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::withMaxTokens",
-			"p": "Dagger/LLM.html#method_withMaxTokens",
-			"d": "<p>Set the maximum number of output tokens the model may generate per API call</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\LLM::withModel",
 			"p": "Dagger/LLM.html#method_withModel",
 			"d": "<p>swap out the llm model</p>"

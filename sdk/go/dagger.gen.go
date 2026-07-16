@@ -11303,6 +11303,8 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 type LLMLoopOpts struct {
 	// Cap the number of API calls
 	MaxAPICalls int
+	// Cap the model's output tokens on each API call made during this loop (0 to use the model's default)
+	MaxTokens int
 }
 
 // Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
@@ -11312,6 +11314,10 @@ func (r *LLM) Loop(opts ...LLMLoopOpts) *LLM {
 		// `maxAPICalls` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
 			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
+		}
+		// `maxTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxTokens) {
+			q = q.Arg("maxTokens", opts[i].MaxTokens)
 		}
 	}
 
@@ -11405,9 +11411,21 @@ func (r *LLM) SerializeHistory(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// LLMStepOpts contains options for LLM.Step
+type LLMStepOpts struct {
+	// Cap the model's output tokens for this API call (0 to use the model's default)
+	MaxTokens int
+}
+
 // Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
-func (r *LLM) Step(ctx context.Context) (*LLM, error) {
+func (r *LLM) Step(ctx context.Context, opts ...LLMStepOpts) (*LLM, error) {
 	q := r.query.Select("step")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `maxTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxTokens) {
+			q = q.Arg("maxTokens", opts[i].MaxTokens)
+		}
+	}
 
 	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
@@ -11481,16 +11499,6 @@ func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	q := r.query.Select("withMCPServer")
 	q = q.Arg("name", name)
 	q = q.Arg("service", service)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set the maximum number of output tokens the model may generate per API call
-func (r *LLM) WithMaxTokens(tokens int) *LLM {
-	q := r.query.Select("withMaxTokens")
-	q = q.Arg("tokens", tokens)
 
 	return &LLM{
 		query: q,

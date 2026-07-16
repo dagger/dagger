@@ -126,12 +126,14 @@ defmodule Dagger.LLM do
   @doc """
   Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
   """
-  @spec loop(t(), [{:max_api_calls, integer() | nil}]) :: Dagger.LLM.t()
+  @spec loop(t(), [{:max_api_calls, integer() | nil}, {:max_tokens, integer() | nil}]) ::
+          Dagger.LLM.t()
   def loop(%__MODULE__{} = llm, optional_args \\ []) do
     query_builder =
       llm.query_builder
       |> QB.select("loop")
       |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
+      |> QB.maybe_put_arg("maxTokens", optional_args[:max_tokens])
 
     %Dagger.LLM{
       query_builder: query_builder,
@@ -219,10 +221,12 @@ defmodule Dagger.LLM do
   @doc """
   Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
   """
-  @spec step(t()) :: {:ok, Dagger.LLM.t()} | {:error, term()}
-  def step(%__MODULE__{} = llm) do
+  @spec step(t(), [{:max_tokens, integer() | nil}]) :: {:ok, Dagger.LLM.t()} | {:error, term()}
+  def step(%__MODULE__{} = llm, optional_args \\ []) do
     query_builder =
-      llm.query_builder |> QB.select("step")
+      llm.query_builder
+      |> QB.select("step")
+      |> QB.maybe_put_arg("maxTokens", optional_args[:max_tokens])
 
     with {:ok, id} <- Client.execute(llm.client, query_builder) do
       {:ok,
@@ -324,20 +328,6 @@ defmodule Dagger.LLM do
       |> QB.select("withMCPServer")
       |> QB.put_arg("name", name)
       |> QB.put_arg("service", Dagger.ID.id!(service))
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
-  Set the maximum number of output tokens the model may generate per API call
-  """
-  @spec with_max_tokens(t(), integer()) :: Dagger.LLM.t()
-  def with_max_tokens(%__MODULE__{} = llm, tokens) do
-    query_builder =
-      llm.query_builder |> QB.select("withMaxTokens") |> QB.put_arg("tokens", tokens)
 
     %Dagger.LLM{
       query_builder: query_builder,

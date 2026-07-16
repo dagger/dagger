@@ -12009,6 +12009,15 @@ pub struct LlmLoopOpts {
     /// Cap the number of API calls
     #[builder(setter(into, strip_option), default)]
     pub max_api_calls: Option<isize>,
+    /// Cap the model's output tokens on each API call made during this loop (0 to use the model's default)
+    #[builder(setter(into, strip_option), default)]
+    pub max_tokens: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmStepOpts {
+    /// Cap the model's output tokens for this API call (0 to use the model's default)
+    #[builder(setter(into, strip_option), default)]
+    pub max_tokens: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct LlmWithResponseOpts {
@@ -12134,6 +12143,9 @@ impl Llm {
         if let Some(max_api_calls) = opts.max_api_calls {
             query = query.arg("maxAPICalls", max_api_calls);
         }
+        if let Some(max_tokens) = opts.max_tokens {
+            query = query.arg("maxTokens", max_tokens);
+        }
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -12187,8 +12199,33 @@ impl Llm {
         query.execute(self.graphql_client.clone()).await
     }
     /// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn step(&self) -> Result<Llm, DaggerError> {
         let query = self.selection.select("step");
+        let id: Id = query.execute(self.graphql_client.clone()).await?;
+        Ok(Llm {
+            proc: self.proc.clone(),
+            selection: query
+                .root()
+                .select("node")
+                .arg("id", &id.0)
+                .inline_fragment("LLM"),
+            graphql_client: self.graphql_client.clone(),
+        })
+    }
+    /// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn step_opts(&self, opts: LlmStepOpts) -> Result<Llm, DaggerError> {
+        let mut query = self.selection.select("step");
+        if let Some(max_tokens) = opts.max_tokens {
+            query = query.arg("maxTokens", max_tokens);
+        }
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(Llm {
             proc: self.proc.clone(),
@@ -12282,20 +12319,6 @@ impl Llm {
                 Box::pin(async move { service.into_id().await.unwrap().quote() })
             }),
         );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set the maximum number of output tokens the model may generate per API call
-    ///
-    /// # Arguments
-    ///
-    /// * `tokens` - The maximum number of output tokens (0 to use provider defaults)
-    pub fn with_max_tokens(&self, tokens: isize) -> Llm {
-        let mut query = self.selection.select("withMaxTokens");
-        query = query.arg("tokens", tokens);
         Llm {
             proc: self.proc.clone(),
             selection: query,
