@@ -225,7 +225,7 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 
 	env, ok := cfg.Env[envName]
 	if !ok {
-		return nil, fmt.Errorf("workspace env %q is not defined", envName)
+		return nil, UndefinedEnvError(cfg, envName)
 	}
 
 	if err := applyModuleOverlays(applied, env.Modules, fmt.Sprintf("workspace env %q", envName)); err != nil {
@@ -268,6 +268,28 @@ func applyModuleOverlays(applied *Config, overlays map[string]EnvModuleOverlay, 
 	return nil
 }
 
+// UndefinedEnvError reports a selected env that has no env.<name>.* entry in
+// the config. Enumerating the defined envs is the actionable part: a missing
+// env is most often a typo, and the list is what disambiguates. No creation
+// hint — envs come into being through env-scoped writes, but we can't know
+// which write the user meant.
+func UndefinedEnvError(cfg *Config, envName string) error {
+	return fmt.Errorf(UndefinedEnvErrorPrefix+" (%s)", envName, definedEnvsFragment(cfg))
+}
+
+// UndefinedEnvErrorPrefix is the format string every "undefined env" error
+// starts with, so callers matching on it (the CLI's create-on-write retry)
+// stay compile-coupled to the message they key off.
+const UndefinedEnvErrorPrefix = "workspace env %q is not defined"
+
+func definedEnvsFragment(cfg *Config) string {
+	names := EnvNames(cfg)
+	if len(names) == 0 {
+		return "no envs defined"
+	}
+	return "defined envs: " + strings.Join(names, ", ")
+}
+
 // EnvNames returns the configured environment names in deterministic order.
 func EnvNames(cfg *Config) []string {
 	if cfg == nil || len(cfg.Env) == 0 {
@@ -298,10 +320,10 @@ func EnsureEnv(cfg *Config, envName string) bool {
 // RemoveEnv removes the named environment from the config.
 func RemoveEnv(cfg *Config, envName string) error {
 	if cfg == nil || len(cfg.Env) == 0 {
-		return fmt.Errorf("workspace env %q is not defined", envName)
+		return fmt.Errorf(UndefinedEnvErrorPrefix+" (%s)", envName, definedEnvsFragment(cfg))
 	}
 	if _, ok := cfg.Env[envName]; !ok {
-		return fmt.Errorf("workspace env %q is not defined", envName)
+		return fmt.Errorf(UndefinedEnvErrorPrefix+" (%s)", envName, definedEnvsFragment(cfg))
 	}
 	delete(cfg.Env, envName)
 	if len(cfg.Env) == 0 {

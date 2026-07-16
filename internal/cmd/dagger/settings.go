@@ -100,7 +100,26 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 	if workspaceSettingsGlobal && !workspaceSettingsUnset && len(args) < 3 {
 		return fmt.Errorf("--global stores a setting in user-level config; pass MODULE KEY VALUE to set or use --unset (reads always show the effective value)")
 	}
-	return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+	envWrite := len(args) >= 3 && !workspaceSettingsUnset && workspaceEnv != ""
+	err := runWorkspaceSettingsSession(cmd, args, envWrite, false)
+	if envWrite && err != nil && strings.Contains(err.Error(), fmt.Sprintf(workspacepkg.UndefinedEnvErrorPrefix, workspaceEnv)) {
+		// A write is the gesture that creates a missing env. The first attempt
+		// applies the overlay so existing envs keep full discovery (including
+		// modules the env itself adds); only when the env turns out not to
+		// exist retry without it, addressing the env explicitly in the config
+		// key instead.
+		return runWorkspaceSettingsSession(cmd, args, envWrite, true)
+	}
+	return err
+}
+
+func runWorkspaceSettingsSession(cmd *cobra.Command, args []string, envWrite, suppressEnv bool) error {
+	params := client.Params{}
+	if suppressEnv {
+		noEnv := ""
+		params.WorkspaceEnv = &noEnv
+	}
+	return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) error {
 		moduleName := ""
 		if len(args) > 0 {
 			moduleName = args[0]
@@ -144,11 +163,37 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 				return err
 			}
 			if workspaceSettingsGlobal {
+				// User-level writes happen client-side; --env composes there
+				// through userScopedConfigKey, and a personal env comes into
+				// being by the write itself, so none of the env staging below
+				// applies.
 				return writeUserConfigValue(ctx, userScopedConfigKey(workspaceSettingConfigKey(setting.Module, setting.Key)), value, values)
 			}
-			return state.Workspace.
-				WithConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), value, dagger.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).
-				Export(ctx)
+			key := workspaceSettingConfigKey(setting.Module, setting.Key)
+			target := state.Workspace
+			creates := false
+			if envWrite {
+				key = workspaceEnvSettingConfigKey(workspaceEnv, setting.Module, setting.Key)
+				// Only the suppressed retry can be creating the env: the first
+				// phase loaded with the env applied, so reaching here means it
+				// exists. --here still needs the check, since it can target a
+				// directory with no config of its own, where any env is new.
+				if suppressEnv || workspaceHere {
+					creates, target, err = workspaceEnvWriteCreates(ctx, state.Workspace, workspaceEnv, workspaceHere)
+					if err != nil {
+						return err
+					}
+				}
+			}
+			if err := target.
+				WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).
+				Export(ctx); err != nil {
+				return err
+			}
+			if creates {
+				fmt.Fprintf(cmd.OutOrStdout(), "Created env %q\n", workspaceEnv)
+			}
+			return nil
 		}
 	})
 }
@@ -249,6 +294,13 @@ func (s *workspaceSettingsState) lookupSetting(name string) (workspaceSetting, e
 
 func workspaceSettingConfigKey(moduleName, settingName string) string {
 	return workspacepkg.JoinConfigPath("modules", moduleName, "settings", settingName)
+}
+
+// workspaceEnvSettingConfigKey addresses a setting in an env overlay through
+// raw env.<name>.* storage, which withConfigValue writes without requiring the
+// env to pre-exist (the write creates it).
+func workspaceEnvSettingConfigKey(envName, moduleName, settingName string) string {
+	return workspacepkg.JoinConfigPath("env", envName, "modules", moduleName, "settings", settingName)
 }
 
 func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting) error {
