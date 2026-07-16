@@ -109,6 +109,14 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		return nil, err
 	}
 
+	// Reasoning (extended thinking) is enabled for this request only when an
+	// effort is configured. This single condition gates both OutputConfig.Effort
+	// below and whether prior thinking blocks may be replayed: Anthropic rejects
+	// a request that carries thinking blocks when thinking isn't enabled for it
+	// ("thinking blocks without thinking enabled"). If a prior turn produced
+	// thinking but this turn has reasoning off, the stored blocks must be dropped.
+	reasoningEnabled := c.endpoint.ReasoningEffort != "" && c.endpoint.ReasoningEffort != "none"
+
 	// Convert content-block messages to Anthropic-specific message parameters.
 	var messages []anthropic.MessageParam
 	var systemPrompts []anthropic.TextBlockParam
@@ -153,6 +161,14 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 				// thinking blocks to be replayed unmodified with their signature,
 				// or it rejects the request. A block with no text but a signature
 				// is a redacted thinking block (opaque data stored in Signature).
+				//
+				// Only replay thinking (and redacted-thinking) blocks when
+				// reasoning is enabled for this request. If it isn't (effort
+				// cleared, or a model that doesn't support it), Anthropic rejects
+				// a request that carries thinking blocks, so drop them instead.
+				if !reasoningEnabled {
+					continue
+				}
 				switch {
 				case block.Text != "":
 					blocks = append(blocks, anthropic.NewThinkingBlock(block.Signature, block.Text))
@@ -249,8 +265,8 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 	// straight through as output_config.effort; leave room for reasoning tokens
 	// on top of the reply so the answer isn't truncated.
 	var outputConfig anthropic.OutputConfigParam
-	if effort := c.endpoint.ReasoningEffort; effort != "" && effort != "none" {
-		outputConfig.Effort = anthropic.OutputConfigEffort(effort)
+	if reasoningEnabled {
+		outputConfig.Effort = anthropic.OutputConfigEffort(c.endpoint.ReasoningEffort)
 		if maxTokens < 16384 {
 			maxTokens = 16384
 		}
