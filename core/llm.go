@@ -94,7 +94,10 @@ type LLM struct {
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
 
-	model string
+	// model selects the model to converse with; provider, when set, selects
+	// the provider explicitly instead of inferring it from the model name.
+	model    string
+	provider string
 
 	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
@@ -102,10 +105,14 @@ type LLM struct {
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
 
-	// maxAPICalls caps the number of API calls per loop when loop() itself
-	// doesn't specify a cap. Zero means no cap. Only set via the legacy
+	// maxSteps caps the number of steps per loop when loop() itself doesn't
+	// specify a cap. Zero means no cap. Only set via the legacy
 	// llm(maxAPICalls:) argument, kept for pre-v1 module views.
-	maxAPICalls int
+	maxSteps int
+}
+
+func (*LLM) TypeDescription() string {
+	return "A conversation with a large language model (LLM): queue prompts, expose tools, and step the model until it completes its turn."
 }
 
 type LLMEndpoint struct {
@@ -203,11 +210,15 @@ func (r *LLMResponse) ToolCalls() []*LLMContentBlock {
 }
 
 type LLMTokenUsage struct {
-	InputTokens       int64 `field:"true" json:"input_tokens"`
-	OutputTokens      int64 `field:"true" json:"output_tokens"`
-	CachedTokenReads  int64 `field:"true" json:"cached_token_reads"`
-	CachedTokenWrites int64 `field:"true" json:"cached_token_writes"`
-	TotalTokens       int64 `field:"true" json:"total_tokens"`
+	InputTokens       int64 `field:"true" json:"input_tokens" doc:"Uncached input tokens sent to the model."`
+	OutputTokens      int64 `field:"true" json:"output_tokens" doc:"Tokens received from the model, including text and tool calls."`
+	CachedTokenReads  int64 `field:"true" json:"cached_token_reads" doc:"Input tokens served from the provider's prompt cache."`
+	CachedTokenWrites int64 `field:"true" json:"cached_token_writes" doc:"Input tokens written to the provider's prompt cache."`
+	TotalTokens       int64 `field:"true" json:"total_tokens" doc:"Total tokens consumed, as reported by the provider."`
+}
+
+func (*LLMTokenUsage) TypeDescription() string {
+	return "A count of tokens consumed by LLM API calls."
 }
 
 var _ dagql.PersistedObject = (*LLMTokenUsage)(nil)
@@ -274,24 +285,28 @@ func (t LLMContentBlockKind) ToLiteral() call.Literal {
 // LLMContentBlock is a single piece of content within an LLMMessage.
 // The Kind field determines which other fields are populated.
 type LLMContentBlock struct {
-	Kind LLMContentBlockKind `field:"true" json:"kind"`
+	Kind LLMContentBlockKind `field:"true" json:"kind" doc:"The kind of content block, which determines the other populated fields."`
 
 	// Text content (Kind=TEXT, THINKING, or TOOL_RESULT)
-	Text string `field:"true" json:"text,omitempty"`
+	Text string `field:"true" json:"text,omitempty" doc:"Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."`
 
 	// Tool call fields (Kind=TOOL_CALL)
-	CallID    string `field:"true" json:"call_id,omitempty"`
-	ToolName  string `field:"true" json:"tool_name,omitempty"`
-	Arguments JSON   `field:"true" json:"arguments,omitempty"`
+	CallID    string `field:"true" json:"call_id,omitempty" doc:"The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."`
+	ToolName  string `field:"true" json:"tool_name,omitempty" doc:"The name of the tool called (for TOOL_CALL kind)."`
+	Arguments JSON   `field:"true" json:"arguments,omitempty" doc:"The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind)."`
 
 	// Tool result fields (Kind=TOOL_RESULT)
 	// CallID is reused from above.
-	Errored bool `field:"true" json:"errored,omitempty"`
+	Errored bool `field:"true" json:"errored,omitempty" doc:"Whether the tool call resulted in an error (for TOOL_RESULT kind)."`
 
-	// Provider-specific opaque data (e.g. Anthropic thinking signature).
-	// Not exposed as a field — must be preserved in history but is
-	// meaningless to users.
-	Signature string `json:"signature,omitempty"`
+	// Provider-specific opaque data. Exposed so a conversation exported via
+	// messages can be reconstructed losslessly with withResponse — some
+	// providers (e.g. Anthropic) reject replayed thinking blocks without it.
+	Signature string `field:"true" json:"signature,omitempty" doc:"Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation."`
+}
+
+func (*LLMContentBlock) TypeDescription() string {
+	return "A single piece of content within an LLM message."
 }
 
 func (*LLMContentBlock) Type() *ast.Type {
@@ -342,11 +357,15 @@ func (in LLMContentBlockInput) ToLLMContentBlock() *LLMContentBlock {
 // Content is a list of typed content blocks, supporting multi-modal and
 // multi-part messages (e.g. thinking + text + tool calls in one turn).
 type LLMMessage struct {
-	Role    LLMMessageRole     `field:"true" json:"role"`
-	Content []*LLMContentBlock `field:"true" json:"content"`
+	Role    LLMMessageRole     `field:"true" json:"role" doc:"The role that produced this message."`
+	Content []*LLMContentBlock `field:"true" json:"content" doc:"The message's content blocks, in the order the model produced them."`
 
 	// Token usage for this message (only set on assistant responses).
 	TokenUsage LLMTokenUsage `json:"token_usage,omitzero"`
+}
+
+func (*LLMMessage) TypeDescription() string {
+	return "A single message in an LLM conversation."
 }
 
 func (*LLMMessage) Type() *ast.Type {
@@ -698,9 +717,33 @@ func (r *LLMRouter) DefaultModel() string {
 	return ""
 }
 
-// Return an endpoint for the requested model
-// If the model name is not set, a default will be selected.
-func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
+// routeProvider dispatches directly to the named provider, bypassing
+// model-name pattern matching.
+func (r *LLMRouter) routeProvider(provider LLMProvider) (*LLMEndpoint, error) {
+	switch provider {
+	case Anthropic:
+		return r.routeAnthropicModel(), nil
+	case OpenAI:
+		return r.routeOpenAIModel(), nil
+	case OpenAICodex:
+		return r.routeCodexModel(), nil
+	case Google:
+		return r.routeGoogleModel()
+	case Local:
+		return r.routeLocalModel()
+	case Other:
+		return r.routeOtherModel(), nil
+	default:
+		return nil, fmt.Errorf("unknown LLM provider %q (expected one of %q, %q, %q, %q, %q, %q)",
+			provider, Anthropic, Google, Local, OpenAI, OpenAICodex, Other)
+	}
+}
+
+// Route returns an endpoint for the requested model. If the model name is not
+// set, a default will be selected. If provider is set, it selects the
+// provider explicitly; otherwise the provider is inferred from the model
+// name.
+func (r *LLMRouter) Route(model, provider string) (*LLMEndpoint, error) {
 	if model == "" {
 		model = r.DefaultModel()
 	} else {
@@ -709,6 +752,11 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	var endpoint *LLMEndpoint
 	var err error
 	switch {
+	case provider != "":
+		endpoint, err = r.routeProvider(LLMProvider(provider))
+		if err != nil {
+			return nil, err
+		}
 	// NB: must precede the prefix-based matchers — a local model may be named to
 	// look like any provider's (e.g. "gpt-oss"), so an exact configured-model
 	// match wins.
@@ -911,7 +959,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func (q *Query) NewLLM(ctx context.Context, model string) (*LLM, error) {
+func (q *Query) NewLLM(ctx context.Context, model, provider string) (*LLM, error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -924,6 +972,7 @@ func (q *Query) NewLLM(ctx context.Context, model string) (*LLM, error) {
 	}
 	return &LLM{
 		model:       model,
+		provider:    provider,
 		mcp:         newMCP(env),
 		endpointMtx: &sync.Mutex{},
 	}, nil
@@ -984,7 +1033,7 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := router.Route(llm.model)
+	endpoint, err := router.Route(llm.model, llm.provider)
 	if err != nil {
 		return nil, err
 	}
@@ -1041,9 +1090,13 @@ func (llm *LLM) ToolsDoc(ctx context.Context) (string, error) {
 	return result, nil
 }
 
-func (llm *LLM) WithModel(model string) *LLM {
+// WithModel changes the model for the rest of the conversation. An empty
+// provider infers the provider from the model name; a non-empty one selects
+// it explicitly.
+func (llm *LLM) WithModel(model, provider string) *LLM {
 	llm = llm.Clone()
 	llm.model = model
+	llm.provider = provider
 
 	llm.endpointMtx.Lock()
 	defer llm.endpointMtx.Unlock()
@@ -1158,8 +1211,8 @@ func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
 	return llm
 }
 
-// WithToolResponse appends a tool response (user) message to the history.
-func (llm *LLM) WithToolResponse(callID, content string, errored bool) *LLM {
+// WithToolResult appends a tool result (user) message to the history.
+func (llm *LLM) WithToolResult(callID, content string, errored bool) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role: LLMMessageRoleUser,
@@ -1181,12 +1234,12 @@ func (llm *LLM) WithObject(objectID string, id dagql.AnyID) *LLM {
 	return llm
 }
 
-// WithMaxAPICalls sets a default cap on the number of API calls per loop,
-// used when loop() doesn't specify its own cap. Kept for the legacy
+// WithMaxAPICalls sets a default cap on the number of steps per loop, used
+// when loop() doesn't specify its own cap. Kept for the legacy
 // llm(maxAPICalls:) argument exposed to pre-v1 module views.
 func (llm *LLM) WithMaxAPICalls(calls int) *LLM {
 	llm = llm.Clone()
-	llm.maxAPICalls = calls
+	llm.maxSteps = calls
 	return llm
 }
 
@@ -1334,10 +1387,10 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxToke
 	}
 	for _, msg := range llm.mcp.CallBatch(ctx, tools, toolCalls, res.ToolCallDisplays) {
 		sels = append(sels, dagql.Selector{
-			Field: "withToolResponse",
+			Field: "withToolResult",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "call",
+					Name:  "callId",
 					Value: dagql.NewString(msg.ToolResultCallID()),
 				},
 				{
@@ -1541,24 +1594,24 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 }
 
 // Loop sends the context to the LLM endpoint, processes replies and tool calls,
-// and continues in a loop until the model ends its turn (no more prompts) or
-// the API call cap is reached. maxTokens caps the model's output tokens on
-// each API call made during this loop; zero uses the model's default.
-func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls, maxTokens int) (dagql.ObjectResult[*LLM], error) {
+// and continues stepping until the model ends its turn (no more prompts) or
+// the step cap is reached. maxTokens caps the model's output tokens on each
+// step made during this loop; zero uses the model's default.
+func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxSteps, maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
 	}
 
-	if maxAPICalls <= 0 {
+	if maxSteps <= 0 {
 		// fall back to the legacy llm(maxAPICalls:) cap, if one was set
-		maxAPICalls = llm.maxAPICalls
+		maxSteps = llm.maxSteps
 	}
 
-	var apiCalls int
+	var steps int
 	for {
 		llm := inst.Self()
 
-		if !llm.HasPrompt() {
+		if !llm.HasPending() {
 			if llm.HasMissingOutputs() {
 				// There's no prompt, and yet there are outputs unfulfilled. This means
 				// future calls to Env.Output may fail, so we should interject to help
@@ -1586,11 +1639,11 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 			return inst, nil
 		}
 
-		if maxAPICalls > 0 && apiCalls >= maxAPICalls {
-			return inst, fmt.Errorf("reached API call limit: %d", apiCalls)
+		if maxSteps > 0 && steps >= maxSteps {
+			return inst, fmt.Errorf("reached step limit: %d", steps)
 		}
 
-		apiCalls++
+		steps++
 
 		var err error
 		inst, err = inst.Self().Step(ctx, inst, maxTokens)
@@ -1675,7 +1728,10 @@ func mdQuote(msg string) string {
 	return strings.Join(lines, "\n")
 }
 
-func (llm *LLM) HasPrompt() bool {
+// HasPending reports whether anything is queued to send to the model: an
+// unsent prompt or unevaluated tool results. When true, another step will do
+// work; when false, the turn is complete.
+func (llm *LLM) HasPending() bool {
 	return len(llm.Messages) > 0 && llm.Messages[len(llm.Messages)-1].Role == LLMMessageRoleUser
 }
 
@@ -1918,10 +1974,10 @@ func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 	return JSON(result), nil
 }
 
-// SerializeHistory returns the message history as plain text suitable for LLM
-// consumption (e.g. for summarization). Role-tagged lines with no emojis, tool
-// calls shown as function signatures, and tool results included inline.
-func (llm *LLM) SerializeHistory() string {
+// Transcript returns the message history as plain text suitable for LLM
+// consumption (e.g. for summarization). Role-tagged lines, tool calls shown
+// as function signatures, and tool results included inline.
+func (llm *LLM) Transcript() string {
 	var parts []string
 	for _, msg := range llm.Messages {
 		switch msg.Role {

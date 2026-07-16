@@ -133,7 +133,7 @@ func TestLocalModelRouting(t *testing.T) {
 	// With only a local endpoint configured, its model is the default.
 	assert.Equal(t, "llama3", r.DefaultModel())
 
-	ep, err := r.Route("llama3")
+	ep, err := r.Route("llama3", "")
 	assert.NoError(t, err)
 	assert.Equal(t, Local, ep.Provider)
 	assert.Equal(t, "llama3", ep.Model)
@@ -146,7 +146,7 @@ func TestLocalModelRouting(t *testing.T) {
 		LocalModel:     "gpt-oss",
 		LocalAPICompat: "anthropic",
 	}
-	ep2, err := r2.Route("gpt-oss")
+	ep2, err := r2.Route("gpt-oss", "")
 	assert.NoError(t, err)
 	assert.Equal(t, Local, ep2.Provider)
 
@@ -161,7 +161,7 @@ func TestLocalModelRouting(t *testing.T) {
 		LocalModel:     "llama3",
 		LocalAPICompat: "bogus",
 	}
-	_, err = r3.Route("llama3")
+	_, err = r3.Route("llama3", "")
 	assert.Error(t, err)
 }
 
@@ -175,7 +175,7 @@ func TestCodexModelRouting(t *testing.T) {
 	}
 	assert.Equal(t, "openai-codex/gpt-5.5", r.DefaultModel())
 
-	ep, err := r.Route("")
+	ep, err := r.Route("", "")
 	assert.NoError(t, err)
 	assert.Equal(t, OpenAICodex, ep.Provider)
 	// The routing prefix is stripped for display and the API request.
@@ -184,22 +184,45 @@ func TestCodexModelRouting(t *testing.T) {
 	// With only a Codex token, the default model routes to Codex too.
 	r2 := &LLMRouter{OpenAICodexAuthToken: "tok"}
 	assert.Equal(t, "openai-codex/"+modelDefaultCodex, r2.DefaultModel())
-	epDefault, err := r2.Route("")
+	epDefault, err := r2.Route("", "")
 	assert.NoError(t, err)
 	assert.Equal(t, OpenAICodex, epDefault.Provider)
 	assert.Equal(t, modelDefaultCodex, epDefault.Model)
 
 	// An explicitly prefixed model routes to Codex regardless of the slot.
-	epPrefixed, err := r2.Route("openai-codex/gpt-5.4")
+	epPrefixed, err := r2.Route("openai-codex/gpt-5.4", "")
 	assert.NoError(t, err)
 	assert.Equal(t, OpenAICodex, epPrefixed.Provider)
 	assert.Equal(t, "gpt-5.4", epPrefixed.Model)
 
 	// A "codex"-named model still routes to Codex (backward compatible).
-	epNamed, err := r2.Route("gpt-5.3-codex")
+	epNamed, err := r2.Route("gpt-5.3-codex", "")
 	assert.NoError(t, err)
 	assert.Equal(t, OpenAICodex, epNamed.Provider)
 	assert.Equal(t, "gpt-5.3-codex", epNamed.Model)
+}
+
+func TestExplicitProviderRouting(t *testing.T) {
+	r := &LLMRouter{
+		AnthropicAPIKey: "ak",
+		OpenAIAPIKey:    "ok",
+	}
+
+	// An explicit provider overrides model-name pattern matching: a "codex"-
+	// named fine-tune can be pinned to plain OpenAI, and a model with no
+	// recognizable name can be pinned to Anthropic.
+	ep, err := r.Route("my-codex-ft", string(OpenAI))
+	assert.NoError(t, err)
+	assert.Equal(t, OpenAI, ep.Provider)
+	assert.Equal(t, "my-codex-ft", ep.Model)
+
+	ep, err = r.Route("some-custom-model", string(Anthropic))
+	assert.NoError(t, err)
+	assert.Equal(t, Anthropic, ep.Provider)
+
+	// An unknown provider is an error, not a silent fallback.
+	_, err = r.Route("some-model", "bogus")
+	assert.ErrorContains(t, err, `unknown LLM provider "bogus"`)
 }
 
 func TestContentBlockInputRoundTrip(t *testing.T) {
