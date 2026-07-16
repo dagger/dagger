@@ -37,19 +37,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("contextWindow", s.contextWindow).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model)."),
-		// history and historyJSON are superseded in v1 by messages (structured)
-		// and transcript (plain text), but remain visible to pre-v1 module views:
-		// the record/replay test machinery still runs pre-v1 modules that dump
-		// conversations with historyJSON.
-		dagql.Func("history", s.history).
-			View(BeforeVersion("v1.0.0-0")).
-			Doc("return the llm message history"),
-		dagql.Func("historyJSON", s.historyJSON).
-			View(BeforeVersion("v1.0.0-0")).
-			Doc("return the raw llm message history as json"),
-		dagql.Func("historyJSON", s.historyJSONString).
-			View(BeforeVersion("v0.18.4")).
-			Doc("return the raw llm message history as json"),
 		dagql.Func("messages", s.messages).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("The full message history, as structured messages."),
@@ -451,27 +438,21 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 }
 
 func (s *llmSchema) messages(_ context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMMessage, error) {
-	return llm.Messages, nil
-}
-
-func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {
-	return llm.History(ctx)
+	// tokenUsage is a non-null field, so messages that never had usage
+	// recorded (prompts, tool results) must serve zeros rather than nil.
+	msgs := make([]*core.LLMMessage, len(llm.Messages))
+	for i, msg := range llm.Messages {
+		if msg.TokenUsage == nil {
+			msg = msg.Clone()
+			msg.TokenUsage = &core.LLMTokenUsage{}
+		}
+		msgs[i] = msg
+	}
+	return msgs, nil
 }
 
 func (s *llmSchema) transcript(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
 	return llm.Transcript(), nil
-}
-
-func (s *llmSchema) historyJSON(ctx context.Context, llm *core.LLM, _ struct{}) (core.JSON, error) {
-	return llm.HistoryJSON(ctx)
-}
-
-func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
-	js, err := llm.HistoryJSON(ctx)
-	if err != nil {
-		return "", err
-	}
-	return js.String(), nil
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {

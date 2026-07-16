@@ -360,8 +360,8 @@ type LLMMessage struct {
 	Role    LLMMessageRole     `field:"true" json:"role" doc:"The role that produced this message."`
 	Content []*LLMContentBlock `field:"true" json:"content" doc:"The message's content blocks, in the order the model produced them."`
 
-	// Token usage for this message (only set on assistant responses).
-	TokenUsage LLMTokenUsage `json:"token_usage,omitzero"`
+	// Token usage for this message (all zeros except on assistant responses).
+	TokenUsage *LLMTokenUsage `field:"true" json:"token_usage,omitempty" doc:"Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses."`
 }
 
 func (*LLMMessage) TypeDescription() string {
@@ -380,6 +380,10 @@ func (m *LLMMessage) Clone() *LLMMessage {
 	cp.Content = make([]*LLMContentBlock, len(m.Content))
 	for i, block := range m.Content {
 		cp.Content[i] = block.Clone()
+	}
+	if m.TokenUsage != nil {
+		usage := *m.TokenUsage
+		cp.TokenUsage = &usage
 	}
 	return &cp
 }
@@ -567,7 +571,7 @@ func (r *LLMRouter) isReplay(model string) bool {
 	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
 }
 
-func (r *LLMRouter) getReplay(model string) (messages []*LLMMessage, _ error) {
+func (r *LLMRouter) getReplay(model string) ([]*LLMMessage, error) {
 	model, ok := strings.CutPrefix(model, "replay-")
 	if !ok {
 		model, ok = strings.CutPrefix(model, "replay/")
@@ -580,10 +584,7 @@ func (r *LLMRouter) getReplay(model string) (messages []*LLMMessage, _ error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(result, &messages); err != nil {
-		return nil, err
-	}
-	return messages, nil
+	return decodeReplayMessages(result)
 }
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
@@ -1184,7 +1185,7 @@ func (llm *LLM) WithResponse(blocks []*LLMContentBlock, tokenUsage LLMTokenUsage
 	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role:       LLMMessageRoleAssistant,
 		Content:    blocks,
-		TokenUsage: tokenUsage,
+		TokenUsage: &tokenUsage,
 	})
 	return llm
 }
@@ -1913,67 +1914,6 @@ func (llm *LLM) Replay(ctx context.Context) {
 	}
 }
 
-func squash(str string) string {
-	return strings.ReplaceAll(str, "\n", `\n`)
-}
-
-func (llm *LLM) History(ctx context.Context) ([]string, error) {
-	var history []string
-	var lastRole LLMMessageRole
-	for _, msg := range llm.Messages {
-		if len(history) > 0 && lastRole != msg.Role {
-			// add a blank line when roles change
-			history = append(history, "")
-			lastRole = msg.Role
-		}
-		switch msg.Role {
-		case LLMMessageRoleUser:
-			for _, block := range msg.Content {
-				switch block.Kind {
-				case LLMContentToolResult:
-					item := "🛠️ 💬 "
-					if block.Errored {
-						item += "ERROR: "
-					}
-					item += squash(block.Text)
-					history = append(history, item)
-				case LLMContentText:
-					history = append(history, "🧑 💬 "+squash(block.Text))
-				}
-			}
-		case LLMMessageRoleAssistant:
-			for _, block := range msg.Content {
-				switch block.Kind {
-				case LLMContentThinking:
-					history = append(history, "💭 "+squash(block.Text))
-				case LLMContentText:
-					if len(block.Text) > 0 {
-						history = append(history, "🤖 💬 "+squash(block.Text))
-					}
-				case LLMContentToolCall:
-					item := fmt.Sprintf("🤖 🛠️ %s %s", block.ToolName, block.Arguments)
-					history = append(history, item)
-				}
-			}
-		}
-		if msg.TokenUsage.InputTokens > 0 || msg.TokenUsage.OutputTokens > 0 {
-			history = append(history,
-				fmt.Sprintf("🪙 Tokens Used: %d in => %d out",
-					msg.TokenUsage.InputTokens,
-					msg.TokenUsage.OutputTokens))
-		}
-	}
-	return history, nil
-}
-
-func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
-	result, err := json.MarshalIndent(llm.Messages, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return JSON(result), nil
-}
-
 // Transcript returns the message history as plain text suitable for LLM
 // consumption (e.g. for summarization). Role-tagged lines, tool calls shown
 // as function signatures, and tool results included inline.
@@ -2099,6 +2039,9 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
 	var res LLMTokenUsage
 	for _, msg := range llm.Messages {
+		if msg.TokenUsage == nil {
+			continue
+		}
 		res.InputTokens += msg.TokenUsage.InputTokens
 		res.OutputTokens += msg.TokenUsage.OutputTokens
 		res.CachedTokenReads += msg.TokenUsage.CachedTokenReads
