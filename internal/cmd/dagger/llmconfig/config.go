@@ -137,11 +137,42 @@ func (c *Config) Save() error {
 		return fmt.Errorf("failed to serialize config: %w", err)
 	}
 
-	// Write with 0600 permissions
-	if err := os.WriteFile(ConfigFile, []byte(out), 0600); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+	// Write atomically with 0600 permissions so a concurrent cross-process
+	// reader (Load, called on every dagger command) never observes a truncated
+	// or partially written file.
+	if err := atomicWriteFile(ConfigFile, []byte(out), 0600); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+// atomicWriteFile writes data to path atomically by writing to a temporary
+// file in the same directory and renaming it into place (rename is atomic on
+// POSIX). The temp file is removed if the write or rename fails.
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp config file: %w", err)
+	}
+	tmpName := tmp.Name()
+	// Clean up the temp file unless it was successfully renamed into place.
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+	}()
+	if err := tmp.Chmod(mode); err != nil {
+		return fmt.Errorf("failed to set config file permissions: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
 	return nil
 }
 
@@ -213,8 +244,8 @@ func Remove() error {
 	if err != nil {
 		return fmt.Errorf("failed to serialize config: %w", err)
 	}
-	if err := os.WriteFile(ConfigFile, []byte(out), 0600); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+	if err := atomicWriteFile(ConfigFile, []byte(out), 0600); err != nil {
+		return err
 	}
 	return nil
 }
