@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -161,22 +162,10 @@ func formatTokenCount(count int) string {
 	}
 }
 
-// visibleLen returns the visible width of a string, stripping ANSI codes.
+// visibleLen returns the visible display width of a string, ignoring ANSI
+// escape codes. It measures rendered cells, not bytes, so multi-byte glyphs
+// like ↑/↓ (3 bytes, 1 column each) don't inflate the count and skew the
+// right-alignment math.
 func visibleLen(s string) int {
-	clean := strings.Builder{}
-	inEscape := false
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\x1b' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if (s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z') {
-				inEscape = false
-			}
-			continue
-		}
-		clean.WriteByte(s[i])
-	}
-	return clean.Len()
+	return ansi.StringWidth(s)
 }
