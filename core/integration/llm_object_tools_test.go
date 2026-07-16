@@ -10,21 +10,13 @@ package core
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
-
-// replayModel encodes a scripted conversation as the deterministic replay model
-// flag (`--model=replay/<base64>`). Each turn is one message in the LLM's
-// content-block history format; an assistant turn drives a tool call without a
-// live provider. See core/llm_replay.go.
-func replayModel(messages string) string {
-	return "replay/" + base64.StdEncoding.EncodeToString([]byte(messages))
-}
 
 // TestObjectToolset locks in that the LLM's tools come from the objects it's
 // bound to via withTools — one tool per eligible method — and not from the raw
@@ -92,12 +84,15 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 
 	// The assistant calls the swap tool (its Workspace! arg is auto-injected, so
 	// no arguments are passed); swap returns currentWorkspace + SWAPPED.txt.
-	model := replayModel(`[` +
-		`{"role":"USER","content":[{"kind":"TEXT","text":"swap the workspace"}]},` +
-		`{"role":"ASSISTANT","content":[{"kind":"TOOL_CALL","callId":"call_1","toolName":"swap"}]},` +
-		`{"role":"USER","content":[{"kind":"TOOL_RESULT","callId":"call_1"}]},` +
-		`{"role":"ASSISTANT","content":[{"kind":"TEXT","text":"done"}]}` +
-		`]`)
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("swap the workspace").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "swap"},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "done"},
+		}))
 
 	t.Run("the returned workspace becomes the LLM's workspace", func(ctx context.Context, t *testctx.T) {
 		// If the returned Workspace were merely synced/described (the pre-existing
