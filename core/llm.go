@@ -464,23 +464,6 @@ type LLMToolCall struct {
 	Arguments JSON   `json:"arguments"`
 }
 
-// ToContentBlock converts to the canonical content block representation.
-func (tc *LLMToolCall) ToContentBlock() *LLMContentBlock {
-	return &LLMContentBlock{
-		Kind:      LLMContentToolCall,
-		CallID:    tc.CallID,
-		ToolName:  tc.Name,
-		Arguments: tc.Arguments,
-	}
-}
-
-func (*LLMToolCall) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "LLMToolCall",
-		NonNull:   true,
-	}
-}
-
 const (
 	OpenAI      LLMProvider = "openai"
 	OpenAICodex LLMProvider = "openai-codex"

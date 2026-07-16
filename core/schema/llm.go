@@ -187,10 +187,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	// ID/load fields and Env/Binding extensions.
 	srv.InstallObject(dagql.NewClass[*core.LLMMessage](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMContentBlock](srv).View(AfterVersion("v1.0.0-0")))
-	srv.InstallObject(dagql.NewClass[*core.LLMToolCall](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.LLMMessage]{}.Install(srv)
 	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
-	dagql.Fields[*core.LLMToolCall]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
