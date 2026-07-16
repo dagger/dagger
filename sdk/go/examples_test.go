@@ -1,3 +1,8 @@
+// These examples intentionally omit Go's magic "Output:" directives. They are
+// compiled and included in the generated package documentation, but are not
+// executed by a bare `go test`: every example requires a live Dagger engine.
+// Engine-backed client behavior is tested separately under sdk/go/e2e.
+
 package dagger_test
 
 import (
@@ -27,8 +32,6 @@ func ExampleContainer() {
 	}
 
 	fmt.Println(out)
-
-	// Output: 3.16.2
 }
 
 func ExampleContainer_With() {
@@ -50,7 +53,6 @@ func ExampleContainer_With() {
 	}
 
 	fmt.Println(out)
-	// Output: bar
 }
 
 func ExampleGitRepository() {
@@ -70,8 +72,6 @@ func ExampleGitRepository() {
 
 	lines := strings.Split(strings.TrimSpace(readme), "\n")
 	fmt.Println(lines[0])
-
-	// Output: ## What is Dagger?
 }
 
 func ExampleDirectory_DockerBuild() {
@@ -94,8 +94,6 @@ func ExampleDirectory_DockerBuild() {
 
 	words := strings.Split(strings.TrimSpace(out), " ")
 	fmt.Println(words[0])
-
-	// Output: dagger
 }
 
 func ExampleContainer_WithEnvVariable() {
@@ -117,8 +115,6 @@ func ExampleContainer_WithEnvVariable() {
 	}
 
 	fmt.Println(out)
-
-	// Output: bar
 }
 
 func ExampleContainer_WithMountedDirectory() {
@@ -144,8 +140,6 @@ func ExampleContainer_WithMountedDirectory() {
 	}
 
 	fmt.Printf("%q", out)
-
-	// Output: "goodbye.txt\nhello.txt\n"
 }
 
 func ExampleContainer_WithMountedCache() {
@@ -178,8 +172,6 @@ func ExampleContainer_WithMountedCache() {
 	}
 
 	fmt.Printf("%q", out)
-
-	// Output: "0\n1\n2\n3\n4\n"
 }
 
 func ExampleDirectory() {
@@ -200,8 +192,6 @@ func ExampleDirectory() {
 	}
 
 	fmt.Println(entries)
-
-	// Output: [goodbye.txt hello.txt]
 }
 
 func ExampleHost_Directory() {
@@ -218,6 +208,4 @@ func ExampleHost_Directory() {
 	}
 
 	fmt.Printf("%v\n", strings.Contains(readme, "Dagger"))
-
-	// Output: true
 }
