@@ -255,22 +255,36 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		systemPrompts = append([]anthropic.TextBlockParam{claudeCodePrompt}, systemPrompts...)
 	}
 
-	// Prepare parameters for the streaming call.
-	maxTokens := int64(8192)
-	if opts != nil && opts.MaxTokens > 0 {
+	// Prepare parameters for the streaming call. The API requires max_tokens;
+	// default to the model's own output cap (from the catwalk catalog) so
+	// replies are never artificially truncated, keeping a conservative
+	// fallback for models the catalog doesn't know (e.g. Anthropic-compatible
+	// local endpoints).
+	userSetMaxTokens := opts != nil && opts.MaxTokens > 0
+	maxTokens := c.endpoint.DefaultMaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 8192
+	}
+	if userSetMaxTokens {
 		maxTokens = int64(opts.MaxTokens)
 	}
 
 	// Configure reasoning effort, if requested. Anthropic takes the level
-	// straight through as output_config.effort; leave room for reasoning tokens
-	// on top of the reply so the answer isn't truncated.
+	// straight through as output_config.effort; when on the conservative
+	// fallback default, leave room for reasoning tokens on top of the reply
+	// so the answer isn't truncated. An explicit maxTokens cap is respected
+	// as-is.
 	var outputConfig anthropic.OutputConfigParam
 	if reasoningEnabled {
 		outputConfig.Effort = anthropic.OutputConfigEffort(c.endpoint.ReasoningEffort)
-		if maxTokens < 16384 {
+		if !userSetMaxTokens && maxTokens < 16384 {
 			maxTokens = 16384
 		}
 	}
+
+	// Cap max_tokens to the context window's remaining space; the API rejects
+	// requests whose input tokens + max_tokens exceed it.
+	maxTokens = clampMaxTokensToContext(maxTokens, c.endpoint.ContextWindow, history, tools)
 
 	params := anthropic.MessageNewParams{
 		Model:        c.endpoint.Model,

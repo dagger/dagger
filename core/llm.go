@@ -132,6 +132,12 @@ type LLMEndpoint struct {
 	// thinking_level). Empty or "none" disables reasoning.
 	ReasoningEffort string
 
+	// DefaultMaxTokens and ContextWindow are the model's default output-token
+	// cap and total context size, from catwalk's embedded catalog. Zero when
+	// the model isn't in the catalog (e.g. local endpoints).
+	DefaultMaxTokens int64
+	ContextWindow    int64
+
 	// dial overrides how the endpoint's HTTP client opens connections. Set
 	// for local endpoints so traffic routes through a container-to-host
 	// tunnel (forwarding through the client's session) while BaseURL keeps
@@ -740,6 +746,10 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	// Strip the Codex routing prefix (if any) so the model displays and is sent
 	// to the provider under its bare name; non-Codex models are unaffected.
 	endpoint.Model = strings.TrimPrefix(model, codexModelPrefix)
+	if m, ok := lookupCatalogModel(endpoint.Provider, endpoint.Model); ok {
+		endpoint.DefaultMaxTokens = m.DefaultMaxTokens
+		endpoint.ContextWindow = m.ContextWindow
+	}
 	return endpoint, nil
 }
 
