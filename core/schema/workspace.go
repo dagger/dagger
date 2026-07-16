@@ -264,6 +264,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc("Module name to inspect."),
 			),
+		dagql.NodeFunc("moduleSource", s.moduleSource).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("Load a module source from a path within the workspace.",
+				`Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths (e.g., "/foo") resolve from the workspace root.`,
+				"Fails if the path does not point to an initialized module.").
+			Args(
+				dagql.Arg("path").Doc(`Location of the module source to load, relative to the workspace cwd or absolute from the workspace root.`),
+			),
 		dagql.Func("cwd", s.cwd).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Current location within the workspace root.",

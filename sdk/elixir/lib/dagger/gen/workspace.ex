@@ -281,6 +281,24 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Load a module source from a path within the workspace.
+
+  Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths (e.g., "/foo") resolve from the workspace root.
+
+  Fails if the path does not point to an initialized module.
+  """
+  @spec module_source(t(), String.t()) :: Dagger.ModuleSource.t()
+  def module_source(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("moduleSource") |> QB.put_arg("path", path)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   List modules defined in the workspace configuration.
   """
   @spec modules(t()) :: {:ok, [Dagger.WorkspaceModule.t()]} | {:error, term()}

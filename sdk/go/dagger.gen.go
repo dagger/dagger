@@ -16414,6 +16414,20 @@ func (r *Workspace) Module(name string) *WorkspaceModule {
 	}
 }
 
+// Load a module source from a path within the workspace.
+//
+// Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths (e.g., "/foo") resolve from the workspace root.
+//
+// Fails if the path does not point to an initialized module.
+func (r *Workspace) ModuleSource(path string) *ModuleSource {
+	q := r.query.Select("moduleSource")
+	q = q.Arg("path", path)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // List modules defined in the workspace configuration.
 func (r *Workspace) Modules(ctx context.Context) ([]WorkspaceModule, error) {
 	q := r.query.Select("modules")
