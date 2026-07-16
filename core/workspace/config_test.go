@@ -710,6 +710,21 @@ region = "us-east-1"
 		require.NotContains(t, out, `region = "us-east-1"`)
 	})
 
+	t.Run("undefined env removal lists the defined envs", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := ParseConfig([]byte("[env.dev]\n[env.prod]\n"))
+		require.NoError(t, err)
+
+		err = RemoveEnv(cfg, "ci")
+		require.ErrorContains(t, err, `workspace env "ci" is not defined (defined envs: dev, prod)`)
+		// Removal never teaches the create-by-writing gesture.
+		require.NotContains(t, err.Error(), "create it by writing a setting")
+
+		err = RemoveEnv(&Config{}, "ci")
+		require.ErrorContains(t, err, `workspace env "ci" is not defined (no envs defined)`)
+	})
+
 	t.Run("removes existing numeric path segments", func(t *testing.T) {
 		t.Parallel()
 
@@ -800,7 +815,16 @@ func TestApplyEnvOverlay(t *testing.T) {
 		t.Parallel()
 
 		_, err := ApplyEnvOverlay(&Config{}, "ci")
-		require.EqualError(t, err, `workspace env "ci" is not defined`)
+		require.EqualError(t, err, `workspace env "ci" is not defined (no envs defined)`)
+	})
+
+	t.Run("missing env error lists defined envs", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := ApplyEnvOverlay(&Config{
+			Env: map[string]EnvOverlay{"ci": {}, "prod": {}},
+		}, "prdo")
+		require.ErrorContains(t, err, `workspace env "prdo" is not defined (defined envs: ci, prod)`)
 	})
 
 	t.Run("rejects unknown module alias", func(t *testing.T) {
