@@ -640,6 +640,10 @@ func setupOpenAICodexOAuth(ctx context.Context, ph PromptHandler) (string, *Prov
 				code = browserCode
 			}
 			cancelForm() // dismiss the fallback form
+			// Wait for the form goroutine to return before reading manualCode
+			// below; it writes manualCode as the user types, so reading it while
+			// the goroutine is still running would be a data race.
+			<-formDone
 		case err := <-formDone:
 			if err != nil {
 				return "", nil, "", err

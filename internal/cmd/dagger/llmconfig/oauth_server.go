@@ -22,11 +22,12 @@ const oauthSuccessHTML = `<!doctype html>
 
 // OAuthCallbackServer listens on localhost for an OAuth callback.
 type OAuthCallbackServer struct {
-	server *http.Server
-	code   string
-	state  string
-	mu     sync.Mutex
-	done   chan struct{}
+	server    *http.Server
+	code      string
+	state     string
+	mu        sync.Mutex
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // StartOAuthCallbackServer starts a local HTTP server to receive OAuth callbacks.
@@ -76,11 +77,13 @@ func (s *OAuthCallbackServer) handleCallback(w http.ResponseWriter, r *http.Requ
 	s.code = code
 	s.mu.Unlock()
 
-	select {
-	case <-s.done:
-	default:
+	// net/http serves each request in its own goroutine, so two concurrent
+	// callbacks could both reach the close; sync.Once ensures done is closed
+	// exactly once (a second close would panic). The code is written above,
+	// before done fires, so WaitForCode observes it.
+	s.closeOnce.Do(func() {
 		close(s.done)
-	}
+	})
 }
 
 // WaitForCode waits for the OAuth callback to deliver a code, or for the
