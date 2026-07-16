@@ -17,17 +17,17 @@
       },
       {
         "kind": "TOOL_CALL",
-        "call_id": "toolu_012crW2hQCwNVb48ZwoZUoNA",
-        "tool_name": "read",
+        "callId": "toolu_012crW2hQCwNVb48ZwoZUoNA",
+        "toolName": "read",
         "arguments": "{}"
       }
     ],
-    "token_usage": {
-      "input_tokens": 2,
-      "output_tokens": 68,
-      "cached_token_reads": 0,
-      "cached_token_writes": 1220,
-      "total_tokens": 1290
+    "tokenUsage": {
+      "inputTokens": 2,
+      "outputTokens": 68,
+      "cachedTokenReads": 0,
+      "cachedTokenWrites": 1220,
+      "totalTokens": 1290
     }
   },
   {
@@ -36,7 +36,7 @@
       {
         "kind": "TOOL_RESULT",
         "text": "workspace file \"main.go\": stat main.go: no such file or directory",
-        "call_id": "toolu_012crW2hQCwNVb48ZwoZUoNA",
+        "callId": "toolu_012crW2hQCwNVb48ZwoZUoNA",
         "errored": true
       }
     ]
@@ -50,17 +50,17 @@
       },
       {
         "kind": "TOOL_CALL",
-        "call_id": "toolu_01FZYs2jNfNs3erSnTe3eYUp",
-        "tool_name": "write",
+        "callId": "toolu_01FZYs2jNfNs3erSnTe3eYUp",
+        "toolName": "write",
         "arguments": "{\"content\":\"package main\\n\\nimport \\\"fmt\\\"\\n\\nfunc main() {\\n\\tfmt.Println(\\\"Hello, World!\\\")\\n}\\n\"}"
       }
     ],
-    "token_usage": {
-      "input_tokens": 7,
-      "output_tokens": 95,
-      "cached_token_reads": 1220,
-      "cached_token_writes": 100,
-      "total_tokens": 1422
+    "tokenUsage": {
+      "inputTokens": 7,
+      "outputTokens": 95,
+      "cachedTokenReads": 1220,
+      "cachedTokenWrites": 100,
+      "totalTokens": 1422
     }
   },
   {
@@ -69,7 +69,7 @@
       {
         "kind": "TOOL_RESULT",
         "text": "diff --git b/main.go b/main.go\nnew file mode 100644\nindex 0000000..a3dd973\n--- /dev/null\n+++ b/main.go\n@@ -0,0 +1,7 @@\n+package main\n+\n+import \"fmt\"\n+\n+func main() {\n+\tfmt.Println(\"Hello, World!\")\n+}\n",
-        "call_id": "toolu_01FZYs2jNfNs3erSnTe3eYUp"
+        "callId": "toolu_01FZYs2jNfNs3erSnTe3eYUp"
       }
     ]
   },
@@ -82,17 +82,17 @@
       },
       {
         "kind": "TOOL_CALL",
-        "call_id": "toolu_01HqccozuzWnAwAznGZV2WAB",
-        "tool_name": "build",
+        "callId": "toolu_01HqccozuzWnAwAznGZV2WAB",
+        "toolName": "build",
         "arguments": "{}"
       }
     ],
-    "token_usage": {
-      "input_tokens": 6,
-      "output_tokens": 48,
-      "cached_token_reads": 1320,
-      "cached_token_writes": 204,
-      "total_tokens": 1578
+    "tokenUsage": {
+      "inputTokens": 6,
+      "outputTokens": 48,
+      "cachedTokenReads": 1320,
+      "cachedTokenWrites": 204,
+      "totalTokens": 1578
     }
   },
   {
@@ -101,7 +101,7 @@
       {
         "kind": "TOOL_RESULT",
         "text": "go: creating new go.mod: module main\ngo: to add module requirements and sums:\n\tgo mod tidy\ngo: creating new go.mod: module main\ngo: to add module requirements and sums:\n\tgo mod tidy",
-        "call_id": "toolu_01HqccozuzWnAwAznGZV2WAB"
+        "callId": "toolu_01HqccozuzWnAwAznGZV2WAB"
       }
     ]
   },
@@ -113,12 +113,12 @@
         "text": "Perfect! The program has been successfully created and built. The Hello World program:\n\n1. **Package declaration**: `package main` - defines this as an executable program\n2. **Import statement**: `import \"fmt\"` - imports the format package for printing\n3. **Main function**: `func main()` - the entry point of the program\n4. **Print statement**: `fmt.Println(\"Hello, World!\")` - prints \"Hello, World!\" to the console\n\nThe build was successful (Go automatically created a go.mod file for module management). Your Hello World program is ready to run!"
       }
     ],
-    "token_usage": {
-      "input_tokens": 6,
-      "output_tokens": 131,
-      "cached_token_reads": 1524,
-      "cached_token_writes": 115,
-      "total_tokens": 1776
+    "tokenUsage": {
+      "inputTokens": 6,
+      "outputTokens": 131,
+      "cachedTokenReads": 1524,
+      "cachedTokenWrites": 115,
+      "totalTokens": 1776
     }
   }
 ]
