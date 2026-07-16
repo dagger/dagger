@@ -12197,6 +12197,17 @@ func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts
 	return convert(response), nil
 }
 
+// Detect and return the current workspace.
+//
+// Experimental: Highly experimental API extracted from a more ambitious workspace implementation.
+func (r *Query) CurrentWorkspace() *Workspace {
+	q := r.query.Select("currentWorkspace")
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // The default platform of the engine.
 func (r *Query) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.query.Select("defaultPlatform")
