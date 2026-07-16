@@ -73,7 +73,7 @@
       "customizations": [
         {
           "argument": "test",
-          "default": "e2e/**"
+          "default": "e2e/**,sdk/go,sdk/go/e2e"
         },
         {
           "argument": "lint",
@@ -81,7 +81,7 @@
         },
         {
           "argument": "generate",
-          "default": "docs/current_docs/reference"
+          "default": "docs/current_docs/reference,sdk/go"
         }
       ]
     },

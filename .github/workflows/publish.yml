@@ -181,14 +181,6 @@ jobs:
       - name: "FIXME: SkipWorkspaceModules workaround"
         run: rm dagger.json # FIXME: general workaround that does the equivalent of SkipWorkspaceModules(). See #12932, #12933
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
-      - name: "Test Go SDK"
-        run: |
-          cd sdk/go
-          go test -v -run TestProvision ./...
-
       - uses: yezz123/setup-uv@v4
         with:
           uv-version: "0.10.3"
@@ -257,13 +249,6 @@ jobs:
           echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
           echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
-      - name: "Test Go SDK"
-        run: |
-          cd sdk/go
-          go test -v -run TestProvision ./...
       - name: "Test Go SDK Module Load"
         run: |
           # verify we can load a go module (the dagger-dev module has multiple go modules)

@@ -36,28 +36,6 @@ type GoSdkDev {
   }
 
   """
-  Test the Go SDK
-  """
-  pub test: Void {
-    devContainer
-      .withExec(["go", "test", "-v", "-skip=TestProvision", "./..."])
-      .sync
-
-    null
-  }
-
-  """
-  Regenerate the Go SDK API
-  """
-  pub generate: Changeset! @generate {
-    devContainer
-      .withExec(["go", "generate", "-v", "./..."])
-      .withExec(["go", "mod", "tidy"])
-      .directory("../..") # pop back to repo root
-      .changes(workspaceDir)
-  }
-
-  """
   Check that releasing works, without actually releasing
   """
   pub releaseDryRun(
