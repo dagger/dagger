@@ -11,8 +11,10 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
@@ -167,6 +169,298 @@ func (UpSuite) TestUpServiceBinding(ctx context.Context, t *testctx.T) {
 			CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "OK: all services with dedup works")
+	})
+}
+
+func (UpSuite) TestUpModuleWiring(ctx context.Context, t *testctx.T) {
+	// A module's constructor can receive another module's function output via a
+	// plain-string module reference in workspace settings:
+	// settings.<arg> = "<module>:<function>". These strings route through the
+	// Address decoders (see core/schema/address.go: resolveModuleRef, wired
+	// into .service() and .container()). Supported for Service (+up functions)
+	// and Container. The same decoders back CLI object flags, so a constructor
+	// arg like --app=<module>:<function> resolves identically.
+	c := connect(ctx, t)
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+
+	t.Run("without refs", func(ctx context.Context, t *testctx.T) {
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+`)
+		out, err := ctr.
+			With(daggerExec("call", "service-ref-consumer", "has-service")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "false")
+
+		out, err = ctr.
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "none")
+	})
+
+	t.Run("service ref via settings", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.app = "hello-with-services:web"
+`).
+			With(daggerExec("call", "service-ref-consumer", "has-service")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "true")
+	})
+
+	t.Run("container ref via settings", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "container-provider:image"
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
+	})
+
+	t.Run("service ref via CLI flag", func(ctx context.Context, t *testctx.T) {
+		// The consumer's constructor arg (app *dagger.Service) is settable as a
+		// flag on the call; the flag value routes through the same Address
+		// decoders as settings strings.
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+`).
+			With(daggerExec("call", "service-ref-consumer", "--app=hello-with-services:web", "has-service")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "true")
+	})
+
+	t.Run("service ref via settings under check", func(ctx context.Context, t *testctx.T) {
+		// Checks run through the ModTree path (standalone per-module dagql
+		// servers), not the caller's session schema, so settings-wired
+		// constructor args must resolve against the schema served to the main
+		// client (see UserDefault.Value in core/modfunc.go). The consumer's
+		// check-service check passes only when the wired service arrived.
+		ctr := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.app = "hello-with-services:web"
+`)
+
+		// Unfiltered: every workspace module loads before the check runs.
+		out, err := ctr.
+			With(daggerExec("check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "check-service")
+
+		// Filtered: only the named module loads up front; the referenced
+		// module (hello-with-services) must be demand-loaded when the wiring
+		// resolves (see demandLoadInstalledModule in core/schema/address.go).
+		out, err = ctr.
+			With(daggerExec("check", "service-ref-consumer:check-service")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "check-service")
+	})
+
+	t.Run("commit-on-match is a hard error", func(ctx context.Context, t *testctx.T) {
+		// Once the first segment names an installed module, the ref is committed:
+		// an unknown function is a hard error and must NOT fall back to pulling an
+		// image named "container-provider". See resolveModuleRef in
+		// core/schema/address.go.
+		_, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "container-provider:nonexistent"
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Sync(ctx)
+		requireErrOut(t, err, "module reference")
+		requireErrOut(t, err, "container-provider")
+	})
+
+	t.Run("extra segments error", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "container-provider:image:extra"
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Sync(ctx)
+		requireErrOut(t, err, "only container-provider:<function> is supported today")
+	})
+
+	t.Run("rejects reference cycle", func(ctx context.Context, t *testctx.T) {
+		// A self-referential module ref (container-provider's own base wired
+		// from container-provider:image) is now caught by the cycle guard in
+		// core/schema/address.go (resolveModuleRef, moduleRefCycleKey) and
+		// fails fast with a "module reference cycle detected" error. Before the
+		// guard existed this recursed unboundedly and hung the engine, so a
+		// context deadline is kept as a safety net against a regression wedging CI.
+		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+		_, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+settings.base = "container-provider:image"
+`).
+			With(daggerExec("call", "container-provider", "image", "env-variable", "--name", "PROVIDED_BY")).
+			Sync(ctx)
+		requireErrOut(t, err, "module reference cycle detected")
+	})
+
+	t.Run("OCI fallback when no module matches", func(ctx context.Context, t *testctx.T) {
+		// "alpine:3.20" has no installed module named "alpine", so it falls
+		// through to image interpretation (precedence rule's fallback side). The
+		// image is a plain alpine with no PROVIDED_BY annotation, so
+		// container-provided-by returns an empty value rather than
+		// "container-provider" — it must NOT be treated as a module ref.
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "alpine:3.20"
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "container-provider")
+	})
+
+	t.Run("core field is not a module ref (container)", func(ctx context.Context, t *testctx.T) {
+		// With NO module installed, "git:2.40" happens to name a core Query field
+		// ("git"), which exists on the outer root too. It must NOT be committed as
+		// a module ref; it falls through to image resolution. There is no
+		// "git:2.40" image, so the failure must be an image-resolution error, NOT
+		// a committed "resolve module reference" error. See F1 in
+		// resolveModuleRef. (A near-miss F2 hint mentioning wiring in another
+		// module's output is acceptable — what must be absent is the
+		// committed-ref failure that would mean "git" was treated as a module.)
+		_, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "git:2.40"
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Sync(ctx)
+		require.Error(t, err)
+		var execErr *dagger.ExecError
+		combined := err.Error()
+		if errors.As(err, &execErr) {
+			combined = fmt.Sprintf("%s\n%s\n%s", err, execErr.Stdout, execErr.Stderr)
+		}
+		// Must NOT have been committed as a module ref (that path emits
+		// "resolve module reference %q (module %q)").
+		require.NotContains(t, combined, "resolve module reference")
+		require.NotContains(t, combined, `module "git"`)
+	})
+
+	t.Run("core field is not a module ref (service, gives hint)", func(ctx context.Context, t *testctx.T) {
+		// "secret:foo" names the core "secret" field, so it is not a module
+		// ref. It falls through to service URL parsing, which fails. Because it is
+		// bare-ref-shaped, the F2 hint is appended rather than a raw "missing port
+		// in address".
+		_, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.app = "secret:foo"
+`).
+			With(daggerExec("call", "service-ref-consumer", "has-service")).
+			Sync(ctx)
+		requireErrOut(t, err, "no installed module matches")
+		requireErrOut(t, err, "dagger.toml")
+	})
+
+	t.Run("typo'd module name gives near-miss hint", func(ctx context.Context, t *testctx.T) {
+		// "docusarus:serve" is bare-ref-shaped but names no installed module (and
+		// "docusarus" is not a core field), so it falls through. The fallback
+		// error is wrapped with the F2 hint pointing at dagger.toml.
+		_, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.app = "docusarus:serve"
+`).
+			With(daggerExec("call", "service-ref-consumer", "has-service")).
+			Sync(ctx)
+		requireErrOut(t, err, `no installed module matches "docusarus:serve"`)
+		requireErrOut(t, err, "check the [modules.X] keys in dagger.toml")
+	})
+
+	t.Run("rejects two-module reference cycle", func(ctx context.Context, t *testctx.T) {
+		// A→B→A: container-provider's base is wired from service-ref-consumer:ctr,
+		// and service-ref-consumer's base is wired from container-provider:image.
+		// The cycle guard must catch this and fail fast rather than hang. A context
+		// deadline is kept as a safety net against a regression wedging CI.
+		ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+		_, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.container-provider]
+source = "../container-provider"
+settings.base = "service-ref-consumer:ctr"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "container-provider:image"
+`).
+			With(daggerExec("call", "container-provider", "image", "env-variable", "--name", "PROVIDED_BY")).
+			Sync(ctx)
+		requireErrOut(t, err, "module reference cycle detected")
+	})
+
+	t.Run("install alias names the leading segment", func(ctx context.Context, t *testctx.T) {
+		// The leading segment of a module ref is the install NAME (the
+		// [modules.X] key), which need not equal the module's own name. Here the
+		// container-provider module is installed under the key "cp", so
+		// "cp:image" must resolve. See F4.
+		out, err := modGen.
+			WithWorkdir("app").
+			WithNewFile("dagger.toml", `[modules.cp]
+source = "../container-provider"
+
+[modules.service-ref-consumer]
+source = "../service-ref-consumer"
+settings.base = "cp:image"
+`).
+			With(daggerExec("call", "service-ref-consumer", "container-provided-by")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "container-provider")
 	})
 }
 

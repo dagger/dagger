@@ -373,7 +373,16 @@ func (v *serviceValue) Set(s string) error {
 }
 
 func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Address(v.address).Service().Start(ctx)
+	svc := c.Address(v.address).Service()
+	// tcp:// and udp:// host services are started eagerly: the caller expects
+	// the tunnel up for the duration of the call. Module references resolve to
+	// services that start lazily on first use via service bindings; starting
+	// them here would leak a running container that nothing ever detaches,
+	// blocking session teardown.
+	if strings.Contains(v.address, "://") {
+		return svc.Start(ctx)
+	}
+	return svc, nil
 }
 
 // portForwardValue is a pflag.Value that builds a dagger.

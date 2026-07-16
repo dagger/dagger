@@ -455,8 +455,20 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		return nil, fmt.Errorf("access main client: %w", err)
 	}
 	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
-	// Resolve object from user-supplied "address"
-	srv := dagql.CurrentDagqlServer(mainCtx)
+	// Resolve object from user-supplied "address" against the schema served to
+	// the main client, which carries the workspace's installed modules as root
+	// fields. The context-stamped server (dagql.CurrentDagqlServer) may be a
+	// standalone per-module server — e.g. under `dagger check`'s ModTree path —
+	// whose root lacks sibling workspace modules, so module refs like
+	// "pulse:serve" would silently fall through to legacy address decoding.
+	servedDeps, err := query.Server.CurrentServedDeps(mainCtx)
+	if err != nil {
+		return nil, fmt.Errorf("get main client served deps: %w", err)
+	}
+	srv, err := servedDeps.Schema(mainCtx)
+	if err != nil {
+		return nil, fmt.Errorf("get main client schema: %w", err)
+	}
 
 	resolveOne := func(userInput, typename string) (any, error) {
 		var result dagql.AnyObjectResult
