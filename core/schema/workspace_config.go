@@ -216,9 +216,10 @@ func (s *workspaceSchema) configRead(
 }
 
 type workspaceConfigValueArgs struct {
-	Key   string
-	Value string
-	Here  bool `default:"false"`
+	Key    string
+	Value  string
+	Values dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Here   bool `default:"false"`
 }
 
 type workspaceConfigKeyArgs struct {

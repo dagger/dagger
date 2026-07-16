@@ -6347,8 +6347,15 @@ type Workspace implements Node {
     """Dotted key path."""
     key: String!
 
-    """Value to set."""
+    """
+    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+    """
     value: String!
+
+    """
+    List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+    """
+    values: [String!]
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
@@ -6569,6 +6576,9 @@ type WorkspaceModuleSetting implements Node {
 
   """A unique identifier for this WorkspaceModuleSetting."""
   id: ID!
+
+  """Whether the setting accepts a list of values."""
+  isList: Boolean!
 
   """The setting key."""
   key: String!

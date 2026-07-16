@@ -147,7 +147,19 @@ func (s *workspaceSchema) withConfigValue(
 		}
 	}
 
-	updated, err := workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
+	var updated []byte
+	if args.Values.Valid {
+		if args.Value != "" {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("value and values are mutually exclusive")
+		}
+		elements := make([]string, 0, len(args.Values.Value))
+		for _, v := range args.Values.Value {
+			elements = append(elements, v.String())
+		}
+		updated, err = workspace.WriteConfigValues(staged.Data, writeKey, elements)
+	} else {
+		updated, err = workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
+	}
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

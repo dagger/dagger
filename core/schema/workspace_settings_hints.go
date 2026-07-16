@@ -248,6 +248,7 @@ func buildHintFromArg(arg *core.FunctionArg) (workspace.ConstructorArgHint, bool
 	return workspace.ConstructorArgHint{
 		Name:         arg.Name,
 		TypeLabel:    typeLabel,
+		IsList:       arg.TypeDef.Self().Kind == core.TypeDefKindList,
 		Description:  arg.Description,
 		ExampleValue: exampleValue,
 	}, true

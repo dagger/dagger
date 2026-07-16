@@ -27,7 +27,7 @@ import (
 // implementation details. The command is intentionally positional and requires
 // an explicit module alias at every depth so it stays unambiguous.
 func (WorkspaceSuite) TestWorkspaceSettingsCommandGrammar(ctx context.Context, t *testctx.T) {
-	t.Run("settings supports exactly zero, one, two, or three positional args", func(ctx context.Context, t *testctx.T) {
+	t.Run("settings supports zero, one, two, or trailing value positional args", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "modules/aws"
 entrypoint = true
@@ -63,7 +63,7 @@ region = "us-west-2"
 
 		_, err = hostDaggerExec(ctx, t, workdir, "--silent", "settings", "aws", "region", "eu-central-1", "extra")
 		require.Error(t, err)
-		requireErrOut(t, err, "accepts at most 3 arg")
+		requireErrOut(t, err, `setting "region" of module "aws" is not a list and accepts a single value`)
 	})
 
 	t.Run("module omission is never supported, even for a single entrypoint module", func(ctx context.Context, t *testctx.T) {
@@ -551,8 +551,8 @@ region = "us-west-2"
 
 // TestWorkspaceSettingsListValues locks in how list settings reach a module's
 // constructor: TOML arrays deliver their elements as-is, comma-separated
-// strings split into elements, and JSON-array writes through `dagger settings`
-// round-trip to the same list.
+// strings split into elements, and variadic writes through `dagger settings`
+// store each trailing argument verbatim as one element.
 func (WorkspaceSuite) TestWorkspaceSettingsListValues(ctx context.Context, t *testctx.T) {
 	const vitestConfig = `[modules.vitest]
 source = "modules/vitest"
@@ -581,19 +581,49 @@ retries = 0
 		require.JSONEq(t, `["smoke", "regression"]`, strings.TrimSpace(string(out)))
 	})
 
-	t.Run("JSON array writes round-trip through settings to the constructor", func(ctx context.Context, t *testctx.T) {
+	t.Run("variadic writes round-trip through settings to the constructor", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
 
-		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "tags", `["!docs","!integration"]`)
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "tags", "smoke", "regression")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.vitest.settings.tags")
 		require.NoError(t, err)
-		require.Equal(t, "[!docs, !integration]", strings.TrimSpace(string(out)))
+		require.Equal(t, "[smoke, regression]", strings.TrimSpace(string(out)))
 
 		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "tags", "--json")
 		require.NoError(t, err)
-		require.JSONEq(t, `["!docs", "!integration"]`, strings.TrimSpace(string(out)))
+		require.JSONEq(t, `["smoke", "regression"]`, strings.TrimSpace(string(out)))
+	})
+
+	t.Run("variadic values keep commas and JSON-looking elements verbatim", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "tags", "smoke,regression", `["docs"]`)
+		require.NoError(t, err)
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "tags", "--json")
+		require.NoError(t, err)
+		require.JSONEq(t, `["smoke,regression", "[\"docs\"]"]`, strings.TrimSpace(string(out)))
+	})
+
+	t.Run("a single trailing value for a list setting keeps comma-splitting behavior", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "tags", "smoke,regression")
+		require.NoError(t, err)
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "tags", "--json")
+		require.NoError(t, err)
+		require.JSONEq(t, `["smoke", "regression"]`, strings.TrimSpace(string(out)))
+	})
+
+	t.Run("multiple values for a scalar setting fail clearly", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, vitestConfig, workspaceSettingsVitestModule("modules/vitest", "vitest"))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "retries", "1", "2")
+		require.Error(t, err)
+		requireErrOut(t, err, `setting "retries" of module "vitest" is not a list and accepts a single value`)
 	})
 }
 

@@ -14,6 +14,7 @@ import (
 type ConstructorArgHint struct {
 	Name         string
 	TypeLabel    string
+	IsList       bool
 	Description  string
 	ExampleValue string
 }

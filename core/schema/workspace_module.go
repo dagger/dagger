@@ -180,6 +180,7 @@ func (s *workspaceSchema) moduleSettings(
 			Key:         hint.Name,
 			Value:       value,
 			Description: hint.Description,
+			IsList:      hint.IsList,
 		})
 	}
 

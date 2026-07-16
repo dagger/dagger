@@ -16312,6 +16312,7 @@ class Workspace(Type):
         key: str,
         value: str,
         *,
+        values: list[str] | None = None,
         here: bool | None = False,
     ) -> Self:
         """Return this workspace with a configuration value written.
@@ -16321,13 +16322,18 @@ class Workspace(Type):
         key:
             Dotted key path.
         value:
-            Value to set.
+            Value to set. Bools, integers, and comma-separated arrays are
+            auto-detected.
+        values:
+            List value to set. Elements are stored verbatim, with no auto-
+            detection. Mutually exclusive with value.
         here:
             Write to the workspace config directory at the workspace cwd.
         """
         _args = [
             Arg("key", key),
             Arg("value", value),
+            Arg("values", values, None),
             Arg("here", here, False),
         ]
         _ctx = self._select("withConfigValue", _args)
@@ -16965,6 +16971,25 @@ class WorkspaceModuleSetting(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
+
+    async def is_list(self) -> bool:
+        """Whether the setting accepts a list of values.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("isList", _args)
+        return await _ctx.execute(bool)
 
     async def key(self) -> str:
         """The setting key.

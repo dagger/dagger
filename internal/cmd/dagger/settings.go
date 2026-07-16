@@ -43,6 +43,25 @@ query WorkspaceModuleSettings($module: String!) {
 }
 `
 
+// workspaceModuleSettingsQueryWithIsList additionally requests isList, which
+// older engines don't expose. Only multi-value writes need it, so other flows
+// use the queries above and keep working against those engines.
+const workspaceModuleSettingsQueryWithIsList = `
+query WorkspaceModuleSettings($module: String!) {
+  currentWorkspace {
+    module(name: $module) {
+      name
+      settings {
+        key
+        value
+        description
+        isList
+      }
+    }
+  }
+}
+`
+
 var settingsCmd = newSettingsCmd(false)
 
 // workspaceSettingsCmd is retained as a hidden alias under `dagger workspace`
@@ -60,10 +79,10 @@ var workspaceSettingsUnset bool
 
 func newSettingsCmd(hidden bool) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "settings [module] [key] [value]",
+		Use:    "settings [module] [key] [value...]",
 		Short:  "Get, set, or unset module settings (use --env for an env overlay)",
 		Hidden: hidden,
-		Args:   cobra.MaximumNArgs(3),
+		Args:   cobra.ArbitraryArgs,
 		RunE:   runWorkspaceSettings,
 	}
 	cmd.Flags().BoolVarP(&workspaceSettingsUnset, "unset", "u", false, "Remove the setting from workspace config")
@@ -80,7 +99,7 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 			moduleName = args[0]
 		}
 
-		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName)
+		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName, len(args) > 3)
 		if err != nil {
 			return err
 		}
@@ -105,16 +124,18 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 			}
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), setting.Value)
 			return err
-		case 3:
+		default:
 			setting, err := state.lookupSetting(args[1])
 			if err != nil {
 				return err
 			}
+			value, values, err := workspaceSettingWriteValue(setting, args[2:])
+			if err != nil {
+				return err
+			}
 			return state.Workspace.
-				WithConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), args[2], dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).
+				WithConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), value, dagger.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).
 				Export(ctx)
-		default:
-			return fmt.Errorf("expected 0-3 arguments, got %d", len(args))
 		}
 	})
 }
@@ -124,6 +145,22 @@ type workspaceSetting struct {
 	Key         string
 	Value       string
 	Description string
+	IsList      bool
+}
+
+// workspaceSettingWriteValue maps trailing CLI args onto WithConfigValue's
+// value/values split. A single value passes through unchanged so existing
+// scalar and comma-separated forms keep their behavior. Multiple values are
+// only valid for list settings and are passed as an explicit list so elements
+// round-trip exactly, without comma-splitting.
+func workspaceSettingWriteValue(setting workspaceSetting, args []string) (string, []string, error) {
+	if len(args) == 1 {
+		return args[0], nil, nil
+	}
+	if !setting.IsList {
+		return "", nil, fmt.Errorf("setting %q of module %q is not a list and accepts a single value", setting.Key, setting.Module)
+	}
+	return "", args, nil
 }
 
 type workspaceSettingsState struct {
@@ -132,7 +169,7 @@ type workspaceSettingsState struct {
 	Settings  []workspaceSetting
 }
 
-func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string) (*workspaceSettingsState, error) {
+func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleName string, withIsList bool) (*workspaceSettingsState, error) {
 	type settingsModule struct {
 		Name     string
 		Settings []workspaceSetting
@@ -149,13 +186,17 @@ func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client, moduleN
 		}
 		modules = res.CurrentWorkspace.Modules
 	} else {
+		query := workspaceModuleSettingsQuery
+		if withIsList {
+			query = workspaceModuleSettingsQueryWithIsList
+		}
 		var res struct {
 			CurrentWorkspace struct {
 				Module settingsModule
 			}
 		}
 		if err := dag.Do(ctx, &dagger.Request{
-			Query:     workspaceModuleSettingsQuery,
+			Query:     query,
 			Variables: map[string]any{"module": moduleName},
 		}, &dagger.Response{Data: &res}); err != nil {
 			return nil, err

@@ -16630,6 +16630,8 @@ func (r *Workspace) WithConfigEnv(name string, opts ...WorkspaceWithConfigEnvOpt
 
 // WorkspaceWithConfigValueOpts contains options for Workspace.WithConfigValue
 type WorkspaceWithConfigValueOpts struct {
+	// List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+	Values []string
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
 }
@@ -16638,6 +16640,10 @@ type WorkspaceWithConfigValueOpts struct {
 func (r *Workspace) WithConfigValue(key string, value string, opts ...WorkspaceWithConfigValueOpts) *Workspace {
 	q := r.query.Select("withConfigValue")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `values` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Values) {
+			q = q.Arg("values", opts[i].Values)
+		}
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
@@ -17366,6 +17372,7 @@ type WorkspaceModuleSetting struct {
 
 	description *string
 	id          *ID
+	isList      *bool
 	key         *string
 	value       *string
 }
@@ -17427,6 +17434,19 @@ func (r *WorkspaceModuleSetting) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Whether the setting accepts a list of values.
+func (r *WorkspaceModuleSetting) IsList(ctx context.Context) (bool, error) {
+	if r.isList != nil {
+		return *r.isList, nil
+	}
+	q := r.query.Select("isList")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The setting key.

@@ -16228,10 +16228,13 @@ pub struct WorkspaceWithConfigEnvOpts {
     pub here: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceWithConfigValueOpts {
+pub struct WorkspaceWithConfigValueOpts<'a> {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
+    /// List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+    #[builder(setter(into, strip_option), default)]
+    pub values: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithInitClientOpts {
@@ -16838,7 +16841,7 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `key` - Dotted key path.
-    /// * `value` - Value to set.
+    /// * `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_config_value(&self, key: impl Into<String>, value: impl Into<String>) -> Workspace {
         let mut query = self.selection.select("withConfigValue");
@@ -16855,17 +16858,20 @@ impl Workspace {
     /// # Arguments
     ///
     /// * `key` - Dotted key path.
-    /// * `value` - Value to set.
+    /// * `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_config_value_opts(
+    pub fn with_config_value_opts<'a>(
         &self,
         key: impl Into<String>,
         value: impl Into<String>,
-        opts: WorkspaceWithConfigValueOpts,
+        opts: WorkspaceWithConfigValueOpts<'a>,
     ) -> Workspace {
         let mut query = self.selection.select("withConfigValue");
         query = query.arg("key", key.into());
         query = query.arg("value", value.into());
+        if let Some(values) = opts.values {
+            query = query.arg("values", values);
+        }
         if let Some(here) = opts.here {
             query = query.arg("here", here);
         }
@@ -17612,6 +17618,11 @@ impl WorkspaceModuleSetting {
     /// A unique identifier for this WorkspaceModuleSetting.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the setting accepts a list of values.
+    pub async fn is_list(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isList");
         query.execute(self.graphql_client.clone()).await
     }
     /// The setting key.

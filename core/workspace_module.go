@@ -55,6 +55,7 @@ type WorkspaceModuleSetting struct {
 	Key         string `field:"true" doc:"The setting key."`
 	Value       string `field:"true" doc:"The configured value after applying the selected workspace environment, or empty when unset."`
 	Description string `field:"true" doc:"The constructor argument description."`
+	IsList      bool   `field:"true" doc:"Whether the setting accepts a list of values."`
 }
 
 var _ dagql.PersistedObject = (*WorkspaceModuleSetting)(nil)
