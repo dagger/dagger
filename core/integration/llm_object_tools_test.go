@@ -94,8 +94,8 @@ func (LLMSuite) TestToolReturningWorkspaceRebinds(ctx context.Context, t *testct
 	// no arguments are passed); swap returns currentWorkspace + SWAPPED.txt.
 	model := replayModel(`[` +
 		`{"role":"USER","content":[{"kind":"TEXT","text":"swap the workspace"}]},` +
-		`{"role":"ASSISTANT","content":[{"kind":"TOOL_CALL","call_id":"call_1","tool_name":"swap"}]},` +
-		`{"role":"USER","content":[{"kind":"TOOL_RESULT","call_id":"call_1"}]},` +
+		`{"role":"ASSISTANT","content":[{"kind":"TOOL_CALL","callId":"call_1","toolName":"swap"}]},` +
+		`{"role":"USER","content":[{"kind":"TOOL_RESULT","callId":"call_1"}]},` +
 		`{"role":"ASSISTANT","content":[{"kind":"TEXT","text":"done"}]}` +
 		`]`)
 
