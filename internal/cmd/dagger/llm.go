@@ -787,23 +787,32 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 //go:embed llm_branch_summary.md
 var branchSummaryPrompt string
 
-// Summarization input budget: assume a conservative context window when the
-// model's real one is unknown, and reserve room for the prompt scaffolding
-// and the model's output, estimating ~4 chars per token.
+// Summarization input budget: fall back to a conservative context window
+// when the model's real one is unknown, and reserve room for the prompt
+// scaffolding and the model's output, estimating ~4 chars per token.
 const (
-	summaryContextWindowTokens = 128000
-	summaryReserveTokens       = 16384
-	summaryCharsPerToken       = 4
+	summaryFallbackWindowTokens = 128000
+	summaryReserveTokens        = 16384
+	summaryCharsPerToken        = 4
 )
 
 // trimConversationForSummary drops the oldest serialized messages so the
-// conversation fits the summarization input budget, keeping the newest
-// content. SerializeHistory joins messages with blank lines, so trimming
-// happens at those boundaries; a notice marks the omission. Without this, a
-// near-window-sized history would leave the summarization request little or
-// no room to respond.
-func trimConversationForSummary(text string) string {
-	budgetChars := (summaryContextWindowTokens - summaryReserveTokens) * summaryCharsPerToken
+// conversation fits the summarization input budget within the model's
+// context window (tokens; 0 or negative uses a conservative fallback),
+// keeping the newest content. SerializeHistory joins messages with blank
+// lines, so trimming happens at those boundaries; a notice marks the
+// omission. Without this, a near-window-sized history would leave the
+// summarization request little or no room to respond.
+func trimConversationForSummary(text string, contextWindow int) string {
+	if contextWindow <= 0 {
+		contextWindow = summaryFallbackWindowTokens
+	}
+	budgetChars := (contextWindow - summaryReserveTokens) * summaryCharsPerToken
+	if budgetChars < summaryReserveTokens*summaryCharsPerToken {
+		// Tiny or reserve-sized windows: keep at least a minimal budget so
+		// the summary sees some conversation.
+		budgetChars = summaryReserveTokens * summaryCharsPerToken
+	}
 	if len(text) <= budgetChars {
 		return text
 	}
@@ -842,7 +851,13 @@ func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions strin
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize history: %w", err)
 	}
-	conversationText = trimConversationForSummary(conversationText)
+	// Budget the input to the model's actual context window; unknown models
+	// (e.g. local endpoints) report 0 and get a conservative fallback.
+	contextWindow, err := s.llm.ContextWindow(ctx)
+	if err != nil {
+		contextWindow = 0
+	}
+	conversationText = trimConversationForSummary(conversationText, contextWindow)
 
 	instructions := branchSummaryPrompt
 	if customInstructions != "" {
