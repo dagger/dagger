@@ -39,6 +39,44 @@ func causeLink(target SpanID) SpanLink {
 	}
 }
 
+func waitingSegments(hb *TimeBreakdown) []TimeSegment {
+	var segs []TimeSegment
+	for _, seg := range hb.Segments {
+		if seg.Waiting {
+			segs = append(segs, seg)
+		}
+	}
+	return segs
+}
+
+func assertBlockers(t *testing.T, seg TimeSegment, want ...SpanID) {
+	t.Helper()
+	if len(seg.Blockers) != len(want) {
+		t.Fatalf("blocker path length: got %+v, want %v", seg.Blockers, want)
+	}
+	for i, target := range want {
+		if seg.Blockers[i].Target != target {
+			t.Fatalf("blocker path at %d: got %+v, want %v", i, seg.Blockers, want)
+		}
+		if seg.Blockers[i].Label == "" {
+			t.Fatalf("blocker path at %d has no label: %+v", i, seg.Blockers)
+		}
+	}
+	if seg.Target.IsValid() {
+		if len(seg.Blockers) == 0 || seg.Blockers[len(seg.Blockers)-1].Target != seg.Target {
+			t.Fatalf("valid target must equal final blocker: %+v", seg)
+		}
+	}
+}
+
+func visitedBreakdownSpans(span *Span) map[SpanID]bool {
+	visited := map[SpanID]bool{}
+	span.TimeBreakdownSpans(func(dep *Span) {
+		visited[dep.ID] = true
+	})
+	return visited
+}
+
 // buildLazyChainDB constructs the reference-trace shape:
 //
 //	q (query root) [0,16]
@@ -85,6 +123,408 @@ func buildLazyChainDB(t *testing.T) (*DB, SpanID, SpanID, SpanID) {
 	return db, s, w1, w2
 }
 
+func TestTimeBreakdownExplicitBlockerPathPrefixes(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	a := testID(2)
+	b := testID(3)
+	c := testID(4)
+	n := testID(5)
+
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+		{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(b, "test", at(0), at(10))}},
+		{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(c, "test", at(2), at(8))}},
+		{ID: c, ParentID: q, Name: "C", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(n, "test", at(4), at(6))}},
+		{ID: n, ParentID: q, Name: "N", StartTime: at(0), EndTime: at(10)},
+	})
+
+	segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+	if len(segs) != 5 {
+		t.Fatalf("expected per-instant path prefixes, got %+v", segs)
+	}
+	want := [][]SpanID{{b}, {b, c}, {b, c, n}, {b, c}, {b}}
+	for i := range segs {
+		assertBlockers(t, segs[i], want[i]...)
+	}
+	if segs[0].Indirect || segs[4].Indirect {
+		t.Fatalf("direct B slices must remain direct: %+v", segs)
+	}
+	if segs[2].Target != n || !segs[2].Indirect || segs[2].Via != "B" {
+		t.Fatalf("deep slice must retain fundamental attribution via B: %+v", segs[2])
+	}
+}
+
+func TestTimeBreakdownLiveInferredBlockerPath(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	n := testID(2)
+	nExec := testID(3)
+	c := testID(4)
+	mN := testID(5)
+	b := testID(6)
+	mC := testID(7)
+	a := testID(8)
+	aTwin := testID(9)
+	mB := testID(10)
+	now := at(8)
+
+	// Live inferred chain A -> B -> C -> N. None of the waits has ended, so
+	// there are no explicit wait links yet; the running resume markers are
+	// the only causal evidence.
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0)},
+		{ID: n, ParentID: q, Name: "N", StartTime: at(0.5), EndTime: at(1)},
+		{ID: nExec, ParentID: n, Name: "exec N", StartTime: at(1)},
+		{ID: c, ParentID: q, Name: "C", StartTime: at(1), EndTime: at(1.5)},
+		{ID: mN, ParentID: c, Name: "resume N", StartTime: at(1.5),
+			Links: []SpanLink{causeLink(n)}},
+		{ID: b, ParentID: q, Name: "B", StartTime: at(2), EndTime: at(2.5)},
+		{ID: mC, ParentID: b, Name: "resume C", StartTime: at(2.5),
+			Links: []SpanLink{causeLink(c)}},
+		{ID: a, ParentID: q, Name: "A", StartTime: at(3)},
+		{ID: aTwin, ParentID: a, Name: "A", StartTime: at(3)},
+		{ID: mB, ParentID: aTwin, Name: "resume B", StartTime: at(3),
+			Links: []SpanLink{causeLink(b)}},
+	})
+
+	seg, ok := db.Spans.Map[a].TimeBreakdown(now).BlockedNow(now)
+	if !ok {
+		t.Fatal("A should be blocked on the live inferred chain")
+	}
+	assertBlockers(t, seg, b, c, n)
+	if seg.Target != n || !seg.Indirect || seg.Via != "B" {
+		t.Fatalf("live path must preserve fundamental attribution via B: %+v", seg)
+	}
+}
+
+func TestTimeBreakdownCycleAndDepthPaths(t *testing.T) {
+	t.Run("cycle retains non-adjacent repeat", func(t *testing.T) {
+		db := NewDB()
+		q := testID(1)
+		a := testID(2)
+		b := testID(3)
+		c := testID(4)
+		db.ImportSnapshots([]SpanSnapshot{
+			{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+			{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(b, "test", at(0), at(10))}},
+			{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(c, "test", at(0), at(10))}},
+			{ID: c, ParentID: q, Name: "C", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(b, "test", at(0), at(10))}},
+		})
+
+		segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+		if len(segs) != 1 {
+			t.Fatalf("cycle should terminate as one deterministic slice: %+v", segs)
+		}
+		assertBlockers(t, segs[0], b, c, b)
+		if segs[0].Target != b {
+			t.Fatalf("cycle-capped target must be its final blocker: %+v", segs[0])
+		}
+	})
+
+	t.Run("maximum depth is bounded and deterministic", func(t *testing.T) {
+		db := NewDB()
+		q := testID(1)
+		a := testID(2)
+		ids := make([]SpanID, waitChainMaxDepth+3)
+		for i := range ids {
+			ids[i] = testID(byte(20 + i))
+		}
+		snaps := []SpanSnapshot{
+			{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+			{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(ids[0], "test", at(0), at(10))}},
+		}
+		for i, id := range ids {
+			snap := SpanSnapshot{ID: id, ParentID: q, Name: "blocker", StartTime: at(0), EndTime: at(10)}
+			if i+1 < len(ids) {
+				snap.Links = []SpanLink{waitLink(ids[i+1], "test", at(0), at(10))}
+			}
+			snaps = append(snaps, snap)
+		}
+		db.ImportSnapshots(snaps)
+
+		first := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+		second := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+		if len(first) != 1 || len(second) != 1 {
+			t.Fatalf("depth-capped chain should be one slice: first=%+v second=%+v", first, second)
+		}
+		want := ids[:waitChainMaxDepth+1]
+		assertBlockers(t, first[0], want...)
+		assertBlockers(t, second[0], want...)
+		if first[0].Target != want[len(want)-1] || second[0].Target != first[0].Target {
+			t.Fatalf("depth cap must be stable and end at the target: first=%+v second=%+v", first[0], second[0])
+		}
+	})
+}
+
+func TestTimeBreakdownResolvedMarkersDeduplicate(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	a := testID(2)
+	b := testID(3)
+	r1 := testID(4)
+	r2 := testID(5)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+		{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(r1, "test", at(0), at(10))}},
+		{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10)},
+		{ID: r1, ParentID: q, Name: "resume B 1", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{causeLink(b), waitLink(r2, "test", at(0), at(10))}},
+		{ID: r2, ParentID: q, Name: "resume B 2", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{causeLink(b)}},
+	})
+
+	segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+	if len(segs) != 1 {
+		t.Fatalf("expected one resolved marker slice, got %+v", segs)
+	}
+	assertBlockers(t, segs[0], b)
+	if segs[0].Target == r1 || segs[0].Target == r2 {
+		t.Fatalf("raw resume marker leaked into attribution: %+v", segs[0])
+	}
+}
+
+func TestTimeBreakdownOutsideTraceRetainsPrefix(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	a := testID(2)
+	b := testID(3)
+	missing := testID(99)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+		{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(b, "test", at(0), at(10))}},
+		{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(missing, "test", at(0), at(10))}},
+	})
+
+	segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+	if len(segs) != 1 {
+		t.Fatalf("expected one outside-trace slice, got %+v", segs)
+	}
+	assertBlockers(t, segs[0], b)
+	if segs[0].Target.IsValid() || segs[0].Label != "an operation outside this trace" {
+		t.Fatalf("outside-trace attribution changed: %+v", segs[0])
+	}
+}
+
+func TestBlockerPathIdentityAndSliverAbsorption(t *testing.T) {
+	b := &Span{SpanSnapshot: SpanSnapshot{ID: testID(1), Name: "B"}}
+	c := &Span{SpanSnapshot: SpanSnapshot{ID: testID(2), Name: "C"}}
+	n := &Span{SpanSnapshot: SpanSnapshot{ID: testID(3), Name: "N"}}
+
+	t.Run("coalescing keeps routes to the same target distinct", func(t *testing.T) {
+		wins := coalesceResolvedWaits([]resolvedWait{
+			{start: at(0), end: at(1), blocker: n, blockers: []*Span{b, n}, indirect: true, via: "via"},
+			{start: at(1), end: at(2), blocker: n, blockers: []*Span{c, n}, indirect: true, via: "via"},
+		})
+		if len(wins) != 2 {
+			t.Fatalf("distinct causal routes were coalesced: %+v", wins)
+		}
+
+		hb := &TimeBreakdown{}
+		hb.addSegment(TimeSegment{
+			Start: at(0), End: at(1), Waiting: true, Target: n.ID, Label: "N",
+			Blockers: []TimeBlocker{{Target: b.ID, Label: "B"}, {Target: n.ID, Label: "N"}},
+			Indirect: true, Via: "via",
+		})
+		hb.addSegment(TimeSegment{
+			Start: at(1), End: at(2), Waiting: true, Target: n.ID, Label: "N",
+			Blockers: []TimeBlocker{{Target: c.ID, Label: "C"}, {Target: n.ID, Label: "N"}},
+			Indirect: true, Via: "via",
+		})
+		if len(hb.Segments) != 2 {
+			t.Fatalf("segment construction erased distinct causal routes: %+v", hb.Segments)
+		}
+		assertBlockers(t, hb.Segments[0], b.ID, n.ID)
+		assertBlockers(t, hb.Segments[1], c.ID, n.ID)
+	})
+
+	t.Run("outside-trace prefixes are segment identity", func(t *testing.T) {
+		wins := coalesceResolvedWaits([]resolvedWait{
+			{start: at(0), end: at(1), blockers: []*Span{b}, indirect: true, via: "via"},
+			{start: at(1), end: at(2), blockers: []*Span{c}, indirect: true, via: "via"},
+		})
+		if len(wins) != 2 {
+			t.Fatalf("outside-trace waits with different prefixes coalesced: %+v", wins)
+		}
+	})
+
+	t.Run("winning neighbor transfers its complete path", func(t *testing.T) {
+		leftWins := absorbWaitSlivers([]resolvedWait{
+			{start: at(0), end: at(5), blocker: n, blockers: []*Span{b, n}},
+			{start: at(5), end: at(5.05), blocker: n, blockers: []*Span{c, n}},
+		}, 10*time.Second)
+		if len(leftWins) != 1 || !sameResolvedBlockers(leftWins[0].blockers, []*Span{b, n}) || leftWins[0].end != at(5.05) {
+			t.Fatalf("left winner did not retain its complete path: %+v", leftWins)
+		}
+
+		rightWins := absorbWaitSlivers([]resolvedWait{
+			{start: at(0), end: at(0.05), blocker: n, blockers: []*Span{b, n}},
+			{start: at(0.05), end: at(5), blocker: n, blockers: []*Span{c, n}},
+		}, 10*time.Second)
+		if len(rightWins) != 1 || !sameResolvedBlockers(rightWins[0].blockers, []*Span{c, n}) || rightWins[0].start != at(0) {
+			t.Fatalf("right winner did not retain its complete path: %+v", rightWins)
+		}
+	})
+}
+
+func TestTimeBreakdownSliverKeepsWinningPath(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	a := testID(2)
+	b := testID(3)
+	n := testID(4)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+		{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(b, "test", at(0), at(10))}},
+		{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(n, "test", at(5), at(5.05))}},
+		{ID: n, ParentID: q, Name: "N", StartTime: at(0), EndTime: at(10)},
+	})
+
+	segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+	if len(segs) != 1 {
+		t.Fatalf("absorbed sliver should leave one B segment: %+v", segs)
+	}
+	assertBlockers(t, segs[0], b)
+	if segs[0].Target != b {
+		t.Fatalf("absorbed segment target must match the winning path: %+v", segs[0])
+	}
+}
+
+func TestTimeBreakdownRetainsInSubtreeIntermediate(t *testing.T) {
+	db := NewDB()
+	q := testID(1)
+	a := testID(2)
+	b := testID(3)
+	n := testID(4)
+	db.ImportSnapshots([]SpanSnapshot{
+		{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+		{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(b, "test", at(0), at(10))}},
+		{ID: b, ParentID: a, Name: "B", StartTime: at(0), EndTime: at(10),
+			Links: []SpanLink{waitLink(n, "test", at(0), at(10))}},
+		{ID: n, ParentID: q, Name: "N", StartTime: at(0), EndTime: at(10)},
+	})
+
+	segs := waitingSegments(db.Spans.Map[a].TimeBreakdown(at(20)))
+	if len(segs) != 1 {
+		t.Fatalf("external fundamental blocker should survive subtree filtering: %+v", segs)
+	}
+	assertBlockers(t, segs[0], b, n)
+	if segs[0].Target != n {
+		t.Fatalf("final external blocker must remain fundamental: %+v", segs[0])
+	}
+}
+
+func TestTimeBreakdownSpansIncludesBlockerChains(t *testing.T) {
+	t.Run("explicit and label descendants", func(t *testing.T) {
+		db := NewDB()
+		q := testID(1)
+		a := testID(2)
+		b := testID(3)
+		c := testID(4)
+		n := testID(5)
+		cRun := testID(6)
+		cProcess := testID(7)
+		process := SpanSnapshot{ID: cProcess, ParentID: cRun, Name: "exec.processRun", StartTime: at(0), EndTime: at(10)}
+		process.ProcessAttribute("wcprof.exec.argv", `["intermediate","command"]`)
+		db.ImportSnapshots([]SpanSnapshot{
+			{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+			{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(b, "test", at(0), at(10))}},
+			{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(c, "test", at(0), at(10))}},
+			{ID: c, ParentID: q, Name: "C", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(n, "test", at(0), at(10))}},
+			{ID: n, ParentID: q, Name: "N", StartTime: at(0), EndTime: at(10)},
+			{ID: cRun, ParentID: c, Name: "exec.run", StartTime: at(0), EndTime: at(10)},
+			process,
+		})
+
+		visited := visitedBreakdownSpans(db.Spans.Map[a])
+		for _, id := range []SpanID{b, c, n, cRun, cProcess} {
+			if !visited[id] {
+				t.Fatalf("missing explicit blocker dependency %v: %v", id, visited)
+			}
+		}
+	})
+
+	t.Run("live inferred intermediates", func(t *testing.T) {
+		db := NewDB()
+		q := testID(1)
+		a := testID(2)
+		aTwin := testID(3)
+		mB := testID(4)
+		b := testID(5)
+		mC := testID(6)
+		c := testID(7)
+		mN := testID(8)
+		n := testID(9)
+		db.ImportSnapshots([]SpanSnapshot{
+			{ID: q, Name: "query", StartTime: at(0)},
+			{ID: a, ParentID: q, Name: "A", StartTime: at(1)},
+			{ID: aTwin, ParentID: a, Name: "A", StartTime: at(1)},
+			{ID: mB, ParentID: aTwin, Name: "resume B", StartTime: at(1), Links: []SpanLink{causeLink(b)}},
+			{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(0.2)},
+			{ID: mC, ParentID: b, Name: "resume C", StartTime: at(1), Links: []SpanLink{causeLink(c)}},
+			{ID: c, ParentID: q, Name: "C", StartTime: at(0), EndTime: at(0.2)},
+			{ID: mN, ParentID: c, Name: "resume N", StartTime: at(1), Links: []SpanLink{causeLink(n)}},
+			{ID: n, ParentID: q, Name: "N", StartTime: at(0), EndTime: at(0.2)},
+		})
+
+		visited := visitedBreakdownSpans(db.Spans.Map[a])
+		for _, id := range []SpanID{mB, b, mC, c, mN, n} {
+			if !visited[id] {
+				t.Fatalf("missing live inferred dependency %v: %v", id, visited)
+			}
+		}
+	})
+
+	t.Run("later wait-edge import", func(t *testing.T) {
+		db := NewDB()
+		q := testID(1)
+		a := testID(2)
+		b := testID(3)
+		c := testID(4)
+		n := testID(5)
+		db.ImportSnapshots([]SpanSnapshot{
+			{ID: q, Name: "query", StartTime: at(0), EndTime: at(10)},
+			{ID: a, ParentID: q, Name: "A", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(b, "test", at(0), at(10))}},
+			{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10)},
+		})
+		first := visitedBreakdownSpans(db.Spans.Map[a])
+		if !first[b] || first[c] || first[n] {
+			t.Fatalf("unexpected initial dependencies: %v", first)
+		}
+
+		db.ImportSnapshots([]SpanSnapshot{
+			{ID: b, ParentID: q, Name: "B", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(c, "test", at(0), at(10))}},
+			{ID: c, ParentID: q, Name: "C", StartTime: at(0), EndTime: at(10),
+				Links: []SpanLink{waitLink(n, "test", at(0), at(10))}},
+			{ID: n, ParentID: q, Name: "N", StartTime: at(0), EndTime: at(10)},
+		})
+		second := visitedBreakdownSpans(db.Spans.Map[a])
+		for _, id := range []SpanID{b, c, n} {
+			if !second[id] {
+				t.Fatalf("later import did not expose dependency %v: %v", id, second)
+			}
+		}
+	})
+}
+
 func TestTimeBreakdownForcingOp(t *testing.T) {
 	db, s, w1, w2 := buildLazyChainDB(t)
 	span := db.Spans.Map[s]
@@ -117,9 +557,11 @@ func TestTimeBreakdownForcingOp(t *testing.T) {
 	if segs[0].Label != "go build -o /tmp/waitdemo ." {
 		t.Fatalf("blocker label should use the exec argv, got %q", segs[0].Label)
 	}
+	assertBlockers(t, segs[0], w1, w2)
 	if segs[1].Target != db.Spans.Map[w1].ID || segs[1].Indirect {
 		t.Fatalf("second stretch should be direct on w1: %+v", segs[1])
 	}
+	assertBlockers(t, segs[1], w1)
 
 	if hb.DominantTarget != w2 {
 		t.Fatalf("dominant blocker should be w2, got %v (%s)", hb.DominantTarget, hb.DominantLabel)
@@ -472,6 +914,7 @@ func TestLiveChainResolvesToWorkingOp(t *testing.T) {
 	if !seg.Indirect || seg.Via == "" || seg.Via == seg.Label {
 		t.Fatalf("segment should be indirect via the first hop, got %+v", seg)
 	}
+	assertBlockers(t, seg, bRow, cRow)
 
 	// b's own row also resolves through to c.
 	b := db.Spans.Map[bRow]
