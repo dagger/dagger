@@ -1930,21 +1930,28 @@ export type JSONValueContentsOpts = {
 
 export type LLMLoopOpts = {
   /**
-   * Cap the number of API calls
+   * Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
    */
-  maxAPICalls?: number
+  maxSteps?: number
 
   /**
-   * Cap the model's output tokens on each API call made during this loop (0 to use the model's default)
+   * Cap the model's output tokens on each step. Defaults to the model's maximum.
    */
   maxTokens?: number
 }
 
 export type LLMStepOpts = {
   /**
-   * Cap the model's output tokens for this API call (0 to use the model's default)
+   * Cap the model's output tokens for this step. Defaults to the model's maximum.
    */
   maxTokens?: number
+}
+
+export type LLMWithModelOpts = {
+  /**
+   * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+   */
+  provider?: string
 }
 
 export type LLMWithResponseOpts = {
@@ -2463,9 +2470,14 @@ export type ClientHttpOpts = {
 
 export type ClientLLMOpts = {
   /**
-   * Model to use
+   * The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
    */
   model?: string
+
+  /**
+   * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+   */
+  provider?: string
 }
 
 export type ClientModuleSourceOpts = {
@@ -11527,20 +11539,21 @@ export class JSONValue extends BaseClient {
   }
 }
 
+/**
+ * A conversation with a large language model (LLM): queue prompts, expose tools, and step the model until it completes its turn.
+ */
 export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _contextWindow?: number = undefined
-  private readonly _globalID?: ID = undefined
-  private readonly _hasPrompt?: boolean = undefined
-  private readonly _historyJSON?: JSON = undefined
+  private readonly _hasPending?: boolean = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
+  private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
   private readonly _replay?: ID = undefined
-  private readonly _serializeHistory?: string = undefined
-  private readonly _step?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
+  private readonly _transcript?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -11549,33 +11562,29 @@ export class LLM extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _contextWindow?: number,
-    _globalID?: ID,
-    _hasPrompt?: boolean,
-    _historyJSON?: JSON,
+    _hasPending?: boolean,
     _lastReply?: string,
     _model?: string,
+    _portableID?: ID,
     _provider?: string,
     _replay?: ID,
-    _serializeHistory?: string,
-    _step?: ID,
     _sync?: ID,
     _tools?: string,
+    _transcript?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._contextWindow = _contextWindow
-    this._globalID = _globalID
-    this._hasPrompt = _hasPrompt
-    this._historyJSON = _historyJSON
+    this._hasPending = _hasPending
     this._lastReply = _lastReply
     this._model = _model
+    this._portableID = _portableID
     this._provider = _provider
     this._replay = _replay
-    this._serializeHistory = _serializeHistory
-    this._step = _step
     this._sync = _sync
     this._tools = _tools
+    this._transcript = _transcript
   }
 
   /**
@@ -11594,16 +11603,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * create a branch in the LLM's history
-   */
-  attempt = (number_: number): LLM => {
-    const ctx = this._ctx.select("attempt", {
-      number: number_,
-    })
-    return new LLM(ctx)
-  }
-
-  /**
    * returns the type of the current state
    */
   bindResult = (name: string): Binding => {
@@ -11612,7 +11611,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * The model's total context window in tokens, from the model catalog (0 if unknown)
+   * The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
    */
   contextWindow = async (): Promise<number> => {
     if (this._contextWindow) {
@@ -11635,29 +11634,23 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+   * Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
+   * @param label A label distinguishing this fork from its siblings, e.g. "attempt-2" when retrying a flaky evaluation.
    */
-  globalID = async (): Promise<ID> => {
-    if (this._globalID) {
-      return this._globalID
-    }
-
-    const ctx = this._ctx.select("globalID")
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return response
+  fork = (label: string): LLM => {
+    const ctx = this._ctx.select("fork", { label })
+    return new LLM(ctx)
   }
 
   /**
-   * Indicates whether there are any queued prompts or tool results to send to the model
+   * Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
    */
-  hasPrompt = async (): Promise<boolean> => {
-    if (this._hasPrompt) {
-      return this._hasPrompt
+  hasPending = async (): Promise<boolean> => {
+    if (this._hasPending) {
+      return this._hasPending
     }
 
-    const ctx = this._ctx.select("hasPrompt")
+    const ctx = this._ctx.select("hasPending")
 
     const response: Awaited<boolean> = await ctx.execute()
 
@@ -11665,33 +11658,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * return the llm message history
-   */
-  history = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("history")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * return the raw llm message history as json
-   */
-  historyJSON = async (): Promise<JSON> => {
-    if (this._historyJSON) {
-      return this._historyJSON
-    }
-
-    const ctx = this._ctx.select("historyJSON")
-
-    const response: Awaited<JSON> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * return the last llm reply from the history
+   * The text of the model's most recent reply.
    */
   lastReply = async (): Promise<string> => {
     if (this._lastReply) {
@@ -11706,9 +11673,9 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-   * @param opts.maxAPICalls Cap the number of API calls
-   * @param opts.maxTokens Cap the model's output tokens on each API call made during this loop (0 to use the model's default)
+   * Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
+   * @param opts.maxSteps Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
+   * @param opts.maxTokens Cap the model's output tokens on each step. Defaults to the model's maximum.
    */
   loop = (opts?: LLMLoopOpts): LLM => {
     const ctx = this._ctx.select("loop", { ...opts })
@@ -11716,7 +11683,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * The full message history.
+   * The full message history, as structured messages.
    */
   messages = async (): Promise<LLMMessage[]> => {
     type messages = {
@@ -11733,7 +11700,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * return the model used by the llm
+   * The model the conversation is running against, after resolving any configured default.
    */
   model = async (): Promise<string> => {
     if (this._model) {
@@ -11748,7 +11715,22 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * return the provider used by the llm
+   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+   */
+  portableID = async (): Promise<ID> => {
+    if (this._portableID) {
+      return this._portableID
+    }
+
+    const ctx = this._ctx.select("portableID")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
    */
   provider = async (): Promise<string> => {
     if (this._provider) {
@@ -11763,7 +11745,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation
+   * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
    */
   replay = async (): Promise<LLM> => {
     const ctx = this._ctx.select("replay")
@@ -11774,34 +11756,16 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)
+   * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
+   * @param opts.maxTokens Cap the model's output tokens for this step. Defaults to the model's maximum.
    */
-  serializeHistory = async (): Promise<string> => {
-    if (this._serializeHistory) {
-      return this._serializeHistory
-    }
-
-    const ctx = this._ctx.select("serializeHistory")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
-   * @param opts.maxTokens Cap the model's output tokens for this API call (0 to use the model's default)
-   */
-  step = async (opts?: LLMStepOpts): Promise<LLM> => {
+  step = (opts?: LLMStepOpts): LLM => {
     const ctx = this._ctx.select("step", { ...opts })
-
-    const response: Awaited<ID> = await ctx.execute()
-
-    return new LLM(ctx.copy().selectNode(response, "LLM"))
+    return new LLM(ctx)
   }
 
   /**
-   * synchronize LLM state
+   * Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
    */
   sync = async (): Promise<LLM> => {
     const ctx = this._ctx.select("sync")
@@ -11812,7 +11776,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * returns the token usage of the current state
+   * The cumulative token usage, summed across every API call in the conversation.
    */
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
@@ -11820,7 +11784,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * print documentation for available tools
+   * Render documentation for the tools currently exposed to the model.
    */
   tools = async (): Promise<string> => {
     if (this._tools) {
@@ -11828,6 +11792,21 @@ export class LLM extends BaseClient {
     }
 
     const ctx = this._ctx.select("tools")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+   */
+  transcript = async (): Promise<string> => {
+    if (this._transcript) {
+      return this._transcript
+    }
+
+    const ctx = this._ctx.select("transcript")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -11868,11 +11847,12 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * swap out the llm model
-   * @param model The model to use
+   * Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
+   * @param model The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4".
+   * @param opts.provider The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
    */
-  withModel = (model: string): LLM => {
-    const ctx = this._ctx.select("withModel", { model })
+  withModel = (model: string, opts?: LLMWithModelOpts): LLM => {
+    const ctx = this._ctx.select("withModel", { model, ...opts })
     return new LLM(ctx)
   }
 
@@ -11887,7 +11867,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * append a prompt to the llm context
+   * Queue a user prompt, to be sent to the model on the next step or loop.
    * @param prompt The prompt to send
    */
   withPrompt = (prompt: string): LLM => {
@@ -11896,7 +11876,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * append the contents of a file to the llm context
+   * Queue a file's contents as a user prompt, like withPrompt.
    * @param file The file to read the prompt from
    */
   withPromptFile = (file: File): LLM => {
@@ -11905,7 +11885,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Append an assistant response to the message history
+   * Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
    * @param content The response content
    * @param opts.inputTokens Uncached input tokens sent
    * @param opts.outputTokens Tokens received from the model, including text and tool calls
@@ -11930,7 +11910,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Add a system prompt to the LLM's environment
+   * Add a system prompt, instructing the model across the whole conversation.
    * @param prompt The system prompt to send
    */
   withSystemPrompt = (prompt: string): LLM => {
@@ -11939,28 +11919,28 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Append a tool call to the last assistant message
-   * @param call The unique ID for this tool call
-   * @param tool The name of the tool to call
-   * @param arguments The arguments to pass to the tool
+   * Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.
+   * @param callId The unique ID for this tool call
+   * @param toolName The name of the tool to call
+   * @param arguments The arguments to pass to the tool, JSON-encoded
    */
-  withToolCall = (call: string, tool: string, arguments_: JSON): LLM => {
+  withToolCall = (callId: string, toolName: string, arguments_: JSON): LLM => {
     const ctx = this._ctx.select("withToolCall", {
-      call,
-      tool,
+      callId,
+      toolName,
       arguments: arguments_,
     })
     return new LLM(ctx)
   }
 
   /**
-   * Append a tool response to the message history
-   * @param call The ID of the tool call this is responding to
-   * @param content The response content from the tool
+   * Append the result of a tool call to the message history.
+   * @param callId The ID of the tool call this result responds to
+   * @param content The content returned by the tool
    * @param errored Whether the tool call resulted in an error
    */
-  withToolResponse = (call: string, content: string, errored: boolean): LLM => {
-    const ctx = this._ctx.select("withToolResponse", { call, content, errored })
+  withToolResult = (callId: string, content: string, errored: boolean): LLM => {
+    const ctx = this._ctx.select("withToolResult", { callId, content, errored })
     return new LLM(ctx)
   }
 
@@ -11973,7 +11953,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Clear the message history, leaving only the system prompts
+   * Clear the message history, keeping only the system prompts.
    */
   withoutMessageHistory = (): LLM => {
     const ctx = this._ctx.select("withoutMessageHistory")
@@ -11981,7 +11961,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Clear the system prompts, leaving only the default system prompt
+   * Clear the user-added system prompts, keeping only the default system prompt.
    */
   withoutSystemPrompts = (): LLM => {
     const ctx = this._ctx.select("withoutSystemPrompts")
@@ -11998,12 +11978,16 @@ export class LLM extends BaseClient {
   }
 }
 
+/**
+ * A single piece of content within an LLM message.
+ */
 export class LLMContentBlock extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _arguments?: JSON = undefined
   private readonly _callId?: string = undefined
   private readonly _errored?: boolean = undefined
   private readonly _kind?: LLMContentBlockKind = undefined
+  private readonly _signature?: string = undefined
   private readonly _text?: string = undefined
   private readonly _toolName?: string = undefined
 
@@ -12017,6 +12001,7 @@ export class LLMContentBlock extends BaseClient {
     _callId?: string,
     _errored?: boolean,
     _kind?: LLMContentBlockKind,
+    _signature?: string,
     _text?: string,
     _toolName?: string,
   ) {
@@ -12027,6 +12012,7 @@ export class LLMContentBlock extends BaseClient {
     this._callId = _callId
     this._errored = _errored
     this._kind = _kind
+    this._signature = _signature
     this._text = _text
     this._toolName = _toolName
   }
@@ -12045,6 +12031,10 @@ export class LLMContentBlock extends BaseClient {
 
     return response
   }
+
+  /**
+   * The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+   */
   arguments_ = async (): Promise<JSON> => {
     if (this._arguments) {
       return this._arguments
@@ -12056,6 +12046,10 @@ export class LLMContentBlock extends BaseClient {
 
     return response
   }
+
+  /**
+   * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+   */
   callId = async (): Promise<string> => {
     if (this._callId) {
       return this._callId
@@ -12067,6 +12061,10 @@ export class LLMContentBlock extends BaseClient {
 
     return response
   }
+
+  /**
+   * Whether the tool call resulted in an error (for TOOL_RESULT kind).
+   */
   errored = async (): Promise<boolean> => {
     if (this._errored) {
       return this._errored
@@ -12078,6 +12076,10 @@ export class LLMContentBlock extends BaseClient {
 
     return response
   }
+
+  /**
+   * The kind of content block, which determines the other populated fields.
+   */
   kind = async (): Promise<LLMContentBlockKind> => {
     if (this._kind) {
       return this._kind
@@ -12089,6 +12091,25 @@ export class LLMContentBlock extends BaseClient {
 
     return LLMContentBlockKindNameToValue(response)
   }
+
+  /**
+   * Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+   */
+  signature = async (): Promise<string> => {
+    if (this._signature) {
+      return this._signature
+    }
+
+    const ctx = this._ctx.select("signature")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+   */
   text = async (): Promise<string> => {
     if (this._text) {
       return this._text
@@ -12100,6 +12121,10 @@ export class LLMContentBlock extends BaseClient {
 
     return response
   }
+
+  /**
+   * The name of the tool called (for TOOL_CALL kind).
+   */
   toolName = async (): Promise<string> => {
     if (this._toolName) {
       return this._toolName
@@ -12113,6 +12138,9 @@ export class LLMContentBlock extends BaseClient {
   }
 }
 
+/**
+ * A single message in an LLM conversation.
+ */
 export class LLMMessage extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _role?: LLMMessageRole = undefined
@@ -12141,6 +12169,10 @@ export class LLMMessage extends BaseClient {
 
     return response
   }
+
+  /**
+   * The message's content blocks, in the order the model produced them.
+   */
   content = async (): Promise<LLMContentBlock[]> => {
     type content = {
       id: ID
@@ -12155,6 +12187,10 @@ export class LLMMessage extends BaseClient {
         new LLMContentBlock(ctx.copy().selectNode(r.id, "LLMContentBlock")),
     )
   }
+
+  /**
+   * The role that produced this message.
+   */
   role = async (): Promise<LLMMessageRole> => {
     if (this._role) {
       return this._role
@@ -12168,6 +12204,9 @@ export class LLMMessage extends BaseClient {
   }
 }
 
+/**
+ * A count of tokens consumed by LLM API calls.
+ */
 export class LLMTokenUsage extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _cachedTokenReads?: number = undefined
@@ -12212,6 +12251,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Input tokens served from the provider's prompt cache.
+   */
   cachedTokenReads = async (): Promise<number> => {
     if (this._cachedTokenReads) {
       return this._cachedTokenReads
@@ -12223,6 +12266,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Input tokens written to the provider's prompt cache.
+   */
   cachedTokenWrites = async (): Promise<number> => {
     if (this._cachedTokenWrites) {
       return this._cachedTokenWrites
@@ -12234,6 +12281,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Uncached input tokens sent to the model.
+   */
   inputTokens = async (): Promise<number> => {
     if (this._inputTokens) {
       return this._inputTokens
@@ -12245,6 +12296,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Tokens received from the model, including text and tool calls.
+   */
   outputTokens = async (): Promise<number> => {
     if (this._outputTokens) {
       return this._outputTokens
@@ -12256,6 +12311,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Total tokens consumed, as reported by the provider.
+   */
   totalTokens = async (): Promise<number> => {
     if (this._totalTokens) {
       return this._totalTokens
@@ -14069,8 +14128,9 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Initialize a Large Language Model (LLM)
-   * @param opts.model Model to use
+   * Initialize a new LLM conversation.
+   * @param opts.model The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
+   * @param opts.provider The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
    * @experimental
    */
   llm = (opts?: ClientLLMOpts): LLM => {

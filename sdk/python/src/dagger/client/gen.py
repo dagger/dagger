@@ -11401,13 +11401,8 @@ class JSONValue(Type):
 
 @typecheck
 class LLM(Type):
-    def attempt(self, number: int) -> Self:
-        """create a branch in the LLM's history"""
-        _args = [
-            Arg("number", number),
-        ]
-        _ctx = self._select("attempt", _args)
-        return LLM(_ctx)
+    """A conversation with a large language model (LLM): queue prompts,
+    expose tools, and step the model until it completes its turn."""
 
     def bind_result(self, name: str) -> Binding:
         """returns the type of the current state"""
@@ -11417,13 +11412,13 @@ class LLM(Type):
         _ctx = self._select("bindResult", _args)
         return Binding(_ctx)
 
-    async def context_window(self) -> int:
-        """The model's total context window in tokens, from the model catalog (0
-        if unknown)
+    async def context_window(self) -> int | None:
+        """The model's total context window in tokens, or null if unknown (e.g. a
+        local or uncatalogued model).
 
         Returns
         -------
-        int
+        int | None
             The `Int` scalar type represents non-fractional signed whole
             numeric values. Int can represent values between -(2^31) and 2^31
             - 1.
@@ -11437,7 +11432,7 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("contextWindow", _args)
-        return await _ctx.execute(int)
+        return await _ctx.execute(int | None)
 
     def env(self) -> Env:
         """return the LLM's current environment"""
@@ -11445,36 +11440,26 @@ class LLM(Type):
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
-    async def global_id(self) -> str:
-        """A portable, self-contained ID for this LLM that node() can resolve in
-        any session. Unlike id, which may return an engine-local runtime
-        handle valid only within the current session, this returns the recipe
-        form suitable for persisting and later restoring the conversation.
+    def fork(self, label: str) -> Self:
+        """Fork the conversation, so that otherwise-identical follow-ups evaluate
+        independently instead of deduplicating to a single cached result.
 
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        Parameters
+        ----------
+        label:
+            A label distinguishing this fork from its siblings, e.g.
+            "attempt-2" when retrying a flaky evaluation.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("globalID", _args)
-        return await _ctx.execute(str)
+        _args = [
+            Arg("label", label),
+        ]
+        _ctx = self._select("fork", _args)
+        return LLM(_ctx)
 
-    async def has_prompt(self) -> bool:
-        """Indicates whether there are any queued prompts or tool results to send
-        to the model
+    async def has_pending(self) -> bool:
+        """Report whether anything is queued to send to the model: an unsent
+        prompt or unevaluated tool results. When true, another step will do
+        work; when false, the turn is complete.
 
         Returns
         -------
@@ -11489,48 +11474,8 @@ class LLM(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("hasPrompt", _args)
+        _ctx = self._select("hasPending", _args)
         return await _ctx.execute(bool)
-
-    async def history(self) -> list[str]:
-        """return the llm message history
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("history", _args)
-        return await _ctx.execute(list[str])
-
-    async def history_json(self) -> JSON:
-        """return the raw llm message history as json
-
-        Returns
-        -------
-        JSON
-            An arbitrary JSON-encoded value.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("historyJSON", _args)
-        return await _ctx.execute(JSON)
 
     async def id(self) -> str:
         """A unique identifier for this LLM.
@@ -11561,7 +11506,7 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     async def last_reply(self) -> str:
-        """return the last llm reply from the history
+        """The text of the model's most recent reply.
 
         Returns
         -------
@@ -11584,35 +11529,38 @@ class LLM(Type):
     def loop(
         self,
         *,
-        max_api_calls: int | None = None,
+        max_steps: int | None = None,
         max_tokens: int | None = None,
     ) -> Self:
-        """Submit the queued prompt, evaluate any tool calls, queue their
-        results, and keep going until the model ends its turn
+        """Send the queued prompt and step the model against the available tools,
+        until it ends its turn: a reply with no tool calls and nothing left
+        queued.
 
         Parameters
         ----------
-        max_api_calls:
-            Cap the number of API calls
+        max_steps:
+            Cap the number of steps. The loop fails if the cap is reached
+            before the model ends its turn.
         max_tokens:
-            Cap the model's output tokens on each API call made during this
-            loop (0 to use the model's default)
+            Cap the model's output tokens on each step. Defaults to the
+            model's maximum.
         """
         _args = [
-            Arg("maxAPICalls", max_api_calls, None),
+            Arg("maxSteps", max_steps, None),
             Arg("maxTokens", max_tokens, None),
         ]
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
 
     async def messages(self) -> list["LLMMessage"]:
-        """The full message history."""
+        """The full message history, as structured messages."""
         _args: list[Arg] = []
         _ctx = self._select("messages", _args)
         return await _ctx.execute_object_list(LLMMessage)
 
     async def model(self) -> str:
-        """return the model used by the llm
+        """The model the conversation is running against, after resolving any
+        configured default.
 
         Returns
         -------
@@ -11632,8 +11580,37 @@ class LLM(Type):
         _ctx = self._select("model", _args)
         return await _ctx.execute(str)
 
+    async def portable_id(self) -> str:
+        """A portable, self-contained ID for the conversation that node() can
+        resolve in any session. Unlike id, which may return an engine-local
+        runtime handle valid only within the current session, this returns the
+        recipe form suitable for persisting and later restoring the
+        conversation.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("portableID", _args)
+        return await _ctx.execute(str)
+
     async def provider(self) -> str:
-        """return the provider used by the llm
+        """The provider serving the model, e.g. "anthropic", "openai", "google",
+        or "local".
 
         Returns
         -------
@@ -11654,8 +11631,8 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     async def replay(self) -> Self:
-        """Re-emit telemetry spans for the full message history, allowing the TUI
-        to display a loaded conversation
+        """Re-emit telemetry spans for the full message history, so a loaded
+        conversation displays in the TUI.
 
         Raises
         ------
@@ -11667,52 +11644,26 @@ class LLM(Type):
         _args: list[Arg] = []
         return await self._ctx.execute_sync(self, "replay", _args)
 
-    async def serialize_history(self) -> str:
-        """return the message history serialized as text, suitable for LLM
-        consumption (e.g. for summarization)
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("serializeHistory", _args)
-        return await _ctx.execute(str)
-
-    async def step(self, *, max_tokens: int | None = None) -> Self:
-        """Submit the queued prompt or tool call results, evaluate any tool
-        calls, and queue their results
+    def step(self, *, max_tokens: int | None = None) -> Self:
+        """Advance the conversation by a single step: send the queued prompt or
+        tool results to the model, evaluate any tool calls it makes, and queue
+        their results. Use loop to step until the model ends its turn.
 
         Parameters
         ----------
         max_tokens:
-            Cap the model's output tokens for this API call (0 to use the
-            model's default)
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+            Cap the model's output tokens for this step. Defaults to the
+            model's maximum.
         """
         _args = [
             Arg("maxTokens", max_tokens, None),
         ]
-        return await self._ctx.execute_sync(self, "step", _args)
+        _ctx = self._select("step", _args)
+        return LLM(_ctx)
 
     async def sync(self) -> Self:
-        """synchronize LLM state
+        """Force evaluation of the conversation's pending operations (prompts,
+        steps, loops) in the engine.
 
         Raises
         ------
@@ -11728,13 +11679,15 @@ class LLM(Type):
         return self.sync().__await__()
 
     def token_usage(self) -> "LLMTokenUsage":
-        """returns the token usage of the current state"""
+        """The cumulative token usage, summed across every API call in the
+        conversation.
+        """
         _args: list[Arg] = []
         _ctx = self._select("tokenUsage", _args)
         return LLMTokenUsage(_ctx)
 
     async def tools(self) -> str:
-        """print documentation for available tools
+        """Render documentation for the tools currently exposed to the model.
 
         Returns
         -------
@@ -11752,6 +11705,28 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("tools", _args)
+        return await _ctx.execute(str)
+
+    async def transcript(self) -> str:
+        """The message history rendered as a plain-text transcript, suitable for
+        feeding back to an LLM (e.g. for summarization).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("transcript", _args)
         return await _ctx.execute(str)
 
     def with_blocked_function(self, type_name: str, function: str) -> Self:
@@ -11798,16 +11773,28 @@ class LLM(Type):
         _ctx = self._select("withMCPServer", _args)
         return LLM(_ctx)
 
-    def with_model(self, model: str) -> Self:
-        """swap out the llm model
+    def with_model(
+        self,
+        model: str,
+        *,
+        provider: str | None = None,
+    ) -> Self:
+        """Change the model for the rest of the conversation. The message history
+        is preserved; the new model takes effect on the next step.
 
         Parameters
         ----------
         model:
-            The model to use
+            The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4".
+        provider:
+            The provider serving the model, e.g. "openai". Overrides the
+            provider otherwise inferred from the model name — useful when the
+            name matches no known pattern (e.g. a fine-tune), or matches the
+            wrong one.
         """
         _args = [
             Arg("model", model),
+            Arg("provider", provider, None),
         ]
         _ctx = self._select("withModel", _args)
         return LLM(_ctx)
@@ -11831,7 +11818,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_prompt(self, prompt: str) -> Self:
-        """append a prompt to the llm context
+        """Queue a user prompt, to be sent to the model on the next step or loop.
 
         Parameters
         ----------
@@ -11845,7 +11832,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_prompt_file(self, file: File) -> Self:
-        """append the contents of a file to the llm context
+        """Queue a file's contents as a user prompt, like withPrompt.
 
         Parameters
         ----------
@@ -11868,7 +11855,8 @@ class LLM(Type):
         cached_token_writes: int | None = 0,
         total_tokens: int | None = 0,
     ) -> Self:
-        """Append an assistant response to the message history
+        """Append an assistant response to the message history without calling
+        the model, e.g. to reconstruct a conversation from another source.
 
         Parameters
         ----------
@@ -11905,7 +11893,8 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
-        """Add a system prompt to the LLM's environment
+        """Add a system prompt, instructing the model across the whole
+        conversation.
 
         Parameters
         ----------
@@ -11920,52 +11909,53 @@ class LLM(Type):
 
     def with_tool_call(
         self,
-        call: str,
-        tool: str,
+        call_id: str,
+        tool_name: str,
         arguments: JSON,
     ) -> Self:
-        """Append a tool call to the last assistant message
+        """Append a tool call to the last assistant message, e.g. to reconstruct
+        a conversation from another source.
 
         Parameters
         ----------
-        call:
+        call_id:
             The unique ID for this tool call
-        tool:
+        tool_name:
             The name of the tool to call
         arguments:
-            The arguments to pass to the tool
+            The arguments to pass to the tool, JSON-encoded
         """
         _args = [
-            Arg("call", call),
-            Arg("tool", tool),
+            Arg("callId", call_id),
+            Arg("toolName", tool_name),
             Arg("arguments", arguments),
         ]
         _ctx = self._select("withToolCall", _args)
         return LLM(_ctx)
 
-    def with_tool_response(
+    def with_tool_result(
         self,
-        call: str,
+        call_id: str,
         content: str,
         errored: bool,
     ) -> Self:
-        """Append a tool response to the message history
+        """Append the result of a tool call to the message history.
 
         Parameters
         ----------
-        call:
-            The ID of the tool call this is responding to
+        call_id:
+            The ID of the tool call this result responds to
         content:
-            The response content from the tool
+            The content returned by the tool
         errored:
             Whether the tool call resulted in an error
         """
         _args = [
-            Arg("call", call),
+            Arg("callId", call_id),
             Arg("content", content),
             Arg("errored", errored),
         ]
-        _ctx = self._select("withToolResponse", _args)
+        _ctx = self._select("withToolResult", _args)
         return LLM(_ctx)
 
     def without_default_system_prompt(self) -> Self:
@@ -11975,13 +11965,15 @@ class LLM(Type):
         return LLM(_ctx)
 
     def without_message_history(self) -> Self:
-        """Clear the message history, leaving only the system prompts"""
+        """Clear the message history, keeping only the system prompts."""
         _args: list[Arg] = []
         _ctx = self._select("withoutMessageHistory", _args)
         return LLM(_ctx)
 
     def without_system_prompts(self) -> Self:
-        """Clear the system prompts, leaving only the default system prompt"""
+        """Clear the user-added system prompts, keeping only the default system
+        prompt.
+        """
         _args: list[Arg] = []
         _ctx = self._select("withoutSystemPrompts", _args)
         return LLM(_ctx)
@@ -11996,8 +11988,12 @@ class LLM(Type):
 
 @typecheck
 class LLMContentBlock(Type):
+    """A single piece of content within an LLM message."""
+
     async def arguments(self) -> JSON:
-        """Returns
+        """The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+
+        Returns
         -------
         JSON
             An arbitrary JSON-encoded value.
@@ -12014,7 +12010,9 @@ class LLMContentBlock(Type):
         return await _ctx.execute(JSON)
 
     async def call_id(self) -> str:
-        """Returns
+        """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -12033,7 +12031,9 @@ class LLMContentBlock(Type):
         return await _ctx.execute(str)
 
     async def errored(self) -> bool:
-        """Returns
+        """Whether the tool call resulted in an error (for TOOL_RESULT kind).
+
+        Returns
         -------
         bool
             The `Boolean` scalar type represents `true` or `false`.
@@ -12078,7 +12078,10 @@ class LLMContentBlock(Type):
         return await _ctx.execute(str)
 
     async def kind(self) -> LLMContentBlockKind:
-        """Returns
+        """The kind of content block, which determines the other populated
+        fields.
+
+        Returns
         -------
         LLMContentBlockKind
             The kind of content in a message block.
@@ -12094,8 +12097,32 @@ class LLMContentBlock(Type):
         _ctx = self._select("kind", _args)
         return await _ctx.execute(LLMContentBlockKind)
 
+    async def signature(self) -> str:
+        """Provider-specific opaque data (e.g. Anthropic thinking signature).
+        Preserve it when reconstructing a conversation.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("signature", _args)
+        return await _ctx.execute(str)
+
     async def text(self) -> str:
-        """Returns
+        """Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -12114,7 +12141,9 @@ class LLMContentBlock(Type):
         return await _ctx.execute(str)
 
     async def tool_name(self) -> str:
-        """Returns
+        """The name of the tool called (for TOOL_CALL kind).
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -12135,7 +12164,10 @@ class LLMContentBlock(Type):
 
 @typecheck
 class LLMMessage(Type):
+    """A single message in an LLM conversation."""
+
     async def content(self) -> list[LLMContentBlock]:
+        """The message's content blocks, in the order the model produced them."""
         _args: list[Arg] = []
         _ctx = self._select("content", _args)
         return await _ctx.execute_object_list(LLMContentBlock)
@@ -12169,7 +12201,9 @@ class LLMMessage(Type):
         return await _ctx.execute(str)
 
     async def role(self) -> LLMMessageRole:
-        """Returns
+        """The role that produced this message.
+
+        Returns
         -------
         LLMMessageRole
             The role that generated a message.
@@ -12188,8 +12222,12 @@ class LLMMessage(Type):
 
 @typecheck
 class LLMTokenUsage(Type):
+    """A count of tokens consumed by LLM API calls."""
+
     async def cached_token_reads(self) -> int:
-        """Returns
+        """Input tokens served from the provider's prompt cache.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -12208,7 +12246,9 @@ class LLMTokenUsage(Type):
         return await _ctx.execute(int)
 
     async def cached_token_writes(self) -> int:
-        """Returns
+        """Input tokens written to the provider's prompt cache.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -12255,7 +12295,9 @@ class LLMTokenUsage(Type):
         return await _ctx.execute(str)
 
     async def input_tokens(self) -> int:
-        """Returns
+        """Uncached input tokens sent to the model.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -12274,7 +12316,9 @@ class LLMTokenUsage(Type):
         return await _ctx.execute(int)
 
     async def output_tokens(self) -> int:
-        """Returns
+        """Tokens received from the model, including text and tool calls.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -12293,7 +12337,9 @@ class LLMTokenUsage(Type):
         return await _ctx.execute(int)
 
     async def total_tokens(self) -> int:
-        """Returns
+        """Total tokens consumed, as reported by the provider.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -14450,8 +14496,13 @@ class Query(Root):
         _ctx = self._select("json", _args)
         return JSONValue(_ctx)
 
-    def llm(self, *, model: str | None = None) -> LLM:
-        """Initialize a Large Language Model (LLM)
+    def llm(
+        self,
+        *,
+        model: str | None = None,
+        provider: str | None = None,
+    ) -> LLM:
+        """Initialize a new LLM conversation.
 
         .. caution::
             Experimental: LLM support is not yet stabilized
@@ -14459,10 +14510,17 @@ class Query(Root):
         Parameters
         ----------
         model:
-            Model to use
+            The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4".
+            Defaults to the configured default model.
+        provider:
+            The provider serving the model, e.g. "openai". Overrides the
+            provider otherwise inferred from the model name — useful when the
+            name matches no known pattern (e.g. a fine-tune), or matches the
+            wrong one.
         """
         _args = [
             Arg("model", model, None),
+            Arg("provider", provider, None),
         ]
         _ctx = self._select("llm", _args)
         return LLM(_ctx)

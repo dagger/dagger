@@ -8,8 +8,14 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * A single message in an LLM conversation.
+ */
 class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
 {
+    /**
+     * The message's content blocks, in the order the model produced them.
+     */
     public function content(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('content');
@@ -25,6 +31,9 @@ class LLMMessage extends Client\AbstractObject implements Client\IdAble, Node
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The role that produced this message.
+     */
     public function role(): LLMMessageRole
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('role');

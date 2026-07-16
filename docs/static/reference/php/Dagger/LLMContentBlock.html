@@ -93,6 +93,8 @@
     
         
 
+            <div class="description">
+            <p><p>A single piece of content within an LLM message.</p></p>                    </div>
             
         
     
@@ -146,8 +148,7 @@
                 <div class="col-md-8">
                     <a href="#method_arguments">arguments</a>()
         
-                                            <p class="no-description">No description</p>
-                                    </div>
+                                            <p><p>The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -157,8 +158,7 @@
                 <div class="col-md-8">
                     <a href="#method_callId">callId</a>()
         
-                                            <p class="no-description">No description</p>
-                                    </div>
+                                            <p><p>The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -168,8 +168,7 @@
                 <div class="col-md-8">
                     <a href="#method_errored">errored</a>()
         
-                                            <p class="no-description">No description</p>
-                                    </div>
+                                            <p><p>Whether the tool call resulted in an error (for TOOL_RESULT kind).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -189,8 +188,17 @@
                 <div class="col-md-8">
                     <a href="#method_kind">kind</a>()
         
-                                            <p class="no-description">No description</p>
-                                    </div>
+                                            <p><p>The kind of content block, which determines the other populated fields.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_signature">signature</a>()
+        
+                                            <p><p>Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -200,8 +208,7 @@
                 <div class="col-md-8">
                     <a href="#method_text">text</a>()
         
-                                            <p class="no-description">No description</p>
-                                    </div>
+                                            <p><p>Text content (for TEXT, THINKING, or TOOL_RESULT kinds).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -211,8 +218,7 @@
                 <div class="col-md-8">
                     <a href="#method_toolName">toolName</a>()
         
-                                            <p class="no-description">No description</p>
-                                    </div>
+                                            <p><p>The name of the tool called (for TOOL_CALL kind).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -312,7 +318,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_arguments">
-        <div class="location">at line 13</div>
+        <div class="location">at line 19</div>
         <code>                    <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a>
     <strong>arguments</strong>()
         </code>
@@ -322,8 +328,7 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).</p></p>                        
         </div>
         <div class="tags">
             
@@ -345,7 +350,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_callId">
-        <div class="location">at line 19</div>
+        <div class="location">at line 28</div>
         <code>                    string
     <strong>callId</strong>()
         </code>
@@ -355,8 +360,7 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).</p></p>                        
         </div>
         <div class="tags">
             
@@ -378,7 +382,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_errored">
-        <div class="location">at line 25</div>
+        <div class="location">at line 37</div>
         <code>                    bool
     <strong>errored</strong>()
         </code>
@@ -388,8 +392,7 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>Whether the tool call resulted in an error (for TOOL_RESULT kind).</p></p>                        
         </div>
         <div class="tags">
             
@@ -411,7 +414,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 34</div>
+        <div class="location">at line 46</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -443,7 +446,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_kind">
-        <div class="location">at line 40</div>
+        <div class="location">at line 55</div>
         <code>                    <abbr title="Dagger\LLMContentBlockKind">LLMContentBlockKind</abbr>
     <strong>kind</strong>()
         </code>
@@ -453,8 +456,7 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>The kind of content block, which determines the other populated fields.</p></p>                        
         </div>
         <div class="tags">
             
@@ -475,8 +477,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_signature">
+        <div class="location">at line 64</div>
+        <code>                    string
+    <strong>signature</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_text">
-        <div class="location">at line 46</div>
+        <div class="location">at line 73</div>
         <code>                    string
     <strong>text</strong>()
         </code>
@@ -486,8 +520,7 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>Text content (for TEXT, THINKING, or TOOL_RESULT kinds).</p></p>                        
         </div>
         <div class="tags">
             
@@ -509,7 +542,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_toolName">
-        <div class="location">at line 52</div>
+        <div class="location">at line 82</div>
         <code>                    string
     <strong>toolName</strong>()
         </code>
@@ -519,8 +552,7 @@
             
 
         <div class="method-description">
-                            <p class="no-description">No description</p>
-                    
+                            <p><p>The name of the tool called (for TOOL_CALL kind).</p></p>                        
         </div>
         <div class="tags">
             

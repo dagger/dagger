@@ -93,6 +93,8 @@
     
         
 
+            <div class="description">
+            <p><p>A conversation with a large language model (LLM): queue prompts, expose tools, and step the model until it completes its turn.</p></p>                    </div>
             
         
     
@@ -141,16 +143,6 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_attempt">attempt</a>(int $number)
-        
-                                            <p><p>create a branch in the LLM's history</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -166,7 +158,7 @@
                 <div class="col-md-8">
                     <a href="#method_contextWindow">contextWindow</a>()
         
-                                            <p><p>The model's total context window in tokens, from the model catalog (0 if unknown)</p></p>                </div>
+                                            <p><p>The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -181,12 +173,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_globalID">globalID</a>()
+                    <a href="#method_fork">fork</a>(string $label)
         
-                                            <p><p>A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p></p>                </div>
+                                            <p><p>Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -194,29 +186,9 @@
                     bool
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_hasPrompt">hasPrompt</a>()
+                    <a href="#method_hasPending">hasPending</a>()
         
-                                            <p><p>Indicates whether there are any queued prompts or tool results to send to the model</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    array
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_history">history</a>()
-        
-                                            <p><p>return the llm message history</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_historyJSON">historyJSON</a>()
-        
-                                            <p><p>return the raw llm message history as json</p></p>                </div>
+                                            <p><p>Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -236,7 +208,7 @@
                 <div class="col-md-8">
                     <a href="#method_lastReply">lastReply</a>()
         
-                                            <p><p>return the last llm reply from the history</p></p>                </div>
+                                            <p><p>The text of the model's most recent reply.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -244,9 +216,9 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_loop">loop</a>(int|null $maxAPICalls = null, int|null $maxTokens = null)
+                    <a href="#method_loop">loop</a>(int|null $maxSteps = null, int|null $maxTokens = null)
         
-                                            <p><p>Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn</p></p>                </div>
+                                            <p><p>Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -256,7 +228,7 @@
                 <div class="col-md-8">
                     <a href="#method_messages">messages</a>()
         
-                                            <p><p>The full message history.</p></p>                </div>
+                                            <p><p>The full message history, as structured messages.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -266,7 +238,17 @@
                 <div class="col-md-8">
                     <a href="#method_model">model</a>()
         
-                                            <p><p>return the model used by the llm</p></p>                </div>
+                                            <p><p>The model the conversation is running against, after resolving any configured default.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_portableID">portableID</a>()
+        
+                                            <p><p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -276,7 +258,7 @@
                 <div class="col-md-8">
                     <a href="#method_provider">provider</a>()
         
-                                            <p><p>return the provider used by the llm</p></p>                </div>
+                                            <p><p>The provider serving the model, e.g. &quot;anthropic&quot;, &quot;openai&quot;, &quot;google&quot;, or &quot;local&quot;.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -286,17 +268,7 @@
                 <div class="col-md-8">
                     <a href="#method_replay">replay</a>()
         
-                                            <p><p>Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_serializeHistory">serializeHistory</a>()
-        
-                                            <p><p>return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)</p></p>                </div>
+                                            <p><p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -306,7 +278,7 @@
                 <div class="col-md-8">
                     <a href="#method_step">step</a>(int|null $maxTokens = null)
         
-                                            <p><p>Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results</p></p>                </div>
+                                            <p><p>Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -316,7 +288,7 @@
                 <div class="col-md-8">
                     <a href="#method_sync">sync</a>()
         
-                                            <p><p>synchronize LLM state</p></p>                </div>
+                                            <p><p>Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -326,7 +298,7 @@
                 <div class="col-md-8">
                     <a href="#method_tokenUsage">tokenUsage</a>()
         
-                                            <p><p>returns the token usage of the current state</p></p>                </div>
+                                            <p><p>The cumulative token usage, summed across every API call in the conversation.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -336,7 +308,17 @@
                 <div class="col-md-8">
                     <a href="#method_tools">tools</a>()
         
-                                            <p><p>print documentation for available tools</p></p>                </div>
+                                            <p><p>Render documentation for the tools currently exposed to the model.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_transcript">transcript</a>()
+        
+                                            <p><p>The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -374,9 +356,9 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withModel">withModel</a>(string $model)
+                    <a href="#method_withModel">withModel</a>(string $model, string|null $provider = null)
         
-                                            <p><p>swap out the llm model</p></p>                </div>
+                                            <p><p>Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -396,7 +378,7 @@
                 <div class="col-md-8">
                     <a href="#method_withPrompt">withPrompt</a>(string $prompt)
         
-                                            <p><p>append a prompt to the llm context</p></p>                </div>
+                                            <p><p>Queue a user prompt, to be sent to the model on the next step or loop.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -406,7 +388,7 @@
                 <div class="col-md-8">
                     <a href="#method_withPromptFile">withPromptFile</a>(<a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a> $file)
         
-                                            <p><p>append the contents of a file to the llm context</p></p>                </div>
+                                            <p><p>Queue a file's contents as a user prompt, like withPrompt.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -416,7 +398,7 @@
                 <div class="col-md-8">
                     <a href="#method_withResponse">withResponse</a>(array $content, int|null $inputTokens = 0, int|null $outputTokens = 0, int|null $cachedTokenReads = 0, int|null $cachedTokenWrites = 0, int|null $totalTokens = 0)
         
-                                            <p><p>Append an assistant response to the message history</p></p>                </div>
+                                            <p><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -436,7 +418,7 @@
                 <div class="col-md-8">
                     <a href="#method_withSystemPrompt">withSystemPrompt</a>(string $prompt)
         
-                                            <p><p>Add a system prompt to the LLM's environment</p></p>                </div>
+                                            <p><p>Add a system prompt, instructing the model across the whole conversation.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -444,9 +426,9 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withToolCall">withToolCall</a>(string $call, string $tool, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $arguments)
+                    <a href="#method_withToolCall">withToolCall</a>(string $callId, string $toolName, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $arguments)
         
-                                            <p><p>Append a tool call to the last assistant message</p></p>                </div>
+                                            <p><p>Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -454,9 +436,9 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withToolResponse">withToolResponse</a>(string $call, string $content, bool $errored)
+                    <a href="#method_withToolResult">withToolResult</a>(string $callId, string $content, bool $errored)
         
-                                            <p><p>Append a tool response to the message history</p></p>                </div>
+                                            <p><p>Append the result of a tool call to the message history.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -476,7 +458,7 @@
                 <div class="col-md-8">
                     <a href="#method_withoutMessageHistory">withoutMessageHistory</a>()
         
-                                            <p><p>Clear the message history, leaving only the system prompts</p></p>                </div>
+                                            <p><p>Clear the message history, keeping only the system prompts.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -486,7 +468,7 @@
                 <div class="col-md-8">
                     <a href="#method_withoutSystemPrompts">withoutSystemPrompts</a>()
         
-                                            <p><p>Clear the system prompts, leaving only the default system prompt</p></p>                </div>
+                                            <p><p>Clear the user-added system prompts, keeping only the default system prompt.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -585,50 +567,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_attempt">
-        <div class="location">at line 16</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>attempt</strong>(int $number)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>create a branch in the LLM's history</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>int</td>
-                <td>$number</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_bindResult">
-        <div class="location">at line 26</div>
+        <div class="location">at line 19</div>
         <code>                    <a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a>
     <strong>bindResult</strong>(string $name)
         </code>
@@ -670,7 +610,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_contextWindow">
-        <div class="location">at line 36</div>
+        <div class="location">at line 29</div>
         <code>                    int
     <strong>contextWindow</strong>()
         </code>
@@ -680,7 +620,7 @@
             
 
         <div class="method-description">
-                            <p><p>The model's total context window in tokens, from the model catalog (0 if unknown)</p></p>                        
+                            <p><p>The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).</p></p>                        
         </div>
         <div class="tags">
             
@@ -702,7 +642,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_env">
-        <div class="location">at line 45</div>
+        <div class="location">at line 38</div>
         <code>                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
     <strong>env</strong>()
         </code>
@@ -733,10 +673,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_globalID">
-        <div class="location">at line 54</div>
-        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
-    <strong>globalID</strong>()
+                    <h3 id="method_fork">
+        <div class="location">at line 47</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>fork</strong>(string $label)
         </code>
     </h3>
     <div class="details">    
@@ -744,15 +684,25 @@
             
 
         <div class="method-description">
-                            <p><p>A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p></p>                        
+                            <p><p>Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$label</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -765,10 +715,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_hasPrompt">
-        <div class="location">at line 63</div>
+                    <h3 id="method_hasPending">
+        <div class="location">at line 57</div>
         <code>                    bool
-    <strong>hasPrompt</strong>()
+    <strong>hasPending</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -776,7 +726,7 @@
             
 
         <div class="method-description">
-                            <p><p>Indicates whether there are any queued prompts or tool results to send to the model</p></p>                        
+                            <p><p>Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.</p></p>                        
         </div>
         <div class="tags">
             
@@ -797,72 +747,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_history">
-        <div class="location">at line 72</div>
-        <code>                    array
-    <strong>history</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>return the llm message history</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>array</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_historyJSON">
-        <div class="location">at line 81</div>
-        <code>                    <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a>
-    <strong>historyJSON</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>return the raw llm message history as json</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 90</div>
+        <div class="location">at line 66</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -894,7 +780,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_lastReply">
-        <div class="location">at line 99</div>
+        <div class="location">at line 75</div>
         <code>                    string
     <strong>lastReply</strong>()
         </code>
@@ -904,7 +790,7 @@
             
 
         <div class="method-description">
-                            <p><p>return the last llm reply from the history</p></p>                        
+                            <p><p>The text of the model's most recent reply.</p></p>                        
         </div>
         <div class="tags">
             
@@ -926,9 +812,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loop">
-        <div class="location">at line 108</div>
+        <div class="location">at line 84</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>loop</strong>(int|null $maxAPICalls = null, int|null $maxTokens = null)
+    <strong>loop</strong>(int|null $maxSteps = null, int|null $maxTokens = null)
         </code>
     </h3>
     <div class="details">    
@@ -936,7 +822,7 @@
             
 
         <div class="method-description">
-                            <p><p>Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn</p></p>                        
+                            <p><p>Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -944,7 +830,7 @@
                     <table class="table table-condensed">
                     <tr>
                 <td>int|null</td>
-                <td>$maxAPICalls</td>
+                <td>$maxSteps</td>
                 <td></td>
             </tr>
                     <tr>
@@ -973,7 +859,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_messages">
-        <div class="location">at line 123</div>
+        <div class="location">at line 99</div>
         <code>                    array
     <strong>messages</strong>()
         </code>
@@ -983,7 +869,7 @@
             
 
         <div class="method-description">
-                            <p><p>The full message history.</p></p>                        
+                            <p><p>The full message history, as structured messages.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1005,7 +891,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_model">
-        <div class="location">at line 132</div>
+        <div class="location">at line 108</div>
         <code>                    string
     <strong>model</strong>()
         </code>
@@ -1015,7 +901,7 @@
             
 
         <div class="method-description">
-                            <p><p>return the model used by the llm</p></p>                        
+                            <p><p>The model the conversation is running against, after resolving any configured default.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1036,8 +922,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_portableID">
+        <div class="location">at line 117</div>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+    <strong>portableID</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_provider">
-        <div class="location">at line 141</div>
+        <div class="location">at line 126</div>
         <code>                    string
     <strong>provider</strong>()
         </code>
@@ -1047,7 +965,7 @@
             
 
         <div class="method-description">
-                            <p><p>return the provider used by the llm</p></p>                        
+                            <p><p>The provider serving the model, e.g. &quot;anthropic&quot;, &quot;openai&quot;, &quot;google&quot;, or &quot;local&quot;.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1069,7 +987,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_replay">
-        <div class="location">at line 150</div>
+        <div class="location">at line 135</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>replay</strong>()
         </code>
@@ -1079,7 +997,7 @@
             
 
         <div class="method-description">
-                            <p><p>Re-emit telemetry spans for the full message history, allowing the TUI to display a loaded conversation</p></p>                        
+                            <p><p>Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1100,40 +1018,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_serializeHistory">
-        <div class="location">at line 160</div>
-        <code>                    string
-    <strong>serializeHistory</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>return the message history serialized as text, suitable for LLM consumption (e.g. for summarization)</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_step">
-        <div class="location">at line 169</div>
+        <div class="location">at line 145</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>step</strong>(int|null $maxTokens = null)
         </code>
@@ -1143,7 +1029,7 @@
             
 
         <div class="method-description">
-                            <p><p>Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results</p></p>                        
+                            <p><p>Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1175,7 +1061,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 182</div>
+        <div class="location">at line 157</div>
         <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -1185,7 +1071,7 @@
             
 
         <div class="method-description">
-                            <p><p>synchronize LLM state</p></p>                        
+                            <p><p>Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1207,7 +1093,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tokenUsage">
-        <div class="location">at line 192</div>
+        <div class="location">at line 167</div>
         <code>                    <a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a>
     <strong>tokenUsage</strong>()
         </code>
@@ -1217,7 +1103,7 @@
             
 
         <div class="method-description">
-                            <p><p>returns the token usage of the current state</p></p>                        
+                            <p><p>The cumulative token usage, summed across every API call in the conversation.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1239,7 +1125,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tools">
-        <div class="location">at line 201</div>
+        <div class="location">at line 176</div>
         <code>                    string
     <strong>tools</strong>()
         </code>
@@ -1249,7 +1135,39 @@
             
 
         <div class="method-description">
-                            <p><p>print documentation for available tools</p></p>                        
+                            <p><p>Render documentation for the tools currently exposed to the model.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_transcript">
+        <div class="location">at line 185</div>
+        <code>                    string
+    <strong>transcript</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).</p></p>                        
         </div>
         <div class="tags">
             
@@ -1271,7 +1189,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withBlockedFunction">
-        <div class="location">at line 210</div>
+        <div class="location">at line 194</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withBlockedFunction</strong>(string $typeName, string $function)
         </code>
@@ -1318,7 +1236,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnv">
-        <div class="location">at line 221</div>
+        <div class="location">at line 205</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withEnv</strong>(<a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a> $env)
         </code>
@@ -1360,7 +1278,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withMCPServer">
-        <div class="location">at line 231</div>
+        <div class="location">at line 215</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withMCPServer</strong>(string $name, <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a> $service)
         </code>
@@ -1407,9 +1325,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withModel">
-        <div class="location">at line 242</div>
+        <div class="location">at line 226</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withModel</strong>(string $model)
+    <strong>withModel</strong>(string $model, string|null $provider = null)
         </code>
     </h3>
     <div class="details">    
@@ -1417,7 +1335,7 @@
             
 
         <div class="method-description">
-                            <p><p>swap out the llm model</p></p>                        
+                            <p><p>Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1426,6 +1344,11 @@
                     <tr>
                 <td>string</td>
                 <td>$model</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$provider</td>
                 <td></td>
             </tr>
             </table>
@@ -1449,7 +1372,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObject">
-        <div class="location">at line 252</div>
+        <div class="location">at line 239</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withObject</strong>(string $tag, <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $object)
         </code>
@@ -1496,7 +1419,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPrompt">
-        <div class="location">at line 263</div>
+        <div class="location">at line 250</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withPrompt</strong>(string $prompt)
         </code>
@@ -1506,7 +1429,7 @@
             
 
         <div class="method-description">
-                            <p><p>append a prompt to the llm context</p></p>                        
+                            <p><p>Queue a user prompt, to be sent to the model on the next step or loop.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1538,7 +1461,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPromptFile">
-        <div class="location">at line 273</div>
+        <div class="location">at line 260</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withPromptFile</strong>(<a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a> $file)
         </code>
@@ -1548,7 +1471,7 @@
             
 
         <div class="method-description">
-                            <p><p>append the contents of a file to the llm context</p></p>                        
+                            <p><p>Queue a file's contents as a user prompt, like withPrompt.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1580,7 +1503,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withResponse">
-        <div class="location">at line 283</div>
+        <div class="location">at line 270</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withResponse</strong>(array $content, int|null $inputTokens = 0, int|null $outputTokens = 0, int|null $cachedTokenReads = 0, int|null $cachedTokenWrites = 0, int|null $totalTokens = 0)
         </code>
@@ -1590,7 +1513,7 @@
             
 
         <div class="method-description">
-                            <p><p>Append an assistant response to the message history</p></p>                        
+                            <p><p>Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1647,7 +1570,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withStaticTools">
-        <div class="location">at line 314</div>
+        <div class="location">at line 301</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withStaticTools</strong>()
         </code>
@@ -1679,7 +1602,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSystemPrompt">
-        <div class="location">at line 323</div>
+        <div class="location">at line 310</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withSystemPrompt</strong>(string $prompt)
         </code>
@@ -1689,7 +1612,7 @@
             
 
         <div class="method-description">
-                            <p><p>Add a system prompt to the LLM's environment</p></p>                        
+                            <p><p>Add a system prompt, instructing the model across the whole conversation.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1721,9 +1644,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withToolCall">
-        <div class="location">at line 333</div>
+        <div class="location">at line 320</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withToolCall</strong>(string $call, string $tool, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $arguments)
+    <strong>withToolCall</strong>(string $callId, string $toolName, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $arguments)
         </code>
     </h3>
     <div class="details">    
@@ -1731,7 +1654,7 @@
             
 
         <div class="method-description">
-                            <p><p>Append a tool call to the last assistant message</p></p>                        
+                            <p><p>Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1739,12 +1662,12 @@
                     <table class="table table-condensed">
                     <tr>
                 <td>string</td>
-                <td>$call</td>
+                <td>$callId</td>
                 <td></td>
             </tr>
                     <tr>
                 <td>string</td>
-                <td>$tool</td>
+                <td>$toolName</td>
                 <td></td>
             </tr>
                     <tr>
@@ -1772,10 +1695,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withToolResponse">
-        <div class="location">at line 345</div>
+                    <h3 id="method_withToolResult">
+        <div class="location">at line 332</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withToolResponse</strong>(string $call, string $content, bool $errored)
+    <strong>withToolResult</strong>(string $callId, string $content, bool $errored)
         </code>
     </h3>
     <div class="details">    
@@ -1783,7 +1706,7 @@
             
 
         <div class="method-description">
-                            <p><p>Append a tool response to the message history</p></p>                        
+                            <p><p>Append the result of a tool call to the message history.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1791,7 +1714,7 @@
                     <table class="table table-condensed">
                     <tr>
                 <td>string</td>
-                <td>$call</td>
+                <td>$callId</td>
                 <td></td>
             </tr>
                     <tr>
@@ -1825,7 +1748,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDefaultSystemPrompt">
-        <div class="location">at line 357</div>
+        <div class="location">at line 344</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutDefaultSystemPrompt</strong>()
         </code>
@@ -1857,7 +1780,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutMessageHistory">
-        <div class="location">at line 366</div>
+        <div class="location">at line 353</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutMessageHistory</strong>()
         </code>
@@ -1867,7 +1790,7 @@
             
 
         <div class="method-description">
-                            <p><p>Clear the message history, leaving only the system prompts</p></p>                        
+                            <p><p>Clear the message history, keeping only the system prompts.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1889,7 +1812,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutSystemPrompts">
-        <div class="location">at line 375</div>
+        <div class="location">at line 362</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
     <strong>withoutSystemPrompts</strong>()
         </code>
@@ -1899,7 +1822,7 @@
             
 
         <div class="method-description">
-                            <p><p>Clear the system prompts, leaving only the default system prompt</p></p>                        
+                            <p><p>Clear the user-added system prompts, keeping only the default system prompt.</p></p>                        
         </div>
         <div class="tags">
             
