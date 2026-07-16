@@ -93,7 +93,16 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 	if workspaceSettingsUnset && len(args) != 2 {
 		return fmt.Errorf("--unset requires MODULE and KEY arguments")
 	}
-	return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+	params := client.Params{}
+	envWrite := len(args) >= 3 && !workspaceSettingsUnset && workspaceEnv != ""
+	if envWrite {
+		// A write is the gesture that creates a missing env, so don't apply
+		// (and validate) the env overlay at session load; the write addresses
+		// the env explicitly in the config key instead.
+		noEnv := ""
+		params.WorkspaceEnv = &noEnv
+	}
+	return withEngine(cmd.Context(), params, func(ctx context.Context, engineClient *client.Client) error {
 		moduleName := ""
 		if len(args) > 0 {
 			moduleName = args[0]
@@ -133,9 +142,25 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			return state.Workspace.
-				WithConfigValue(workspaceSettingConfigKey(setting.Module, setting.Key), value, dagger.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).
-				Export(ctx)
+			key := workspaceSettingConfigKey(setting.Module, setting.Key)
+			target := state.Workspace
+			creates := false
+			if envWrite {
+				key = workspaceEnvSettingConfigKey(workspaceEnv, setting.Module, setting.Key)
+				creates, target, err = workspaceEnvWriteCreates(ctx, state.Workspace, workspaceEnv, workspaceHere)
+				if err != nil {
+					return err
+				}
+			}
+			if err := target.
+				WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Values: values, Here: workspaceHere}).
+				Export(ctx); err != nil {
+				return err
+			}
+			if creates {
+				fmt.Fprintf(cmd.OutOrStdout(), "Created env %q\n", workspaceEnv)
+			}
+			return nil
 		}
 	})
 }
@@ -236,6 +261,13 @@ func (s *workspaceSettingsState) lookupSetting(name string) (workspaceSetting, e
 
 func workspaceSettingConfigKey(moduleName, settingName string) string {
 	return workspacepkg.JoinConfigPath("modules", moduleName, "settings", settingName)
+}
+
+// workspaceEnvSettingConfigKey addresses a setting in an env overlay through
+// raw env.<name>.* storage, which withConfigValue writes without requiring the
+// env to pre-exist (the write creates it).
+func workspaceEnvSettingConfigKey(envName, moduleName, settingName string) string {
+	return workspacepkg.JoinConfigPath("env", envName, "modules", moduleName, "settings", settingName)
 }
 
 func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting) error {

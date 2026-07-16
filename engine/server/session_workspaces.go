@@ -156,12 +156,15 @@ func workspaceRefFromClientMetadata(clientMD *engine.ClientMetadata) (string, bo
 }
 
 // workspaceEnvFromClientMetadata returns the explicitly declared workspace
-// environment selection, if present.
+// environment selection, if present. An explicit empty string means "no env"
+// (clients use it to opt a session out of overlay application, e.g. env-scoped
+// settings writes that create the env); it matches selectedWorkspaceEnv's
+// treatment of empty as not-set.
 func workspaceEnvFromClientMetadata(clientMD *engine.ClientMetadata) (string, bool) {
 	if clientMD == nil {
 		return "", false
 	}
-	if clientMD.WorkspaceEnv != nil {
+	if clientMD.WorkspaceEnv != nil && *clientMD.WorkspaceEnv != "" {
 		return *clientMD.WorkspaceEnv, true
 	}
 	return "", false

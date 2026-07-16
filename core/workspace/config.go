@@ -212,7 +212,7 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 
 	env, ok := cfg.Env[envName]
 	if !ok {
-		return nil, fmt.Errorf("workspace env %q is not defined", envName)
+		return nil, UndefinedEnvError(cfg, envName)
 	}
 
 	for moduleName, overlay := range env.Modules {
@@ -230,6 +230,18 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 	}
 
 	return applied, nil
+}
+
+// UndefinedEnvError reports a selected env that has no env.<name>.* entry in
+// the config. Since the CLI 1.0 redesign there is no dedicated create command:
+// an env comes into being when a setting is written under it, so the error
+// teaches that gesture.
+func UndefinedEnvError(cfg *Config, envName string) error {
+	defined := "no envs defined"
+	if names := EnvNames(cfg); len(names) > 0 {
+		defined = "defined envs: " + strings.Join(names, ", ")
+	}
+	return fmt.Errorf("workspace env %q is not defined (%s); create it by writing a setting: dagger settings --env=%q <module> <setting> <value>", envName, defined, envName)
 }
 
 // EnvNames returns the configured environment names in deterministic order.

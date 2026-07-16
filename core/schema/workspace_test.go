@@ -574,9 +574,26 @@ func TestEnvScopedConfigKeyQuotesDynamicSegments(t *testing.T) {
 		},
 	}
 
-	key, err := envScopedConfigKey(cfg, "review env", `modules."my.module".settings."some.key"`)
+	key, err := envScopedConfigKey(cfg, "review env", `modules."my.module".settings."some.key"`, workspaceConfigMustExist)
 	require.NoError(t, err)
 	require.Equal(t, `env."review env".modules."my.module".settings."some.key"`, key)
+}
+
+func TestEnvScopedConfigKeyMissingEnv(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"aws": {Source: "modules/aws"},
+		},
+	}
+
+	// Writes create the env, so the key maps even when the env is undefined.
+	key, err := envScopedConfigKey(cfg, "staging", "modules.aws.settings.region", workspaceConfigInitIfMissing)
+	require.NoError(t, err)
+	require.Equal(t, "env.staging.modules.aws.settings.region", key)
+
+	// Unsets still require the env to exist.
+	_, err = envScopedConfigKey(cfg, "staging", "modules.aws.settings.region", workspaceConfigMustExist)
+	require.ErrorContains(t, err, `workspace env "staging" is not defined`)
 }
 
 func TestWorkspaceSettingConfigKeyQuotesDynamicSegments(t *testing.T) {

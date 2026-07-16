@@ -407,7 +407,7 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
 	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
-	flags.StringVar(&workspaceEnv, "env", "", "Apply the named workspace environment overlay")
+	flags.StringVar(&workspaceEnv, "env", "", "Apply (or write to) a named env overlay. Envs are paths under env.<name>.* in workspace config; see 'dagger workspace config env'")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")

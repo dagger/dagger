@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -265,7 +266,7 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 		case 1:
 			return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0])
 		case 2:
-			return writeWorkspaceConfig(ctx, ws, args[0], args[1])
+			return writeWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0], args[1])
 		default:
 			return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
 		}
@@ -287,8 +288,87 @@ func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspa
 	return err
 }
 
-func writeWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, key, value string) error {
-	return ws.WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).Export(ctx)
+func writeWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key, value string) error {
+	envName := writtenConfigEnvName(key)
+	target := ws
+	creates := false
+	if envName != "" {
+		var err error
+		creates, target, err = workspaceEnvWriteCreates(ctx, ws, envName, workspaceHere)
+		if err != nil {
+			return err
+		}
+	}
+	if err := target.WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).Export(ctx); err != nil {
+		return err
+	}
+	if creates {
+		fmt.Fprintf(out, "Created env %q\n", envName)
+	}
+	return nil
+}
+
+// writtenConfigEnvName returns the env a config write lands in: the env named
+// by an explicit env.<name>.* key (which always addresses raw overlay storage,
+// even under --env), or the --env selection for other keys.
+func writtenConfigEnvName(key string) string {
+	if strings.HasPrefix(key, "env.") {
+		if parts, err := workspacepkg.SplitConfigPath(key); err == nil && len(parts) >= 2 {
+			return parts[1]
+		}
+		return ""
+	}
+	if key != "env" {
+		return workspaceEnv
+	}
+	return ""
+}
+
+// workspaceEnvWriteCreates reports whether writing to env `name` will create it,
+// and returns the workspace the write should chain onto (with the env staged so
+// creation stays explicit). Detection is here-aware by comparing config
+// directories, not by trusting EnvList alone: workspace detection selects the
+// nearest dagger.toml walking up from the cwd, so a --here write whose cwd isn't
+// the selected config's own directory targets a directory that has no config of
+// its own — it always writes a fresh config there, hence a new env. When the
+// --here target and the selected config share a directory (or --here is off),
+// the write lands in the selected config, where the env is new iff EnvList (read
+// from that same config) doesn't already list it.
+func workspaceEnvWriteCreates(ctx context.Context, ws *dagger.Workspace, name string, here bool) (bool, *dagger.Workspace, error) {
+	staged := ws.WithConfigEnv(name, dagger.WorkspaceWithConfigEnvOpts{Here: here})
+	if here {
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			// No selected config resolves to the same conclusion as an empty one.
+			if strings.Contains(err.Error(), "no dagger.toml found in workspace") {
+				return true, staged, nil
+			}
+			return false, nil, err
+		}
+		if configFile == "" {
+			// No selected config: --here writes a fresh dagger.toml at the cwd.
+			return true, staged, nil
+		}
+		cwd, err := ws.Cwd(ctx)
+		if err != nil {
+			return false, nil, err
+		}
+		if normalizeWorkspaceDir(path.Dir(configFile)) != normalizeWorkspaceDir(cwd) {
+			return true, staged, nil
+		}
+	}
+	names, err := ws.EnvList(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	return !slices.Contains(names, name), staged, nil
+}
+
+// normalizeWorkspaceDir reduces a workspace path to a comparable directory:
+// ConfigFile is workspace-root-relative ("sub/dagger.toml") while Cwd is an
+// absolute workspace path ("/sub"), so strip any leading slash before cleaning.
+func normalizeWorkspaceDir(p string) string {
+	return path.Clean(strings.TrimPrefix(p, "/"))
 }
 
 func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string, here bool) error {
