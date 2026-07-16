@@ -118,12 +118,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("tag").Doc("Arbitrary string tag for the object, typically in TypeName#Number format"),
 				dagql.Arg("object").Doc("The object to track, as a generic ID"),
 			),
-		dagql.Func("withMaxTokens", s.withMaxTokens).
-			View(AfterVersion("v1.0.0-0")).
-			Doc("Set the maximum number of output tokens the model may generate per API call").
-			Args(
-				dagql.Arg("tokens").Doc("The maximum number of output tokens (0 to use provider defaults)"),
-			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
 		dagql.Func("withBlockedFunction", s.withBlockedFunction).
@@ -167,11 +161,17 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls").
 					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("maxTokens").Doc("Cap the model's output tokens on each API call made during this loop (0 to use the model's default)").
+					View(AfterVersion("v1.0.0-0")),
 			),
 		dagql.Func("hasPrompt", s.hasPrompt).
 			Doc("Indicates whether there are any queued prompts or tool results to send to the model"),
 		dagql.NodeFunc("step", s.step).
-			Doc("Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results"),
+			Doc("Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results").
+			Args(
+				dagql.Arg("maxTokens").Doc("Cap the model's output tokens for this API call (0 to use the model's default)").
+					View(AfterVersion("v1.0.0-0")),
+			),
 		dagql.Func("attempt", s.attempt).
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
@@ -299,12 +299,6 @@ func (s *llmSchema) withObject(ctx context.Context, llm *core.LLM, args struct {
 	return llm.WithObject(args.Tag, args.Object), nil
 }
 
-func (s *llmSchema) withMaxTokens(_ context.Context, llm *core.LLM, args struct {
-	Tokens int
-}) (*core.LLM, error) {
-	return llm.WithMaxTokens(args.Tokens), nil
-}
-
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.WithoutDefaultSystemPrompt(), nil
 }
@@ -363,12 +357,15 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 
 func (s *llmSchema) loop(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
 	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
+	MaxTokens   dagql.Optional[dagql.Int] `name:"maxTokens"`
 }) (dagql.ObjectResult[*core.LLM], error) {
-	return parent.Self().Loop(ctx, parent, int(args.MaxAPICalls.Value))
+	return parent.Self().Loop(ctx, parent, int(args.MaxAPICalls.Value), int(args.MaxTokens.Value))
 }
 
-func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct{}) (id dagql.ID[*core.LLM], err error) {
-	inst, err := parent.Self().Step(ctx, parent)
+func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
+	MaxTokens dagql.Optional[dagql.Int] `name:"maxTokens"`
+}) (id dagql.ID[*core.LLM], err error) {
+	inst, err := parent.Self().Step(ctx, parent, int(args.MaxTokens.Value))
 	if err != nil {
 		return id, err
 	}

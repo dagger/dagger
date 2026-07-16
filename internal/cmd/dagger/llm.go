@@ -811,12 +811,11 @@ func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions strin
 
 	prompt := fmt.Sprintf("<conversation>\n%s\n</conversation>\n\n%s", conversationText, instructions)
 
-	// Use a fresh LLM (no tools, no history) with a small output budget.
+	// Use a fresh LLM (no tools, no history).
 	summaryText, err := s.llm.
 		WithoutMessageHistory().
 		WithoutSystemPrompts().
 		WithSystemPrompt("You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified. Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.").
-		WithMaxTokens(2048).
 		WithPrompt(prompt).
 		Loop(dagger.LLMLoopOpts{MaxAPICalls: 1}).
 		LastReply(ctx)

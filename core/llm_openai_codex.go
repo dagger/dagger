@@ -101,6 +101,10 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 		})
 	}
 
+	// NB: no max_output_tokens is sent, so an explicit maxTokens cap has no
+	// effect here. The ChatGPT backend only officially serves the Codex CLI,
+	// which never sends an output cap; an unexpected parameter risks
+	// rejection.
 	params := responses.ResponseNewParams{
 		Model:        strings.TrimPrefix(c.endpoint.Model, "openai-codex/"),
 		Instructions: param.NewOpt(systemPrompt),

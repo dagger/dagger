@@ -139,6 +139,20 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		// call tools one at a time, or else chaining breaks
 	}
 
+	// Apply an explicit maxTokens cap. The parameter is optional for
+	// OpenAI-style APIs — left unset, the provider allows up to the model's
+	// maximum — so no default is invented. OpenAI itself needs the modern
+	// max_completion_tokens field (reasoning models reject max_tokens), while
+	// OpenAI-compatible endpoints (local, other) more universally support the
+	// classic max_tokens.
+	if opts != nil && opts.MaxTokens > 0 {
+		if c.endpoint.Provider == OpenAI {
+			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
+		} else {
+			params.MaxTokens = openai.Int(int64(opts.MaxTokens))
+		}
+	}
+
 	if len(tools) > 0 {
 		var toolParams []openai.ChatCompletionToolParam
 		for _, tool := range tools {

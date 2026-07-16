@@ -451,11 +451,17 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tool
 		return nil, fmt.Errorf("failed to convert tools: %w", err)
 	}
 
-	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, &genai.GenerateContentConfig{
+	config := &genai.GenerateContentConfig{
 		SystemInstruction: systemInstruction,
 		Tools:             genaiTools,
 		ThinkingConfig:    c.thinkingConfig(),
-	}, chatHistoryForGenai)
+	}
+	// Apply an explicit maxTokens cap; left unset, Gemini defaults to the
+	// model's maximum output tokens.
+	if opts != nil && opts.MaxTokens > 0 {
+		config.MaxOutputTokens = int32(opts.MaxTokens)
+	}
+	chat, err := c.client.Chats.Create(ctx, c.endpoint.Model, config, chatHistoryForGenai)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat: %w", err)
 	}

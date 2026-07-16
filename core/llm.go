@@ -102,10 +102,6 @@ type LLM struct {
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
 
-	// maxTokens limits the number of output tokens the model may generate
-	// per API call. Zero means use provider defaults.
-	maxTokens int
-
 	// maxAPICalls caps the number of API calls per loop when loop() itself
 	// doesn't specify a cap. Zero means no cap. Only set via the legacy
 	// llm(maxAPICalls:) argument, kept for pre-v1 module views.
@@ -155,8 +151,10 @@ type LLMClient interface {
 
 // LLMCallOpts carries per-call options from the LLM state to the provider.
 type LLMCallOpts struct {
-	// MaxTokens limits the number of output/completion tokens. Zero means
-	// the provider should use its own default.
+	// MaxTokens caps the model's output tokens for this API call, from the
+	// loop(maxTokens:) / step(maxTokens:) argument. Zero means use the
+	// model's default cap (LLMEndpoint.DefaultMaxTokens) or leave the choice
+	// to the provider.
 	MaxTokens int
 
 	// CallDigest is this turn's LLM state digest, set on the live display spans
@@ -1183,14 +1181,6 @@ func (llm *LLM) WithObject(objectID string, id dagql.AnyID) *LLM {
 	return llm
 }
 
-// WithMaxTokens returns a new LLM with the maximum output tokens set.
-// Zero means use provider defaults.
-func (llm *LLM) WithMaxTokens(tokens int) *LLM {
-	llm = llm.Clone()
-	llm.maxTokens = tokens
-	return llm
-}
-
 // WithMaxAPICalls sets a default cap on the number of API calls per loop,
 // used when loop() doesn't specify its own cap. Kept for the legacy
 // llm(maxAPICalls:) argument exposed to pre-v1 module views.
@@ -1276,14 +1266,14 @@ func (err *ModelFinishedError) Error() string {
 // Step submits the queued prompt or tool-call results, evaluates any tool
 // calls, and materializes the resulting message history through the API as a
 // new LLM DAG node (via withResponse/withToolResponse/withObject selectors).
-func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
 	}
-	return llm.step(ctx, inst)
+	return llm.step(ctx, inst, maxTokens)
 }
 
-func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	llm = llm.Clone()
 
 	// Snapshot the object registry before anything can ingest into this step's
@@ -1316,7 +1306,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 
 	emitNewMessageSpans(ctx, messagesToSend, llmCallDigest)
 
-	res, err := llm.sendQueryWithRetry(ctx, messagesToSend, tools, llmCallDigest)
+	res, err := llm.sendQueryWithRetry(ctx, messagesToSend, tools, llmCallDigest, maxTokens)
 	if err != nil {
 		return inst, err
 	}
@@ -1428,7 +1418,7 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 
 // sendQueryWithRetry submits the conversation to the model's endpoint,
 // retrying retryable provider failures with exponential backoff.
-func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, tools []LLMTool, llmCallDigest string) (*LLMResponse, error) {
+func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, tools []LLMTool, llmCallDigest string, maxTokens int) (*LLMResponse, error) {
 	b := backoff.NewExponentialBackOff()
 	// Sane defaults (ideally not worth extra knobs)
 	b.InitialInterval = 1 * time.Second
@@ -1449,7 +1439,7 @@ func (llm *LLM) sendQueryWithRetry(ctx context.Context, messages []*LLMMessage, 
 		// so the TUI can branch from a span, and ends them (or the loop does for
 		// text/thinking spans, once tool results are applied).
 		res, sendErr = client.SendQuery(ctx, messages, tools, &LLMCallOpts{
-			MaxTokens:  llm.maxTokens,
+			MaxTokens:  maxTokens,
 			CallDigest: llmCallDigest,
 		})
 		if sendErr != nil {
@@ -1552,8 +1542,9 @@ func responseSelector(res *LLMResponse) (dagql.Selector, error) {
 
 // Loop sends the context to the LLM endpoint, processes replies and tool calls,
 // and continues in a loop until the model ends its turn (no more prompts) or
-// the API call cap is reached.
-func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls int) (dagql.ObjectResult[*LLM], error) {
+// the API call cap is reached. maxTokens caps the model's output tokens on
+// each API call made during this loop; zero uses the model's default.
+func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls, maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
 	}
@@ -1602,7 +1593,7 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 		apiCalls++
 
 		var err error
-		inst, err = inst.Self().Step(ctx, inst)
+		inst, err = inst.Self().Step(ctx, inst, maxTokens)
 		if err != nil {
 			if ctx.Err() != nil {
 				// Context was cancelled (user interrupt). Return the last
