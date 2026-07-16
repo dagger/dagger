@@ -222,8 +222,9 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	prompted := compacted.WithPrompt(input)
 
 	for {
-		// update the sidebar after every step, not after the entire loop
-		prompted, err = prompted.Step(ctx)
+		// update the sidebar after every step, not after the entire loop; step
+		// is lazy, so sync to force it and re-root on the materialized state
+		prompted, err = prompted.Step().Sync(ctx)
 		if err != nil {
 			return s, err
 		}
@@ -242,7 +243,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			s.onStep(s)
 		}
 
-		hasMore, err := prompted.HasPrompt(s.plumbingCtx)
+		hasMore, err := prompted.HasPending(s.plumbingCtx)
 		if err != nil {
 			return s, err
 		}
@@ -762,14 +763,12 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 }
 
 func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {
-	history, err := s.llm.History(ctx)
+	transcript, err := s.llm.Transcript(ctx)
 	if err != nil {
 		return s, err
 	}
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	for _, h := range history {
-		fmt.Fprintln(stdio.Stdout, h)
-	}
+	fmt.Fprintln(stdio.Stdout, transcript)
 	return s, nil
 }
 
@@ -799,7 +798,7 @@ const (
 // trimConversationForSummary drops the oldest serialized messages so the
 // conversation fits the summarization input budget within the model's
 // context window (tokens; 0 or negative uses a conservative fallback),
-// keeping the newest content. SerializeHistory joins messages with blank
+// keeping the newest content. The transcript joins messages with blank
 // lines, so trimming happens at those boundaries; a notice marks the
 // omission. Without this, a near-window-sized history would leave the
 // summarization request little or no room to respond.
@@ -847,12 +846,13 @@ func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions strin
 	ctx, span := Tracer().Start(ctx, "branch summary", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	conversationText, err := s.llm.SerializeHistory(ctx)
+	conversationText, err := s.llm.Transcript(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize history: %w", err)
 	}
 	// Budget the input to the model's actual context window; unknown models
-	// (e.g. local endpoints) report 0 and get a conservative fallback.
+	// (e.g. local endpoints) report null (decoded as 0) and get a
+	// conservative fallback.
 	contextWindow, err := s.llm.ContextWindow(ctx)
 	if err != nil {
 		contextWindow = 0
@@ -872,7 +872,7 @@ func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions strin
 		WithoutSystemPrompts().
 		WithSystemPrompt("You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified. Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.").
 		WithPrompt(prompt).
-		Loop(dagger.LLMLoopOpts{MaxAPICalls: 1, MaxTokens: 2048}).
+		Loop(dagger.LLMLoopOpts{MaxSteps: 1, MaxTokens: 2048}).
 		LastReply(ctx)
 	if err != nil {
 		return "", err
@@ -931,7 +931,7 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 	// Persist the portable, self-contained (recipe-form) ID rather than the
 	// default runtime handle, which is an engine-local reference that cannot be
 	// resolved once this session's engine is gone.
-	llmID, err := s.llm.GlobalID(ctx)
+	llmID, err := s.llm.PortableID(ctx)
 	if err != nil {
 		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
 	}

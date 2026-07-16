@@ -7,6 +7,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ import (
 	"dagger.io/dagger/dag"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/golden"
@@ -144,28 +146,24 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
+func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// maxAPICalls is a loop() argument: the limit caps the loop invocation
+	// maxSteps is a loop() argument: the limit caps the loop invocation
 	// rather than the LLM as a whole.
 	ctrFn := func(llmFlags, loopFlags string) dagger.WithContainerFunc {
-		return daggerShell(fmt.Sprintf(`llm %s | with-env $(env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | historyJSON`, llmFlags, loopFlags))
+		return daggerShell(fmt.Sprintf(`llm %s | with-env $(env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | transcript`, llmFlags, loopFlags))
 	}
 
 	recording := "llmtest/api-limit.golden"
 	if golden.FlagUpdate() {
-		out, err := daggerCliBase(t, c).
-			With(daggerForwardSecrets(c)).
-			With(ctrFn("", "")).
-			Stdout(ctx)
-		require.NoError(t, err)
+		out := recordLLMConversation(t, c)
 
 		if dir := filepath.Dir(recording); dir != "." {
 			err := os.MkdirAll(dir, 0755)
 			require.NoError(t, err)
 		}
-		err = os.WriteFile(recording, []byte(out), 0644)
+		err := os.WriteFile(recording, out, 0644)
 		require.NoError(t, err)
 	}
 
@@ -174,9 +172,90 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 	llmFlags := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
 
 	_, err = daggerCliBase(t, c).
-		With(ctrFn(llmFlags, "--max-api-calls=1")).
+		With(ctrFn(llmFlags, "--max-steps=1")).
 		Stdout(ctx)
-	requireErrOut(t, err, "reached API call limit: 1")
+	requireErrOut(t, err, "reached step limit: 1")
+}
+
+// recordLLMConversation drives the same conversation as TestStepLimit's shell
+// pipeline against real providers and returns the message history in the
+// snake_case JSON format the replay/ model decoder consumes. The v1 API
+// dropped historyJSON, so the recording exports structured messages over raw
+// GraphQL and re-encodes them.
+func recordLLMConversation(t *testctx.T, c *dagger.Client) []byte {
+	ctrRes, err := testutil.QueryWithClient[struct {
+		Container struct {
+			From struct {
+				ID string
+			}
+		}
+	}](c, t, `{container{from(address:"alpine"){id}}}`, nil)
+	require.NoError(t, err)
+
+	envRes, err := testutil.QueryWithClient[struct {
+		Env struct {
+			WithContainerInput struct {
+				ID string
+			}
+		}
+	}](c, t, `query($ctr: ContainerID!){env{withContainerInput(name:"alpine",value:$ctr,description:"an alpine linux container"){id}}}`,
+		&testutil.QueryOptions{Variables: map[string]any{"ctr": ctrRes.Container.From.ID}})
+	require.NoError(t, err)
+
+	type block struct {
+		Kind      string `json:"kind"`
+		Text      string `json:"text"`
+		CallID    string `json:"callId"`
+		ToolName  string `json:"toolName"`
+		Arguments string `json:"arguments"`
+		Errored   bool   `json:"errored"`
+		Signature string `json:"signature"`
+	}
+	type message struct {
+		Role    string  `json:"role"`
+		Content []block `json:"content"`
+	}
+	msgRes, err := testutil.QueryWithClient[struct {
+		Llm struct {
+			WithEnv struct {
+				WithPrompt struct {
+					Loop struct {
+						WithPrompt struct {
+							Messages []message
+						}
+					}
+				}
+			}
+		}
+	}](c, t, `query($env: EnvID!){llm{withEnv(env:$env){withPrompt(prompt:"tell me the value of PATH"){loop{withPrompt(prompt:"now tell me the value of TERM"){messages{role content{kind text callId toolName arguments errored signature}}}}}}}}`,
+		&testutil.QueryOptions{Variables: map[string]any{"env": envRes.Env.WithContainerInput.ID}})
+	require.NoError(t, err)
+
+	// Re-encode in the snake_case shape of core.LLMMessage's JSON encoding.
+	type goldenBlock struct {
+		Kind      string `json:"kind"`
+		Text      string `json:"text,omitempty"`
+		CallID    string `json:"call_id,omitempty"`
+		ToolName  string `json:"tool_name,omitempty"`
+		Arguments string `json:"arguments,omitempty"`
+		Errored   bool   `json:"errored,omitempty"`
+		Signature string `json:"signature,omitempty"`
+	}
+	type goldenMessage struct {
+		Role    string        `json:"role"`
+		Content []goldenBlock `json:"content"`
+	}
+	var out []goldenMessage
+	for _, msg := range msgRes.Llm.WithEnv.WithPrompt.Loop.WithPrompt.Messages {
+		gm := goldenMessage{Role: msg.Role}
+		for _, b := range msg.Content {
+			gm.Content = append(gm.Content, goldenBlock(b))
+		}
+		out = append(out, gm)
+	}
+	data, err := json.MarshalIndent(out, "", "  ")
+	require.NoError(t, err)
+	return data
 }
 
 func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
@@ -419,12 +498,12 @@ func daggerForwardSecrets(dag *dagger.Client) dagger.WithContainerFunc {
 	//	}
 }
 
-// TestGlobalIDPortable verifies that llm.globalID returns a portable,
+// TestPortableID verifies that llm.portableID returns a portable,
 // recipe-form ID that node() can resolve in any session, whereas llm.id
 // returns an engine-local runtime handle. `dagger llm` session save/resume
-// persists globalID; persisting id used to fail on resume with "missing shared
-// result" once the original engine was gone.
-func (LLMSuite) TestGlobalIDPortable(ctx context.Context, t *testctx.T) {
+// persists portableID; persisting id used to fail on resume with "missing
+// shared result" once the original engine was gone.
+func (LLMSuite) TestPortableID(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	llm := c.LLM().
@@ -432,15 +511,15 @@ func (LLMSuite) TestGlobalIDPortable(ctx context.Context, t *testctx.T) {
 		WithSystemPrompt("you are a helpful assistant").
 		WithPrompt("hello")
 
-	globalID, err := llm.GlobalID(ctx)
+	portableID, err := llm.PortableID(ctx)
 	require.NoError(t, err)
 	handleID, err := llm.ID(ctx)
 	require.NoError(t, err)
 
-	// globalID must be a self-contained recipe, not an engine-local handle.
+	// portableID must be a self-contained recipe, not an engine-local handle.
 	gid := new(call.ID)
-	require.NoError(t, gid.Decode(string(globalID)))
-	require.False(t, gid.IsHandle(), "globalID must be recipe-form, got a runtime handle")
+	require.NoError(t, gid.Decode(string(portableID)))
+	require.False(t, gid.IsHandle(), "portableID must be recipe-form, got a runtime handle")
 
 	// id is the runtime handle that does not survive across engines: this is
 	// exactly the engineResult(N) reference that broke session resume.
@@ -448,8 +527,8 @@ func (LLMSuite) TestGlobalIDPortable(ctx context.Context, t *testctx.T) {
 	require.NoError(t, hid.Decode(string(handleID)))
 	require.True(t, hid.IsHandle(), "id is expected to be a runtime handle")
 
-	// globalID resolves via node() and reconstructs the same conversation.
-	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
+	// portableID resolves via node() and reconstructs the same conversation.
+	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
 	reloadedModel, err := reloaded.Model(ctx)
 	require.NoError(t, err)
 	origModel, err := llm.Model(ctx)
@@ -457,12 +536,13 @@ func (LLMSuite) TestGlobalIDPortable(ctx context.Context, t *testctx.T) {
 	require.Equal(t, origModel, reloadedModel)
 }
 
-// TestGlobalIDWithResponse verifies that a conversation containing assistant
-// content blocks survives the globalID round trip. Empty "arguments" on a
+// TestPortableIDWithResponse verifies that a conversation containing
+// assistant content blocks survives the portableID round trip. Empty
+// "arguments" on a
 // non-tool-call block decodes to nil and is dropped from the serialized ID
 // literal; reloading used to fail with `missing required input field
 // "arguments"`, which broke resume for every saved session with a reply.
-func (LLMSuite) TestGlobalIDWithResponse(ctx context.Context, t *testctx.T) {
+func (LLMSuite) TestPortableIDWithResponse(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	llm := c.LLM().
@@ -473,10 +553,10 @@ func (LLMSuite) TestGlobalIDWithResponse(ctx context.Context, t *testctx.T) {
 			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "read", Arguments: dagger.JSON(`{"path":"/x"}`)},
 		})
 
-	globalID, err := llm.GlobalID(ctx)
+	portableID, err := llm.PortableID(ctx)
 	require.NoError(t, err)
 
-	reloaded := dagger.Ref[*dagger.LLM](c, globalID)
+	reloaded := dagger.Ref[*dagger.LLM](c, portableID)
 	reply, err := reloaded.LastReply(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello world", reply)

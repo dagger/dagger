@@ -1318,7 +1318,7 @@ func (err *ModelFinishedError) Error() string {
 
 // Step submits the queued prompt or tool-call results, evaluates any tool
 // calls, and materializes the resulting message history through the API as a
-// new LLM DAG node (via withResponse/withToolResponse/withObject selectors).
+// new LLM DAG node (via withResponse/withToolResult/withObject selectors).
 func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM], maxTokens int) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
