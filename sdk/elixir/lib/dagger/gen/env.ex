@@ -1003,42 +1003,6 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Create or update a binding of type LLMToolCall in the environment
-  """
-  @spec with_llm_tool_call_input(t(), String.t(), Dagger.LLMToolCall.t(), String.t()) ::
-          Dagger.Env.t()
-  def with_llm_tool_call_input(%__MODULE__{} = env, name, value, description) do
-    query_builder =
-      env.query_builder
-      |> QB.select("withLLMToolCallInput")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("value", Dagger.ID.id!(value))
-      |> QB.put_arg("description", description)
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: env.client
-    }
-  end
-
-  @doc """
-  Declare a desired LLMToolCall output to be assigned in the environment
-  """
-  @spec with_llm_tool_call_output(t(), String.t(), String.t()) :: Dagger.Env.t()
-  def with_llm_tool_call_output(%__MODULE__{} = env, name, description) do
-    query_builder =
-      env.query_builder
-      |> QB.select("withLLMToolCallOutput")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("description", description)
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: env.client
-    }
-  end
-
-  @doc """
   Sets the main module for this environment (the project being worked on)
 
   Contextual path arguments will be populated using the environment's workspace.

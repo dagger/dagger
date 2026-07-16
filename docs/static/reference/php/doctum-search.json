@@ -1168,16 +1168,6 @@
 		},
 		{
 			"t": "C",
-			"n": "Dagger\\LLMToolCall",
-			"p": "Dagger/LLMToolCall.html",
-			"d": null,
-			"f": {
-				"n": "Dagger",
-				"p": "Dagger.html"
-			}
-		},
-		{
-			"t": "C",
 			"n": "Dagger\\Label",
 			"p": "Dagger/Label.html",
 			"d": "<p>A simple key value object that represents a label.</p>",
@@ -2109,12 +2099,6 @@
 			"n": "Dagger\\Binding::asLLMMessage",
 			"p": "Dagger/Binding.html#method_asLLMMessage",
 			"d": "<p>Retrieve the binding value, as type LLMMessage</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Binding::asLLMToolCall",
-			"p": "Dagger/Binding.html#method_asLLMToolCall",
-			"d": "<p>Retrieve the binding value, as type LLMToolCall</p>"
 		},
 		{
 			"t": "M",
@@ -4284,18 +4268,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Env::withLLMToolCallInput",
-			"p": "Dagger/Env.html#method_withLLMToolCallInput",
-			"d": "<p>Create or update a binding of type LLMToolCall in the environment</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Env::withLLMToolCallOutput",
-			"p": "Dagger/Env.html#method_withLLMToolCallOutput",
-			"d": "<p>Declare a desired LLMToolCall output to be assigned in the environment</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Env::withMainModule",
 			"p": "Dagger/Env.html#method_withMainModule",
 			"d": "<p>Sets the main module for this environment (the project being worked on)</p>"
@@ -5538,6 +5510,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::globalID",
+			"p": "Dagger/LLM.html#method_globalID",
+			"d": "<p>A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::hasPrompt",
 			"p": "Dagger/LLM.html#method_hasPrompt",
 			"d": "<p>Indicates whether there are any queued prompts or tool results to send to the model</p>"
@@ -5823,12 +5801,6 @@
 			"n": "Dagger\\LLMTokenUsage::totalTokens",
 			"p": "Dagger/LLMTokenUsage.html#method_totalTokens",
 			"d": null
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\LLMToolCall::id",
-			"p": "Dagger/LLMToolCall.html#method_id",
-			"d": "<p>A unique identifier for this LLMToolCall.</p>"
 		},
 		{
 			"t": "M",

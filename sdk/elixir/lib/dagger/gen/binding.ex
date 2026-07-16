@@ -338,20 +338,6 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  Retrieve the binding value, as type LLMToolCall
-  """
-  @spec as_llm_tool_call(t()) :: Dagger.LLMToolCall.t()
-  def as_llm_tool_call(%__MODULE__{} = binding) do
-    query_builder =
-      binding.query_builder |> QB.select("asLLMToolCall")
-
-    %Dagger.LLMToolCall{
-      query_builder: query_builder,
-      client: binding.client
-    }
-  end
-
-  @doc """
   Retrieve the binding value, as type Module
   """
   @spec as_module(t()) :: Dagger.Module.t()

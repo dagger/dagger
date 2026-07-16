@@ -7,7 +7,7 @@ defmodule Dagger.LLMContentBlockInput do
   use Dagger.Core.Base, kind: :input, name: "LLMContentBlockInput"
 
   @type t() :: %__MODULE__{
-          arguments: Dagger.JSON.t(),
+          arguments: Dagger.JSON.t() | nil,
           call_id: String.t() | nil,
           errored: boolean() | nil,
           kind: Dagger.LLMContentBlockKind.t(),

@@ -342,11 +342,11 @@ class BuildArg(Input):
 class LLMContentBlockInput(Input):
     """A content block within an LLM message."""
 
-    arguments: JSON
-    """The arguments to pass to the tool (for TOOL_CALL kind)."""
-
     kind: LLMContentBlockKind
     """The kind of content block."""
+
+    arguments: JSON | None = None
+    """The arguments to pass to the tool (for TOOL_CALL kind)."""
 
     call_id: str | None = ""
     """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
@@ -821,12 +821,6 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asLLMMessage", _args)
         return LLMMessage(_ctx)
-
-    def as_llm_tool_call(self) -> "LLMToolCall":
-        """Retrieve the binding value, as type LLMToolCall"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLMToolCall", _args)
-        return LLMToolCall(_ctx)
 
     def as_module(self) -> "Module":
         """Retrieve the binding value, as type Module"""
@@ -7298,48 +7292,6 @@ class Env(Type):
         _ctx = self._select("withLLMMessageOutput", _args)
         return Env(_ctx)
 
-    def with_llm_tool_call_input(
-        self,
-        name: str,
-        value: "LLMToolCall",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLMToolCall in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLMToolCall value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMToolCallInput", _args)
-        return Env(_ctx)
-
-    def with_llm_tool_call_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLMToolCall output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMToolCallOutput", _args)
-        return Env(_ctx)
-
     def with_main_module(self, module: "Module") -> Self:
         """Sets the main module for this environment (the project being worked
         on)
@@ -11471,6 +11423,33 @@ class LLM(Type):
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
+    async def global_id(self) -> str:
+        """A portable, self-contained ID for this LLM that node() can resolve in
+        any session. Unlike id, which may return an engine-local runtime
+        handle valid only within the current session, this returns the recipe
+        form suitable for persisting and later restoring the conversation.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("globalID", _args)
+        return await _ctx.execute(str)
+
     async def has_prompt(self) -> bool:
         """Indicates whether there are any queued prompts or tool results to send
         to the model
@@ -12311,37 +12290,6 @@ class LLMTokenUsage(Type):
         _args: list[Arg] = []
         _ctx = self._select("totalTokens", _args)
         return await _ctx.execute(int)
-
-
-@typecheck
-class LLMToolCall(Type):
-    async def id(self) -> str:
-        """A unique identifier for this LLMToolCall.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
 
 
 @typecheck
@@ -17810,7 +17758,6 @@ __all__ = [
     "LLMMessage",
     "LLMMessageRole",
     "LLMTokenUsage",
-    "LLMToolCall",
     "Label",
     "ListTypeDef",
     "Module",

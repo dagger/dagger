@@ -218,15 +218,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Retrieve the binding value, as type LLMToolCall
-     */
-    public function asLLMToolCall(): LLMToolCall
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLLMToolCall');
-        return new \Dagger\LLMToolCall($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve the binding value, as type Module
      */
     public function asModule(): Module

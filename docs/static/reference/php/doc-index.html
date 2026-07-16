@@ -155,9 +155,7 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asLLMContentBlock</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type LLMContentBlock</p></dd><dt><a href="Dagger/Binding.html#method_asLLMMessage">
 <abbr title="Dagger\Binding">Binding</abbr>::asLLMMessage</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type LLMMessage</p></dd><dt><a href="Dagger/Binding.html#method_asLLMToolCall">
-<abbr title="Dagger\Binding">Binding</abbr>::asLLMToolCall</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type LLMToolCall</p></dd><dt><a href="Dagger/Binding.html#method_asModule">
+                    <dd><p>Retrieve the binding value, as type LLMMessage</p></dd><dt><a href="Dagger/Binding.html#method_asModule">
 <abbr title="Dagger\Binding">Binding</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type Module</p></dd><dt><a href="Dagger/Binding.html#method_asModuleConfigClient">
 <abbr title="Dagger\Binding">Binding</abbr>::asModuleConfigClient</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -747,7 +745,9 @@
                     <dd><p>A git ref (tag, branch, or commit).</p></dd><dt><a href="Dagger/GitRefId.html"><abbr title="Dagger\GitRefId">GitRefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A git repository.</p></dd><dt><a href="Dagger/GitRepositoryId.html"><abbr title="Dagger\GitRepositoryId">GitRepositoryId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Module.html#method_generatedContextDirectory">
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/LLM.html#method_globalID">
+<abbr title="Dagger\LLM">LLM</abbr>::globalID</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.</p></dd><dt><a href="Dagger/Module.html#method_generatedContextDirectory">
 <abbr title="Dagger\Module">Module</abbr>::generatedContextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The generated files and directories made on top of the module source's context directory.</p></dd><dt><a href="Dagger/Module.html#method_generator">
 <abbr title="Dagger\Module">Module</abbr>::generator</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
@@ -930,9 +930,7 @@
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
                     <dd><p>A unique identifier for this LLMTokenUsage.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_inputTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::inputTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
-                    <dd></dd><dt><a href="Dagger/LLMToolCall.html#method_id">
-<abbr title="Dagger\LLMToolCall">LLMToolCall</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMToolCall.html"><abbr title="Dagger\LLMToolCall">LLMToolCall</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this LLMToolCall.</p></dd><dt><a href="Dagger/Label.html#method_id">
+                    <dd></dd><dt><a href="Dagger/Label.html#method_id">
 <abbr title="Dagger\Label">Label</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Label.</p></dd><dt><a href="Dagger/ListTypeDef.html#method_id">
 <abbr title="Dagger\ListTypeDef">ListTypeDef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a></em></dt>
@@ -1062,8 +1060,7 @@
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/LLMMessage.html"><abbr title="Dagger\LLMMessage">LLMMessage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/LLMTokenUsageId.html"><abbr title="Dagger\LLMTokenUsageId">LLMTokenUsageId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/LLMToolCall.html"><abbr title="Dagger\LLMToolCall">LLMToolCall</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd></dd><dt><a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A simple key value object that represents a label.</p></dd><dt><a href="Dagger/LabelId.html"><abbr title="Dagger\LabelId">LabelId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A definition of a list type in a Module.</p></dd><dt><a href="Dagger/ListTypeDefId.html"><abbr title="Dagger\ListTypeDefId">ListTypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1838,11 +1835,7 @@
 <abbr title="Dagger\Env">Env</abbr>::withLLMMessageInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type LLMMessage in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMMessageOutput">
 <abbr title="Dagger\Env">Env</abbr>::withLLMMessageOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Declare a desired LLMMessage output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMToolCallInput">
-<abbr title="Dagger\Env">Env</abbr>::withLLMToolCallInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Create or update a binding of type LLMToolCall in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMToolCallOutput">
-<abbr title="Dagger\Env">Env</abbr>::withLLMToolCallOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Declare a desired LLMToolCall output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withMainModule">
+                    <dd><p>Declare a desired LLMMessage output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withMainModule">
 <abbr title="Dagger\Env">Env</abbr>::withMainModule</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Sets the main module for this environment (the project being worked on)</p></dd><dt><a href="Dagger/Env.html#method_withModule">
 <abbr title="Dagger\Env">Env</abbr>::withModule</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>

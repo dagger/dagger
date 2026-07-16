@@ -633,15 +633,6 @@ func (r *Binding) AsLLMMessage() *LLMMessage {
 	}
 }
 
-// Retrieve the binding value, as type LLMToolCall
-func (r *Binding) AsLLMToolCall() *LLMToolCall {
-	q := r.query.Select("asLLMToolCall")
-
-	return &LLMToolCall{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Module
 func (r *Binding) AsModule() *Module {
 	q := r.query.Select("asModule")
@@ -7038,30 +7029,6 @@ func (r *Env) WithLLMMessageOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type LLMToolCall in the environment
-func (r *Env) WithLLMToolCallInput(name string, value *LLMToolCall, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLMToolCallInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired LLMToolCall output to be assigned in the environment
-func (r *Env) WithLLMToolCallOutput(name string, description string) *Env {
-	q := r.query.Select("withLLMToolCallOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // Sets the main module for this environment (the project being worked on)
 //
 // Contextual path arguments will be populated using the environment's workspace.
@@ -11173,6 +11140,7 @@ func (r *JSONValue) AsNode() Node {
 type LLM struct {
 	query *querybuilder.Selection
 
+	globalID         *ID
 	hasPrompt        *bool
 	historyJSON      *JSON
 	id               *ID
@@ -11227,6 +11195,19 @@ func (r *LLM) Env() *Env {
 	return &Env{
 		query: q,
 	}
+}
+
+// A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+func (r *LLM) GlobalID(ctx context.Context) (ID, error) {
+	if r.globalID != nil {
+		return *r.globalID, nil
+	}
+	q := r.query.Select("globalID")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Indicates whether there are any queued prompts or tool results to send to the model
@@ -12053,66 +12034,6 @@ func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 // AsNode returns this LLMTokenUsage as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *LLMTokenUsage) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
-type LLMToolCall struct {
-	query *querybuilder.Selection
-
-	id *ID
-}
-
-func (r *LLMToolCall) WithGraphQLQuery(q *querybuilder.Selection) *LLMToolCall {
-	return &LLMToolCall{
-		query: q,
-	}
-}
-
-// A unique identifier for this LLMToolCall.
-func (r *LLMToolCall) ID(ctx context.Context) (ID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *LLMToolCall) XXX_GraphQLType() string {
-	return "LLMToolCall"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *LLMToolCall) XXX_GraphQLIDType() string {
-	return "ID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *LLMToolCall) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *LLMToolCall) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// AsNode returns this LLMToolCall as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *LLMToolCall) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}

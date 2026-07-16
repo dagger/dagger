@@ -641,29 +641,6 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Create or update a binding of type LLMToolCall in the environment
-     */
-    public function withLLMToolCallInput(string $name, LLMToolCall $value, string $description): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLLMToolCallInput');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
-        $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Declare a desired LLMToolCall output to be assigned in the environment
-     */
-    public function withLLMToolCallOutput(string $name, string $description): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLLMToolCallOutput');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Sets the main module for this environment (the project being worked on)
      *
      * Contextual path arguments will be populated using the environment's workspace.

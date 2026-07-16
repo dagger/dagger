@@ -158,9 +158,6 @@ type Binding implements Node {
   """Retrieve the binding value, as type LLMMessage"""
   asLLMMessage: LLMMessage!
 
-  """Retrieve the binding value, as type LLMToolCall"""
-  asLLMToolCall: LLMToolCall!
-
   """Retrieve the binding value, as type Module"""
   asModule: Module!
 
@@ -3091,27 +3088,6 @@ type Env implements Node {
     description: String!
   ): Env!
 
-  """Create or update a binding of type LLMToolCall in the environment"""
-  withLLMToolCallInput(
-    """The name of the binding"""
-    name: String!
-
-    """The LLMToolCall value to assign to the binding"""
-    value: ID! @expectedType(name: "LLMToolCall")
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired LLMToolCall output to be assigned in the environment"""
-  withLLMToolCallOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
   """
   Sets the main module for this environment (the project being worked on)
 
@@ -4605,6 +4581,14 @@ type LLM implements Node & Syncer {
   env: Env!
 
   """
+  A portable, self-contained ID for this LLM that node() can resolve in any
+  session. Unlike id, which may return an engine-local runtime handle valid only
+  within the current session, this returns the recipe form suitable for
+  persisting and later restoring the conversation.
+  """
+  globalID: ID!
+
+  """
   Indicates whether there are any queued prompts or tool results to send to the model
   """
   hasPrompt: Boolean!
@@ -4824,7 +4808,7 @@ input LLMContentBlockInput {
   toolName: String = ""
 
   """The arguments to pass to the tool (for TOOL_CALL kind)."""
-  arguments: JSON!
+  arguments: JSON
 
   """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
   errored: Boolean = false
@@ -4882,11 +4866,6 @@ type LLMTokenUsage implements Node {
   outputTokens: Int!
 
   totalTokens: Int!
-}
-
-type LLMToolCall implements Node {
-  """A unique identifier for this LLMToolCall."""
-  id: ID!
 }
 
 """A simple key value object that represents a label."""

@@ -58,6 +58,17 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+  """
+  @spec global_id(t()) :: {:ok, String.t()} | {:error, term()}
+  def global_id(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("globalID")
+
+    Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
   Indicates whether there are any queued prompts or tool results to send to the model
   """
   @spec has_prompt(t()) :: {:ok, boolean()} | {:error, term()}

@@ -1966,7 +1966,7 @@ export type LLMContentBlockInput = {
   /**
    * The arguments to pass to the tool (for TOOL_CALL kind).
    */
-  arguments: JSON
+  arguments?: JSON
 
   /**
    * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
@@ -3511,14 +3511,6 @@ export class Binding extends BaseClient {
   asLLMMessage = (): LLMMessage => {
     const ctx = this._ctx.select("asLLMMessage")
     return new LLMMessage(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type LLMToolCall
-   */
-  asLLMToolCall = (): LLMToolCall => {
-    const ctx = this._ctx.select("asLLMToolCall")
-    return new LLMToolCall(ctx)
   }
 
   /**
@@ -8229,35 +8221,6 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update a binding of type LLMToolCall in the environment
-   * @param name The name of the binding
-   * @param value The LLMToolCall value to assign to the binding
-   * @param description The purpose of the input
-   */
-  withLLMToolCallInput = (
-    name: string,
-    value: LLMToolCall,
-    description: string,
-  ): Env => {
-    const ctx = this._ctx.select("withLLMToolCallInput", {
-      name,
-      value,
-      description,
-    })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLMToolCall output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMToolCallOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMToolCallOutput", { name, description })
-    return new Env(ctx)
-  }
-
-  /**
    * Sets the main module for this environment (the project being worked on)
    *
    * Contextual path arguments will be populated using the environment's workspace.
@@ -11554,6 +11517,7 @@ export class JSONValue extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _globalID?: ID = undefined
   private readonly _hasPrompt?: boolean = undefined
   private readonly _historyJSON?: JSON = undefined
   private readonly _lastReply?: string = undefined
@@ -11571,6 +11535,7 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _globalID?: ID,
     _hasPrompt?: boolean,
     _historyJSON?: JSON,
     _lastReply?: string,
@@ -11585,6 +11550,7 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._globalID = _globalID
     this._hasPrompt = _hasPrompt
     this._historyJSON = _historyJSON
     this._lastReply = _lastReply
@@ -11636,6 +11602,21 @@ export class LLM extends BaseClient {
   env = (): Env => {
     const ctx = this._ctx.select("env")
     return new Env(ctx)
+  }
+
+  /**
+   * A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+   */
+  globalID = async (): Promise<ID> => {
+    if (this._globalID) {
+      return this._globalID
+    }
+
+    const ctx = this._ctx.select("globalID")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -12260,34 +12241,6 @@ export class LLMTokenUsage extends BaseClient {
     const ctx = this._ctx.select("totalTokens")
 
     const response: Awaited<number> = await ctx.execute()
-
-    return response
-  }
-}
-
-export class LLMToolCall extends BaseClient {
-  private readonly _id?: ID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this LLMToolCall.
-   */
-  id = async (): Promise<ID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ID> = await ctx.execute()
 
     return response
   }

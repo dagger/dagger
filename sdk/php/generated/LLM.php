@@ -40,6 +40,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+     */
+    public function globalID(): Id
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('globalID');
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'globalID'));
+    }
+
+    /**
      * Indicates whether there are any queued prompts or tool results to send to the model
      */
     public function hasPrompt(): bool

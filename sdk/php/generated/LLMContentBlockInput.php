@@ -18,7 +18,7 @@ class LLMContentBlockInput extends Client\AbstractInputObject
         public ?string $text = '',
         public ?string $callId = '',
         public ?string $toolName = '',
-        public Json $arguments,
+        public ?Json $arguments,
         public ?bool $errored = false,
         public ?string $signature = '',
     ) {

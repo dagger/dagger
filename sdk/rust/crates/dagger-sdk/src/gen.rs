@@ -716,15 +716,6 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Retrieve the binding value, as type LLMToolCall
-    pub fn as_llm_tool_call(&self) -> LlmToolCall {
-        let query = self.selection.select("asLLMToolCall");
-        LlmToolCall {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Retrieve the binding value, as type Module
     pub fn as_module(&self) -> Module {
         let query = self.selection.select("asModule");
@@ -7973,55 +7964,6 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create or update a binding of type LLMToolCall in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `value` - The LLMToolCall value to assign to the binding
-    /// * `description` - The purpose of the input
-    pub fn with_llm_tool_call_input(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<Id>,
-        description: impl Into<String>,
-    ) -> Env {
-        let mut query = self.selection.select("withLLMToolCallInput");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        query = query.arg("description", description.into());
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Declare a desired LLMToolCall output to be assigned in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `description` - A description of the desired value of the binding
-    pub fn with_llm_tool_call_output(
-        &self,
-        name: impl Into<String>,
-        description: impl Into<String>,
-    ) -> Env {
-        let mut query = self.selection.select("withLLMToolCallOutput");
-        query = query.arg("name", name.into());
-        query = query.arg("description", description.into());
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Sets the main module for this environment (the project being worked on)
     /// Contextual path arguments will be populated using the environment's workspace.
     pub fn with_main_module(&self, module: impl IntoID<Id>) -> Env {
@@ -12139,6 +12081,11 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// A portable, self-contained ID for this LLM that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+    pub async fn global_id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("globalID");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Indicates whether there are any queued prompts or tool results to send to the model
     pub async fn has_prompt(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("hasPrompt");
@@ -12777,49 +12724,6 @@ impl LlmTokenUsage {
     }
 }
 impl Node for LlmTokenUsage {
-    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
-        let query = self.selection.select("id");
-        let graphql_client = self.graphql_client.clone();
-        async move { query.execute(graphql_client).await }
-    }
-}
-#[derive(Clone)]
-pub struct LlmToolCall {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl IntoID<Id> for LlmToolCall {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl Loadable for LlmToolCall {
-    fn graphql_type() -> &'static str {
-        "LLMToolCall"
-    }
-    fn from_query(
-        proc: Option<Arc<DaggerSessionProc>>,
-        selection: Selection,
-        graphql_client: DynGraphQLClient,
-    ) -> Self {
-        Self {
-            proc,
-            selection,
-            graphql_client,
-        }
-    }
-}
-impl LlmToolCall {
-    /// A unique identifier for this LLMToolCall.
-    pub async fn id(&self) -> Result<Id, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-impl Node for LlmToolCall {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
