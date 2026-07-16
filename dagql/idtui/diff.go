@@ -3,6 +3,7 @@ package idtui
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -58,32 +59,40 @@ func renderEditDiff(profile termenv.Profile, fileName, oldText, newText string, 
 	// Pair consecutive removed/added lines for intraline highlighting.
 	paired := pairForIntraline(lines)
 
+	// Size the line-number columns to the widest line number in the diff so the
+	// gutter doesn't overflow (or misalign) once numbers reach 5+ digits.
+	maxNo := 0
+	for _, dl := range lines {
+		maxNo = max(maxNo, dl.OldNo, dl.NewNo)
+	}
+	numW := max(4, len(strconv.Itoa(maxNo)))
+
 	out := NewOutput(new(strings.Builder), termenv.WithProfile(profile))
 	var sb strings.Builder
 	for i, dl := range lines {
-		sb.WriteString(renderUnifiedLine(out, dl, paired[i], totalWidth))
+		sb.WriteString(renderUnifiedLine(out, dl, paired[i], numW, totalWidth))
 		sb.WriteByte('\n')
 	}
 	return sb.String()
 }
 
 // renderUnifiedLine renders a single unified diff line with gutter, marker,
-// and optional intraline emphasis, truncated to fit within width.
-func renderUnifiedLine(out TermOutput, dl diffLine, pair *diffLine, width int) string {
+// and optional intraline emphasis, truncated to fit within width. numW is the
+// width of each line-number column, sized to the widest line number in the diff.
+func renderUnifiedLine(out TermOutput, dl diffLine, pair *diffLine, numW, width int) string {
 	// Expand tabs to spaces so width math is correct.
 	content := expandTabs(dl.Content, diffTabWidth)
 
-	// Gutter: "NNNN NNNN " (10 chars) + marker "X " (2 chars) = 12 chars.
-	const gutterW = 12
+	// Gutter: "N…N N…N " (2*numW+2 chars) + marker "X " (2 chars).
 	var gutter string
 	if dl.OldNo > 0 && dl.NewNo > 0 {
-		gutter = fmt.Sprintf("%4d %4d ", dl.OldNo, dl.NewNo)
+		gutter = fmt.Sprintf("%*d %*d ", numW, dl.OldNo, numW, dl.NewNo)
 	} else if dl.OldNo > 0 {
-		gutter = fmt.Sprintf("%4d      ", dl.OldNo)
+		gutter = fmt.Sprintf("%*d %*s ", numW, dl.OldNo, numW, "")
 	} else if dl.NewNo > 0 {
-		gutter = fmt.Sprintf("     %4d ", dl.NewNo)
+		gutter = fmt.Sprintf("%*s %*d ", numW, "", numW, dl.NewNo)
 	} else {
-		gutter = "          "
+		gutter = strings.Repeat(" ", 2*numW+2)
 	}
 
 	var marker string
@@ -125,6 +134,7 @@ func renderUnifiedLine(out TermOutput, dl diffLine, pair *diffLine, width int) s
 		}
 	}
 
+	gutterW := ansi.StringWidth(gutter) + ansi.StringWidth(marker)
 	contentW := width - gutterW
 	if contentW < 1 {
 		contentW = 1
@@ -289,8 +299,15 @@ func addFileContext(fileName, oldText string, lines []diffLine) []diffLine {
 	}
 
 	// Append context lines from after the edit.
-	// Find the end of the old text in the file.
-	oldEndLine := fileStartLine + strings.Count(oldText, "\n") + 1 // exclusive, 0-based
+	// Find the end of the old text in the file. A trailing newline terminates
+	// the last covered line rather than starting a new one, so it must not add
+	// an extra line — otherwise the after-context starts one line too far down
+	// and silently skips a line.
+	linesCovered := strings.Count(oldText, "\n")
+	if !strings.HasSuffix(oldText, "\n") {
+		linesCovered++
+	}
+	oldEndLine := fileStartLine + linesCovered // exclusive, 0-based
 	ctxEnd := oldEndLine + diffContextLines
 	if ctxEnd > len(allFileLines) {
 		ctxEnd = len(allFileLines)

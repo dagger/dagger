@@ -2,11 +2,15 @@ package idtui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestLineLevelDiff(t *testing.T) {
@@ -168,6 +172,74 @@ func TestRenderEditDiffUnifiedFormat(t *testing.T) {
 		if len(line) < 12 {
 			t.Errorf("line %d too short: %q", i, line)
 		}
+	}
+}
+
+// TestRenderUnifiedLineWideGutter guards against the gutter overflowing the
+// terminal width once line numbers reach 5+ digits: the gutter width must be
+// derived from the actual field width (numW), not a hard-coded constant, and
+// content must be truncated to what's left over.
+func TestRenderUnifiedLineWideGutter(t *testing.T) {
+	out := NewOutput(new(strings.Builder), termenv.WithProfile(termenv.Ascii))
+
+	// A 5-digit line number widens the gutter past the old hard-coded 12.
+	dl := diffLine{
+		OldNo:   12345,
+		NewNo:   12345,
+		Kind:    diffContext,
+		Content: strings.Repeat("x", 200),
+	}
+	numW := len(strconv.Itoa(dl.OldNo)) // 5
+
+	for _, width := range []int{20, 40, 80} {
+		line := renderUnifiedLine(out, dl, nil, numW, width)
+		if w := ansi.StringWidth(line); w > width {
+			t.Errorf("width=%d: rendered width %d > %d: %q", width, w, width, line)
+		}
+		// The full line-number gutter must survive (never truncated away).
+		if !strings.Contains(line, "12345 12345") {
+			t.Errorf("width=%d: 5-digit gutter missing/truncated: %q", width, line)
+		}
+	}
+}
+
+// TestAddFileContextTrailingNewline verifies the after-context isn't shifted
+// down by one (silently skipping a line) when oldText ends in a newline.
+func TestAddFileContextTrailingNewline(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "f.txt")
+	// Lines a..g, whole file terminated by a newline.
+	if err := os.WriteFile(file, []byte("a\nb\nc\nd\ne\nf\ng\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// oldText covers lines c,d and ends with a trailing newline.
+	oldText := "c\nd\n"
+	lines := []diffLine{
+		{OldNo: 1, NewNo: 1, Kind: diffContext, Content: "c"},
+		{OldNo: 2, Kind: diffRemoved, Content: "d"},
+		{NewNo: 2, Kind: diffAdded, Content: "D"},
+	}
+
+	got := addFileContext(file, oldText, lines)
+
+	// The line immediately after the edit ("e") must appear as after-context,
+	// not be skipped. It should be numbered 5 in both columns.
+	var foundE bool
+	for _, dl := range got {
+		if dl.Kind == diffContext && dl.Content == "e" {
+			foundE = true
+			if dl.OldNo != 5 || dl.NewNo != 5 {
+				t.Errorf("line 'e' has wrong numbers: OldNo=%d NewNo=%d (want 5/5)", dl.OldNo, dl.NewNo)
+			}
+		}
+	}
+	if !foundE {
+		var contents []string
+		for _, dl := range got {
+			contents = append(contents, dl.Content)
+		}
+		t.Errorf("after-context skipped line 'e'; got lines: %q", contents)
 	}
 }
 
