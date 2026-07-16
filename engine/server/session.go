@@ -1300,6 +1300,9 @@ func (srv *Server) getOrInitClient(
 		if opts.SingleQuery {
 			client.clientMetadata.SingleQuery = true
 		}
+		if client.clientMetadata.WorkspaceModuleScope == "" {
+			client.clientMetadata.WorkspaceModuleScope = opts.WorkspaceModuleScope
+		}
 		if opts.SuppressCompatWorkspaceWarning {
 			client.clientMetadata.SuppressCompatWorkspaceWarning = true
 		}
@@ -1484,6 +1487,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var extraModules []engine.ExtraModule
 	var loadWorkspaceModules bool
 	var singleQuery bool
+	var workspaceModuleScope string
 	var eagerRuntime bool
 	var suppressCompatWorkspaceWarning bool
 	var workspaceRef *string
@@ -1494,6 +1498,10 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules
 		singleQuery = md.SingleQuery
+		// A nested CLI declares its own scope in its own request headers; the
+		// parent's scope is never inherited (the struct copy above is reset
+		// here like the other load-shaping fields).
+		workspaceModuleScope = md.WorkspaceModuleScope
 		eagerRuntime = md.EagerRuntime
 		suppressCompatWorkspaceWarning = md.SuppressCompatWorkspaceWarning
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
@@ -1512,6 +1520,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	clientMetadata.ExtraModules = extraModules
 	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
 	clientMetadata.SingleQuery = singleQuery
+	clientMetadata.WorkspaceModuleScope = workspaceModuleScope
 	clientMetadata.EagerRuntime = eagerRuntime
 	clientMetadata.SuppressCompatWorkspaceWarning = suppressCompatWorkspaceWarning
 	clientMetadata.Workspace = workspaceRef
