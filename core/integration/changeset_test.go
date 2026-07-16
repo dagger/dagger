@@ -924,6 +924,41 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		require.Equal(t, "new in subdir", newInSubdirContent)
 	})
 
+	t.Run("renamed file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// A file whose identical content moves to a new path reads as a
+		// rename to git. AsPatch shells out to `git diff --no-prefix
+		// --no-index` between the a/ and b/ mount dirs; git detects the
+		// rename and used to emit a rename entry whose "rename from"/"rename
+		// to" lines still carried the a/ b/ dirs (unlike the stripped ---/+++
+		// lines), producing a patch git apply rejected with "inconsistent old
+		// filename". Applying such a changeset must still land the rename.
+		baseDir := c.Directory().
+			WithNewFile("keep.txt", "unchanged").
+			WithNewFile("old-name.txt", "same content across the rename\n")
+
+		beforeDir := baseDir
+
+		afterDir := c.Directory().
+			WithNewFile("keep.txt", "unchanged").
+			WithNewFile("new-name.txt", "same content across the rename\n")
+
+		changes := afterDir.Changes(beforeDir)
+
+		resultDir := apply(baseDir, changes)
+
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "keep.txt")
+		require.Contains(t, entries, "new-name.txt")
+		require.NotContains(t, entries, "old-name.txt")
+
+		renamedContent, err := resultDir.File("new-name.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "same content across the rename\n", renamedContent)
+	})
+
 	t.Run("only added files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
