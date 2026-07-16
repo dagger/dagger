@@ -3,13 +3,14 @@ package schema
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+	"gotest.tools/v3/golden"
 
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/introspection/sdl"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -37,14 +38,14 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 
 	gotBytes, err := getSchemaJSON(nil, nil, baseSchemaView(), dag)
 	require.NoError(t, err)
-	got := canonicalJSON(t, gotBytes)
+	var got strings.Builder
+	sdl.Format(&got, decodeSchemaResponse(t, gotBytes).Schema)
 
-	wantBytes, err := os.ReadFile("base_schema.json")
-	require.NoError(t, err)
-	want := canonicalJSON(t, wantBytes)
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("base schema allowlist mismatch (-want +got):\n%s\nNew public APIs must be gated with View(AfterVersion(<next release version from internal/version/VERSION>)).", diff)
-	}
+	golden.Assert(t, got.String(), "base_schema.graphqls",
+		"base schema allowlist mismatch. New public APIs must be gated with "+
+			"View(AfterVersion(<next release version from internal/version/VERSION>)). "+
+			"For intentional changes to the base view, regenerate with "+
+			"`go test ./core/schema -run TestBaseSchemaAllowlist -update`.")
 }
 
 func TestSchemaJSONScrubbing(t *testing.T) {
@@ -188,16 +189,6 @@ func baseSchemaView() call.View {
 		return "v0.9.9"
 	}
 	return call.View(engine.MinimumModuleVersion)
-}
-
-func canonicalJSON(t *testing.T, data []byte) string {
-	t.Helper()
-
-	var value any
-	require.NoError(t, json.Unmarshal(data, &value))
-	formatted, err := json.MarshalIndent(value, "", "  ")
-	require.NoError(t, err)
-	return string(formatted) + "\n"
 }
 
 func TestCoreModTypeDefs(t *testing.T) {
