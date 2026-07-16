@@ -13,21 +13,20 @@
     "content": [
       {
         "kind": "TEXT",
-        "text": "I'll check the PATH environment variable in the alpine linux container by executing a command to print it."
+        "text": "I'll check the value of the PATH environment variable in the container by echoing it."
       },
       {
         "kind": "TOOL_CALL",
-        "call_id": "toolu_01HA7rStPbwd2ug1GR1hqceA",
-        "tool_name": "Container_withExec",
+        "callId": "toolu_019P7YFGHz3n2JhPAyKRTtVh",
+        "toolName": "Container_withExec",
         "arguments": "{\"self\":\"Container#1\",\"args\":[\"sh\",\"-c\",\"echo $PATH\"]}"
       }
     ],
-    "token_usage": {
-      "input_tokens": 3,
-      "output_tokens": 105,
-      "cached_token_reads": 9872,
-      "cached_token_writes": 0,
-      "total_tokens": 108
+    "tokenUsage": {
+      "inputTokens": 2,
+      "outputTokens": 115,
+      "cachedTokenReads": 12628,
+      "totalTokens": 117
     }
   },
   {
@@ -35,8 +34,8 @@
     "content": [
       {
         "kind": "TOOL_RESULT",
-        "text": "{\n  \"result\": \"Container#2\"\n}\n",
-        "call_id": "toolu_01HA7rStPbwd2ug1GR1hqceA"
+        "text": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n\n{\n  \"result\": \"Container#2\"\n}",
+        "callId": "toolu_019P7YFGHz3n2JhPAyKRTtVh"
       }
     ]
   },
@@ -45,47 +44,15 @@
     "content": [
       {
         "kind": "TEXT",
-        "text": "Now let me get the output from that command:"
-      },
-      {
-        "kind": "TOOL_CALL",
-        "call_id": "toolu_019XfxnsCEaWi93cuL5qmRhU",
-        "tool_name": "Container_stdout",
-        "arguments": "{\"self\":\"Container#2\"}"
+        "text": "The value of `PATH` in the container is:\n\n```\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n```\n\nThese are the directories the shell searches through (in order) when looking for executable commands."
       }
     ],
-    "token_usage": {
-      "input_tokens": 6,
-      "output_tokens": 66,
-      "cached_token_reads": 9872,
-      "cached_token_writes": 127,
-      "total_tokens": 72
-    }
-  },
-  {
-    "role": "USER",
-    "content": [
-      {
-        "kind": "TOOL_RESULT",
-        "text": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n",
-        "call_id": "toolu_019XfxnsCEaWi93cuL5qmRhU"
-      }
-    ]
-  },
-  {
-    "role": "ASSISTANT",
-    "content": [
-      {
-        "kind": "TEXT",
-        "text": "The value of PATH in the alpine linux container is:\n\n```\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n```\n\nThis is the standard PATH for Alpine Linux, including directories for system binaries (`/sbin`, `/bin`), user binaries (`/usr/sbin`, `/usr/bin`), and local binaries (`/usr/local/sbin`, `/usr/local/bin`)."
-      }
-    ],
-    "token_usage": {
-      "input_tokens": 6,
-      "output_tokens": 108,
-      "cached_token_reads": 9999,
-      "cached_token_writes": 105,
-      "total_tokens": 114
+    "tokenUsage": {
+      "inputTokens": 2,
+      "outputTokens": 87,
+      "cachedTokenReads": 12628,
+      "cachedTokenWrites": 177,
+      "totalTokens": 89
     }
   },
   {

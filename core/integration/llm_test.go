@@ -22,9 +22,11 @@ import (
 	"dagger.io/dagger/dag"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"gotest.tools/v3/golden"
 )
 
@@ -56,12 +58,95 @@ type LLMTestCaseFlag struct {
 	Optional bool
 }
 
-var (
-	// llm-test-module passes a prompt to LLM and sets a random string variable to bust cache
-	directCallModuleRef = "github.com/dagger/dagger-test-modules/llm-dir-module-depender/llm-test-module"
-	// llm-dir-module-depender depends on directCall module via a relative path
-	dependerModuleRef = "github.com/dagger/dagger-test-modules/llm-dir-module-depender"
+const (
+	// testModulesVersion pins github.com/dagger/dagger-test-modules, so that
+	// changes to that repo take effect only when the pin is bumped instead of
+	// immediately affecting every branch's CI. Currently the head of the
+	// dang-llm-modules branch.
+	testModulesVersion = "db684170de03c8d5cf5cb6302ce0008405c44608"
+
+	// llm-test-module prompts the LLM in the most minimal way, forked per
+	// call (via its cacheBuster argument) to bust caches
+	directCallModuleSymbolic = "github.com/dagger/dagger-test-modules/dang/llm-dir-module-depender/llm-test-module"
+	// llm-dir-module-depender depends on llm-test-module via a relative path
+	dependerModuleSymbolic = "github.com/dagger/dagger-test-modules/dang/llm-dir-module-depender"
+
+	// pinned refs for loading the modules; the allow-llm policy matches
+	// against the unpinned symbolic form
+	directCallModuleRef = directCallModuleSymbolic + "@" + testModulesVersion
+	dependerModuleRef   = dependerModuleSymbolic + "@" + testModulesVersion
 )
+
+// llmMessagesSelection selects everything a replay recording needs from a
+// conversation: the same JSON shape core.decodeReplayMessages consumes.
+const llmMessagesSelection = `role content{kind text callId toolName arguments errored signature} tokenUsage{inputTokens outputTokens cachedTokenReads cachedTokenWrites totalTokens}`
+
+type recordedTokenUsage struct {
+	InputTokens       int64 `json:"inputTokens,omitempty"`
+	OutputTokens      int64 `json:"outputTokens,omitempty"`
+	CachedTokenReads  int64 `json:"cachedTokenReads,omitempty"`
+	CachedTokenWrites int64 `json:"cachedTokenWrites,omitempty"`
+	TotalTokens       int64 `json:"totalTokens,omitempty"`
+}
+
+type recordedBlock struct {
+	Kind      string `json:"kind"`
+	Text      string `json:"text,omitempty"`
+	CallID    string `json:"callId,omitempty"`
+	ToolName  string `json:"toolName,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	Errored   bool   `json:"errored,omitempty"`
+	Signature string `json:"signature,omitempty"`
+}
+
+type recordedMessage struct {
+	Role       string              `json:"role"`
+	Content    []recordedBlock     `json:"content"`
+	TokenUsage *recordedTokenUsage `json:"tokenUsage,omitempty"`
+}
+
+// messagesGolden extracts the messages array at the given gjson path in a
+// `dagger query` result and renders it as a replay recording.
+func messagesGolden(t *testctx.T, queryOutput string, path string) []byte {
+	t.Helper()
+	raw := gjson.Get(queryOutput, path)
+	require.True(t, raw.Exists(), "path %q missing in query output:\n%s", path, queryOutput)
+	var msgs []recordedMessage
+	require.NoError(t, json.Unmarshal([]byte(raw.Raw), &msgs))
+	for i := range msgs {
+		// drop all-zero usage (prompts, tool results) for readability
+		if msgs[i].TokenUsage != nil && *msgs[i].TokenUsage == (recordedTokenUsage{}) {
+			msgs[i].TokenUsage = nil
+		}
+	}
+	data, err := json.MarshalIndent(msgs, "", "  ")
+	require.NoError(t, err)
+	return data
+}
+
+// recordMessages runs a raw GraphQL query that drives a conversation against
+// live providers and renders the messages export at the given gjson path as a
+// replay recording. The query should select messages{llmMessagesSelection}.
+func recordMessages(t *testctx.T, c *dagger.Client, query string, vars map[string]any, path string) []byte {
+	t.Helper()
+	var opts *testutil.QueryOptions
+	if vars != nil {
+		opts = &testutil.QueryOptions{Variables: vars}
+	}
+	res, err := testutil.QueryWithClient[map[string]any](c, t, query, opts)
+	require.NoError(t, err)
+	raw, err := json.Marshal(res)
+	require.NoError(t, err)
+	return messagesGolden(t, string(raw), path)
+}
+
+func writeRecording(t *testctx.T, path string, data []byte) {
+	t.Helper()
+	if dir := filepath.Dir(path); dir != "." {
+		require.NoError(t, os.MkdirAll(dir, 0755))
+	}
+	require.NoError(t, os.WriteFile(path, data, 0644))
+}
 
 func (flag LLMTestCaseFlag) ToCall() []string {
 	return []string{"--" + flag.Key, flag.Value}
@@ -104,18 +189,18 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 
 			recording := fmt.Sprintf("llmtest/%s.golden", tc.Name)
 			if golden.FlagUpdate() {
+				var args []string
+				for _, flag := range tc.Flags {
+					args = append(args, fmt.Sprintf("%s: %q", flag.Key, flag.Value))
+				}
 				out, err := ctr.
 					With(daggerForwardSecrets(c)).
-					With(daggerCallAt(".", append([]string{"save"}, flags...)...)).
+					With(daggerQueryAt(".", `{agent(%s){messages{%s}}}`,
+						strings.Join(args, ", "), llmMessagesSelection)).
 					Stdout(ctx)
 				require.NoError(t, err)
 
-				if dir := filepath.Dir(recording); dir != "." {
-					err := os.MkdirAll(dir, 0755)
-					require.NoError(t, err)
-				}
-				err = os.WriteFile(recording, []byte(out), 0644)
-				require.NoError(t, err)
+				writeRecording(t, recording, messagesGolden(t, out, "agent.messages"))
 			}
 
 			replayData, err := os.ReadFile(recording)
@@ -157,14 +242,32 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 
 	recording := "llmtest/api-limit.golden"
 	if golden.FlagUpdate() {
-		out := recordLLMConversation(t, c)
-
-		if dir := filepath.Dir(recording); dir != "." {
-			err := os.MkdirAll(dir, 0755)
-			require.NoError(t, err)
-		}
-		err := os.WriteFile(recording, out, 0644)
+		// Drive the same conversation as the shell pipeline below, minus the
+		// step limit, and export its messages as the recording.
+		ctrRes, err := testutil.QueryWithClient[struct {
+			Container struct {
+				From struct {
+					ID string
+				}
+			}
+		}](c, t, `{container{from(address:"alpine"){id}}}`, nil)
 		require.NoError(t, err)
+
+		envRes, err := testutil.QueryWithClient[struct {
+			Env struct {
+				WithContainerInput struct {
+					ID string
+				}
+			}
+		}](c, t, `query($ctr: ID!){env{withContainerInput(name:"alpine",value:$ctr,description:"an alpine linux container"){id}}}`,
+			&testutil.QueryOptions{Variables: map[string]any{"ctr": ctrRes.Container.From.ID}})
+		require.NoError(t, err)
+
+		out := recordMessages(t, c,
+			fmt.Sprintf(`query($env: ID!){llm{withEnv(env:$env){withPrompt(prompt:"tell me the value of PATH"){loop{withPrompt(prompt:"now tell me the value of TERM"){messages{%s}}}}}}}`, llmMessagesSelection),
+			map[string]any{"env": envRes.Env.WithContainerInput.ID},
+			"llm.withEnv.withPrompt.loop.withPrompt.messages")
+		writeRecording(t, recording, out)
 	}
 
 	replayData, err := os.ReadFile(recording)
@@ -177,104 +280,22 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "reached step limit: 1")
 }
 
-// recordLLMConversation drives the same conversation as TestStepLimit's shell
-// pipeline against real providers and returns the message history in the
-// snake_case JSON format the replay/ model decoder consumes. The v1 API
-// dropped historyJSON, so the recording exports structured messages over raw
-// GraphQL and re-encodes them.
-func recordLLMConversation(t *testctx.T, c *dagger.Client) []byte {
-	ctrRes, err := testutil.QueryWithClient[struct {
-		Container struct {
-			From struct {
-				ID string
-			}
-		}
-	}](c, t, `{container{from(address:"alpine"){id}}}`, nil)
-	require.NoError(t, err)
-
-	envRes, err := testutil.QueryWithClient[struct {
-		Env struct {
-			WithContainerInput struct {
-				ID string
-			}
-		}
-	}](c, t, `query($ctr: ContainerID!){env{withContainerInput(name:"alpine",value:$ctr,description:"an alpine linux container"){id}}}`,
-		&testutil.QueryOptions{Variables: map[string]any{"ctr": ctrRes.Container.From.ID}})
-	require.NoError(t, err)
-
-	type block struct {
-		Kind      string `json:"kind"`
-		Text      string `json:"text"`
-		CallID    string `json:"callId"`
-		ToolName  string `json:"toolName"`
-		Arguments string `json:"arguments"`
-		Errored   bool   `json:"errored"`
-		Signature string `json:"signature"`
-	}
-	type message struct {
-		Role    string  `json:"role"`
-		Content []block `json:"content"`
-	}
-	msgRes, err := testutil.QueryWithClient[struct {
-		Llm struct {
-			WithEnv struct {
-				WithPrompt struct {
-					Loop struct {
-						WithPrompt struct {
-							Messages []message
-						}
-					}
-				}
-			}
-		}
-	}](c, t, `query($env: EnvID!){llm{withEnv(env:$env){withPrompt(prompt:"tell me the value of PATH"){loop{withPrompt(prompt:"now tell me the value of TERM"){messages{role content{kind text callId toolName arguments errored signature}}}}}}}}`,
-		&testutil.QueryOptions{Variables: map[string]any{"env": envRes.Env.WithContainerInput.ID}})
-	require.NoError(t, err)
-
-	// Re-encode in the snake_case shape of core.LLMMessage's JSON encoding.
-	type goldenBlock struct {
-		Kind      string `json:"kind"`
-		Text      string `json:"text,omitempty"`
-		CallID    string `json:"call_id,omitempty"`
-		ToolName  string `json:"tool_name,omitempty"`
-		Arguments string `json:"arguments,omitempty"`
-		Errored   bool   `json:"errored,omitempty"`
-		Signature string `json:"signature,omitempty"`
-	}
-	type goldenMessage struct {
-		Role    string        `json:"role"`
-		Content []goldenBlock `json:"content"`
-	}
-	var out []goldenMessage
-	for _, msg := range msgRes.Llm.WithEnv.WithPrompt.Loop.WithPrompt.Messages {
-		gm := goldenMessage{Role: msg.Role}
-		for _, b := range msg.Content {
-			gm.Content = append(gm.Content, goldenBlock(b))
-		}
-		out = append(out, gm)
-	}
-	data, err := json.MarshalIndent(out, "", "  ")
-	require.NoError(t, err)
-	return data
-}
-
 func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	recording := "llmtest/allow-llm.golden"
 	if golden.FlagUpdate() {
+		// shared recording amongst subtests, they all drive the same conversation
 		out, err := daggerCliBase(t, c).
 			With(daggerForwardSecrets(c)).
-			// shared recording amongst subtests, they all do basically the same thing
-			With(daggerCallAt(directCallModuleRef, "--allow-llm=all", "save", "--string-arg", "greet me")).
+			WithExec([]string{"dagger", "query", "-m", directCallModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
+				Stdin: fmt.Sprintf(`{agent(stringArg:"greet me", cacheBuster:%q){messages{%s}}}`,
+					identity.NewID(), llmMessagesSelection),
+				ExperimentalPrivilegedNesting: true,
+			}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		if dir := filepath.Dir(recording); dir != "." {
-			err := os.MkdirAll(dir, 0755)
-			require.NoError(t, err)
-		}
-		err = os.WriteFile(recording, []byte(out), 0644)
-		require.NoError(t, err)
+		writeRecording(t, recording, messagesGolden(t, out, "agent.messages"))
 	}
 
 	replayData, err := os.ReadFile(recording)
@@ -295,7 +316,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			{
 				name:     "direct allow specific module",
 				module:   directCallModuleRef,
-				allowLLM: directCallModuleRef,
+				allowLLM: directCallModuleSymbolic,
 			},
 			{
 				name:     "depender allow all",
@@ -305,14 +326,14 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			{
 				name:     "depender allow specific module",
 				module:   dependerModuleRef,
-				allowLLM: directCallModuleRef,
+				allowLLM: directCallModuleSymbolic,
 			},
 			// we only test various permutations of remote module LLM use, local modules don't require the flag and that's covered by the toy-programmer case
 		}
 
 		for _, tc := range tcs {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-				args := []string{"--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me"}
+				args := []string{"--allow-llm", tc.allowLLM, modelFlag, "prompt", "--string-arg", "greet me", "--cache-buster", identity.NewID()}
 
 				_, err := daggerCliBase(t, c).
 					With(daggerCallAt(tc.module, args...)).
@@ -323,7 +344,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("noninteractive prompt fail", func(ctx context.Context, t *testctx.T) {
-		args := []string{modelFlag, "save", "--string-arg", t.Name()}
+		args := []string{modelFlag, "prompt", "--string-arg", t.Name(), "--cache-buster", identity.NewID()}
 
 		_, err := daggerCliBase(t, c).
 			With(daggerCallAt(directCallModuleRef, args...)).
@@ -334,7 +355,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
 			WithEnvVariable("DAGGER_ALLOW_LLM", "all").
-			With(daggerCallAt(dependerModuleRef, modelFlag, "save", "--string-arg", "greet me")).
+			With(daggerCallAt(dependerModuleRef, modelFlag, "prompt", "--string-arg", "greet me", "--cache-buster", identity.NewID())).
 			Stdout(ctx)
 		require.NoError(t, err)
 	})
@@ -342,7 +363,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "shell", "-m", dependerModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
-				Stdin:                         fmt.Sprintf(`. %s | save "greet me"`, modelFlag),
+				Stdin:                         fmt.Sprintf(`. %s | prompt "greet me" %q`, modelFlag, identity.NewID()),
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Stdout(ctx)
@@ -351,8 +372,8 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "shell", "--allow-llm", directCallModuleRef}, dagger.ContainerWithExecOpts{
-				Stdin:                         fmt.Sprintf(`%s %s | save "greet me"`, dependerModuleRef, modelFlag),
+			WithExec([]string{"dagger", "shell", "--allow-llm", directCallModuleSymbolic}, dagger.ContainerWithExecOpts{
+				Stdin:                         fmt.Sprintf(`%s %s | prompt "greet me" %q`, dependerModuleRef, modelFlag, identity.NewID()),
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Stdout(ctx)
@@ -408,13 +429,13 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			},
 			{
 				name:     "allowed depender, calling direct",
-				allowLLM: dependerModuleRef,
+				allowLLM: dependerModuleSymbolic,
 				module:   directCallModuleRef,
 			},
 			{
 				// this should prompt for the dependency
 				name:     "allowed depender, calling depender",
-				allowLLM: dependerModuleRef,
+				allowLLM: dependerModuleSymbolic,
 				module:   dependerModuleRef,
 			},
 		}
@@ -427,7 +448,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 				}
 				cmd, console := consoleDagger(
 					ctx, t,
-					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", fmt.Sprintf("greet me %d", i),
+					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "prompt", "--string-arg", fmt.Sprintf("greet me %d", i), "--cache-buster", identity.NewID(),
 				)
 				defer console.Close()
 

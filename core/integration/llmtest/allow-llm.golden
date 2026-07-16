@@ -13,15 +13,13 @@
     "content": [
       {
         "kind": "TEXT",
-        "text": "Hello! 👋 Welcome! I'm here to help you with various tools and functions. How can I assist you today?\n\nI see you have a cache-busting value provided (7b9874f3-5dc4-40ea-8e22-acb468b1dbb9), and I have access to some tools including:\n- An LLM test module\n- Log reading capabilities\n- User-provided values access\n\nIs there something specific you'd like me to help you with?"
+        "text": "Hello! 👋 How can I help you today? I'm here to assist you with reading logs or testing LLM modules. Is there something specific you'd like to do?"
       }
     ],
-    "token_usage": {
-      "input_tokens": 1024,
-      "output_tokens": 113,
-      "cached_token_reads": 0,
-      "cached_token_writes": 0,
-      "total_tokens": 1137
+    "tokenUsage": {
+      "inputTokens": 794,
+      "outputTokens": 42,
+      "totalTokens": 836
     }
   }
 ]
