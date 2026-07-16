@@ -10,7 +10,9 @@ import (
 	"testing"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/responses"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -292,6 +294,77 @@ func TestCodexAPIError(t *testing.T) {
 	// Non-API errors pass through unchanged.
 	plain := errors.New("dial tcp: timeout")
 	assert.Equal(t, plain, codexAPIError(plain))
+}
+
+// TestCodexReasoningRoundTrip covers B1: a streamed reasoning item is packed
+// into a THINKING block's Signature and reconstructed into a replayable
+// reasoning input item, while non-reasoning signatures are ignored.
+func TestCodexReasoningRoundTrip(t *testing.T) {
+	r := responses.ResponseReasoningItem{
+		ID:               "rs_123",
+		EncryptedContent: "encrypted-blob",
+		Summary: []responses.ResponseReasoningItemSummary{
+			{Text: "step one"},
+			{Text: "step two"},
+		},
+	}
+	summary, sig := encodeCodexReasoning(r)
+	assert.Equal(t, "step one\n\nstep two", summary)
+	require.NotEmpty(t, sig)
+
+	item, ok := decodeCodexReasoning(sig)
+	require.True(t, ok)
+	assert.Equal(t, "rs_123", item.ID)
+	assert.Equal(t, "encrypted-blob", item.EncryptedContent.Or(""))
+	require.Len(t, item.Summary, 2)
+	assert.Equal(t, "step one", item.Summary[0].Text)
+
+	// A signature that isn't a codex reasoning payload (e.g. an Anthropic
+	// thinking signature) is ignored rather than mis-replayed.
+	_, ok = decodeCodexReasoning("not-json-opaque-signature")
+	assert.False(t, ok)
+
+	// Without encrypted content there's nothing replayable under Store:false.
+	_, noEnc := encodeCodexReasoning(responses.ResponseReasoningItem{ID: "rs_x"})
+	_, ok = decodeCodexReasoning(noEnc)
+	assert.False(t, ok)
+}
+
+// TestCodexConvertReasoningOrder covers B1: a reasoning item is replayed
+// immediately before the function call it produced.
+func TestCodexConvertReasoningOrder(t *testing.T) {
+	_, sig := encodeCodexReasoning(responses.ResponseReasoningItem{
+		ID:               "rs_1",
+		EncryptedContent: "enc",
+	})
+	history := []*LLMMessage{
+		{Role: LLMMessageRoleUser, Content: []*LLMContentBlock{{Kind: LLMContentText, Text: "hi"}}},
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{
+			{Kind: LLMContentThinking, Signature: sig},
+			{Kind: LLMContentToolCall, CallID: "call_1", ToolName: "do_thing", Arguments: JSON(`{"x":1}`)},
+		}},
+	}
+	_, items := convertToCodexResponsesFormat(history)
+	require.Len(t, items, 3) // user message, reasoning, function call
+	assert.NotNil(t, items[0].OfMessage)
+	require.NotNil(t, items[1].OfReasoning)
+	assert.Equal(t, "rs_1", items[1].OfReasoning.ID)
+	require.NotNil(t, items[2].OfFunctionCall)
+	assert.Equal(t, "call_1", items[2].OfFunctionCall.CallID)
+}
+
+// TestCodexConvertEmptyToolArgs covers B2: an empty tool-arguments string is
+// normalized to "{}" on the outbound request.
+func TestCodexConvertEmptyToolArgs(t *testing.T) {
+	history := []*LLMMessage{
+		{Role: LLMMessageRoleAssistant, Content: []*LLMContentBlock{
+			{Kind: LLMContentToolCall, CallID: "c1", ToolName: "noargs"},
+		}},
+	}
+	_, items := convertToCodexResponsesFormat(history)
+	require.Len(t, items, 1)
+	require.NotNil(t, items[0].OfFunctionCall)
+	assert.Equal(t, "{}", items[0].OfFunctionCall.Arguments)
 }
 
 func TestLlmConfigDisableStreaming(t *testing.T) {

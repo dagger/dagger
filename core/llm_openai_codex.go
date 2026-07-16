@@ -108,6 +108,13 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 			OfInputItemList: inputItems,
 		},
 		Store: param.NewOpt(false),
+		// Return the encrypted reasoning chain so it can be replayed on the next
+		// turn. With Store:false the server keeps no state, so a reasoning model
+		// (e.g. gpt-5-codex) would otherwise reject a function call replayed
+		// without the reasoning item that produced it.
+		Include: []responses.ResponseIncludable{
+			responses.ResponseIncludableReasoningEncryptedContent,
+		},
 	}
 	if len(toolParams) > 0 {
 		params.Tools = toolParams
@@ -133,6 +140,10 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	var contentBlocks []*LLMContentBlock
 	var usage LLMTokenUsage
 	var toolIdx int64
+	// Reasoning summary display spans use negative indices so they never
+	// collide with the text (0) or tool-call (1+) phases.
+	var reasonIdx int64
+	var hasReasoning bool
 
 	for stream.Next() {
 		event := stream.Current()
@@ -145,7 +156,8 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 
 		case "response.output_item.done":
 			e := event.AsResponseOutputItemDone()
-			if e.Item.Type == "function_call" {
+			switch e.Item.Type {
+			case "function_call":
 				fc := e.Item.AsFunctionCall()
 				contentBlocks = append(contentBlocks, &LLMContentBlock{
 					Kind:      LLMContentToolCall,
@@ -155,6 +167,26 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 				})
 				toolIdx++
 				dp.EmitToolCall(toolIdx, fc.CallID, fc.Name, fc.Arguments)
+			case "reasoning":
+				// Capture the reasoning item (its id, encrypted content, and
+				// summary) so it can be replayed before the function call it
+				// produced. It's appended in stream order, so it precedes that
+				// call. The opaque data is stashed in a THINKING block's
+				// Signature; the summary text (if any) is human-readable.
+				r := e.Item.AsReasoning()
+				summary, sig := encodeCodexReasoning(r)
+				contentBlocks = append(contentBlocks, &LLMContentBlock{
+					Kind:      LLMContentThinking,
+					Text:      summary,
+					Signature: sig,
+				})
+				hasReasoning = true
+				if summary != "" {
+					reasonIdx--
+					p := dp.StartThinking(reasonIdx)
+					fmt.Fprint(p.Stdio.Stdout, summary)
+					dp.Close(reasonIdx)
+				}
 			}
 
 		case "response.completed":
@@ -193,12 +225,21 @@ func (c *OpenAICodexClient) SendQuery(ctx context.Context, history []*LLMMessage
 	// Close the streamed text response phase (if any).
 	dp.Close(0)
 
-	// Prepend text content block if we got any text
+	// Add the text answer as a content block. When there's reasoning, it must
+	// come after the reasoning/tool-call blocks: the Responses API requires each
+	// reasoning item to be immediately followed by the item it produced, so a
+	// leading text block would strand a reasoning item on replay. Without
+	// reasoning, keep the text ahead of any tool calls (unchanged behavior).
 	if content.Len() > 0 {
-		contentBlocks = append([]*LLMContentBlock{{
+		textBlock := &LLMContentBlock{
 			Kind: LLMContentText,
 			Text: content.String(),
-		}}, contentBlocks...)
+		}
+		if hasReasoning {
+			contentBlocks = append(contentBlocks, textBlock)
+		} else {
+			contentBlocks = append([]*LLMContentBlock{textBlock}, contentBlocks...)
+		}
 	}
 
 	if len(contentBlocks) == 0 {
@@ -255,33 +296,110 @@ func convertToCodexResponsesFormat(history []*LLMMessage) (systemPrompt string, 
 			}
 
 		case LLMMessageRoleAssistant:
-			// Add text content
-			text := msg.TextContent()
-			if text != "" {
-				items = append(items, responses.ResponseInputItemUnionParam{
-					OfMessage: &responses.EasyInputMessageParam{
-						Role: responses.EasyInputMessageRoleAssistant,
-						Content: responses.EasyInputMessageContentUnionParam{
-							OfString: param.NewOpt(text),
+			// Emit blocks in their stored order so a reasoning item precedes the
+			// function call it produced, as the Responses API requires when the
+			// reasoning chain is replayed (Store:false).
+			for _, block := range msg.Content {
+				switch block.Kind {
+				case LLMContentText:
+					if block.Text != "" {
+						items = append(items, responses.ResponseInputItemUnionParam{
+							OfMessage: &responses.EasyInputMessageParam{
+								Role: responses.EasyInputMessageRoleAssistant,
+								Content: responses.EasyInputMessageContentUnionParam{
+									OfString: param.NewOpt(block.Text),
+								},
+							},
+						})
+					}
+				case LLMContentThinking:
+					// Replay a captured reasoning item ahead of its function call.
+					// Only when we have its encrypted content: with Store:false a
+					// bare id references server state that no longer exists.
+					if reasoning, ok := decodeCodexReasoning(block.Signature); ok {
+						items = append(items, responses.ResponseInputItemUnionParam{
+							OfReasoning: reasoning,
+						})
+					}
+				case LLMContentToolCall:
+					// The Responses API rejects an empty arguments string;
+					// normalize it to an empty JSON object, mirroring the chat path.
+					args := block.Arguments.String()
+					if args == "" {
+						args = "{}"
+					}
+					items = append(items, responses.ResponseInputItemUnionParam{
+						OfFunctionCall: &responses.ResponseFunctionToolCallParam{
+							CallID:    block.CallID,
+							Name:      block.ToolName,
+							Arguments: args,
 						},
-					},
-				})
-			}
-			// Add tool calls as function_call items
-			for _, block := range msg.ToolCalls() {
-				items = append(items, responses.ResponseInputItemUnionParam{
-					OfFunctionCall: &responses.ResponseFunctionToolCallParam{
-						CallID:    block.CallID,
-						Name:      block.ToolName,
-						Arguments: block.Arguments.String(),
-					},
-				})
+					})
+				}
 			}
 		}
 	}
 
 	systemPrompt = strings.Join(systemParts, "\n\n")
 	return systemPrompt, items
+}
+
+// codexReasoning is the opaque data stashed in a THINKING block's Signature so a
+// Responses API reasoning item can be round-tripped across turns. Codex requests
+// use Store:false, so the server keeps no state and the reasoning item's id +
+// encrypted content must be carried in the history and replayed verbatim.
+type codexReasoning struct {
+	ID               string   `json:"id"`
+	EncryptedContent string   `json:"encrypted_content,omitempty"`
+	Summary          []string `json:"summary,omitempty"`
+}
+
+// encodeCodexReasoning converts a streamed reasoning item into a human-readable
+// summary (for display) and an opaque signature (for replay).
+func encodeCodexReasoning(r responses.ResponseReasoningItem) (summary string, signature string) {
+	cr := codexReasoning{
+		ID:               r.ID,
+		EncryptedContent: r.EncryptedContent,
+	}
+	var parts []string
+	for _, s := range r.Summary {
+		cr.Summary = append(cr.Summary, s.Text)
+		if s.Text != "" {
+			parts = append(parts, s.Text)
+		}
+	}
+	data, err := json.Marshal(cr)
+	if err != nil {
+		return strings.Join(parts, "\n\n"), ""
+	}
+	return strings.Join(parts, "\n\n"), string(data)
+}
+
+// decodeCodexReasoning reconstructs a reasoning input item from a THINKING
+// block's Signature. It returns ok=false when the signature isn't a codex
+// reasoning payload (e.g. another provider's thinking signature) or lacks the
+// encrypted content required to replay it under Store:false.
+func decodeCodexReasoning(signature string) (*responses.ResponseReasoningItemParam, bool) {
+	if signature == "" {
+		return nil, false
+	}
+	var cr codexReasoning
+	if err := json.Unmarshal([]byte(signature), &cr); err != nil {
+		return nil, false
+	}
+	if cr.ID == "" || cr.EncryptedContent == "" {
+		return nil, false
+	}
+	item := &responses.ResponseReasoningItemParam{
+		ID:               cr.ID,
+		EncryptedContent: param.NewOpt(cr.EncryptedContent),
+		// Summary is required by the API but may be empty.
+		Summary: []responses.ResponseReasoningItemSummaryParam{},
+	}
+	for _, s := range cr.Summary {
+		item.Summary = append(item.Summary, responses.ResponseReasoningItemSummaryParam{Text: s})
+	}
+	return item, true
 }
 
 // codexAPIError turns an opaque openai-go API error into one that surfaces the
