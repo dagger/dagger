@@ -700,288 +700,9 @@ class Address(Type):
 
 
 @typecheck
-class Binding(Type):
-    def as_address(self) -> Address:
-        """Retrieve the binding value, as type Address"""
-        _args: list[Arg] = []
-        _ctx = self._select("asAddress", _args)
-        return Address(_ctx)
-
-    def as_cache_volume(self) -> "CacheVolume":
-        """Retrieve the binding value, as type CacheVolume"""
-        _args: list[Arg] = []
-        _ctx = self._select("asCacheVolume", _args)
-        return CacheVolume(_ctx)
-
-    def as_changeset(self) -> "Changeset":
-        """Retrieve the binding value, as type Changeset"""
-        _args: list[Arg] = []
-        _ctx = self._select("asChangeset", _args)
-        return Changeset(_ctx)
-
-    def as_check(self) -> "Check":
-        """Retrieve the binding value, as type Check"""
-        _args: list[Arg] = []
-        _ctx = self._select("asCheck", _args)
-        return Check(_ctx)
-
-    def as_check_group(self) -> "CheckGroup":
-        """Retrieve the binding value, as type CheckGroup"""
-        _args: list[Arg] = []
-        _ctx = self._select("asCheckGroup", _args)
-        return CheckGroup(_ctx)
-
-    def as_cloud(self) -> "Cloud":
-        """Retrieve the binding value, as type Cloud"""
-        _args: list[Arg] = []
-        _ctx = self._select("asCloud", _args)
-        return Cloud(_ctx)
-
-    def as_container(self) -> "Container":
-        """Retrieve the binding value, as type Container"""
-        _args: list[Arg] = []
-        _ctx = self._select("asContainer", _args)
-        return Container(_ctx)
-
-    def as_current_module_as_sdk(self) -> "CurrentModuleAsSDK":
-        """Retrieve the binding value, as type CurrentModuleAsSDK"""
-        _args: list[Arg] = []
-        _ctx = self._select("asCurrentModuleAsSDK", _args)
-        return CurrentModuleAsSDK(_ctx)
-
-    def as_current_module_as_sdk_client(self) -> "CurrentModuleAsSDKClient":
-        """Retrieve the binding value, as type CurrentModuleAsSDKClient"""
-        _args: list[Arg] = []
-        _ctx = self._select("asCurrentModuleAsSDKClient", _args)
-        return CurrentModuleAsSDKClient(_ctx)
-
-    def as_current_module_as_sdk_module(self) -> "CurrentModuleAsSDKModule":
-        """Retrieve the binding value, as type CurrentModuleAsSDKModule"""
-        _args: list[Arg] = []
-        _ctx = self._select("asCurrentModuleAsSDKModule", _args)
-        return CurrentModuleAsSDKModule(_ctx)
-
-    def as_diff_stat(self) -> "DiffStat":
-        """Retrieve the binding value, as type DiffStat"""
-        _args: list[Arg] = []
-        _ctx = self._select("asDiffStat", _args)
-        return DiffStat(_ctx)
-
-    def as_directory(self) -> "Directory":
-        """Retrieve the binding value, as type Directory"""
-        _args: list[Arg] = []
-        _ctx = self._select("asDirectory", _args)
-        return Directory(_ctx)
-
-    def as_env(self) -> "Env":
-        """Retrieve the binding value, as type Env"""
-        _args: list[Arg] = []
-        _ctx = self._select("asEnv", _args)
-        return Env(_ctx)
-
-    def as_env_file(self) -> "EnvFile":
-        """Retrieve the binding value, as type EnvFile"""
-        _args: list[Arg] = []
-        _ctx = self._select("asEnvFile", _args)
-        return EnvFile(_ctx)
-
-    def as_file(self) -> "File":
-        """Retrieve the binding value, as type File"""
-        _args: list[Arg] = []
-        _ctx = self._select("asFile", _args)
-        return File(_ctx)
-
-    def as_generator(self) -> "Generator":
-        """Retrieve the binding value, as type Generator"""
-        _args: list[Arg] = []
-        _ctx = self._select("asGenerator", _args)
-        return Generator(_ctx)
-
-    def as_generator_group(self) -> "GeneratorGroup":
-        """Retrieve the binding value, as type GeneratorGroup"""
-        _args: list[Arg] = []
-        _ctx = self._select("asGeneratorGroup", _args)
-        return GeneratorGroup(_ctx)
-
-    def as_git_ref(self) -> "GitRef":
-        """Retrieve the binding value, as type GitRef"""
-        _args: list[Arg] = []
-        _ctx = self._select("asGitRef", _args)
-        return GitRef(_ctx)
-
-    def as_git_repository(self) -> "GitRepository":
-        """Retrieve the binding value, as type GitRepository"""
-        _args: list[Arg] = []
-        _ctx = self._select("asGitRepository", _args)
-        return GitRepository(_ctx)
-
-    def as_http_state(self) -> "HTTPState":
-        """Retrieve the binding value, as type HTTPState"""
-        _args: list[Arg] = []
-        _ctx = self._select("asHTTPState", _args)
-        return HTTPState(_ctx)
-
-    def as_json_value(self) -> "JSONValue":
-        """Retrieve the binding value, as type JSONValue"""
-        _args: list[Arg] = []
-        _ctx = self._select("asJSONValue", _args)
-        return JSONValue(_ctx)
-
-    def as_llm_content_block(self) -> "LLMContentBlock":
-        """Retrieve the binding value, as type LLMContentBlock"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLMContentBlock", _args)
-        return LLMContentBlock(_ctx)
-
-    def as_llm_message(self) -> "LLMMessage":
-        """Retrieve the binding value, as type LLMMessage"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLMMessage", _args)
-        return LLMMessage(_ctx)
-
-    def as_module(self) -> "Module":
-        """Retrieve the binding value, as type Module"""
-        _args: list[Arg] = []
-        _ctx = self._select("asModule", _args)
-        return Module(_ctx)
-
-    def as_module_config_client(self) -> "ModuleConfigClient":
-        """Retrieve the binding value, as type ModuleConfigClient"""
-        _args: list[Arg] = []
-        _ctx = self._select("asModuleConfigClient", _args)
-        return ModuleConfigClient(_ctx)
-
-    def as_module_source(self) -> "ModuleSource":
-        """Retrieve the binding value, as type ModuleSource"""
-        _args: list[Arg] = []
-        _ctx = self._select("asModuleSource", _args)
-        return ModuleSource(_ctx)
-
-    def as_schema(self) -> "Schema":
-        """Retrieve the binding value, as type Schema"""
-        _args: list[Arg] = []
-        _ctx = self._select("asSchema", _args)
-        return Schema(_ctx)
-
-    def as_search_result(self) -> "SearchResult":
-        """Retrieve the binding value, as type SearchResult"""
-        _args: list[Arg] = []
-        _ctx = self._select("asSearchResult", _args)
-        return SearchResult(_ctx)
-
-    def as_search_submatch(self) -> "SearchSubmatch":
-        """Retrieve the binding value, as type SearchSubmatch"""
-        _args: list[Arg] = []
-        _ctx = self._select("asSearchSubmatch", _args)
-        return SearchSubmatch(_ctx)
-
-    def as_secret(self) -> "Secret":
-        """Retrieve the binding value, as type Secret"""
-        _args: list[Arg] = []
-        _ctx = self._select("asSecret", _args)
-        return Secret(_ctx)
-
-    def as_service(self) -> "Service":
-        """Retrieve the binding value, as type Service"""
-        _args: list[Arg] = []
-        _ctx = self._select("asService", _args)
-        return Service(_ctx)
-
-    def as_socket(self) -> "Socket":
-        """Retrieve the binding value, as type Socket"""
-        _args: list[Arg] = []
-        _ctx = self._select("asSocket", _args)
-        return Socket(_ctx)
-
-    def as_stat(self) -> "Stat":
-        """Retrieve the binding value, as type Stat"""
-        _args: list[Arg] = []
-        _ctx = self._select("asStat", _args)
-        return Stat(_ctx)
-
-    async def as_string(self) -> str | None:
-        """Returns the binding's string value
-
-        Returns
-        -------
-        str | None
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("asString", _args)
-        return await _ctx.execute(str | None)
-
-    def as_up(self) -> "Up":
-        """Retrieve the binding value, as type Up"""
-        _args: list[Arg] = []
-        _ctx = self._select("asUp", _args)
-        return Up(_ctx)
-
-    def as_up_group(self) -> "UpGroup":
-        """Retrieve the binding value, as type UpGroup"""
-        _args: list[Arg] = []
-        _ctx = self._select("asUpGroup", _args)
-        return UpGroup(_ctx)
-
-    def as_volume(self) -> "Volume":
-        """Retrieve the binding value, as type Volume"""
-        _args: list[Arg] = []
-        _ctx = self._select("asVolume", _args)
-        return Volume(_ctx)
-
-    def as_workspace(self) -> "Workspace":
-        """Retrieve the binding value, as type Workspace"""
-        _args: list[Arg] = []
-        _ctx = self._select("asWorkspace", _args)
-        return Workspace(_ctx)
-
-    def as_workspace_git(self) -> "WorkspaceGit":
-        """Retrieve the binding value, as type WorkspaceGit"""
-        _args: list[Arg] = []
-        _ctx = self._select("asWorkspaceGit", _args)
-        return WorkspaceGit(_ctx)
-
-    def as_workspace_migration(self) -> "WorkspaceMigration":
-        """Retrieve the binding value, as type WorkspaceMigration"""
-        _args: list[Arg] = []
-        _ctx = self._select("asWorkspaceMigration", _args)
-        return WorkspaceMigration(_ctx)
-
-    def as_workspace_migration_step(self) -> "WorkspaceMigrationStep":
-        """Retrieve the binding value, as type WorkspaceMigrationStep"""
-        _args: list[Arg] = []
-        _ctx = self._select("asWorkspaceMigrationStep", _args)
-        return WorkspaceMigrationStep(_ctx)
-
-    def as_workspace_module(self) -> "WorkspaceModule":
-        """Retrieve the binding value, as type WorkspaceModule"""
-        _args: list[Arg] = []
-        _ctx = self._select("asWorkspaceModule", _args)
-        return WorkspaceModule(_ctx)
-
-    def as_workspace_module_setting(self) -> "WorkspaceModuleSetting":
-        """Retrieve the binding value, as type WorkspaceModuleSetting"""
-        _args: list[Arg] = []
-        _ctx = self._select("asWorkspaceModuleSetting", _args)
-        return WorkspaceModuleSetting(_ctx)
-
-    def as_workspace_sdk(self) -> "WorkspaceSDK":
-        """Retrieve the binding value, as type WorkspaceSDK"""
-        _args: list[Arg] = []
-        _ctx = self._select("asWorkspaceSDK", _args)
-        return WorkspaceSDK(_ctx)
-
-    async def digest(self) -> str:
-        """Returns the digest of the binding value
+class Agent(Type):
+    async def description(self) -> str:
+        """The description of the agent
 
         Returns
         -------
@@ -998,11 +719,11 @@ class Binding(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("digest", _args)
+        _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
     async def id(self) -> str:
-        """A unique identifier for this Binding.
+        """A unique identifier for this Agent.
 
         Note
         ----
@@ -1029,27 +750,8 @@ class Binding(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def is_null(self) -> bool:
-        """Returns true if the binding is null
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("isNull", _args)
-        return await _ctx.execute(bool)
-
     async def name(self) -> str:
-        """Returns the binding name
+        """Return the fully qualified name of the agent
 
         Returns
         -------
@@ -1069,12 +771,18 @@ class Binding(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
-    async def type_name(self) -> str:
-        """Returns the binding type
+    def original_module(self) -> "Module":
+        """The original module in which the agent has been defined"""
+        _args: list[Arg] = []
+        _ctx = self._select("originalModule", _args)
+        return Module(_ctx)
+
+    async def path(self) -> list[str]:
+        """The path of the agent within its module
 
         Returns
         -------
-        str
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -1087,8 +795,61 @@ class Binding(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("typeName", _args)
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+
+@typecheck
+class AgentGroup(Type):
+    def compose(self, *, base: "LLM | None" = None) -> "LLM":
+        """Compose all selected agent middlewares onto a base LLM, in
+        alphabetical module:fn order, and return the composed LLM.
+
+        Parameters
+        ----------
+        base:
+            The base LLM to compose onto. Defaults to a fresh workspace-bound
+            LLM.
+        """
+        _args = [
+            Arg("base", base, None),
+        ]
+        _ctx = self._select("compose", _args)
+        return LLM(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this AgentGroup.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
         return await _ctx.execute(str)
+
+    async def list_(self) -> list[Agent]:
+        """Return a list of individual agents and their details"""
+        _args: list[Arg] = []
+        _ctx = self._select("list", _args)
+        return await _ctx.execute_object_list(Agent)
 
 
 @typecheck
@@ -6264,2085 +6025,6 @@ class EnumValueTypeDef(Type):
 
 
 @typecheck
-class Env(Type):
-    def check(self, name: str) -> Check:
-        """Return the check with the given name from the installed modules. Must
-        match exactly one check.
-
-        .. caution::
-            Experimental: Checks API is highly experimental and may be removed
-            or replaced entirely.
-
-        Parameters
-        ----------
-        name:
-            The name of the check to retrieve
-        """
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("check", _args)
-        return Check(_ctx)
-
-    def checks(
-        self,
-        *,
-        include: list[str] | None = None,
-        no_generate: bool | None = None,
-    ) -> CheckGroup:
-        """Return all checks defined by the installed modules
-
-        .. caution::
-            Experimental: Checks API is highly experimental and may be removed
-            or replaced entirely.
-
-        Parameters
-        ----------
-        include:
-            Only include checks matching the specified patterns
-        no_generate:
-            When true, only return annotated check functions; exclude
-            generate-as-checks
-        """
-        _args = [
-            Arg("include", include, None),
-            Arg("noGenerate", no_generate, None),
-        ]
-        _ctx = self._select("checks", _args)
-        return CheckGroup(_ctx)
-
-    async def id(self) -> str:
-        """A unique identifier for this Env.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(str)
-
-    def input(self, name: str) -> Binding:
-        """Retrieves an input binding by name"""
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("input", _args)
-        return Binding(_ctx)
-
-    async def inputs(self) -> list[Binding]:
-        """Returns all input bindings provided to the environment"""
-        _args: list[Arg] = []
-        _ctx = self._select("inputs", _args)
-        return await _ctx.execute_object_list(Binding)
-
-    def output(self, name: str) -> Binding:
-        """Retrieves an output binding by name"""
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("output", _args)
-        return Binding(_ctx)
-
-    async def outputs(self) -> list[Binding]:
-        """Returns all declared output bindings for the environment"""
-        _args: list[Arg] = []
-        _ctx = self._select("outputs", _args)
-        return await _ctx.execute_object_list(Binding)
-
-    def services(
-        self,
-        *,
-        include: list[str] | None = None,
-    ) -> "UpGroup":
-        """Return all services defined by the installed modules
-
-        .. caution::
-            Experimental: Services API is highly experimental and may be
-            removed or replaced entirely.
-
-        Parameters
-        ----------
-        include:
-            Only include services matching the specified patterns
-        """
-        _args = [
-            Arg("include", include, None),
-        ]
-        _ctx = self._select("services", _args)
-        return UpGroup(_ctx)
-
-    def with_address_input(
-        self,
-        name: str,
-        value: Address,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Address in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Address value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withAddressInput", _args)
-        return Env(_ctx)
-
-    def with_address_output(self, name: str, description: str) -> Self:
-        """Declare a desired Address output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withAddressOutput", _args)
-        return Env(_ctx)
-
-    def with_cache_volume_input(
-        self,
-        name: str,
-        value: CacheVolume,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type CacheVolume in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The CacheVolume value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCacheVolumeInput", _args)
-        return Env(_ctx)
-
-    def with_cache_volume_output(self, name: str, description: str) -> Self:
-        """Declare a desired CacheVolume output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCacheVolumeOutput", _args)
-        return Env(_ctx)
-
-    def with_changeset_input(
-        self,
-        name: str,
-        value: Changeset,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Changeset in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Changeset value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withChangesetInput", _args)
-        return Env(_ctx)
-
-    def with_changeset_output(self, name: str, description: str) -> Self:
-        """Declare a desired Changeset output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withChangesetOutput", _args)
-        return Env(_ctx)
-
-    def with_check_group_input(
-        self,
-        name: str,
-        value: CheckGroup,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type CheckGroup in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The CheckGroup value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCheckGroupInput", _args)
-        return Env(_ctx)
-
-    def with_check_group_output(self, name: str, description: str) -> Self:
-        """Declare a desired CheckGroup output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCheckGroupOutput", _args)
-        return Env(_ctx)
-
-    def with_check_input(
-        self,
-        name: str,
-        value: Check,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Check in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Check value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCheckInput", _args)
-        return Env(_ctx)
-
-    def with_check_output(self, name: str, description: str) -> Self:
-        """Declare a desired Check output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCheckOutput", _args)
-        return Env(_ctx)
-
-    def with_cloud_input(
-        self,
-        name: str,
-        value: Cloud,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Cloud in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Cloud value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCloudInput", _args)
-        return Env(_ctx)
-
-    def with_cloud_output(self, name: str, description: str) -> Self:
-        """Declare a desired Cloud output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCloudOutput", _args)
-        return Env(_ctx)
-
-    def with_container_input(
-        self,
-        name: str,
-        value: Container,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Container in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Container value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withContainerInput", _args)
-        return Env(_ctx)
-
-    def with_container_output(self, name: str, description: str) -> Self:
-        """Declare a desired Container output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withContainerOutput", _args)
-        return Env(_ctx)
-
-    def with_current_module(self) -> Self:
-        """Installs the current module into the environment, exposing its
-        functions to the model
-
-        Contextual path arguments will be populated using the environment's
-        workspace.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("withCurrentModule", _args)
-        return Env(_ctx)
-
-    def with_current_module_as_sdk_client_input(
-        self,
-        name: str,
-        value: CurrentModuleAsSDKClient,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type CurrentModuleAsSDKClient in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The CurrentModuleAsSDKClient value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCurrentModuleAsSDKClientInput", _args)
-        return Env(_ctx)
-
-    def with_current_module_as_sdk_client_output(
-        self, name: str, description: str
-    ) -> Self:
-        """Declare a desired CurrentModuleAsSDKClient output to be assigned in
-        the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCurrentModuleAsSDKClientOutput", _args)
-        return Env(_ctx)
-
-    def with_current_module_as_sdk_input(
-        self,
-        name: str,
-        value: CurrentModuleAsSDK,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type CurrentModuleAsSDK in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The CurrentModuleAsSDK value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCurrentModuleAsSDKInput", _args)
-        return Env(_ctx)
-
-    def with_current_module_as_sdk_module_input(
-        self,
-        name: str,
-        value: CurrentModuleAsSDKModule,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type CurrentModuleAsSDKModule in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The CurrentModuleAsSDKModule value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCurrentModuleAsSDKModuleInput", _args)
-        return Env(_ctx)
-
-    def with_current_module_as_sdk_module_output(
-        self, name: str, description: str
-    ) -> Self:
-        """Declare a desired CurrentModuleAsSDKModule output to be assigned in
-        the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCurrentModuleAsSDKModuleOutput", _args)
-        return Env(_ctx)
-
-    def with_current_module_as_sdk_output(self, name: str, description: str) -> Self:
-        """Declare a desired CurrentModuleAsSDK output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCurrentModuleAsSDKOutput", _args)
-        return Env(_ctx)
-
-    def with_diff_stat_input(
-        self,
-        name: str,
-        value: DiffStat,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type DiffStat in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The DiffStat value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withDiffStatInput", _args)
-        return Env(_ctx)
-
-    def with_diff_stat_output(self, name: str, description: str) -> Self:
-        """Declare a desired DiffStat output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withDiffStatOutput", _args)
-        return Env(_ctx)
-
-    def with_directory_input(
-        self,
-        name: str,
-        value: Directory,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Directory in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Directory value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withDirectoryInput", _args)
-        return Env(_ctx)
-
-    def with_directory_output(self, name: str, description: str) -> Self:
-        """Declare a desired Directory output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withDirectoryOutput", _args)
-        return Env(_ctx)
-
-    def with_env_file_input(
-        self,
-        name: str,
-        value: "EnvFile",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type EnvFile in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The EnvFile value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withEnvFileInput", _args)
-        return Env(_ctx)
-
-    def with_env_file_output(self, name: str, description: str) -> Self:
-        """Declare a desired EnvFile output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withEnvFileOutput", _args)
-        return Env(_ctx)
-
-    def with_env_input(
-        self,
-        name: str,
-        value: Self,
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Env in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Env value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withEnvInput", _args)
-        return Env(_ctx)
-
-    def with_env_output(self, name: str, description: str) -> Self:
-        """Declare a desired Env output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withEnvOutput", _args)
-        return Env(_ctx)
-
-    def with_file_input(
-        self,
-        name: str,
-        value: "File",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type File in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The File value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withFileInput", _args)
-        return Env(_ctx)
-
-    def with_file_output(self, name: str, description: str) -> Self:
-        """Declare a desired File output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withFileOutput", _args)
-        return Env(_ctx)
-
-    def with_generator_group_input(
-        self,
-        name: str,
-        value: "GeneratorGroup",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type GeneratorGroup in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The GeneratorGroup value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withGeneratorGroupInput", _args)
-        return Env(_ctx)
-
-    def with_generator_group_output(self, name: str, description: str) -> Self:
-        """Declare a desired GeneratorGroup output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withGeneratorGroupOutput", _args)
-        return Env(_ctx)
-
-    def with_generator_input(
-        self,
-        name: str,
-        value: "Generator",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Generator in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Generator value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withGeneratorInput", _args)
-        return Env(_ctx)
-
-    def with_generator_output(self, name: str, description: str) -> Self:
-        """Declare a desired Generator output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withGeneratorOutput", _args)
-        return Env(_ctx)
-
-    def with_git_ref_input(
-        self,
-        name: str,
-        value: "GitRef",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type GitRef in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The GitRef value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withGitRefInput", _args)
-        return Env(_ctx)
-
-    def with_git_ref_output(self, name: str, description: str) -> Self:
-        """Declare a desired GitRef output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withGitRefOutput", _args)
-        return Env(_ctx)
-
-    def with_git_repository_input(
-        self,
-        name: str,
-        value: "GitRepository",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type GitRepository in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The GitRepository value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withGitRepositoryInput", _args)
-        return Env(_ctx)
-
-    def with_git_repository_output(self, name: str, description: str) -> Self:
-        """Declare a desired GitRepository output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withGitRepositoryOutput", _args)
-        return Env(_ctx)
-
-    def with_http_state_input(
-        self,
-        name: str,
-        value: "HTTPState",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type HTTPState in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The HTTPState value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withHTTPStateInput", _args)
-        return Env(_ctx)
-
-    def with_http_state_output(self, name: str, description: str) -> Self:
-        """Declare a desired HTTPState output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withHTTPStateOutput", _args)
-        return Env(_ctx)
-
-    def with_json_value_input(
-        self,
-        name: str,
-        value: "JSONValue",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type JSONValue in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The JSONValue value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withJSONValueInput", _args)
-        return Env(_ctx)
-
-    def with_json_value_output(self, name: str, description: str) -> Self:
-        """Declare a desired JSONValue output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withJSONValueOutput", _args)
-        return Env(_ctx)
-
-    def with_llm_content_block_input(
-        self,
-        name: str,
-        value: "LLMContentBlock",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLMContentBlock in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLMContentBlock value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMContentBlockInput", _args)
-        return Env(_ctx)
-
-    def with_llm_content_block_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLMContentBlock output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMContentBlockOutput", _args)
-        return Env(_ctx)
-
-    def with_llm_message_input(
-        self,
-        name: str,
-        value: "LLMMessage",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLMMessage in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLMMessage value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMMessageInput", _args)
-        return Env(_ctx)
-
-    def with_llm_message_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLMMessage output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMMessageOutput", _args)
-        return Env(_ctx)
-
-    def with_main_module(self, module: "Module") -> Self:
-        """Sets the main module for this environment (the project being worked
-        on)
-
-        Contextual path arguments will be populated using the environment's
-        workspace.
-        """
-        _args = [
-            Arg("module", module),
-        ]
-        _ctx = self._select("withMainModule", _args)
-        return Env(_ctx)
-
-    def with_module(self, module: "Module") -> Self:
-        """Installs a module into the environment, exposing its functions to the
-        model
-
-        Contextual path arguments will be populated using the environment's
-        workspace.
-
-        .. deprecated::
-            Use withMainModule instead
-        """
-        warnings.warn(
-            'Method "with_module" is deprecated: Use withMainModule instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args = [
-            Arg("module", module),
-        ]
-        _ctx = self._select("withModule", _args)
-        return Env(_ctx)
-
-    def with_module_config_client_input(
-        self,
-        name: str,
-        value: "ModuleConfigClient",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type ModuleConfigClient in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The ModuleConfigClient value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withModuleConfigClientInput", _args)
-        return Env(_ctx)
-
-    def with_module_config_client_output(self, name: str, description: str) -> Self:
-        """Declare a desired ModuleConfigClient output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withModuleConfigClientOutput", _args)
-        return Env(_ctx)
-
-    def with_module_input(
-        self,
-        name: str,
-        value: "Module",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Module in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Module value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withModuleInput", _args)
-        return Env(_ctx)
-
-    def with_module_output(self, name: str, description: str) -> Self:
-        """Declare a desired Module output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withModuleOutput", _args)
-        return Env(_ctx)
-
-    def with_module_source_input(
-        self,
-        name: str,
-        value: "ModuleSource",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type ModuleSource in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The ModuleSource value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withModuleSourceInput", _args)
-        return Env(_ctx)
-
-    def with_module_source_output(self, name: str, description: str) -> Self:
-        """Declare a desired ModuleSource output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withModuleSourceOutput", _args)
-        return Env(_ctx)
-
-    def with_schema_input(
-        self,
-        name: str,
-        value: "Schema",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Schema in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Schema value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSchemaInput", _args)
-        return Env(_ctx)
-
-    def with_schema_output(self, name: str, description: str) -> Self:
-        """Declare a desired Schema output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSchemaOutput", _args)
-        return Env(_ctx)
-
-    def with_search_result_input(
-        self,
-        name: str,
-        value: "SearchResult",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type SearchResult in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The SearchResult value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSearchResultInput", _args)
-        return Env(_ctx)
-
-    def with_search_result_output(self, name: str, description: str) -> Self:
-        """Declare a desired SearchResult output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSearchResultOutput", _args)
-        return Env(_ctx)
-
-    def with_search_submatch_input(
-        self,
-        name: str,
-        value: "SearchSubmatch",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type SearchSubmatch in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The SearchSubmatch value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSearchSubmatchInput", _args)
-        return Env(_ctx)
-
-    def with_search_submatch_output(self, name: str, description: str) -> Self:
-        """Declare a desired SearchSubmatch output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSearchSubmatchOutput", _args)
-        return Env(_ctx)
-
-    def with_secret_input(
-        self,
-        name: str,
-        value: "Secret",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Secret in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Secret value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSecretInput", _args)
-        return Env(_ctx)
-
-    def with_secret_output(self, name: str, description: str) -> Self:
-        """Declare a desired Secret output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSecretOutput", _args)
-        return Env(_ctx)
-
-    def with_service_input(
-        self,
-        name: str,
-        value: "Service",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Service in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Service value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withServiceInput", _args)
-        return Env(_ctx)
-
-    def with_service_output(self, name: str, description: str) -> Self:
-        """Declare a desired Service output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withServiceOutput", _args)
-        return Env(_ctx)
-
-    def with_socket_input(
-        self,
-        name: str,
-        value: "Socket",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Socket in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Socket value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSocketInput", _args)
-        return Env(_ctx)
-
-    def with_socket_output(self, name: str, description: str) -> Self:
-        """Declare a desired Socket output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withSocketOutput", _args)
-        return Env(_ctx)
-
-    def with_stat_input(
-        self,
-        name: str,
-        value: "Stat",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Stat in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Stat value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withStatInput", _args)
-        return Env(_ctx)
-
-    def with_stat_output(self, name: str, description: str) -> Self:
-        """Declare a desired Stat output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withStatOutput", _args)
-        return Env(_ctx)
-
-    def with_string_input(
-        self,
-        name: str,
-        value: str,
-        description: str,
-    ) -> Self:
-        """Provides a string input binding to the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The string value to assign to the binding
-        description:
-            The description of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withStringInput", _args)
-        return Env(_ctx)
-
-    def with_string_output(self, name: str, description: str) -> Self:
-        """Declares a desired string output binding
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            The description of the output
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withStringOutput", _args)
-        return Env(_ctx)
-
-    def with_up_group_input(
-        self,
-        name: str,
-        value: "UpGroup",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type UpGroup in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The UpGroup value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withUpGroupInput", _args)
-        return Env(_ctx)
-
-    def with_up_group_output(self, name: str, description: str) -> Self:
-        """Declare a desired UpGroup output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withUpGroupOutput", _args)
-        return Env(_ctx)
-
-    def with_up_input(
-        self,
-        name: str,
-        value: "Up",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Up in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Up value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withUpInput", _args)
-        return Env(_ctx)
-
-    def with_up_output(self, name: str, description: str) -> Self:
-        """Declare a desired Up output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withUpOutput", _args)
-        return Env(_ctx)
-
-    def with_volume_input(
-        self,
-        name: str,
-        value: "Volume",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Volume in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Volume value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withVolumeInput", _args)
-        return Env(_ctx)
-
-    def with_volume_output(self, name: str, description: str) -> Self:
-        """Declare a desired Volume output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withVolumeOutput", _args)
-        return Env(_ctx)
-
-    def with_workspace(self, workspace: Directory) -> Self:
-        """Returns a new environment with the provided workspace
-
-        Parameters
-        ----------
-        workspace:
-            The directory to set as the host filesystem
-        """
-        _args = [
-            Arg("workspace", workspace),
-        ]
-        _ctx = self._select("withWorkspace", _args)
-        return Env(_ctx)
-
-    def with_workspace_git_input(
-        self,
-        name: str,
-        value: "WorkspaceGit",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type WorkspaceGit in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The WorkspaceGit value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceGitInput", _args)
-        return Env(_ctx)
-
-    def with_workspace_git_output(self, name: str, description: str) -> Self:
-        """Declare a desired WorkspaceGit output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceGitOutput", _args)
-        return Env(_ctx)
-
-    def with_workspace_input(
-        self,
-        name: str,
-        value: "Workspace",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type Workspace in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The Workspace value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceInput", _args)
-        return Env(_ctx)
-
-    def with_workspace_migration_input(
-        self,
-        name: str,
-        value: "WorkspaceMigration",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type WorkspaceMigration in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The WorkspaceMigration value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceMigrationInput", _args)
-        return Env(_ctx)
-
-    def with_workspace_migration_output(self, name: str, description: str) -> Self:
-        """Declare a desired WorkspaceMigration output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceMigrationOutput", _args)
-        return Env(_ctx)
-
-    def with_workspace_migration_step_input(
-        self,
-        name: str,
-        value: "WorkspaceMigrationStep",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type WorkspaceMigrationStep in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The WorkspaceMigrationStep value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceMigrationStepInput", _args)
-        return Env(_ctx)
-
-    def with_workspace_migration_step_output(self, name: str, description: str) -> Self:
-        """Declare a desired WorkspaceMigrationStep output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceMigrationStepOutput", _args)
-        return Env(_ctx)
-
-    def with_workspace_module_input(
-        self,
-        name: str,
-        value: "WorkspaceModule",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type WorkspaceModule in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The WorkspaceModule value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceModuleInput", _args)
-        return Env(_ctx)
-
-    def with_workspace_module_output(self, name: str, description: str) -> Self:
-        """Declare a desired WorkspaceModule output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceModuleOutput", _args)
-        return Env(_ctx)
-
-    def with_workspace_module_setting_input(
-        self,
-        name: str,
-        value: "WorkspaceModuleSetting",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type WorkspaceModuleSetting in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The WorkspaceModuleSetting value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceModuleSettingInput", _args)
-        return Env(_ctx)
-
-    def with_workspace_module_setting_output(self, name: str, description: str) -> Self:
-        """Declare a desired WorkspaceModuleSetting output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceModuleSettingOutput", _args)
-        return Env(_ctx)
-
-    def with_workspace_output(self, name: str, description: str) -> Self:
-        """Declare a desired Workspace output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceOutput", _args)
-        return Env(_ctx)
-
-    def with_workspace_sdk_input(
-        self,
-        name: str,
-        value: "WorkspaceSDK",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type WorkspaceSDK in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The WorkspaceSDK value to assign to the binding
-        description:
-            The purpose of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceSDKInput", _args)
-        return Env(_ctx)
-
-    def with_workspace_sdk_output(self, name: str, description: str) -> Self:
-        """Declare a desired WorkspaceSDK output to be assigned in the
-        environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withWorkspaceSDKOutput", _args)
-        return Env(_ctx)
-
-    def without_outputs(self) -> Self:
-        """Returns a new environment without any outputs"""
-        _args: list[Arg] = []
-        _ctx = self._select("withoutOutputs", _args)
-        return Env(_ctx)
-
-    def workspace(self) -> Directory:
-        _args: list[Arg] = []
-        _ctx = self._select("workspace", _args)
-        return Directory(_ctx)
-
-    def with_(self, cb: Callable[["Env"], "Env"]) -> "Env":
-        """Call the provided callable with current Env.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-@typecheck
 class EnvFile(Type):
     """A collection of environment variables."""
 
@@ -9372,6 +7054,12 @@ class Function(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
+
+    def with_agent(self) -> Self:
+        """Returns the function with a flag indicating it is an agent middleware."""
+        _args: list[Arg] = []
+        _ctx = self._select("withAgent", _args)
+        return Function(_ctx)
 
     def with_arg(
         self,
@@ -11533,13 +9221,27 @@ class LLM(Type):
     """A conversation with a large language model (LLM): queue prompts,
     expose tools, and step the model until it completes its turn."""
 
-    def bind_result(self, name: str) -> Binding:
-        """returns the type of the current state"""
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("bindResult", _args)
-        return Binding(_ctx)
+    async def context_tokens(self) -> int:
+        """estimated number of tokens currently occupying the context window;
+        unlike tokenUsage this is not cumulative over the session
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contextTokens", _args)
+        return await _ctx.execute(int)
 
     async def context_window(self) -> int | None:
         """The model's total context window in tokens, or null if unknown (e.g. a
@@ -11562,12 +9264,6 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("contextWindow", _args)
         return await _ctx.execute(int | None)
-
-    def env(self) -> Env:
-        """return the LLM's current environment"""
-        _args: list[Arg] = []
-        _ctx = self._select("env", _args)
-        return Env(_ctx)
 
     def fork(self, label: str) -> Self:
         """Fork the conversation, so that otherwise-identical follow-ups evaluate
@@ -11858,33 +9554,6 @@ class LLM(Type):
         _ctx = self._select("transcript", _args)
         return await _ctx.execute(str)
 
-    def with_blocked_function(self, type_name: str, function: str) -> Self:
-        """Return a new LLM with the specified function no longer exposed as a
-        tool
-
-        Parameters
-        ----------
-        type_name:
-            The type name whose function will be blocked
-        function:
-            The function to block
-            Will be converted to lowerCamelCase if necessary.
-        """
-        _args = [
-            Arg("typeName", type_name),
-            Arg("function", function),
-        ]
-        _ctx = self._select("withBlockedFunction", _args)
-        return LLM(_ctx)
-
-    def with_env(self, env: Env) -> Self:
-        """allow the LLM to interact with an environment via MCP"""
-        _args = [
-            Arg("env", env),
-        ]
-        _ctx = self._select("withEnv", _args)
-        return LLM(_ctx)
-
     def with_mcp_server(self, name: str, service: "Service") -> Self:
         """Add an external MCP server to the LLM
 
@@ -11926,24 +9595,6 @@ class LLM(Type):
             Arg("provider", provider, None),
         ]
         _ctx = self._select("withModel", _args)
-        return LLM(_ctx)
-
-    def with_object(self, tag: str, object: Type) -> Self:
-        """Track an object so the LLM can reference it in subsequent tool calls.
-
-        Parameters
-        ----------
-        tag:
-            Arbitrary string tag for the object, typically in TypeName#Number
-            format
-        object:
-            The object to track, as a generic ID
-        """
-        _args = [
-            Arg("tag", tag),
-            Arg("object", object),
-        ]
-        _ctx = self._select("withObject", _args)
         return LLM(_ctx)
 
     def with_prompt(self, prompt: str) -> Self:
@@ -12025,14 +9676,6 @@ class LLM(Type):
         _ctx = self._select("withResponse", _args)
         return LLM(_ctx)
 
-    def with_static_tools(self) -> Self:
-        """Use a static set of tools for method calls, e.g. for MCP clients that
-        do not support dynamic tool registration
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("withStaticTools", _args)
-        return LLM(_ctx)
-
     def with_system_prompt(self, prompt: str) -> Self:
         """Add a system prompt, instructing the model across the whole
         conversation.
@@ -12073,6 +9716,46 @@ class LLM(Type):
         _ctx = self._select("withToolResult", _args)
         return LLM(_ctx)
 
+    def with_tools(
+        self,
+        object: Node,
+        *,
+        except_: list[str] | None = None,
+    ) -> Self:
+        """Expose an object's methods as tools. Every eligible method of the
+        bound object becomes a tool; a tool that returns this object's own
+        type replaces it as the new state. Repeatable to bind several objects.
+
+        Parameters
+        ----------
+        object:
+            The object whose methods become tools.
+        except_:
+            Method names to exclude from the toolset (e.g. constructors,
+            entrypoints).
+        """
+        _args = [
+            Arg("object", object),
+            Arg("except", [] if except_ is None else except_, []),
+        ]
+        _ctx = self._select("withTools", _args)
+        return LLM(_ctx)
+
+    def with_workspace(self, workspace: "Workspace") -> Self:
+        """Bind the LLM to a workspace, exposing its modules as tools exactly as
+        the Dagger CLI would serve them for that workspace.
+
+        Parameters
+        ----------
+        workspace:
+            The workspace to work in.
+        """
+        _args = [
+            Arg("workspace", workspace),
+        ]
+        _ctx = self._select("withWorkspace", _args)
+        return LLM(_ctx)
+
     def without_default_system_prompt(self) -> Self:
         """Disable the default system prompt"""
         _args: list[Arg] = []
@@ -12092,6 +9775,12 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("withoutSystemPrompts", _args)
         return LLM(_ctx)
+
+    def workspace(self) -> "Workspace":
+        """Return the workspace the LLM is bound to."""
+        _args: list[Arg] = []
+        _ctx = self._select("workspace", _args)
+        return Workspace(_ctx)
 
     def with_(self, cb: Callable[["LLM"], "LLM"]) -> "LLM":
         """Call the provided callable with current LLM.
@@ -14270,27 +11959,6 @@ class Query(Root):
         _ctx = self._select("container", _args)
         return Container(_ctx)
 
-    def current_env(self) -> Env:
-        """Returns the current environment
-
-        When called from a function invoked via an LLM tool call, this will be
-        the LLM's current environment, including any modifications made
-        through calling tools. Env values returned by functions become the new
-        environment for subsequent calls, and Changeset values returned by
-        functions are applied to the environment's workspace.
-
-        When called from a module function outside of an LLM, this returns an
-        Env with the current module installed, and with the current module's
-        source directory as its workspace.
-
-        .. caution::
-            Experimental: Programmatic env access is speculative and might be
-            replaced.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("currentEnv", _args)
-        return Env(_ctx)
-
     def current_function_call(self) -> FunctionCall:
         """The FunctionCall context that the SDK caller is currently executing
         in.
@@ -14307,6 +11975,15 @@ class Query(Root):
         _args: list[Arg] = []
         _ctx = self._select("currentModule", _args)
         return CurrentModule(_ctx)
+
+    def current_node(self) -> Node:
+        """The object that received the current module function call, as a Node.
+        Errors when there is no current call, or the call is top-level (e.g. a
+        module constructor).
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("currentNode", _args)
+        return _NodeClient(_ctx)
 
     async def current_type_defs(
         self,
@@ -14378,32 +12055,6 @@ class Query(Root):
         _args: list[Arg] = []
         _ctx = self._select("engine", _args)
         return Engine(_ctx)
-
-    def env(
-        self,
-        *,
-        privileged: bool | None = False,
-        writable: bool | None = False,
-    ) -> Env:
-        """Initializes a new environment
-
-        .. caution::
-            Experimental: Environments are not yet stabilized
-
-        Parameters
-        ----------
-        privileged:
-            Give the environment the same privileges as the caller: core API
-            including host access, current module, and dependencies
-        writable:
-            Allow new outputs to be declared and saved in the environment
-        """
-        _args = [
-            Arg("privileged", privileged, False),
-            Arg("writable", writable, False),
-        ]
-        _ctx = self._select("env", _args)
-        return Env(_ctx)
 
     def env_file(self, *, expand: bool | None = None) -> EnvFile:
         """Initialize an environment file
@@ -16631,6 +14282,24 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
+    def agents(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> AgentGroup:
+        """Return all agent middlewares from modules loaded in the workspace.
+
+        Parameters
+        ----------
+        include:
+            Only include agents matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("agents", _args)
+        return AgentGroup(_ctx)
+
     def changes(self) -> Changeset:
         """Return this workspace's pending overlay changes."""
         _args: list[Arg] = []
@@ -17996,7 +15665,8 @@ __all__ = [
     "JSON",
     "LLM",
     "Address",
-    "Binding",
+    "Agent",
+    "AgentGroup",
     "BuildArg",
     "CacheSharingMode",
     "CacheVolume",
@@ -18022,7 +15692,6 @@ __all__ = [
     "EngineCacheEntrySet",
     "EnumTypeDef",
     "EnumValueTypeDef",
-    "Env",
     "EnvFile",
     "EnvVariable",
     "Error",
