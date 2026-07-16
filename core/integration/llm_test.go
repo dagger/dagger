@@ -236,9 +236,11 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// maxSteps is a loop() argument: the limit caps the loop invocation
-	// rather than the LLM as a whole.
+	// rather than the LLM as a whole. Binding a container's methods as tools
+	// gives the recorded conversation a tool call, so the loop needs a second
+	// API call and trips the limit.
 	ctrFn := func(llmFlags, loopFlags string) dagger.WithContainerFunc {
-		return daggerShell(fmt.Sprintf(`llm %s | with-env $(env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | transcript`, llmFlags, loopFlags))
+		return daggerShell(fmt.Sprintf(`llm %s | with-tools $(container | from alpine) | with-prompt "tell me the value of PATH" | loop %s | with-prompt "now tell me the value of TERM" | transcript`, llmFlags, loopFlags))
 	}
 
 	recording := "llmtest/api-limit.golden"
@@ -254,20 +256,10 @@ func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 		}](c, t, `{container{from(address:"alpine"){id}}}`, nil)
 		require.NoError(t, err)
 
-		envRes, err := testutil.QueryWithClient[struct {
-			Env struct {
-				WithContainerInput struct {
-					ID string
-				}
-			}
-		}](c, t, `query($ctr: ID!){env{withContainerInput(name:"alpine",value:$ctr,description:"an alpine linux container"){id}}}`,
-			&testutil.QueryOptions{Variables: map[string]any{"ctr": ctrRes.Container.From.ID}})
-		require.NoError(t, err)
-
 		out := recordMessages(t, c,
-			fmt.Sprintf(`query($env: ID!){llm{withEnv(env:$env){withPrompt(prompt:"tell me the value of PATH"){loop{withPrompt(prompt:"now tell me the value of TERM"){messages{%s}}}}}}}`, llmMessagesSelection),
-			map[string]any{"env": envRes.Env.WithContainerInput.ID},
-			"llm.withEnv.withPrompt.loop.withPrompt.messages")
+			fmt.Sprintf(`query($ctr: ID!){llm{withTools(object:$ctr){withPrompt(prompt:"tell me the value of PATH"){loop{withPrompt(prompt:"now tell me the value of TERM"){messages{%s}}}}}}}`, llmMessagesSelection),
+			map[string]any{"ctr": ctrRes.Container.From.ID},
+			"llm.withTools.withPrompt.loop.withPrompt.messages")
 		writeRecording(t, recording, out)
 	}
 
