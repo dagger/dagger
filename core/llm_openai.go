@@ -52,38 +52,10 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
-	// Stream this turn's content into per-block display spans.
-	dp := newDisplayPhases(ctx, opts.CallDigest)
-	defer func() {
-		dp.CloseAll()
-		if rerr != nil {
-			dp.Abort(rerr)
-		}
-	}()
-
-	m := telemetry.Meter(ctx, InstrumentationLibrary)
-	spanCtx := trace.SpanContextFromContext(ctx)
-	attrs := []attribute.KeyValue{
-		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
-		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
-		attribute.String("model", c.endpoint.Model),
-		attribute.String("provider", string(c.endpoint.Provider)),
-	}
-
-	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
-	if err != nil {
-		return nil, err
-	}
-
-	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert content-block messages to OpenAI specific format
+// convertHistoryToOpenAI converts content-block messages to the OpenAI
+// chat-completions message format.
+func convertHistoryToOpenAI(history []*LLMMessage) []openai.ChatCompletionMessageParamUnion {
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
-
 	for _, msg := range history {
 		switch msg.Role {
 		case LLMMessageRoleSystem:
@@ -131,6 +103,39 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 			openAIMessages = append(openAIMessages, assistantMsg)
 		}
 	}
+	return openAIMessages
+}
+
+func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool, opts *LLMCallOpts) (_ *LLMResponse, rerr error) {
+	// Stream this turn's content into per-block display spans.
+	dp := newDisplayPhases(ctx, opts.CallDigest)
+	defer func() {
+		dp.CloseAll()
+		if rerr != nil {
+			dp.Abort(rerr)
+		}
+	}()
+
+	m := telemetry.Meter(ctx, InstrumentationLibrary)
+	spanCtx := trace.SpanContextFromContext(ctx)
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
+		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
+		attribute.String("model", c.endpoint.Model),
+		attribute.String("provider", string(c.endpoint.Provider)),
+	}
+
+	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	if err != nil {
+		return nil, err
+	}
+
+	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
+	if err != nil {
+		return nil, err
+	}
+
+	openAIMessages := convertHistoryToOpenAI(history)
 
 	params := openai.ChatCompletionNewParams{
 		Seed:     openai.Int(0),
