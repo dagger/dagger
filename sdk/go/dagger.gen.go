@@ -4200,6 +4200,15 @@ func (r *CurrentModuleAsSDKClient) Module(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The resolved module source this client is bound to, including its dependency closure and pinned version.
+func (r *CurrentModuleAsSDKClient) ModuleSource() *ModuleSource {
+	q := r.query.Select("moduleSource")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Workspace-root-relative path of the generated client.
 func (r *CurrentModuleAsSDKClient) Path(ctx context.Context) (string, error) {
 	if r.path != nil {
@@ -12318,6 +12327,17 @@ func (r *ModuleSource) Blueprint() *ModuleSource {
 	q := r.query.Select("blueprint")
 
 	return &ModuleSource{
+		query: q,
+	}
+}
+
+// The client-facing introspection schema JSON file for this module source.
+//
+// This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+func (r *ModuleSource) ClientSchemaIntrospectionJSON() *File {
+	q := r.query.Select("clientSchemaIntrospectionJSON")
+
+	return &File{
 		query: q,
 	}
 }

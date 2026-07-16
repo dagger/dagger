@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 )
 
 // currentModuleAsSDK treats the currently executing module as an SDK installed
@@ -92,4 +93,47 @@ func (s *moduleSchema) currentModuleAsSDKClients(
 	_ struct{},
 ) ([]*core.CurrentModuleAsSDKClient, error) {
 	return parent.Clients, nil
+}
+
+// currentModuleAsSDKClientModuleSource resolves the module a client is bound to
+// from its stored {module, pin}. Resolution goes through the same
+// resolveClientTargetModule the workspace client-generation path uses, so local
+// (workspace-relative) refs are expanded to host paths, the pin is applied, and
+// the load happens in the workspace client context -- correct for both local
+// and remote/git refs, unlike resolving the ref string directly.
+func (s *moduleSchema) currentModuleAsSDKClientModuleSource(
+	ctx context.Context,
+	client *core.CurrentModuleAsSDKClient,
+	_ struct{},
+) (dagql.ObjectResult[*core.ModuleSource], error) {
+	var res dagql.ObjectResult[*core.ModuleSource]
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	ws, err := query.Server.CurrentWorkspace(ctx)
+	if err != nil {
+		return res, fmt.Errorf("get current workspace: %w", err)
+	}
+	if isSyntheticWorkspace(ws) || ws.ConfigFile == "" {
+		return res, fmt.Errorf("current module is not installed as an SDK in this workspace")
+	}
+
+	_, moduleLoadRef, err := resolveWorkspaceClientModuleRef(ws, client.Module)
+	if err != nil {
+		return res, err
+	}
+
+	wsSchema := &workspaceSchema{}
+	workspaceCtx := ctx
+	if ws.ClientID != "" {
+		workspaceCtx, err = wsSchema.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return res, fmt.Errorf("workspace client context: %w", err)
+		}
+	}
+	workspaceCtx = workspaceInstallLookupContext(workspaceCtx)
+
+	return wsSchema.resolveClientTargetModule(workspaceCtx, ws, moduleLoadRef, client.Pin)
 }

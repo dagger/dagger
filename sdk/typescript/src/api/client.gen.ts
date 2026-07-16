@@ -5790,6 +5790,14 @@ export class CurrentModuleAsSDKClient extends BaseClient {
   }
 
   /**
+   * The resolved module source this client is bound to, including its dependency closure and pinned version.
+   */
+  moduleSource = (): ModuleSource => {
+    const ctx = this._ctx.select("moduleSource")
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Workspace-root-relative path of the generated client.
    */
   path = async (): Promise<string> => {
@@ -12289,6 +12297,16 @@ export class ModuleSource extends BaseClient {
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * The client-facing introspection schema JSON file for this module source.
+   *
+   * This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+   */
+  clientSchemaIntrospectionJSON = (): File => {
+    const ctx = this._ctx.select("clientSchemaIntrospectionJSON")
+    return new File(ctx)
   }
 
   /**
