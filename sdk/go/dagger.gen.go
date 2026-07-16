@@ -11140,6 +11140,7 @@ func (r *JSONValue) AsNode() Node {
 type LLM struct {
 	query *querybuilder.Selection
 
+	contextWindow    *int
 	globalID         *ID
 	hasPrompt        *bool
 	historyJSON      *JSON
@@ -11186,6 +11187,19 @@ func (r *LLM) BindResult(name string) *Binding {
 	return &Binding{
 		query: q,
 	}
+}
+
+// The model's total context window in tokens, from the model catalog (0 if unknown)
+func (r *LLM) ContextWindow(ctx context.Context) (int, error) {
+	if r.contextWindow != nil {
+		return *r.contextWindow, nil
+	}
+	q := r.query.Select("contextWindow")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // return the LLM's current environment

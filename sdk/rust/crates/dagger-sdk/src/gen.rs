@@ -12081,6 +12081,11 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The model's total context window in tokens, from the model catalog (0 if unknown)
+    pub async fn context_window(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("contextWindow");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// return the LLM's current environment
     pub fn env(&self) -> Env {
         let query = self.selection.select("env");

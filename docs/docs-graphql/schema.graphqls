@@ -4577,6 +4577,11 @@ type LLM implements Node & Syncer {
   """returns the type of the current state"""
   bindResult(name: String!): Binding
 
+  """
+  The model's total context window in tokens, from the model catalog (0 if unknown)
+  """
+  contextWindow: Int!
+
   """return the LLM's current environment"""
   env: Env!
 

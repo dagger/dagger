@@ -11417,6 +11417,28 @@ class LLM(Type):
         _ctx = self._select("bindResult", _args)
         return Binding(_ctx)
 
+    async def context_window(self) -> int:
+        """The model's total context window in tokens, from the model catalog (0
+        if unknown)
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contextWindow", _args)
+        return await _ctx.execute(int)
+
     def env(self) -> Env:
         """return the LLM's current environment"""
         _args: list[Arg] = []

@@ -11529,6 +11529,7 @@ export class JSONValue extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
+  private readonly _contextWindow?: number = undefined
   private readonly _globalID?: ID = undefined
   private readonly _hasPrompt?: boolean = undefined
   private readonly _historyJSON?: JSON = undefined
@@ -11547,6 +11548,7 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
+    _contextWindow?: number,
     _globalID?: ID,
     _hasPrompt?: boolean,
     _historyJSON?: JSON,
@@ -11562,6 +11564,7 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._contextWindow = _contextWindow
     this._globalID = _globalID
     this._hasPrompt = _hasPrompt
     this._historyJSON = _historyJSON
@@ -11606,6 +11609,21 @@ export class LLM extends BaseClient {
   bindResult = (name: string): Binding => {
     const ctx = this._ctx.select("bindResult", { name })
     return new Binding(ctx)
+  }
+
+  /**
+   * The model's total context window in tokens, from the model catalog (0 if unknown)
+   */
+  contextWindow = async (): Promise<number> => {
+    if (this._contextWindow) {
+      return this._contextWindow
+    }
+
+    const ctx = this._ctx.select("contextWindow")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
   }
 
   /**

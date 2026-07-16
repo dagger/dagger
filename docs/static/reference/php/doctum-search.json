@@ -5504,6 +5504,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::contextWindow",
+			"p": "Dagger/LLM.html#method_contextWindow",
+			"d": "<p>The model's total context window in tokens, from the model catalog (0 if unknown)</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::env",
 			"p": "Dagger/LLM.html#method_env",
 			"d": "<p>return the LLM's current environment</p>"

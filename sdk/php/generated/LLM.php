@@ -31,6 +31,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * The model's total context window in tokens, from the model catalog (0 if unknown)
+     */
+    public function contextWindow(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contextWindow');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'contextWindow');
+    }
+
+    /**
      * return the LLM's current environment
      */
     public function env(): Env

@@ -44,6 +44,17 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  The model's total context window in tokens, from the model catalog (0 if unknown)
+  """
+  @spec context_window(t()) :: {:ok, integer()} | {:error, term()}
+  def context_window(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("contextWindow")
+
+    Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
   return the LLM's current environment
   """
   @spec env(t()) :: Dagger.Env.t()
