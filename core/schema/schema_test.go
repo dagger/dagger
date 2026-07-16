@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
+	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -34,7 +35,7 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 	dag, err := coreSchemaBase.Fork(ctx, root, "")
 	require.NoError(t, err)
 
-	gotBytes, err := getSchemaJSON(nil, baseSchemaView(), dag)
+	gotBytes, err := getSchemaJSON(nil, nil, baseSchemaView(), dag)
 	require.NoError(t, err)
 	got := canonicalJSON(t, gotBytes)
 
@@ -44,6 +45,142 @@ func TestBaseSchemaAllowlist(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("base schema allowlist mismatch (-want +got):\n%s\nNew public APIs must be gated with View(AfterVersion(<next release version from internal/version/VERSION>)).", diff)
 	}
+}
+
+func TestSchemaJSONScrubbing(t *testing.T) {
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "schema-scrubbing-client",
+		SessionID: "schema-scrubbing-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, "v1.0.0")
+	require.NoError(t, err)
+
+	// Module object arguments are represented by their ID scalar in GraphQL.
+	// Install one here to verify field scrubbing keeps Workspace-typed module
+	// arguments and both of the schema types codegen needs for them.
+	dagql.Fields[*core.Query]{
+		dagql.Func("workspaceArgument", func(_ context.Context, _ *core.Query, _ struct {
+			Workspace dagql.ID[*core.Workspace]
+		}) (string, error) {
+			return "", nil
+		}).Args(dagql.Arg("workspace")),
+	}.Install(dag)
+
+	fullJSON, err := getSchemaJSON(nil, nil, dag.View, dag)
+	require.NoError(t, err)
+	full := decodeSchemaResponse(t, fullJSON)
+	require.NotNil(t, schemaField(full.Schema.Query(), "currentWorkspace"))
+	require.NotNil(t, full.Schema.Types.Get("Workspace"))
+	require.NotNil(t, full.Schema.Types.Get("ID"))
+	requireWorkspaceArgument(t, full.Schema)
+	require.NotNil(t, full.Schema.Types.Get("Host"))
+	require.NotNil(t, schemaField(full.Schema.Query(), "host"))
+
+	t.Run("module and client policies", func(t *testing.T) {
+		moduleHiddenTypes := append([]string{}, core.TypesToIgnoreForModuleIntrospection...)
+		for _, typed := range core.TypesHiddenFromModuleSDKs {
+			moduleHiddenTypes = append(moduleHiddenTypes, typed.Type().Name())
+		}
+		moduleJSON, err := getSchemaJSON(
+			moduleHiddenTypes,
+			core.FieldsToIgnoreForModuleIntrospection,
+			dag.View,
+			dag,
+		)
+		require.NoError(t, err)
+		require.NotEqual(t, fullJSON, moduleJSON)
+
+		moduleSchema := decodeSchemaResponse(t, moduleJSON)
+		require.Nil(t, schemaField(moduleSchema.Schema.Query(), "currentWorkspace"))
+		require.NotNil(t, moduleSchema.Schema.Types.Get("Workspace"))
+		require.NotNil(t, moduleSchema.Schema.Types.Get("ID"))
+		requireWorkspaceArgument(t, moduleSchema.Schema)
+		require.Nil(t, moduleSchema.Schema.Types.Get("Host"))
+		require.Nil(t, schemaField(moduleSchema.Schema.Query(), "host"))
+
+		clientSchema := decodeSchemaResponse(t, fullJSON)
+		require.NotNil(t, schemaField(clientSchema.Schema.Query(), "currentWorkspace"))
+		require.NotNil(t, clientSchema.Schema.Types.Get("Workspace"))
+		require.NotNil(t, clientSchema.Schema.Types.Get("Host"))
+		require.NotNil(t, schemaField(clientSchema.Schema.Query(), "host"))
+	})
+
+	t.Run("individual field", func(t *testing.T) {
+		scrubbedJSON, err := getSchemaJSON(nil, []string{"Query.currentWorkspace"}, dag.View, dag)
+		require.NoError(t, err)
+		require.NotEqual(t, fullJSON, scrubbedJSON)
+
+		scrubbed := decodeSchemaResponse(t, scrubbedJSON)
+		require.Nil(t, schemaField(scrubbed.Schema.Query(), "currentWorkspace"))
+		require.NotNil(t, scrubbed.Schema.Types.Get("Workspace"))
+		require.NotNil(t, scrubbed.Schema.Types.Get("ID"))
+		requireWorkspaceArgument(t, scrubbed.Schema)
+	})
+
+	t.Run("different fields", func(t *testing.T) {
+		currentWorkspaceJSON, err := getSchemaJSON(nil, []string{"Query.currentWorkspace"}, dag.View, dag)
+		require.NoError(t, err)
+		versionJSON, err := getSchemaJSON(nil, []string{"Query.version"}, dag.View, dag)
+		require.NoError(t, err)
+		require.NotEqual(t, currentWorkspaceJSON, versionJSON)
+
+		versionScrubbed := decodeSchemaResponse(t, versionJSON)
+		require.NotNil(t, schemaField(versionScrubbed.Schema.Query(), "currentWorkspace"))
+		require.Nil(t, schemaField(versionScrubbed.Schema.Query(), "version"))
+	})
+
+	t.Run("whole type", func(t *testing.T) {
+		scrubbedJSON, err := getSchemaJSON([]string{"Host"}, nil, dag.View, dag)
+		require.NoError(t, err)
+		scrubbed := decodeSchemaResponse(t, scrubbedJSON)
+
+		require.Nil(t, scrubbed.Schema.Types.Get("Host"))
+		require.Nil(t, schemaField(scrubbed.Schema.Query(), "host"))
+		require.NotNil(t, schemaField(scrubbed.Schema.Query(), "currentWorkspace"))
+	})
+
+	t.Run("invalid field", func(t *testing.T) {
+		_, err := getSchemaJSON(nil, []string{"currentWorkspace"}, dag.View, dag)
+		require.EqualError(t, err, `invalid hidden field "currentWorkspace": expected Type.field`)
+	})
+}
+
+func decodeSchemaResponse(t *testing.T, data []byte) *codegenintrospection.Response {
+	t.Helper()
+	var response codegenintrospection.Response
+	require.NoError(t, json.Unmarshal(data, &response))
+	require.NotNil(t, response.Schema)
+	return &response
+}
+
+func schemaField(typ *codegenintrospection.Type, name string) *codegenintrospection.Field {
+	if typ == nil {
+		return nil
+	}
+	for _, field := range typ.Fields {
+		if field.Name == name {
+			return field
+		}
+	}
+	return nil
+}
+
+func requireWorkspaceArgument(t *testing.T, schema *codegenintrospection.Schema) {
+	t.Helper()
+	field := schemaField(schema.Query(), "workspaceArgument")
+	require.NotNil(t, field)
+	require.Len(t, field.Args, 1)
+	require.Equal(t, "workspace", field.Args[0].Name)
+	require.True(t, field.Args[0].TypeRef.ReferencesType("ID"))
+	require.Equal(t, "Workspace", field.Args[0].Directives.ExpectedType())
 }
 
 func baseSchemaView() call.View {

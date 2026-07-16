@@ -47,6 +47,26 @@ func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "dag.Engine undefined")
 }
 
+// TestCurrentWorkspaceError verifies currentWorkspace is not exposed to module
+// SDKs. Modules receive the current Workspace through declared arguments.
+func (ModuleSuite) TestCurrentWorkspaceError(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("go", func(ctx context.Context, t *testctx.T) {
+		_, err := moduleFixture(t, c, "go/current-workspace-error").
+			With(daggerCallAt(".", "fn")).
+			Sync(ctx)
+		requireErrOut(t, err, "dag.CurrentWorkspace undefined")
+	})
+
+	t.Run("python", func(ctx context.Context, t *testctx.T) {
+		_, err := moduleFixture(t, c, "python/current-workspace-error").
+			With(daggerCallAt(".", "fn")).
+			Sync(ctx)
+		requireErrOut(t, err, "current_workspace")
+	})
+}
+
 func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 	copyTestdataFixture(ctx, t, modDir, "modules", "go", "large-errors")

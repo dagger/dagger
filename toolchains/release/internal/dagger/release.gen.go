@@ -9,8 +9,10 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
-func (r *Query) Release() *Release { // release (../../../../:0:0)
+func (r *Query) Release(ws *Workspace) *Release { // release (../../../../:0:0)
+	assertNotNil("ws", ws)
 	q := r.query.Select("release")
+	q = q.Arg("ws", ws)
 
 	return &Release{
 		query: q,
