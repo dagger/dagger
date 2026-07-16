@@ -63,18 +63,18 @@ const (
 	// changes to that repo take effect only when the pin is bumped instead of
 	// immediately affecting every branch's CI. Currently the head of the
 	// dang-llm-modules branch.
-	testModulesVersion = "db684170de03c8d5cf5cb6302ce0008405c44608"
+	testModulesVersion = "4232918aa11c5347758ce657659e92f43610f0ff"
 
-	// llm-test-module prompts the LLM in the most minimal way, forked per
-	// call (via its cacheBuster argument) to bust caches
-	directCallModuleSymbolic = "github.com/dagger/dagger-test-modules/dang/llm-dir-module-depender/llm-test-module"
-	// llm-dir-module-depender depends on llm-test-module via a relative path
-	dependerModuleSymbolic = "github.com/dagger/dagger-test-modules/dang/llm-dir-module-depender"
+	// llm-direct prompts the LLM in the most minimal way, forked per call
+	// (via its cacheBuster argument) to bust caches
+	directModuleSymbolic = "github.com/dagger/dagger-test-modules/llm/direct"
+	// llm-indirect only reaches the LLM through its dependency on llm-direct
+	indirectModuleSymbolic = "github.com/dagger/dagger-test-modules/llm/indirect"
 
 	// pinned refs for loading the modules; the allow-llm policy matches
 	// against the unpinned symbolic form
-	directCallModuleRef = directCallModuleSymbolic + "@" + testModulesVersion
-	dependerModuleRef   = dependerModuleSymbolic + "@" + testModulesVersion
+	directModuleRef   = directModuleSymbolic + "@" + testModulesVersion
+	indirectModuleRef = indirectModuleSymbolic + "@" + testModulesVersion
 )
 
 // llmMessagesSelection selects everything a replay recording needs from a
@@ -288,7 +288,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 		// shared recording amongst subtests, they all drive the same conversation
 		out, err := daggerCliBase(t, c).
 			With(daggerForwardSecrets(c)).
-			WithExec([]string{"dagger", "query", "-m", directCallModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "query", "-m", directModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
 				Stdin: fmt.Sprintf(`{agent(stringArg:"greet me", cacheBuster:%q){messages{%s}}}`,
 					identity.NewID(), llmMessagesSelection),
 				ExperimentalPrivilegedNesting: true,
@@ -310,23 +310,23 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 		}{
 			{
 				name:     "direct allow all",
-				module:   directCallModuleRef,
+				module:   directModuleRef,
 				allowLLM: "all",
 			},
 			{
 				name:     "direct allow specific module",
-				module:   directCallModuleRef,
-				allowLLM: directCallModuleSymbolic,
+				module:   directModuleRef,
+				allowLLM: directModuleSymbolic,
 			},
 			{
-				name:     "depender allow all",
-				module:   dependerModuleRef,
+				name:     "indirect allow all",
+				module:   indirectModuleRef,
 				allowLLM: "all",
 			},
 			{
-				name:     "depender allow specific module",
-				module:   dependerModuleRef,
-				allowLLM: directCallModuleSymbolic,
+				name:     "indirect allow specific module",
+				module:   indirectModuleRef,
+				allowLLM: directModuleSymbolic,
 			},
 			// we only test various permutations of remote module LLM use, local modules don't require the flag and that's covered by the toy-programmer case
 		}
@@ -347,7 +347,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 		args := []string{modelFlag, "prompt", "--string-arg", t.Name(), "--cache-buster", identity.NewID()}
 
 		_, err := daggerCliBase(t, c).
-			With(daggerCallAt(directCallModuleRef, args...)).
+			With(daggerCallAt(directModuleRef, args...)).
 			Stdout(ctx)
 		require.Error(t, err)
 	})
@@ -355,14 +355,14 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
 			WithEnvVariable("DAGGER_ALLOW_LLM", "all").
-			With(daggerCallAt(dependerModuleRef, modelFlag, "prompt", "--string-arg", "greet me", "--cache-buster", identity.NewID())).
+			With(daggerCallAt(indirectModuleRef, modelFlag, "prompt", "--string-arg", "greet me", "--cache-buster", identity.NewID())).
 			Stdout(ctx)
 		require.NoError(t, err)
 	})
 
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "shell", "-m", dependerModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "shell", "-m", indirectModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`. %s | prompt "greet me" %q`, modelFlag, identity.NewID()),
 				ExperimentalPrivilegedNesting: true,
 			}).
@@ -372,8 +372,8 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
 		_, err := daggerCliBase(t, c).
-			WithExec([]string{"dagger", "shell", "--allow-llm", directCallModuleSymbolic}, dagger.ContainerWithExecOpts{
-				Stdin:                         fmt.Sprintf(`%s %s | prompt "greet me" %q`, dependerModuleRef, modelFlag, identity.NewID()),
+			WithExec([]string{"dagger", "shell", "--allow-llm", directModuleSymbolic}, dagger.ContainerWithExecOpts{
+				Stdin:                         fmt.Sprintf(`%s %s | prompt "greet me" %q`, indirectModuleRef, modelFlag, identity.NewID()),
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Stdout(ctx)
@@ -412,31 +412,31 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			{
 				name:     "direct remote module call",
 				allowLLM: "",
-				module:   directCallModuleRef,
+				module:   directModuleRef,
 			},
 			// TODO: find a way to test plain tui.
 			// under test, it doesn't acknowledge input, but works fine irl
 			// {
 			// 	name:     "plain tui direct remote module call",
 			// 	allowLLM: "",
-			// 	module:   directCallModuleRef,
+			// 	module:   directModuleRef,
 			// 	plain:    true,
 			// },
 			{
 				name:     "allowed unrelated, calling direct",
 				allowLLM: "github.com/dagger/dagger",
-				module:   directCallModuleRef,
+				module:   directModuleRef,
 			},
 			{
-				name:     "allowed depender, calling direct",
-				allowLLM: dependerModuleSymbolic,
-				module:   directCallModuleRef,
+				name:     "allowed indirect, calling direct",
+				allowLLM: indirectModuleSymbolic,
+				module:   directModuleRef,
 			},
 			{
 				// this should prompt for the dependency
-				name:     "allowed depender, calling depender",
-				allowLLM: dependerModuleSymbolic,
-				module:   dependerModuleRef,
+				name:     "allowed indirect, calling indirect",
+				allowLLM: indirectModuleSymbolic,
+				module:   indirectModuleRef,
 			},
 		}
 
