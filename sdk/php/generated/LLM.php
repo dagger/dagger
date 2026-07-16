@@ -315,18 +315,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.
-     */
-    public function withToolCall(string $callId, string $toolName, Json $arguments): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolCall');
-        $innerQueryBuilder->setArgument('callId', $callId);
-        $innerQueryBuilder->setArgument('toolName', $toolName);
-        $innerQueryBuilder->setArgument('arguments', $arguments);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Append the result of a tool call to the message history.
      */
     public function withToolResult(string $callId, string $content, bool $errored): LLM

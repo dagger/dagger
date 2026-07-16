@@ -11907,32 +11907,6 @@ class LLM(Type):
         _ctx = self._select("withSystemPrompt", _args)
         return LLM(_ctx)
 
-    def with_tool_call(
-        self,
-        call_id: str,
-        tool_name: str,
-        arguments: JSON,
-    ) -> Self:
-        """Append a tool call to the last assistant message, e.g. to reconstruct
-        a conversation from another source.
-
-        Parameters
-        ----------
-        call_id:
-            The unique ID for this tool call
-        tool_name:
-            The name of the tool to call
-        arguments:
-            The arguments to pass to the tool, JSON-encoded
-        """
-        _args = [
-            Arg("callId", call_id),
-            Arg("toolName", tool_name),
-            Arg("arguments", arguments),
-        ]
-        _ctx = self._select("withToolCall", _args)
-        return LLM(_ctx)
-
     def with_tool_result(
         self,
         call_id: str,

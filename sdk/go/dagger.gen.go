@@ -11610,18 +11610,6 @@ func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	}
 }
 
-// Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.
-func (r *LLM) WithToolCall(callId string, toolName string, arguments JSON) *LLM {
-	q := r.query.Select("withToolCall")
-	q = q.Arg("callId", callId)
-	q = q.Arg("toolName", toolName)
-	q = q.Arg("arguments", arguments)
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Append the result of a tool call to the message history.
 func (r *LLM) WithToolResult(callId string, content string, errored bool) *LLM {
 	q := r.query.Select("withToolResult")

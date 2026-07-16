@@ -11919,21 +11919,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.
-   * @param callId The unique ID for this tool call
-   * @param toolName The name of the tool to call
-   * @param arguments The arguments to pass to the tool, JSON-encoded
-   */
-  withToolCall = (callId: string, toolName: string, arguments_: JSON): LLM => {
-    const ctx = this._ctx.select("withToolCall", {
-      callId,
-      toolName,
-      arguments: arguments_,
-    })
-    return new LLM(ctx)
-  }
-
-  /**
    * Append the result of a tool call to the message history.
    * @param callId The ID of the tool call this result responds to
    * @param content The content returned by the tool

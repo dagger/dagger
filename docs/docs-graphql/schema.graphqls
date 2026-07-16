@@ -4785,20 +4785,6 @@ type LLM implements Node & Syncer {
     prompt: String!
   ): LLM!
 
-  """
-  Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.
-  """
-  withToolCall(
-    """The unique ID for this tool call"""
-    callId: String!
-
-    """The name of the tool to call"""
-    toolName: String!
-
-    """The arguments to pass to the tool, JSON-encoded"""
-    arguments: JSON!
-  ): LLM!
-
   """Append the result of a tool call to the message history."""
   withToolResult(
     """The ID of the tool call this result responds to"""

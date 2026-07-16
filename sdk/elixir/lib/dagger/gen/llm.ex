@@ -435,24 +435,6 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.
-  """
-  @spec with_tool_call(t(), String.t(), String.t(), Dagger.JSON.t()) :: Dagger.LLM.t()
-  def with_tool_call(%__MODULE__{} = llm, call_id, tool_name, arguments) do
-    query_builder =
-      llm.query_builder
-      |> QB.select("withToolCall")
-      |> QB.put_arg("callId", call_id)
-      |> QB.put_arg("toolName", tool_name)
-      |> QB.put_arg("arguments", arguments)
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
   Append the result of a tool call to the message history.
   """
   @spec with_tool_result(t(), String.t(), String.t(), boolean()) :: Dagger.LLM.t()

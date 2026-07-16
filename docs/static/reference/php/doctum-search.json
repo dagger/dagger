@@ -5660,12 +5660,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::withToolCall",
-			"p": "Dagger/LLM.html#method_withToolCall",
-			"d": "<p>Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\LLM::withToolResult",
 			"p": "Dagger/LLM.html#method_withToolResult",
 			"d": "<p>Append the result of a tool call to the message history.</p>"

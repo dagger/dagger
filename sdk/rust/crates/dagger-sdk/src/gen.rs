@@ -12481,29 +12481,6 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Append a tool call to the last assistant message, e.g. to reconstruct a conversation from another source.
-    ///
-    /// # Arguments
-    ///
-    /// * `call_id` - The unique ID for this tool call
-    /// * `tool_name` - The name of the tool to call
-    /// * `arguments` - The arguments to pass to the tool, JSON-encoded
-    pub fn with_tool_call(
-        &self,
-        call_id: impl Into<String>,
-        tool_name: impl Into<String>,
-        arguments: Json,
-    ) -> Llm {
-        let mut query = self.selection.select("withToolCall");
-        query = query.arg("callId", call_id.into());
-        query = query.arg("toolName", tool_name.into());
-        query = query.arg("arguments", arguments);
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Append the result of a tool call to the message history.
     ///
     /// # Arguments
