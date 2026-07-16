@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -508,6 +510,153 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 		filtered := filterPendingWorkspaceModulesForRootFields(mods, nil, []string{"loadSomethingFromID"})
 		require.Equal(t, mods, filtered)
 	})
+}
+
+func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
+	t.Parallel()
+
+	foo := pendingModule{Kind: moduleLoadKindAmbient, Name: "foo"}
+	barBaz := pendingModule{Kind: moduleLoadKindAmbient, Name: "barBaz"}
+	entry := pendingModule{Kind: moduleLoadKindAmbient, Name: "entry", Entrypoint: true}
+	mods := []pendingModule{foo, barBaz, entry}
+
+	t.Run("no scope delegates to root-field demand", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "", false)
+		require.False(t, applied)
+		require.Equal(t, mods, selected)
+	})
+
+	t.Run("scoped typedefs loads target plus entrypoint", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "foo", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{foo, entry}, selected)
+	})
+
+	t.Run("kebab-case token matches declared module name", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "bar-baz", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{barBaz, entry}, selected)
+	})
+
+	t.Run("unknown token loads pending entrypoint alone", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "greet", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{entry}, selected)
+	})
+
+	t.Run("unknown token without entrypoint loads all", func(t *testing.T) {
+		t.Parallel()
+
+		noEntry := []pendingModule{foo, barBaz}
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(noEntry, nil, []string{"currentTypeDefs"}, "greet", false)
+		require.True(t, applied)
+		require.Equal(t, noEntry, selected)
+	})
+
+	t.Run("another full-schema field loads all without consuming", func(t *testing.T) {
+		t.Parallel()
+
+		for _, field := range []string{"env", "__schema", "currentModule"} {
+			selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", field}, "foo", false)
+			require.False(t, applied, field)
+			require.Equal(t, mods, selected, field)
+		}
+	})
+
+	t.Run("no typedefs field delegates without consuming", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"foo"}, "barBaz", false)
+		require.False(t, applied)
+		require.Equal(t, []pendingModule{foo}, selected)
+	})
+
+	t.Run("typedefs plus module field unions both demands", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", "foo"}, "bar-baz", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{foo, barBaz, entry}, selected)
+	})
+
+	t.Run("served target contributes nothing to load", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"my-mod": {}}
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, served, []string{"currentTypeDefs"}, "myMod", false)
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{entry}, selected)
+	})
+
+	t.Run("unknown token with served entrypoint loads no siblings", func(t *testing.T) {
+		t.Parallel()
+
+		// A prior selective request may have loaded the entrypoint without
+		// consuming the scope. The later typedefs request is then already
+		// satisfied by that served entrypoint and must not fall back to every
+		// still-pending workspace module.
+		served := map[string]struct{}{"entry": {}}
+		pending := []pendingModule{foo, barBaz}
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(pending, served, []string{"currentTypeDefs"}, "greet", true)
+		require.True(t, applied)
+		require.Empty(t, selected)
+	})
+}
+
+func TestEnsureRequestModulesLoadedConsumesScopeBeforeUnlock(t *testing.T) {
+	client := &daggerClient{
+		clientID: "client",
+		clientMetadata: &engine.ClientMetadata{
+			WorkspaceModuleScope: "good",
+		},
+		pendingModules: []pendingModule{
+			{Kind: moduleLoadKindAmbient, Name: "bad"},
+		},
+		servedWorkspaceModuleNames: map[string]struct{}{"good": {}},
+	}
+	req := httptest.NewRequest(http.MethodPost, engine.QueryEndpoint, strings.NewReader(`{"query":"{ currentTypeDefs { name } }"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	postLoad := make(chan struct{})
+	resume := make(chan struct{})
+	var resumeOnce sync.Once
+	release := func() { resumeOnce.Do(func() { close(resume) }) }
+	t.Cleanup(release)
+
+	loadDone := make(chan error, 1)
+	go func() {
+		loadDone <- (&Server{}).ensureRequestModulesLoadedWithPostLoad(context.Background(), client, req, func() {
+			close(postLoad)
+			<-resume
+		})
+	}()
+
+	select {
+	case <-postLoad:
+	case <-time.After(10 * time.Second):
+		t.Fatal("module loading did not return")
+	}
+
+	client.modulesMu.Lock()
+	observedScope := client.pendingWorkspaceModuleScopeLocked()
+	client.modulesMu.Unlock()
+
+	release()
+	require.Empty(t, observedScope, "the one-shot scope was visible after the successful load released modulesMu")
+	select {
+	case err := <-loadDone:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("request module loading did not finish")
+	}
 }
 
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
