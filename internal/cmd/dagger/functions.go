@@ -191,6 +191,11 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 				params := initModuleParams(execArgs)
 				params.LoadWorkspaceModules = shouldLoadWorkspaceModules(fc.DisableModuleLoad)
+				// The leading token is the likely target module; the engine
+				// narrows workspace module loading from it (deliberately not
+				// set in initModuleParams: shell shares that helper and needs
+				// the full view).
+				params.WorkspaceModuleScope = functionName(execArgs)
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
