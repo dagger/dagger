@@ -787,6 +787,45 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 //go:embed llm_branch_summary.md
 var branchSummaryPrompt string
 
+// Summarization input budget: assume a conservative context window when the
+// model's real one is unknown, and reserve room for the prompt scaffolding
+// and the model's output, estimating ~4 chars per token.
+const (
+	summaryContextWindowTokens = 128000
+	summaryReserveTokens       = 16384
+	summaryCharsPerToken       = 4
+)
+
+// trimConversationForSummary drops the oldest serialized messages so the
+// conversation fits the summarization input budget, keeping the newest
+// content. SerializeHistory joins messages with blank lines, so trimming
+// happens at those boundaries; a notice marks the omission. Without this, a
+// near-window-sized history would leave the summarization request little or
+// no room to respond.
+func trimConversationForSummary(text string) string {
+	budgetChars := (summaryContextWindowTokens - summaryReserveTokens) * summaryCharsPerToken
+	if len(text) <= budgetChars {
+		return text
+	}
+	const notice = "[Earlier conversation omitted to fit the context window.]"
+	parts := strings.Split(text, "\n\n")
+	var kept []string
+	total := 0
+	for i := len(parts) - 1; i >= 0; i-- {
+		total += len(parts[i]) + 2
+		if total > budgetChars {
+			break
+		}
+		kept = append(kept, parts[i])
+	}
+	if len(kept) == 0 {
+		// A single oversized message (e.g. a huge tool result); keep its tail.
+		return notice + "\n\n" + text[len(text)-budgetChars:]
+	}
+	slices.Reverse(kept)
+	return notice + "\n\n" + strings.Join(kept, "\n\n")
+}
+
 // BranchSummary generates a summary of the current conversation branch. It is
 // used when branching to describe what was explored in the branch being
 // abandoned, so the summary can be injected at the branch target.
@@ -803,6 +842,7 @@ func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions strin
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize history: %w", err)
 	}
+	conversationText = trimConversationForSummary(conversationText)
 
 	instructions := branchSummaryPrompt
 	if customInstructions != "" {
