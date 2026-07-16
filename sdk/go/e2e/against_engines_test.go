@@ -12,7 +12,7 @@ import (
 func TestAgainstEngines(t *testing.T) {
 	t.Run("dev", func(t *testing.T) {
 		h := newHarness(t)
-		cliBin := h.devCLIBinary()
+		cliBin := h.devCLIBinary(t)
 		engine, engineEndpoint := h.startDevEngine(t, "go-client-against-dev-engine")
 
 		innerSource := h.dag.CurrentWorkspace().Directory("/sdk/go/e2e/testdata/against-engines")

@@ -26,8 +26,36 @@ import (
 	"dagger.io/dagger"
 )
 
+const (
+	engineDevModuleRef = "../../../toolchains/engine-dev"
+	engineDevCLIPath   = "/usr/local/bin/dagger"
+)
+
+// Keep in sync with the go:test:include directives above. ModuleSource starts
+// with the engine-dev module's narrow context; these patterns expand it to the
+// repository inputs needed to build the development CLI and engine.
+var engineDevSourceIncludes = []string{
+	"../../analytics/**",
+	"../../auth/**",
+	"../../cmd/**",
+	"../../core/**",
+	"../../dagql/**",
+	"../../engine/**",
+	"../../internal/**",
+	"../../modules/**",
+	"../../network/**",
+	"../../sdk/**",
+	"../../toolchains/**",
+	"../../util/**",
+	"../../dagger.json",
+	"../../go.mod",
+	"../../go.sum",
+	"../../LICENSE",
+}
+
 type harness struct {
-	dag *dagger.Client
+	dag      *dagger.Client
+	sourceID dagger.ID
 }
 
 func newHarness(t *testing.T) *harness {
@@ -42,41 +70,86 @@ func newHarness(t *testing.T) *harness {
 			t.Errorf("close stable orchestration client: %v", err)
 		}
 	})
-
-	// Privileged generic tests receive a core-only session. Explicitly serve
-	// engine-dev and its dagger-cli dependency from the workspace so these tests
-	// also work through a normally opened native session. The generic harness
-	// creates a synthetic .git/HEAD; exclude it to avoid Go VCS stamping errors
-	// and transferring repository history.
-	projectSource := dag.CurrentWorkspace().Directory("/", dagger.WorkspaceDirectoryOpts{
-		Exclude: []string{".git", ".git/**"},
-	})
-	if err := projectSource.AsModuleSource(dagger.DirectoryAsModuleSourceOpts{
-		SourceRootPath: "toolchains/engine-dev",
-	}).AsModule().Serve(t.Context(), dagger.ModuleServeOpts{IncludeDependencies: true}); err != nil {
-		t.Fatalf("serve project build modules: %v", err)
+	moduleSource := dag.ModuleSource(engineDevModuleRef).WithIncludes(engineDevSourceIncludes)
+	if err := moduleSource.AsModule().Serve(t.Context()); err != nil {
+		t.Fatalf("serve engine-dev module: %v", err)
+	}
+	sourceID, err := moduleSource.ContextDirectory().ID(t.Context())
+	if err != nil {
+		t.Fatalf("load engine-dev source directory: %v", err)
 	}
 
-	return &harness{dag: dag}
+	return &harness{dag: dag, sourceID: sourceID}
 }
 
-func (h *harness) devCLIBinary() *dagger.File {
-	// The released orchestration client has no generated types for this
-	// repository's project-only modules, so attach their query selections to
-	// otherwise empty core objects.
-	q := h.dag.QueryBuilder().Select("daggerCli").Select("binary")
-	return h.dag.File("e2e-placeholder", "").WithGraphQLQuery(q)
+func (h *harness) devCLIBinary(t *testing.T) *dagger.File {
+	t.Helper()
+
+	var result struct {
+		EngineDev struct {
+			Container struct {
+				File struct {
+					ID dagger.FileID `json:"id"`
+				} `json:"file"`
+			} `json:"container"`
+		} `json:"engineDev"`
+	}
+	if err := h.dag.Do(t.Context(), &dagger.Request{
+		Query: `query EngineDevCLI($source: ID!, $path: String!) {
+  engineDev(source: $source) {
+    container {
+      file(path: $path) {
+        id
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{
+			"source": h.sourceID,
+			"path":   engineDevCLIPath,
+		},
+		OpName: "EngineDevCLI",
+	}, &dagger.Response{Data: &result}); err != nil {
+		t.Fatalf("build development CLI: %v", err)
+	}
+
+	return h.dag.LoadFileFromID(result.EngineDev.Container.File.ID)
 }
 
-func (h *harness) devEngineService(name string) *dagger.Service {
-	q := h.dag.QueryBuilder().Select("engineDev").Select("service").Arg("name", name)
-	return h.dag.Container().AsService().WithGraphQLQuery(q)
+func (h *harness) devEngineService(t *testing.T, name string) *dagger.Service {
+	t.Helper()
+
+	var result struct {
+		EngineDev struct {
+			Service struct {
+				ID dagger.ServiceID `json:"id"`
+			} `json:"service"`
+		} `json:"engineDev"`
+	}
+	if err := h.dag.Do(t.Context(), &dagger.Request{
+		Query: `query EngineDevService($source: ID!, $name: String!) {
+  engineDev(source: $source) {
+    service(name: $name) {
+      id
+    }
+  }
+}`,
+		Variables: map[string]any{
+			"source": h.sourceID,
+			"name":   name,
+		},
+		OpName: "EngineDevService",
+	}, &dagger.Response{Data: &result}); err != nil {
+		t.Fatalf("create development engine service: %v", err)
+	}
+
+	return h.dag.LoadServiceFromID(result.EngineDev.Service.ID)
 }
 
 func (h *harness) startDevEngine(t *testing.T, name string) (*dagger.Service, string) {
 	t.Helper()
 
-	engine, err := h.devEngineService(name).Start(t.Context())
+	engine, err := h.devEngineService(t, name).Start(t.Context())
 	if err != nil {
 		t.Fatalf("start development engine: %v", err)
 	}

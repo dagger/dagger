@@ -21,7 +21,7 @@ const bootstrapArchiveName = "dagger-bootstrap.tar.gz"
 // and remains covered by core/integration/provision_test.go.
 func TestBootstrap(t *testing.T) {
 	h := newHarness(t)
-	cliBin := h.devCLIBinary()
+	cliBin := h.devCLIBinary(t)
 	assets := bootstrapAssetServer(h.dag, cliBin)
 	engine, engineEndpoint := h.startDevEngine(t, "go-client-bootstrap")
 
