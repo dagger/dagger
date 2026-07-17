@@ -10164,6 +10164,23 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+   */
+  skills = async (): Promise<LLMSkill[]> => {
+    type skills = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("skills").select("id")
+
+    const response: Awaited<skills[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new LLMSkill(ctx.copy().selectNode(r.id, "LLMSkill")),
+    )
+  }
+
+  /**
    * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
    * @param opts.maxTokens Cap the model's output tokens for this step. Defaults to the model's maximum.
    */
@@ -10281,6 +10298,15 @@ export class LLM extends BaseClient {
     opts?: LLMWithResponseOpts,
   ): LLM => {
     const ctx = this._ctx.select("withResponse", { content, ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
+   * @param directory A directory containing skills, each a subdirectory holding a SKILL.md.
+   */
+  withSkills = (directory: Directory): LLM => {
+    const ctx = this._ctx.select("withSkills", { directory })
     return new LLM(ctx)
   }
 
@@ -10596,6 +10622,71 @@ export class LLMMessage extends BaseClient {
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
     return new LLMTokenUsage(ctx)
+  }
+}
+
+/**
+ * A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.
+ */
+export class LLMSkill extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _description?: string, _name?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this LLMSkill.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The one-line description from the SKILL.md frontmatter.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The skill name, as passed to read_skill.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

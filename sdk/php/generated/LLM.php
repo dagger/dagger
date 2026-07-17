@@ -14,13 +14,12 @@ namespace Dagger;
 class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
-     * returns the type of the current state
+     * estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session
      */
-    public function bindResult(string $name): Binding
+    public function contextTokens(): int
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('bindResult');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Binding($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contextTokens');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'contextTokens');
     }
 
     /**
@@ -30,15 +29,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contextWindow');
         return (int)$this->queryLeaf($leafQueryBuilder, 'contextWindow');
-    }
-
-    /**
-     * return the LLM's current environment
-     */
-    public function env(): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('env');
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -140,6 +130,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
+     * The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.
+     */
+    public function skills(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('skills');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'skills');
+    }
+
+    /**
      * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
      */
     public function step(?int $maxTokens = null): LLM
@@ -189,27 +188,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Return a new LLM with the specified function no longer exposed as a tool
-     */
-    public function withBlockedFunction(string $typeName, string $function): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlockedFunction');
-        $innerQueryBuilder->setArgument('typeName', $typeName);
-        $innerQueryBuilder->setArgument('function', $function);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * allow the LLM to interact with an environment via MCP
-     */
-    public function withEnv(Env $env): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnv');
-        $innerQueryBuilder->setArgument('env', $env);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Add an external MCP server to the LLM
      */
     public function withMCPServer(string $name, Service $service): LLM
@@ -230,17 +208,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         if (null !== $provider) {
         $innerQueryBuilder->setArgument('provider', $provider);
         }
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Track an object so the LLM can reference it in subsequent tool calls.
-     */
-    public function withObject(string $tag, Id $object): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
-        $innerQueryBuilder->setArgument('tag', $tag);
-        $innerQueryBuilder->setArgument('object', $object);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -305,11 +272,12 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     }
 
     /**
-     * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+     * Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.
      */
-    public function withStaticTools(): LLM
+    public function withSkills(Directory $directory): LLM
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withStaticTools');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSkills');
+        $innerQueryBuilder->setArgument('directory', $directory);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -332,6 +300,29 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
         $innerQueryBuilder->setArgument('callId', $callId);
         $innerQueryBuilder->setArgument('content', $content);
         $innerQueryBuilder->setArgument('errored', $errored);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.
+     */
+    public function withTools(Node $object, ?array $except = []): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTools');
+        $innerQueryBuilder->setArgument('object', $object);
+        if (null !== $except) {
+        $innerQueryBuilder->setArgument('except', $except);
+        }
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.
+     */
+    public function withWorkspace(Workspace $workspace): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspace');
+        $innerQueryBuilder->setArgument('workspace', $workspace);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -360,5 +351,14 @@ class LLM extends Client\AbstractObject implements Client\IdAble, Node, Syncer
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSystemPrompts');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return the workspace the LLM is bound to.
+     */
+    public function workspace(): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
