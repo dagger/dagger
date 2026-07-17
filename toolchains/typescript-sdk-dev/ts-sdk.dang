@@ -117,7 +117,7 @@ type TypescriptSdkDev {
     ctr
       .withFile("/usr/local/bin/codegen", codegen.binary)
       .withExec(["codegen", "generate-library", "--lang", "typescript", "-o", "./sdk/typescript/src/api/"])
-      .withExec(["yarn", "--cwd", sourcePath, "eslint", "--max-warnings=0", "--fix", "./src/api/"])
+      .withExec(["sh", "-c", "yarn --cwd " + sourcePath + " eslint --max-warnings=0 --fix ./src/api/"])
       .directory(".")
       # FIXME: more efficient way to exclude node_modules from the diff?
       .withoutDirectory(sourcePath + "/node_modules")

@@ -90,9 +90,10 @@ type Server interface {
 	// Load pending workspace modules on demand; include narrows to the modules
 	// its patterns name ("module" or "module:item"), empty or unrecognized
 	// loads all. With bestEffort, modules that fail to load are skipped with a
-	// warning instead of failing the operation — for operations like generate
-	// that may be exactly what repairs the failing module.
-	EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) error
+	// warning instead of failing the operation, and their failure messages are
+	// returned for the caller to surface (e.g. GeneratorGroup.loadFailures) —
+	// for operations like generate that may be exactly what repairs the module.
+	EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) (loadFailures []string, _ error)
 
 	// A snapshot of the current workspace lockfile for ambient live locking.
 	// Returns ok=false when lock-backed workspace access is unavailable.
@@ -172,6 +173,13 @@ type Server interface {
 
 	// Flush telemetry for all clients in the current session.
 	FlushSessionTelemetry(ctx context.Context) error
+
+	// SessionScopedContext returns a context that lives for the remainder of
+	// the current client's session: it is detached from the given context's
+	// cancellation and is canceled when the session begins closing. Use it
+	// for background work that serves the session as a whole rather than a
+	// single call.
+	SessionScopedContext(ctx context.Context) (context.Context, error)
 
 	// Open a client's telemetry database.
 	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error)

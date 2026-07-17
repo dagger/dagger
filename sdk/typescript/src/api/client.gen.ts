@@ -1824,8 +1824,8 @@ export type ID = string & { __ID: never }
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  EstarGz = "EStarGZ",
-  Estargz = ImageLayerCompression.EstarGz,
+  EStarGz = "EStarGZ",
+  Estargz = ImageLayerCompression.EStarGz,
   Gzip = "Gzip",
   Uncompressed = "Uncompressed",
   Zstd = "Zstd",
@@ -1839,7 +1839,7 @@ export function ImageLayerCompressionValueToName(
   value: ImageLayerCompression,
 ): string {
   switch (value) {
-    case ImageLayerCompression.EstarGz:
+    case ImageLayerCompression.EStarGz:
       return "EStarGZ"
     case ImageLayerCompression.Gzip:
       return "Gzip"
@@ -1861,7 +1861,7 @@ export function ImageLayerCompressionNameToValue(
 ): ImageLayerCompression {
   switch (name) {
     case "EStarGZ":
-      return ImageLayerCompression.EstarGz
+      return ImageLayerCompression.EStarGz
     case "Gzip":
       return ImageLayerCompression.Gzip
     case "Uncompressed":
@@ -1879,7 +1879,7 @@ export enum ImageMediaTypes {
   Docker = "DockerMediaTypes",
   DockerMediaTypes = ImageMediaTypes.Docker,
   Oci = "OCIMediaTypes",
-  OcimediaTypes = ImageMediaTypes.Oci,
+  OciMediaTypes = ImageMediaTypes.Oci,
 }
 
 /**
@@ -1928,6 +1928,215 @@ export type JSONValueContentsOpts = {
   indent?: string
 }
 
+export type LLMLoopOpts = {
+  /**
+   * Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
+   */
+  maxSteps?: number
+
+  /**
+   * Cap the model's output tokens on each step. Defaults to the model's maximum.
+   */
+  maxTokens?: number
+}
+
+export type LLMStepOpts = {
+  /**
+   * Cap the model's output tokens for this step. Defaults to the model's maximum.
+   */
+  maxTokens?: number
+}
+
+export type LLMWithModelOpts = {
+  /**
+   * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+   */
+  provider?: string
+}
+
+export type LLMWithResponseOpts = {
+  /**
+   * Uncached input tokens sent
+   */
+  inputTokens?: number
+
+  /**
+   * Tokens received from the model, including text and tool calls
+   */
+  outputTokens?: number
+
+  /**
+   * Cached input tokens read
+   */
+  cachedTokenReads?: number
+
+  /**
+   * Cached input tokens written
+   */
+  cachedTokenWrites?: number
+
+  /**
+   * Total tokens consumed by this response
+   */
+  totalTokens?: number
+}
+
+export type LLMContentBlockInput = {
+  /**
+   * The arguments to pass to the tool (for TOOL_CALL kind).
+   */
+  arguments?: JSON
+
+  /**
+   * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+   */
+  callId?: string
+
+  /**
+   * Whether the tool call resulted in an error (for TOOL_RESULT kind).
+   */
+  errored?: boolean
+
+  /**
+   * The kind of content block.
+   */
+  kind: LLMContentBlockKind
+
+  /**
+   * Provider-specific opaque data (e.g. Anthropic thinking signature).
+   */
+  signature?: string
+
+  /**
+   * Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+   */
+  text?: string
+
+  /**
+   * The name of the tool to call (for TOOL_CALL kind).
+   */
+  toolName?: string
+}
+
+/**
+ * The kind of content in a message block.
+ */
+export enum LLMContentBlockKind {
+  /**
+   * Plain text content.
+   */
+  Text = "TEXT",
+
+  /**
+   * Model thinking/reasoning content (e.g. Anthropic extended thinking).
+   */
+  Thinking = "THINKING",
+
+  /**
+   * A tool/function call from the model.
+   */
+  ToolCall = "TOOL_CALL",
+
+  /**
+   * A tool/function result.
+   */
+  ToolResult = "TOOL_RESULT",
+}
+
+/**
+ * Utility function to convert a LLMContentBlockKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function LLMContentBlockKindValueToName(
+  value: LLMContentBlockKind,
+): string {
+  switch (value) {
+    case LLMContentBlockKind.Text:
+      return "TEXT"
+    case LLMContentBlockKind.Thinking:
+      return "THINKING"
+    case LLMContentBlockKind.ToolCall:
+      return "TOOL_CALL"
+    case LLMContentBlockKind.ToolResult:
+      return "TOOL_RESULT"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a LLMContentBlockKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function LLMContentBlockKindNameToValue(
+  name: string,
+): LLMContentBlockKind {
+  switch (name) {
+    case "TEXT":
+      return LLMContentBlockKind.Text
+    case "THINKING":
+      return LLMContentBlockKind.Thinking
+    case "TOOL_CALL":
+      return LLMContentBlockKind.ToolCall
+    case "TOOL_RESULT":
+      return LLMContentBlockKind.ToolResult
+    default:
+      return name as LLMContentBlockKind
+  }
+}
+/**
+ * The role that generated a message.
+ */
+export enum LLMMessageRole {
+  /**
+   * A reply from the model.
+   */
+  Assistant = "ASSISTANT",
+
+  /**
+   * A system prompt.
+   */
+  System = "SYSTEM",
+
+  /**
+   * A user prompt or tool response.
+   */
+  User = "USER",
+}
+
+/**
+ * Utility function to convert a LLMMessageRole value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+export function LLMMessageRoleValueToName(value: LLMMessageRole): string {
+  switch (value) {
+    case LLMMessageRole.Assistant:
+      return "ASSISTANT"
+    case LLMMessageRole.System:
+      return "SYSTEM"
+    case LLMMessageRole.User:
+      return "USER"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a LLMMessageRole name to its value so
+ * it can be properly used inside the module runtime.
+ */
+export function LLMMessageRoleNameToValue(name: string): LLMMessageRole {
+  switch (name) {
+    case "ASSISTANT":
+      return LLMMessageRole.Assistant
+    case "SYSTEM":
+      return LLMMessageRole.System
+    case "USER":
+      return LLMMessageRole.User
+    default:
+      return name as LLMMessageRole
+  }
+}
 export type ModuleChecksOpts = {
   /**
    * Only include checks matching the specified patterns
@@ -2259,16 +2468,16 @@ export type ClientHttpOpts = {
   experimentalServiceHost?: Service
 }
 
-export type ClientLlmOpts = {
+export type ClientLLMOpts = {
   /**
-   * Model to use
+   * The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
    */
   model?: string
 
   /**
-   * Cap the number of API calls for this LLM
+   * The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
    */
-  maxAPICalls?: number
+  provider?: string
 }
 
 export type ClientModuleSourceOpts = {
@@ -2781,6 +2990,63 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceSearchOpts = {
+  /**
+   * Directory or file paths to search
+   */
+  paths?: string[]
+
+  /**
+   * Glob patterns to match (e.g., "*.md")
+   */
+  globs?: string[]
+
+  /**
+   * The text to match.
+   */
+  pattern: string
+
+  /**
+   * Interpret the pattern as a literal string instead of a regular expression.
+   */
+  literal?: boolean
+
+  /**
+   * Enable searching across multiple lines.
+   */
+  multiline?: boolean
+
+  /**
+   * Allow the . pattern to match newlines in multiline mode.
+   */
+  dotall?: boolean
+
+  /**
+   * Enable case-insensitive matching.
+   */
+  insensitive?: boolean
+
+  /**
+   * Honor .gitignore, .ignore, and .rgignore files.
+   */
+  skipIgnored?: boolean
+
+  /**
+   * Skip hidden files (files starting with .).
+   */
+  skipHidden?: boolean
+
+  /**
+   * Only return matching files, not lines and content
+   */
+  filesOnly?: boolean
+
+  /**
+   * Limit the number of results to return
+   */
+  limit?: number
+}
+
 export type WorkspaceServicesOpts = {
   /**
    * Only include services matching the specified patterns
@@ -2796,6 +3062,11 @@ export type WorkspaceWithConfigEnvOpts = {
 }
 
 export type WorkspaceWithConfigValueOpts = {
+  /**
+   * List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+   */
+  values?: string[]
+
   /**
    * Write to the workspace config directory at the workspace cwd.
    */
@@ -2878,6 +3149,13 @@ export type WorkspaceWithSdkOpts = {
 }
 
 export type WorkspaceWithoutConfigEnvOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceWithoutConfigValueOpts = {
   /**
    * Write to the workspace config directory at the workspace cwd.
    */
@@ -3241,6 +3519,22 @@ export class Binding extends BaseClient {
   asJSONValue = (): JSONValue => {
     const ctx = this._ctx.select("asJSONValue")
     return new JSONValue(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type LLMContentBlock
+   */
+  asLLMContentBlock = (): LLMContentBlock => {
+    const ctx = this._ctx.select("asLLMContentBlock")
+    return new LLMContentBlock(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type LLMMessage
+   */
+  asLLMMessage = (): LLMMessage => {
+    const ctx = this._ctx.select("asLLMMessage")
+    return new LLMMessage(ctx)
   }
 
   /**
@@ -5721,6 +6015,14 @@ export class CurrentModuleAsSDKClient extends BaseClient {
   }
 
   /**
+   * The resolved module source this client is bound to, including its dependency closure and pinned version.
+   */
+  moduleSource = (): ModuleSource => {
+    const ctx = this._ctx.select("moduleSource")
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Workspace-root-relative path of the generated client.
    */
   path = async (): Promise<string> => {
@@ -7878,6 +8180,67 @@ export class Env extends BaseClient {
    */
   withJSONValueOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withJSONValueOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type LLMContentBlock in the environment
+   * @param name The name of the binding
+   * @param value The LLMContentBlock value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withLLMContentBlockInput = (
+    name: string,
+    value: LLMContentBlock,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withLLMContentBlockInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired LLMContentBlock output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withLLMContentBlockOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withLLMContentBlockOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type LLMMessage in the environment
+   * @param name The name of the binding
+   * @param value The LLMMessage value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withLLMMessageInput = (
+    name: string,
+    value: LLMMessage,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withLLMMessageInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired LLMMessage output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withLLMMessageOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withLLMMessageOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -10217,6 +10580,19 @@ export class GeneratorGroup extends BaseClient {
   }
 
   /**
+   * Load failures tolerated while collecting the generators.
+   *
+   * Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
+   */
+  loadFailures = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("loadFailures")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Execute all selected generators
    */
   run = (): GeneratorGroup => {
@@ -11163,16 +11539,21 @@ export class JSONValue extends BaseClient {
   }
 }
 
+/**
+ * A conversation with a large language model (LLM): queue prompts, expose tools, and step the model until it completes its turn.
+ */
 export class LLM extends BaseClient {
   private readonly _id?: ID = undefined
-  private readonly _hasPrompt?: boolean = undefined
-  private readonly _historyJSON?: JSON = undefined
+  private readonly _contextWindow?: number = undefined
+  private readonly _hasPending?: boolean = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
+  private readonly _portableID?: ID = undefined
   private readonly _provider?: string = undefined
-  private readonly _step?: ID = undefined
+  private readonly _replay?: ID = undefined
   private readonly _sync?: ID = undefined
   private readonly _tools?: string = undefined
+  private readonly _transcript?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -11180,26 +11561,30 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ID,
-    _hasPrompt?: boolean,
-    _historyJSON?: JSON,
+    _contextWindow?: number,
+    _hasPending?: boolean,
     _lastReply?: string,
     _model?: string,
+    _portableID?: ID,
     _provider?: string,
-    _step?: ID,
+    _replay?: ID,
     _sync?: ID,
     _tools?: string,
+    _transcript?: string,
   ) {
     super(ctx)
 
     this._id = _id
-    this._hasPrompt = _hasPrompt
-    this._historyJSON = _historyJSON
+    this._contextWindow = _contextWindow
+    this._hasPending = _hasPending
     this._lastReply = _lastReply
     this._model = _model
+    this._portableID = _portableID
     this._provider = _provider
-    this._step = _step
+    this._replay = _replay
     this._sync = _sync
     this._tools = _tools
+    this._transcript = _transcript
   }
 
   /**
@@ -11218,21 +11603,26 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * create a branch in the LLM's history
-   */
-  attempt = (number_: number): LLM => {
-    const ctx = this._ctx.select("attempt", {
-      number: number_,
-    })
-    return new LLM(ctx)
-  }
-
-  /**
    * returns the type of the current state
    */
   bindResult = (name: string): Binding => {
     const ctx = this._ctx.select("bindResult", { name })
     return new Binding(ctx)
+  }
+
+  /**
+   * The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
+   */
+  contextWindow = async (): Promise<number> => {
+    if (this._contextWindow) {
+      return this._contextWindow
+    }
+
+    const ctx = this._ctx.select("contextWindow")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -11244,14 +11634,23 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Indicates whether there are any queued prompts or tool results to send to the model
+   * Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
+   * @param label A label distinguishing this fork from its siblings, e.g. "attempt-2" when retrying a flaky evaluation.
    */
-  hasPrompt = async (): Promise<boolean> => {
-    if (this._hasPrompt) {
-      return this._hasPrompt
+  fork = (label: string): LLM => {
+    const ctx = this._ctx.select("fork", { label })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
+   */
+  hasPending = async (): Promise<boolean> => {
+    if (this._hasPending) {
+      return this._hasPending
     }
 
-    const ctx = this._ctx.select("hasPrompt")
+    const ctx = this._ctx.select("hasPending")
 
     const response: Awaited<boolean> = await ctx.execute()
 
@@ -11259,33 +11658,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * return the llm message history
-   */
-  history = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("history")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * return the raw llm message history as json
-   */
-  historyJSON = async (): Promise<JSON> => {
-    if (this._historyJSON) {
-      return this._historyJSON
-    }
-
-    const ctx = this._ctx.select("historyJSON")
-
-    const response: Awaited<JSON> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * return the last llm reply from the history
+   * The text of the model's most recent reply.
    */
   lastReply = async (): Promise<string> => {
     if (this._lastReply) {
@@ -11300,15 +11673,34 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
+   * Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
+   * @param opts.maxSteps Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
+   * @param opts.maxTokens Cap the model's output tokens on each step. Defaults to the model's maximum.
    */
-  loop = (): LLM => {
-    const ctx = this._ctx.select("loop")
+  loop = (opts?: LLMLoopOpts): LLM => {
+    const ctx = this._ctx.select("loop", { ...opts })
     return new LLM(ctx)
   }
 
   /**
-   * return the model used by the llm
+   * The full message history, as structured messages.
+   */
+  messages = async (): Promise<LLMMessage[]> => {
+    type messages = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("messages").select("id")
+
+    const response: Awaited<messages[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new LLMMessage(ctx.copy().selectNode(r.id, "LLMMessage")),
+    )
+  }
+
+  /**
+   * The model the conversation is running against, after resolving any configured default.
    */
   model = async (): Promise<string> => {
     if (this._model) {
@@ -11323,7 +11715,22 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * return the provider used by the llm
+   * A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+   */
+  portableID = async (): Promise<ID> => {
+    if (this._portableID) {
+      return this._portableID
+    }
+
+    const ctx = this._ctx.select("portableID")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
    */
   provider = async (): Promise<string> => {
     if (this._provider) {
@@ -11338,10 +11745,10 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+   * Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
    */
-  step = async (): Promise<LLM> => {
-    const ctx = this._ctx.select("step")
+  replay = async (): Promise<LLM> => {
+    const ctx = this._ctx.select("replay")
 
     const response: Awaited<ID> = await ctx.execute()
 
@@ -11349,7 +11756,16 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * synchronize LLM state
+   * Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
+   * @param opts.maxTokens Cap the model's output tokens for this step. Defaults to the model's maximum.
+   */
+  step = (opts?: LLMStepOpts): LLM => {
+    const ctx = this._ctx.select("step", { ...opts })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
    */
   sync = async (): Promise<LLM> => {
     const ctx = this._ctx.select("sync")
@@ -11360,7 +11776,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * returns the token usage of the current state
+   * The cumulative token usage, summed across every API call in the conversation.
    */
   tokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("tokenUsage")
@@ -11368,7 +11784,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * print documentation for available tools
+   * Render documentation for the tools currently exposed to the model.
    */
   tools = async (): Promise<string> => {
     if (this._tools) {
@@ -11376,6 +11792,21 @@ export class LLM extends BaseClient {
     }
 
     const ctx = this._ctx.select("tools")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+   */
+  transcript = async (): Promise<string> => {
+    if (this._transcript) {
+      return this._transcript
+    }
+
+    const ctx = this._ctx.select("transcript")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -11416,16 +11847,27 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * swap out the llm model
-   * @param model The model to use
+   * Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
+   * @param model The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4".
+   * @param opts.provider The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
    */
-  withModel = (model: string): LLM => {
-    const ctx = this._ctx.select("withModel", { model })
+  withModel = (model: string, opts?: LLMWithModelOpts): LLM => {
+    const ctx = this._ctx.select("withModel", { model, ...opts })
     return new LLM(ctx)
   }
 
   /**
-   * append a prompt to the llm context
+   * Track an object so the LLM can reference it in subsequent tool calls.
+   * @param tag Arbitrary string tag for the object, typically in TypeName#Number format
+   * @param object The object to track, as a generic ID
+   */
+  withObject = (tag: string, object: ID): LLM => {
+    const ctx = this._ctx.select("withObject", { tag, object })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Queue a user prompt, to be sent to the model on the next step or loop.
    * @param prompt The prompt to send
    */
   withPrompt = (prompt: string): LLM => {
@@ -11434,11 +11876,28 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * append the contents of a file to the llm context
+   * Queue a file's contents as a user prompt, like withPrompt.
    * @param file The file to read the prompt from
    */
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
+   * @param content The response content
+   * @param opts.inputTokens Uncached input tokens sent
+   * @param opts.outputTokens Tokens received from the model, including text and tool calls
+   * @param opts.cachedTokenReads Cached input tokens read
+   * @param opts.cachedTokenWrites Cached input tokens written
+   * @param opts.totalTokens Total tokens consumed by this response
+   */
+  withResponse = (
+    content: LLMContentBlockInput[],
+    opts?: LLMWithResponseOpts,
+  ): LLM => {
+    const ctx = this._ctx.select("withResponse", { content, ...opts })
     return new LLM(ctx)
   }
 
@@ -11451,11 +11910,22 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Add a system prompt to the LLM's environment
+   * Add a system prompt, instructing the model across the whole conversation.
    * @param prompt The system prompt to send
    */
   withSystemPrompt = (prompt: string): LLM => {
     const ctx = this._ctx.select("withSystemPrompt", { prompt })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Append the result of a tool call to the message history.
+   * @param callId The ID of the tool call this result responds to
+   * @param content The content returned by the tool
+   * @param errored Whether the tool call resulted in an error
+   */
+  withToolResult = (callId: string, content: string, errored: boolean): LLM => {
+    const ctx = this._ctx.select("withToolResult", { callId, content, errored })
     return new LLM(ctx)
   }
 
@@ -11468,7 +11938,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Clear the message history, leaving only the system prompts
+   * Clear the message history, keeping only the system prompts.
    */
   withoutMessageHistory = (): LLM => {
     const ctx = this._ctx.select("withoutMessageHistory")
@@ -11476,7 +11946,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Clear the system prompts, leaving only the default system prompt
+   * Clear the user-added system prompts, keeping only the default system prompt.
    */
   withoutSystemPrompts = (): LLM => {
     const ctx = this._ctx.select("withoutSystemPrompts")
@@ -11493,6 +11963,243 @@ export class LLM extends BaseClient {
   }
 }
 
+/**
+ * A single piece of content within an LLM message.
+ */
+export class LLMContentBlock extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _arguments?: JSON = undefined
+  private readonly _callId?: string = undefined
+  private readonly _errored?: boolean = undefined
+  private readonly _kind?: LLMContentBlockKind = undefined
+  private readonly _signature?: string = undefined
+  private readonly _text?: string = undefined
+  private readonly _toolName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _arguments?: JSON,
+    _callId?: string,
+    _errored?: boolean,
+    _kind?: LLMContentBlockKind,
+    _signature?: string,
+    _text?: string,
+    _toolName?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._arguments = _arguments
+    this._callId = _callId
+    this._errored = _errored
+    this._kind = _kind
+    this._signature = _signature
+    this._text = _text
+    this._toolName = _toolName
+  }
+
+  /**
+   * A unique identifier for this LLMContentBlock.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+   */
+  arguments_ = async (): Promise<JSON> => {
+    if (this._arguments) {
+      return this._arguments
+    }
+
+    const ctx = this._ctx.select("arguments")
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+   */
+  callId = async (): Promise<string> => {
+    if (this._callId) {
+      return this._callId
+    }
+
+    const ctx = this._ctx.select("callId")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the tool call resulted in an error (for TOOL_RESULT kind).
+   */
+  errored = async (): Promise<boolean> => {
+    if (this._errored) {
+      return this._errored
+    }
+
+    const ctx = this._ctx.select("errored")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The kind of content block, which determines the other populated fields.
+   */
+  kind = async (): Promise<LLMContentBlockKind> => {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const ctx = this._ctx.select("kind")
+
+    const response: Awaited<LLMContentBlockKind> = await ctx.execute()
+
+    return LLMContentBlockKindNameToValue(response)
+  }
+
+  /**
+   * Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+   */
+  signature = async (): Promise<string> => {
+    if (this._signature) {
+      return this._signature
+    }
+
+    const ctx = this._ctx.select("signature")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+   */
+  text = async (): Promise<string> => {
+    if (this._text) {
+      return this._text
+    }
+
+    const ctx = this._ctx.select("text")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The name of the tool called (for TOOL_CALL kind).
+   */
+  toolName = async (): Promise<string> => {
+    if (this._toolName) {
+      return this._toolName
+    }
+
+    const ctx = this._ctx.select("toolName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A single message in an LLM conversation.
+ */
+export class LLMMessage extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _role?: LLMMessageRole = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _role?: LLMMessageRole) {
+    super(ctx)
+
+    this._id = _id
+    this._role = _role
+  }
+
+  /**
+   * A unique identifier for this LLMMessage.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The message's content blocks, in the order the model produced them.
+   */
+  content = async (): Promise<LLMContentBlock[]> => {
+    type content = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("content").select("id")
+
+    const response: Awaited<content[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new LLMContentBlock(ctx.copy().selectNode(r.id, "LLMContentBlock")),
+    )
+  }
+
+  /**
+   * The role that produced this message.
+   */
+  role = async (): Promise<LLMMessageRole> => {
+    if (this._role) {
+      return this._role
+    }
+
+    const ctx = this._ctx.select("role")
+
+    const response: Awaited<LLMMessageRole> = await ctx.execute()
+
+    return LLMMessageRoleNameToValue(response)
+  }
+
+  /**
+   * Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+   */
+  tokenUsage = (): LLMTokenUsage => {
+    const ctx = this._ctx.select("tokenUsage")
+    return new LLMTokenUsage(ctx)
+  }
+}
+
+/**
+ * A count of tokens consumed by LLM API calls.
+ */
 export class LLMTokenUsage extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _cachedTokenReads?: number = undefined
@@ -11537,6 +12244,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Input tokens served from the provider's prompt cache.
+   */
   cachedTokenReads = async (): Promise<number> => {
     if (this._cachedTokenReads) {
       return this._cachedTokenReads
@@ -11548,6 +12259,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Input tokens written to the provider's prompt cache.
+   */
   cachedTokenWrites = async (): Promise<number> => {
     if (this._cachedTokenWrites) {
       return this._cachedTokenWrites
@@ -11559,6 +12274,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Uncached input tokens sent to the model.
+   */
   inputTokens = async (): Promise<number> => {
     if (this._inputTokens) {
       return this._inputTokens
@@ -11570,6 +12289,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Tokens received from the model, including text and tool calls.
+   */
   outputTokens = async (): Promise<number> => {
     if (this._outputTokens) {
       return this._outputTokens
@@ -11581,6 +12304,10 @@ export class LLMTokenUsage extends BaseClient {
 
     return response
   }
+
+  /**
+   * Total tokens consumed, as reported by the provider.
+   */
   totalTokens = async (): Promise<number> => {
     if (this._totalTokens) {
       return this._totalTokens
@@ -12207,6 +12934,16 @@ export class ModuleSource extends BaseClient {
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * The client-facing introspection schema JSON file for this module source.
+   *
+   * This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+   */
+  clientSchemaIntrospectionJSON = (): File => {
+    const ctx = this._ctx.select("clientSchemaIntrospectionJSON")
+    return new File(ctx)
   }
 
   /**
@@ -13384,12 +14121,12 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Initialize a Large Language Model (LLM)
-   * @param opts.model Model to use
-   * @param opts.maxAPICalls Cap the number of API calls for this LLM
+   * Initialize a new LLM conversation.
+   * @param opts.model The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
+   * @param opts.provider The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
    * @experimental
    */
-  llm = (opts?: ClientLlmOpts): LLM => {
+  llm = (opts?: ClientLLMOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
     return new LLM(ctx)
   }
@@ -15246,6 +15983,20 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Returns a list of files and directories that match the given pattern.
+   *
+   * Patterns match paths relative to the workspace root.
+   * @param pattern Pattern to match (e.g., "*.md").
+   */
+  glob = async (pattern: string): Promise<string[]> => {
+    const ctx = this._ctx.select("glob", { pattern })
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Plan the explicit migration needed for the current workspace.
    *
    * The returned plan has an empty changeset and no steps when no migration is needed.
@@ -15309,6 +16060,38 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Searches for content matching the given regular expression or literal string.
+   *
+   * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+   *
+   * Runs ripgrep on the client host, falling back to grep if unavailable.
+   * @param opts.paths Directory or file paths to search
+   * @param opts.globs Glob patterns to match (e.g., "*.md")
+   * @param opts.pattern The text to match.
+   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
+   * @param opts.multiline Enable searching across multiple lines.
+   * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
+   * @param opts.insensitive Enable case-insensitive matching.
+   * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
+   * @param opts.skipHidden Skip hidden files (files starting with .).
+   * @param opts.filesOnly Only return matching files, not lines and content
+   * @param opts.limit Limit the number of results to return
+   */
+  search = async (opts?: WorkspaceSearchOpts): Promise<SearchResult[]> => {
+    type search = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("search", { ...opts }).select("id")
+
+    const response: Awaited<search[]> = await ctx.execute()
+
+    return response.map(
+      (r) => new SearchResult(ctx.copy().selectNode(r.id, "SearchResult")),
+    )
+  }
+
+  /**
    * Return all services from modules loaded in the workspace.
    * @param opts.include Only include services matching the specified patterns
    */
@@ -15342,7 +16125,8 @@ export class Workspace extends BaseClient {
   /**
    * Return this workspace with a configuration value written.
    * @param key Dotted key path.
-   * @param value Value to set.
+   * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+   * @param opts.values List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */
   withConfigValue = (
@@ -15462,6 +16246,21 @@ export class Workspace extends BaseClient {
     opts?: WorkspaceWithoutConfigEnvOpts,
   ): Workspace => {
     const ctx = this._ctx.select("withoutConfigEnv", { name, ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
+   * Return this workspace with a configuration value removed.
+   *
+   * Errors when the key is not currently set.
+   * @param key Dotted key path (e.g. modules.greeter.settings.greeting).
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  withoutConfigValue = (
+    key: string,
+    opts?: WorkspaceWithoutConfigValueOpts,
+  ): Workspace => {
+    const ctx = this._ctx.select("withoutConfigValue", { key, ...opts })
     return new Workspace(ctx)
   }
 
@@ -15802,6 +16601,7 @@ export class WorkspaceModule extends BaseClient {
 export class WorkspaceModuleSetting extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _description?: string = undefined
+  private readonly _isList?: boolean = undefined
   private readonly _key?: string = undefined
   private readonly _value?: string = undefined
 
@@ -15812,6 +16612,7 @@ export class WorkspaceModuleSetting extends BaseClient {
     ctx?: Context,
     _id?: ID,
     _description?: string,
+    _isList?: boolean,
     _key?: string,
     _value?: string,
   ) {
@@ -15819,6 +16620,7 @@ export class WorkspaceModuleSetting extends BaseClient {
 
     this._id = _id
     this._description = _description
+    this._isList = _isList
     this._key = _key
     this._value = _value
   }
@@ -15849,6 +16651,21 @@ export class WorkspaceModuleSetting extends BaseClient {
     const ctx = this._ctx.select("description")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the setting accepts a list of values.
+   */
+  isList = async (): Promise<boolean> => {
+    if (this._isList) {
+      return this._isList
+    }
+
+    const ctx = this._ctx.select("isList")
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }

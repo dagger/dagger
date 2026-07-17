@@ -190,6 +190,7 @@ var workspaceConfigCmd = &cobra.Command{
 With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
+With one argument and --unset, removes the value at the given key.
 
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
@@ -224,7 +225,11 @@ var activityCmd = &cobra.Command{
 
 var workspaceActivityAll bool
 
+var workspaceConfigUnset bool
+
 func init() {
+	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigUnset, "unset", "u", false, "Remove the value at the given key")
+
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
@@ -241,11 +246,18 @@ func addWorkspaceHereFlag(cmd *cobra.Command) {
 }
 
 func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
+	if workspaceConfigUnset && len(args) != 1 {
+		return fmt.Errorf("--unset requires a KEY argument")
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		ws := engineClient.Dagger().CurrentWorkspace()
+
+		if workspaceConfigUnset {
+			return ws.WithoutConfigValue(args[0], dagger.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).Export(ctx)
+		}
 
 		switch len(args) {
 		case 0:

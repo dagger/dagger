@@ -299,6 +299,10 @@ type SpanSnapshot struct {
 	// Generator name
 	GeneratorName string `json:",omitempty"`
 
+	// Set on a span reporting a workspace module that best-effort generate
+	// skipped because it could not be loaded.
+	GenerateSkipped bool `json:",omitempty"`
+
 	// Service name
 	ServiceName string `json:",omitempty"`
 
@@ -311,6 +315,7 @@ type SpanSnapshot struct {
 	LLMToolServer    string   `json:",omitempty"`
 	LLMToolArgNames  []string `json:",omitempty"`
 	LLMToolArgValues []string `json:",omitempty"`
+	LLMCallDigest    string   `json:",omitempty"`
 
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
@@ -445,6 +450,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.GeneratorNameAttr:
 		snapshot.GeneratorName = val.(string)
 
+	case telemetryattrs.GenerateSkippedAttr:
+		snapshot.GenerateSkipped = val.(bool)
+
 	case "dagger.io/service.name":
 		snapshot.ServiceName = val.(string)
 
@@ -462,6 +470,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.LLMToolArgValuesAttr:
 		snapshot.LLMToolArgValues = sliceOf[string](val)
+
+	case telemetryattrs.LLMCallDigestAttr:
+		snapshot.LLMCallDigest = val.(string)
 
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)

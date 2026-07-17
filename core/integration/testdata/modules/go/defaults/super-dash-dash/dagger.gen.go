@@ -290,6 +290,40 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A module with a dash in its name, to test how user defaults handles that\n").
+			WithObject(
+				dag.TypeDef().WithObject("SuperDashDash", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 30, 6)}).
+					WithFunction(
+						dag.Function("Capitalize",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Capitalize a string").
+							WithSourceMap(dag.SourceMap("main.go", 52, 1)).
+							WithArg("s", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 52, 36)})).
+					WithFunction(
+						dag.Function("Ls",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind))).
+							WithDescription("List the contents of a directory").
+							WithSourceMap(dag.SourceMap("main.go", 47, 1)).
+							WithArg("dir", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 47, 49)})).
+					WithFunction(
+						dag.Function("Message",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 37, 1)).
+							WithArg("name", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 39, 2), DefaultValue: dagger.JSON("\"world\"")})).
+					WithField("Greeting", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 31, 2)}).
+					WithField("Dir", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 32, 2)}).
+					WithField("File", dag.TypeDef().WithObject("File"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 33, 2)}).
+					WithField("Password", dag.TypeDef().WithObject("Secret"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 34, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("SuperDashDash")).
+							WithSourceMap(dag.SourceMap("main.go", 12, 1)).
+							WithArg("greeting", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 14, 2), DefaultValue: dagger.JSON("\"hello\"")}).
+							WithArg("dir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 16, 2), DefaultPath: "."}).
+							WithArg("password", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 18, 2)}).
+							WithArg("file", dag.TypeDef().WithObject("File").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 20, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

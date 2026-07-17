@@ -102,8 +102,10 @@ type DiffStat struct {
 	RemovedLines int          `field:"true" doc:"Number of removed lines for this path."`
 }
 
-var _ dagql.PersistedObject = (*DiffStat)(nil)
-var _ dagql.PersistedObjectDecoder = (*DiffStat)(nil)
+var (
+	_ dagql.PersistedObject        = (*DiffStat)(nil)
+	_ dagql.PersistedObjectDecoder = (*DiffStat)(nil)
+)
 
 func (*DiffStat) Type() *ast.Type {
 	return &ast.Type{
@@ -147,7 +149,8 @@ func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uin
 	}, nil
 }
 
-// ComputePaths computes the added, modified, and removed paths using git diff.
+// ComputePaths computes the added, modified, and removed paths using file
+// metadata and git diffs.
 func (ch *Changeset) ComputePaths(ctx context.Context) (*ChangesetPaths, error) {
 	ch.pathsOnce.Do(func() {
 		ch.cachedPaths, ch.pathsErr = ch.computePathsOnce(ctx)
@@ -170,7 +173,11 @@ func (ch *Changeset) computePathsOnce(ctx context.Context) (*ChangesetPaths, err
 
 	var result *ChangesetPaths
 	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) (err error) {
-		result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
+		result, _, err = computeChangesetPathsDelta(ctx, beforeDir, afterDir, false)
+		if err != nil {
+			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+			result, err = computeChangesetPaths(ctx, beforeDir, afterDir)
+		}
 		return err
 	})
 	if err != nil {
@@ -203,10 +210,17 @@ func computeChangesetPaths(ctx context.Context, beforeDir, afterDir string) (*Ch
 		renamedOld = append(renamedOld, oldPath)
 	}
 
+	// Sort to match computeChangesetPathsDelta: both paths must emit one
+	// canonical order, or which order a caller observes silently depends on
+	// whether the metadata delta walk succeeded on the underlying mounts.
 	allRemoved := slices.Concat(fc.Removed, renamedOld, removedDirs)
+	slices.Sort(allRemoved)
+	added := slices.Concat(fc.Added, renamedNew, addedDirs)
+	slices.Sort(added)
+	slices.Sort(fc.Modified)
 
 	return &ChangesetPaths{
-		Added:      slices.Concat(fc.Added, renamedNew, addedDirs),
+		Added:      added,
 		Modified:   fc.Modified,
 		Removed:    collapseChildPaths(allRemoved),
 		AllRemoved: allRemoved,
@@ -410,10 +424,12 @@ func (*Changeset) TypeDescription() string {
 	return "A comparison between two directories representing changes that can be applied."
 }
 
-var _ Syncable = (*Changeset)(nil)
-var _ dagql.PersistedObject = (*Changeset)(nil)
-var _ dagql.PersistedObjectDecoder = (*Changeset)(nil)
-var _ dagql.HasDependencyResults = (*Changeset)(nil)
+var (
+	_ Syncable                     = (*Changeset)(nil)
+	_ dagql.PersistedObject        = (*Changeset)(nil)
+	_ dagql.PersistedObjectDecoder = (*Changeset)(nil)
+	_ dagql.HasDependencyResults   = (*Changeset)(nil)
+)
 
 func (ch *Changeset) Evaluate(context.Context) error {
 	return nil
@@ -480,6 +496,12 @@ func (ch *Changeset) IsEmpty(ctx context.Context) (bool, error) {
 
 	var isEmpty bool
 	err = ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
+		empty, err := changesetDeltaIsEmpty(ctx, beforeDir, afterDir)
+		if err == nil {
+			isEmpty = empty
+			return nil
+		}
+		slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
 		identical, err := directoriesAreIdentical(ctx, beforeDir, afterDir)
 		if err != nil {
 			return err
@@ -497,17 +519,21 @@ func (ch *Changeset) DiffStats(ctx context.Context) ([]*DiffStat, error) {
 	var paths *ChangesetPaths
 	var statsByPath map[string]lineChanges
 	err := ch.withMountedDirs(ctx, func(beforeDir, afterDir string) error {
-		computedPaths, err := computeChangesetPaths(ctx, beforeDir, afterDir)
+		computedPaths, deltaStats, err := computeChangesetPathsDelta(ctx, beforeDir, afterDir, true)
 		if err != nil {
-			return fmt.Errorf("compute paths: %w", err)
+			slog.Warn("changeset delta diff failed; falling back to full content diff", "error", err)
+			computedPaths, err = computeChangesetPaths(ctx, beforeDir, afterDir)
+			if err != nil {
+				return fmt.Errorf("compute paths: %w", err)
+			}
+			deltaStats, err = compareDirectoriesNumStat(ctx, beforeDir, afterDir)
+			if err != nil {
+				slog.Debug("changeset numstat failed; returning path-only diff stat entries", "error", err)
+				deltaStats = nil
+			}
 		}
 		paths = computedPaths
-
-		statsByPath, err = compareDirectoriesNumStat(ctx, beforeDir, afterDir)
-		if err != nil {
-			slog.Debug("changeset numstat failed; returning path-only diff stat entries", "error", err)
-			statsByPath = nil
-		}
+		statsByPath = deltaStats
 		return nil
 	})
 	if err != nil {
@@ -613,11 +639,11 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 			return MountRef(ctx, newRef, func(root string, _ *mount.Mount) (rerr error) {
 				beforeMount := filepath.Join(root, "a")
 				afterMount := filepath.Join(root, "b")
-				if err := os.Mkdir(beforeMount, 0755); err != nil {
+				if err := os.Mkdir(beforeMount, 0o755); err != nil {
 					return err
 				}
 				defer os.RemoveAll(beforeMount)
-				if err := os.Mkdir(afterMount, 0755); err != nil {
+				if err := os.Mkdir(afterMount, 0o755); err != nil {
 					return err
 				}
 				defer os.RemoveAll(afterMount)
@@ -636,7 +662,12 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer patchFile.Close()
 
-				cmd := exec.CommandContext(ctx, "git", "diff", "--binary", "--no-prefix", "--no-index", "a", "b")
+				// --no-renames: with --no-prefix, git strips the a/ b/ mount dirs
+				// from the ---/+++ lines but not from rename from/to lines, so a
+				// rename entry makes the patch unapplyable ("inconsistent old
+				// filename"). Emitting renames as delete+add avoids the mismatch;
+				// with --binary the result is identical.
+				cmd := exec.CommandContext(ctx, "git", "diff", "--binary", "--no-prefix", "--no-renames", "--no-index", "a", "b")
 				cmd.Dir = root
 				cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
 				cmd.Stderr = stdio.Stderr

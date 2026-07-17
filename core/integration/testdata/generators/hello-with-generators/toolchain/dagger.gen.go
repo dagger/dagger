@@ -19,7 +19,7 @@ import (
 
 	"dagger/toolchain-generators/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -199,6 +202,15 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("ToolchainGenerators", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 5, 6)}).
+					WithFunction(
+						dag.Function("ToolchainFile",
+							dag.TypeDef().WithObject("Changeset")).
+							WithSourceMap(dag.SourceMap("main.go", 8, 1)).
+							WithGenerator())), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

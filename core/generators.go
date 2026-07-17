@@ -76,6 +76,10 @@ func (g *Generator) RequireChanges(field string) (*Changeset, error) {
 type GeneratorGroup struct {
 	Node       *ModTreeNode `json:"node"`
 	Generators []*Generator `json:"generators"`
+	// LoadFailures carries the per-module load-failure messages tolerated during
+	// an unscoped 'dagger generate' (empty when strict, or when every module
+	// loaded). Surfaced on the API so the CLI can warn and honor --require-load.
+	LoadFailures []string `json:"loadFailures,omitempty"`
 }
 
 var _ dagql.PersistedObject = (*Generator)(nil)
@@ -97,9 +101,10 @@ type persistedGeneratorObjectPayload struct {
 }
 
 type persistedGeneratorGroupPayload struct {
-	Tree       persistedModTree            `json:"tree"`
-	NodeID     int                         `json:"nodeID,omitempty"`
-	Generators []persistedGeneratorPayload `json:"generators,omitempty"`
+	Tree         persistedModTree            `json:"tree"`
+	NodeID       int                         `json:"nodeID,omitempty"`
+	Generators   []persistedGeneratorPayload `json:"generators,omitempty"`
+	LoadFailures []string                    `json:"loadFailures,omitempty"`
 }
 
 func NewGeneratorGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*GeneratorGroup, error) {
@@ -196,6 +201,9 @@ func (gg *GeneratorGroup) Clone() *GeneratorGroup {
 	c.Generators = make([]*Generator, len(gg.Generators))
 	for i := range c.Generators {
 		c.Generators[i] = gg.Generators[i].Clone()
+	}
+	if gg.LoadFailures != nil {
+		c.LoadFailures = append([]string(nil), gg.LoadFailures...)
 	}
 	return &c
 }
@@ -335,9 +343,10 @@ func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql
 		generatorPayloads = append(generatorPayloads, generatorPayload)
 	}
 	payload, err := json.Marshal(persistedGeneratorGroupPayload{
-		Tree:       tree.tree,
-		NodeID:     nodeID,
-		Generators: generatorPayloads,
+		Tree:         tree.tree,
+		NodeID:       nodeID,
+		Generators:   generatorPayloads,
+		LoadFailures: gg.LoadFailures,
 	})
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted generator group payload: %w", err)
@@ -377,8 +386,9 @@ func (*GeneratorGroup) DecodePersistedObject(
 		generators = append(generators, generator)
 	}
 	return &GeneratorGroup{
-		Node:       node,
-		Generators: generators,
+		Node:         node,
+		Generators:   generators,
+		LoadFailures: persisted.LoadFailures,
 	}, nil
 }
 

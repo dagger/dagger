@@ -204,7 +204,7 @@ func JSON() *dagger.JSONValue {
 	return client.JSON()
 }
 
-// Initialize a Large Language Model (LLM)
+// Initialize a new LLM conversation.
 //
 // Experimental: LLM support is not yet stabilized
 func LLM(opts ...dagger.LLMOpts) *dagger.LLM {

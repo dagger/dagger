@@ -79,11 +79,11 @@ func (r *Env) WithImplOutput(name string, description string) *Env { // impl (..
 type Impl struct { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:4:14)
 	query *querybuilder.Selection
 
-	bool *bool
-	id   *ImplID
-	int  *int
-	str  *string
-	void *Void
+	bool_ *bool
+	id    *ImplID
+	int_  *int
+	str   *string
+	void  *Void
 }
 type WithImplFunc func(r *Impl) *Impl
 
@@ -101,8 +101,8 @@ func (r *Impl) WithGraphQLQuery(q *querybuilder.Selection) *Impl {
 }
 
 func (r *Impl) Bool(ctx context.Context) (bool, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:18:3)
-	if r.bool != nil {
-		return *r.bool, nil
+	if r.bool_ != nil {
+		return *r.bool_, nil
 	}
 	q := r.query.Select("bool")
 
@@ -225,8 +225,8 @@ func (r *Impl) UnmarshalJSON(bs []byte) error {
 }
 
 func (r *Impl) Int(ctx context.Context) (int, error) { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:12:3)
-	if r.int != nil {
-		return *r.int, nil
+	if r.int_ != nil {
+		return *r.int_, nil
 	}
 	q := r.query.Select("int")
 
@@ -449,9 +449,9 @@ func (r *Impl) Void(ctx context.Context) error { // impl (../../../../../../../.
 	return q.Execute(ctx)
 }
 
-func (r *Impl) WithBool(bool bool) *Impl { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:96:3)
+func (r *Impl) WithBool(bool_ bool) *Impl { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:96:3)
 	q := r.query.Select("withBool")
-	q = q.Arg("bool", bool)
+	q = q.Arg("bool", bool_)
 
 	return &Impl{
 		query: q,
@@ -467,9 +467,9 @@ func (r *Impl) WithBoolList(bools []bool) *Impl { // impl (../../../../../../../
 	}
 }
 
-func (r *Impl) WithInt(int int) *Impl { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:84:3)
+func (r *Impl) WithInt(int_ int) *Impl { // impl (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/impl/src/index.ts:84:3)
 	q := r.query.Select("withInt")
-	q = q.Arg("int", int)
+	q = q.Arg("int", int_)
 
 	return &Impl{
 		query: q,

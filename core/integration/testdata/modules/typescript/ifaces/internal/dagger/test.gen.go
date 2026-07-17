@@ -120,11 +120,11 @@ func (r *Query) Test() *Test { // test (../../../../../../../../core/integration
 type Test struct { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:48:14)
 	query *querybuilder.Selection
 
-	bool *bool
-	id   *TestID
-	int  *int
-	str  *string
-	void *Void
+	bool_ *bool
+	id    *TestID
+	int_  *int
+	str   *string
+	void  *Void
 }
 type WithTestFunc func(r *Test) *Test
 
@@ -143,8 +143,8 @@ func (r *Test) WithGraphQLQuery(q *querybuilder.Selection) *Test {
 
 func (r *Test) Bool(ctx context.Context, ifaceArg *TestCustomIface) (bool, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:114:9)
 	assertNotNil("ifaceArg", ifaceArg)
-	if r.bool != nil {
-		return *r.bool, nil
+	if r.bool_ != nil {
+		return *r.bool_, nil
 	}
 	q := r.query.Select("bool")
 	q = q.Arg("ifaceArg", ifaceArg)
@@ -312,8 +312,8 @@ func (r *Test) IfaceListField(ctx context.Context) ([]*TestCustomIface, error) {
 
 func (r *Test) Int(ctx context.Context, ifaceArg *TestCustomIface) (int, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:94:9)
 	assertNotNil("ifaceArg", ifaceArg)
-	if r.int != nil {
-		return *r.int, nil
+	if r.int_ != nil {
+		return *r.int_, nil
 	}
 	q := r.query.Select("int")
 	q = q.Arg("ifaceArg", ifaceArg)
@@ -969,11 +969,11 @@ func (r *TestOtherCustomObj) AsNode() Node {
 type TestCustomIface struct { // test (../../../../../../../../:0:0)
 	query *querybuilder.Selection
 
-	bool *bool
-	id   *TestCustomIfaceID
-	int  *int
-	str  *string
-	void *Void
+	bool_ *bool
+	id    *TestCustomIfaceID
+	int_  *int
+	str   *string
+	void  *Void
 }
 
 type TestCustomIfaceClient = TestCustomIface
@@ -985,8 +985,8 @@ func (r *TestCustomIface) WithGraphQLQuery(q *querybuilder.Selection) *TestCusto
 }
 
 func (r *TestCustomIface) Bool(ctx context.Context) (bool, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:19:3)
-	if r.bool != nil {
-		return *r.bool, nil
+	if r.bool_ != nil {
+		return *r.bool_, nil
 	}
 	q := r.query.Select("bool")
 
@@ -1094,8 +1094,8 @@ func (r *TestCustomIface) UnmarshalJSON(bs []byte) error {
 }
 
 func (r *TestCustomIface) Int(ctx context.Context) (int, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:13:3)
-	if r.int != nil {
-		return *r.int, nil
+	if r.int_ != nil {
+		return *r.int_, nil
 	}
 	q := r.query.Select("int")
 
@@ -1234,9 +1234,9 @@ func (r *TestCustomIface) Void(ctx context.Context) error { // test (../../../..
 	return q.Execute(ctx)
 }
 
-func (r *TestCustomIface) WithBool(bool bool) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:20:3)
+func (r *TestCustomIface) WithBool(bool_ bool) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:20:3)
 	q := r.query.Select("withBool")
-	q = q.Arg("bool", bool)
+	q = q.Arg("bool", bool_)
 	return &TestCustomIface{
 		query: q,
 	}
@@ -1250,9 +1250,9 @@ func (r *TestCustomIface) WithBoolList(bools []bool) *TestCustomIface { // test 
 	}
 }
 
-func (r *TestCustomIface) WithInt(int int) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:14:3)
+func (r *TestCustomIface) WithInt(int_ int) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:14:3)
 	q := r.query.Select("withInt")
-	q = q.Arg("int", int)
+	q = q.Arg("int", int_)
 	return &TestCustomIface{
 		query: q,
 	}

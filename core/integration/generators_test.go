@@ -11,6 +11,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -427,16 +428,57 @@ func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context
 		require.NotContains(t, out, "intentionally invalid")
 	})
 
-	t.Run("generating across all modules skips the broken module with a warning", func(ctx context.Context, t *testctx.T) {
-		// Generator enumeration loads modules best-effort: the broken module
-		// is still loaded (unlike the narrowed cases above, which never touch
-		// it) but its failure surfaces as a warning instead of failing the
-		// run — running generate may be exactly what repairs it.
+	t.Run("listing across all modules enumerates the healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {
+		// Enumerating all generators loads modules best-effort: the broken
+		// module is still loaded (unlike the narrowed cases above, which never
+		// touch it) but its failure is tolerated, so listing still succeeds and
+		// shows the healthy generator instead of aborting. The skip itself is
+		// surfaced as a span on the run path (asserted below), not in the list
+		// table.
 		out, err := base.
 			With(daggerExec("generate", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `Skipping module "bad"`)
+		require.Contains(t, out, "good:generate")
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("unscoped generate runs healthy generators despite a broken module", func(ctx context.Context, t *testctx.T) {
+		// -l only lists; this exercises the run+apply path. The broken module is
+		// reported as a skipped-module span, but the healthy `good` generator
+		// still runs and applies -- it writes generated.txt with a known marker.
+		ctr := base.With(daggerExec("generate", "-y", "--progress=plain"))
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.NotContains(t, out, "no changes to apply")
+		// In run mode the output is zoomed to the generators span; the
+		// skipped-module span is revealed into that view so the user still sees
+		// it (its load error names the broken module).
+		require.Contains(t, out, "modules/bad")
+		// grep -rl exits non-zero if the marker was never written, so NoError
+		// proves the healthy generator applied.
+		_, err = ctr.WithExec([]string{"grep", "-rl", "hello from good", "."}).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("--require-load makes a load failure fatal", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("generate", "-l", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "require-load")
+	})
+
+	t.Run("--require-load also catches an explicitly-selected unloadable module", func(ctx context.Context, t *testctx.T) {
+		// Loading is best-effort even for an explicit selector, so naming the
+		// broken module no longer aborts by itself; --require-load is what turns
+		// its load failure into a hard error.
+		out, err := base.
+			With(daggerExecFail("generate", "bad", "--require-load")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "require-load")
+		require.Contains(t, out, "modules/bad")
 	})
 }
 
@@ -594,4 +636,111 @@ func (GeneratorsSuite) TestGeneratorResultFieldsRequireRun(ctx context.Context, 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"currentWorkspace":{"generators":{"list":[{"run":{"isEmpty":false,"changes":{"isEmpty":false}}}]}}}`, out)
 	})
+}
+
+// TestClientSchemaIntrospectionJSON locks in that
+// moduleSource.clientSchemaIntrospectionJSON returns the *client-facing* schema
+// -- the one client codegen consumes. Unlike the module-facing
+// introspectionSchemaJSON, it hides no core types (Host and the Engine* family
+// stay visible) and installs the bound module namespaced on Query
+// (Query.minimal), so a client reaches its functions via dag.minimal -- never a
+// promoted root field (no Query.hello). The two schemas are deliberately
+// different; feeding the module-facing one to client codegen would produce an
+// incomplete client.
+func (GeneratorsSuite) TestClientSchemaIntrospectionJSON(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := moduleFixture(t, c, "go/minimal")
+
+	clientTypes, clientQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "clientSchemaIntrospectionJSON")
+	moduleTypes, moduleQueryFields := introspectModuleSourceSchema(ctx, t, modGen, "introspectionSchemaJSON")
+
+	// No hidden types in the client-facing schema: Host and Engine* (both hidden
+	// from the module-facing schema) are present.
+	require.Contains(t, clientTypes, "Host")
+	require.Contains(t, clientTypes, "EngineCache")
+	require.NotContains(t, moduleTypes, "Host")
+	require.NotContains(t, moduleTypes, "EngineCache")
+
+	// The bound module is namespaced on Query (dag.minimal), never promoted to
+	// the root: `minimal` is a Query field but its function `hello` is not.
+	require.Contains(t, clientQueryFields, "minimal")
+	require.NotContains(t, clientQueryFields, "hello")
+	// The module-facing schema installs neither the module nor its functions.
+	require.NotContains(t, moduleQueryFields, "minimal")
+	require.NotContains(t, moduleQueryFields, "hello")
+}
+
+// introspectModuleSourceSchema selects the named introspection-schema field on
+// the module source at ".", returning the schema's type names and its Query
+// root field names.
+func introspectModuleSourceSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container, field string) (typeNames, queryFields []string) {
+	t.Helper()
+	out, err := ctr.
+		With(daggerQuery(`{moduleSource(refString:"."){%s{contents}}}`, field)).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	var resp struct {
+		ModuleSource map[string]struct {
+			Contents string `json:"contents"`
+		} `json:"moduleSource"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &resp))
+	contents := resp.ModuleSource[field].Contents
+	require.NotEmpty(t, contents)
+
+	schema := parseSchemaContents(t, contents)
+	for _, typ := range schema.Schema.Types {
+		if typ.Name == "Query" {
+			for _, f := range typ.Fields {
+				queryFields = append(queryFields, f.Name)
+			}
+		}
+	}
+	return schema.typeNames(), queryFields
+}
+
+// TestCurrentModuleAsSDKClientModuleSourceField is a lighter engine-level check
+// that CurrentModuleAsSDKClient exposes the moduleSource field (which resolves
+// the bound module from its stored {module, pin}). Exercising it end-to-end
+// requires an installed-SDK module execution context; here we assert the field
+// is registered on the v1.0 schema view with the right type.
+func (GeneratorsSuite) TestCurrentModuleAsSDKClientModuleSourceField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := goGitBase(t, c).
+		With(daggerQuery(`{__type(name:"CurrentModuleAsSDKClient"){fields{name type{kind ofType{kind name}}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	var resp struct {
+		Type *struct {
+			Fields []struct {
+				Name string `json:"name"`
+				Type struct {
+					Kind   string `json:"kind"`
+					OfType *struct {
+						Kind string `json:"kind"`
+						Name string `json:"name"`
+					} `json:"ofType"`
+				} `json:"type"`
+			} `json:"fields"`
+		} `json:"__type"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &resp))
+	require.NotNil(t, resp.Type, "CurrentModuleAsSDKClient should be present in the v1.0 schema view")
+
+	var found bool
+	for _, f := range resp.Type.Fields {
+		if f.Name != "moduleSource" {
+			continue
+		}
+		found = true
+		require.Equal(t, "NON_NULL", f.Type.Kind, "moduleSource must be non-null")
+		require.NotNil(t, f.Type.OfType)
+		require.Equal(t, "OBJECT", f.Type.OfType.Kind)
+		require.Equal(t, "ModuleSource", f.Type.OfType.Name)
+	}
+	require.True(t, found, "CurrentModuleAsSDKClient should expose a moduleSource field")
 }

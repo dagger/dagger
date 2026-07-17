@@ -147,7 +147,44 @@ func (s *workspaceSchema) withConfigValue(
 		}
 	}
 
-	updated, err := workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
+	var updated []byte
+	if args.Values.Valid {
+		if args.Value != "" {
+			return dagql.ObjectResult[*core.Workspace]{}, fmt.Errorf("value and values are mutually exclusive")
+		}
+		elements := make([]string, 0, len(args.Values.Value))
+		for _, v := range args.Values.Value {
+			elements = append(elements, v.String())
+		}
+		updated, err = workspace.WriteConfigValues(staged.Data, writeKey, elements)
+	} else {
+		updated, err = workspace.WriteConfigValue(staged.Data, writeKey, args.Value)
+	}
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return s.stageWorkspaceConfigBytes(ctx, parent, staged, updated)
+}
+
+func (s *workspaceSchema) withoutConfigValue(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceConfigKeyArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	staged, err := s.loadWorkspaceConfigForOverlay(ctx, parent.Self(), workspaceConfigMustExist, args.Here)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	unsetKey := args.Key
+	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
+		unsetKey, err = envScopedConfigKey(staged.Config, envName, args.Key)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
+
+	updated, err := workspace.DeleteConfigValue(staged.Data, unsetKey)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}

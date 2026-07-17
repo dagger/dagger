@@ -275,6 +275,41 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Dev", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 9, 6)}).
+					WithFunction(
+						dag.Function("Agent",
+							dag.TypeDef().WithObject("LLM")).
+							WithDescription("Start a coding agent for the Dagger project.").
+							WithSourceMap(dag.SourceMap("main.go", 45, 1))).
+					WithFunction(
+						dag.Function("Git",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Run a git command and return its output.").
+							WithSourceMap(dag.SourceMap("main.go", 87, 1)).
+							WithArg("args", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 87, 42)})).
+					WithFunction(
+						dag.Function("Github",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Run a gh command and return its output.").
+							WithSourceMap(dag.SourceMap("main.go", 94, 1)).
+							WithArg("args", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 94, 45)})).
+					WithFunction(
+						dag.Function("Test",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithDescription("Run the tests, or a subset of tests.").
+							WithSourceMap(dag.SourceMap("main.go", 74, 1)).
+							WithArg("filter", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Filter the test suite, e.g. TestDirectory, TestContainer, or\n'TestDirectory|TestContainer' for both.", SourceMap: dag.SourceMap("main.go", 79, 2)})).
+					WithField("Source", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 10, 2)}).
+					WithField("GithubToken", dag.TypeDef().WithObject("Secret"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 11, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Dev")).
+							WithSourceMap(dag.SourceMap("main.go", 17, 1)).
+							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 32, 2), DefaultPath: "/", Ignore: []string{"bin", "**/node_modules", "**/.venv", "**/__pycache__", "docs/node_modules", "sdk/typescript/node_modules", "sdk/typescript/dist", "sdk/rust/examples/backend/target", "sdk/rust/target", "sdk/php/vendor"}}).
+							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true), dagger.FunctionWithArgOpts{Description: "GitHub token to use for fetching issue/PR comments", SourceMap: dag.SourceMap("main.go", 36, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

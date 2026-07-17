@@ -884,7 +884,15 @@ func (srv *Server) initializeDaggerClient(
 	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		sdklog.WithProcessor(logs),
+		// NOTE: a synchronous processor here would do one SQLite write per
+		// record on the emitting goroutine; with enough concurrent emitters
+		// they all pile up on the DB's write lock (each busy-waiting in a
+		// syscall that pins an OS thread), which can exhaust the runtime's
+		// thread limit.
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(
+			logs,
+			sdklog.WithExportInterval(telemetry.NearlyImmediate),
+		)),
 	}
 
 	const metricReaderInterval = 5 * time.Second
@@ -907,7 +915,10 @@ func (srv *Server) initializeDaggerClient(
 			),
 		))
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			clientLogs{client: parent},
+			sdklog.NewBatchProcessor(
+				srv.telemetryPubSub.Logs(parent),
+				sdklog.WithExportInterval(telemetry.NearlyImmediate),
+			),
 		))
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
@@ -1802,7 +1813,8 @@ func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *dagge
 			}
 		}
 	}
-	return srv.ensureModulesLoaded(ctx, client, filter)
+	_, err := srv.ensureModulesLoadedMode(ctx, client, filter, false)
+	return err
 }
 
 func (client *daggerClient) hasPendingWorkspaceModules() bool {
@@ -2390,6 +2402,17 @@ func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID st
 		return nil, false, fmt.Errorf("session attachable conn for client %q was nil", clientID)
 	}
 	return conn, true, nil
+}
+
+// SessionScopedContext returns a context that lives for the remainder of the
+// current client's session: it is detached from the given context's
+// cancellation and is canceled when the session begins closing.
+func (srv *Server) SessionScopedContext(ctx context.Context) (context.Context, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.withClosingCancel(context.WithoutCancel(ctx)), nil
 }
 
 func (srv *Server) sessionMainClientConn(ctx context.Context, sess *daggerSession) (*grpc.ClientConn, error) {

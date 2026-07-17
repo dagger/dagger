@@ -26,6 +26,12 @@ import (
 // themselves. Segments whose blocker was reached through the chain are
 // marked Indirect (with Via naming the direct hop).
 
+// TimeBlocker is one operation in a resolved wait chain.
+type TimeBlocker struct {
+	Target SpanID
+	Label  string
+}
+
 // TimeSegment is one contiguous stretch of a row's painted time.
 type TimeSegment struct {
 	Start, End time.Time
@@ -35,6 +41,10 @@ type TimeSegment struct {
 	Waiting bool
 	Target  SpanID
 	Label   string
+	// Blockers contains the resolved wait chain, ordered from the direct
+	// blocker to the fundamental blocker identified by Target. Operations
+	// outside the trace have no entry.
+	Blockers []TimeBlocker
 	// Indirect marks a waiting segment whose blocker was reached by
 	// following the wait chain rather than being the row's direct target.
 	Indirect bool
@@ -83,6 +93,7 @@ type waitWindow struct {
 type resolvedWait struct {
 	start, end time.Time
 	blocker    *Span // nil when not in the trace
+	blockers   []*Span
 	indirect   bool
 	via        string
 }
@@ -143,7 +154,7 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 			via = blockerLabel(direct)
 		}
 		visited := map[*Span]bool{}
-		resolved = append(resolved, resolveWaitChain(w, via, 0, visited, now)...)
+		resolved = append(resolved, resolveWaitChain(w, via, nil, 0, visited, now)...)
 	}
 	// A blocker rendered inside the row's own subtree is the row hosting its
 	// own nested work (a module call running its function, a group span
@@ -195,6 +206,12 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 				End:      end,
 				Waiting:  true,
 				Indirect: w.indirect,
+			}
+			for _, blocker := range w.blockers {
+				seg.Blockers = append(seg.Blockers, TimeBlocker{
+					Target: blocker.ID,
+					Label:  blockerLabel(blocker),
+				})
 			}
 			if w.indirect {
 				seg.Via = w.via
@@ -254,11 +271,14 @@ func (span *Span) TimeBreakdown(now time.Time) *TimeBreakdown {
 // during it by recursing through the target's own waits. Stretches where the
 // target itself was working resolve to the target; stretches where it was in
 // turn waiting resolve deeper.
-func resolveWaitChain(win waitWindow, viaLabel string, depth int, visited map[*Span]bool, now time.Time) []resolvedWait {
+func resolveWaitChain(win waitWindow, viaLabel string, blockers []*Span, depth int, visited map[*Span]bool, now time.Time) []resolvedWait {
+	blocker := resolveBlocker(win.target)
+	blockers = appendResolvedBlocker(blockers, blocker)
 	self := resolvedWait{
 		start:    win.start,
 		end:      win.end,
-		blocker:  resolveBlocker(win.target),
+		blocker:  blocker,
+		blockers: append([]*Span(nil), blockers...),
 		indirect: depth > 0,
 		via:      viaLabel,
 	}
@@ -312,7 +332,7 @@ func resolveWaitChain(win waitWindow, viaLabel string, depth int, visited map[*S
 			gap.start, gap.end = cursor, sub.start
 			out = append(out, gap)
 		}
-		out = append(out, resolveWaitChain(sub, viaLabel, depth+1, visited, now)...)
+		out = append(out, resolveWaitChain(sub, viaLabel, blockers, depth+1, visited, now)...)
 		cursor = sub.end
 	}
 	if cursor.Before(win.end) {
@@ -323,7 +343,19 @@ func resolveWaitChain(win waitWindow, viaLabel string, depth int, visited map[*S
 	return out
 }
 
-// coalesceResolvedWaits merges adjacent windows with the same blocker.
+// appendResolvedBlocker copies path and adds blocker unless it is outside the
+// trace or is an adjacent duplicate of the last resolved operation. Copying
+// keeps sibling recursion from changing paths already stored on other slices.
+func appendResolvedBlocker(path []*Span, blocker *Span) []*Span {
+	out := append([]*Span(nil), path...)
+	if blocker == nil || (len(out) > 0 && out[len(out)-1] == blocker) {
+		return out
+	}
+	return append(out, blocker)
+}
+
+// coalesceResolvedWaits merges adjacent windows with the same blocker and
+// complete causal path.
 func coalesceResolvedWaits(wins []resolvedWait) []resolvedWait {
 	if len(wins) == 0 {
 		return nil
@@ -332,7 +364,9 @@ func coalesceResolvedWaits(wins []resolvedWait) []resolvedWait {
 	out := wins[:1]
 	for _, w := range wins[1:] {
 		last := &out[len(out)-1]
-		if w.blocker == last.blocker && !w.start.After(last.end) {
+		if w.blocker == last.blocker &&
+			sameResolvedBlockers(w.blockers, last.blockers) &&
+			!w.start.After(last.end) {
 			if w.end.After(last.end) {
 				last.end = w.end
 			}
@@ -345,6 +379,18 @@ func coalesceResolvedWaits(wins []resolvedWait) []resolvedWait {
 		out = append(out, w)
 	}
 	return out
+}
+
+func sameResolvedBlockers(a, b []*Span) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // absorbWaitSlivers folds windows too small to see (or click) into their
@@ -363,14 +409,16 @@ func absorbWaitSlivers(wins []resolvedWait, paintedTotal time.Duration) []resolv
 			last := &out[len(out)-1]
 			contiguous := !w.start.After(last.end)
 			if contiguous && w.end.Sub(w.start) < epsilon {
-				// too small to matter: extend the previous window over it
+				// Too small to matter: the previous window claims this time
+				// with its own complete blocker path.
 				if w.end.After(last.end) {
 					last.end = w.end
 				}
 				continue
 			}
 			if contiguous && last.end.Sub(last.start) < epsilon {
-				// previous was the sliver: let this window claim its space
+				// The previous window was the sliver: this window claims its
+				// time with this window's complete blocker path.
 				w.start = last.start
 				out[len(out)-1] = w
 				continue
@@ -389,6 +437,9 @@ func (hb *TimeBreakdown) addSegment(seg TimeSegment) {
 		if prev.Waiting == seg.Waiting &&
 			prev.Label == seg.Label &&
 			prev.Target == seg.Target &&
+			prev.Indirect == seg.Indirect &&
+			prev.Via == seg.Via &&
+			sameTimeBlockers(prev.Blockers, seg.Blockers) &&
 			!seg.Start.After(prev.End) {
 			if seg.End.After(prev.End) {
 				prev.End = seg.End
@@ -397,6 +448,18 @@ func (hb *TimeBreakdown) addSegment(seg TimeSegment) {
 		}
 	}
 	hb.Segments = append(hb.Segments, seg)
+}
+
+func sameTimeBlockers(a, b []TimeBlocker) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // collectWaitWindows appends span's wait edges as raw windows attributed to row.
@@ -564,33 +627,61 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 		return
 	}
 	seen := map[*Span]bool{span: true}
+	walkedAt := map[*Span]int{}
+	expandedAt := map[*Span]int{}
 	var walk func(s *Span, depth int)
-	emit := func(c *Span, depth int) {
+	var emit func(c *Span, depth int)
+	visitOnce := func(c *Span) {
 		if c == nil || seen[c] {
 			return
 		}
 		seen[c] = true
 		visit(c)
-		// the cause chain resolves markers to their ops
-		for _, cause := range c.causesViaLinks.Order {
-			if !seen[cause] {
-				seen[cause] = true
-				visit(cause)
-			}
+	}
+	// blockerLabel searches two child levels for exec argv attributes.
+	var visitLabelSpans func(*Span, int)
+	visitLabelSpans = func(c *Span, depth int) {
+		if c == nil || depth >= 2 {
+			return
 		}
-		// blockers' exec children carry the argv labels
 		for _, child := range c.ChildSpans.Order {
-			if !seen[child] {
-				seen[child] = true
-				visit(child)
-			}
+			visitOnce(child)
+			visitLabelSpans(child, depth+1)
+		}
+	}
+	emit = func(c *Span, depth int) {
+		if c == nil {
+			return
+		}
+		visitOnce(c)
+		if prev, ok := expandedAt[c]; ok && prev <= depth {
+			return
+		}
+		expandedAt[c] = depth
+
+		// Cause links and the parent fallback map resume markers to the
+		// operations retained in TimeSegment.Blockers. Expand those operations
+		// too: their waits form the next link and their descendants carry labels.
+		for _, cause := range c.causesViaLinks.Order {
+			// Preserve the existing dependency on every direct cause, even though
+			// resolveBlocker deterministically selects the first one.
+			visitOnce(cause)
+		}
+		resolved := resolveBlockerPath(c, visitOnce)
+		visitLabelSpans(resolved, 0)
+		if resolved != nil && resolved != c {
+			emit(resolved, depth)
 		}
 		walk(c, depth+1)
 	}
 	walk = func(s *Span, depth int) {
-		if depth > waitChainMaxDepth {
+		if s == nil || depth > waitChainMaxDepth {
 			return
 		}
+		if prev, ok := walkedAt[s]; ok && prev <= depth {
+			return
+		}
+		walkedAt[s] = depth
 		for i := range s.Links {
 			if s.Links[i].IsWait() {
 				emit(s.db.Spans.Map[s.Links[i].SpanContext.SpanID], depth)
@@ -602,6 +693,10 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 				for _, gc := range child.ChildSpans.Order {
 					emit(gc, depth)
 				}
+			} else if resolved := resolveBlocker(child); resolved != nil && resolved != child {
+				// collectInferredWaits inspects non-twin children which stand
+				// in for another operation, including live resume markers.
+				emit(child, depth)
 			}
 		}
 		for _, effect := range s.effectsViaLinks.Order {
@@ -618,6 +713,13 @@ func (span *Span) TimeBreakdownSpans(visit func(*Span)) {
 // to the user-meaningful op whose deferred work they represent: the resume's
 // causal source, falling back to its parent.
 func resolveBlocker(target *Span) *Span {
+	return resolveBlockerPath(target, nil)
+}
+
+// resolveBlockerPath resolves target and optionally visits each operation used
+// along the way. The callback lets TimeBreakdownSpans stream the exact inputs a
+// filtered frontend needs to perform the same resolution after import.
+func resolveBlockerPath(target *Span, visit func(*Span)) *Span {
 	for depth := 0; target != nil && depth < 10; depth++ {
 		if !strings.HasPrefix(target.Name, "resume ") {
 			return target
@@ -636,6 +738,9 @@ func resolveBlocker(target *Span) *Span {
 			return target
 		}
 		target = next
+		if visit != nil {
+			visit(target)
+		}
 	}
 	return target
 }

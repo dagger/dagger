@@ -209,6 +209,16 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("HelloWithContainer", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 8, 6)}).
+					WithFunction(
+						dag.Function("TestWithDefaultContainer",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("TestWithDefaultContainer uses alpine:3.19 when no container is provided").
+							WithSourceMap(dag.SourceMap("main.go", 11, 1)).
+							WithArg("ctr", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 14, 2), DefaultAddress: "alpine:3.19"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

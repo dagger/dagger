@@ -293,6 +293,37 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Send notifications\n\nSupports Discord & Slack.\n").
+			WithObject(
+				dag.TypeDef().WithObject("Notify", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 18, 6)}).
+					WithFunction(
+						dag.Function("DaggerCloudTraceURL",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("helper to return a dagger cloud trace link from the OTEL data in ctx.\nuseful as input to \"message\" to link your slack or discord notification back up to dagger cloud.").
+							WithSourceMap(dag.SourceMap("main.go", 116, 1))).
+					WithFunction(
+						dag.Function("Discord",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Message a Discord webhook: `dagger call discord --webhook-url=env:DISCORD_WEBHOOK --message=\"👋 from Dagger notify module\"`").
+							WithSourceMap(dag.SourceMap("main.go", 21, 1)).
+							WithArg("webhookURL", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 23, 2)}).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 24, 2)})).
+					WithFunction(
+						dag.Function("Slack",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithDescription("Message a specific Slack channel: `dagger call slack --token=env:SLACK_TOKEN --channel-id=C07PBDE3U57 --color=\"#FC0\" --message=\"👋 from Dagger notify module\"`").
+							WithSourceMap(dag.SourceMap("main.go", 50, 1)).
+							WithArg("token", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{Description: "The slack token to authenticate with the slack organization", SourceMap: dag.SourceMap("main.go", 53, 2)}).
+							WithArg("color", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The sidebar color of the message", SourceMap: dag.SourceMap("main.go", 55, 2)}).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The content of the notification to send", SourceMap: dag.SourceMap("main.go", 57, 2)}).
+							WithArg("channelID", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{Description: "The channel where to post the message", SourceMap: dag.SourceMap("main.go", 59, 2)}).
+							WithArg("title", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Set a title to the message", SourceMap: dag.SourceMap("main.go", 62, 2)}).
+							WithArg("footer", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Set a footer to the message", SourceMap: dag.SourceMap("main.go", 65, 2)}).
+							WithArg("footerIcon", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Set an icon in the footer, the icon should be a link", SourceMap: dag.SourceMap("main.go", 68, 2)}).
+							WithArg("imageURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Add an image in the message", SourceMap: dag.SourceMap("main.go", 71, 2)}).
+							WithArg("threadID", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "The thread id if we want to reply to a message or in a thread", SourceMap: dag.SourceMap("main.go", 74, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

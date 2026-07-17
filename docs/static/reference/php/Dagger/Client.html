@@ -441,9 +441,9 @@
                     <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_llm">llm</a>(string|null $model = null, int|null $maxAPICalls = null)
+                    <a href="#method_llm">llm</a>(string|null $model = null, string|null $provider = null)
         
-                                            <p><p>Initialize a Large Language Model (LLM)</p></p>                </div>
+                                            <p><p>Initialize a new LLM conversation.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -1844,7 +1844,7 @@
                     <h3 id="method_llm">
         <div class="location">at line 353</div>
         <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>llm</strong>(string|null $model = null, int|null $maxAPICalls = null)
+    <strong>llm</strong>(string|null $model = null, string|null $provider = null)
         </code>
     </h3>
     <div class="details">    
@@ -1852,7 +1852,7 @@
             
 
         <div class="method-description">
-                            <p><p>Initialize a Large Language Model (LLM)</p></p>                        
+                            <p><p>Initialize a new LLM conversation.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1864,8 +1864,8 @@
                 <td></td>
             </tr>
                     <tr>
-                <td>int|null</td>
-                <td>$maxAPICalls</td>
+                <td>string|null</td>
+                <td>$provider</td>
                 <td></td>
             </tr>
             </table>

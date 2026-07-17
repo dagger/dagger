@@ -38,6 +38,20 @@ defmodule Dagger.CurrentModuleAsSDKClient do
   end
 
   @doc """
+  The resolved module source this client is bound to, including its dependency closure and pinned version.
+  """
+  @spec module_source(t()) :: Dagger.ModuleSource.t()
+  def module_source(%__MODULE__{} = current_module_as_sdk_client) do
+    query_builder =
+      current_module_as_sdk_client.query_builder |> QB.select("moduleSource")
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: current_module_as_sdk_client.client
+    }
+  end
+
+  @doc """
   Workspace-root-relative path of the generated client.
   """
   @spec path(t()) :: {:ok, String.t()} | {:error, term()}

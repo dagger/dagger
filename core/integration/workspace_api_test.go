@@ -12,6 +12,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -219,6 +220,142 @@ func (WorkspaceAPISuite) TestWorkspaceFindUp(ctx context.Context, t *testctx.T) 
 		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
+	})
+}
+
+// TestWorkspaceGlob verifies that Workspace.glob matches files and
+// directories on the host filesystem without syncing them into the engine.
+func (WorkspaceAPISuite) TestWorkspaceGlob(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "workspace-api").
+		WithNewFile("README.md", "readme").
+		WithNewFile("CHANGELOG.md", "changelog").
+		WithNewFile("main.go", "package main").
+		WithNewFile("src/app.go", "package src").
+		WithNewFile("src/app_test.go", "package src")
+
+	t.Run("match by extension", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("globber", "--pattern=*.md", "results")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "README.md")
+		require.Contains(t, lines, "CHANGELOG.md")
+		require.NotContains(t, lines, "main.go")
+	})
+
+	t.Run("recursive glob", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("globber", "--pattern=**/*.go", "results")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "main.go")
+		require.Contains(t, lines, "src/app.go")
+		require.Contains(t, lines, "src/app_test.go")
+	})
+
+	t.Run("subdirectory glob", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("globber", "--pattern=src/*.go", "results")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "src/app.go")
+		require.Contains(t, lines, "src/app_test.go")
+		require.NotContains(t, lines, "main.go")
+	})
+
+	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("globber", "--pattern=*.rs", "results")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+}
+
+// TestWorkspaceSearch verifies that Workspace.search runs ripgrep (or grep)
+// on the host filesystem and returns structured results.
+func (WorkspaceAPISuite) TestWorkspaceSearch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "workspace-api").
+		// The base image only has BusyBox grep; install ripgrep so the
+		// client-side search runs its primary code path.
+		WithExec([]string{"apk", "add", "ripgrep"}).
+		WithNewFile("hello.txt", "hello world\nGoodbye World\n").
+		WithNewFile("src/main.go", "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n").
+		WithNewFile("src/util.go", "package main\n\nfunc helper() string {\n\treturn \"hello\"\n}\n").
+		WithNewFile("docs/readme.md", "# Hello\n\nThis is a hello world project.\n")
+
+	t.Run("basic search", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("searcher", "--pattern=hello", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "hello.txt:1")
+		require.Contains(t, lines, "src/main.go:4")
+		require.Contains(t, lines, "src/util.go:4")
+	})
+
+	t.Run("files only", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("files-searcher", "--pattern=hello", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "hello.txt")
+		require.Contains(t, lines, "src/main.go")
+		require.Contains(t, lines, "src/util.go")
+		require.Contains(t, lines, "docs/readme.md")
+	})
+
+	t.Run("files only with glob filter", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("files-searcher", "--pattern=hello", "--globs=*.go", "files")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.TrimSpace(out)
+		require.Contains(t, lines, "src/main.go")
+		require.Contains(t, lines, "src/util.go")
+		require.NotContains(t, lines, "hello.txt")
+		require.NotContains(t, lines, "readme.md")
+	})
+
+	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("searcher", "--pattern=nonexistent_pattern_xyz", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
+	})
+
+	t.Run("limit caps results without hanging", func(ctx context.Context, t *testctx.T) {
+		// Regression test: when matches far exceed the limit, the client-side
+		// search must stop the subprocess instead of deadlocking. The match
+		// output past the limit needs to exceed the OS pipe buffer (64KB) for
+		// the old code to wedge, hence the large file.
+		ctr := base.WithNewFile("many.txt", strings.Repeat("hello, again and again\n", 50000))
+		out, err := ctr.With(daggerCall("searcher", "--pattern=hello", "--limit=5", "file-paths")).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		require.Len(t, lines, 5)
+	})
+
+	t.Run("reject paths outside workspace", func(ctx context.Context, t *testctx.T) {
+		ctr := base.WithNewFile("/secret.txt", "workspace-boundary-repro\n")
+		_, err := ctr.With(daggerCall(
+			"searcher",
+			"--pattern=workspace-boundary-repro",
+			"--paths=../secret.txt",
+			"file-paths",
+		)).Stdout(ctx)
+		require.Error(t, err, "search paths outside the workspace must be rejected")
+	})
+
+	// Regression test: the grep fallback must apply limit to files-only results.
+	t.Run("grep fallback honors files only limit", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceFixture(t, c, "workspace-api").
+			WithExec([]string{"apk", "add", "grep"})
+		for i := range 5 {
+			ctr = ctr.WithNewFile(fmt.Sprintf("match-%d.txt", i), "grep-fallback-repro\n")
+		}
+		out, err := ctr.With(daggerCall(
+			"files-searcher",
+			"--pattern=grep-fallback-repro",
+			"--limit=2",
+			"files",
+		)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Len(t, strings.Split(strings.TrimSpace(out), "\n"), 2)
 	})
 }
 
@@ -941,7 +1078,7 @@ func (WorkspaceAPISuite) TestHostWorkspaceFunctionalOverlayAPIsChain(ctx context
 				}
 			}`,
 			variables:  map[string]any{"source": sourceID},
-			wantOutput: `{"currentWorkspace":{"withNewDirectory":{"changes":{"addedPaths":["dir/nested.txt","dir/"]}}}}`,
+			wantOutput: `{"currentWorkspace":{"withNewDirectory":{"changes":{"addedPaths":["dir/","dir/nested.txt"]}}}}`,
 		},
 		{
 			name: "withChanges",

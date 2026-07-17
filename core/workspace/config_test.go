@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -413,34 +414,28 @@ func TestWriteConfigValue(t *testing.T) {
 		}, cfg.Env["ci"])
 	})
 
-	t.Run("writes JSON array values as native arrays", func(t *testing.T) {
+	t.Run("settings named after module bool fields keep their written value", func(t *testing.T) {
 		t.Parallel()
 
-		data, err := WriteConfigValue(nil, "modules.greeter.settings.lint", `["!docs","!x"]`)
+		data, err := WriteConfigValue(nil, "modules.greeter.settings.entrypoint", "cmd/main.go")
 		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.settings.counts", `[1, 2]`)
-		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.settings.flags", `[true, false]`)
-		require.NoError(t, err)
-		data, err = WriteConfigValue(data, "modules.greeter.settings.ratios", `[0.5, 1.5]`)
+		data, err = WriteConfigValue(data, "env.ci.modules.greeter.settings.entrypoint", "cmd/ci.go")
 		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
 		require.NoError(t, err)
-		require.Equal(t, map[string]any{
-			"lint":   []any{"!docs", "!x"},
-			"counts": []any{int64(1), int64(2)},
-			"flags":  []any{true, false},
-			"ratios": []any{0.5, 1.5},
-		}, cfg.Modules["greeter"].Settings)
+		require.Equal(t, "cmd/main.go", cfg.Modules["greeter"].Settings["entrypoint"])
+		require.Equal(t, "cmd/ci.go", cfg.Env["ci"].Modules["greeter"].Settings["entrypoint"])
 	})
 
-	t.Run("bracketed non-JSON values keep string handling", func(t *testing.T) {
+	t.Run("bracketed values keep string handling instead of JSON parsing", func(t *testing.T) {
 		t.Parallel()
 
 		data, err := WriteConfigValue(nil, "modules.greeter.settings.glob", `[abc]*`)
 		require.NoError(t, err)
 		data, err = WriteConfigValue(data, "modules.greeter.settings.globs", `[a]*,[b]*`)
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "modules.greeter.settings.lint", `["!docs","!x"]`)
 		require.NoError(t, err)
 
 		cfg, err := ParseConfig(data)
@@ -448,7 +443,29 @@ func TestWriteConfigValue(t *testing.T) {
 		require.Equal(t, map[string]any{
 			"glob":  "[abc]*",
 			"globs": []any{"[a]*", "[b]*"},
+			"lint":  []any{`["!docs"`, `"!x"]`},
 		}, cfg.Modules["greeter"].Settings)
+	})
+
+	t.Run("WriteConfigValues stores elements verbatim as native arrays", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValues(nil, "modules.greeter.settings.lint", []string{"!docs", "!x"})
+		require.NoError(t, err)
+		data, err = WriteConfigValues(data, "modules.greeter.settings.tags", []string{"a,b", `["c"]`, "", "true", "42"})
+		require.NoError(t, err)
+		data, err = WriteConfigValues(data, "env.ci.modules.greeter.settings.lint", []string{"ci-only"})
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{
+			"lint": []any{"!docs", "!x"},
+			"tags": []any{"a,b", `["c"]`, "", "true", "42"},
+		}, cfg.Modules["greeter"].Settings)
+		require.Equal(t, map[string]any{
+			"lint": []any{"ci-only"},
+		}, cfg.Env["ci"].Modules["greeter"].Settings)
 	})
 
 	t.Run("writes module skip fields", func(t *testing.T) {
@@ -835,5 +852,215 @@ func TestResolveModuleEntrySource(t *testing.T) {
 	t.Run("leaves remote source unchanged", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t, "github.com/dagger/dagger/modules/wolfi", ResolveModuleEntrySource(LockDirName, "github.com/dagger/dagger/modules/wolfi"))
+	})
+}
+
+func TestDeleteConfigValue(t *testing.T) {
+	t.Parallel()
+
+	data := []byte(`# workspace config
+[modules.greeter]
+source = "modules/greeter"
+entrypoint = true
+
+[modules.greeter.settings]
+greeting = "hello"
+enabled = true
+
+[env.ci.modules.greeter.settings]
+greeting = "hola"
+
+[env.local]
+`)
+
+	t.Run("removes a base setting and keeps the rest", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := DeleteConfigValue(data, "modules.greeter.settings.greeting")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.NotContains(t, cfg.Modules["greeter"].Settings, "greeting")
+		require.Equal(t, true, cfg.Modules["greeter"].Settings["enabled"])
+		require.Equal(t, "hola", cfg.Env["ci"].Modules["greeter"].Settings["greeting"])
+		require.Contains(t, string(out), "# workspace config")
+	})
+
+	t.Run("removing the last base setting drops the settings section", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := DeleteConfigValue(data, "modules.greeter.settings.greeting")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "modules.greeter.settings.enabled")
+		require.NoError(t, err)
+
+		require.NotContains(t, string(out), "[modules.greeter.settings]")
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.Empty(t, cfg.Modules["greeter"].Settings)
+		require.Equal(t, "modules/greeter", cfg.Modules["greeter"].Source)
+	})
+
+	t.Run("removes an env setting and keeps the env defined", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := DeleteConfigValue(data, "env.ci.modules.greeter.settings.greeting")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.Contains(t, cfg.Env, "ci")
+		require.NotContains(t, cfg.Env["ci"].Modules, "greeter")
+		require.Equal(t, "hello", cfg.Modules["greeter"].Settings["greeting"])
+		require.Contains(t, cfg.Env, "local")
+		require.Contains(t, string(out), "[env.ci]")
+		require.NotContains(t, string(out), "[env]\n")
+	})
+
+	t.Run("removes boolean and list fields", func(t *testing.T) {
+		t.Parallel()
+
+		listData := []byte(`ignore = ["dist"]
+defaults_from_dotenv = true
+check-generated = false
+
+[modules.greeter]
+source = "modules/greeter"
+entrypoint = true
+
+[modules.greeter.check]
+skip = ["slow"]
+`)
+
+		out, err := DeleteConfigValue(listData, "modules.greeter.entrypoint")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "modules.greeter.check.skip")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "ignore")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "defaults_from_dotenv")
+		require.NoError(t, err)
+		out, err = DeleteConfigValue(out, "check-generated")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.False(t, cfg.Modules["greeter"].Entrypoint)
+		require.Empty(t, cfg.Modules["greeter"].Check.Skip)
+		require.Empty(t, cfg.Ignore)
+		require.False(t, cfg.DefaultsFromDotEnv)
+		require.Nil(t, cfg.CheckGenerated)
+		require.NotContains(t, string(out), "entrypoint")
+		require.NotContains(t, string(out), "check-generated")
+	})
+
+	t.Run("removes explicitly set zero values", func(t *testing.T) {
+		t.Parallel()
+
+		zeroData := []byte(`ignore = []
+defaults_from_dotenv = false
+
+[modules.greeter]
+source = "modules/greeter"
+entrypoint = false
+`)
+
+		for _, tc := range []struct {
+			key  string
+			line string
+		}{
+			{"ignore", "ignore"},
+			{"defaults_from_dotenv", "defaults_from_dotenv"},
+			{"modules.greeter.entrypoint", "entrypoint"},
+		} {
+			out, err := DeleteConfigValue(zeroData, tc.key)
+			require.NoError(t, err, tc.key)
+			require.NotContains(t, string(out), tc.line, tc.key)
+
+			_, err = DeleteConfigValue(out, tc.key)
+			require.ErrorContains(t, err, fmt.Sprintf("key %q is not set", tc.key), tc.key)
+		}
+	})
+
+	t.Run("errors when the key is not set", func(t *testing.T) {
+		t.Parallel()
+
+		for _, key := range []string{
+			"modules.greeter.settings.missing",
+			"modules.missing.settings.greeting",
+			"env.missing.modules.greeter.settings.greeting",
+			"env.ci.modules.missing.settings.greeting",
+			"env.ci.modules.greeter.settings.enabled",
+			"modules.greeter.legacy-default-path",
+			"check-generated",
+			"ignore",
+		} {
+			_, err := DeleteConfigValue(data, key)
+			require.ErrorContains(t, err, fmt.Sprintf("key %q is not set", key), key)
+		}
+	})
+
+	t.Run("rejects invalid and protected keys", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := DeleteConfigValue(data, "")
+		require.ErrorContains(t, err, "key is required")
+
+		_, err = DeleteConfigValue(data, "modules.greeter.source")
+		require.ErrorContains(t, err, "cannot unset modules.greeter.source")
+
+		_, err = DeleteConfigValue(data, "modules.greeter")
+		require.ErrorContains(t, err, `cannot unset "modules.greeter" directly; use dagger uninstall to remove a module`)
+
+		_, err = DeleteConfigValue(data, "modules.greeter.settings")
+		require.ErrorContains(t, err, `cannot unset "modules.greeter.settings" directly`)
+
+		_, err = DeleteConfigValue(data, "modules.greeter.badfield")
+		require.ErrorContains(t, err, "unknown config key")
+
+		_, err = DeleteConfigValue(data, "modules.greeter.as-sdk.name")
+		require.ErrorContains(t, err, "SDK state is managed by dagger install")
+
+		portsData := []byte("[ports.3000]\nbackendService = \"web\"\nbackendPort = 8080\n")
+		_, err = DeleteConfigValue(portsData, "ports.3000.backendService")
+		require.ErrorContains(t, err, "cannot unset")
+	})
+
+	t.Run("removes keys without dedicated handling", func(t *testing.T) {
+		t.Parallel()
+
+		pinned := []byte(`[modules.greeter]
+source = "modules/greeter"
+pin = "abc123"
+`)
+
+		out, err := DeleteConfigValue(pinned, "modules.greeter.pin")
+		require.NoError(t, err)
+		require.NotContains(t, string(out), "pin")
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.Equal(t, "modules/greeter", cfg.Modules["greeter"].Source)
+	})
+
+	t.Run("removes quoted setting keys", func(t *testing.T) {
+		t.Parallel()
+
+		quoted := []byte(`[modules."my.module"]
+source = "modules/my.module"
+
+[modules."my.module".settings]
+"some.key" = "value"
+other = "kept"
+`)
+
+		out, err := DeleteConfigValue(quoted, `modules."my.module".settings."some.key"`)
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(out)
+		require.NoError(t, err)
+		require.NotContains(t, cfg.Modules["my.module"].Settings, "some.key")
+		require.Equal(t, "kept", cfg.Modules["my.module"].Settings["other"])
 	})
 }

@@ -589,6 +589,125 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Impl", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 30, 6)}).
+					WithFunction(
+						dag.Function("DynamicOtherIfaceByIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("LocalOtherIface"))).
+							WithSourceMap(dag.SourceMap("main.go", 147, 1))).
+					WithFunction(
+						dag.Function("DynamicOtherIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithObject("OtherImpl"))).
+							WithSourceMap(dag.SourceMap("main.go", 138, 1))).
+					WithFunction(
+						dag.Function("OtherIface",
+							dag.TypeDef().WithObject("OtherImpl")).
+							WithSourceMap(dag.SourceMap("main.go", 122, 1))).
+					WithFunction(
+						dag.Function("SelfIface",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 111, 1))).
+					WithFunction(
+						dag.Function("SelfIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Impl"))).
+							WithSourceMap(dag.SourceMap("main.go", 115, 1))).
+					WithFunction(
+						dag.Function("StaticOtherIfaceList",
+							dag.TypeDef().WithListOf(dag.TypeDef().WithObject("OtherImpl"))).
+							WithSourceMap(dag.SourceMap("main.go", 126, 1))).
+					WithFunction(
+						dag.Function("Void",
+							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
+							WithSourceMap(dag.SourceMap("main.go", 47, 1))).
+					WithFunction(
+						dag.Function("WithBool",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 81, 1)).
+							WithArg("boolArg", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 81, 24)})).
+					WithFunction(
+						dag.Function("WithBoolList",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 86, 1)).
+							WithArg("boolListArg", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 86, 28)})).
+					WithFunction(
+						dag.Function("WithInt",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 71, 1)).
+							WithArg("intArg", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 71, 23)})).
+					WithFunction(
+						dag.Function("WithIntList",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 76, 1)).
+							WithArg("intListArg", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 76, 27)})).
+					WithFunction(
+						dag.Function("WithObj",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 91, 1)).
+							WithArg("objArg", dag.TypeDef().WithObject("Directory"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 91, 23)})).
+					WithFunction(
+						dag.Function("WithObjList",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 106, 1)).
+							WithArg("objListArg", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Directory")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 106, 27)})).
+					WithFunction(
+						dag.Function("WithOptionalPragmaObj",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 96, 1)).
+							WithArg("objArg", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 98, 2)})).
+					WithFunction(
+						dag.Function("WithOptionalPragmaStr",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 56, 1)).
+							WithArg("strArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 58, 2)})).
+					WithFunction(
+						dag.Function("WithOtherIface",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 133, 1)).
+							WithArg("other", dag.TypeDef().WithObject("OtherImpl"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 133, 31)})).
+					WithFunction(
+						dag.Function("WithOtherIfaceByIface",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 142, 1)).
+							WithArg("other", dag.TypeDef().WithInterface("LocalOtherIface"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 142, 38)})).
+					WithFunction(
+						dag.Function("WithStr",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 51, 1)).
+							WithArg("strArg", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 51, 23)})).
+					WithFunction(
+						dag.Function("WithStrList",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 66, 1)).
+							WithArg("strListArg", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 66, 27)})).
+					WithField("Str", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 31, 2)}).
+					WithField("StrList", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 32, 2)}).
+					WithField("Int", dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 34, 2)}).
+					WithField("IntList", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 35, 2)}).
+					WithField("Bool", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 37, 2)}).
+					WithField("BoolList", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 38, 2)}).
+					WithField("Obj", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 40, 2)}).
+					WithField("ObjList", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Directory")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 41, 2)}).
+					WithField("Others", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("OtherImpl")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 43, 2)}).
+					WithField("OtherIfaces", dag.TypeDef().WithListOf(dag.TypeDef().WithInterface("LocalOtherIface")), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 44, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Impl")).
+							WithSourceMap(dag.SourceMap("main.go", 9, 1)).
+							WithArg("strs", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 10, 2)}).
+							WithArg("ints", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindIntegerKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 11, 2)}).
+							WithArg("bools", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind)), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 12, 2)}).
+							WithArg("dirs", dag.TypeDef().WithListOf(dag.TypeDef().WithObject("Directory")), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 13, 2)}))).
+			WithInterface(
+				dag.TypeDef().WithInterface("LocalOtherIface", dagger.TypeDefWithInterfaceOpts{Description: "LocalOtherIface is the same as OtherIface and is used here to test interface\nto interface compatibility.", SourceMap: dag.SourceMap("main.go", 157, 6)}).
+					WithFunction(
+						dag.Function("Foo",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 159, 5)))).
+			WithObject(
+				dag.TypeDef().WithObject("OtherImpl", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 151, 6)}).
+					WithField("Foo", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 152, 2)})), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

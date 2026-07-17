@@ -71,6 +71,29 @@ func (db *DB) HasChecks() bool {
 	return false
 }
 
+func (db *DB) HasGenerateReport() bool {
+	for _, span := range db.Spans.Order {
+		if span.GenerateSkipped {
+			return true
+		}
+	}
+	return false
+}
+
+// SkippedModuleSpans returns the spans reporting workspace modules that
+// best-effort generate skipped because they could not be loaded, in encounter
+// order. The final report renders these as a persisted "SKIPPED MODULES"
+// section so they survive the live tree collapsing on a successful run.
+func (db *DB) SkippedModuleSpans() []*Span {
+	var out []*Span
+	for _, span := range db.Spans.Order {
+		if span.GenerateSkipped {
+			out = append(out, span)
+		}
+	}
+	return out
+}
+
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
 		BySpan: make(map[SpanID]*TraceTree),
@@ -327,15 +350,27 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 		return expanded
 	}
 
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[row.Span.ID]; ok {
+		verbosity = v
+	}
+
 	autoExpand := row.Depth() < 1 && row.IsRunningOrChildRunning
 
 	alwaysExpand := row.Span.IsCanceled() ||
-		opts.Verbosity >= ExpandCompletedVerbosity ||
+		verbosity >= ExpandCompletedVerbosity ||
 		opts.ExpandCompleted
 
-	// never expand tool calls by default, tends to show a bunch of guts that
-	// distracts from the overall history
-	neverExpand := row.Span.LLMTool != "" || row.Span.RollUpLogs || row.Span.RollUpSpans
+	// Tool calls and rolled-up spans hide their guts by default -- they tend to
+	// show a bunch of internals that distract from the overall history. But at a
+	// high enough verbosity (the same threshold that expands completed spans)
+	// the user is explicitly asking to see everything, so let it punch through
+	// the rollup boundary -- e.g. 'dagger trace --span <toolcall> -vvvvv' to
+	// inspect a slow tool call's full call tree. ExpandCompleted alone does not
+	// punch through: it keeps completed spans open but still respects rollup
+	// boundaries.
+	neverExpand := (row.Span.LLMTool != "" || row.Span.RollUpLogs || row.Span.RollUpSpans) &&
+		verbosity < ExpandCompletedVerbosity
 
 	return (autoExpand || alwaysExpand) && !neverExpand
 }
