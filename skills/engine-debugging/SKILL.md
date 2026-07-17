@@ -8,6 +8,13 @@ description: Run Dagger repo tests and debug Dagger engine, core, dagql, filesyn
 This is the default guide for running Dagger engine/core tests and for debugging
 the failures those tests expose.
 
+## CLI Version Compatibility
+
+> [!IMPORTANT]
+> Commands in this guide use Dagger v1.0 or later. If your installed Dagger
+> version is earlier than v1.0, replace every `dagger api call ...` invocation
+> below with `dagger call ...`.
+
 Start from evidence, not broad guesses.
 
 ## Core Loop
@@ -34,7 +41,7 @@ Use a tight test repro before adding logs.
 Recommended integration command format:
 
 ```bash
-dagger call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>'
+dagger api call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>'
 ```
 
 This command rebuilds the dev engine, runs it as an ephemeral service, and then
@@ -48,7 +55,7 @@ runs tests against it. Output includes:
 Capture output to a file under `/tmp` to avoid overwhelming terminal context:
 
 ```bash
-dagger call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>' > /tmp/engine-debug.log 2>&1
+dagger api call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>' > /tmp/engine-debug.log 2>&1
 rg -n "panic:|--- FAIL:|^FAIL\s" /tmp/engine-debug.log
 ```
 
@@ -95,7 +102,7 @@ stack traces, you are done and do not need to wait for the test hang to end.
 To compare behavior against an engine from another git ref:
 
 ```bash
-dagger call engine-dev --source 'https://github.com/dagger/dagger#main' test --pkg ./core/integration --run='TestSomeSuite/TestSomeSubtestYouWant'
+dagger api call engine-dev --source 'https://github.com/dagger/dagger#main' test --pkg ./core/integration --run='TestSomeSuite/TestSomeSubtestYouWant'
 ```
 
 Do not run multiple suites in parallel unless necessary. Each suite is CPU-heavy
@@ -193,15 +200,15 @@ sed -n '<start>,<end>p' /tmp/ci-trace-<trace-id>.log
 
 Use the replayed trace to identify the exact failing call, subtest, generated
 command, or engine error. Once the failing surface is clear, decide whether to
-reproduce it locally with a tight `dagger call engine-dev ...` command or debug
-directly from the recorded CI trace.
+reproduce it locally with a tight `dagger api call engine-dev ...` command or
+debug directly from the recorded CI trace.
 
 ## Performance Debugging With Persistent Dev Engine
 
 For most testing/debugging flows, prefer ephemeral engines via:
 
 ```bash
-dagger call engine-dev ...
+dagger api call engine-dev ...
 ```
 
 For performance debugging, such as pprof snapshots, repeated profiling loops, or
