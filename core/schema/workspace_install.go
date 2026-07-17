@@ -90,12 +90,13 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 	ref string,
 	name string,
 	here bool,
+	workspaceRoot dagql.ObjectResult[*core.Directory],
 ) (workspaceInstallResolution, error) {
 	var resolved workspaceInstallResolution
 	ctx = workspaceInstallLookupContext(ctx)
 
 	configDir := workspaceConfigDirectoryForWrite(ws, here)
-	src, sourcePath, err := s.resolveWorkspaceInstallSource(ctx, ws, ref, configDir)
+	src, sourcePath, err := s.resolveWorkspaceInstallSource(ctx, ws, ref, configDir, workspaceRoot)
 	if err != nil {
 		return resolved, err
 	}
@@ -124,6 +125,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 	ws *core.Workspace,
 	ref string,
 	configDir string,
+	workspaceRoot dagql.ObjectResult[*core.Directory],
 ) (dagql.ObjectResult[*core.ModuleSource], string, error) {
 	var src dagql.ObjectResult[*core.ModuleSource]
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -132,11 +134,12 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 	}
 
 	kind := core.FastModuleSourceKindCheck(ref, "")
-	var workspaceRoot dagql.ObjectResult[*core.Directory]
 	if kind == "" {
-		workspaceRoot, err = s.workspaceOverlayRootfs(ctx, ws)
-		if err != nil {
-			return src, "", err
+		if workspaceRoot.Self() == nil {
+			workspaceRoot, err = s.workspaceOverlayRootfs(ctx, ws)
+			if err != nil {
+				return src, "", err
+			}
 		}
 		parsed, err := core.ParseRefString(ctx, &core.DirectoryStatFS{Dir: workspaceRoot}, ref, "")
 		if err != nil {
@@ -262,6 +265,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallForOverlay(
 	ref string,
 	name string,
 	here bool,
+	workspaceRoot dagql.ObjectResult[*core.Directory],
 ) (workspaceInstallResolution, error) {
 	return s.resolveWorkspaceInstall(
 		workspaceInstallContextWithLockMode(ctx, workspace.LockModePinned),
@@ -269,6 +273,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallForOverlay(
 		ref,
 		name,
 		here,
+		workspaceRoot,
 	)
 }
 
@@ -325,21 +330,39 @@ type workspaceInstallOutcome struct {
 // lock rides in context, invisible to dagql cache keys, so results resolved
 // under one lock must not be served to another. Git refs escape that cost:
 // their resolution depends only on the ref and the base lock contents, both of
-// which __workspaceInstallResolution captures in its cache key. Local and
-// ambiguous refs read live host or workspace state that the base lock cannot
+// which __workspaceInstallResolution captures in its cache key. Local refs
+// read live host or workspace state that the base lock cannot
 // content-address, so they stay on the live path.
+//
+// Ambiguous refs (e.g. github.com/org/repo without an explicit scheme) need a
+// stat against the workspace rootfs to classify; the rootfs is passed down to
+// the live path so it is only synced once.
 func (s *workspaceSchema) resolveInstallOutcomeForOverlay(
 	ctx context.Context,
 	ws *core.Workspace,
 	overlayLock *workspaceOverlayLock,
 	args workspaceInstallArgs,
 ) (*workspaceInstallOutcome, error) {
-	if core.FastModuleSourceKindCheck(args.Ref, "") == core.ModuleSourceKindGit {
+	kind := core.FastModuleSourceKindCheck(args.Ref, "")
+	var workspaceRoot dagql.ObjectResult[*core.Directory]
+	if kind == "" {
+		var err error
+		workspaceRoot, err = s.workspaceOverlayRootfs(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+		parsed, err := core.ParseRefString(ctx, &core.DirectoryStatFS{Dir: workspaceRoot}, args.Ref, "")
+		if err != nil {
+			return nil, fmt.Errorf("parse module ref %q: %w", args.Ref, err)
+		}
+		kind = parsed.Kind
+	}
+	if kind == core.ModuleSourceKindGit {
 		return s.cachedGitInstallOutcome(ctx, overlayLock, args)
 	}
 
 	lookupCtx := withWorkspaceLookupLockOverride(ctx, overlayLock.Lock)
-	resolved, err := s.resolveWorkspaceInstallForOverlay(lookupCtx, ws, args.Ref, args.Name, args.Here)
+	resolved, err := s.resolveWorkspaceInstallForOverlay(lookupCtx, ws, args.Ref, args.Name, args.Here, workspaceRoot)
 	if err != nil {
 		return nil, err
 	}
