@@ -60,10 +60,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Return the workspace the LLM is bound to."),
 		dagql.NodeFunc("withResetWorkspace", s.withResetWorkspace).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Return a new LLM with the workspace reset to its base, dropping any accumulated changes. "+
-				"The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, "+
-				"so a persisted session (globalID) no longer replays workspace edits when loaded. "+
-				"Use after exporting changes (Workspace.export) so a resumed session continues from the "+
+			Doc("Return a new LLM with the workspace reset to its base, dropping any accumulated changes. " +
+				"The conversation and configuration are re-emitted as a flat recipe bound to the live workspace, " +
+				"so a persisted session (globalID) no longer replays workspace edits when loaded. " +
+				"Use after exporting changes (Workspace.export) so a resumed session continues from the " +
 				"workspace's on-disk state."),
 		dagql.Func("withModel", s.withModel).
 			Doc("Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.").
@@ -136,8 +136,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("withSkills", s.withSkills).
 			View(AfterVersion("v1.0.0-0")).
-			Doc("Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. "+
-				"Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. "+
+			Doc("Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. " +
+				"Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. " +
 				"Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.").
 			Args(
 				dagql.Arg("directory").Doc("A directory containing skills, each a subdirectory holding a SKILL.md."),

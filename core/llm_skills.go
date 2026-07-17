@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	dangskills "github.com/vito/dang/v2/.agents/skills"
 	"github.com/vektah/gqlparser/v2/ast"
+	dangskills "github.com/vito/dang/v2/.agents/skills"
 	"gopkg.in/yaml.v3"
 
 	"github.com/dagger/dagger/dagql"

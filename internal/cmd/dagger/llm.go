@@ -786,7 +786,7 @@ func conflictMarkerCue(ctx context.Context, llm *dagger.LLM) string {
 		slog.Debug("skipping conflict-marker check", "error", err)
 		return ""
 	}
-	paths := append(added, modified...)
+	paths := slices.Concat(added, modified)
 	if len(paths) == 0 {
 		return ""
 	}
