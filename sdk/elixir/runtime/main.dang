@@ -1,0 +1,179 @@
+let modSourceDirPath = "/src"
+let sdkSrc = "/sdk"
+let genDir = "dagger_sdk"
+let schemaPath = "/schema.json"
+let elixirImage = "elixir:1.19.5-otp-28-alpine@sha256:1747b3595b6742d2273d18608203457d5b925000cd38aca40c76e23c64d44def"
+
+type ElixirSdk {
+  """
+  Directory with the Elixir SDK source code.
+  """
+  pub sdkSourceDir: Directory!
+    @defaultPath(path: "/sdk/elixir")
+    @ignorePatterns(patterns: [
+      "**",
+      "!LICENSE",
+      "!lib/**/*.ex",
+      "!.formatter.exs",
+      "!mix.exs",
+      "!mix.lock",
+      "!dagger_codegen/lib/**/*.ex",
+      "!dagger_codegen/mix.exs",
+      "!dagger_codegen/mix.lock",
+    ])
+
+  pub moduleRuntime(
+    modSource: ModuleSource!,
+    introspectionJson: File!,
+  ): Container! {
+    let modName = modSource.moduleName
+    let subPath = modSource.sourceSubpath
+
+    common(modSource, introspectionJson)
+      .withEnvVariable("MIX_ENV", "prod")
+      .withEnvVariable("HEX_CACERTS_PATH", "/etc/ssl/certs/ca-certificates.crt")
+      .withExec(["mix", "deps.get", "--only", "prod"])
+      .withExec(["mix", "deps.compile"])
+      .withExec(["mix", "compile"])
+      .withEntrypoint([
+        "mix",
+        "cmd",
+        "--cd",
+        pathJoin(modSourceDirPath, subPath),
+        "mix",
+        "dagger.entrypoint.invoke",
+        toElixirModuleName(modName),
+      ])
+  }
+
+  pub codegen(
+    modSource: ModuleSource!,
+    introspectionJson: File!,
+  ): GeneratedCode! {
+    generatedCode(common(modSource, introspectionJson).directory(modSourceDirPath))
+      .withVCSGeneratedPaths([genDir + "/**"])
+      .withVCSIgnoredPaths([
+        genDir,
+        "_build",
+        "cover",
+        "deps",
+        "doc",
+        "erl_crash.dump",
+        "*.ez",
+        "template-*.tar",
+        "tmp",
+      ])
+  }
+
+  let common(
+    modSource: ModuleSource!,
+    introspectionJson: File!,
+  ): Container! {
+    let modName = modSource.moduleName
+    let subPath = modSource.sourceSubpath
+
+    withNewElixirPackage(
+      withSdk(base(modSource, subPath), introspectionJson),
+      modName,
+    )
+  }
+
+  let base(modSource: ModuleSource!, subPath: String!): Container! {
+    baseContainer(container)
+      .withMountedDirectory(sdkSrc, sdkSourceDir)
+      .withMountedDirectory(modSourceDirPath, modSource.contextDirectory)
+      .withWorkdir(pathJoin(modSourceDirPath, subPath))
+  }
+
+  """
+  Generate a new Elixir package unless one already exists.
+  """
+  let withNewElixirPackage(ctr: Container!, modName: String!): Container! {
+    if (ctr.directory(".").entries.contains("mix.exs")) {
+      return ctr
+    }
+
+    let appName = toElixirApplicationName(modName)
+    let moduleName = toElixirModuleName(modName)
+    let template = currentModule.source.directory("template")
+    let mixExs = renderTemplate(template.file("mix.exs").contents, appName, moduleName)
+    let mainModule = renderTemplate(template.file("lib/template.ex").contents, appName, moduleName)
+    let readme = renderTemplate(template.file("README.md").contents, appName, moduleName)
+
+    ctr
+      .withDirectory(".", template, exclude: ["mix.exs", "lib/template.ex"])
+      .withNewFile("mix.exs", mixExs)
+      .withNewFile(`lib/${appName}.ex`, mainModule)
+      .withNewFile("README.md", readme)
+      .withExec(["mix", "deps.get"])
+  }
+
+  """
+  Generate the SDK into the module container.
+  """
+  let withSdk(ctr: Container!, introspectionJson: File!): Container! {
+    ctr
+      .withDirectory(
+        genDir,
+        sdkSourceDir
+          .withoutDirectory("dagger_codegen")
+          .withoutDirectory("lib/dagger/gen"),
+      )
+      .withDirectory(pathJoin(genDir, "lib/dagger/gen"), generateCode(introspectionJson))
+  }
+
+  let generateCode(introspectionJson: File!): Directory! {
+    withDaggerCodegen
+      .withMountedFile(schemaPath, introspectionJson)
+      .withExec([
+        "mix",
+        "dagger.codegen",
+        "generate",
+        "--outdir",
+        "/gen",
+        "--introspection",
+        schemaPath,
+      ])
+      .directory("/gen")
+  }
+
+  let withDaggerCodegen: Container! {
+    baseContainer(container)
+      .withMountedDirectory(sdkSrc, sdkSourceDir)
+      .withWorkdir(pathJoin(sdkSrc, "dagger_codegen"))
+  }
+
+  let baseContainer(ctr: Container!): Container! {
+    ctr
+      .from(elixirImage)
+      .withExec(["apk", "add", "--no-cache", "git"])
+      .withExec(["mix", "local.hex", "--force"])
+      .withExec(["mix", "local.rebar", "--force"])
+  }
+}
+
+let renderTemplate(text: String!, appName: String!, moduleName: String!): String! {
+  text
+    .replace("{{ .AppName }}", appName)
+    .replace("{{ .ModName }}", moduleName)
+}
+
+let pathJoin(left: String!, right: String!): String! {
+  left.trimRight("/") + "/" + right.trimLeft("/")
+}
+
+let toElixirApplicationName(name: String!): String! {
+  name
+    .replaceMatches(`([A-Z]+)([A-Z][a-z])`, with: "$1_$2")
+    .replaceMatches(`([a-z0-9])([A-Z])`, with: "$1_$2")
+    .replaceMatches(`[^A-Za-z0-9]+`, with: "_")
+    .trim("_")
+    .toLower
+}
+
+let toElixirModuleName(name: String!): String! {
+  toElixirApplicationName(name)
+    .split("_")
+    .map { word => word.rewriteMatches(`^.`) { first => first.string.toUpper } }
+    .join("")
+}
