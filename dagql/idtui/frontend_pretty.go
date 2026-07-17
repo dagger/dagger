@@ -644,13 +644,11 @@ func (d *DurationView) Render(ctx tuist.Context) {
 	}
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(d.profile))
-	dur := out.String(dagui.FormatDuration(d.span.Activity.Duration(time.Now())))
-	if d.span.IsRunningOrEffectsRunning() {
-		dur = dur.Foreground(termenv.ANSIYellow)
-	} else {
-		dur = dur.Faint()
-	}
-	ctx.Line(dur.String())
+	// The view only mounts while the span is running (never in the final
+	// render), so this is always a live render: show self time when the row
+	// is materially blocked, and name the live blocker.
+	renderSpanDuration(out, d.span, time.Now(), false)
+	ctx.Line(buf.String())
 }
 
 func (fe *frontendPretty) newStatusSpinner() *tuist.Spinner {
