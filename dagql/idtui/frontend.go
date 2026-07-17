@@ -740,19 +740,28 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) 
 	if space {
 		fmt.Fprint(out, out.String(" "))
 	}
+	renderSpanDuration(out, span, r.now, r.final)
+}
+
+// renderSpanDuration writes a span's duration—self time rather than
+// wall-clock when the row provably spent material time blocked on other
+// ops—plus a "waiting on X" suffix while the row is blocked right now. It is
+// shared by the static renderer and the live, self-updating DurationView so
+// running rows tell the same story as completed ones.
+func renderSpanDuration(out TermOutput, span *dagui.Span, now time.Time, final bool) {
 	// When a row spent material time provably blocked on other ops, show
 	// the time it actually spent executing, not the wall-clock it was
 	// blocked or dormant for.
-	hb := span.TimeBreakdown(r.now)
+	hb := span.TimeBreakdown(now)
 	// "Blocked right now" only means something while the run is still going:
 	// a final render has no "now", and a failed or canceled row's story is
 	// its error, not whatever it was waiting on when things went wrong.
 	var blocked dagui.TimeSegment
 	var blockedNow bool
-	if !r.final && !span.IsFailedOrCausedFailure() && !span.IsCanceled() {
-		blocked, blockedNow = hb.BlockedNow(r.now)
+	if !final && !span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		blocked, blockedNow = hb.BlockedNow(now)
 	}
-	shown := span.Activity.Duration(r.now)
+	shown := span.Activity.Duration(now)
 	if hb.Material || blockedNow {
 		shown = hb.Self
 	}
