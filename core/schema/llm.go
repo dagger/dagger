@@ -134,6 +134,17 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("The name of the MCP server"),
 				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
 			),
+		dagql.Func("withSkills", s.withSkills).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. "+
+				"Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. "+
+				"Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.").
+			Args(
+				dagql.Arg("directory").Doc("A directory containing skills, each a subdirectory holding a SKILL.md."),
+			),
+		dagql.Func("skills", s.skills).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace."),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {
 			id, err := self.ID()
 			if err != nil {
@@ -199,8 +210,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	// ID/load fields and Env/Binding extensions.
 	srv.InstallObject(dagql.NewClass[*core.LLMMessage](srv).View(AfterVersion("v1.0.0-0")))
 	srv.InstallObject(dagql.NewClass[*core.LLMContentBlock](srv).View(AfterVersion("v1.0.0-0")))
+	srv.InstallObject(dagql.NewClass[*core.LLMSkill](srv).View(AfterVersion("v1.0.0-0")))
 	dagql.Fields[*core.LLMMessage]{}.Install(srv)
 	dagql.Fields[*core.LLMContentBlock]{}.Install(srv)
+	dagql.Fields[*core.LLMSkill]{}.Install(srv)
 	core.LLMMessageRoles.Install(srv, AfterVersion("v1.0.0-0"))
 	core.LLMContentBlockKinds.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.MustInputSpec(core.LLMContentBlockInput{}).Install(srv, AfterVersion("v1.0.0-0"))
@@ -353,6 +366,24 @@ func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struc
 		return nil, err
 	}
 	return llm.WithMCPServer(args.Name, svc), nil
+}
+
+func (s *llmSchema) withSkills(ctx context.Context, llm *core.LLM, args struct {
+	Directory core.DirectoryID
+}) (*core.LLM, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := args.Directory.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithSkills(dir), nil
+}
+
+func (s *llmSchema) skills(ctx context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMSkill, error) {
+	return llm.Skills(ctx)
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
