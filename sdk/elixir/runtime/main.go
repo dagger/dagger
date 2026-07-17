@@ -18,7 +18,7 @@ const (
 	sdkSrc           = "/sdk"
 	genDir           = "dagger_sdk"
 	schemaPath       = "/schema.json"
-	elixirImage      = "elixir:1.19.5-otp-28-alpine@sha256:1747b3595b6742d2273d18608203457d5b925000cd38aca40c76e23c64d44def"
+	elixirImage      = "elixir:1.20.2-otp-29-alpine@sha256:4cede0b5a644d3c36941bfc59fe0b59433bfc3f6f67b38d87d600e8a807548f5"
 )
 
 //go:embed template/mix.exs
