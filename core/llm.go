@@ -1127,6 +1127,18 @@ func (llm *LLM) AttachDependencyResults(
 		llm.mcp.boundTools[i].Object = obj
 		deps = append(deps, attached)
 	}
+	for i, skillDir := range llm.mcp.skillDirs {
+		attached, err := attach(skillDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach llm skill directory: %w", err)
+		}
+		dir, ok := attached.(dagql.ObjectResult[*Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach llm skill directory: unexpected result %T", attached)
+		}
+		llm.mcp.skillDirs[i] = dir
+		deps = append(deps, attached)
+	}
 	return deps, nil
 }
 
@@ -1344,6 +1356,22 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 		Service: svc,
 	})
 	return llm
+}
+
+// WithSkills installs a directory of skills — each a subdirectory holding a
+// SKILL.md — surfaced to the model through list_skills/read_skill alongside
+// the engine-embedded and workspace-discovered skills.
+func (llm *LLM) WithSkills(dir dagql.ObjectResult[*Directory]) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithSkills(dir)
+	return llm
+}
+
+// Skills returns the discovery index of every skill visible to the model — the
+// same list the list_skills tool serves, across all sources with the same
+// precedence.
+func (llm *LLM) Skills(ctx context.Context) ([]*LLMSkill, error) {
+	return listSkills(ctx, llm.mcp.skillSources())
 }
 
 // Return the last message sent by the agent
@@ -2102,6 +2130,19 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.NewString(name)},
 				{Name: "service", Value: dagql.NewID[*Service](svcID)},
+			},
+		})
+	}
+
+	for _, dir := range llm.mcp.skillDirs {
+		dirID, err := dir.ID()
+		if err != nil {
+			return res, fmt.Errorf("skill directory ID: %w", err)
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withSkills",
+			Args: []dagql.NamedInput{
+				{Name: "directory", Value: dagql.NewID[*Directory](dirID)},
 			},
 		})
 	}

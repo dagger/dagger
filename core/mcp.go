@@ -87,6 +87,10 @@ type MCP struct {
 	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
+	// skillDirs are skill directories installed via LLM.withSkills, surfaced to
+	// the model through list_skills/read_skill alongside the engine-embedded and
+	// workspace-discovered skills.
+	skillDirs []dagql.ObjectResult[*Directory]
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
@@ -134,6 +138,7 @@ func (m *MCP) DefaultSystemPrompt(ctx context.Context) (string, error) {
 func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.boundTools = slices.Clone(cp.boundTools)
+	cp.skillDirs = slices.Clone(cp.skillDirs)
 	cp.mcpServers = maps.Clone(cp.mcpServers)
 	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
@@ -176,6 +181,14 @@ func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
 func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
 	m = m.Clone()
 	m.mcpServers[srv.Name] = srv
+	return m
+}
+
+// WithSkills installs a directory of skills, discovered via its SKILL.md files
+// and surfaced to the model through list_skills/read_skill.
+func (m *MCP) WithSkills(dir dagql.ObjectResult[*Directory]) *MCP {
+	m = m.Clone()
+	m.skillDirs = append(m.skillDirs, dir)
 	return m
 }
 

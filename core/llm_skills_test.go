@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 func TestParseSkillFrontmatter(t *testing.T) {
@@ -123,7 +125,7 @@ func TestListSkillsDedupAndSort(t *testing.T) {
 
 	metas, err := listSkills(ctx, []skillSource{first, second})
 	require.NoError(t, err)
-	require.Equal(t, []skillMeta{
+	require.Equal(t, []*LLMSkill{
 		{Name: "a", Description: "a"},
 		{Name: "b", Description: "from-first"}, // earlier source wins the collision
 	}, metas)
@@ -144,9 +146,9 @@ func TestReadSkillFallthrough(t *testing.T) {
 	require.ErrorContains(t, err, "required")
 }
 
-func TestResolveWorkspaceSkill(t *testing.T) {
+func TestResolveSkillManifest(t *testing.T) {
 	t.Run("name from frontmatter", func(t *testing.T) {
-		sk, ok := resolveWorkspaceSkill(
+		sk, ok := resolveSkillManifest(
 			".agents/skills/deploy/SKILL.md",
 			[]byte("---\nname: deployer\ndescription: How to deploy.\n---\nbody"),
 		)
@@ -157,7 +159,7 @@ func TestResolveWorkspaceSkill(t *testing.T) {
 	})
 
 	t.Run("name falls back to the directory base", func(t *testing.T) {
-		sk, ok := resolveWorkspaceSkill(
+		sk, ok := resolveSkillManifest(
 			"skills/my-skill/SKILL.md",
 			[]byte("---\ndescription: no name here\n---\nbody"),
 		)
@@ -166,10 +168,42 @@ func TestResolveWorkspaceSkill(t *testing.T) {
 		require.Equal(t, "skills/my-skill", sk.dir)
 	})
 
-	t.Run("rejects a file without frontmatter", func(t *testing.T) {
-		_, ok := resolveWorkspaceSkill("skills/x/SKILL.md", []byte("# no frontmatter\n"))
+	t.Run("root SKILL.md is named by its frontmatter", func(t *testing.T) {
+		sk, ok := resolveSkillManifest(
+			"SKILL.md",
+			[]byte("---\nname: standalone\ndescription: A whole directory as one skill.\n---\nbody"),
+		)
+		require.True(t, ok)
+		require.Equal(t, "standalone", sk.name)
+		require.Equal(t, ".", sk.dir)
+	})
+
+	t.Run("rejects a root SKILL.md without a frontmatter name", func(t *testing.T) {
+		// A root-level SKILL.md has no containing directory to name it after.
+		_, ok := resolveSkillManifest("SKILL.md", []byte("---\ndescription: nameless\n---\nbody"))
 		require.False(t, ok)
 	})
+
+	t.Run("rejects a file without frontmatter", func(t *testing.T) {
+		_, ok := resolveSkillManifest("skills/x/SKILL.md", []byte("# no frontmatter\n"))
+		require.False(t, ok)
+	})
+}
+
+// TestSkillSourcesOrder guards the precedence of skill origins: engine-embedded
+// skills cannot be shadowed, explicitly installed directories (LLM.withSkills)
+// win over skills discovered in the workspace, and installed directories are
+// consulted in install order.
+func TestSkillSourcesOrder(t *testing.T) {
+	m := newMCP().
+		WithSkills(dagql.ObjectResult[*Directory]{}).
+		WithSkills(dagql.ObjectResult[*Directory]{})
+	sources := m.skillSources()
+	require.Len(t, sources, 4)
+	require.IsType(t, embeddedSkillSource{}, sources[0])
+	require.IsType(t, directorySkillSource{}, sources[1])
+	require.IsType(t, directorySkillSource{}, sources[2])
+	require.IsType(t, workspaceSkillSource{}, sources[3])
 }
 
 // TestEngineSkills checks the real embedded source: the dang-language skill is

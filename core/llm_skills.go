@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	dangskills "github.com/vito/dang/v2/.agents/skills"
+	"github.com/vektah/gqlparser/v2/ast"
 	"gopkg.in/yaml.v3"
 
 	"github.com/dagger/dagger/dagql"
@@ -24,25 +25,38 @@ import (
 // the model can't read a Dang-teaching skill through a Dang eval it doesn't yet
 // know how to write.
 //
-// Skills come from ordered sources behind a common skillSource interface. Today
-// the only source is engine-embedded (the dang-language skill shipped in the
-// engine); workspace-shipped SKILL.md files plug in as a second source.
+// Skills come from ordered sources behind a common skillSource interface:
+// engine-embedded skills (the dang-language skill shipped in the engine), skill
+// directories installed via LLM.withSkills, and SKILL.md files discovered in the
+// bound workspace.
 
 // errSkillNotFound signals that a source does not provide the requested skill, so
 // read_skill should consult the next source rather than fail.
 var errSkillNotFound = errors.New("skill not found")
 
-// skillMeta is the discovery-time view of a skill: enough for the model to decide
-// whether to open it.
-type skillMeta struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+// LLMSkill is the discovery-time view of a skill: enough for the model to decide
+// whether to open it. It is exactly what the list_skills tool serves, and is
+// also exposed over the API as LLM.skills so callers can see the model's view.
+type LLMSkill struct {
+	Name        string `field:"true" json:"name" doc:"The skill name, as passed to read_skill."`
+	Description string `field:"true" json:"description" doc:"The one-line description from the SKILL.md frontmatter."`
+}
+
+func (*LLMSkill) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMSkill",
+		NonNull:   true,
+	}
+}
+
+func (*LLMSkill) TypeDescription() string {
+	return "A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill."
 }
 
 // skillSource enumerates and reads skills from one origin.
 type skillSource interface {
 	// list returns discovery metadata for every skill this source exposes.
-	list(ctx context.Context) ([]skillMeta, error)
+	list(ctx context.Context) ([]*LLMSkill, error)
 	// read returns the contents of file rel within skill name (rel defaults to
 	// SKILL.md when empty). It returns errSkillNotFound if this source does not
 	// provide the skill, and other errors for a bad path or read failure.
@@ -51,9 +65,15 @@ type skillSource interface {
 
 // skillSources returns the ordered skill origins consulted by list_skills and
 // read_skill. Engine-embedded skills come first, so the dang-language skill
-// cannot be shadowed by a workspace skill of the same name.
+// cannot be shadowed; directories installed explicitly via LLM.withSkills come
+// before skills discovered in the bound workspace, so an installed skill wins a
+// name collision with an ambient one.
 func (m *MCP) skillSources() []skillSource {
-	return []skillSource{engineSkills, workspaceSkillSource{m: m}}
+	sources := []skillSource{engineSkills}
+	for _, dir := range m.skillDirs {
+		sources = append(sources, directorySkillSource{m: m, dir: dir})
+	}
+	return append(sources, workspaceSkillSource{m: m})
 }
 
 // engineSkills exposes the engine-embedded skills. Only skills useful for writing
@@ -82,8 +102,8 @@ func (s embeddedSkillSource) allowed(name string) bool {
 	return false
 }
 
-func (s embeddedSkillSource) list(context.Context) ([]skillMeta, error) {
-	metas := make([]skillMeta, 0, len(s.allow))
+func (s embeddedSkillSource) list(context.Context) ([]*LLMSkill, error) {
+	metas := make([]*LLMSkill, 0, len(s.allow))
 	for _, name := range s.allow {
 		content, err := fs.ReadFile(s.fsys, path.Join(name, "SKILL.md"))
 		if err != nil {
@@ -93,7 +113,7 @@ func (s embeddedSkillSource) list(context.Context) ([]skillMeta, error) {
 		if err != nil {
 			return nil, fmt.Errorf("skill %q: %w", name, err)
 		}
-		metas = append(metas, skillMeta{Name: name, Description: desc})
+		metas = append(metas, &LLMSkill{Name: name, Description: desc})
 	}
 	return metas, nil
 }
@@ -121,9 +141,118 @@ func skillFilePath(rel string) string {
 	return rel
 }
 
-// workspaceSkillGlob finds skills shipped in the bound workspace anywhere in its
-// tree, matching the prior "glob **/SKILL.md" convention.
-const workspaceSkillGlob = "**/SKILL.md"
+// skillGlob finds skills anywhere in a tree — the bound workspace or an
+// installed skill directory — matching the prior "glob **/SKILL.md" convention.
+const skillGlob = "**/SKILL.md"
+
+// discoveredSkill is a skill found by globbing a tree for SKILL.md files: its
+// resolved name, the directory holding its SKILL.md, and its description.
+type discoveredSkill struct {
+	name        string
+	dir         string
+	description string
+}
+
+// resolveSkillManifest turns a SKILL.md path and its contents into a named
+// skill: the name is the frontmatter name, falling back to the containing
+// directory's base name. It reports false for a file without valid frontmatter,
+// or one whose name cannot be resolved (a root-level SKILL.md with no
+// frontmatter name has no directory to name it after).
+func resolveSkillManifest(skillPath string, content []byte) (discoveredSkill, bool) {
+	fm, err := parseSkillFrontmatter(content)
+	if err != nil {
+		return discoveredSkill{}, false
+	}
+	dir := path.Dir(skillPath)
+	name := fm.Name
+	if name == "" {
+		name = path.Base(dir)
+	}
+	if name == "" || name == "." || name == "/" {
+		return discoveredSkill{}, false
+	}
+	return discoveredSkill{name: name, dir: dir, description: fm.Description}, true
+}
+
+// enumerateSkillDir globs a directory for SKILL.md files and resolves each to a
+// named skill. Files that are not well-formed skills are skipped rather than
+// failing the whole listing. The first skill wins a name collision.
+func enumerateSkillDir(ctx context.Context, srv *dagql.Server, dir dagql.ObjectResult[*Directory]) (map[string]discoveredSkill, error) {
+	var paths []string
+	if err := srv.Select(ctx, dir, &paths, dagql.Selector{
+		Field: "glob",
+		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.NewString(skillGlob)}},
+	}); err != nil {
+		return nil, fmt.Errorf("glob skills: %w", err)
+	}
+	skills := map[string]discoveredSkill{}
+	for _, p := range paths {
+		content, err := readSkillFile(ctx, srv, dir, p)
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", p, err)
+		}
+		sk, ok := resolveSkillManifest(p, []byte(content))
+		if !ok {
+			continue
+		}
+		if _, exists := skills[sk.name]; exists {
+			continue
+		}
+		skills[sk.name] = sk
+	}
+	return skills, nil
+}
+
+// listDiscoveredSkills renders an enumeration as discovery metadata.
+func listDiscoveredSkills(skills map[string]discoveredSkill) []*LLMSkill {
+	metas := make([]*LLMSkill, 0, len(skills))
+	for _, sk := range skills {
+		metas = append(metas, &LLMSkill{Name: sk.name, Description: sk.description})
+	}
+	return metas
+}
+
+// directorySkillSource surfaces SKILL.md files from a skill directory installed
+// via LLM.withSkills. Both enumeration and reads go through the directory
+// itself: unlike the workspace source there is no host sync to scope, the
+// directory is already content-addressed.
+type directorySkillSource struct {
+	m   *MCP
+	dir dagql.ObjectResult[*Directory]
+}
+
+func (s directorySkillSource) enumerate(ctx context.Context) (map[string]discoveredSkill, error) {
+	srv, err := s.m.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return enumerateSkillDir(ctx, srv, s.dir)
+}
+
+func (s directorySkillSource) list(ctx context.Context) ([]*LLMSkill, error) {
+	skills, err := s.enumerate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return listDiscoveredSkills(skills), nil
+}
+
+func (s directorySkillSource) read(ctx context.Context, name, rel string) (string, error) {
+	skills, err := s.enumerate(ctx)
+	if err != nil {
+		return "", err
+	}
+	sk, ok := skills[name]
+	if !ok {
+		return "", errSkillNotFound
+	}
+	rel = skillFilePath(rel)
+	srv, err := s.m.Server(ctx)
+	if err != nil {
+		return "", err
+	}
+	return readSkillFile(ctx, srv, s.dir, path.Join(sk.dir, rel))
+}
 
 // workspaceSkillSource surfaces SKILL.md files shipped in the LLM's bound
 // workspace. It enumerates them by globbing the workspace source directory and
@@ -133,18 +262,10 @@ type workspaceSkillSource struct {
 	m *MCP
 }
 
-// workspaceSkill is a discovered workspace skill: its resolved name, the
-// directory holding its SKILL.md, and its description.
-type workspaceSkill struct {
-	name        string
-	dir         string
-	description string
-}
-
 // enumerate globs the bound workspace for SKILL.md files and resolves each to a
 // named skill (frontmatter name, else the containing directory's base name). It
-// returns nil when no workspace is bound. The first skill wins a name collision.
-func (s workspaceSkillSource) enumerate(ctx context.Context) (map[string]workspaceSkill, error) {
+// returns nil when no workspace is bound.
+func (s workspaceSkillSource) enumerate(ctx context.Context) (map[string]discoveredSkill, error) {
 	if s.m.workspace.Self() == nil {
 		return nil, nil
 	}
@@ -156,58 +277,15 @@ func (s workspaceSkillSource) enumerate(ctx context.Context) (map[string]workspa
 	if err != nil {
 		return nil, err
 	}
-	var paths []string
-	if err := srv.Select(ctx, srcDir, &paths, dagql.Selector{
-		Field: "glob",
-		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.NewString(workspaceSkillGlob)}},
-	}); err != nil {
-		return nil, fmt.Errorf("glob workspace skills: %w", err)
-	}
-	skills := map[string]workspaceSkill{}
-	for _, p := range paths {
-		content, err := readWorkspaceFile(ctx, srv, srcDir, p)
-		if err != nil {
-			return nil, fmt.Errorf("read %q: %w", p, err)
-		}
-		sk, ok := resolveWorkspaceSkill(p, []byte(content))
-		if !ok {
-			// Not a well-formed skill; skip it rather than fail the whole listing.
-			continue
-		}
-		if _, exists := skills[sk.name]; exists {
-			continue
-		}
-		skills[sk.name] = sk
-	}
-	return skills, nil
+	return enumerateSkillDir(ctx, srv, srcDir)
 }
 
-// resolveWorkspaceSkill turns a SKILL.md path and its contents into a named
-// skill: the name is the frontmatter name, falling back to the containing
-// directory's base name. It reports false for a file without valid frontmatter.
-func resolveWorkspaceSkill(skillPath string, content []byte) (workspaceSkill, bool) {
-	fm, err := parseSkillFrontmatter(content)
-	if err != nil {
-		return workspaceSkill{}, false
-	}
-	dir := path.Dir(skillPath)
-	name := fm.Name
-	if name == "" {
-		name = path.Base(dir)
-	}
-	return workspaceSkill{name: name, dir: dir, description: fm.Description}, true
-}
-
-func (s workspaceSkillSource) list(ctx context.Context) ([]skillMeta, error) {
+func (s workspaceSkillSource) list(ctx context.Context) ([]*LLMSkill, error) {
 	skills, err := s.enumerate(ctx)
 	if err != nil {
 		return nil, err
 	}
-	metas := make([]skillMeta, 0, len(skills))
-	for _, sk := range skills {
-		metas = append(metas, skillMeta{Name: sk.name, Description: sk.description})
-	}
-	return metas, nil
+	return listDiscoveredSkills(skills), nil
 }
 
 func (s workspaceSkillSource) read(ctx context.Context, name, rel string) (string, error) {
@@ -226,7 +304,7 @@ func (s workspaceSkillSource) read(ctx context.Context, name, rel string) (strin
 	}
 	// Load just the requested file — Workspace.file scopes the host sync to that
 	// single path rather than syncing the whole skill directory or workspace tree.
-	return readWorkspaceFile(ctx, srv, s.m.workspace, path.Join(sk.dir, rel))
+	return readSkillFile(ctx, srv, s.m.workspace, path.Join(sk.dir, rel))
 }
 
 // skillIndexDir resolves a directory containing only the workspace's SKILL.md
@@ -241,16 +319,16 @@ func (s workspaceSkillSource) skillIndexDir(ctx context.Context, srv *dagql.Serv
 		Field: "directory",
 		Args: []dagql.NamedInput{
 			{Name: "path", Value: dagql.NewString(".")},
-			{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(workspaceSkillGlob)}},
+			{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(skillGlob)}},
 		},
 	})
 	return dir, err
 }
 
-// readWorkspaceFile reads a file's contents from a workspace receiver — either a
+// readSkillFile reads a file's contents from a skill-bearing receiver — a
 // Directory or the Workspace itself — via recv.file(path).contents. On the
 // Workspace the file(...) resolver scopes the host sync to that single path.
-func readWorkspaceFile(ctx context.Context, srv *dagql.Server, recv dagql.AnyObjectResult, p string) (string, error) {
+func readSkillFile(ctx context.Context, srv *dagql.Server, recv dagql.AnyObjectResult, p string) (string, error) {
 	var contents string
 	err := srv.Select(ctx, recv, &contents,
 		dagql.Selector{
@@ -304,8 +382,8 @@ func parseSkillFrontmatter(content []byte) (skillFrontmatter, error) {
 
 // listSkills gathers discovery metadata across all sources, earlier sources
 // winning on a name collision, sorted by name for stable output.
-func listSkills(ctx context.Context, sources []skillSource) ([]skillMeta, error) {
-	var all []skillMeta
+func listSkills(ctx context.Context, sources []skillSource) ([]*LLMSkill, error) {
+	var all []*LLMSkill
 	var firstErr error
 	seen := map[string]bool{}
 	for _, src := range sources {
