@@ -1,0 +1,5 @@
+Expected stderr:
+
+✘ viztest:generate-fail X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ ERROR
+┃ boom
+! exit code: 3

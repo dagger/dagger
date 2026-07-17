@@ -431,8 +431,17 @@ var (
 	_ dagql.HasDependencyResults   = (*Changeset)(nil)
 )
 
-func (ch *Changeset) Evaluate(context.Context) error {
-	return nil
+// Evaluate forces the changeset's before/after directories to materialize. This
+// is where a generator's underlying exec (e.g. SDK codegen) actually runs, so
+// syncing a changeset within a generator's span attributes any failure to that
+// span -- the frontend then renders a red generator with its exec logs, instead
+// of the failure surfacing later, unattributed, during the merge.
+func (ch *Changeset) Evaluate(ctx context.Context) error {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	return cache.Evaluate(ctx, ch.Before, ch.After)
 }
 
 func (ch *Changeset) Sync(ctx context.Context) error {

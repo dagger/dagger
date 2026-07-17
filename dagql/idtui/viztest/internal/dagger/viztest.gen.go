@@ -359,6 +359,18 @@ func (r *Viztest) FailSlow(ctx context.Context, opts ...ViztestFailSlowOpts) err
 	return q.Execute(ctx)
 }
 
+// GenerateFail is a generator whose changeset only evaluates -- and fails -- when
+// it is forced during `dagger generate`'s merge. It exercises exec-error
+// surfacing: the reported error must name the failed command and its stderr, not
+// a bare "exit code: N". See dagger/dagger#13606.
+func (r *Viztest) GenerateFail() *Changeset {
+	q := r.query.Select("generateFail")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 func (r *Viztest) GitReadme(ctx context.Context, remote string, version string) (string, error) {
 	if r.gitReadme != nil {
 		return *r.gitReadme, nil

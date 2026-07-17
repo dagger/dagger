@@ -4545,8 +4545,11 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 				unindent := *row
 				unindent.Depth = -1
 				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
-			} else if row.Span.RollUpLogs && row.IsRunningOrChildRunning {
-				// Only show rolled-up logs while the span is running.
+			} else if row.Span.RollUpLogs && (row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure()) {
+				// Show rolled-up logs while the span is running, and keep them on
+				// failure so the reason survives in the final report -- otherwise a
+				// failed rolled-up span (e.g. a generator whose exec failed)
+				// collapses to a bare status with its stderr hidden.
 				fe.renderStepLogs(ctx, out, r, row, prefix, focused)
 			}
 		}
