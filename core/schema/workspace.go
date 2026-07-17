@@ -40,6 +40,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Query]{
 		currentWorkspaceField,
+		dagql.Func("__workspaceInstallResolution", s.workspaceInstallResolution).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerClientInput).
+			Doc("(Internal-only) Resolve a git module install ref against a base lockfile, returning the resolution and its lock deltas.").
+			Args(
+				dagql.Arg("ref").Doc("Git module reference to install."),
+				dagql.Arg("baseLock").Doc("Marshaled dagger.lock contents the resolution starts from."),
+			),
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{

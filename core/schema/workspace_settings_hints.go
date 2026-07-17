@@ -20,6 +20,21 @@ func collectWorkspaceSettingsHintsFromSource(
 	name string,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) map[string][]workspace.ConstructorArgHint {
+	hints := workspaceSettingsHintsFromSource(ctx, name, source)
+	if len(hints) == 0 {
+		return nil
+	}
+	return map[string][]workspace.ConstructorArgHint{name: hints}
+}
+
+// workspaceSettingsHintsFromSource loads the module behind source and returns
+// its constructor-arg hints. Hints are best-effort: failures degrade to no
+// hints rather than failing the surrounding install.
+func workspaceSettingsHintsFromSource(
+	ctx context.Context,
+	name string,
+	source dagql.ObjectResult[*core.ModuleSource],
+) []workspace.ConstructorArgHint {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		slog.Warn("could not prepare workspace settings hints", "error", err)
@@ -33,11 +48,7 @@ func collectWorkspaceSettingsHintsFromSource(
 		)
 		return nil
 	}
-	hints := constructorHintsFromModule(mod.Self())
-	if len(hints) == 0 {
-		return nil
-	}
-	return map[string][]workspace.ConstructorArgHint{name: hints}
+	return constructorHintsFromModule(mod.Self())
 }
 
 func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(

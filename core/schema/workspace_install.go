@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -300,4 +301,218 @@ func workspaceInstallModuleSourceSelector(ref string) dagql.Selector {
 			{Name: "disableFindUp", Value: dagql.Boolean(true)},
 		},
 	}
+}
+
+// workspaceInstallOutcome is a resolved install plus its deferred added-module
+// effects. Installs record lock lookups as they resolve; the hints phase (a
+// full module load) both produces settings hints and records more lookups, and
+// only applies when the config entry is actually added, so it stays deferred
+// behind applyAddedEffects.
+type workspaceInstallOutcome struct {
+	Name         string
+	ConfigSource string
+	// applyAddedEffects finishes the added-module side of the install: it
+	// applies the hints-phase lock recordings to the overlay lock and returns
+	// the settings hints to inject into the config.
+	applyAddedEffects func() (map[string][]workspace.ConstructorArgHint, error)
+}
+
+// resolveInstallOutcomeForOverlay resolves an install ref for the workspace
+// overlay, routing git refs through the content-addressed resolution cache.
+//
+// Live-path installs run under withWorkspaceLookupLockOverride, whose fresh
+// per-client cache scope forces full re-resolution on every call: the override
+// lock rides in context, invisible to dagql cache keys, so results resolved
+// under one lock must not be served to another. Git refs escape that cost:
+// their resolution depends only on the ref and the base lock contents, both of
+// which __workspaceInstallResolution captures in its cache key. Local and
+// ambiguous refs read live host or workspace state that the base lock cannot
+// content-address, so they stay on the live path.
+func (s *workspaceSchema) resolveInstallOutcomeForOverlay(
+	ctx context.Context,
+	ws *core.Workspace,
+	overlayLock *workspaceOverlayLock,
+	args workspaceInstallArgs,
+) (*workspaceInstallOutcome, error) {
+	if core.FastModuleSourceKindCheck(args.Ref, "") == core.ModuleSourceKindGit {
+		return s.cachedGitInstallOutcome(ctx, overlayLock, args)
+	}
+
+	lookupCtx := withWorkspaceLookupLockOverride(ctx, overlayLock.Lock)
+	resolved, err := s.resolveWorkspaceInstallForOverlay(lookupCtx, ws, args.Ref, args.Name, args.Here)
+	if err != nil {
+		return nil, err
+	}
+	return &workspaceInstallOutcome{
+		Name:         resolved.Name,
+		ConfigSource: resolved.ConfigSource,
+		applyAddedEffects: func() (map[string][]workspace.ConstructorArgHint, error) {
+			// Recordings land directly in the overlay lock via lookupCtx.
+			return collectWorkspaceSettingsHintsFromSource(lookupCtx, resolved.Name, resolved.ModuleSource), nil
+		},
+	}, nil
+}
+
+// cachedGitInstallOutcome resolves a git install ref through the
+// __workspaceInstallResolution cache and replays the returned lock deltas onto
+// the overlay lock, reproducing exactly what a live resolution would have
+// recorded.
+func (s *workspaceSchema) cachedGitInstallOutcome(
+	ctx context.Context,
+	overlayLock *workspaceOverlayLock,
+	args workspaceInstallArgs,
+) (*workspaceInstallOutcome, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("dagql server: %w", err)
+	}
+	baseLockData, err := overlayLock.Lock.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshal base workspace lock: %w", err)
+	}
+
+	var payloadJSON dagql.String
+	if err := srv.Select(ctx, srv.Root(), &payloadJSON, dagql.Selector{
+		Field: "__workspaceInstallResolution",
+		Args: []dagql.NamedInput{
+			{Name: "ref", Value: dagql.String(args.Ref)},
+			{Name: "baseLock", Value: dagql.String(baseLockData)},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	var payload workspaceInstallResolutionPayload
+	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+		return nil, fmt.Errorf("decode workspace install resolution: %w", err)
+	}
+
+	resolveDelta, err := workspace.ParseLock([]byte(payload.ResolveDelta))
+	if err != nil {
+		return nil, fmt.Errorf("parse install resolve delta: %w", err)
+	}
+	if err := overlayLock.Lock.Merge(resolveDelta); err != nil {
+		return nil, fmt.Errorf("apply install resolve delta: %w", err)
+	}
+
+	name := args.Name
+	if name == "" {
+		name = payload.ModuleName
+	}
+	if name == "" {
+		return nil, fmt.Errorf("ref %q does not point to an initialized module", args.Ref)
+	}
+
+	return &workspaceInstallOutcome{
+		Name:         name,
+		ConfigSource: filepath.ToSlash(args.Ref),
+		applyAddedEffects: func() (map[string][]workspace.ConstructorArgHint, error) {
+			hintsDelta, err := workspace.ParseLock([]byte(payload.HintsDelta))
+			if err != nil {
+				return nil, fmt.Errorf("parse install hints delta: %w", err)
+			}
+			if err := overlayLock.Lock.Merge(hintsDelta); err != nil {
+				return nil, fmt.Errorf("apply install hints delta: %w", err)
+			}
+			if len(payload.ConstructorHints) == 0 {
+				return nil, nil
+			}
+			return map[string][]workspace.ConstructorArgHint{name: payload.ConstructorHints}, nil
+		},
+	}, nil
+}
+
+type workspaceInstallResolutionArgs struct {
+	Ref      string
+	BaseLock string
+}
+
+// workspaceInstallResolutionPayload is the JSON value returned by the internal
+// __workspaceInstallResolution field. Lock deltas are marshaled dagger.lock
+// documents; replaying them onto an overlay lock reproduces the recordings a
+// live resolution would have made, which is what makes the field safe to
+// cache: everything the resolution writes is part of its value.
+type workspaceInstallResolutionPayload struct {
+	ModuleName       string                         `json:"moduleName"`
+	ResolveDelta     string                         `json:"resolveDelta"`
+	HintsDelta       string                         `json:"hintsDelta"`
+	ConstructorHints []workspace.ConstructorArgHint `json:"constructorHints,omitempty"`
+}
+
+// workspaceInstallResolution resolves a git module install ref against a base
+// lockfile. It is cached per client keyed on its args: the ref and the full
+// base lock contents cover every input of a git resolution, so identical
+// installs (the common SDK pattern of evaluating one workspace chain several
+// times: changes, then export) reuse the first resolution instead of redoing
+// the module fetch, SDK load, and codegen behind it.
+func (s *workspaceSchema) workspaceInstallResolution(
+	ctx context.Context,
+	parent *core.Query,
+	args workspaceInstallResolutionArgs,
+) (dagql.String, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", fmt.Errorf("dagql server: %w", err)
+	}
+	baseLock, err := workspace.ParseLock([]byte(args.BaseLock))
+	if err != nil {
+		return "", fmt.Errorf("parse base lock: %w", err)
+	}
+	overlay, err := baseLock.Clone()
+	if err != nil {
+		return "", fmt.Errorf("clone base lock: %w", err)
+	}
+
+	// Match the live install path: pins resolve through the overlay lock in
+	// pinned mode, and one lookup context spans both phases so the hints-phase
+	// module load reuses the resolve phase's results.
+	lookupCtx := withWorkspaceLookupLockOverride(
+		workspaceInstallContextWithLockMode(ctx, workspace.LockModePinned),
+		overlay,
+	)
+
+	var src dagql.ObjectResult[*core.ModuleSource]
+	if err := srv.Select(lookupCtx, srv.Root(), &src, workspaceInstallModuleSourceSelector(args.Ref)); err != nil {
+		return "", fmt.Errorf("load module source: %w", err)
+	}
+	source := src.Self()
+	if source == nil {
+		return "", fmt.Errorf("load module source: empty result")
+	}
+	if !source.ConfigExists {
+		return "", fmt.Errorf("ref %q does not point to an initialized module", args.Ref)
+	}
+
+	resolveDelta, err := overlay.Diff(baseLock)
+	if err != nil {
+		return "", fmt.Errorf("diff resolve lock recordings: %w", err)
+	}
+	resolveDeltaData, err := resolveDelta.Marshal()
+	if err != nil {
+		return "", fmt.Errorf("marshal resolve delta: %w", err)
+	}
+
+	afterResolve, err := overlay.Clone()
+	if err != nil {
+		return "", fmt.Errorf("snapshot lock after resolve: %w", err)
+	}
+	hints := workspaceSettingsHintsFromSource(lookupCtx, source.ModuleName, src)
+	hintsDelta, err := overlay.Diff(afterResolve)
+	if err != nil {
+		return "", fmt.Errorf("diff hints lock recordings: %w", err)
+	}
+	hintsDeltaData, err := hintsDelta.Marshal()
+	if err != nil {
+		return "", fmt.Errorf("marshal hints delta: %w", err)
+	}
+
+	data, err := json.Marshal(workspaceInstallResolutionPayload{
+		ModuleName:       source.ModuleName,
+		ResolveDelta:     string(resolveDeltaData),
+		HintsDelta:       string(hintsDeltaData),
+		ConstructorHints: hints,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode workspace install resolution: %w", err)
+	}
+	return dagql.String(data), nil
 }

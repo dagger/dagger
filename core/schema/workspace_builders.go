@@ -266,13 +266,12 @@ func (s *workspaceSchema) withModuleInstall(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
-	lookupCtx := withWorkspaceLookupLockOverride(ctx, overlayLock.Lock)
-	resolved, err := s.resolveWorkspaceInstallForOverlay(lookupCtx, selected, args.Ref, args.Name, args.Here)
+	install, err := s.resolveInstallOutcomeForOverlay(ctx, selected, overlayLock, args)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
 
-	plan, err := planWorkspaceInstallConfig(staged.Config, args, resolved.Name, resolved.ConfigSource)
+	plan, err := planWorkspaceInstallConfig(staged.Config, args, install.Name, install.ConfigSource)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
@@ -288,7 +287,10 @@ func (s *workspaceSchema) withModuleInstall(
 	}
 	var hints map[string][]workspace.ConstructorArgHint
 	if plan.Added {
-		hints = collectWorkspaceSettingsHintsFromSource(lookupCtx, resolved.Name, resolved.ModuleSource)
+		hints, err = install.applyAddedEffects()
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
 	}
 	updated, err := workspace.UpdateConfigBytesWithHints(staged.Data, staged.Config, hints)
 	if err != nil {
