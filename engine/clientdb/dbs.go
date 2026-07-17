@@ -42,13 +42,23 @@ func NewDBs(root string) *DBs {
 //go:embed schema.sql
 var Schema string
 
+// slowOpen flags Open calls that spent significant time waiting on the
+// per-DB lock (or on the initial SQLite open): every telemetry export batch
+// re-opens the DB by refcount, so contention here serializes exporters
+// before they even reach the connection pool.
+const slowOpen = 1 * time.Second
+
 // Open open a database for the given clientID if not open already and
 // runs the schema migration if needed.
 func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 	lg := slog.Default().With("clientID", clientID)
 
+	openStart := time.Now()
 	dbs.perDBLock.Lock(clientID)
 	defer dbs.perDBLock.Unlock(clientID)
+	if waited := time.Since(openStart); waited > slowOpen {
+		lg.Warn("slow client DB open", "waited", waited)
+	}
 
 	dbs.mu.Lock()
 	db, ok := dbs.open[clientID]
@@ -226,6 +236,14 @@ type DB struct {
 
 func (db *DB) Begin() (*sql.Tx, error) {
 	return db.inner.Begin()
+}
+
+// Stats reports the underlying pool's counters. The pool is capped at a
+// single connection, so WaitCount/WaitDuration directly measure how long
+// callers queued behind the one connection (shared across ALL users of this
+// client's DB: every exporter hop targeting it plus its SSE drain reads).
+func (db *DB) Stats() sql.DBStats {
+	return db.inner.Stats()
 }
 
 func (db *DB) Close() (rerr error) {
