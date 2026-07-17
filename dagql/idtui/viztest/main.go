@@ -181,6 +181,19 @@ func (*Viztest) Changeset() *dagger.Changeset {
 		Changes(dag.Directory())
 }
 
+// GenerateFail is a generator whose changeset only evaluates -- and fails -- when
+// it is forced during `dagger generate`'s merge. It exercises exec-error
+// surfacing: the reported error must name the failed command and its stderr, not
+// a bare "exit code: N". See dagger/dagger#13606.
+// +generate
+func (*Viztest) GenerateFail() *dagger.Changeset {
+	failed := dag.Container().
+		From("alpine").
+		WithExec([]string{"sh", "-c", "echo boom >&2; exit 3"}).
+		Directory("/")
+	return failed.Changes(dag.Directory())
+}
+
 // +cache="session"
 func (*Viztest) PrimaryLines(n int) string {
 	buf := new(strings.Builder)

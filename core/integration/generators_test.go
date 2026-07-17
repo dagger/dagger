@@ -125,6 +125,32 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 	}
 }
 
+// A generator whose changeset evaluates lazily and whose backing exec fails must
+// surface that failure -- the command, its stderr, and its exit code -- to the
+// user of `dagger generate`, rather than a bare "exit code: N" with the detail
+// hidden. The failing exec is now forced inside the generator's span (see
+// ModTreeNode.runGeneratorLocally), so the run fails there. Regression for
+// #13606; the rendered-attribution half (a red generator row) is pinned by the
+// generate-fail golden in dagql/idtui.
+func (GeneratorsSuite) TestGeneratorLazyExecFailureSurfacesStderr(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen, err := generatorsTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("hello-with-generators")
+
+	out, err := modGen.
+		WithExec([]string{"dagger", "generate", "lazy-exec-failure", "-y", "--progress=plain"}, dagger.ContainerWithExecOpts{
+			Expect:                        dagger.ReturnTypeAny,
+			ExperimentalPrivilegedNesting: true,
+		}).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "STDERR_ONLY_MARKER") // stderr surfaced
+	require.Contains(t, out, "exit code: 3")       // exit code surfaced
+	require.Contains(t, out, "sh -c")              // failed command surfaced
+}
+
 func (GeneratorsSuite) TestGeneratorsViaLegacyBlueprintConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {

@@ -157,6 +157,11 @@ entrypoint = true
 		{Function: "revealed-spans"},
 		{Function: "partial-progress"},
 
+		// a generator whose changeset fails lazily during `dagger generate`'s
+		// merge must surface the underlying exec error -- the failed command and
+		// its stderr -- not a bare "exit code: N" (dagger/dagger#13606).
+		{Name: "generate-fail", Function: "generate-fail", Generate: true, Fail: true},
+
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",
 			"--version", "v0.18.6",
@@ -327,6 +332,7 @@ type Example struct {
 	Function string
 	Args     []string
 	Check    bool
+	Generate bool
 	// verbosities 3 and higher do not work well with golden, they're not very deterministic atm
 	Verbosity int
 	Fail      bool
@@ -356,12 +362,18 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	}
 
 	var daggerArgs []string
-	if ex.Check {
+	switch {
+	case ex.Check:
 		daggerArgs = []string{"--progress=report", "-v", "--workdir", ex.Module, "check"}
 		if ex.Function != "" {
 			daggerArgs = append(daggerArgs, ex.Function)
 		}
-	} else {
+	case ex.Generate:
+		daggerArgs = []string{"--progress=report", "-v", "--workdir", ex.Module, "generate", "-y"}
+		if ex.Function != "" {
+			daggerArgs = append(daggerArgs, ex.Function)
+		}
+	default:
 		daggerArgs = []string{"--progress=report", "-v", "call", "-m", ex.Module, ex.Function}
 	}
 	daggerArgs = append(daggerArgs, ex.Args...)
