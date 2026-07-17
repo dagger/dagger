@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"slices"
 
+	set "github.com/hashicorp/go-set/v3"
+
 	persistdb "github.com/dagger/dagger/dagql/persistdb"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -130,8 +132,14 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			isObject:              payload.isObject,
 			hasValue:              payload.hasValue,
 			sessionResourceHandle: res.sessionResourceHandle,
-			persistedEnvelope:     payload.persistedEnvelope,
-			snapshotOwnerLinks:    payload.snapshotOwnerLinks,
+			embeddedSessionResources: func() []SessionResourceHandle {
+				if res.embeddedSessionResources == nil {
+					return nil
+				}
+				return res.embeddedSessionResources.Slice()
+			}(),
+			persistedEnvelope:  payload.persistedEnvelope,
+			snapshotOwnerLinks: payload.snapshotOwnerLinks,
 			row: persistdb.MirrorResult{
 				ID:                 int64(resultID),
 				ExpiresAtUnix:      res.expiresAtUnix,
@@ -419,20 +427,22 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 			return PersistedResultEncoding{}, fmt.Errorf("result has no call frame and no persisted envelope")
 		}
 		shared := &sharedResult{
-			self:                  snapshot.self,
-			isObject:              snapshot.isObject,
-			hasValue:              snapshot.hasValue,
-			id:                    snapshot.resultID,
-			sessionResourceHandle: snapshot.sessionResourceHandle,
+			self:                     snapshot.self,
+			isObject:                 snapshot.isObject,
+			hasValue:                 snapshot.hasValue,
+			id:                       snapshot.resultID,
+			sessionResourceHandle:    snapshot.sessionResourceHandle,
+			embeddedSessionResources: embeddedSessionResourcesSet(snapshot.embeddedSessionResources),
 		}
 		return DefaultPersistedSelfCodec.EncodeResult(context.WithoutCancel(ctx), c, Result[Typed]{shared: shared})
 	}
 	shared := &sharedResult{
-		self:                  snapshot.self,
-		isObject:              snapshot.isObject,
-		hasValue:              snapshot.hasValue,
-		id:                    snapshot.resultID,
-		sessionResourceHandle: snapshot.sessionResourceHandle,
+		self:                     snapshot.self,
+		isObject:                 snapshot.isObject,
+		hasValue:                 snapshot.hasValue,
+		id:                       snapshot.resultID,
+		sessionResourceHandle:    snapshot.sessionResourceHandle,
+		embeddedSessionResources: embeddedSessionResourcesSet(snapshot.embeddedSessionResources),
 	}
 	shared.storeResultCall(snapshot.frame)
 	persistCtx := context.WithoutCancel(ctx)
@@ -467,4 +477,13 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		return PersistedResultEncoding{}, err
 	}
 	return env, nil
+}
+
+// embeddedSessionResourcesSet rebuilds a snapshot's embedded session-resource
+// slice as the TreeSet form sharedResult carries.
+func embeddedSessionResourcesSet(handles []SessionResourceHandle) *set.TreeSet[SessionResourceHandle] {
+	if len(handles) == 0 {
+		return nil
+	}
+	return set.TreeSetFrom(handles, compareSessionResourceHandles)
 }

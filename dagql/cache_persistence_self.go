@@ -23,15 +23,20 @@ const (
 // while still carrying enough structured data to decode common SDK-return
 // shapes (scalars, object IDs, lists, nested combinations).
 type PersistedResultEnvelope struct {
-	Version               int                       `json:"version"`
-	Kind                  string                    `json:"kind"`
-	TypeName              string                    `json:"typeName,omitempty"`
-	ResultID              uint64                    `json:"resultID,omitempty"`
-	SessionResourceHandle SessionResourceHandle     `json:"sessionResourceHandle,omitempty"`
-	ObjectJSON            json.RawMessage           `json:"objectJSON,omitempty"`
-	ScalarJSON            json.RawMessage           `json:"scalarJSON,omitempty"`
-	ElemTypeName          string                    `json:"elemTypeName,omitempty"`
-	Items                 []PersistedResultEnvelope `json:"items,omitempty"`
+	Version               int                   `json:"version"`
+	Kind                  string                `json:"kind"`
+	TypeName              string                `json:"typeName,omitempty"`
+	ResultID              uint64                `json:"resultID,omitempty"`
+	SessionResourceHandle SessionResourceHandle `json:"sessionResourceHandle,omitempty"`
+	// EmbeddedSessionResources carries value-scoped handle requirements
+	// inherited from embedded results (see sharedResult.embeddedSessionResources),
+	// so a persisted value embedding e.g. a client-owned workspace stays gated
+	// after import.
+	EmbeddedSessionResources []SessionResourceHandle   `json:"embeddedSessionResources,omitempty"`
+	ObjectJSON               json.RawMessage           `json:"objectJSON,omitempty"`
+	ScalarJSON               json.RawMessage           `json:"scalarJSON,omitempty"`
+	ElemTypeName             string                    `json:"elemTypeName,omitempty"`
+	Items                    []PersistedResultEnvelope `json:"items,omitempty"`
 }
 
 type PersistedObjectCache interface {
@@ -98,8 +103,12 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		}
 	}
 	var sessionResourceHandle SessionResourceHandle
+	var embeddedSessionResources []SessionResourceHandle
 	if shared := res.cacheSharedResult(); shared != nil {
 		sessionResourceHandle = shared.sessionResourceHandle
+		if shared.embeddedSessionResources != nil {
+			embeddedSessionResources = shared.embeddedSessionResources.Slice()
+		}
 	}
 
 	isObject := false
@@ -121,12 +130,13 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		}
 		return PersistedResultEncoding{
 			Envelope: PersistedResultEnvelope{
-				Version:               2,
-				Kind:                  persistedResultKindObject,
-				TypeName:              res.Type().Name(),
-				ResultID:              resultID,
-				SessionResourceHandle: sessionResourceHandle,
-				ObjectJSON:            objectEncoding.JSON,
+				Version:                  2,
+				Kind:                     persistedResultKindObject,
+				TypeName:                 res.Type().Name(),
+				ResultID:                 resultID,
+				SessionResourceHandle:    sessionResourceHandle,
+				EmbeddedSessionResources: embeddedSessionResources,
+				ObjectJSON:               objectEncoding.JSON,
 			},
 			SnapshotLinks: objectEncoding.SnapshotLinks,
 		}, nil
@@ -138,12 +148,13 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		}
 		return PersistedResultEncoding{
 			Envelope: PersistedResultEnvelope{
-				Version:               2,
-				Kind:                  persistedResultKindObject,
-				TypeName:              res.Type().Name(),
-				ResultID:              resultID,
-				SessionResourceHandle: sessionResourceHandle,
-				ObjectJSON:            objectEncoding.JSON,
+				Version:                  2,
+				Kind:                     persistedResultKindObject,
+				TypeName:                 res.Type().Name(),
+				ResultID:                 resultID,
+				SessionResourceHandle:    sessionResourceHandle,
+				EmbeddedSessionResources: embeddedSessionResources,
+				ObjectJSON:               objectEncoding.JSON,
 			},
 			SnapshotLinks: objectEncoding.SnapshotLinks,
 		}, nil
@@ -169,13 +180,14 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		}
 		return PersistedResultEncoding{
 			Envelope: PersistedResultEnvelope{
-				Version:               2,
-				Kind:                  persistedResultKindList,
-				TypeName:              res.Type().Name(),
-				ResultID:              resultID,
-				SessionResourceHandle: sessionResourceHandle,
-				ElemTypeName:          enumerable.Element().Type().Name(),
-				Items:                 itemEnvs,
+				Version:                  2,
+				Kind:                     persistedResultKindList,
+				TypeName:                 res.Type().Name(),
+				ResultID:                 resultID,
+				SessionResourceHandle:    sessionResourceHandle,
+				EmbeddedSessionResources: embeddedSessionResources,
+				ElemTypeName:             enumerable.Element().Type().Name(),
+				Items:                    itemEnvs,
 			},
 		}, nil
 	}
@@ -193,12 +205,13 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 	}
 	return PersistedResultEncoding{
 		Envelope: PersistedResultEnvelope{
-			Version:               2,
-			Kind:                  persistedResultKindScalar,
-			TypeName:              res.Type().Name(),
-			ResultID:              resultID,
-			SessionResourceHandle: sessionResourceHandle,
-			ScalarJSON:            scalarJSON,
+			Version:                  2,
+			Kind:                     persistedResultKindScalar,
+			TypeName:                 res.Type().Name(),
+			ResultID:                 resultID,
+			SessionResourceHandle:    sessionResourceHandle,
+			EmbeddedSessionResources: embeddedSessionResources,
+			ScalarJSON:               scalarJSON,
 		},
 	}, nil
 }
@@ -206,16 +219,22 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func decodePersistedResultEnvelope(ctx context.Context, dag *Server, resultID uint64, call *ResultCall, env PersistedResultEnvelope) (AnyResult, error) {
 	setHandle := func(res AnyResult) AnyResult {
-		if res == nil || env.SessionResourceHandle == "" {
+		if res == nil || (env.SessionResourceHandle == "" && len(env.EmbeddedSessionResources) == 0) {
 			return res
 		}
 		shared := res.cacheSharedResult()
 		if shared == nil {
 			return res
 		}
-		shared.sessionResourceHandle = env.SessionResourceHandle
 		reqs := set.NewTreeSet(compareSessionResourceHandles)
-		reqs.Insert(env.SessionResourceHandle)
+		if env.SessionResourceHandle != "" {
+			shared.sessionResourceHandle = env.SessionResourceHandle
+			reqs.Insert(env.SessionResourceHandle)
+		}
+		if len(env.EmbeddedSessionResources) > 0 {
+			shared.embeddedSessionResources = set.TreeSetFrom(env.EmbeddedSessionResources, compareSessionResourceHandles)
+			reqs.InsertSlice(env.EmbeddedSessionResources)
+		}
 		shared.requiredSessionResources = reqs
 		return res
 	}
