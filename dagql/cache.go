@@ -252,9 +252,19 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 	}
 
 	var reqs *set.TreeSet[SessionResourceHandle]
+	insert := func(handle SessionResourceHandle) {
+		if reqs == nil {
+			reqs = set.NewTreeSet(compareSessionResourceHandles)
+		}
+		reqs.Insert(handle)
+	}
 	if res.sessionResourceHandle != "" {
-		reqs = set.NewTreeSet(compareSessionResourceHandles)
-		reqs.Insert(res.sessionResourceHandle)
+		insert(res.sessionResourceHandle)
+	}
+	if res.embeddedSessionResources != nil {
+		for _, handle := range res.embeddedSessionResources.Slice() {
+			insert(handle)
+		}
 	}
 	for depID := range res.deps {
 		dep := c.resultsByID[depID]
@@ -264,10 +274,15 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 		if dep.requiredSessionResources == nil {
 			continue
 		}
-		if reqs == nil {
-			reqs = dep.requiredSessionResources.Copy()
-		} else {
-			reqs = reqs.Union(dep.requiredSessionResources).(*set.TreeSet[SessionResourceHandle])
+		for _, handle := range dep.requiredSessionResources.Slice() {
+			// Value-scoped requirements follow value embedding, not
+			// derivation: a plain execution dep on (say) a client-owned
+			// workspace does not gate this result. Embedding edges carry
+			// them via embeddedSessionResources instead (attach hook).
+			if handle.ValueScoped() {
+				continue
+			}
+			insert(handle)
 		}
 	}
 	if reqs == nil || reqs.Empty() {
@@ -1469,6 +1484,13 @@ type sharedResult struct {
 	// transitive set of handle requirements for cache-hit validation.
 	sessionResourceHandle    SessionResourceHandle
 	requiredSessionResources *set.TreeSet[SessionResourceHandle]
+	// embeddedSessionResources carries value-scoped handle requirements
+	// inherited from results this one EMBEDS (attached dependency results —
+	// e.g. an LLM embedding its bound client-owned workspace), as opposed to
+	// results it merely derived from. Value-scoped handles only propagate
+	// along these embedding edges; plain execution deps do not inherit them
+	// (see recomputeRequiredSessionResourcesLocked).
+	embeddedSessionResources *set.TreeSet[SessionResourceHandle]
 	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
 	// attached for this result. They are the source of truth for owner lease
 	// cleanup and debug output. Persistence export for newly encoded objects
@@ -2462,6 +2484,12 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			}
 			return r.shared.requiredSessionResources.Copy()
 		}(),
+		embeddedSessionResources: func() *set.TreeSet[SessionResourceHandle] {
+			if r.shared.embeddedSessionResources == nil {
+				return nil
+			}
+			return r.shared.embeddedSessionResources.Copy()
+		}(),
 		persistedEnvelope:  state.persistedEnvelope,
 		snapshotOwnerLinks: state.snapshotOwnerLinks,
 		createdAtUnixNano:  state.createdAtUnixNano,
@@ -2557,10 +2585,16 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		deps:                     deps,
 		sessionResourceHandle:    handle,
 		requiredSessionResources: reqs,
-		persistedEnvelope:        state.persistedEnvelope,
-		snapshotOwnerLinks:       state.snapshotOwnerLinks,
-		createdAtUnixNano:        state.createdAtUnixNano,
-		lastUsedAtUnixNano:       state.lastUsedAtUnixNano,
+		embeddedSessionResources: func() *set.TreeSet[SessionResourceHandle] {
+			if r.shared.embeddedSessionResources == nil {
+				return nil
+			}
+			return r.shared.embeddedSessionResources.Copy()
+		}(),
+		persistedEnvelope:  state.persistedEnvelope,
+		snapshotOwnerLinks: state.snapshotOwnerLinks,
+		createdAtUnixNano:  state.createdAtUnixNano,
+		lastUsedAtUnixNano: state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
 			if len(r.shared.cacheUsageSizeByIdentity) == 0 {
 				return nil
@@ -3675,6 +3709,9 @@ func (c *Cache) getOrInitCallInner(
 			if shared.requiredSessionResources != nil {
 				detached.requiredSessionResources = shared.requiredSessionResources.Copy()
 			}
+			if shared.embeddedSessionResources != nil {
+				detached.embeddedSessionResources = shared.embeddedSessionResources.Copy()
+			}
 		}
 		if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
 			return nil, fmt.Errorf("do-not-cache result %T cannot implement OnReleaser", onReleaser)
@@ -4208,6 +4245,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 				if shared.requiredSessionResources != nil {
 					oc.res.requiredSessionResources = shared.requiredSessionResources.Copy()
 				}
+				if shared.embeddedSessionResources != nil {
+					oc.res.embeddedSessionResources = shared.embeddedSessionResources.Copy()
+				}
 			}
 			if oc.res.loadResultCall() == nil {
 				oc.res.storeResultCall(req.ResultCall.clone())
@@ -4584,7 +4624,48 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 		}
 	}
 
-	return nil
+	// Attached dependency results are EMBEDDED in the parent's value, so
+	// value-scoped session-resource requirements (e.g. a client-owned
+	// workspace) carry over: a value embedding the workspace must only serve
+	// sessions holding its handle, transitively through embedding chains.
+	return c.collectEmbeddedSessionResources(parent, deps)
+}
+
+// collectEmbeddedSessionResources records the value-scoped session-resource
+// requirements of attached (embedded) dependency results on the parent. Plain
+// execution deps do not inherit value-scoped requirements (see
+// recomputeRequiredSessionResourcesLocked), so embedding edges collect them
+// here.
+func (c *Cache) collectEmbeddedSessionResources(parent *sharedResult, deps []DependencyResult) error {
+	c.egraphMu.Lock()
+	defer c.egraphMu.Unlock()
+	var embedded []SessionResourceHandle
+	for _, dep := range deps {
+		if dep.Result == nil {
+			continue
+		}
+		depShared := dep.Result.cacheSharedResult()
+		if depShared == nil {
+			continue
+		}
+		depRes := c.resultsByID[depShared.id]
+		if depRes == nil || depRes.requiredSessionResources == nil {
+			continue
+		}
+		for _, handle := range depRes.requiredSessionResources.Slice() {
+			if handle.ValueScoped() {
+				embedded = append(embedded, handle)
+			}
+		}
+	}
+	if len(embedded) == 0 {
+		return nil
+	}
+	if parent.embeddedSessionResources == nil {
+		parent.embeddedSessionResources = set.NewTreeSet(compareSessionResourceHandles)
+	}
+	parent.embeddedSessionResources.InsertSlice(embedded)
+	return c.recomputeRequiredSessionResourcesLocked(parent)
 }
 
 func candidateSharedResultExpiryUnix(nowUnix, ttlSeconds int64) int64 {

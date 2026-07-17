@@ -97,6 +97,31 @@ type RecipeIDable interface {
 
 type SessionResourceHandle string
 
+// valueScopedSessionResourceHandlePrefix marks handles whose requirement
+// follows value embedding rather than derivation. See
+// ValueScopedSessionResourceHandle.
+const valueScopedSessionResourceHandlePrefix = "value-scoped:"
+
+// ValueScopedSessionResourceHandle returns a handle whose requirement attaches
+// only to results that EMBED the resource value: the resource result itself
+// (via WithSessionResourceHandle) and results that declare it as an embedded
+// dependency (AttachDependencyResults). Unlike regular handles (secrets,
+// sockets), whose requirement propagates transitively through every execution
+// dependency, a value-scoped requirement does NOT taint results merely
+// computed FROM the resource — content read out of a client-owned workspace is
+// ordinary content-addressed data and stays shareable across sessions, while
+// values that capture the workspace itself stay gated to sessions holding the
+// handle.
+func ValueScopedSessionResourceHandle(name string) SessionResourceHandle {
+	return SessionResourceHandle(valueScopedSessionResourceHandlePrefix + name)
+}
+
+// ValueScoped reports whether the handle's requirement follows value embedding
+// rather than execution-dependency derivation.
+func (h SessionResourceHandle) ValueScoped() bool {
+	return strings.HasPrefix(string(h), valueScopedSessionResourceHandlePrefix)
+}
+
 // AnyResult is a Typed value wrapped with an ID constructor. The wrapped value may
 // be any graphql type, including scalars, objects, arrays, etc.
 // It's a Result but as an interface and without any type params, allowing it

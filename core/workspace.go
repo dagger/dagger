@@ -244,14 +244,21 @@ func (ws *Workspace) OverlayChanges() (dagql.ObjectResult[*Changeset], bool) {
 }
 
 // WorkspaceClientHandle is the session-resource handle for a client-owned
-// workspace. Results embedding such a workspace (e.g. an LLM bound to it)
-// require this handle, gating cache hits to sessions that hold it (see
-// internal-docs/session_resources.md). Client IDs are per-session, so no later
-// session ever loads the handle: cached values carrying a dead client binding
-// are filtered at lookup and re-resolved instead of resurfacing as
-// "client not found" errors.
+// workspace. Results EMBEDDING such a workspace (the workspace result itself,
+// an LLM bound to it) require this handle, gating cache hits to sessions that
+// hold it (see internal-docs/session_resources.md). Client IDs are
+// per-session, so no later session ever loads the handle: cached values
+// carrying a dead client binding are filtered at lookup and re-resolved
+// instead of resurfacing as "client not found" errors.
+//
+// The handle is value-scoped: the requirement follows value embedding, not
+// derivation. Content read out of the workspace (scoped directories, module
+// function results keyed by collected content) is ordinary content-addressed
+// data and stays shareable across sessions — that cross-session reuse is the
+// whole point of content-keyed workspace calls (see
+// TestContextualWorkspaceCaching).
 func WorkspaceClientHandle(clientID string) dagql.SessionResourceHandle {
-	return dagql.SessionResourceHandle("workspace-client:" + clientID)
+	return dagql.ValueScopedSessionResourceHandle("workspace-client:" + clientID)
 }
 
 // ClientLocalBase reports whether the workspace's base source is the client's
