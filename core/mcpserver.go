@@ -212,6 +212,18 @@ func (s mcpServer) run(ctx context.Context) error {
 }
 
 func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
+	// Under the object-tools scheme the LLM only acts through explicitly
+	// bound objects. `dagger mcp` exposes the workspace: when nothing was
+	// bound, bind each workspace module's main object so its methods are the
+	// served MCP tools.
+	if len(llm.mcp.boundTools) == 0 {
+		bound, err := llm.mcp.bindWorkspaceModuleTools(ctx)
+		if err != nil {
+			return fmt.Errorf("bind workspace module tools: %w", err)
+		}
+		llm.mcp = bound
+	}
+
 	// Get engine client
 	query, err := CurrentQuery(ctx)
 	if err != nil {
