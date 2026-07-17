@@ -161,6 +161,7 @@ var moduleDirectives = []dagql.DirectiveSpec{
 		Locations: []dagql.DirectiveLocation{
 			dagql.DirectiveLocationFieldDefinition,
 		},
+		ViewFilter: AfterVersion("v1.0.0-0"),
 	},
 	{
 		Name:        "cache",

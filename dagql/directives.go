@@ -12,6 +12,16 @@ type DirectiveSpec struct {
 	Args         InputSpecs          `field:"true"`
 	Locations    []DirectiveLocation `field:"true"`
 	IsRepeatable bool                `field:"true"`
+
+	// ViewFilter is a filter that specifies under which views this directive
+	// is visible.
+	ViewFilter ViewFilter
+}
+
+// View sets the ViewFilter under which this directive is visible.
+func (d DirectiveSpec) View(filter ViewFilter) DirectiveSpec {
+	d.ViewFilter = filter
+	return d
 }
 
 type DirectiveLocation string
