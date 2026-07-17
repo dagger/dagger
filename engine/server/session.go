@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -149,6 +150,9 @@ type workspaceLockState struct {
 	delta    *workspace.Lock
 	loaded   bool
 	dirty    bool
+	// gen increments on every recorded lookup so a flush can tell whether the
+	// delta it exported is still current before clearing the dirty state.
+	gen uint64
 }
 
 // daggerSessionState is the lifecycle state of a session. It is intentionally
@@ -1839,6 +1843,13 @@ func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *dag
 	return nil
 }
 
+// workspaceLockFlushTimeout bounds the shutdown-time workspace lock flush. The
+// flush is detached from the request context so a client-side shutdown
+// deadline (or request teardown race) can't lose lock data mid-write, but it
+// needs the client's session attachables to make progress, so a wedged host
+// roundtrip must not pin the handler forever once the client is gone.
+const workspaceLockFlushTimeout = 5 * time.Minute
+
 func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 	var shutdownErr error
@@ -1851,12 +1862,40 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		"mainClientID", sess.mainClientCallerID)
 
 	slog.Info("client shutdown")
-	defer slog.Debug("client shutdown done")
+	shutdownStart := time.Now()
+	defer func() {
+		slog.Debug("client shutdown done", "duration", time.Since(shutdownStart))
+	}()
+
+	// drainPhase runs one shutdown drain phase with an otel span and a timing
+	// log. The client enforces a hard deadline on the whole shutdown request,
+	// so a slow drain phase is otherwise indistinguishable from a hang; the
+	// spans land in the client's telemetry DB before the final telemetry flush
+	// ships them, making slow shutdowns attributable from traces.
+	drainPhase := func(ctx context.Context, name string, fn func(context.Context) error) (rerr error) {
+		if client.tracerProvider != nil {
+			var span trace.Span
+			ctx, span = client.tracerProvider.Tracer(InstrumentationLibrary).Start(ctx, name)
+			defer telemetry.EndWithCause(span, &rerr)
+		}
+		start := time.Now()
+		defer func() {
+			slog.Info("shutdown drain phase done", "phase", name, "duration", time.Since(start), "error", rerr)
+		}()
+		return fn(ctx)
+	}
+
+	flushLocks := func(ctx context.Context) error {
+		return drainPhase(ctx, "shutdown: flush workspace locks", func(ctx context.Context) error {
+			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceLockFlushTimeout)
+			defer cancel()
+			return srv.flushWorkspaceLocks(flushCtx, client)
+		})
+	}
 
 	if client.clientID == sess.mainClientCallerID {
 		slog.Info("main client is shutting down")
-		flushCtx := context.WithoutCancel(ctx)
-		if err := srv.flushWorkspaceLocks(flushCtx, client); err != nil {
+		if err := flushLocks(ctx); err != nil {
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush workspace locks: %w", err))
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
@@ -1865,8 +1904,12 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		sess.beginClosing()
 
 		// Stop services, since the main client is going away, and we
-		// want the client to see them stop.
-		sess.services.StopSessionServices(ctx, sess.sessionID)
+		// want the client to see them stop. Stop errors are best-effort
+		// (matching prior behavior), so the phase always returns nil.
+		_ = drainPhase(ctx, "shutdown: stop session services", func(ctx context.Context) error {
+			sess.services.StopSessionServices(ctx, sess.sessionID)
+			return nil
+		})
 
 		defer func() {
 			// Signal shutdown at the very end, _after_ flushing telemetry/etc.,
@@ -1877,8 +1920,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			})
 		}()
 	} else {
-		flushCtx := context.WithoutCancel(ctx)
-		if err := srv.flushWorkspaceLocks(flushCtx, client); err != nil {
+		if err := flushLocks(ctx); err != nil {
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush workspace locks: %w", err))
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
@@ -1886,10 +1928,15 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 
 	// Flush telemetry across the entire session so that any child clients will
 	// save telemetry into their parent's DB, including to this client.
+	// (No span for this phase: it would race its own flush; the timing log
+	// below is the record.)
 	slog.ExtraDebug("flushing session telemetry")
+	telemetryStart := time.Now()
 	if err := sess.FlushTelemetry(ctx); err != nil {
-		slog.Error("failed to flush telemetry", "error", err)
+		slog.Error("failed to flush telemetry", "error", err, "duration", time.Since(telemetryStart))
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush session telemetry: %w", err))
+	} else {
+		slog.Info("shutdown drain phase done", "phase", "shutdown: flush telemetry", "duration", time.Since(telemetryStart))
 	}
 
 	client.closeShutdownOnce.Do(func() {
@@ -2062,6 +2109,7 @@ func (srv *Server) SetCurrentWorkspaceLookup(
 		return err
 	}
 	state.dirty = true
+	state.gen++
 	return nil
 }
 
@@ -2232,16 +2280,21 @@ func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient
 	sess := client.daggerSession
 
 	type pendingWorkspaceLockExport struct {
+		key      workspaceLockKey
 		ws       *core.Workspace
 		lockPath string
 		delta    *workspace.Lock
+		gen      uint64
 	}
 
 	var pending []pendingWorkspaceLockExport
 
 	sess.lockFileMu.RLock()
-	for _, state := range sess.lockFiles {
+	for key, state := range sess.lockFiles {
 		if state == nil || !state.loaded || !state.dirty {
+			continue
+		}
+		if state.ws.ClientID != client.clientID {
 			continue
 		}
 		delta, err := state.delta.Clone()
@@ -2249,13 +2302,13 @@ func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient
 			sess.lockFileMu.RUnlock()
 			return fmt.Errorf("clone workspace lock delta for %s: %w", state.lockPath, err)
 		}
-		if state.ws.ClientID == client.clientID {
-			pending = append(pending, pendingWorkspaceLockExport{
-				ws:       state.ws.Clone(),
-				lockPath: state.lockPath,
-				delta:    delta,
-			})
-		}
+		pending = append(pending, pendingWorkspaceLockExport{
+			key:      key,
+			ws:       state.ws.Clone(),
+			lockPath: state.lockPath,
+			delta:    delta,
+			gen:      state.gen,
+		})
 	}
 	sess.lockFileMu.RUnlock()
 
@@ -2263,19 +2316,52 @@ func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient
 	for _, export := range pending {
 		srv.locker.Lock(export.lockPath)
 
+		var flushed bool
 		workspaceCtx, bk, err := srv.workspaceOwnerAccess(ctx, sess, export.ws)
 		if err == nil {
 			var latest *workspace.Lock
 			latest, err = readWorkspaceLockState(workspaceCtx, bk, export.ws)
+			var before []byte
+			if err == nil {
+				before, err = latest.Marshal()
+			}
 			if err == nil {
 				err = latest.Merge(export.delta)
 			}
+			var after []byte
 			if err == nil {
-				err = exportWorkspaceLockToHost(workspaceCtx, bk, export.ws, latest)
+				after, err = latest.Marshal()
+			}
+			if err == nil {
+				if bytes.Equal(before, after) {
+					// The host lockfile already contains everything in this
+					// delta (e.g. a workspace export already wrote it): skip
+					// the redundant write roundtrip.
+					slog.Debug("workspace lock flush: host lock already up to date",
+						"lockPath", export.lockPath,
+						"clientID", client.clientID)
+					flushed = true
+				} else {
+					err = exportWorkspaceLockToHost(workspaceCtx, bk, export.ws, latest)
+					flushed = err == nil
+				}
 			}
 		}
 
 		srv.locker.Unlock(export.lockPath)
+
+		if flushed {
+			// The flushed delta is on the host now; mark the state clean
+			// (unless new lookups landed while flushing) so a repeated
+			// shutdown request doesn't redo host roundtrips for content that
+			// is already on disk.
+			sess.lockFileMu.Lock()
+			if state, ok := sess.lockFiles[export.key]; ok && state != nil && state.gen == export.gen {
+				state.dirty = false
+				state.delta = workspace.NewLock()
+			}
+			sess.lockFileMu.Unlock()
+		}
 
 		if err != nil {
 			flushErr = errors.Join(flushErr, fmt.Errorf("flush workspace lock %s: %w", export.lockPath, err))
