@@ -36,7 +36,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	core.ExistsTypes.Install(srv)
 	core.FileTypes.Install(srv)
-	core.PatchConflicts.Install(srv)
+	core.PatchConflicts.Install(srv, AfterVersion("v1.0.0-0"))
 	dagql.Fields[*core.Stat]{}.Install(srv)
 
 	dagql.Fields[*core.Directory]{
@@ -272,7 +272,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this directory with the given Git-compatible patch applied.`).
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
-				dagql.Arg("onConflict").Doc(`How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.`),
+				dagql.Arg("onConflict").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.`),
 			),
 		dagql.NodeFunc("withPatchFile", s.withPatchFile).
 			IsPersistable().
@@ -280,7 +282,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this directory with the given Git-compatible patch file applied.`).
 			Args(
 				dagql.Arg("patch").Doc(`File containing the patch to apply`),
-				dagql.Arg("onConflict").Doc(`How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.`),
+				dagql.Arg("onConflict").
+					View(AfterVersion("v1.0.0-0")).
+					Doc(`How to handle hunks that no longer apply to the target content: fail (default), or apply what fits and leave git-style conflict markers where it doesn't.`),
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
