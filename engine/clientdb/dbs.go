@@ -48,6 +48,12 @@ var Schema string
 // before they even reach the connection pool.
 const slowOpen = 1 * time.Second
 
+// maxOpenConns bounds each client DB's connection pool (see the rationale in
+// Open). A single connection serialized all readers and writers and convoyed
+// under load; unbounded pinned too many threads. A small bound balances the
+// two.
+const maxOpenConns = 10
+
 // Open open a database for the given clientID if not open already and
 // runs the schema migration if needed.
 func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
@@ -109,12 +115,19 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 		if err != nil {
 			return nil, fmt.Errorf("open %s: %w", connURL, err)
 		}
-		// SQLite allows only one writer at a time, and modernc.org/sqlite's
-		// busy handler waits by sleeping in a raw nanosleep syscall, which
-		// pins an OS thread per waiting connection. Cap the pool at a single
-		// connection so concurrent queries queue cheaply in database/sql
-		// instead of busy-waiting against each other in SQLite.
-		sqlDB.SetMaxOpenConns(1)
+		// Bound the connection pool. SQLite allows only one writer at a time,
+		// and modernc.org/sqlite's busy handler waits by sleeping in a raw
+		// nanosleep syscall that pins an OS thread per waiting connection, so
+		// an *unbounded* pool let a burst of concurrent writers pin thousands
+		// of threads and exhaust the Go runtime's limit. Capping at 1 avoided
+		// that but funneled every reader and writer of a client DB through a
+		// single connection: under a parallel-teardown storm the resulting
+		// convoy blew the client shutdown budget (poolWaitDelta in the tens of
+		// seconds while individual statements stayed sub-second). A small bound
+		// keeps WAL's reader/writer concurrency and lets writes drain in
+		// parallel, while capping worst-case pinned threads per DB well below
+		// the runtime limit.
+		sqlDB.SetMaxOpenConns(maxOpenConns)
 		if err := sqlDB.Ping(); err != nil {
 			return nil, fmt.Errorf("ping %s: %w", connURL, err)
 		}
