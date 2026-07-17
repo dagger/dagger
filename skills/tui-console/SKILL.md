@@ -40,7 +40,7 @@ for i in $(seq 1 60); do
 done
 ```
 
-(An installed `dagger` binary works the same once this ships: `DAGGER_TUI_CONSOLE=:7777 dagger …`.)
+(An installed `dagger` binary works the same: `DAGGER_TUI_CONSOLE=:7777 dagger …`.)
 
 ## Drive it
 
@@ -106,7 +106,7 @@ gracefully on signal.
 ## Notes
 
 - **Command requirements are unchanged.** The console doesn't add any. `dagger
-  trace <id> --full` still needs Cloud access (run `dagger login`, or point
+  trace <id>` still needs Cloud access (run `dagger login`, or point
   elsewhere with `DAGGER_CLOUD_URL`); `call`/`check` still run locally. The
   console is just the presentation layer.
 - Screens default to 120x40; verbosity is driven by the `+`/`-` keys.

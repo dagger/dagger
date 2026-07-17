@@ -127,56 +127,15 @@ This does not rerun the CI job. It fetches and prints the recorded trace. Keep
 the full output in `/tmp`, inspect it with `rg`, and avoid dumping the whole
 trace into the conversation.
 
-### Finding Trace IDs From GitHub PR Checks
-
-If the user gives a GitHub PR URL instead of a trace ID, first inspect the PR's
-commit statuses and collect the Dagger Cloud target URLs for the checks of
-interest. With GitHub CLI this usually looks like:
+If the user gives a GitHub PR URL instead of a trace ID, start by checking the
+PR status with GitHub CLI:
 
 ```bash
-pr_url='https://github.com/dagger/dagger/pull/13119'
-head_sha="$(gh pr view "$pr_url" --json headRefOid --jq .headRefOid)"
-gh api "repos/dagger/dagger/commits/$head_sha/status" \
-  --jq '.statuses[] | select(.target_url | startswith("https://dagger.cloud/")) | [.state, .context, .target_url] | @tsv'
+gh pr checks <pr-url>
 ```
 
-For failed checks, add `select(.state != "success")`. A Dagger status target URL
-has this shape:
-
-```text
-https://dagger.cloud/{org}/checks/{moduleRef}@{moduleVersion}?check={checkName}
-```
-
-For public repos, the Cloud GraphQL API can map that URL data to check IDs and
-trace IDs without rerunning anything:
-
-```bash
-curl -sS -X POST https://api.dagger.cloud/query \
-  -H 'Content-Type: application/json' \
-  --data '{
-    "query": "query($org:String!,$moduleRef:String!,$moduleVersion:String!){ org(name:$org){ moduleChecks(moduleRef:$moduleRef,moduleVersion:$moduleVersion){ commitSHA checks { id name status traceId spanId moduleRef moduleVersion } } } }",
-    "variables": {
-      "org": "dagger",
-      "moduleRef": "github.com/dagger/dagger",
-      "moduleVersion": "e7600fda40142627a4206ec04de3a5f702be5a45"
-    }
-  }' > /tmp/ci-checks.json
-
-jq -r --arg check 'test-split:test-base' \
-  '.data.org.moduleChecks[].checks[]
-   | select(.name == $check)
-   | [.status, .name, .id, .traceId]
-   | @tsv' /tmp/ci-checks.json
-```
-
-If the Dagger Cloud URL contains `run=<checkID>`, prefer that exact check ID.
-Current GitHub status URLs often only include `check=<name>`, so the lookup is
-"latest matching check for this org/module/version/name"; be careful after
-reruns and prefer the non-success/latest row that matches the status being
-debugged.
-
-Once you have the trace ID, replay it with `dagger trace ...` and capture output
-to `/tmp` as described above.
+If a failed check points to a Dagger trace, replay it with `dagger trace ...`
+and capture output to `/tmp` as described above.
 
 Start with the usual failure scan:
 
