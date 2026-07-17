@@ -161,6 +161,9 @@ func legacyBlueprintTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "init"}).
+		// containerized CLI invocations don't inherit the test process env,
+		// so re-apply the widened shutdown budget (see TestMain)
+		WithEnvVariable(shutdownTimeoutEnvName, testShutdownTimeout).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithDirectory(".", c.Host().Directory("./testdata/test-blueprint")).
 		WithDirectory("app", c.Directory())

@@ -17,6 +17,9 @@ func nestedDaggerContainer(t *testctx.T, c *dagger.Client, modLang, modName stri
 	ctr := c.Container().
 		From(alpineImage).
 		WithWorkdir("/work").
+		// containerized CLI invocations don't inherit the test process env,
+		// so re-apply the widened shutdown budget (see TestMain)
+		WithEnvVariable(shutdownTimeoutEnvName, testShutdownTimeout).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 	if modLang != "" && modName != "" {
 		ctr = ctr.

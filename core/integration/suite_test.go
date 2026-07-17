@@ -29,6 +29,16 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// Session close drains workspace locks, services, and telemetry on the
+	// engine; under CI load that can legitimately exceed the client's default
+	// 10s shutdown budget, failing otherwise-passing tests at Close. Give test
+	// clients (SDK sessions and host-run CLI invocations both inherit this
+	// env) a wider budget: a real hang still fails, just attributably via the
+	// engine's shutdown drain phase spans/logs.
+	if os.Getenv(shutdownTimeoutEnvName) == "" {
+		os.Setenv(shutdownTimeoutEnvName, testShutdownTimeout)
+	}
+
 	// Preserve original SSH_AUTH_SOCK value and
 	// Ensure SSH_AUTH_SOCK does not pollute tests state
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
@@ -41,6 +51,16 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(res)
 }
+
+const (
+	// shutdownTimeoutEnvName mirrors engine/client's
+	// _EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT (default 10s).
+	shutdownTimeoutEnvName = "_EXPERIMENTAL_DAGGER_SHUTDOWN_TIMEOUT"
+	// testShutdownTimeout widens the client shutdown budget for tests so a
+	// loaded CI engine draining a session doesn't flake otherwise-passing
+	// tests at Close.
+	testShutdownTimeout = "60s"
+)
 
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
@@ -270,6 +290,9 @@ func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
 	return c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		// containerized CLI invocations don't inherit the test process env,
+		// so re-apply the widened shutdown budget (see TestMain)
+		WithEnvVariable(shutdownTimeoutEnvName, testShutdownTimeout).
 		WithWorkdir("/work")
 }
 
