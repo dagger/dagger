@@ -159,6 +159,67 @@ func TestMerge(t *testing.T) {
 	require.Equal(t, LookupResult{Value: "0123456789abcdef0123456789abcdef01234567", Policy: PolicyFloat}, result)
 }
 
+func TestDiff(t *testing.T) {
+	base := NewLock()
+	require.NoError(t, base.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, LookupResult{
+		Value:  "sha256:deadbeef",
+		Policy: PolicyPin,
+	}))
+	require.NoError(t, base.SetLookup("", "git.tag", []any{"https://github.com/dagger/dagger.git", "v0.1.0"}, LookupResult{
+		Value:  "0123456789abcdef0123456789abcdef01234567",
+		Policy: PolicyPin,
+	}))
+
+	updated, err := base.Clone()
+	require.NoError(t, err)
+	// New entry: should appear in the diff.
+	require.NoError(t, updated.SetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"}, LookupResult{
+		Value:  "89abcdef0123456789abcdef0123456789abcdef",
+		Policy: PolicyFloat,
+	}))
+	// Changed result for an existing tuple: should appear in the diff.
+	require.NoError(t, updated.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, LookupResult{
+		Value:  "sha256:cafebabe",
+		Policy: PolicyPin,
+	}))
+
+	diff, err := updated.Diff(base)
+	require.NoError(t, err)
+
+	entries, err := diff.Entries()
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+
+	result, ok, err := diff.GetLookup("", "git.branch", []any{"https://github.com/dagger/dagger.git", "main"})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, LookupResult{Value: "89abcdef0123456789abcdef0123456789abcdef", Policy: PolicyFloat}, result)
+
+	result, ok, err = diff.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, LookupResult{Value: "sha256:cafebabe", Policy: PolicyPin}, result)
+
+	// Unchanged entries stay out of the diff.
+	_, ok, err = diff.GetLookup("", "git.tag", []any{"https://github.com/dagger/dagger.git", "v0.1.0"})
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	// A diff against an empty base contains everything.
+	full, err := updated.Diff(NewLock())
+	require.NoError(t, err)
+	fullEntries, err := full.Entries()
+	require.NoError(t, err)
+	require.Len(t, fullEntries, 3)
+
+	// Diffing identical locks yields nothing.
+	empty, err := base.Diff(base)
+	require.NoError(t, err)
+	emptyEntries, err := empty.Entries()
+	require.NoError(t, err)
+	require.Empty(t, emptyEntries)
+}
+
 func TestParseLockMode(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		mode, err := ParseLockMode("disabled")

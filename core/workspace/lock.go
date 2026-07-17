@@ -154,6 +154,31 @@ func (l *Lock) Merge(other *Lock) error {
 	return nil
 }
 
+// Diff returns a lock containing the entries of l that are absent from base
+// or whose result differs from base's entry.
+func (l *Lock) Diff(base *Lock) (*Lock, error) {
+	out := NewLock()
+	if l == nil {
+		return out, nil
+	}
+	entries, err := l.Entries()
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		baseResult, ok, err := base.GetLookup(entry.Namespace, entry.Operation, entry.Inputs)
+		if err == nil && ok && baseResult == entry.Result {
+			continue
+		}
+		// An unreadable base entry counts as differing, so the updated entry
+		// still lands in the diff.
+		if err := out.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // GetLookup retrieves the lock result for a generic lookup tuple.
 func (l *Lock) GetLookup(namespace, operation string, inputs []any) (LookupResult, bool, error) {
 	if l == nil {
