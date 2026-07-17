@@ -31,7 +31,7 @@ defmodule Dagger.MixProject do
       {:nestru, "~> 1.0"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:req, "~> 0.5", optional: true}
+      {:req, "~> 0.6", optional: true}
     ]
   end
 
