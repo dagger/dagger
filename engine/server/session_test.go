@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
@@ -348,6 +349,204 @@ func TestSessionLifecycleObserverConcurrency(t *testing.T) {
 		_ = srv.Clients()
 		_ = srv.activeClientIDs()
 		_, _ = srv.clientFromIDs("s0", "c")
+	}
+}
+
+// newTeardownTestServer builds a Server with just enough real state for
+// removeDaggerSession to run: an empty in-memory dagql cache, a live wcprof
+// counter, and a stubbed GC callback (scheduled via time.AfterFunc at the end
+// of teardown).
+func newTeardownTestServer(t *testing.T) *Server {
+	t.Helper()
+	cache, err := dagql.NewCache(context.Background(), "", nil, nil)
+	require.NoError(t, err)
+	return &Server{
+		daggerSessions:  map[string]*daggerSession{},
+		engineCache:     cache,
+		wcprofSpanCount: newWcprofSpanCounter(),
+		throttledGC:     func() {},
+	}
+}
+
+// newTeardownTestSession publishes an initialized session whose main client
+// has the given number of active connections. dagqlInFlight starts at 1 so
+// teardown deterministically blocks in the in-flight drain until
+// releaseTeardownDrain is called.
+func newTeardownTestSession(srv *Server, sessionID, mainClientID string, activeCount int) (*daggerSession, *daggerClient) {
+	client := &daggerClient{
+		clientID:    mainClientID,
+		activeCount: activeCount,
+	}
+	sess := &daggerSession{
+		sessionID:          sessionID,
+		mainClientCallerID: mainClientID,
+		clients:            map[string]*daggerClient{mainClientID: client},
+		services:           core.NewServices(),
+		analytics:          analytics.New(analytics.Config{DoNotTrack: true}),
+		shutdownCh:         make(chan struct{}),
+	}
+	client.daggerSession = sess
+	sess.dagqlCond = sync.NewCond(&sess.dagqlMu)
+	sess.dagqlInFlight = 1
+	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
+	sess.state.Store(sessionStateInitialized)
+
+	srv.daggerSessionsMu.Lock()
+	srv.daggerSessions[sessionID] = sess
+	srv.daggerSessionsMu.Unlock()
+	return sess, client
+}
+
+func releaseTeardownDrain(sess *daggerSession) {
+	sess.dagqlMu.Lock()
+	sess.dagqlInFlight = 0
+	sess.dagqlCond.Broadcast()
+	sess.dagqlMu.Unlock()
+}
+
+func sessionInRegistry(srv *Server, sessionID string) bool {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	_, ok := srv.daggerSessions[sessionID]
+	return ok
+}
+
+func TestMainClientLastDisconnectDoesNotBlockOnTeardown(t *testing.T) {
+	t.Parallel()
+
+	// Regression for the client-side `shutdown: ... context deadline exceeded`
+	// timeout: the main client's last connection cleanup runs in the request
+	// handler before the /shutdown response is flushed, so it must only
+	// SCHEDULE teardown, never run it. Teardown here is deterministically
+	// blocked in the in-flight dagql drain; the cleanup must return anyway.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.releaseClientConnection(context.Background(), sess, client)
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("last-connection cleanup blocked on session teardown")
+	}
+
+	// The background reap marks the session removed (tombstone) but stays
+	// blocked in the drain, so the registry entry must survive for now.
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond, "background teardown never started")
+	require.True(t, sessionInRegistry(srv, "s"), "tombstone dropped before teardown finished")
+
+	releaseTeardownDrain(sess)
+
+	require.Eventually(t, func() bool {
+		return !sessionInRegistry(srv, "s")
+	}, 10*time.Second, 10*time.Millisecond, "session never finished background teardown")
+	select {
+	case <-sess.shutdownCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("session shutdownCh never closed by background teardown")
+	}
+}
+
+func TestSameIDConnectDuringBackgroundTeardownGetsRetryable(t *testing.T) {
+	t.Parallel()
+
+	// While a background reap is mid-teardown (removed tombstone in the
+	// registry, lifecycleMu held), a same-id getOrInitClient must bail out
+	// fast with a retryable error instead of blocking on the teardown.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	require.NoError(t, srv.releaseClientConnection(context.Background(), sess, client))
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond)
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := srv.getOrInitClient(context.Background(), &ClientInitOpts{
+			ClientMetadata: &engine.ClientMetadata{
+				SessionID:         "s",
+				ClientID:          "m",
+				ClientSecretToken: "token",
+			},
+		})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		var retryable flightcontrol.RetryableError
+		require.ErrorAs(t, err, &retryable)
+	case <-time.After(10 * time.Second):
+		t.Fatal("same-id getOrInitClient blocked on background teardown")
+	}
+
+	releaseTeardownDrain(sess)
+	require.Eventually(t, func() bool {
+		return !sessionInRegistry(srv, "s")
+	}, 10*time.Second, 10*time.Millisecond)
+}
+
+func TestReapAbandonedWhenMainClientReconnects(t *testing.T) {
+	t.Parallel()
+
+	// A new main-client connection can land between the last disconnect and
+	// the scheduled reap running. The reap re-checks activeCount under
+	// lifecycleMu and must leave the now-live session alone.
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 1)
+
+	// Simulate the reconnect winning the race: activeCount is back above zero
+	// by the time the reap runs.
+	client.stateMu.Lock()
+	client.activeCount = 1
+	client.stateMu.Unlock()
+
+	srv.reapDaggerSession(context.Background(), sess, client)
+
+	require.Equal(t, sessionStateInitialized, sess.state.Load())
+	require.True(t, sessionInRegistry(srv, "s"))
+	select {
+	case <-sess.shutdownCh:
+		t.Fatal("reap tore down a session with a live main client")
+	default:
+	}
+}
+
+func TestConcurrentReapsSingleTeardown(t *testing.T) {
+	t.Parallel()
+
+	// Duplicate reaps can be scheduled (disconnect, reconnect, disconnect).
+	// Whichever acquires lifecycleMu first tears down; the loser must observe
+	// the removed state and no-op (double teardown would double-close
+	// shutdownCh and panic).
+	srv := newTeardownTestServer(t)
+	sess, client := newTeardownTestSession(srv, "s", "m", 0)
+
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			srv.reapDaggerSession(context.Background(), sess, client)
+		}()
+	}
+
+	require.Eventually(t, func() bool {
+		return sess.state.Load() == sessionStateRemoved
+	}, 10*time.Second, 10*time.Millisecond)
+	releaseTeardownDrain(sess)
+	wg.Wait()
+
+	require.False(t, sessionInRegistry(srv, "s"))
+	select {
+	case <-sess.shutdownCh:
+	default:
+		t.Fatal("session shutdownCh not closed after teardown")
 	}
 }
 
