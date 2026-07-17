@@ -1362,3 +1362,26 @@ RUN --mount=type=bind,source=app/main.txt,target=/mnt/main.txt head -c16 /dev/ur
 	copyStamp3, _ := stamps()
 	require.NotEqual(t, copyStamp1, copyStamp3, "COPY'd content change did not invalidate downstream RUN")
 }
+
+// TestDockerBuildEmptyWildcardCopy verifies that a COPY with a wildcard that
+// matches nothing (and a destination that never gets created) still builds:
+// content hashing the copy result must not fail on the absent destination.
+func (DockerfileSuite) TestDockerBuildEmptyWildcardCopy(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "present.txt"), []byte("hi"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(`FROM `+alpineImage+`
+COPY optional-* /out/
+COPY present.txt /present.txt
+`), 0o644))
+
+	ctr := c.Host().Directory(dir).DockerBuild()
+	contents, err := ctr.File("/present.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hi", contents)
+
+	exists, err := ctr.Exists(ctx, "/out")
+	require.NoError(t, err)
+	require.False(t, exists, "unmatched wildcard COPY should not create the destination")
+}

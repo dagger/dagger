@@ -2648,9 +2648,11 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 		return inst, err
 	}
 
-	// The mount's effect is fully determined by the parent container, the target/readOnly config,
-	// and the content at sourcePath, so key on those instead — mirroring BuildKit's
-	// content-checksummed bind-mount cache keys.
+	// Key the result on the mounted content rather than the source directory's
+	// recipe, mirroring BuildKit's content-checksummed bind-mount cache keys.
+	// A taught content digest is a global alias for the result's cache identity,
+	// so it must still include everything that distinguishes this container:
+	// the parent it was built from and the target/readOnly mount config.
 	parentDgst, err := parent.ContentPreferredDigest(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to content hash dockerfile bind mount: parent digest: %w", err)
@@ -2682,7 +2684,6 @@ func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, p
 		"__withMountedPathDockerfileCompat",
 		string(parentDgst),
 		target,
-		args.SourcePath,
 		strconv.FormatBool(args.ReadOnly),
 		srcHash,
 	))

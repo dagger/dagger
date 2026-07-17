@@ -598,7 +598,8 @@ func (s *directorySchema) withDirectoryDockerfileCompat(ctx context.Context, par
 }
 
 // withDirectoryDockerfileCompatContentHashed wraps withDirectoryDockerfileCompat
-// and gives the result a content-based cache identity.
+// and gives the result a content-based cache identity so unrelated build-context
+// changes don't re-key downstream calls.
 func (s *directorySchema) withDirectoryDockerfileCompatContentHashed(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Directory],
@@ -611,35 +612,34 @@ func (s *directorySchema) withDirectoryDockerfileCompatContentHashed(
 	if res.Self() == nil {
 		return res, fmt.Errorf("failed to content hash dockerfile copy: nil directory result")
 	}
-
-	parentDgst, err := parent.ContentPreferredDigest(ctx)
-	if err != nil {
-		return res, fmt.Errorf("failed to content hash dockerfile copy: parent digest: %w", err)
+	// On errors past this point the result may hold a committed snapshot that
+	// dagql never attached, so release it instead of leaking the ref.
+	releaseErr := func(err error) (dagql.ObjectResult[*core.Directory], error) {
+		_ = res.Self().OnRelease(context.WithoutCancel(ctx))
+		return dagql.ObjectResult[*core.Directory]{}, err
 	}
 	if lazy := res.Self().LazyEvalFunc(); lazy != nil {
 		if err := lazy(ctx); err != nil {
-			return res, fmt.Errorf("failed to content hash dockerfile copy: %w", err)
+			return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
 		}
 	}
 	snapshot, ok := res.Self().Snapshot.Peek()
 	if !ok {
-		return res, fmt.Errorf("failed to content hash dockerfile copy: snapshot unset")
+		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: snapshot unset"))
 	}
 	dirPath, ok := res.Self().Dir.Peek()
 	if !ok {
-		return res, fmt.Errorf("failed to content hash dockerfile copy: directory path unset")
+		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: directory path unset"))
 	}
-	destPath := path.Join(dirPath, args.Path)
-	destDgst, err := core.GetContentHashFromFile(ctx, snapshot, destPath)
+	dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
 	if err != nil {
-		return res, fmt.Errorf("failed to content hash dockerfile copy at %q: %w", destPath, err)
+		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
 	}
-	return res.WithContentDigest(ctx, hashutil.HashStrings(
-		"__withDirectoryDockerfileCompat",
-		string(parentDgst),
-		destPath,
-		string(destDgst),
-	))
+	res, err = res.WithContentDigest(ctx, dgst)
+	if err != nil {
+		return releaseErr(fmt.Errorf("failed to content hash dockerfile copy: %w", err))
+	}
+	return res, nil
 }
 
 type FilterArgs struct {
