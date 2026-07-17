@@ -1,12 +1,13 @@
 package core
 
 // These tests cover `dagger mcp`, the Model Context Protocol server exposed by
-// the CLI over stdio. They verify which module and core methods are available
-// with and without `--env-privileged`.
+// the CLI over stdio. Under the object-tools scheme
+// (hack/designs/workspace-agents.md) the CLI binds each workspace module's
+// main object via LLM.withTools, so the module's eligible methods are served
+// directly as MCP tools alongside the builtins (ReadLogs, skills).
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"strings"
@@ -29,12 +30,11 @@ func (MCPSuite) TestModuleWithoutPrivilegedExposesModuleMethods(ctx context.Cont
 	modDir := initMCPTestModule(ctx, t)
 	cli := startMCPClient(ctx, t, modDir)
 
-	methods := listMethodNames(ctx, t, cli)
-	require.Contains(t, methods, "greeting")
-	require.NotContains(t, methods, "container")
+	tools := listToolNames(ctx, t, cli)
+	require.Contains(t, tools, "greeting")
+	require.NotContains(t, tools, "container")
 
-	selectMethods(ctx, t, cli, "greeting")
-	require.Contains(t, callMethodText(ctx, t, cli, "greeting", nil, map[string]any{}), "hello from module")
+	require.Contains(t, callToolText(ctx, t, cli, "greeting", map[string]any{}), "hello from module")
 }
 
 func (MCPSuite) TestWithoutModuleAndWithoutPrivilegedFails(ctx context.Context, t *testctx.T) {
@@ -45,28 +45,26 @@ func (MCPSuite) TestWithoutModuleAndWithoutPrivilegedFails(ctx context.Context, 
 	requireErrOut(t, err, "no module found and --env-privileged not specified")
 }
 
-func (MCPSuite) TestWithoutModuleAndWithPrivilegedExposesCoreMethods(ctx context.Context, t *testctx.T) {
+func (MCPSuite) TestWithoutModuleAndWithPrivilegedServesBuiltins(ctx context.Context, t *testctx.T) {
 	emptyDir := t.TempDir()
 	cli := startMCPClient(ctx, t, emptyDir, "--env-privileged")
 
-	methods := listMethodNames(ctx, t, cli)
-	require.Contains(t, methods, "container")
-
-	selectMethods(ctx, t, cli, "container")
-	require.Contains(t, callMethodText(ctx, t, cli, "container", nil, map[string]any{}), "Container#")
+	// With no module there is no object to bind, so only the builtin tools
+	// are served. (The old Env-based core-API surface was retired with the
+	// object-tools scheme.)
+	tools := listToolNames(ctx, t, cli)
+	require.Contains(t, tools, "ReadLogs")
+	require.NotContains(t, tools, "container")
 }
 
-func (MCPSuite) TestModuleWithPrivilegedExposesModuleAndCoreMethods(ctx context.Context, t *testctx.T) {
+func (MCPSuite) TestModuleWithPrivilegedStillExposesModuleMethods(ctx context.Context, t *testctx.T) {
 	modDir := initMCPTestModule(ctx, t)
 	cli := startMCPClient(ctx, t, modDir, "--env-privileged")
 
-	methods := listMethodNames(ctx, t, cli)
-	require.Contains(t, methods, "greeting")
-	require.Contains(t, methods, "container")
+	tools := listToolNames(ctx, t, cli)
+	require.Contains(t, tools, "greeting")
 
-	selectMethods(ctx, t, cli, "greeting", "container")
-	require.Contains(t, callMethodText(ctx, t, cli, "greeting", nil, map[string]any{}), "hello from module")
-	require.Contains(t, callMethodText(ctx, t, cli, "container", nil, map[string]any{}), "Container#")
+	require.Contains(t, callToolText(ctx, t, cli, "greeting", map[string]any{}), "hello from module")
 }
 
 func initMCPTestModule(ctx context.Context, t testing.TB) string {
@@ -121,68 +119,42 @@ func startMCPClient(ctx context.Context, t testing.TB, workdir string, extraArgs
 	return cli
 }
 
-func listMethodNames(ctx context.Context, t testing.TB, cli *mcpclient.Client) []string {
+// listToolNames lists the MCP server's tools via the MCP protocol. Tools are
+// the bound module objects' methods plus builtins — there is no discovery
+// indirection (the old ListMethods/SelectMethods tools are gone).
+func listToolNames(ctx context.Context, t testing.TB, cli *mcpclient.Client) []string {
 	t.Helper()
 
-	listMethods, err := cli.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      "ListMethods",
-			Arguments: map[string]any{},
-		},
-	})
+	res, err := cli.ListTools(ctx, mcp.ListToolsRequest{})
 	require.NoError(t, err)
-	require.False(t, listMethods.IsError)
 
-	var methods []struct {
-		Name string `json:"name"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(toolResultText(t, listMethods)), &methods))
-
-	names := make([]string, 0, len(methods))
-	for _, method := range methods {
-		names = append(names, method.Name)
+	names := make([]string, 0, len(res.Tools))
+	for _, tool := range res.Tools {
+		names = append(names, tool.Name)
 	}
 	return names
 }
 
-func selectMethods(ctx context.Context, t testing.TB, cli *mcpclient.Client, methods ...string) {
-	t.Helper()
-
-	_, err := cli.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "SelectMethods",
-			Arguments: map[string]any{
-				"methods": methods,
-			},
-		},
-	})
-	require.NoError(t, err)
-}
-
-func callMethodText(
+// callToolText invokes a tool by name and returns its text output.
+func callToolText(
 	ctx context.Context,
 	t testing.TB,
 	cli *mcpclient.Client,
-	method string,
-	self any,
+	tool string,
 	args map[string]any,
 ) string {
 	t.Helper()
 
-	callMethod, err := cli.CallTool(ctx, mcp.CallToolRequest{
+	res, err := cli.CallTool(ctx, mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
-			Name: "CallMethod",
-			Arguments: map[string]any{
-				"method": method,
-				"self":   self,
-				"args":   args,
-			},
+			Name:      tool,
+			Arguments: args,
 		},
 	})
 	require.NoError(t, err)
-	require.False(t, callMethod.IsError)
+	require.False(t, res.IsError, "tool %q errored: %s", tool, toolResultText(t, res))
 
-	return strings.TrimSpace(toolResultText(t, callMethod))
+	return strings.TrimSpace(toolResultText(t, res))
 }
 
 func toolResultText(t testing.TB, result *mcp.CallToolResult) string {
