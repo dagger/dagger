@@ -8,14 +8,23 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * A count of tokens consumed by LLM API calls.
+ */
 class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble, Node
 {
+    /**
+     * Input tokens served from the provider's prompt cache.
+     */
     public function cachedTokenReads(): int
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cachedTokenReads');
         return (int)$this->queryLeaf($leafQueryBuilder, 'cachedTokenReads');
     }
 
+    /**
+     * Input tokens written to the provider's prompt cache.
+     */
     public function cachedTokenWrites(): int
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cachedTokenWrites');
@@ -31,18 +40,27 @@ class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble, Node
         return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * Uncached input tokens sent to the model.
+     */
     public function inputTokens(): int
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('inputTokens');
         return (int)$this->queryLeaf($leafQueryBuilder, 'inputTokens');
     }
 
+    /**
+     * Tokens received from the model, including text and tool calls.
+     */
     public function outputTokens(): int
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('outputTokens');
         return (int)$this->queryLeaf($leafQueryBuilder, 'outputTokens');
     }
 
+    /**
+     * Total tokens consumed, as reported by the provider.
+     */
     public function totalTokens(): int
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('totalTokens');

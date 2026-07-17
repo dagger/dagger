@@ -68,6 +68,14 @@ func (fe *frontendLogs) SetClient(client *dagger.Client) {}
 
 func (fe *frontendLogs) SetSidebarContent(SidebarSection) {}
 
+func (fe *frontendLogs) SetStatusLine(StatusLineData) {}
+
+func (fe *frontendLogs) GetLLMTokenMetrics() *dagui.LLMTokenMetrics {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	return fe.db.LLMTokenMetrics
+}
+
 func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
 	cleanup, runErr := f(ctx)

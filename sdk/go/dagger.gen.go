@@ -159,6 +159,30 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
+// A content block within an LLM message.
+type LLMContentBlockInput struct {
+	// The arguments to pass to the tool (for TOOL_CALL kind).
+	Arguments JSON `json:"arguments"`
+
+	// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+	CallID string `json:"callId,omitempty"`
+
+	// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+	Errored bool `json:"errored,omitempty"`
+
+	// The kind of content block.
+	Kind LLMContentBlockKind `json:"kind"`
+
+	// Provider-specific opaque data (e.g. Anthropic thinking signature).
+	Signature string `json:"signature,omitempty"`
+
+	// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+	Text string `json:"text,omitempty"`
+
+	// The name of the tool to call (for TOOL_CALL kind).
+	ToolName string `json:"toolName,omitempty"`
+}
+
 // Key value object that represents a pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -587,6 +611,24 @@ func (r *Binding) AsJSONValue() *JSONValue {
 	q := r.query.Select("asJSONValue")
 
 	return &JSONValue{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMContentBlock
+func (r *Binding) AsLLMContentBlock() *LLMContentBlock {
+	q := r.query.Select("asLLMContentBlock")
+
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMMessage
+func (r *Binding) AsLLMMessage() *LLMMessage {
+	q := r.query.Select("asLLMMessage")
+
+	return &LLMMessage{
 		query: q,
 	}
 }
@@ -6939,6 +6981,54 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type LLMContentBlock in the environment
+func (r *Env) WithLLMContentBlockInput(name string, value *LLMContentBlock, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMContentBlockInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMContentBlock output to be assigned in the environment
+func (r *Env) WithLLMContentBlockOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMContentBlockOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMMessage in the environment
+func (r *Env) WithLLMMessageInput(name string, value *LLMMessage, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMMessageInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired LLMMessage output to be assigned in the environment
+func (r *Env) WithLLMMessageOutput(name string, description string) *Env {
+	q := r.query.Select("withLLMMessageOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Sets the main module for this environment (the project being worked on)
 //
 // Contextual path arguments will be populated using the environment's workspace.
@@ -11047,18 +11137,21 @@ func (r *JSONValue) AsNode() Node {
 	}
 }
 
+// A conversation with a large language model (LLM): queue prompts, expose tools, and step the model until it completes its turn.
 type LLM struct {
 	query *querybuilder.Selection
 
-	hasPrompt   *bool
-	historyJSON *JSON
-	id          *ID
-	lastReply   *string
-	model       *string
-	provider    *string
-	step        *ID
-	sync        *ID
-	tools       *string
+	contextWindow *int
+	hasPending    *bool
+	id            *ID
+	lastReply     *string
+	model         *string
+	portableID    *ID
+	provider      *string
+	replay        *ID
+	sync          *ID
+	tools         *string
+	transcript    *string
 }
 type WithLLMFunc func(r *LLM) *LLM
 
@@ -11075,16 +11168,6 @@ func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	}
 }
 
-// create a branch in the LLM's history
-func (r *LLM) Attempt(number int) *LLM {
-	q := r.query.Select("attempt")
-	q = q.Arg("number", number)
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // returns the type of the current state
 func (r *LLM) BindResult(name string) *Binding {
 	q := r.query.Select("bindResult")
@@ -11093,6 +11176,19 @@ func (r *LLM) BindResult(name string) *Binding {
 	return &Binding{
 		query: q,
 	}
+}
+
+// The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
+func (r *LLM) ContextWindow(ctx context.Context) (int, error) {
+	if r.contextWindow != nil {
+		return *r.contextWindow, nil
+	}
+	q := r.query.Select("contextWindow")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // return the LLM's current environment
@@ -11104,37 +11200,24 @@ func (r *LLM) Env() *Env {
 	}
 }
 
-// Indicates whether there are any queued prompts or tool results to send to the model
-func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
-	if r.hasPrompt != nil {
-		return *r.hasPrompt, nil
+// Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
+func (r *LLM) Fork(label string) *LLM {
+	q := r.query.Select("fork")
+	q = q.Arg("label", label)
+
+	return &LLM{
+		query: q,
 	}
-	q := r.query.Select("hasPrompt")
+}
+
+// Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
+func (r *LLM) HasPending(ctx context.Context) (bool, error) {
+	if r.hasPending != nil {
+		return *r.hasPending, nil
+	}
+	q := r.query.Select("hasPending")
 
 	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// return the llm message history
-func (r *LLM) History(ctx context.Context) ([]string, error) {
-	q := r.query.Select("history")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// return the raw llm message history as json
-func (r *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
-	if r.historyJSON != nil {
-		return *r.historyJSON, nil
-	}
-	q := r.query.Select("historyJSON")
-
-	var response JSON
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11180,7 +11263,7 @@ func (r *LLM) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// return the last llm reply from the history
+// The text of the model's most recent reply.
 func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	if r.lastReply != nil {
 		return *r.lastReply, nil
@@ -11193,16 +11276,67 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
-func (r *LLM) Loop() *LLM {
+// LLMLoopOpts contains options for LLM.Loop
+type LLMLoopOpts struct {
+	// Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
+	MaxSteps int
+	// Cap the model's output tokens on each step. Defaults to the model's maximum.
+	MaxTokens int
+}
+
+// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
+func (r *LLM) Loop(opts ...LLMLoopOpts) *LLM {
 	q := r.query.Select("loop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `maxSteps` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxSteps) {
+			q = q.Arg("maxSteps", opts[i].MaxSteps)
+		}
+		// `maxTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxTokens) {
+			q = q.Arg("maxTokens", opts[i].MaxTokens)
+		}
+	}
 
 	return &LLM{
 		query: q,
 	}
 }
 
-// return the model used by the llm
+// The full message history, as structured messages.
+func (r *LLM) Messages(ctx context.Context) ([]LLMMessage, error) {
+	q := r.query.Select("messages")
+
+	q = q.Select("id")
+
+	type messages struct {
+		Id ID
+	}
+
+	convert := func(fields []messages) []LLMMessage {
+		out := []LLMMessage{}
+
+		for i := range fields {
+			val := LLMMessage{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMMessage")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []messages
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The model the conversation is running against, after resolving any configured default.
 func (r *LLM) Model(ctx context.Context) (string, error) {
 	if r.model != nil {
 		return *r.model, nil
@@ -11215,7 +11349,20 @@ func (r *LLM) Model(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// return the provider used by the llm
+// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+func (r *LLM) PortableID(ctx context.Context) (ID, error) {
+	if r.portableID != nil {
+		return *r.portableID, nil
+	}
+	q := r.query.Select("portableID")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
 func (r *LLM) Provider(ctx context.Context) (string, error) {
 	if r.provider != nil {
 		return *r.provider, nil
@@ -11228,9 +11375,9 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
-func (r *LLM) Step(ctx context.Context) (*LLM, error) {
-	q := r.query.Select("step")
+// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+func (r *LLM) Replay(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("replay")
 
 	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
@@ -11241,7 +11388,28 @@ func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 	}, nil
 }
 
-// synchronize LLM state
+// LLMStepOpts contains options for LLM.Step
+type LLMStepOpts struct {
+	// Cap the model's output tokens for this step. Defaults to the model's maximum.
+	MaxTokens int
+}
+
+// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
+func (r *LLM) Step(opts ...LLMStepOpts) *LLM {
+	q := r.query.Select("step")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `maxTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxTokens) {
+			q = q.Arg("maxTokens", opts[i].MaxTokens)
+		}
+	}
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
 func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("sync")
 
@@ -11254,7 +11422,7 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	}, nil
 }
 
-// returns the token usage of the current state
+// The cumulative token usage, summed across every API call in the conversation.
 func (r *LLM) TokenUsage() *LLMTokenUsage {
 	q := r.query.Select("tokenUsage")
 
@@ -11263,12 +11431,25 @@ func (r *LLM) TokenUsage() *LLMTokenUsage {
 	}
 }
 
-// print documentation for available tools
+// Render documentation for the tools currently exposed to the model.
 func (r *LLM) Tools(ctx context.Context) (string, error) {
 	if r.tools != nil {
 		return *r.tools, nil
 	}
 	q := r.query.Select("tools")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+func (r *LLM) Transcript(ctx context.Context) (string, error) {
+	if r.transcript != nil {
+		return *r.transcript, nil
+	}
+	q := r.query.Select("transcript")
 
 	var response string
 
@@ -11310,9 +11491,21 @@ func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
 	}
 }
 
-// swap out the llm model
-func (r *LLM) WithModel(model string) *LLM {
+// LLMWithModelOpts contains options for LLM.WithModel
+type LLMWithModelOpts struct {
+	// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+	Provider string
+}
+
+// Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
+func (r *LLM) WithModel(model string, opts ...LLMWithModelOpts) *LLM {
 	q := r.query.Select("withModel")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `provider` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Provider) {
+			q = q.Arg("provider", opts[i].Provider)
+		}
+	}
 	q = q.Arg("model", model)
 
 	return &LLM{
@@ -11320,7 +11513,18 @@ func (r *LLM) WithModel(model string) *LLM {
 	}
 }
 
-// append a prompt to the llm context
+// Track an object so the LLM can reference it in subsequent tool calls.
+func (r *LLM) WithObject(tag string, object ID) *LLM {
+	q := r.query.Select("withObject")
+	q = q.Arg("tag", tag)
+	q = q.Arg("object", object)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Queue a user prompt, to be sent to the model on the next step or loop.
 func (r *LLM) WithPrompt(prompt string) *LLM {
 	q := r.query.Select("withPrompt")
 	q = q.Arg("prompt", prompt)
@@ -11330,11 +11534,57 @@ func (r *LLM) WithPrompt(prompt string) *LLM {
 	}
 }
 
-// append the contents of a file to the llm context
+// Queue a file's contents as a user prompt, like withPrompt.
 func (r *LLM) WithPromptFile(file *File) *LLM {
 	assertNotNil("file", file)
 	q := r.query.Select("withPromptFile")
 	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// LLMWithResponseOpts contains options for LLM.WithResponse
+type LLMWithResponseOpts struct {
+	// Uncached input tokens sent
+	InputTokens int
+	// Tokens received from the model, including text and tool calls
+	OutputTokens int
+	// Cached input tokens read
+	CachedTokenReads int
+	// Cached input tokens written
+	CachedTokenWrites int
+	// Total tokens consumed by this response
+	TotalTokens int
+}
+
+// Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
+func (r *LLM) WithResponse(content []LLMContentBlockInput, opts ...LLMWithResponseOpts) *LLM {
+	q := r.query.Select("withResponse")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `inputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InputTokens) {
+			q = q.Arg("inputTokens", opts[i].InputTokens)
+		}
+		// `outputTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OutputTokens) {
+			q = q.Arg("outputTokens", opts[i].OutputTokens)
+		}
+		// `cachedTokenReads` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenReads) {
+			q = q.Arg("cachedTokenReads", opts[i].CachedTokenReads)
+		}
+		// `cachedTokenWrites` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CachedTokenWrites) {
+			q = q.Arg("cachedTokenWrites", opts[i].CachedTokenWrites)
+		}
+		// `totalTokens` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TotalTokens) {
+			q = q.Arg("totalTokens", opts[i].TotalTokens)
+		}
+	}
+	q = q.Arg("content", content)
 
 	return &LLM{
 		query: q,
@@ -11350,10 +11600,22 @@ func (r *LLM) WithStaticTools() *LLM {
 	}
 }
 
-// Add a system prompt to the LLM's environment
+// Add a system prompt, instructing the model across the whole conversation.
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")
 	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Append the result of a tool call to the message history.
+func (r *LLM) WithToolResult(callId string, content string, errored bool) *LLM {
+	q := r.query.Select("withToolResult")
+	q = q.Arg("callId", callId)
+	q = q.Arg("content", content)
+	q = q.Arg("errored", errored)
 
 	return &LLM{
 		query: q,
@@ -11369,7 +11631,7 @@ func (r *LLM) WithoutDefaultSystemPrompt() *LLM {
 	}
 }
 
-// Clear the message history, leaving only the system prompts
+// Clear the message history, keeping only the system prompts.
 func (r *LLM) WithoutMessageHistory() *LLM {
 	q := r.query.Select("withoutMessageHistory")
 
@@ -11378,7 +11640,7 @@ func (r *LLM) WithoutMessageHistory() *LLM {
 	}
 }
 
-// Clear the system prompts, leaving only the default system prompt
+// Clear the user-added system prompts, keeping only the default system prompt.
 func (r *LLM) WithoutSystemPrompts() *LLM {
 	q := r.query.Select("withoutSystemPrompts")
 
@@ -11403,6 +11665,283 @@ func (r *LLM) AsSyncer() Syncer {
 	}
 }
 
+// A single piece of content within an LLM message.
+type LLMContentBlock struct {
+	query *querybuilder.Selection
+
+	arguments *JSON
+	callId    *string
+	errored   *bool
+	id        *ID
+	kind      *LLMContentBlockKind
+	signature *string
+	text      *string
+	toolName  *string
+}
+
+func (r *LLMContentBlock) WithGraphQLQuery(q *querybuilder.Selection) *LLMContentBlock {
+	return &LLMContentBlock{
+		query: q,
+	}
+}
+
+// The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+func (r *LLMContentBlock) Arguments(ctx context.Context) (JSON, error) {
+	if r.arguments != nil {
+		return *r.arguments, nil
+	}
+	q := r.query.Select("arguments")
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+func (r *LLMContentBlock) CallID(ctx context.Context) (string, error) {
+	if r.callId != nil {
+		return *r.callId, nil
+	}
+	q := r.query.Select("callId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+func (r *LLMContentBlock) Errored(ctx context.Context) (bool, error) {
+	if r.errored != nil {
+		return *r.errored, nil
+	}
+	q := r.query.Select("errored")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMContentBlock.
+func (r *LLMContentBlock) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMContentBlock) XXX_GraphQLType() string {
+	return "LLMContentBlock"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMContentBlock) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMContentBlock) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMContentBlock) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The kind of content block, which determines the other populated fields.
+func (r *LLMContentBlock) Kind(ctx context.Context) (LLMContentBlockKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.query.Select("kind")
+
+	var response LLMContentBlockKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+func (r *LLMContentBlock) Signature(ctx context.Context) (string, error) {
+	if r.signature != nil {
+		return *r.signature, nil
+	}
+	q := r.query.Select("signature")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+func (r *LLMContentBlock) Text(ctx context.Context) (string, error) {
+	if r.text != nil {
+		return *r.text, nil
+	}
+	q := r.query.Select("text")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The name of the tool called (for TOOL_CALL kind).
+func (r *LLMContentBlock) ToolName(ctx context.Context) (string, error) {
+	if r.toolName != nil {
+		return *r.toolName, nil
+	}
+	q := r.query.Select("toolName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// AsNode returns this LLMContentBlock as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMContentBlock) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A single message in an LLM conversation.
+type LLMMessage struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	role *LLMMessageRole
+}
+
+func (r *LLMMessage) WithGraphQLQuery(q *querybuilder.Selection) *LLMMessage {
+	return &LLMMessage{
+		query: q,
+	}
+}
+
+// The message's content blocks, in the order the model produced them.
+func (r *LLMMessage) Content(ctx context.Context) ([]LLMContentBlock, error) {
+	q := r.query.Select("content")
+
+	q = q.Select("id")
+
+	type content struct {
+		Id ID
+	}
+
+	convert := func(fields []content) []LLMContentBlock {
+		out := []LLMContentBlock{}
+
+		for i := range fields {
+			val := LLMContentBlock{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "LLMContentBlock")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []content
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this LLMMessage.
+func (r *LLMMessage) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMMessage) XXX_GraphQLType() string {
+	return "LLMMessage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMMessage) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMMessage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMMessage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The role that produced this message.
+func (r *LLMMessage) Role(ctx context.Context) (LLMMessageRole, error) {
+	if r.role != nil {
+		return *r.role, nil
+	}
+	q := r.query.Select("role")
+
+	var response LLMMessageRole
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+func (r *LLMMessage) TokenUsage() *LLMTokenUsage {
+	q := r.query.Select("tokenUsage")
+
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
+// AsNode returns this LLMMessage as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMMessage) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// A count of tokens consumed by LLM API calls.
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
 
@@ -11420,6 +11959,7 @@ func (r *LLMTokenUsage) WithGraphQLQuery(q *querybuilder.Selection) *LLMTokenUsa
 	}
 }
 
+// Input tokens served from the provider's prompt cache.
 func (r *LLMTokenUsage) CachedTokenReads(ctx context.Context) (int, error) {
 	if r.cachedTokenReads != nil {
 		return *r.cachedTokenReads, nil
@@ -11432,6 +11972,7 @@ func (r *LLMTokenUsage) CachedTokenReads(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// Input tokens written to the provider's prompt cache.
 func (r *LLMTokenUsage) CachedTokenWrites(ctx context.Context) (int, error) {
 	if r.cachedTokenWrites != nil {
 		return *r.cachedTokenWrites, nil
@@ -11484,6 +12025,7 @@ func (r *LLMTokenUsage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Uncached input tokens sent to the model.
 func (r *LLMTokenUsage) InputTokens(ctx context.Context) (int, error) {
 	if r.inputTokens != nil {
 		return *r.inputTokens, nil
@@ -11496,6 +12038,7 @@ func (r *LLMTokenUsage) InputTokens(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// Tokens received from the model, including text and tool calls.
 func (r *LLMTokenUsage) OutputTokens(ctx context.Context) (int, error) {
 	if r.outputTokens != nil {
 		return *r.outputTokens, nil
@@ -11508,6 +12051,7 @@ func (r *LLMTokenUsage) OutputTokens(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// Total tokens consumed, as reported by the provider.
 func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 	if r.totalTokens != nil {
 		return *r.totalTokens, nil
@@ -13838,13 +14382,13 @@ func (r *Query) JSON() *JSONValue {
 
 // LLMOpts contains options for Query.LLM
 type LLMOpts struct {
-	// Model to use
+	// The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
 	Model string
-	// Cap the number of API calls for this LLM
-	MaxAPICalls int
+	// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+	Provider string
 }
 
-// Initialize a Large Language Model (LLM)
+// Initialize a new LLM conversation.
 //
 // Experimental: LLM support is not yet stabilized
 func (r *Query) LLM(opts ...LLMOpts) *LLM {
@@ -13854,9 +14398,9 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 		if !querybuilder.IsZeroValue(opts[i].Model) {
 			q = q.Arg("model", opts[i].Model)
 		}
-		// `maxAPICalls` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
-			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
+		// `provider` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Provider) {
+			q = q.Arg("provider", opts[i].Provider)
 		}
 	}
 
@@ -18549,6 +19093,141 @@ const (
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+)
+
+// The kind of content in a message block.
+type LLMContentBlockKind string
+
+func (LLMContentBlockKind) IsEnum() {}
+
+func (v LLMContentBlockKind) Name() string {
+	switch v {
+	case LLMContentBlockKindText:
+		return "TEXT"
+	case LLMContentBlockKindThinking:
+		return "THINKING"
+	case LLMContentBlockKindToolCall:
+		return "TOOL_CALL"
+	case LLMContentBlockKindToolResult:
+		return "TOOL_RESULT"
+	default:
+		return ""
+	}
+}
+
+func (v LLMContentBlockKind) Value() string {
+	return string(v)
+}
+
+func (v *LLMContentBlockKind) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMContentBlockKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "TEXT":
+		*v = LLMContentBlockKindText
+	case "THINKING":
+		*v = LLMContentBlockKindThinking
+	case "TOOL_CALL":
+		*v = LLMContentBlockKindToolCall
+	case "TOOL_RESULT":
+		*v = LLMContentBlockKindToolResult
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Plain text content.
+	LLMContentBlockKindText LLMContentBlockKind = "TEXT"
+
+	// Model thinking/reasoning content (e.g. Anthropic extended thinking).
+	LLMContentBlockKindThinking LLMContentBlockKind = "THINKING"
+
+	// A tool/function call from the model.
+	LLMContentBlockKindToolCall LLMContentBlockKind = "TOOL_CALL"
+
+	// A tool/function result.
+	LLMContentBlockKindToolResult LLMContentBlockKind = "TOOL_RESULT"
+)
+
+// The role that generated a message.
+type LLMMessageRole string
+
+func (LLMMessageRole) IsEnum() {}
+
+func (v LLMMessageRole) Name() string {
+	switch v {
+	case LLMMessageRoleUser:
+		return "USER"
+	case LLMMessageRoleAssistant:
+		return "ASSISTANT"
+	case LLMMessageRoleSystem:
+		return "SYSTEM"
+	default:
+		return ""
+	}
+}
+
+func (v LLMMessageRole) Value() string {
+	return string(v)
+}
+
+func (v *LLMMessageRole) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *LLMMessageRole) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ASSISTANT":
+		*v = LLMMessageRoleAssistant
+	case "SYSTEM":
+		*v = LLMMessageRoleSystem
+	case "USER":
+		*v = LLMMessageRoleUser
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// A user prompt or tool response.
+	LLMMessageRoleUser LLMMessageRole = "USER"
+
+	// A reply from the model.
+	LLMMessageRoleAssistant LLMMessageRole = "ASSISTANT"
+
+	// A system prompt.
+	LLMMessageRoleSystem LLMMessageRole = "SYSTEM"
 )
 
 // Experimental features of a module

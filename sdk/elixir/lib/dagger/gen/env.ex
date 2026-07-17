@@ -931,6 +931,78 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type LLMContentBlock in the environment
+  """
+  @spec with_llm_content_block_input(t(), String.t(), Dagger.LLMContentBlock.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_llm_content_block_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withLLMContentBlockInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired LLMContentBlock output to be assigned in the environment
+  """
+  @spec with_llm_content_block_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_llm_content_block_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withLLMContentBlockOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type LLMMessage in the environment
+  """
+  @spec with_llm_message_input(t(), String.t(), Dagger.LLMMessage.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_llm_message_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withLLMMessageInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired LLMMessage output to be assigned in the environment
+  """
+  @spec with_llm_message_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_llm_message_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withLLMMessageOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Sets the main module for this environment (the project being worked on)
 
   Contextual path arguments will be populated using the environment's workspace.

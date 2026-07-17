@@ -473,20 +473,19 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Initialize a Large Language Model (LLM)
+  Initialize a new LLM conversation.
 
   > #### Experimental {: .warning}
   >
   > "LLM support is not yet stabilized"
   """
-  @spec llm(t(), [{:model, String.t() | nil}, {:max_api_calls, integer() | nil}]) ::
-          Dagger.LLM.t()
+  @spec llm(t(), [{:model, String.t() | nil}, {:provider, String.t() | nil}]) :: Dagger.LLM.t()
   def llm(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
       client.query_builder
       |> QB.select("llm")
       |> QB.maybe_put_arg("model", optional_args[:model])
-      |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
+      |> QB.maybe_put_arg("provider", optional_args[:provider])
 
     %Dagger.LLM{
       query_builder: query_builder,
