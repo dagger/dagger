@@ -93,6 +93,51 @@ func (s *workspaceSchema) module(
 	return modules[0], nil
 }
 
+type workspaceModuleSourceArgs struct {
+	Path string
+}
+
+// moduleSource loads a module source from a path within the workspace, applying
+// the standard workspace path rules (absolute from the workspace root, relative
+// from the workspace cwd). The whole workspace tree is materialized so the
+// module's dagger.json and dependency include paths resolve; asModuleSource then
+// scopes to sourceRootPath. Host reads route to the workspace owner via
+// workspaceOverlayRootfs, so this works both from the session that owns the
+// workspace and from a module that received the workspace as an argument.
+func (s *workspaceSchema) moduleSource(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceModuleSourceArgs,
+) (inst dagql.ObjectResult[*core.ModuleSource], _ error) {
+	ws := parent.Self()
+	resolvedPath, err := resolveWorkspacePath(args.Path, ws.Cwd)
+	if err != nil {
+		return inst, err
+	}
+
+	root, err := s.workspaceOverlayRootfs(ctx, ws)
+	if err != nil {
+		return inst, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	// asModuleSource errors if the resolved path holds no module config, so it
+	// doubles as the "path is not an initialized module" check.
+	if err := srv.Select(ctx, root, &inst, dagql.Selector{
+		Field: "asModuleSource",
+		Args: []dagql.NamedInput{
+			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(resolvedPath))},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)
+	}
+	return inst, nil
+}
+
 func (s *workspaceSchema) workspaceModule(
 	ctx context.Context,
 	parent *core.Workspace,

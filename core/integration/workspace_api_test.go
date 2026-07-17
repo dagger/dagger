@@ -744,6 +744,53 @@ source = "go"
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func (WorkspaceAPISuite) TestModuleSourceResolvesWorkspacePaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := c.Directory().
+		WithNewFile("dagger.toml", "\n").
+		WithNewFile("sub/dagger-module.toml", `name = "submod"
+engineVersion = "latest"
+`).
+		WithNewFile("nested/marker", "x")
+
+	t.Run("relative path resolves from the workspace root cwd", func(ctx context.Context, t *testctx.T) {
+		src := base.AsWorkspace().ModuleSource("sub")
+		exists, err := src.ConfigExists(ctx)
+		require.NoError(t, err)
+		require.True(t, exists)
+		name, err := src.ModuleOriginalName(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "submod", name)
+	})
+
+	t.Run("relative path resolves from a nested cwd", func(ctx context.Context, t *testctx.T) {
+		ws := base.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/nested"})
+		name, err := ws.ModuleSource("../sub").ModuleOriginalName(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "submod", name)
+	})
+
+	t.Run("absolute path resolves from the workspace root regardless of cwd", func(ctx context.Context, t *testctx.T) {
+		ws := base.AsWorkspace(dagger.DirectoryAsWorkspaceOpts{Cwd: "/nested"})
+		name, err := ws.ModuleSource("/sub").ModuleOriginalName(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "submod", name)
+	})
+
+	t.Run("path without a module errors", func(ctx context.Context, t *testctx.T) {
+		_, err := base.AsWorkspace().ModuleSource("nested").ModuleOriginalName(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "does not contain a dagger config file")
+	})
+
+	t.Run("path escaping the workspace root errors", func(ctx context.Context, t *testctx.T) {
+		_, err := base.AsWorkspace().ModuleSource("../../etc").ModuleOriginalName(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "escapes workspace root")
+	})
+}
+
 func (WorkspaceAPISuite) TestSyntheticWorkspaceGitModuleStagesConfigAndLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	workspaceID, err := c.Directory().AsWorkspace().ID(ctx)

@@ -6561,6 +6561,21 @@ type Workspace implements Node {
     name: String!
   ): WorkspaceModule!
 
+  """
+  Load a module source from a path within the workspace.
+
+  Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths
+  (e.g., "/foo") resolve from the workspace root.
+
+  Fails if the path does not point to an initialized module.
+  """
+  moduleSource(
+    """
+    Location of the module source to load, relative to the workspace cwd or absolute from the workspace root.
+    """
+    path: String!
+  ): ModuleSource!
+
   """List modules defined in the workspace configuration."""
   modules: [WorkspaceModule!]!
 

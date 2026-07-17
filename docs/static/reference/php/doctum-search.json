@@ -7052,6 +7052,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::moduleSource",
+			"p": "Dagger/Workspace.html#method_moduleSource",
+			"d": "<p>Load a module source from a path within the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::modules",
 			"p": "Dagger/Workspace.html#method_modules",
 			"d": "<p>List modules defined in the workspace configuration.</p>"

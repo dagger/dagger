@@ -16782,6 +16782,26 @@ class Workspace(Type):
         _ctx = self._select("module", _args)
         return WorkspaceModule(_ctx)
 
+    def module_source(self, path: str) -> ModuleSource:
+        """Load a module source from a path within the workspace.
+
+        Relative paths (e.g., "foo") resolve from the workspace cwd; absolute
+        paths (e.g., "/foo") resolve from the workspace root.
+
+        Fails if the path does not point to an initialized module.
+
+        Parameters
+        ----------
+        path:
+            Location of the module source to load, relative to the workspace
+            cwd or absolute from the workspace root.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("moduleSource", _args)
+        return ModuleSource(_ctx)
+
     async def modules(self) -> list["WorkspaceModule"]:
         """List modules defined in the workspace configuration."""
         _args: list[Arg] = []

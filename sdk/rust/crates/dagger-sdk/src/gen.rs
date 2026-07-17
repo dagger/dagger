@@ -17147,6 +17147,22 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a module source from a path within the workspace.
+    /// Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths (e.g., "/foo") resolve from the workspace root.
+    /// Fails if the path does not point to an initialized module.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the module source to load, relative to the workspace cwd or absolute from the workspace root.
+    pub fn module_source(&self, path: impl Into<String>) -> ModuleSource {
+        let mut query = self.selection.select("moduleSource");
+        query = query.arg("path", path.into());
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// List modules defined in the workspace configuration.
     pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
         let query = self.selection.select("modules");

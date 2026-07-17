@@ -16016,6 +16016,19 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Load a module source from a path within the workspace.
+   *
+   * Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths (e.g., "/foo") resolve from the workspace root.
+   *
+   * Fails if the path does not point to an initialized module.
+   * @param path Location of the module source to load, relative to the workspace cwd or absolute from the workspace root.
+   */
+  moduleSource = (path: string): ModuleSource => {
+    const ctx = this._ctx.select("moduleSource", { path })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * List modules defined in the workspace configuration.
    */
   modules = async (): Promise<WorkspaceModule[]> => {
