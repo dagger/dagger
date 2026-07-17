@@ -28,6 +28,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Agent",
+			"p": "Dagger/Agent.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\AgentGroup",
+			"p": "Dagger/AgentGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Attribute\\DaggerFunction",
 			"p": "Dagger/Attribute/DaggerFunction.html",
 			"d": null,
@@ -1148,6 +1168,16 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\LLMSkill",
+			"p": "Dagger/LLMSkill.html",
+			"d": "<p>A skill available to a model: task-specific guidance discovered with list_skills and read with read_skill.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\LLMTokenUsage",
 			"p": "Dagger/LLMTokenUsage.html",
 			"d": "<p>A count of tokens consumed by LLM API calls.</p>",
@@ -1934,6 +1964,54 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Agent::description",
+			"p": "Dagger/Agent.html#method_description",
+			"d": "<p>The description of the agent</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::id",
+			"p": "Dagger/Agent.html#method_id",
+			"d": "<p>A unique identifier for this Agent.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::name",
+			"p": "Dagger/Agent.html#method_name",
+			"d": "<p>Return the fully qualified name of the agent</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::originalModule",
+			"p": "Dagger/Agent.html#method_originalModule",
+			"d": "<p>The original module in which the agent has been defined</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Agent::path",
+			"p": "Dagger/Agent.html#method_path",
+			"d": "<p>The path of the agent within its module</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentGroup::compose",
+			"p": "Dagger/AgentGroup.html#method_compose",
+			"d": "<p>Compose all selected agent middlewares onto a base LLM, in alphabetical module:fn order, and return the composed LLM.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentGroup::id",
+			"p": "Dagger/AgentGroup.html#method_id",
+			"d": "<p>A unique identifier for this AgentGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\AgentGroup::list",
+			"p": "Dagger/AgentGroup.html#method_list",
+			"d": "<p>Return a list of individual agents and their details</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Attribute\\DefaultPath::__construct",
 			"p": "Dagger/Attribute/DefaultPath.html#method___construct",
 			"d": null
@@ -2516,12 +2594,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::currentEnv",
-			"p": "Dagger/Client.html#method_currentEnv",
-			"d": "<p>Returns the current environment</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Client::currentFunctionCall",
 			"p": "Dagger/Client.html#method_currentFunctionCall",
 			"d": "<p>The FunctionCall context that the SDK caller is currently executing in.</p>"
@@ -2531,6 +2603,12 @@
 			"n": "Dagger\\Client::currentModule",
 			"p": "Dagger/Client.html#method_currentModule",
 			"d": "<p>The module currently being served in the session, if any.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentNode",
+			"p": "Dagger/Client.html#method_currentNode",
+			"d": "<p>The object that received the current module function call, as a Node. Errors when there is no current call, or the call is top-level (e.g. a module constructor).</p>"
 		},
 		{
 			"t": "M",
@@ -2561,12 +2639,6 @@
 			"n": "Dagger\\Client::engine",
 			"p": "Dagger/Client.html#method_engine",
 			"d": "<p>The Dagger engine container configuration and state</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Client::env",
-			"p": "Dagger/Client.html#method_env",
-			"d": "<p>Initializes a new environment</p>"
 		},
 		{
 			"t": "M",
@@ -4976,6 +5048,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withAgent",
+			"p": "Dagger/Function_.html#method_withAgent",
+			"d": "<p>Returns the function with a flag indicating it is an agent middleware.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withArg",
 			"p": "Dagger/Function_.html#method_withArg",
 			"d": "<p>Returns the function with the provided argument</p>"
@@ -5492,21 +5570,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::bindResult",
-			"p": "Dagger/LLM.html#method_bindResult",
-			"d": "<p>returns the type of the current state</p>"
+			"n": "Dagger\\LLM::contextTokens",
+			"p": "Dagger/LLM.html#method_contextTokens",
+			"d": "<p>estimated number of tokens currently occupying the context window; unlike tokenUsage this is not cumulative over the session</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\LLM::contextWindow",
 			"p": "Dagger/LLM.html#method_contextWindow",
 			"d": "<p>The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\LLM::env",
-			"p": "Dagger/LLM.html#method_env",
-			"d": "<p>return the LLM's current environment</p>"
 		},
 		{
 			"t": "M",
@@ -5570,6 +5642,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::skills",
+			"p": "Dagger/LLM.html#method_skills",
+			"d": "<p>The skills visible to the model, exactly as the list_skills tool serves them: engine-embedded skills, skills installed with withSkills, and skills discovered in the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::step",
 			"p": "Dagger/LLM.html#method_step",
 			"d": "<p>Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.</p>"
@@ -5600,18 +5678,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::withBlockedFunction",
-			"p": "Dagger/LLM.html#method_withBlockedFunction",
-			"d": "<p>Return a new LLM with the specified function no longer exposed as a tool</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\LLM::withEnv",
-			"p": "Dagger/LLM.html#method_withEnv",
-			"d": "<p>allow the LLM to interact with an environment via MCP</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\LLM::withMCPServer",
 			"p": "Dagger/LLM.html#method_withMCPServer",
 			"d": "<p>Add an external MCP server to the LLM</p>"
@@ -5621,12 +5687,6 @@
 			"n": "Dagger\\LLM::withModel",
 			"p": "Dagger/LLM.html#method_withModel",
 			"d": "<p>Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\LLM::withObject",
-			"p": "Dagger/LLM.html#method_withObject",
-			"d": "<p>Track an object so the LLM can reference it in subsequent tool calls.</p>"
 		},
 		{
 			"t": "M",
@@ -5654,9 +5714,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::withStaticTools",
-			"p": "Dagger/LLM.html#method_withStaticTools",
-			"d": "<p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p>"
+			"n": "Dagger\\LLM::withSkills",
+			"p": "Dagger/LLM.html#method_withSkills",
+			"d": "<p>Install skills from a directory, adding them to the skills the model discovers with list_skills and reads with read_skill. Each skill is a directory containing a SKILL.md with name and description frontmatter, discovered anywhere in the tree. Installed skills take precedence over skills discovered in the workspace, but cannot shadow the engine's built-in skills.</p>"
 		},
 		{
 			"t": "M",
@@ -5669,6 +5729,18 @@
 			"n": "Dagger\\LLM::withToolResult",
 			"p": "Dagger/LLM.html#method_withToolResult",
 			"d": "<p>Append the result of a tool call to the message history.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withTools",
+			"p": "Dagger/LLM.html#method_withTools",
+			"d": "<p>Expose an object's methods as tools. Every eligible method of the bound object becomes a tool; a tool that returns this object's own type replaces it as the new state. Repeatable to bind several objects.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withWorkspace",
+			"p": "Dagger/LLM.html#method_withWorkspace",
+			"d": "<p>Bind the LLM to a workspace, exposing its modules as tools exactly as the Dagger CLI would serve them for that workspace.</p>"
 		},
 		{
 			"t": "M",
@@ -5687,6 +5759,12 @@
 			"n": "Dagger\\LLM::withoutSystemPrompts",
 			"p": "Dagger/LLM.html#method_withoutSystemPrompts",
 			"d": "<p>Clear the user-added system prompts, keeping only the default system prompt.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::workspace",
+			"p": "Dagger/LLM.html#method_workspace",
+			"d": "<p>Return the workspace the LLM is bound to.</p>"
 		},
 		{
 			"t": "M",
@@ -5765,6 +5843,24 @@
 			"n": "Dagger\\LLMMessage::tokenUsage",
 			"p": "Dagger/LLMMessage.html#method_tokenUsage",
 			"d": "<p>Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMSkill::description",
+			"p": "Dagger/LLMSkill.html#method_description",
+			"d": "<p>The one-line description from the SKILL.md frontmatter.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMSkill::id",
+			"p": "Dagger/LLMSkill.html#method_id",
+			"d": "<p>A unique identifier for this LLMSkill.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLMSkill::name",
+			"p": "Dagger/LLMSkill.html#method_name",
+			"d": "<p>The skill name, as passed to read_skill.</p>"
 		},
 		{
 			"t": "M",
@@ -6959,6 +7055,12 @@
 			"n": "Dagger\\Workspace::address",
 			"p": "Dagger/Workspace.html#method_address",
 			"d": "<p>Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::agents",
+			"p": "Dagger/Workspace.html#method_agents",
+			"d": "<p>Return all agent middlewares from modules loaded in the workspace.</p>"
 		},
 		{
 			"t": "M",
