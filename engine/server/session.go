@@ -1977,14 +1977,28 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		}
 	}
 
-	// Flush telemetry across the entire session so that any child clients will
-	// save telemetry into their parent's DB, including to this client.
-	err := drainPhase("flush session telemetry", func() error {
-		return sess.FlushTelemetry(ctx, "client shutdown")
-	})
-	if err != nil {
-		slog.Error("failed to flush telemetry", "error", err)
-		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush session telemetry: %w", err))
+	// Flush telemetry so nested spans land in the DBs the CLI drains. A client's
+	// own providers already export its spans to its own DB *and every ancestor
+	// DB*, so a nested client only needs to flush itself; re-flushing every
+	// sibling on each nested shutdown is redundant and, under a parallel
+	// teardown storm, self-inflicts an O(n^2) burst of concurrent whole-session
+	// flushes that convoy on the per-DB single connection and blow the client's
+	// shutdown budget. The main client (which shuts down last and whose DB the
+	// CLI ultimately drains) still does a session-wide flush to sweep up any
+	// stragglers from clients that hadn't shut down yet.
+	var flushErr error
+	if client.clientID == sess.mainClientCallerID {
+		flushErr = drainPhase("flush session telemetry", func() error {
+			return sess.FlushTelemetry(ctx, "main client shutdown")
+		})
+	} else {
+		flushErr = drainPhase("flush client telemetry", func() error {
+			return client.FlushTelemetry(ctx)
+		})
+	}
+	if flushErr != nil {
+		slog.Error("failed to flush telemetry", "error", flushErr)
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
 	}
 
 	client.closeShutdownOnce.Do(func() {
