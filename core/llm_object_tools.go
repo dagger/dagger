@@ -30,12 +30,35 @@ const llmToolLogsMaxLines = 100
 // from the generated tool schema.
 const workspaceTypeName = "Workspace"
 
-// boundTool is one object bound into the LLM's toolset via withTools. Its Object
-// is the receiver every generated tool selects its method on; Except lists the
-// method names to omit (e.g. the module's own entrypoint/constructor).
+// boundTool is one object bound into the LLM's toolset via withTools. It carries
+// enough to build the toolset (the object's type, via objType) and to dispatch a
+// tool call (the object itself, as the receiver). The object may be held lazily
+// as an unevaluated ID: a binding restored from a persisted session references
+// an object whose construction might have side effects or might no longer be
+// reproducible, so it is only loaded when a tool is actually invoked on it. See
+// the StructuralOnly argument on LLM.withTools.
 type boundTool struct {
-	Object dagql.AnyObjectResult
-	Except []string
+	// object is the loaded receiver. It is nil for a lazy binding until the
+	// first dispatch loads it (see MCP.loadBoundTool).
+	object dagql.AnyObjectResult
+	// id is the recipe ID of the bound object, used to load it lazily. Always
+	// set (both for eager and lazy bindings) so the binding can be re-emitted.
+	id *call.ID
+	// objType is the bound object's GraphQL type, known without loading, so the
+	// toolset can be built from a lazy binding.
+	objType dagql.ObjectType
+	Except  []string
+}
+
+// typeName returns the bound object's type name without forcing a load.
+func (b boundTool) typeName() string {
+	if b.object != nil {
+		return b.object.Type().Name()
+	}
+	if b.objType != nil {
+		return b.objType.TypeName()
+	}
+	return ""
 }
 
 // WithTools binds obj's methods as tools, carrying except. At most one binding
@@ -46,28 +69,89 @@ type boundTool struct {
 func (m *MCP) WithTools(obj dagql.AnyObjectResult, except []string) *MCP {
 	m = m.Clone()
 	typeName := obj.Type().Name()
+	id, _ := obj.ID()
+	binding := boundTool{object: obj, id: id, objType: obj.ObjectType(), Except: except}
 	for i, b := range m.boundTools {
-		if b.Object.Type().Name() == typeName {
-			m.boundTools[i] = boundTool{Object: obj, Except: except}
+		if b.typeName() == typeName {
+			m.boundTools[i] = binding
 			return m
 		}
 	}
-	m.boundTools = append(m.boundTools, boundTool{Object: obj, Except: except})
+	m.boundTools = append(m.boundTools, binding)
 	return m
 }
 
-// boundToolObject returns the current bound object for a type, read under the
-// lock so a state update from an earlier call in the same batch is visible to a
-// later call's receiver.
-func (m *MCP) boundToolObject(typeName string) (dagql.AnyObjectResult, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, b := range m.boundTools {
-		if b.Object.Type().Name() == typeName {
-			return b.Object, true
+// WithLazyTools binds an object's methods as tools from its unevaluated ID,
+// without loading it. Used when restoring a persisted session: the referenced
+// object is only loaded if and when a tool is actually invoked on it (see
+// MCP.boundToolObject), so restoring the conversation never re-runs the call
+// that produced the object. objType is the object's GraphQL type, resolved from
+// the ID's return type, so the toolset can still be built.
+func (m *MCP) WithLazyTools(id *call.ID, objType dagql.ObjectType, except []string) *MCP {
+	m = m.Clone()
+	typeName := objType.TypeName()
+	binding := boundTool{id: id, objType: objType, Except: except}
+	for i, b := range m.boundTools {
+		if b.typeName() == typeName {
+			m.boundTools[i] = binding
+			return m
 		}
 	}
-	return nil, false
+	m.boundTools = append(m.boundTools, binding)
+	return m
+}
+
+// boundToolObject returns the current bound object for a type, loading it lazily
+// if the binding was restored from an unevaluated ID. Loading (and any side
+// effects or failures it entails) is deferred to here, the first time a tool is
+// actually invoked on the binding.
+func (m *MCP) boundToolObject(ctx context.Context, srv *dagql.Server, typeName string) (dagql.AnyObjectResult, bool, error) {
+	// Look up the binding under the lock so a state update from an earlier call
+	// in the same batch is visible. If it needs loading, release the lock first:
+	// srv.Load can be slow and may re-enter MCP, so it must not run under m.mu.
+	m.mu.Lock()
+	var toLoad *call.ID
+	for _, b := range m.boundTools {
+		if b.typeName() != typeName {
+			continue
+		}
+		if b.object != nil {
+			obj := b.object
+			m.mu.Unlock()
+			return obj, true, nil
+		}
+		if b.id == nil {
+			m.mu.Unlock()
+			return nil, false, fmt.Errorf("bound object of type %q has neither a loaded value nor an ID", typeName)
+		}
+		toLoad = b.id
+		break
+	}
+	m.mu.Unlock()
+	if toLoad == nil {
+		return nil, false, nil
+	}
+
+	obj, err := srv.Load(ctx, toLoad)
+	if err != nil {
+		return nil, true, fmt.Errorf("load bound object of type %q: %w", typeName, err)
+	}
+
+	// Store the loaded object back, unless another caller already did (or the
+	// binding was rebound in the meantime — then keep the newer value).
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, b := range m.boundTools {
+		if b.typeName() != typeName {
+			continue
+		}
+		if b.object != nil {
+			return b.object, true, nil
+		}
+		m.boundTools[i].object = obj
+		return obj, true, nil
+	}
+	return obj, true, nil
 }
 
 // rebindBoundTool replaces the object for typeName's binding with newObj — the
@@ -77,8 +161,11 @@ func (m *MCP) rebindBoundTool(typeName string, newObj dagql.AnyObjectResult) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i, b := range m.boundTools {
-		if b.Object.Type().Name() == typeName {
-			m.boundTools[i].Object = newObj
+		if b.typeName() == typeName {
+			id, _ := newObj.ID()
+			m.boundTools[i].object = newObj
+			m.boundTools[i].id = id
+			m.boundTools[i].objType = newObj.ObjectType()
 			return
 		}
 	}
@@ -93,15 +180,21 @@ type boundToolBinding struct {
 
 // BoundToolBindings snapshots the current bindings' IDs and except lists so
 // step() can detect a state transition (an object rebind) and persist it, the
-// same way it persists a workspace overlay via withWorkspace.
+// same way it persists a workspace overlay via withWorkspace. Uses each
+// binding's recorded ID directly (without loading a lazy binding), so snapshotting
+// a restored session never forces evaluation.
 func (m *MCP) BoundToolBindings() ([]boundToolBinding, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]boundToolBinding, 0, len(m.boundTools))
 	for _, b := range m.boundTools {
-		id, err := b.Object.ID()
-		if err != nil {
-			return nil, err
+		id := b.id
+		if id == nil && b.object != nil {
+			var err error
+			id, err = b.object.ID()
+			if err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, boundToolBinding{ID: id, Except: slices.Clone(b.Except)})
 	}
@@ -226,7 +319,7 @@ func (m *MCP) ToolNameCollisions(ctx context.Context) (map[string][]string, erro
 		if err != nil {
 			return nil, err
 		}
-		typeName := b.Object.Type().Name()
+		typeName := b.typeName()
 		for _, t := range tools {
 			contributors[t.Name] = append(contributors[t.Name], typeName)
 		}
@@ -244,7 +337,7 @@ func (m *MCP) ToolNameCollisions(ctx context.Context) (map[string][]string, erro
 // toolsForBoundObject generates the tools for a single bound object: one per
 // eligible field of its schema type.
 func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b boundTool) ([]LLMTool, error) {
-	typeName := b.Object.Type().Name()
+	typeName := b.typeName()
 	def := schema.Types[typeName]
 	if def == nil || (def.Kind != ast.Object && def.Kind != ast.Interface) {
 		return nil, fmt.Errorf("bound object type %q is not an object in the workspace schema", typeName)
@@ -449,7 +542,10 @@ func (m *MCP) callObjectMethod(srv *dagql.Server, typeName string, field *ast.Fi
 		if !ok {
 			return nil, fmt.Errorf("invalid arguments type: %T", rawArgs)
 		}
-		recv, ok := m.boundToolObject(typeName)
+		recv, ok, err := m.boundToolObject(ctx, srv, typeName)
+		if err != nil {
+			return nil, err
+		}
 		if !ok {
 			return nil, fmt.Errorf("no object of type %q is bound", typeName)
 		}

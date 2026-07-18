@@ -123,7 +123,14 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				// any object where this ID! is wanted, since every object implements
 				// the universal Node interface; the value is conveyed as its id.
 				dagql.Arg("object").Doc("The object whose methods become tools.").
-					Directive(dagql.ExpectedTypeDirective("Node")),
+					Directive(dagql.ExpectedTypeDirective("Node")).
+					// The bound object's value is not needed to reconstruct the
+					// conversation on replay — only its type, to expose its methods
+					// as tools — so carry it by reference and load it lazily. This
+					// keeps restoring a persisted session from re-running the call
+					// that produced the object (which may have side effects or may
+					// no longer be reproducible).
+					StructuralOnly(),
 				dagql.Arg("except").Doc("Method names to exclude from the toolset (e.g. constructors, entrypoints)."),
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
@@ -342,6 +349,17 @@ func (s *llmSchema) withTools(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
+	// Resolve the bound object's type from its ID without evaluating it, so the
+	// toolset can be built lazily. The object itself is loaded only when a tool
+	// is actually invoked on it (see MCP.boundToolObject). This is what lets a
+	// persisted session restore a binding whose object has side effects or is no
+	// longer reproducible without re-running its construction.
+	if id.Type() != nil {
+		if objType, ok := srv.ObjectType(id.Type().NamedType()); ok {
+			return llm.WithLazyTools(id, objType, args.Except), nil
+		}
+	}
+	// Fall back to eager loading if the type isn't resolvable structurally.
 	obj, err := srv.Load(ctx, id)
 	if err != nil {
 		return nil, err

@@ -1113,10 +1113,12 @@ func (llm *LLM) AttachDependencyResults(
 		deps = append(deps, attached)
 	}
 	for i, bound := range llm.mcp.boundTools {
-		if bound.Object == nil {
+		if bound.object == nil {
+			// A lazy binding (restored from a persisted session) has no loaded
+			// object to attach; it is loaded on first dispatch instead.
 			continue
 		}
-		attached, err := attach(bound.Object)
+		attached, err := attach(bound.object)
 		if err != nil {
 			return nil, fmt.Errorf("attach llm bound tool object: %w", err)
 		}
@@ -1124,7 +1126,7 @@ func (llm *LLM) AttachDependencyResults(
 		if !ok {
 			return nil, fmt.Errorf("attach llm bound tool object: unexpected result %T", attached)
 		}
-		llm.mcp.boundTools[i].Object = obj
+		llm.mcp.boundTools[i].object = obj
 		deps = append(deps, attached)
 	}
 	for i, skillDir := range llm.mcp.skillDirs {
@@ -1329,6 +1331,15 @@ func (llm *LLM) WithToolResult(callID, content string, errored bool) *LLM {
 func (llm *LLM) WithTools(obj dagql.AnyObjectResult, except []string) *LLM {
 	llm = llm.Clone()
 	llm.mcp = llm.mcp.WithTools(obj, except)
+	return llm
+}
+
+// WithLazyTools binds an object's methods as tools from its unevaluated ID,
+// without loading it — the object is loaded only when a tool is invoked on it.
+// See MCP.WithLazyTools.
+func (llm *LLM) WithLazyTools(id *call.ID, objType dagql.ObjectType, except []string) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithLazyTools(id, objType, except)
 	return llm
 }
 
