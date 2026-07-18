@@ -461,16 +461,6 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		if h.initialPrompt == "" {
 			h.initialPrompt = line
 		}
-		// Auto-save the session after each step, updating the same file
-		// in-place so a conversation maps to a single session file.
-		llm.onStep = func(s *LLMSession) {
-			savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
-			if err != nil {
-				slog.Warn("failed to auto-save session", "error", err)
-				return
-			}
-			h.sessionUUID = savedUUID
-		}
 		newLLM, err := llm.WithPrompt(ctx, line)
 		if err != nil {
 			return err
@@ -644,6 +634,18 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	}
 	h.llmSession = s
 	h.llmModel = s.model
+	// Auto-save the session after each step (and after ctrl+s exports/resets the
+	// workspace), updating the same file in-place so a conversation maps to a
+	// single session file. Set here at init so it is available even before the
+	// first prompt (e.g. ctrl+s on a freshly loaded session).
+	s.onStep = func(s *LLMSession) {
+		savedUUID, err := s.AutoSaveSession(ctx, h.initialPrompt, h.sessionUUID)
+		if err != nil {
+			slog.Warn("failed to auto-save session", "error", err)
+			return
+		}
+		h.sessionUUID = savedUUID
+	}
 	return h.llmSession, h.llmErr
 }
 

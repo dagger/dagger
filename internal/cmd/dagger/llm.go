@@ -439,6 +439,15 @@ func (s *LLMSession) ExportChanges(ctx context.Context) error {
 	if err := s.updateLLM(reset); err != nil {
 		return err
 	}
+	// Persist the reset (overlay-free) session to disk now. Otherwise the
+	// on-disk session still holds the pre-reset recipe with its overlays, and a
+	// later resume replays them against files that already carry the same
+	// exported changes — producing conflict markers. The auto-save otherwise
+	// only fires on the next step, which may never happen (e.g. the user exports
+	// and exits).
+	if s.onStep != nil {
+		s.onStep(s)
+	}
 	return s.updateChangesPreview(s.llm)
 }
 
