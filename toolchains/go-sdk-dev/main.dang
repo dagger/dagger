@@ -36,6 +36,17 @@ type GoSdkDev {
   }
 
   """
+  Regenerate the Go SDK API
+  """
+  pub generate: Changeset! @generate {
+    devContainer
+      .withExec(["go", "generate", "-v", "./..."])
+      .withExec(["go", "mod", "tidy"])
+      .directory("../..") # pop back to repo root
+      .changes(workspaceDir)
+  }
+
+  """
   Check that releasing works, without actually releasing
   """
   pub releaseDryRun(
