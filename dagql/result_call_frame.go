@@ -76,12 +76,27 @@ type ResultCallModule struct {
 	Pin       string         `json:"pin,omitempty"`
 }
 
+// resultCallCloneMemo makes clone() DAG-preserving. Frames are stored as shared
+// DAGs (see recipeCallMemo), so a naive deep clone re-expands the shared sub-DAG
+// into a tree — one clone of a large shared frame exploded to ~3.3e8 objects and
+// ~28GB in a runaway. Keyed by the source *ResultCall (the only shared join
+// point; the Arg/Literal/Ref wrappers above each ResultCall are not themselves
+// shared), so each distinct source frame is cloned once and reused. The copy is
+// still fully independent of the original (distinct nodes); only sharing *within*
+// one clone is preserved, which is safe because frames are frozen provenance
+// (never mutated in place below the top-level spine).
+type resultCallCloneMemo = map[*ResultCall]*ResultCall
+
 func (mod *ResultCallModule) clone() *ResultCallModule {
+	return mod.cloneWith(resultCallCloneMemo{})
+}
+
+func (mod *ResultCallModule) cloneWith(memo resultCallCloneMemo) *ResultCallModule {
 	if mod == nil {
 		return nil
 	}
 	return &ResultCallModule{
-		ResultRef: mod.ResultRef.clone(),
+		ResultRef: mod.ResultRef.cloneWith(memo),
 		Name:      mod.Name,
 		Ref:       mod.Ref,
 		Pin:       mod.Pin,
@@ -94,14 +109,14 @@ type ResultCallArg struct {
 	Value       *ResultCallLiteral `json:"value,omitempty"`
 }
 
-func (arg *ResultCallArg) clone() *ResultCallArg {
+func (arg *ResultCallArg) cloneWith(memo resultCallCloneMemo) *ResultCallArg {
 	if arg == nil {
 		return nil
 	}
 	return &ResultCallArg{
 		Name:        arg.Name,
 		IsSensitive: arg.IsSensitive,
-		Value:       arg.Value.clone(),
+		Value:       arg.Value.cloneWith(memo),
 	}
 }
 
@@ -137,7 +152,7 @@ type ResultCallLiteral struct {
 	ObjectFields []*ResultCallArg     `json:"objectFields,omitempty"`
 }
 
-func (lit *ResultCallLiteral) clone() *ResultCallLiteral {
+func (lit *ResultCallLiteral) cloneWith(memo resultCallCloneMemo) *ResultCallLiteral {
 	if lit == nil {
 		return nil
 	}
@@ -150,18 +165,18 @@ func (lit *ResultCallLiteral) clone() *ResultCallLiteral {
 		EnumValue:            lit.EnumValue,
 		DigestedStringValue:  lit.DigestedStringValue,
 		DigestedStringDigest: lit.DigestedStringDigest,
-		ResultRef:            lit.ResultRef.clone(),
+		ResultRef:            lit.ResultRef.cloneWith(memo),
 	}
 	if len(lit.ListItems) > 0 {
 		cp.ListItems = make([]*ResultCallLiteral, 0, len(lit.ListItems))
 		for _, item := range lit.ListItems {
-			cp.ListItems = append(cp.ListItems, item.clone())
+			cp.ListItems = append(cp.ListItems, item.cloneWith(memo))
 		}
 	}
 	if len(lit.ObjectFields) > 0 {
 		cp.ObjectFields = make([]*ResultCallArg, 0, len(lit.ObjectFields))
 		for _, field := range lit.ObjectFields {
-			cp.ObjectFields = append(cp.ObjectFields, field.clone())
+			cp.ObjectFields = append(cp.ObjectFields, field.cloneWith(memo))
 		}
 	}
 	return cp
@@ -222,8 +237,15 @@ type ResultCallStructuralInputRef struct {
 }
 
 func (frame *ResultCall) clone() *ResultCall {
+	return frame.cloneWith(resultCallCloneMemo{})
+}
+
+func (frame *ResultCall) cloneWith(memo resultCallCloneMemo) *ResultCall {
 	if frame == nil {
 		return nil
+	}
+	if cp := memo[frame]; cp != nil {
+		return cp
 	}
 	cp := &ResultCall{
 		Kind:         frame.Kind,
@@ -234,20 +256,23 @@ func (frame *ResultCall) clone() *ResultCall {
 		Nth:          frame.Nth,
 		EffectIDs:    slices.Clone(frame.EffectIDs),
 		ExtraDigests: slices.Clone(frame.ExtraDigests),
-		Receiver:     frame.Receiver.clone(),
-		Module:       frame.Module.clone(),
 		ProfileSkip:  frame.ProfileSkip,
 	}
+	// Register before recursing so a shared (or, defensively, cyclic) sub-DAG
+	// resolves to this same clone instead of being re-expanded into a tree.
+	memo[frame] = cp
+	cp.Receiver = frame.Receiver.cloneWith(memo)
+	cp.Module = frame.Module.cloneWith(memo)
 	if len(frame.Args) > 0 {
 		cp.Args = make([]*ResultCallArg, 0, len(frame.Args))
 		for _, arg := range frame.Args {
-			cp.Args = append(cp.Args, arg.clone())
+			cp.Args = append(cp.Args, arg.cloneWith(memo))
 		}
 	}
 	if len(frame.ImplicitInputs) > 0 {
 		cp.ImplicitInputs = make([]*ResultCallArg, 0, len(frame.ImplicitInputs))
 		for _, arg := range frame.ImplicitInputs {
-			cp.ImplicitInputs = append(cp.ImplicitInputs, arg.clone())
+			cp.ImplicitInputs = append(cp.ImplicitInputs, arg.cloneWith(memo))
 		}
 	}
 	return cp
@@ -994,13 +1019,13 @@ func (ref ResultCallStructuralInputRef) inputDigest(c *Cache) (digest.Digest, er
 	}
 }
 
-func (ref *ResultCallRef) clone() *ResultCallRef {
+func (ref *ResultCallRef) cloneWith(memo resultCallCloneMemo) *ResultCallRef {
 	if ref == nil {
 		return nil
 	}
 	return &ResultCallRef{
 		ResultID: ref.ResultID,
-		Call:     ref.Call.clone(),
+		Call:     ref.Call.cloneWith(memo),
 		shared:   ref.shared,
 	}
 }
