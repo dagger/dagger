@@ -1794,7 +1794,7 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 	if id, idErr := self.ID(); idErr == nil && !id.IsHandle() {
 		selfDigest = id.Digest().String()
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
 		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
@@ -1915,9 +1915,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	if callDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.LLMCallDigestAttr, callDigest))
 	}
-	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
-		telemetry.Reveal(),
-		trace.WithAttributes(attrs...))
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", trace.WithAttributes(attrs...))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
@@ -1990,9 +1988,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 			if g.kind == LLMContentToolCall {
 				startCtx = toolAnchorCtx
 			}
-			spanCtx, span := Tracer(startCtx).Start(startCtx, name,
-				telemetry.Reveal(),
-				trace.WithAttributes(attrs...))
+			spanCtx, span := Tracer(startCtx).Start(startCtx, name, trace.WithAttributes(attrs...))
 			if g.kind != LLMContentToolCall {
 				toolAnchorCtx = spanCtx
 			}
