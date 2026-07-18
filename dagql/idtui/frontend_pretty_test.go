@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
@@ -1136,5 +1138,179 @@ func TestDoQuitInvalidatesCachedRender(t *testing.T) {
 
 	if after := fe.tui.RenderLines(); len(after) != 0 {
 		t.Fatalf("render after quit = %q, want no live rows", strings.Join(after, "\n"))
+	}
+}
+
+// stubShellHandler is a no-op ShellHandler used to put the frontend into shell
+// (flowing) mode for rendering tests, without standing up the real shell.
+type stubShellHandler struct{}
+
+func (stubShellHandler) Handle(context.Context, string) error { return nil }
+func (stubShellHandler) AutoComplete(string, int) tuist.CompletionResult {
+	return tuist.CompletionResult{}
+}
+func (stubShellHandler) IsComplete(string) bool { return true }
+func (stubShellHandler) Prompt(context.Context, TermOutput, termenv.Color) (string, func()) {
+	return "⋈ ", nil
+}
+func (stubShellHandler) KeyBindings(TermOutput) []key.Binding { return nil }
+func (stubShellHandler) ReactToInput(context.Context, uv.KeyPressEvent, string, bool) func() {
+	return nil
+}
+func (stubShellHandler) EncodeHistory(entry string) string { return entry }
+func (stubShellHandler) DecodeHistory(entry string) string { return entry }
+func (stubShellHandler) SaveBeforeHistory()                {}
+func (stubShellHandler) RestoreAfterHistory()              {}
+func (stubShellHandler) BranchFromID(context.Context, string, BranchSummary) func() {
+	return nil
+}
+
+// TestFlowingModeDoesNotCropOverflowingTree is the regression guard for the
+// shell/prompt REPL behaviour: when the rendered tree is taller than the
+// terminal, the flowing (shell) renderer must NOT crop it to the viewport. It
+// returns every line so tuist pushes the overflow into the terminal's native
+// scrollback and the newest rows stay onscreen -- unlike the non-shell
+// renderer, which clips to the viewport so the frame never exceeds the terminal
+// height, dropping the rows furthest from the focus.
+func TestFlowingModeDoesNotCropOverflowingTree(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	const rows = 16
+	const steps = 50
+
+	mkFrontend := func(shell bool) *frontendPretty {
+		db := dagui.NewDB()
+		rootID := prettyTestSpanID(1)
+		start := time.Unix(100, 0)
+		snapshots := []dagui.SpanSnapshot{
+			{
+				ID:        rootID,
+				TraceID:   prettyTestTraceID(),
+				Name:      "root call",
+				StartTime: start,
+				EndTime:   start.Add(time.Duration(steps+2) * time.Second),
+				Final:     true,
+			},
+		}
+		// Enough sibling rows to overflow the terminal several times over.
+		for i := range steps {
+			snapshots = append(snapshots, dagui.SpanSnapshot{
+				ID:        prettyTestSpanID(byte(2 + i)),
+				TraceID:   prettyTestTraceID(),
+				Name:      fmt.Sprintf("step %02d", i),
+				StartTime: start.Add(time.Duration(i+1) * time.Second),
+				EndTime:   start.Add(time.Duration(i+2) * time.Second),
+				ParentID:  rootID,
+				Final:     true,
+			})
+		}
+		db.ImportSnapshots(snapshots)
+		db.SetPrimarySpan(rootID)
+
+		term := tuist.NewHeadlessTerminal(120, rows)
+		fe := newWithTerminal(io.Discard, db, term)
+		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+		fe.FrontendOpts.GCThreshold = time.Hour
+		// Keep the root expanded: in shell mode a completed depth-0 span otherwise
+		// rolls up to a summary, so the tree wouldn't overflow the viewport.
+		fe.FrontendOpts.SpanExpanded = map[dagui.SpanID]bool{rootID: true}
+		// Focus an early row so the non-shell crop window sits near the top and
+		// the final steps fall below the fold (and so get cropped).
+		fe.FocusedSpan = prettyTestSpanID(2)
+		if shell {
+			fe.shell = stubShellHandler{}
+		}
+
+		fe.recalculateViewLocked()
+		return fe
+	}
+
+	// The non-shell view keeps the newest rows onscreen, so it crops from the
+	// top: the first step is the row that falls off.
+	firstStep := fmt.Sprintf("step %02d", 0)
+	lastStep := fmt.Sprintf("step %02d", steps-1)
+
+	// Non-shell: the tree is clipped to the viewport, so the frame never exceeds
+	// the terminal height and the oldest rows (the first steps) are dropped.
+	feClip := mkFrontend(false)
+	if feClip.flowingMode() {
+		t.Fatal("non-shell frontend should not be in flowing mode")
+	}
+	clipLines := feClip.tui.Frame()
+	clip := strings.Join(clipLines, "\n")
+	if len(clipLines) > rows {
+		t.Fatalf("non-shell frame = %d lines, want <= %d (viewport-clipped)", len(clipLines), rows)
+	}
+	if strings.Contains(clip, firstStep) {
+		t.Fatalf("non-shell frame unexpectedly kept cropped row %q:\n%s", firstStep, clip)
+	}
+
+	// Shell (flowing): the tree is not cropped -- the frame runs taller than the
+	// terminal, and every row (including the first, which non-shell dropped) is
+	// present so tuist can flow the overflow into scrollback while the newest
+	// rows stay onscreen.
+	feFlow := mkFrontend(true)
+	if !feFlow.flowingMode() {
+		t.Fatal("shell frontend should be in flowing mode")
+	}
+	flowLines := feFlow.tui.Frame()
+	flow := strings.Join(flowLines, "\n")
+	if len(flowLines) <= rows {
+		t.Fatalf("flowing frame = %d lines, want > %d (uncropped, overflowing into scrollback)", len(flowLines), rows)
+	}
+	if !strings.Contains(flow, firstStep) {
+		t.Fatalf("flowing frame dropped row %q:\n%s", firstStep, flow)
+	}
+	if !strings.Contains(flow, lastStep) {
+		t.Fatalf("flowing frame dropped row %q:\n%s", lastStep, flow)
+	}
+}
+
+// TestFlowingModeScopedToLiveUnzoomedShell verifies flowingMode is only active
+// for live, un-zoomed shell rendering -- the final report and an explicitly
+// zoomed span keep the viewport-clipped behaviour that's correct for those
+// focused views.
+func TestFlowingModeScopedToLiveUnzoomedShell(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	childID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: rootID, TraceID: prettyTestTraceID(), Name: "root call",
+			StartTime: start, EndTime: start.Add(2 * time.Second), Final: true,
+		},
+		{
+			ID: childID, TraceID: prettyTestTraceID(), Name: "child op",
+			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second),
+			ParentID: rootID, Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.shell = stubShellHandler{}
+	fe.recalculateViewLocked()
+
+	if !fe.flowingMode() {
+		t.Fatal("live un-zoomed shell should be in flowing mode")
+	}
+
+	// The final report keeps the clipped behaviour.
+	fe.finalRender = true
+	if fe.flowingMode() {
+		t.Fatal("final render must not use flowing mode")
+	}
+	fe.finalRender = false
+
+	// A zoomed span keeps the clipped, top-anchored behaviour.
+	fe.rowsView.Zoomed = db.Spans.Map[childID]
+	if fe.flowingMode() {
+		t.Fatal("a zoomed span must not use flowing mode")
+	}
+	fe.rowsView.Zoomed = nil
+	if !fe.flowingMode() {
+		t.Fatal("un-zooming should restore flowing mode")
 	}
 }

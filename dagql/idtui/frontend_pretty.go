@@ -2440,7 +2440,12 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// ScreenHeight means the height is unknown (RenderLines / the report discovery
 	// render, before a frame sizes the terminal) -- render everything, like the
 	// old behaviour.
-	if h := ctx.ScreenHeight(); h > 0 {
+	//
+	// In flowing (shell/prompt) mode we also render everything: tuist pushes the
+	// overflow into the terminal's native scrollback (see flowingMode), so old
+	// output scrolls off the top like a normal REPL while the pinned live region
+	// -- rendered as siblings below -- stays at the bottom of the frame.
+	if h := ctx.ScreenHeight(); h > 0 && !fe.flowingMode() {
 		if avail := h - reserved - len(zoomHeader); avail > 0 && len(body) > avail {
 			body = body[:avail]
 		}
@@ -2985,6 +2990,36 @@ func (fe *frontendPretty) errorLabelHeight() int {
 	return 1
 }
 
+// flowingMode reports whether the frontend should let completed history flow
+// into the terminal's native scrollback instead of clamping/cropping it to the
+// viewport. This is the shell/prompt REPL behaviour: old output scrolls off the
+// top like a normal terminal, while the pinned live region (spinners, status
+// line, editline/prompt, keymap) -- rendered as tuist siblings below this
+// component -- stays at the bottom of the frame and so remains visible.
+//
+// tuist enables this naturally: with sync output it renders over-tall frames
+// against the terminal's scrollback (see TUI.doRender/applyFrame), showing the
+// bottom `height` lines and pushing the top into scrollback -- provided nothing
+// mounts a mouse handler (which forces the alt-screen/viewport-clipped model).
+// No mouse-handling component is mounted in plain shell mode (the only one,
+// testSidebarView, belongs to the tests view).
+//
+// It is scoped to live, un-zoomed shell rendering: the final report, the log
+// pager, the tests view, and an explicitly zoomed span all keep the
+// viewport-clipped behaviour, which is correct for those focused views.
+func (fe *frontendPretty) flowingMode() bool {
+	if fe.shell == nil || fe.finalRender {
+		return false
+	}
+	// A zoomed span (user pressed enter to inspect one row) keeps the
+	// viewport-clipped, top-anchored behaviour so its header stays pinned.
+	if fe.rowsView != nil && fe.rowsView.Zoomed != nil &&
+		fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
+		return false
+	}
+	return true
+}
+
 // queuedMessageHeight returns the line count of the queued message label. The
 // label always renders as a single line (see QueuedMessageLabel.Render).
 func (fe *frontendPretty) queuedMessageHeight() int {
@@ -3458,6 +3493,14 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	}
 
 	if fe.finalRender {
+		return allLines
+	}
+
+	// In flowing (shell/prompt) mode, don't crop: return every line and let
+	// tuist push the overflow into the terminal's native scrollback, so old
+	// output scrolls off the top like a normal REPL while the newest lines and
+	// the pinned live region below stay onscreen.
+	if fe.flowingMode() {
 		return allLines
 	}
 
