@@ -3243,13 +3243,15 @@ func (fe *frontendPretty) promoteChecksLocked() {
 }
 
 // promoteConversationLocked is the LLM-message analog of promoteChecksLocked:
-// when a trace ran an LLM, mark the root span passthrough so RowsView surfaces
-// the revealed message spans at the top level instead of the root's setup
-// children (session connect, workspace load). This is what replaces `dagger
-// shell`'s old manual zoom -- the conversation surfaces on its own via the
-// reveal mechanism, exactly as checks do. Messages bubble to the root via reveal
-// (top-level turns reach the root; a sub-agent's turns stop at the tool-call
-// span that spawned them), so this reuses the existing tree/row rendering.
+// when a trace ran an LLM, surface the conversation at the top level instead of
+// the root's setup children (session connect, workspace load). This is what
+// replaces `dagger shell`'s old manual zoom -- and, now that LLM messages no
+// longer set `reveal`, it also wires the surfaced transcript into the host's
+// RevealedSpans (via DB.PromoteConversationTo) so the live tree has something to
+// surface. That derives from the reveal-independent SurfacedConversation tree:
+// top-level turns land under the host and a sub-agent's turns nest under the
+// tool-call span that spawned them, exactly as reveal bubbling used to. Marking
+// the host Passthrough then makes RowsView iterate those revealed spans.
 func (fe *frontendPretty) promoteConversationLocked() {
 	if fe.db == nil || !fe.db.HasConversation() {
 		return
@@ -3268,6 +3270,7 @@ func (fe *frontendPretty) promoteConversationLocked() {
 		// The host is itself a message: there is no setup noise above it to hide.
 		return
 	}
+	fe.db.PromoteConversationTo(host)
 	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan

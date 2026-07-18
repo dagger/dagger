@@ -129,3 +129,29 @@ func (db *DB) HasConversation() bool {
 	}
 	return false
 }
+
+// PromoteConversationTo wires the surfaced conversation into host.RevealedSpans
+// (and each nested message into its parent message's RevealedSpans) so the live
+// tree can surface the transcript at the top level without relying on the
+// deprecated `reveal` attribute. It mirrors what reveal bubbling used to
+// populate, but derives it from the reveal-independent SurfacedConversation tree
+// -- so a top-level turn lands under the host and a sub-agent's turns nest under
+// the tool call that spawned them. Idempotent: re-adds are no-ops on the set.
+//
+// It is the live-tree analog of conversationReport, which renders the same tree
+// for the final report. Callers mark host Passthrough (see
+// promoteConversationLocked) so RowsView iterates these revealed spans instead
+// of host's raw children.
+func (db *DB) PromoteConversationTo(host *Span) {
+	if host == nil {
+		return
+	}
+	var wire func(parent *Span, nodes []*MessageNode)
+	wire = func(parent *Span, nodes []*MessageNode) {
+		for _, node := range nodes {
+			parent.RevealedSpans.Add(node.Span)
+			wire(node.Span, node.Children)
+		}
+	}
+	wire(host, db.SurfacedConversation())
+}

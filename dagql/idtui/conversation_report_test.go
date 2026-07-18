@@ -369,7 +369,6 @@ func TestPromoteConversationSurfacesMessages(t *testing.T) {
 			TraceID:   prettyTestTraceID(),
 			Name:      "LLM prompt",
 			LLMRole:   "user",
-			Reveal:    true,
 			ParentID:  rootID,
 			StartTime: start.Add(3 * time.Second),
 			EndTime:   start.Add(4 * time.Second),
@@ -406,7 +405,7 @@ func TestPromoteConversationUsesPrimarySpan(t *testing.T) {
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: unrelatedRootID, TraceID: prettyTestTraceID(), Name: "remote root received first", StartTime: start, EndTime: start.Add(10 * time.Second)},
 		{ID: primaryID, TraceID: prettyTestTraceID(), Name: "dagger agent", StartTime: start.Add(time.Second), EndTime: start.Add(10 * time.Second)},
-		{ID: promptID, TraceID: prettyTestTraceID(), Name: "LLM prompt", LLMRole: "user", Reveal: true, ParentID: primaryID, StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second)},
+		{ID: promptID, TraceID: prettyTestTraceID(), Name: "LLM prompt", LLMRole: "user", ParentID: primaryID, StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second)},
 	})
 	db.SetPrimarySpan(primaryID)
 

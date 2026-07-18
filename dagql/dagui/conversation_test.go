@@ -236,3 +236,50 @@ func TestSurfacedConversationMemoizedPerFrame(t *testing.T) {
 		t.Fatalf("cache must be invalidated by new span data, got %d messages", len(fresh))
 	}
 }
+
+// TestPromoteConversationToWiresRevealedSpans asserts PromoteConversationTo
+// populates the host's RevealedSpans with the top-level turns and nests a
+// sub-agent's turns under the tool-call span that spawned them -- what the live
+// tree consumes now that LLM messages no longer set `reveal`.
+func TestPromoteConversationToWiresRevealedSpans(t *testing.T) {
+	const (
+		rootID byte = iota + 1
+		promptID
+		toolCallID
+		subPromptID
+	)
+	db := NewDB()
+	toolCall := messageSnapshot(toolCallID, "spawn", spanID(rootID), "assistant")
+	toolCall.LLMTool = "spawn"
+	db.ImportSnapshots([]SpanSnapshot{
+		messageSnapshot(rootID, "root", SpanID{}, ""),
+		messageSnapshot(promptID, "prompt", spanID(rootID), "user"),
+		toolCall,
+		messageSnapshot(subPromptID, "sub-prompt", spanID(toolCallID), "user"),
+	})
+
+	root := db.Spans.Map[spanID(rootID)]
+	db.PromoteConversationTo(root)
+
+	// The host surfaces both top-level turns.
+	var topNames []string
+	for _, s := range root.RevealedSpans.Order {
+		topNames = append(topNames, s.Name)
+	}
+	if len(topNames) != 2 || topNames[0] != "prompt" || topNames[1] != "spawn" {
+		t.Fatalf("host RevealedSpans = %v, want [prompt spawn]", topNames)
+	}
+
+	// The sub-agent turn nests under the tool call, not the host.
+	toolSpan := db.Spans.Map[spanID(toolCallID)]
+	if len(toolSpan.RevealedSpans.Order) != 1 || toolSpan.RevealedSpans.Order[0].Name != "sub-prompt" {
+		t.Fatalf("tool call RevealedSpans = %v, want [sub-prompt]", toolSpan.RevealedSpans.Order)
+	}
+
+	// Idempotent: a second promotion (e.g. a later render frame) doesn't
+	// duplicate entries.
+	db.PromoteConversationTo(root)
+	if len(root.RevealedSpans.Order) != 2 {
+		t.Fatalf("host RevealedSpans after re-promote = %d, want 2", len(root.RevealedSpans.Order))
+	}
+}
