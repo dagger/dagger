@@ -264,12 +264,13 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b bound
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
-			// A method that mutates state — returning the bound object's own type
-			// (rebinds it), a Changeset (overlays the workspace), or a Workspace
-			// (replaces it) — is destructive and must run sequentially; everything
-			// else is read-only.
-			ReadOnly: retType != typeName && retType != "Changeset" && retType != "Workspace",
-			Call:     m.callObjectMethod(srv, typeName, field),
+			// A method that returns the bound object's own type or a Workspace
+			// mutates shared state and must run sequentially. Changeset-returning
+			// methods run in parallel; CallBatch merges their results before applying
+			// them to the workspace.
+			ReadOnly:         retType != typeName && retType != "Changeset" && retType != "Workspace",
+			ReturnsChangeset: retType == "Changeset",
+			Call:             m.callObjectMethod(srv, typeName, field),
 		})
 	}
 	return tools, nil

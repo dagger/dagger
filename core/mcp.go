@@ -53,6 +53,10 @@ type LLMTool struct {
 	HideSelf bool `json:"-"`
 	// Whether the tool is read-only (from MCP ReadOnlyHint annotation)
 	ReadOnly bool `json:"-"`
+	// Whether the tool returns a Changeset. Changeset-returning tools can execute
+	// in parallel against the same workspace; CallBatch merges their results
+	// before updating the workspace.
+	ReturnsChangeset bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
@@ -398,6 +402,12 @@ func displayArgs(args any) string {
 	}
 }
 
+type changesetCaptureKey struct{}
+
+type changesetCapture struct {
+	changes dagql.ObjectResult[*Changeset]
+}
+
 // applyStateReturn implements the state-mutation convention shared by tool calls
 // and Dang eval results. Two kinds of value advance the agent's workspace:
 //
@@ -414,6 +424,10 @@ func displayArgs(args any) string {
 // object/scalar output.
 func (m *MCP) applyStateReturn(ctx context.Context, srv *dagql.Server, val dagql.Typed) (handled bool, out string, err error) {
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
+		if capture, ok := ctx.Value(changesetCaptureKey{}).(*changesetCapture); ok {
+			capture.changes = changes
+			return true, m.summarizePatch(ctx, srv, changes), nil
+		}
 		if err := m.applyChangeset(ctx, srv, changes); err != nil {
 			return true, "", err
 		}
@@ -810,6 +824,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
 	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
 	regularCalls := make([]*LLMToolCall, 0)
+	changesetCalls := make([]*LLMToolCall, 0)
 	destructiveCalls := make([]*LLMToolCall, 0)
 
 	for _, toolCall := range toolCalls {
@@ -822,9 +837,11 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		}
 
 		if tool.Server == "" {
-			// Regular tool call (not MCP)
-			// Check if it modifies state (returns Env or Changeset)
-			if tool.ReadOnly {
+			// Changeset-returning tools are evaluated in parallel against the same
+			// workspace, then merged before the workspace is updated.
+			if tool.ReturnsChangeset {
+				changesetCalls = append(changesetCalls, toolCall)
+			} else if tool.ReadOnly {
 				regularCalls = append(regularCalls, toolCall)
 			} else {
 				destructiveCalls = append(destructiveCalls, toolCall)
@@ -842,7 +859,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 
 	var allResults []*LLMMessage
 
-	// 1. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
+	// 1. Execute destructive non-MCP calls sequentially (they replace shared state).
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(toolCallCtx(ctx, toolCallDisplays, call.CallID), tools, call)
 		endToolCallDisplay(toolCallDisplays, call.CallID, isError, result)
@@ -857,18 +874,23 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 		})
 	}
 
-	// 2. Execute destructive MCP calls one server at a time to avoid workspace conflicts
+	// 2. Execute Changeset-returning calls in parallel and merge their changes.
+	if len(changesetCalls) > 0 {
+		allResults = append(allResults, m.callBatchChangesets(ctx, tools, changesetCalls, toolCallDisplays)...)
+	}
+
+	// 3. Execute destructive MCP calls one server at a time to avoid workspace conflicts
 	for serverName, calls := range destructiveMCPCalls {
 		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName, toolCallDisplays)
 		allResults = append(allResults, serverResults...)
 	}
 
-	// 3. Execute all regular read-only (non-MCP) calls in parallel
+	// 4. Execute all regular read-only (non-MCP) calls in parallel
 	if len(regularCalls) > 0 {
 		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls, toolCallDisplays)...)
 	}
 
-	// 4. Execute all read-only MCP calls in parallel (safe across servers)
+	// 5. Execute all read-only MCP calls in parallel (safe across servers)
 	var readOnlyToolCalls []*LLMToolCall
 	for _, calls := range readOnlyMCPCalls {
 		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
@@ -956,6 +978,100 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	}
 
 	return results
+}
+
+// callBatchChangesets evaluates Changeset-returning tools concurrently without
+// mutating the workspace, merges the successful results, then applies the merged
+// Changeset once. Each tool still receives its own patch summary.
+func (m *MCP) callBatchChangesets(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, toolCallDisplays map[string]toolCallDisplay) []*LLMMessage {
+	type callResult struct {
+		message *LLMMessage
+		capture *changesetCapture
+		failed  bool
+	}
+
+	calls := pool.NewWithResults[callResult]()
+	for _, toolCall := range toolCalls {
+		calls.Go(func() callResult {
+			capture := new(changesetCapture)
+			callCtx := context.WithValue(toolCallCtx(ctx, toolCallDisplays, toolCall.CallID), changesetCaptureKey{}, capture)
+			content, failed := m.Call(callCtx, tools, toolCall)
+			return callResult{
+				message: &LLMMessage{
+					Role: LLMMessageRoleUser,
+					Content: []*LLMContentBlock{{
+						Kind:    LLMContentToolResult,
+						Text:    content,
+						CallID:  toolCall.CallID,
+						Errored: failed,
+					}},
+				},
+				capture: capture,
+				failed:  failed,
+			}
+		})
+	}
+	callResults := calls.Wait()
+
+	changes := make([]dagql.ObjectResult[*Changeset], 0, len(callResults))
+	for _, result := range callResults {
+		if !result.failed && result.capture.changes.Self() != nil {
+			changes = append(changes, result.capture.changes)
+		}
+	}
+
+	var mergeErr error
+	if len(changes) > 0 {
+		srv, err := m.Server(ctx)
+		if err != nil {
+			mergeErr = err
+		} else {
+			merged, err := mergeChangesets(ctx, srv, changes)
+			if err == nil {
+				err = m.applyChangeset(ctx, srv, merged)
+			}
+			mergeErr = err
+		}
+	}
+
+	messages := make([]*LLMMessage, len(callResults))
+	for i, result := range callResults {
+		block := result.message.Content[0]
+		if mergeErr != nil && !result.failed && result.capture.changes.Self() != nil {
+			block.Text = fmt.Sprintf("failed to merge parallel changesets: %s", mergeErr)
+			block.Errored = true
+		}
+		endToolCallDisplay(toolCallDisplays, block.CallID, block.Errored, block.Text)
+		messages[i] = result.message
+	}
+	return messages
+}
+
+func mergeChangesets(ctx context.Context, srv *dagql.Server, changes []dagql.ObjectResult[*Changeset]) (dagql.ObjectResult[*Changeset], error) {
+	if len(changes) == 1 {
+		return changes[0], nil
+	}
+
+	otherIDs := make(dagql.ArrayInput[dagql.ID[*Changeset]], len(changes)-1)
+	for i, changeset := range changes[1:] {
+		id, err := changeset.ID()
+		if err != nil {
+			return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("get changeset %d ID: %w", i+1, err)
+		}
+		otherIDs[i] = dagql.NewID[*Changeset](id)
+	}
+
+	var merged dagql.ObjectResult[*Changeset]
+	if err := srv.Select(ctx, changes[0], &merged, dagql.Selector{
+		View:  srv.View,
+		Field: "withChangesets",
+		Args: []dagql.NamedInput{
+			{Name: "changes", Value: otherIDs},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*Changeset]{}, err
+	}
+	return merged, nil
 }
 
 // callBatchRegular is the original parallel execution logic without MCP-specific syncing
