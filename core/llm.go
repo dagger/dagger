@@ -1975,10 +1975,29 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				block := g.blocks[0]
 				name = block.ToolName
 				contentType = "application/json"
+				var toolArgNames []string
+				var toolArgValues []string
+				var args map[string]any
+				if len(block.Arguments) > 0 {
+					if err := json.Unmarshal(block.Arguments.Bytes(), &args); err == nil {
+						for _, name := range slices.Sorted(maps.Keys(args)) {
+							val, ok := args[name]
+							if !ok {
+								continue
+							}
+							if str, ok := val.(string); ok {
+								toolArgNames = append(toolArgNames, name)
+								toolArgValues = append(toolArgValues, str)
+							}
+						}
+					}
+				}
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-					attribute.String(telemetry.LLMToolAttr, block.ToolName),
 					attribute.Bool(telemetry.UIBoundaryAttr, true),
+					attribute.String(telemetry.LLMToolAttr, block.ToolName),
+					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
+					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
 			default:
 				name = "LLM response"
