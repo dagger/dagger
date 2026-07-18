@@ -24,6 +24,16 @@ type CallRequest struct {
 	// the call frame (ResultCall.ProfileSkip) — so the predicate needs no egraphMu
 	// receiver-resolution lookup per call.
 	ReceiverTypeName string
+
+	// CacheEvidence is the per-invocation cache-decision evidence carrier
+	// (request-only carrier state like ReceiverTypeName: never digested, never
+	// persisted, excluded from Clone). core.AroundFunc allocates it exactly
+	// when this call's span records and the call is not ProfileSkip-classified;
+	// getOrInitCallInner fills it along the existing decision flow; AroundFunc's
+	// completion callback stamps it onto the caller's span. Nil means "record
+	// nothing". It is scoped to one invocation — internal CallRequest
+	// constructions that never pass through AroundFunc leave it nil.
+	CacheEvidence *CacheDecision
 }
 
 func (req *CallRequest) Clone() *CallRequest {
@@ -42,6 +52,10 @@ func (req *CallRequest) Clone() *CallRequest {
 		IsPersistable:        req.IsPersistable,
 		PassthroughTelemetry: req.PassthroughTelemetry,
 		ReceiverTypeName:     req.ReceiverTypeName,
+		// CacheEvidence is deliberately NOT carried over: it is per-invocation
+		// state owned by the one AroundFunc-wrapped invocation that allocated
+		// it; a cloned request is a different (or internal) invocation and
+		// sharing the pointer would let two invocations write into one record.
 	}
 }
 
