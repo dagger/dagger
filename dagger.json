@@ -81,7 +81,7 @@
         },
         {
           "argument": "generate",
-          "default": "docs/current_docs/reference,sdk/go"
+          "default": "docs/current_docs/reference"
         }
       ]
     },
