@@ -271,7 +271,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return (*DocsDev).References(&parent, version)
+			var ws *dagger.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
+				}
+			}
+			return (*DocsDev).References(&parent, version, ws)
 		case "Server":
 			var parent DocsDev
 			err = json.Unmarshal(parentJSON, &parent)
@@ -326,25 +333,26 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
 							WithDescription("Deploys a current build of the docs.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 120, 1)).
-							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 122, 2)}).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 123, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 126, 1)).
+							WithArg("message", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 128, 2)}).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 129, 2)})).
 					WithFunction(
 						dag.Function("Publish",
 							dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)).
 							WithDescription("Publish a previous deployment to production - defaults to the latest deployment on the main branch.").
 							WithCachePolicy(dagger.FunctionCachePolicyPerSession).
-							WithSourceMap(dag.SourceMap("main.go", 149, 1)).
-							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 151, 2)}).
-							WithArg("deployment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 153, 2)}).
-							WithArg("apiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 155, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 155, 1)).
+							WithArg("netlifyToken", dag.TypeDef().WithObject("Secret"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 157, 2)}).
+							WithArg("deployment", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 159, 2)}).
+							WithArg("apiURL", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 161, 2)})).
 					WithFunction(
 						dag.Function("References",
 							dag.TypeDef().WithObject("Changeset")).
 							WithDescription("Regenerate the API schema and CLI reference docs").
 							WithSourceMap(dag.SourceMap("main.go", 71, 1)).
 							WithGenerator().
-							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger version to generate API docs for", SourceMap: dag.SourceMap("main.go", 74, 2)})).
+							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Dagger version to generate API docs for", SourceMap: dag.SourceMap("main.go", 74, 2)}).
+							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to engine-dev for VCS stamping (References is the\nonly docs-dev method that builds). Auto-injected on a direct call;\ndependencies don't inherit it.", SourceMap: dag.SourceMap("main.go", 80, 2)})).
 					WithFunction(
 						dag.Function("Server",
 							dag.TypeDef().WithObject("Container")).

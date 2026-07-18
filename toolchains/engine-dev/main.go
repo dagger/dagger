@@ -51,16 +51,24 @@ func New(
 	// to ensure they can access private registries
 	// +optional
 	clientDockerConfig *dagger.Secret,
+
+	// Workspace forwarded to the go/cli-dev toolchains to stamp built
+	// engine/CLI VCS info. Auto-injected when engine-dev is called directly;
+	// when it's a dependency the caller must forward it.
+	// +optional
+	ws *dagger.Workspace,
 ) *EngineDev {
 	return &EngineDev{
 		Source:             source,
+		Workspace:          ws,
 		SubnetNumber:       subnetNumber,
 		ClientDockerConfig: clientDockerConfig,
 	}
 }
 
 type EngineDev struct {
-	Source *dagger.Directory
+	Source    *dagger.Directory
+	Workspace *dagger.Workspace // +private
 
 	EngineConfig []string // +private
 	LogLevel     string   // +private
@@ -162,7 +170,7 @@ func (dev *EngineDev) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, dev.Source, version)
+	builder, err := build.NewBuilder(ctx, dev.Source, version, dev.Workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +197,7 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version, Ws: dev.Workspace}).Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -292,7 +300,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Version: version}).Binary()).
+		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Version: version, Ws: dev.Workspace}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
@@ -343,7 +351,7 @@ func (dev *EngineDev) GraphqlSchema(
 // Build the `introspect` tool which introspects the engine API
 func (dev *EngineDev) IntrospectionTool() *dagger.File {
 	return dag.
-		Go(dagger.GoOpts{Source: dev.Source}).
+		Go(dagger.GoOpts{Source: dev.Source, Ws: dev.Workspace}).
 		Binary("./cmd/introspect")
 }
 
@@ -352,7 +360,7 @@ func (dev *EngineDev) IntrospectionTool() *dagger.File {
 func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 	schemaFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".schema.json"
 	// This tool has runtime dependencies on the engine source code itself
-	return dag.Go(dagger.GoOpts{Source: dev.Source}).
+	return dag.Go(dagger.GoOpts{Source: dev.Source, Ws: dev.Workspace}).
 		Env().
 		WithExec(
 			[]string{"go", "run", "./cmd/json-schema", filename},
@@ -368,6 +376,7 @@ func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 	base := dev.Source
 	withGoGenerate := dag.Go(dagger.GoOpts{
 		Source: dev.Source,
+		Ws:     dev.Workspace,
 		ExtraPackages: []string{
 			"clang",
 			"lld",

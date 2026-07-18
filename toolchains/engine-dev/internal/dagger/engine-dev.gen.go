@@ -766,6 +766,10 @@ type EngineDevOpts struct {
 	// A docker config file with credentials to install on clients,
 	// to ensure they can access private registries
 	ClientDockerConfig *Secret
+	// Workspace forwarded to the go/cli-dev toolchains to stamp built
+	// engine/CLI VCS info. Auto-injected when engine-dev is called directly;
+	// when it's a dependency the caller must forward it.
+	Ws *Workspace
 }
 
 func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../:0:0)
@@ -782,6 +786,10 @@ func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../
 		// `clientDockerConfig` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

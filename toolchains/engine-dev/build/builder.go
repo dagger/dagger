@@ -24,6 +24,10 @@ var versionAnnotation = distconsts.OCIVersionAnnotation
 type Builder struct {
 	source *dagger.Directory
 
+	// workspace stamps VCS info into the built engine; threaded in from
+	// engine-dev since dependencies don't inherit it.
+	workspace *dagger.Workspace
+
 	version string
 
 	platform     dagger.Platform
@@ -38,9 +42,11 @@ func NewBuilder(
 	ctx context.Context,
 	source *dagger.Directory,
 	version string,
+	ws *dagger.Workspace,
 ) (*Builder, error) {
 	return &Builder{
 		source:       source,
+		workspace:    ws,
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
 		version:      version,
@@ -215,6 +221,7 @@ func (build *Builder) Go(race bool) *dagger.Go {
 func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
 	return dag.Go(dagger.GoOpts{
 		Source: source,
+		Ws:     build.workspace,
 		Race:   race,
 		Tags: []string{
 			// The engine uses the dockerfile2llb code from buildkit, which makes use of tags
@@ -304,7 +311,9 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 		"./plugins/meta/firewall",
 		"./plugins/ipam/host-local",
 	} {
-		bin := dag.Go(dagger.GoOpts{Source: src}).Binary(pluginPath, dagger.GoBinaryOpts{
+		// CNI plugins are third-party; ws is passed only because dependencies
+		// must pass it explicitly (the stamped VCS info is irrelevant here).
+		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.workspace}).Binary(pluginPath, dagger.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,

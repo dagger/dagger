@@ -72,12 +72,18 @@ func (d DocsDev) References(
 	// Dagger version to generate API docs for
 	// +optional
 	version string,
+
+	// Workspace forwarded to engine-dev for VCS stamping (References is the
+	// only docs-dev method that builds). Auto-injected on a direct call;
+	// dependencies don't inherit it.
+	// +optional
+	ws *dagger.Workspace,
 ) (*dagger.Changeset, error) {
 	src := d.Source
 	// 1. Generate the GraphQL schema
 	withGqlSchema := src.WithFile(
 		"docs/docs-graphql/schema.graphqls",
-		dag.EngineDev().GraphqlSchema(dagger.EngineDevGraphqlSchemaOpts{
+		dag.EngineDev(dagger.EngineDevOpts{Ws: ws}).GraphqlSchema(dagger.EngineDevGraphqlSchemaOpts{
 			Version: version,
 		}),
 	)
@@ -103,9 +109,9 @@ func (d DocsDev) References(
 
 	// 3. Generate config file schemas?
 	withConfigSchemas := src.
-		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json")).
-		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev().ConfigSchema("dagger-module.toml")).
-		WithFile("docs/static/reference/dagger-workspace.schema.json", dag.EngineDev().ConfigSchema("dagger.toml"))
+		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev(dagger.EngineDevOpts{Ws: ws}).ConfigSchema("dagger.json")).
+		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev(dagger.EngineDevOpts{Ws: ws}).ConfigSchema("dagger-module.toml")).
+		WithFile("docs/static/reference/dagger-workspace.schema.json", dag.EngineDev(dagger.EngineDevOpts{Ws: ws}).ConfigSchema("dagger.toml"))
 
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).

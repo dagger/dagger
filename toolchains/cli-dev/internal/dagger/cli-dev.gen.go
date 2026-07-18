@@ -266,8 +266,10 @@ type CliDevOpts struct {
 	// from the embedded internal/version/VERSION file regardless of what's
 	// passed here; this is for publish-time metadata only.
 	Version string
-	// Git repository for VCS info injection.
-	Repo *GitRepository
+	// Workspace forwarded to the go toolchain to stamp the CLI's VCS info.
+	// Auto-injected when cli-dev is called directly; when it's a dependency
+	// (e.g. of release) the caller must forward it.
+	Ws *Workspace
 }
 
 func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../:0:0)
@@ -289,9 +291,9 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../:0:
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
 		}
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

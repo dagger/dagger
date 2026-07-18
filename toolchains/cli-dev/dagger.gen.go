@@ -422,14 +422,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			var repo *dagger.GitRepository
-			if inputArgs["repo"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
+			var ws *dagger.Workspace
+			if inputArgs["ws"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["ws"]), &ws)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg ws", err))
 				}
 			}
-			return New(ctx, runnerHost, source, base, version, repo)
+			return New(ctx, runnerHost, source, base, version, ws)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -437,19 +437,19 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		return dag.Module().
 			WithDescription("Develop the Dagger CLI\n").
 			WithObject(
-				dag.TypeDef().WithObject("CliDev", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 79, 6)}).
+				dag.TypeDef().WithObject("CliDev", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 82, 6)}).
 					WithFunction(
 						dag.Function("Binary",
 							dag.TypeDef().WithObject("File")).
 							WithDescription("Build the dagger CLI binary for a single platform").
-							WithSourceMap(dag.SourceMap("main.go", 87, 1)).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 89, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 90, 1)).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 92, 2)})).
 					WithFunction(
 						dag.Function("DevBinaries",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Build dev CLI binaries\nTODO: remove this").
-							WithSourceMap(dag.SourceMap("main.go", 100, 1)).
-							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 102, 2)})).
+							WithSourceMap(dag.SourceMap("main.go", 103, 1)).
+							WithArg("platform", dag.TypeDef().WithScalar("Platform").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 105, 2)})).
 					WithFunction(
 						dag.Function("Publish",
 							dag.TypeDef().WithObject("Directory")).
@@ -486,8 +486,8 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithDescription("Verify that the CLI builds without actually publishing anything").
 							WithSourceMap(dag.SourceMap("publish.go", 174, 1)).
 							WithCheck()).
-					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 80, 2)}).
-					WithField("Tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 81, 2)}).
+					WithField("Version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 83, 2)}).
+					WithField("Tag", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 84, 2)}).
 					WithConstructor(
 						dag.Function("New",
 							dag.TypeDef().WithObject("CliDev")).
@@ -496,7 +496,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 							WithArg("source", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 38, 2), DefaultPath: "/", Ignore: []string{"*", ".*", "!cmd/dagger/*", "!internal/cmd/dagger/**", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**/VERSION", "!vendor/**/*", "!**.graphql", "!.changes", "!LICENSE", "!install.sh", "!install.ps1", "!**/*.sql", "!core/prompts/*.md"}}).
 							WithArg("base", dag.TypeDef().WithObject("Container").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Base image for go build environment", SourceMap: dag.SourceMap("main.go", 42, 2)}).
 							WithArg("version", dag.TypeDef().WithKind(dagger.TypeDefKindStringKind).WithOptional(true), dagger.FunctionWithArgOpts{Description: "Version of the Dagger CLI being built. Surfaced as CliDev.Version and\nconsumed by the publish flow (goreleaser ENGINE_VERSION, S3 paths,\nsemver release-gating). The built binary self-reports its own version\nfrom the embedded internal/version/VERSION file regardless of what's\npassed here; this is for publish-time metadata only.", SourceMap: dag.SourceMap("main.go", 50, 2)}).
-							WithArg("repo", dag.TypeDef().WithObject("GitRepository").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Git repository for VCS info injection.", SourceMap: dag.SourceMap("main.go", 54, 2)}))), nil
+							WithArg("ws", dag.TypeDef().WithObject("Workspace").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Workspace forwarded to the go toolchain to stamp the CLI's VCS info.\nAuto-injected when cli-dev is called directly; when it's a dependency\n(e.g. of release) the caller must forward it.", SourceMap: dag.SourceMap("main.go", 56, 2)}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

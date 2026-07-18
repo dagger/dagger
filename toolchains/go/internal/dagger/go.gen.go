@@ -608,16 +608,14 @@ type GoOpts struct {
 	//
 	// Default: 10
 	Limit int
-	// Git repository for VCS info injection. When non-nil, the HEAD commit
-	// and uncommitted state are stamped into the binary via -ldflags
-	// against github.com/dagger/go/buildinfo's Injected* package vars so it
-	// self-reports VCS info at runtime via runtime/debug.ReadBuildInfo —
-	// without needing .git inside the build container.
+	// Workspace whose git HEAD commit and dirty state are stamped into built
+	// binaries as VCS info (see the stamping block in New).
 	//
-	// TODO: switch to Workspace.git (PR dagger/dagger#13074) once we depend
-	// on Dagger >= 1.0.0-beta.2. Workspace.git is lazier (no full repo
-	// upload), supports nested workspaces, and will expose commit time.
-	Repo *GitRepository
+	// The engine only auto-injects a Workspace on a *direct* client call;
+	// module-runtime callers (e.g. cli-dev depending on this module) don't
+	// inherit it, so they must forward their own explicitly. Omitted → no
+	// stamping.
+	Ws *Workspace
 }
 
 func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../:0:0)
@@ -675,9 +673,9 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../:0:0)
 		if !querybuilder.IsZeroValue(opts[i].Limit) {
 			q = q.Arg("limit", opts[i].Limit)
 		}
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

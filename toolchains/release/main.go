@@ -171,7 +171,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		// this is a public release
 		tags = append(tags, "latest")
 	}
-	err := dag.EngineDev().Publish(ctx, tags, dagger.EngineDevPublishOpts{
+	err := dag.EngineDev(dagger.EngineDevOpts{Ws: r.Workspace}).Publish(ctx, tags, dagger.EngineDevPublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
@@ -186,7 +186,10 @@ func (r *Release) Publish( //nolint:gocyclo
 		Name: "🚗 CLI",
 		Tag:  tag,
 	}
-	cliDevOpts := dagger.CliDevOpts{}
+	cliDevOpts := dagger.CliDevOpts{
+		// Dependencies don't inherit the workspace; forward it explicitly.
+		Ws: r.Workspace,
+	}
 	if version != "" {
 		cliDevOpts.Version = version
 	}

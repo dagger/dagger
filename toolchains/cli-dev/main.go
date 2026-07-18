@@ -49,9 +49,11 @@ func New(
 	// +optional
 	version string,
 
-	// Git repository for VCS info injection.
+	// Workspace forwarded to the go toolchain to stamp the CLI's VCS info.
+	// Auto-injected when cli-dev is called directly; when it's a dependency
+	// (e.g. of release) the caller must forward it.
 	// +optional
-	repo *dagger.GitRepository,
+	ws *dagger.Workspace,
 ) (*CliDev, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -71,7 +73,8 @@ func New(
 			Source: source,
 			Base:   base,
 			Values: values,
-			Repo:   repo,
+			// Dependencies don't inherit the workspace; forward it explicitly.
+			Ws: ws,
 		}),
 	}, nil
 }
