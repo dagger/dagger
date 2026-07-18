@@ -275,8 +275,9 @@ const (
 
 	// CacheOutputContentDigestAttr is the completed result's RECORDED content
 	// digest — the last content-labeled extra digest on the result's
-	// authoritative call frame at span completion — for hits and executions
-	// alike, emitted only when non-empty. It is deliberately the recorded fact
+	// authoritative call frame at span completion — emitted only when
+	// non-empty, for any stamped outcome that returned a result (hit,
+	// executed, and joined calls alike). It is deliberately the recorded fact
 	// only (never the derived content-preferred digest): absence means "no
 	// recorded content identity at completion", nothing more. A lazy result may
 	// gain its content digest only after this span ends; that later fact is
