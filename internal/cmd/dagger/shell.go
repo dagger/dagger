@@ -144,6 +144,14 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
+
+	// cmdParentCtx is the context active just above the per-command span
+	// created in Handle. Builtins whose telemetry should surface as siblings of
+	// the command itself -- rather than nested under the command's own span --
+	// replay against this instead of the command ctx (e.g. .resume, whose
+	// replayed conversation belongs at the top level, not buried under the
+	// ".resume" span).
+	cmdParentCtx context.Context
 }
 
 // QueueMessage stores a message submitted while the LLM is running, to be
@@ -475,6 +483,11 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
 		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
+
+	// Remember the context above the per-command span so builtins that replay
+	// conversation telemetry (.resume) can surface it at this level rather than
+	// nested under their own command span.
+	h.cmdParentCtx = ctx
 
 	// Create a new span for this command
 	var span trace.Span

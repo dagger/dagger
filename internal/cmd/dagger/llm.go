@@ -725,8 +725,12 @@ func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, 
 	return sessionID, nil
 }
 
-// LoadSession loads an LLM session from disk by UUID.
-func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
+// LoadSession loads an LLM session from disk by UUID. The message history is
+// replayed for telemetry against replayCtx (not ctx), so callers can surface
+// the replayed conversation at the conversation's top level rather than nested
+// under the command span that triggered the load. Pass ctx for replayCtx to
+// replay in place.
+func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID string) error {
 	sessionDir, err := getSessionDir()
 	if err != nil {
 		return err
@@ -753,8 +757,10 @@ func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
 	loadedLLM := dagger.Ref[*dagger.LLM](s.dag, dagger.ID(metadata.LLMID))
 
 	// Replay the message history to emit telemetry spans so the TUI shows the
-	// conversation in its scrollback.
-	if _, err := loadedLLM.Replay(ctx); err != nil {
+	// conversation in its scrollback. Replay against replayCtx so the spans nest
+	// where the caller wants the conversation to appear (e.g. the top level for
+	// .resume) rather than under the triggering command span.
+	if _, err := loadedLLM.Replay(replayCtx); err != nil {
 		slog.Warn("failed to replay session history", "error", err)
 	}
 
