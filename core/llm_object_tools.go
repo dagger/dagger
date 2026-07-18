@@ -610,6 +610,13 @@ func (m *MCP) routeObjectMethodResult(ctx context.Context, srv *dagql.Server, ty
 	// returning a patch summary. step() persists the resulting workspace via a
 	// withWorkspace selector.
 	if handled, out, err := m.applyStateReturn(ctx, srv, val); handled {
+		if logs := m.toolLogs(ctx); logs != "" {
+			if out == "" {
+				out = logs
+			} else {
+				out = logs + "\n---\n" + out
+			}
+		}
 		return out, err
 	}
 
