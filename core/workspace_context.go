@@ -25,30 +25,15 @@ func WorkspaceToContext(ctx context.Context, ws dagql.ObjectResult[*Workspace]) 
 // WorkspaceFromContext returns the Workspace bound into the context by
 // [WorkspaceToContext], if any.
 //
-// It first checks the in-process context binding (fast path, set at tool
-// dispatch and threaded through group runs). Failing that, it falls back to the
-// Workspace carried into this client from its caller (Server.CurrentWorkspaceContext):
-// the in-process binding is a Go context value that does not survive the module
-// execution boundary, so a module function calling another module would otherwise
-// lose it. The carried Workspace restores the invariant that a callee resolves its
-// caller's Workspace. Ordinary, non-bound calls return ok=false and continue
-// resolving context the existing way (the module source / ambient workspace).
-func WorkspaceFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], bool, error) {
+// Unlike [EnvFromContext] there is no server-side fallback: a Workspace only
+// enters the context through an explicit in-process binding at tool dispatch.
+// Ordinary, non-bound calls return ok=false and continue resolving context the
+// existing way (an Env, or the module source).
+func WorkspaceFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], bool) {
 	if ws, ok := ctx.Value(workspaceContextKey{}).(dagql.ObjectResult[*Workspace]); ok && ws.Self() != nil {
-		return ws, true, nil
+		return ws, true
 	}
-	q, _ := CurrentQuery(ctx)
-	if q == nil {
-		return dagql.ObjectResult[*Workspace]{}, false, nil
-	}
-	ws, err := q.Server.CurrentWorkspaceContext(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*Workspace]{}, false, err
-	}
-	if ws.Self() == nil {
-		return dagql.ObjectResult[*Workspace]{}, false, nil
-	}
-	return ws, true, nil
+	return dagql.ObjectResult[*Workspace]{}, false
 }
 
 // workspaceClientContext switches ctx to the Workspace's owning client so that

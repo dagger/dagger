@@ -223,14 +223,6 @@ type daggerClient struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
-	// If the client is executing in a bound-Workspace context (an LLM operating on
-	// its own, possibly overlaid, Workspace), this is that Workspace. It is carried
-	// per-call into the nested client (not persisted session state) so that a module
-	// function calling another module resolves the caller's Workspace rather than the
-	// frozen session workspace. This is the Workspace counterpart to the old
-	// client.env; WorkspaceFromContext falls back to it via CurrentWorkspaceContext.
-	workspaceContext dagql.ObjectResult[*core.Workspace]
-
 	// engine utility job-related state/config
 	hostServiceProxyClientID string
 	getClientCaller          func(context.Context, string) (engineutil.SessionCaller, error)
@@ -780,11 +772,6 @@ type ClientInitOpts struct {
 
 	// If the client is running from a function in a module, this is that function call.
 	FunctionCall *core.FunctionCall
-
-	// If the caller is executing in a bound-Workspace context, this is that
-	// Workspace, carried into the nested client so its function calls resolve
-	// against it (see daggerClient.workspaceContext).
-	WorkspaceContext dagql.ObjectResult[*core.Workspace]
 }
 
 // requires that client.stateMu is held
@@ -877,24 +864,6 @@ func (srv *Server) initializeDaggerClient(
 	coreMod := coreSchemaBase.CoreMod(coreView)
 	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
-
-	// Workspace is runtime/session context, carried per-call (like the old Env),
-	// so keep it off persisted client state and attach it into this client's cache.
-	if opts.WorkspaceContext.Self() != nil {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get engine cache for workspace context: %w", err)
-		}
-		attached, err := cache.AttachResult(ctx, opts.SessionID, client.dag, opts.WorkspaceContext)
-		if err != nil {
-			return fmt.Errorf("attach workspace context during client init: %w", err)
-		}
-		wsInst, ok := attached.(dagql.ObjectResult[*core.Workspace])
-		if !ok {
-			return fmt.Errorf("attach workspace context during client init: expected %T, got %T", opts.WorkspaceContext, attached)
-		}
-		client.workspaceContext = wsInst
-	}
 
 	if opts.ModuleContext.Self() != nil {
 		cache, err := dagql.EngineCache(ctx)
@@ -1454,7 +1423,6 @@ func (srv *Server) ServeHTTPToNestedClient(
 	hostServiceProxyToCaller bool,
 	moduleCtx dagql.AnyObjectResult,
 	functionCall dagql.Typed,
-	workspaceCtx dagql.AnyObjectResult,
 ) {
 	if nestedClientMetadata == nil {
 		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
@@ -1484,18 +1452,6 @@ func (srv *Server) ServeHTTPToNestedClient(
 		fnCall = typed
 	}
 
-	var workspaceContext dagql.ObjectResult[*core.Workspace]
-	if workspaceCtx != nil {
-		typed, ok := workspaceCtx.(dagql.ObjectResult[*core.Workspace])
-		if !ok {
-			http.Error(w, fmt.Sprintf("nested client workspace context is %T, not Workspace", workspaceCtx), http.StatusInternalServerError)
-			return
-		}
-		if typed.Self() != nil {
-			workspaceContext = typed
-		}
-	}
-
 	var hostServiceProxyClientID string
 	if hostServiceProxyToCaller {
 		hostServiceProxyClientID = callerClientID
@@ -1507,7 +1463,6 @@ func (srv *Server) ServeHTTPToNestedClient(
 		HostServiceProxyClientID: hostServiceProxyClientID,
 		ModuleContext:            moduleContext,
 		FunctionCall:             fnCall,
-		WorkspaceContext:         workspaceContext,
 	}).ServeHTTP(w, r)
 }
 
@@ -2605,20 +2560,6 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 		return nil, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
 	}
 	return client.fnCall, nil
-}
-
-// CurrentWorkspaceContext returns the bound Workspace carried into this client
-// from its caller, if any. It is the server-side fallback for
-// WorkspaceFromContext once the in-process context binding has been lost across
-// the module boundary, so a module function calling another module resolves the
-// caller's Workspace. Returns a zero result (not an error) when no Workspace was
-// carried — e.g. an ordinary client with no bound Workspace.
-func (srv *Server) CurrentWorkspaceContext(ctx context.Context) (dagql.ObjectResult[*core.Workspace], error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return dagql.ObjectResult[*core.Workspace]{}, err
-	}
-	return client.workspaceContext, nil
 }
 
 // Return the modules being served to the current client

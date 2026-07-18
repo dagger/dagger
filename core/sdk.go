@@ -228,7 +228,6 @@ type ModuleRuntime interface {
 		execMD *engineutil.ExecutionMetadata,
 		fnCall *FunctionCall,
 		moduleContext dagql.ObjectResult[*Module],
-		workspaceContext dagql.ObjectResult[*Workspace],
 	) error
 }
 
@@ -248,7 +247,6 @@ func (r *ContainerRuntime) Call(
 	execMD *engineutil.ExecutionMetadata,
 	fnCall *FunctionCall,
 	moduleContext dagql.ObjectResult[*Module],
-	workspaceContext dagql.ObjectResult[*Workspace],
 ) error {
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -298,14 +296,7 @@ func (r *ContainerRuntime) Call(
 		return fmt.Errorf("exec function: %w", err)
 	}
 
-	// Carry the bound Workspace into the exec's context so the nested client
-	// created for this function call resolves against it (see container_exec.go,
-	// where it is read back off the context and threaded to the nested client).
-	syncCtx := ctx
-	if workspaceContext.Self() != nil {
-		syncCtx = WorkspaceToContext(syncCtx, workspaceContext)
-	}
-	err = execCtr.Sync(syncCtx)
+	err = execCtr.Sync(ctx)
 	if err != nil {
 		if fnCall.Name == "" {
 			return fmt.Errorf("call constructor: %w", err)

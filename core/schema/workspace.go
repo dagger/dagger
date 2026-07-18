@@ -449,9 +449,7 @@ func (s *workspaceSchema) currentWorkspace(
 	// the workspace it was rolled up from) over the session's frozen current
 	// workspace, so module tools observe edits the agent has applied. This
 	// mirrors loadWorkspaceArg's preference for the bound workspace.
-	if boundWS, ok, err := core.WorkspaceFromContext(ctx); err != nil {
-		return inst, err
-	} else if ok {
+	if boundWS, ok := core.WorkspaceFromContext(ctx); ok {
 		return boundWS, nil
 	}
 
