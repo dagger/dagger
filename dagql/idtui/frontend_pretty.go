@@ -899,7 +899,11 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	// output → error → queued → prompt → statusLine → keymap
 	fe.promptErrLabel = NewErrorLabel()
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
-	fe.statusLine = &StatusLine{profile: fe.profile, liveStats: fe.llmLiveStats}
+	fe.statusLine = &StatusLine{
+		profile:   fe.profile,
+		liveStats: fe.llmLiveStats,
+		inFlight:  func() bool { return fe.shellRunning },
+	}
 	fe.tui.RemoveChild(fe.keymapBar)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
@@ -3645,12 +3649,11 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
 	trimmedPrefix := strings.TrimRight(gapPrefix, " ")
 	if fe.shell != nil {
-		if row.Depth == 0 && row.Previous != nil {
+		// Conversation turns get one separating line. Tool calls and ordinary
+		// trace spans stay attached to their parent/preceding message so an agent
+		// session does not become a double-spaced list of implementation details.
+		if row.Depth == 0 && row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleUser {
 			return []string{""}
-		}
-		// Gap above each LLM response to visually group RTTT sequences.
-		if row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleAssistant {
-			return []string{trimmedPrefix}
 		}
 		return nil
 	}
@@ -5536,16 +5539,40 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 }
 
 func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, statusHost statusIconHost, focused bool) error {
+	// Message span names are implementation labels; their logs are the actual
+	// content. Until content arrives, omit the row entirely and let the status
+	// line carry the in-flight cue instead of rendering an empty bubble.
+	if row.Span.LLMRole != "" && row.Span.LLMTool == "" {
+		fe.requestLogsOnRender(row.Span.ID)
+		logs := fe.logs.Logs[row.Span.ID]
+		if logs == nil || strings.TrimSpace(logs.View()) == "" {
+			return nil
+		}
+	}
+
 	r.fancyIndent(out, row, false, true)
 
-	if row.Span.LLMRole != "" {
-		switch row.Span.LLMRole {
-		case telemetry.LLMRoleUser:
-			fmt.Fprint(out, out.String(Block).Foreground(termenv.ANSIMagenta))
-		case telemetry.LLMRoleAssistant:
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIMagenta))
+	if !fe.finalRender && fe.shell != nil {
+		if focused {
+			fmt.Fprint(out, out.String("> ").Bold())
+		} else {
+			fmt.Fprint(out, "  ")
 		}
-		fmt.Fprint(out, " ")
+	}
+
+	if row.Span.LLMRole != "" {
+		var marker termenv.Style
+		switch {
+		case row.Span.LLMTool != "":
+			// Tool calls remain fully interactive, but their label is deliberately
+			// quieter than either side of the conversation.
+			marker = out.String("tool").Foreground(termenv.ANSIBrightBlack).Faint()
+		case row.Span.LLMRole == telemetry.LLMRoleUser:
+			marker = out.String("user").Foreground(termenv.ANSIMagenta).Bold()
+		default:
+			marker = out.String("assistant").Foreground(termenv.ANSICyan).Bold()
+		}
+		fmt.Fprint(out, marker, "  ")
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, focused)
 		fmt.Fprint(out, " ")

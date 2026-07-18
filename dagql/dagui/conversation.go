@@ -50,24 +50,23 @@ func (db *DB) buildSurfacedConversation() []*MessageNode {
 	}
 	byID := map[SpanID]*info{}
 	for span := range db.Spans.Iter() {
-		if span.LLMRole == "" {
+		if span.LLMRole == "" || span.Internal {
 			continue
 		}
-		// Skip internal messages (the system prompt), matching the live tree, which
-		// hides them. The transcript should read as the actual conversation --
-		// prompts, responses, tool calls -- not the system scaffolding.
-		if span.Internal {
-			continue
-		}
-		// Walk ancestors toward the root: a Boundary/Encapsulate between this
-		// message and the root contains it (hide it); otherwise remember the
-		// nearest ancestor message to nest under, and note whether we reach the
-		// root at all.
+
 		contained := false
+		anchoredToMessage := false
 		var parentID SpanID
 		reachedRoot := span == db.RootSpan
 		for p := span.ParentSpan; p != nil; p = p.ParentSpan {
 			if p.Boundary || p.Encapsulate {
+				// Tool-call messages are boundaries so nested work remains anchored
+				// beneath the call, but the call itself remains in the conversation.
+				if p.LLMRole != "" {
+					parentID = p.ID
+					anchoredToMessage = true
+					break
+				}
 				contained = true
 				break
 			}
@@ -79,11 +78,7 @@ func (db *DB) buildSurfacedConversation() []*MessageNode {
 				break
 			}
 		}
-		// A severed chain (unreceived placeholder, or a reparenting seam below a
-		// test's Boundary that the incremental fetch never loaded) can't be
-		// proven boundary-free, so treat it as contained -- fixtures stay hidden
-		// just like messages under a loaded Boundary ancestor.
-		if !contained && db.RootSpan != nil && !reachedRoot {
+		if !contained && !anchoredToMessage && db.RootSpan != nil && !reachedRoot {
 			contained = true
 		}
 		if contained {
@@ -99,11 +94,15 @@ func (db *DB) buildSurfacedConversation() []*MessageNode {
 	var roots []*MessageNode
 	for id, in := range byID {
 		node := nodes[id]
-		if parent, ok := nodes[in.parentID]; ok && in.parentID.IsValid() {
-			parent.Children = append(parent.Children, node)
-		} else {
-			roots = append(roots, node)
+		if in.parentID.IsValid() {
+			if parent, ok := nodes[in.parentID]; ok {
+				parent.Children = append(parent.Children, node)
+			}
+			// A message anchored to a contained/missing tool call must not escape
+			// that boundary as a new conversation root.
+			continue
 		}
+		roots = append(roots, node)
 	}
 
 	var sortNodes func(ns []*MessageNode)
