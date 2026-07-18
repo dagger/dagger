@@ -156,3 +156,130 @@ const (
 	// graph/replay is untouched) after reading its count.
 	WcprofSessionCompleteAttr = "wcprof.session_complete"
 )
+
+// Cache-evidence contract (dagger.io/cache.*).
+//
+// These attributes record, on the ordinary per-call span the engine already
+// emits, the cache-decision facts that otherwise exist only transiently inside
+// dagql's lookup: what the cache decided (outcome/route), why a miss missed
+// (expiry, session-resource filtering, unknown input), and the engine-derived
+// structural identity of the call (self digest, ordered structural inputs,
+// pairing digest, recorded output content digest). They exist so a trace
+// consumer can explain cache non-reuse from recorded facts instead of
+// re-deriving engine internals from span shapes.
+//
+// Wire shape: every value is an OTLP STRING, following the wcprof×OTel
+// precedent above and for the same reason — Cloud ingestion JSON-encodes each
+// attribute value into a ClickHouse Map(String,String) and the read path
+// re-decodes heuristically (bare or quoted true/false become bools,
+// leading-digit values become numbers, quoted strings round-trip as strings).
+// The value tokens below are chosen so that trip is loss-free: enum tokens and
+// digest values (algorithm-prefixed) can never collide with true/false/null or
+// a leading digit; the two boolean facts are emitted as "true" only when true
+// (absent means false) and intentionally decode into real bools; the
+// unknown-input index and the structural-input list are emitted as a
+// decimal-string and a single JSON-array-encoded string (the WcprofExecArgvAttr
+// pattern) whose leading '[' keeps them strings end to end.
+//
+// Producer gating: the attributes are stamped by core.AroundFunc's completion
+// callback from a request-only evidence carrier (dagql.CacheDecision) that
+// core allocates only when the call's span records and the call is not
+// ProfileSkip-classified — so suppressed, deduplicated, introspection and
+// profile-skipped calls record nothing, and no new spans are ever created.
+const (
+	// CacheContractAttr is the producer-contract version marker. Consumers must
+	// read cache.* facts only from spans carrying this marker and treat unknown
+	// versions as not eligible. Semantics of every fact within a version are
+	// frozen once released; new optional facts may be added under the same
+	// version (presence-detected); any semantic change to an existing fact
+	// requires bumping the version. Stamped whenever the evidence carrier
+	// stamps, so it governs every other cache.* attribute on the span.
+	CacheContractAttr = "dagger.io/cache.contract"
+	// CacheContractV1 is the current (and first) contract version value.
+	CacheContractV1 = "1"
+
+	// CacheOutcomeAttr is what the cache decided for this call: one of
+	// CacheOutcomeHit (reused a cached result), CacheOutcomeExecuted (miss —
+	// the resolver ran), CacheOutcomeJoined (deduplicated into concurrent
+	// identical in-flight work under the same concurrency key), or
+	// CacheOutcomeUncached (DoNotCache policy: no lookup, no dedupe, no
+	// publication). A hit on a still-pending lazy shell stamps
+	// CacheOutcomeHit — the lookup fact — while the separate evaluation facts
+	// (dagger.io/dag.cached, dagger.io/dag.pending) keep their existing
+	// meaning.
+	CacheOutcomeAttr     = "dagger.io/cache.outcome"
+	CacheOutcomeHit      = "hit"
+	CacheOutcomeExecuted = "executed"
+	CacheOutcomeJoined   = "joined"
+	CacheOutcomeUncached = "uncached"
+
+	// CacheHitRouteAttr (hits only) is how the hit was found:
+	// CacheHitRouteRecipe (exact recipe-digest match), CacheHitRouteDigest
+	// (extra-digest equivalence, e.g. a content digest carried by the request),
+	// or CacheHitRouteStructural (structural term over the call's self digest
+	// and its inputs' equivalence classes).
+	CacheHitRouteAttr       = "dagger.io/cache.hit.route"
+	CacheHitRouteRecipe     = "recipe"
+	CacheHitRouteDigest     = "digest"
+	CacheHitRouteStructural = "structural"
+
+	// CacheMissIncompatibleCandidatesAttr ("true", executed misses only, absent
+	// otherwise) records that non-expired candidate results existed but none
+	// satisfied this session's resource requirements (secrets/sockets the
+	// session has not loaded). It is an existence flag, not a count: expiry is
+	// applied during candidate accumulation, so on a miss a non-empty candidate
+	// set means every surviving candidate failed the session-resource filter.
+	CacheMissIncompatibleCandidatesAttr = "dagger.io/cache.miss.incompatible_candidates"
+
+	// CacheMissSawExpiredAttr ("true", executed misses only, absent otherwise)
+	// records that TTL expiry eliminated at least one otherwise-matching result
+	// during candidate accumulation.
+	CacheMissSawExpiredAttr = "dagger.io/cache.miss.saw_expired"
+
+	// CacheMissUnknownInputAttr (executed misses only) is the decimal-string
+	// index into this span's CacheStructuralInputsAttr list of the first input
+	// digest that had no equivalence class at lookup time, which made the
+	// structural (equivalence) lookup impossible. The semantics are
+	// deliberately narrow: "equivalence lookup was skipped because this input
+	// digest was unknown to the cache at that moment" — digest knowledge is
+	// current cache state, not history, so this does NOT mean "first run".
+	// Absent when every input was known.
+	CacheMissUnknownInputAttr = "dagger.io/cache.miss.unknown_input"
+
+	// CacheSelfDigestAttr is the engine-derived structural self digest of the
+	// call: the operation, its literal arguments (sensitive values redacted),
+	// implicit inputs, list selection and schema view — with reference-valued
+	// inputs factored out into CacheStructuralInputsAttr. Two calls with equal
+	// self digests are "the same operation over possibly different inputs".
+	CacheSelfDigestAttr = "dagger.io/cache.self_digest"
+
+	// CacheStructuralInputsAttr is the exact ordered structural-input digest
+	// list the engine's equivalence lookup keys on — receiver, reference-valued
+	// arguments in argument order, digest-witnessed strings, then the module
+	// reference — encoded as a single JSON-array-of-strings value (the
+	// WcprofExecArgvAttr pattern). This is the list CacheMissUnknownInputAttr
+	// indexes into. It is a different projection than dagger.io/dag.inputs
+	// (which deduplicates and omits the module), and that attribute is
+	// unchanged.
+	CacheStructuralInputsAttr = "dagger.io/cache.structural_inputs"
+
+	// CachePairingDigestAttr is the self digest computed with implicit inputs
+	// excluded: "this operation, these literal arguments, this view/selection —
+	// over whatever inputs, in whatever scope". It is the engine-authored
+	// cross-run pairing anchor: equal pairing digests are counterpart
+	// CANDIDATES for run-to-run comparison (an index, not proof), so
+	// per-client/per-session implicit inputs can never break candidate
+	// discovery, while remaining visible by name in dagger.io/dag.call. For a
+	// call with no implicit inputs it equals CacheSelfDigestAttr.
+	CachePairingDigestAttr = "dagger.io/cache.pairing_digest"
+
+	// CacheOutputContentDigestAttr is the completed result's RECORDED content
+	// digest — the last content-labeled extra digest on the result's
+	// authoritative call frame at span completion — for hits and executions
+	// alike, emitted only when non-empty. It is deliberately the recorded fact
+	// only (never the derived content-preferred digest): absence means "no
+	// recorded content identity at completion", nothing more. A lazy result may
+	// gain its content digest only after this span ends; that later fact is
+	// simply not claimed here.
+	CacheOutputContentDigestAttr = "dagger.io/cache.output.content_digest"
+)
