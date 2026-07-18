@@ -114,21 +114,27 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	if err != nil {
 		return err
 	}
-	for _, check := range []struct {
+	type publishCheck struct {
 		needle string
 		msg    string
-	}{
+	}
+	checks := []publishCheck{
 		{fmt.Sprintf("- [x] 🚙 Engine ([`%s`]", env.releaseTag), "release publish should publish the engine"},
 		{fmt.Sprintf("- [x] 🚗 CLI ([`%s`]", env.releaseTag), "release publish should publish the CLI"},
-		{"- [x] 📖 Docs", "release publish should publish docs"},
-		{"- [x] 🐹 Go SDK", "release publish should publish the Go SDK"},
-		{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
-		{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
-		{"- [x] 🧪 Elixir SDK", "release publish should publish the Elixir SDK"},
-		{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
-		{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
-		{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
-	} {
+	}
+	if semver.Prerelease(env.releaseTag) == "" {
+		checks = append(checks,
+			publishCheck{"- [x] 📖 Docs", "release publish should publish docs"},
+			publishCheck{"- [x] 🐹 Go SDK", "release publish should publish the Go SDK"},
+			publishCheck{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
+			publishCheck{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
+			publishCheck{"- [x] 🧪 Elixir SDK", "release publish should publish the Elixir SDK"},
+			publishCheck{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
+			publishCheck{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
+			publishCheck{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
+		)
+	}
+	for _, check := range checks {
 		if err := requireContains(taggedOut, check.needle, check.msg); err != nil {
 			return err
 		}
