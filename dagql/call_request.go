@@ -25,14 +25,17 @@ type CallRequest struct {
 	// receiver-resolution lookup per call.
 	ReceiverTypeName string
 
-	// CacheEvidence is the per-invocation cache-decision evidence carrier
-	// (request-only carrier state like ReceiverTypeName: never digested, never
-	// persisted, excluded from Clone). core.AroundFunc allocates it exactly
-	// when this call's span records and the call is not ProfileSkip-classified;
-	// getOrInitCallInner fills it along the existing decision flow; AroundFunc's
-	// completion callback stamps it onto the caller's span. Nil means "record
-	// nothing". It is scoped to one invocation — internal CallRequest
-	// constructions that never pass through AroundFunc leave it nil.
+	// CacheEvidence is the per-invocation cache-decision evidence carrier.
+	// Like ReceiverTypeName it is request-only carrier state (never digested,
+	// never persisted); unlike ReceiverTypeName it is additionally scoped to a
+	// single invocation and therefore deliberately omitted by Clone — a cloned
+	// request is a different (or internal) invocation and must not share the
+	// record. core.AroundFunc allocates it exactly when this call's span
+	// records and the call is not ProfileSkip-classified; getOrInitCallInner
+	// fills it along the existing decision flow; AroundFunc's completion
+	// callback stamps it onto the caller's span. Nil means "record nothing" —
+	// internal CallRequest constructions that never pass through AroundFunc
+	// leave it nil.
 	CacheEvidence *CacheDecision
 }
 

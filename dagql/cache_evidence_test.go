@@ -210,6 +210,91 @@ func TestCacheEvidenceMissSawExpired(t *testing.T) {
 	assert.Equal(t, -1, ev.MissUnknownInputIndex)
 }
 
+func TestCacheEvidenceSawExpiredThroughEqClassExpansion(t *testing.T) {
+	t.Parallel()
+	ctx, c := cacheTestEvidenceEnv(t)
+
+	// Build the state where appendTermSetResultsLocked's SECOND loop — the
+	// output-eq-class digest expansion — is the only place expiry can be
+	// observed: the term survives with no directly-associated results (its
+	// observed result is collected), while the term's output eq-class still
+	// indexes an equivalent result that has expired.
+	contentDigest := digest.FromString("evidence-exp-content")
+	inputDigest := digest.FromString("evidence-exp-input")
+	consumerFrame := func() *ResultCall {
+		frame := cacheTestIntCall("evidence-exp-consumer")
+		frame.Args = []*ResultCallArg{{
+			Name: "src",
+			Value: &ResultCallLiteral{
+				Kind:                 ResultCallLiteralKindDigestedString,
+				DigestedStringValue:  "witnessed",
+				DigestedStringDigest: inputDigest,
+			},
+		}}
+		return frame
+	}
+
+	// 1. Observe the term once, in a scratch session, and teach its result a
+	// content digest so its output eq-class gains a second identity route.
+	scratchCtx := ContextWithCache(engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "dagql-test-client-exp",
+		SessionID: "evidence-exp-session",
+	}), c)
+	frameA := consumerFrame()
+	resC, err := c.GetOrInitCall(scratchCtx, "evidence-exp-session", noopTypeResolver{}, &CallRequest{ResultCall: frameA}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(frameA, 1), nil
+	})
+	assert.NilError(t, err)
+	resC, err = resC.WithContentDigestAny(scratchCtx, contentDigest)
+	assert.NilError(t, err)
+	collectedID := resC.cacheSharedResult().id
+
+	// 2. An equivalent-by-content sibling result, owned by the main session,
+	// indexed under the shared content digest (same output eq-class).
+	producerFrame := cacheTestIntCall("evidence-exp-producer")
+	resP, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: producerFrame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(producerFrame, 2), nil
+	})
+	assert.NilError(t, err)
+	resP, err = resP.WithContentDigestAny(ctx, contentDigest)
+	assert.NilError(t, err)
+
+	// 3. Collect the term's observed result: release its only owning session,
+	// then prove it is gone so the first accumulation loop (direct term
+	// results) has nothing at all — live or expired — to visit.
+	assert.NilError(t, c.ReleaseSession(scratchCtx, "evidence-exp-session"))
+	c.egraphMu.Lock()
+	_, stillLive := c.resultsByID[collectedID]
+	c.egraphMu.Unlock()
+	assert.Assert(t, !stillLive)
+
+	// 4. Expire the surviving eq-class sibling.
+	c.egraphMu.Lock()
+	resP.cacheSharedResult().expiresAtUnix = time.Now().Add(-time.Hour).Unix()
+	c.egraphMu.Unlock()
+
+	// 5. Re-issue the consumer call: recipe index no longer holds the
+	// collected result, the request carries no extra digests, so the lookup
+	// reaches the structural term — whose only candidate route is the
+	// eq-class expansion, where the expired sibling is dropped.
+	frameB := consumerFrame()
+	req := cacheTestArmedRequest(frameB)
+	initCalls := 0
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, req, func(context.Context) (AnyResult, error) {
+		initCalls++
+		return cacheTestIntResult(frameB, 3), nil
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, initCalls)
+	assert.Assert(t, !res.HitCache())
+
+	ev := req.CacheEvidence
+	assert.Equal(t, CacheOutcomeExecuted, ev.Outcome)
+	assert.Assert(t, ev.MissSawExpired)
+	assert.Assert(t, !ev.MissIncompatibleCandidates)
+	assert.Equal(t, -1, ev.MissUnknownInputIndex)
+}
+
 func TestCacheEvidenceMissIncompatibleCandidates(t *testing.T) {
 	t.Parallel()
 	baseCtx := cacheTestContext(t.Context())

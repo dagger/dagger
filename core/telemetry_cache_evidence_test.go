@@ -9,9 +9,11 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -42,24 +44,28 @@ func evidenceTestRecordingSpan(t *testing.T) (*tracetest.SpanRecorder, trace.Spa
 	return sr, span
 }
 
-func evidenceTestEndedAttrs(t *testing.T, sr *tracetest.SpanRecorder, span trace.Span) map[string]string {
+func evidenceTestEndedAttrs(t *testing.T, sr *tracetest.SpanRecorder, span trace.Span) []attribute.KeyValue {
 	t.Helper()
 	span.End()
 	ended := sr.Ended()
 	assert.Assert(t, len(ended) > 0)
-	got := map[string]string{}
-	for _, kv := range ended[len(ended)-1].Attributes() {
-		got[string(kv.Key)] = kv.Value.Emit()
-	}
-	return got
+	return ended[len(ended)-1].Attributes()
 }
 
-func evidenceTestCacheAttrs(attrs map[string]string) map[string]string {
+// evidenceTestCacheAttrs filters to the dagger.io/cache.* attributes, asserting
+// the contract's wire-type rule as it goes: every contract attribute must be an
+// OTel STRING value (the scalar-string shape the Cloud ingest round-trips
+// bit-exact), not merely Emit() text that happens to match.
+func evidenceTestCacheAttrs(t *testing.T, kvs []attribute.KeyValue) map[string]string {
+	t.Helper()
 	cacheAttrs := map[string]string{}
-	for k, v := range attrs {
-		if len(k) > len("dagger.io/cache.") && k[:len("dagger.io/cache.")] == "dagger.io/cache." {
-			cacheAttrs[k] = v
+	for _, kv := range kvs {
+		k := string(kv.Key)
+		if !strings.HasPrefix(k, "dagger.io/cache.") {
+			continue
 		}
+		assert.Equal(t, attribute.STRING, kv.Value.Type(), "contract attribute %s must be STRING-typed", k)
+		cacheAttrs[k] = kv.Value.AsString()
 	}
 	return cacheAttrs
 }
@@ -116,7 +122,7 @@ func TestRecordCacheEvidenceMappingHit(t *testing.T) {
 		PairingDigest:         pairDig,
 	}, res)
 
-	got := evidenceTestCacheAttrs(evidenceTestEndedAttrs(t, sr, span))
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.DeepEqual(t, got, map[string]string{
 		telemetryattrs.CacheContractAttr:            telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:             "hit",
@@ -143,7 +149,7 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 		PairingDigest:              selfDig,
 	}, nil)
 
-	got := evidenceTestCacheAttrs(evidenceTestEndedAttrs(t, sr, span))
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.DeepEqual(t, got, map[string]string{
 		telemetryattrs.CacheContractAttr:                   telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:                    "executed",
@@ -171,7 +177,7 @@ func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
 		PairingDigest:              selfDig,
 	}, nil)
 
-	got := evidenceTestCacheAttrs(evidenceTestEndedAttrs(t, sr, span))
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.DeepEqual(t, got, map[string]string{
 		telemetryattrs.CacheContractAttr:         telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:          "joined",
@@ -190,7 +196,7 @@ func TestRecordCacheEvidenceMappingUncached(t *testing.T) {
 		MissUnknownInputIndex: -1,
 	}, nil)
 
-	got := evidenceTestCacheAttrs(evidenceTestEndedAttrs(t, sr, span))
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.DeepEqual(t, got, map[string]string{
 		telemetryattrs.CacheContractAttr: telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:  "uncached",
@@ -207,7 +213,7 @@ func TestRecordCacheEvidenceMappingUndecidedStampsNothing(t *testing.T) {
 	recordCacheEvidence(span, dagql.NewCacheDecision(), nil)
 	recordCacheEvidence(span, nil, nil)
 
-	got := evidenceTestCacheAttrs(evidenceTestEndedAttrs(t, sr, span))
+	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
 	assert.Equal(t, 0, len(got))
 }
 
@@ -245,10 +251,7 @@ func TestAroundFuncCacheEvidenceLifecycle(t *testing.T) {
 
 	ended := sr.Ended()
 	assert.Equal(t, 1, len(ended))
-	got := map[string]string{}
-	for _, kv := range ended[0].Attributes() {
-		got[string(kv.Key)] = kv.Value.Emit()
-	}
+	got := evidenceTestCacheAttrs(t, ended[0].Attributes())
 	assert.Equal(t, got[telemetryattrs.CacheContractAttr], telemetryattrs.CacheContractV1)
 	assert.Equal(t, got[telemetryattrs.CacheOutcomeAttr], "executed")
 	assert.Equal(t, got[telemetryattrs.CacheSelfDigestAttr], digest.FromString("lifecycle-self").String())
