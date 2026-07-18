@@ -1909,7 +1909,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.UIActorEmojiAttr, emoji),
 		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
-		attribute.String(telemetry.LLMRoleAttr, strings.ToLower(msg.Role.String())),
+		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 		attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
 	}
 	if callDigest != "" {
