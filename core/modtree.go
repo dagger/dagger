@@ -154,7 +154,6 @@ func (node *ModTreeNode) runAsCheck(
 				}
 			}
 			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
-				telemetry.Reveal(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
@@ -324,7 +323,6 @@ func (node *ModTreeNode) RunUp(ctx context.Context, include, exclude []string, p
 		func(n *ModTreeNode) bool { return n.IsUp },
 		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
 			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
-				telemetry.Reveal(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.String(ServiceNameAttr, n.PathString()),
@@ -464,7 +462,6 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 		readyName = "ready " + strings.Join(urls, " ")
 	}
 	_, readySpan := Tracer(ctx).Start(ctx, readyName,
-		telemetry.Reveal(),
 		trace.WithAttributes(
 			attribute.StringSlice("service.urls", urls),
 		),
@@ -479,7 +476,6 @@ func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []st
 		func(n *ModTreeNode) bool { return n.IsGenerator },
 		func(ctx context.Context, n *ModTreeNode, _ *engine.ClientMetadata) (rerr error) {
 			ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
-				telemetry.Reveal(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
