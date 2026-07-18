@@ -395,3 +395,35 @@ func TestPromoteConversationSurfacesMessages(t *testing.T) {
 		t.Fatalf("top-level rows = %v, want just the surfaced message %v", topSpanIDs, promptID)
 	}
 }
+
+func TestPromoteConversationUsesPrimarySpan(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	unrelatedRootID := prettyTestSpanID(1)
+	primaryID := prettyTestSpanID(2)
+	promptID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: unrelatedRootID, TraceID: prettyTestTraceID(), Name: "remote root received first", StartTime: start, EndTime: start.Add(10 * time.Second)},
+		{ID: primaryID, TraceID: prettyTestTraceID(), Name: "dagger agent", StartTime: start.Add(time.Second), EndTime: start.Add(10 * time.Second)},
+		{ID: promptID, TraceID: prettyTestTraceID(), Name: "LLM prompt", LLMRole: "user", Reveal: true, ParentID: primaryID, StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second)},
+	})
+	db.SetPrimarySpan(primaryID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	primary := db.Spans.Map[primaryID]
+	if !primary.Passthrough {
+		t.Fatal("expected conversation promotion to mark the primary CLI span passthrough")
+	}
+	if db.RootSpan.Passthrough {
+		t.Fatal("expected unrelated first-received root to remain unchanged")
+	}
+	if fe.ZoomedSpan != primaryID {
+		t.Fatalf("zoomed span = %v, want primary %v", fe.ZoomedSpan, primaryID)
+	}
+	if len(fe.rowsView.Body) != 1 || fe.rowsView.Body[0].Span.ID != promptID {
+		t.Fatalf("top-level rows = %v, want surfaced prompt %v", fe.rowsView.Body, promptID)
+	}
+}

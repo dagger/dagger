@@ -1314,3 +1314,116 @@ func TestFlowingModeScopedToLiveUnzoomedShell(t *testing.T) {
 		t.Fatal("un-zooming should restore flowing mode")
 	}
 }
+
+// TestConversationTranscriptStyling verifies the conversation-mode message
+// rendering reads as a transcript rather than a span tree: no bold-pipe
+// gutters and no "user"/"assistant"/"tool" role labels, with the subtle
+// per-role cues in their place -- a shaded background behind the user's
+// prompt, dim italic for thinking, plain indented prose for the assistant,
+// and a faint dot for tool calls.
+func TestConversationTranscriptStyling(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	userID := prettyTestSpanID(2)
+	thinkID := prettyTestSpanID(3)
+	asstID := prettyTestSpanID(4)
+	toolID := prettyTestSpanID(5)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID: rootID, TraceID: prettyTestTraceID(), Name: "shell",
+			StartTime: start, EndTime: start.Add(10 * time.Second), Final: true,
+		},
+		{
+			ID: userID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			Message: "received", LLMRole: "user", ParentID: rootID,
+			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
+		},
+		{
+			ID: thinkID, TraceID: prettyTestTraceID(), Name: "thinking",
+			Message: "received", LLMRole: "assistant", LLMThinking: true, ParentID: rootID,
+			StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
+		},
+		{
+			ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
+			Message: "received", LLMRole: "assistant", ParentID: rootID,
+			StartTime: start.Add(5 * time.Second), EndTime: start.Add(6 * time.Second), Final: true,
+		},
+		{
+			ID: toolID, TraceID: prettyTestTraceID(), Name: "Find",
+			LLMRole: "assistant", LLMTool: "Find", ParentID: rootID,
+			StartTime: start.Add(7 * time.Second), EndTime: start.Add(8 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, db, term)
+	// Force a colour profile so we can assert the per-role SGR styling; the
+	// screen tool strips ANSI, so a unit test is the only way to see it.
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+
+	setLog := func(id dagui.SpanID, text string) {
+		logs := NewVterm(termenv.ANSI)
+		logs.SetWidth(120)
+		_, _ = logs.Write([]byte(text + "\n"))
+		fe.logs.Logs[id] = logs
+	}
+	setLog(userID, "hello there")
+	setLog(thinkID, "let me think")
+	setLog(asstID, "here is my reply")
+	setLog(toolID, `{"pattern": "*"}`)
+
+	fe.recalculateViewLocked()
+
+	frame := strings.Join(fe.tui.Frame(), "\n")
+	plain := stripANSICodes(frame)
+
+	// No span-tree pipe gutters on the transcript.
+	if strings.Contains(plain, VertBoldBar) {
+		t.Fatalf("conversation transcript still shows bold-pipe gutter (%q):\n%s", VertBoldBar, plain)
+	}
+	// No role-word labels.
+	for _, word := range []string{"assistant", "user", "tool"} {
+		if strings.Contains(plain, word) {
+			t.Fatalf("conversation transcript still shows role label %q:\n%s", word, plain)
+		}
+	}
+	// The user's prompt sits on a shaded background (ANSIBrightBlack bg = SGR
+	// 100).
+	if !containsStyledLine(frame, "hello there", "\x1b[100m") {
+		t.Fatalf("user prompt is not rendered on a shaded background:\n%s", visibleEscapes(frame))
+	}
+	// Thinking is dim italic bright-black (SGR 90;3).
+	if !containsStyledLine(frame, "let me think", "\x1b[90;3m") {
+		t.Fatalf("thinking is not rendered dim italic:\n%s", visibleEscapes(frame))
+	}
+	// Tool calls keep a faint-dot cue.
+	if !strings.Contains(plain, "• Find") {
+		t.Fatalf("tool call missing faint-dot cue:\n%s", plain)
+	}
+}
+
+func stripANSICodes(s string) string {
+	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, "")
+}
+
+func containsStyledLine(frame, text, styleSeq string) bool {
+	for _, line := range strings.Split(frame, "\n") {
+		if !strings.Contains(stripANSICodes(line), text) {
+			continue
+		}
+		if strings.Contains(line, styleSeq) {
+			return true
+		}
+	}
+	return false
+}
+
+func visibleEscapes(frame string) string {
+	return strings.ReplaceAll(frame, "\x1b", "\\x1b")
+}
+

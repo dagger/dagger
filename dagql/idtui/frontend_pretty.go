@@ -3251,16 +3251,24 @@ func (fe *frontendPretty) promoteChecksLocked() {
 // (top-level turns reach the root; a sub-agent's turns stop at the tool-call
 // span that spawned them), so this reuses the existing tree/row rendering.
 func (fe *frontendPretty) promoteConversationLocked() {
-	if fe.db == nil || fe.db.RootSpan == nil || !fe.db.HasConversation() {
+	if fe.db == nil || !fe.db.HasConversation() {
 		return
 	}
-	if fe.db.RootSpan.LLMRole != "" {
-		// The root span is itself a message: there's no setup noise above it to
-		// hide, and passing it through would reparent its children to the top
-		// level. Nothing to promote.
+	// SetPrimary explicitly zooms interactive commands to the CLI root, while
+	// RootSpan is merely the first parentless span received and may be a remote
+	// query root. Promote the span RowsView is actually zoomed to.
+	host := fe.db.RootSpan
+	if primary := fe.db.Spans.Map[fe.db.PrimarySpan]; primary != nil {
+		host = primary
+	}
+	if host == nil {
 		return
 	}
-	fe.db.RootSpan.Passthrough = true
+	if host.LLMRole != "" {
+		// The host is itself a message: there is no setup noise above it to hide.
+		return
+	}
+	host.Passthrough = true
 	if !fe.ZoomedSpan.IsValid() {
 		fe.ZoomedSpan = fe.db.PrimarySpan
 	}
@@ -5460,12 +5468,21 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 				// status is always OK.
 				return nil
 			}
-			r.fancyIndent(out, row, false, false)
-			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
-			if focused {
-				bar = hl(bar)
+			if span.LLMRole == "" {
+				// Non-conversation message spans keep the bold-pipe chrome before
+				// their trailing duration/status. Conversation turns read as a
+				// transcript, so they skip the pipe and let the reply flow into the
+				// duration directly.
+				r.fancyIndent(out, row, false, false)
+				bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+				if focused {
+					bar = hl(bar)
+				}
+				fmt.Fprint(out, bar)
+			} else {
+				r.fancyIndent(out, row, false, false)
+				fmt.Fprint(out, "  ")
 			}
-			fmt.Fprint(out, bar)
 		} else {
 			empty = true
 		}
@@ -5561,18 +5578,22 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 	}
 
 	if row.Span.LLMRole != "" {
-		var marker termenv.Style
+		// Conversation turns are distinguished by subtle content styling rather
+		// than a role label (see renderLLMMessageBlock): the user's message sits
+		// on a shaded background, thinking is dim italic, and the assistant's
+		// reply gets no chrome at all -- just a one-space indent so it reads as
+		// plain prose. Tool calls keep a quiet leading cue since their body is a
+		// call, not a message.
 		switch {
 		case row.Span.LLMTool != "":
-			// Tool calls remain fully interactive, but their label is deliberately
-			// quieter than either side of the conversation.
-			marker = out.String("tool").Foreground(termenv.ANSIBrightBlack).Faint()
-		case row.Span.LLMRole == telemetry.LLMRoleUser:
-			marker = out.String("user").Foreground(termenv.ANSIMagenta).Bold()
+			// Tool calls remain fully interactive; a faint dot marks them without
+			// shouting "tool" on every row.
+			fmt.Fprint(out, out.String("• ").Foreground(termenv.ANSIBrightBlack).Faint())
 		default:
-			marker = out.String("assistant").Foreground(termenv.ANSICyan).Bold()
+			// A single space of indent, matching pi: the assistant's reply has no
+			// special chrome, just breathing room from the margin.
+			fmt.Fprint(out, " ")
 		}
-		fmt.Fprint(out, marker, "  ")
 	} else if !fe.finalRender {
 		fe.renderToggler(out, row, focused)
 		fmt.Fprint(out, " ")
@@ -5963,8 +5984,63 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.Tra
 	if view == "" {
 		return false
 	}
+	// Give conversation turns their subtle content styling: the user's prompt
+	// on a shaded background, thinking as dim italic. The assistant's reply and
+	// tool output are left untouched (no chrome at all).
+	if styled, ok := fe.styleLLMMessageView(out, row.Span, logPrefix, view); ok {
+		view = styled
+	}
 	fmt.Fprint(out, view)
 	return true
+}
+
+// styleLLMMessageView applies pi-style per-role content styling to a rendered
+// message Vterm view, returning the restyled view (and true) for the roles it
+// handles. The user's prompt is drawn on a shaded (ANSIBrightBlack) background
+// padded to the content width, so it reads as an inset block; thinking is drawn
+// dim and italic. Other roles -- the assistant's reply, tool calls -- are left
+// verbatim, so this returns false for them.
+func (fe *frontendPretty) styleLLMMessageView(out TermOutput, span *dagui.Span, logPrefix, view string) (string, bool) {
+	if span.LLMRole == "" || span.LLMTool != "" {
+		return "", false
+	}
+	user := span.LLMRole == telemetry.LLMRoleUser
+	if !user && !span.LLMThinking {
+		return "", false
+	}
+
+	width := fe.contentWidth
+	if width <= 0 {
+		width = fe.window.Width
+	}
+
+	lines := strings.Split(strings.TrimSuffix(view, "\n"), "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		// Strip existing SGR so the role styling owns the line; user prompts and
+		// thinking are prose, not richly formatted output, so nothing of value is
+		// lost, and it keeps a background from being punched out by a reset.
+		plain := ansi.Strip(line)
+		if user {
+			padded := plain
+			if width > 0 {
+				padded = padANSI(clipPlain(plain, width), width)
+			}
+			b.WriteString(out.String(padded).Background(termenv.ANSIBrightBlack).String())
+		} else {
+			// Thinking: dim italic foreground, no background.
+			body := strings.TrimPrefix(plain, ansi.Strip(logPrefix))
+			b.WriteString(logPrefix)
+			b.WriteString(out.String(body).Foreground(termenv.ANSIBrightBlack).Italic().String())
+		}
+	}
+	if strings.HasSuffix(view, "\n") {
+		b.WriteByte('\n')
+	}
+	return b.String(), true
 }
 
 // logLinePrefixes builds the per-line prefix applied to a row's inline log
@@ -5981,6 +6057,21 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		dashed = hl(dashed)
 	}
 
+	// Conversation messages read as a transcript, not a span tree: drop the
+	// bold pipe gutter in favour of a plain indent so the body sits flush like
+	// prose. Only LLM message rows are affected; the regular tree keeps its
+	// pipe. Tool-call output keeps a quiet gutter so its result stays visually
+	// attached to the call.
+	llmMessage := span.LLMRole != ""
+	if llmMessage {
+		gutter := "  "
+		if span.LLMTool != "" {
+			gutter = out.String(VertDash3 + " ").Foreground(termenv.ANSIBrightBlack).Faint().String()
+		}
+		pipe = out.String(gutter)
+		dashed = out.String(gutter)
+	}
+
 	if row.Depth == -1 {
 		// clear prefix when zoomed
 		logPrefix = prefix
@@ -5990,7 +6081,9 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
 		fmt.Fprint(indentOut, pipe)
-		fmt.Fprint(indentOut, out.String(" "))
+		if !llmMessage {
+			fmt.Fprint(indentOut, out.String(" "))
+		}
 		logPrefix = pipeBuf.String()
 	}
 
@@ -5999,7 +6092,9 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 	trimOut := NewOutput(trimBuf, termenv.WithProfile(fe.profile))
 	r.fancyIndent(trimOut, row, false, false)
 	fmt.Fprint(trimOut, dashed)
-	fmt.Fprint(trimOut, out.String(" "))
+	if !llmMessage {
+		fmt.Fprint(trimOut, out.String(" "))
+	}
 	trimPrefix = trimBuf.String()
 	return logPrefix, trimPrefix
 }
