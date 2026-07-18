@@ -2,15 +2,10 @@
 
 As-built design for the agent architecture on this branch: the LLM binds to the
 session's **Workspace**, acts through **object tools**, composes installable
-**`@agent` plugins**, and its edits **propagate** to everything that runs on its
-behalf. This consolidates and supersedes the earlier working docs for the
-individual pieces (the LLM object-tools proposal, the `@agent` plugins proposal,
-and the workspace/generator sync investigation).
-
-The companion skill `skills/dagger-llm-workspace/SKILL.md` covers the same
-plumbing from a debugging perspective (how a given read resolves, and how to QA
-it against a from-source engine); this doc covers what the pieces are and why
-they have the shape they do.
+**`@agent` plugins**, and its edits are **seeded** into the tool calls and
+group runs that act on its behalf. This consolidates and supersedes the earlier
+working docs for the individual pieces (the LLM object-tools proposal, the
+`@agent` plugins proposal, and the workspace/generator sync investigation).
 
 ## 1. The Workspace binding
 
@@ -35,8 +30,8 @@ I/O construct:
 The former `Env` type — the prompt-I/O bag the LLM used to bind against — is
 gone. The workspace binding took over its two real jobs (giving the model
 mutable state, and scoping what it can reach), and object tools (§2) took over
-tool generation. What `Env` had that `Workspace` initially lacked — cross-module
-propagation of the bound value — is restored in §4.
+tool generation. Unlike `Env`, the bound value does not auto-propagate across
+module boundaries; §4 describes the explicit-pass contract that replaced that.
 
 ## 2. Object tools: objects as tools and state
 
@@ -134,49 +129,50 @@ dagger agent                                    # prompt with all of them compos
 ## 4. Workspace propagation: who sees which workspace
 
 There are two workspace notions in a session, and keeping them straight is
-what makes agent edits visible everywhere:
+what makes agent behavior predictable:
 
 1. the LLM's **bound** workspace (`llm.workspace` / `mcp.workspace`), which
    advances as tools apply overlay changesets;
 2. the per-client **frozen** workspace (`Server.CurrentWorkspace`), cached at
    session load and invalidated only by config changes.
 
-The invariant: **module A calling module B runs B against A's workspace.**
-Regular modules satisfy it coincidentally (their workspace *is* the ambient
-one); the LLM's in-session overlay makes the two diverge, and everything below
-exists to close the gaps that exposed:
+The bound (live, edited) workspace is **seeded** into the calls that act on
+the agent's behalf, and stops at the module execution boundary:
 
-- **`currentWorkspace` prefers the bound workspace**
-  (`core/schema/workspace.go`): the resolver returns `WorkspaceFromContext(ctx)`
-  when one is bound before falling back to the frozen session workspace, so a
-  module tool reading `currentWorkspace` under a bound context observes the
-  agent's edits.
-- **Group runs re-seed the workspace they were called on.**
-  `Workspace.generators` / `.checks` / `.agents` / `.services` stash their
+- **Seeding.** MCP tool dispatch threads the bound workspace into the direct
+  tool call's context, and group runs re-seed the workspace they were called
+  on: `Workspace.generators` / `.checks` / `.agents` / `.services` stash their
   `parent` workspace on the group as a transient `BoundWorkspace`, and each
   group's run/compose threads it via `WorkspaceToContext` before invoking each
   leaf — so a *direct* `W.generators(overlay).run` (raw API query, `dagger
   generate`/`check` against an overlay) resolves leaves against that overlay
-  rather than the frozen base. (An A/B confirmed the LLM's own generate path
-  doesn't need this — `applyChangeset` forces lazy changesets under the tool
-  context, which already seeds `WorkspaceFromContext` — so `BoundWorkspace` is
-  a no-op-when-unused backstop for the direct-API contract.)
-- **The binding carries across module calls.** `WorkspaceToContext` is a Go
-  context value and cannot cross the nested client session that runs a module
-  body — the same reason the receiver object rides `fnCall`. `modfunc.Call`
-  reads the bound workspace and threads it through `runtime.Call` into the
-  nested client (Dang and container runtimes); `WorkspaceFromContext` gains a
-  server-side fallback to `Server.CurrentWorkspaceContext`. Carried per call,
-  transient, and a no-op when nothing is bound — ordinary module usage is
-  unchanged. This restores propagation machinery `Env` had that the Workspace
-  migration dropped.
+  rather than the frozen base. Only the first hop — the direct tool call and
+  layer-1 group leaves — sees the bound workspace this way.
+- **No cross-module carry.** The bound workspace does **not** propagate across
+  the module execution boundary. A module function calling another module must
+  pass a `Workspace` **explicitly** as an argument; an omitted auto-injected
+  `Workspace!` errors instead of silently falling back to the caller's session
+  workspace (`loadWorkspaceArg` / `callerInModuleFunction` in
+  `core/modfunc.go`). This is the contract adopted from #13229: workspace flow
+  between modules is always visible in the call.
+- **Frozen-workspace inheritance stays.** A nested client still inherits its
+  parent's *session* workspace (`inheritWorkspaceBinding` →
+  `Server.CurrentWorkspace`, `engine/server/session_workspaces.go`). This is a
+  separate, engine-internal discovery mechanism — e.g. `currentModuleAsSDK`
+  (`core/schema/module_as_sdk.go`) finding the workspace a module is installed
+  in during nested SDK codegen. Module *source* stays session-served (frozen);
+  a generator reading its own module directory via `@defaultPath` is
+  unaffected.
+- **`currentWorkspace` is hidden from module SDKs** (#13659): modules cannot
+  call `dag.CurrentWorkspace()` at all — it's a compile error. A module
+  receives the Workspace via a declared arg, never by reading
+  `currentWorkspace`. (Engine-internal resolvers may still read
+  `Server.CurrentWorkspace` directly, which is what frozen inheritance
+  serves.)
 
-The mental model that unifies it: a workspace must be **seeded** into a call
-chain (MCP seeds tools at dispatch; groups seed their leaves via
-`BoundWorkspace`), then **propagated** across each module boundary (the
-nested-client carry). Module *source* stays session-served (frozen) — a
-generator reading its own module directory via `@defaultPath` is unaffected;
-only workspace reads advance.
+The mental model: a workspace is **seeded** into a call chain (MCP seeds tools
+at dispatch; groups seed their leaves via `BoundWorkspace`), and past that it
+is **passed explicitly** — never carried implicitly across a module boundary.
 
 ## 5. Pointers
 
@@ -185,10 +181,11 @@ only workspace reads advance.
 - `currentNode`: `core/schema/module.go`, `core/modfunc.go`
 - `@agent`: `core/agents.go`, `core/schema/agents.go`, `core/modtree.go`,
   `internal/cmd/dagger/agent.go`, `core/integration/agents_test.go`
-- Propagation: `core/workspace_context.go`, `core/modfunc.go`, `core/sdk.go`,
-  `engine/server/session.go`,
+- Propagation: `core/workspace_context.go` (seeding), `core/modfunc.go`
+  (`loadWorkspaceArg` / `callerInModuleFunction` — the explicit-pass gate),
+  `engine/server/session_workspaces.go` (frozen inheritance),
   `core/integration/generators_test.go`
-  (`TestWorkspaceGeneratorRunsDependencyAgainstItsWorkspace` and the
+  (`TestWorkspaceGeneratorsSeeOverlayEdits` and the
   `generator-workspace-sync` fixtures)
 - Known gap: the `modules/evals` suite still references the removed `dag.Env()`
   and needs migrating to the workspace/object-tools model.
