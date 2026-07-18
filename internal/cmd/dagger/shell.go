@@ -718,6 +718,18 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 				}
 			}
 		}
+	case key.MatchString("ctrl+u"):
+		if h.llmSession != nil {
+			return func() {
+				if err := h.llmSession.ResetWorkspace(ctx); err != nil {
+					slog.Error("failed to reset agent workspace", "error", err.Error())
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("RESET ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+			}
+		}
 	}
 	return nil
 }
