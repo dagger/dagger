@@ -167,18 +167,9 @@ func workspaceEnvFromClientMetadata(clientMD *engine.ClientMetadata) (string, bo
 	return "", false
 }
 
-// isModuleRuntimeClient reports whether client represents code executing inside
-// a module function. It keys off an active function call, not merely a module in
-// context: a client that only serves a module's schema (e.g. the CLI running
-// `dagger generate`) is not a runtime and still inherits its parent workspace.
-func isModuleRuntimeClient(client *daggerClient) bool {
-	return client != nil && client.fnCall != nil
-}
-
 // inheritWorkspaceBinding copies the nearest available parent workspace binding
-// onto the current client. Inheritance stops when a module runtime client would
-// inherit through another module runtime parent, so workspace context does not
-// flow from one module runtime into a dependency module runtime.
+// onto the current client. This keeps nested clients aligned with their parent
+// workspace for currentWorkspace() resolution.
 func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerClient) error {
 	client.workspaceMu.Lock()
 	if client.workspace != nil {
@@ -189,9 +180,6 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 
 	for i := len(client.parents) - 1; i >= 0; i-- {
 		parent := client.parents[i]
-		if isModuleRuntimeClient(client) && isModuleRuntimeClient(parent) {
-			return nil
-		}
 		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
 			return err
 		}
