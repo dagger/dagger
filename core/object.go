@@ -51,6 +51,27 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 			return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
 		}
 		return value, nil
+	case string:
+		// A self-call that returns one of the module's own object types
+		// serializes the result as the object's GraphQL ID (a string), since
+		// the object lives in the module's runtime schema. Decode the ID and
+		// load the concrete object, mirroring how InterfaceType handles IDs.
+		var id call.ID
+		if err := id.Decode(value); err != nil {
+			return nil, fmt.Errorf("decode object ID for %q: %w", t.typeDef.Name, err)
+		}
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("current dagql server: %w", err)
+		}
+		loaded, err := dag.Load(ctx, &id)
+		if err != nil {
+			return nil, fmt.Errorf("load object ID for %q: %w", t.typeDef.Name, err)
+		}
+		if loaded.Type() == nil || loaded.Type().Name() != t.typeDef.Name {
+			return nil, fmt.Errorf("loaded object type %q does not match expected type %q", loaded.Type().Name(), t.typeDef.Name)
+		}
+		return loaded, nil
 	case map[string]any:
 		res, err := dagql.NewResultForCurrentCall(ctx, &ModuleObject{
 			Module:  t.mod,

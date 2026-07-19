@@ -11,6 +11,8 @@ import (
 	"slices"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/iancoleman/strcase"
+
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
@@ -101,6 +103,15 @@ func evalDangSource(
 			return nil, fmt.Errorf("decode schema: %w", err)
 		}
 
+		// During the typedef/declaration phase (ModuleTypes) the schema handed to
+		// us is deps-only: it does not yet carry the module's own object types,
+		// because those are exactly what this pass produces. Self-call fields
+		// annotate their return as Dagger.<MainType> (the module's own type as it
+		// lives in the runtime schema, carrying a GraphQL id + Node), so make that
+		// name resolvable here. At runtime the served schema already includes the
+		// module's own types (Module.IncludeSelfInDeps), so this is a no-op then.
+		ensureModuleSelfTypes(intro.Schema, modSource.Self().ModuleName)
+
 		ctx = dang.ContextWithImportConfigs(ctx, dang.ImportConfig{
 			Name:       "Dagger",
 			Client:     gqlClient,
@@ -127,6 +138,45 @@ func evalDangSource(
 		}
 
 		return withEnv(ctx, env)
+	})
+}
+
+// ensureModuleSelfTypes makes the module's own main object type resolvable as
+// Dagger.<MainType> during the deps-only declaration phase (ModuleTypes), where
+// the schema does not yet carry the module's own installed types — those are
+// exactly what that pass produces. Self-call fields declare their return as
+// Dagger.<MainType> because a self-call (e.g. `tuiQa`) yields the module's own
+// type as it lives in the runtime schema (carrying a GraphQL id, implementing
+// Node), not the bare local type. The synthesized type is only ever used for
+// name resolution and typedef references (via `withObject(name:)`, which core
+// then namespaces consistently); it is never emitted as a TypeDef, so a minimal
+// shape suffices. Once the served runtime schema already carries the type
+// (Module.IncludeSelfInDeps), this is a no-op.
+func ensureModuleSelfTypes(schema *introspection.Schema, moduleName string) {
+	if schema == nil || moduleName == "" {
+		return
+	}
+	// The main object's installed name is the module name in capitalized camel
+	// case (matching core's gqlObjectName / Module.isMainObject rule).
+	mainType := strcase.ToCamel(moduleName)
+	if schema.Types.Get(mainType) != nil {
+		return
+	}
+	schema.Types = append(schema.Types, &introspection.Type{
+		Kind: introspection.TypeKindObject,
+		Name: mainType,
+		Fields: []*introspection.Field{
+			{
+				Name: "id",
+				TypeRef: &introspection.TypeRef{
+					Kind: introspection.TypeKindNonNull,
+					OfType: &introspection.TypeRef{
+						Kind: introspection.TypeKindScalar,
+						Name: "ID",
+					},
+				},
+			},
+		},
 	})
 }
 

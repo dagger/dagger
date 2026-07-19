@@ -385,6 +385,33 @@ func (DangSuite) TestNullableSDKInputObjectFields(_ context.Context, t *testctx.
 	}
 }
 
+func (DangSuite) TestSelfCallReturningOwnType(_ context.Context, t *testctx.T) {
+	// A self-call that returns the module's own object type surfaces as the
+	// object's GraphQL ID (a string), since the object lives in the module's
+	// runtime schema. The runtime must load that ID back into the object
+	// rather than choke on the raw string. Regression test for tui-qa's
+	// `stop`, which returns `tuiQa`.
+	t.Run("return own type from a self-call and read a field", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "self-calls").
+			With(daggerCall("fresh", "get-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from field", strings.TrimSpace(out))
+	})
+
+	t.Run("read a field off a self-returned object", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "self-calls").
+			With(daggerCall("self-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from field", strings.TrimSpace(out))
+	})
+}
+
 func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/dang", moduleName))

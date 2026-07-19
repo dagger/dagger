@@ -1,4 +1,6 @@
 type Test {
+  let message: String! = "hello from field"
+
   pub containerEcho(stringArg: String! = "Hello Self Calls"): Container! {
     Dagger.container.from("alpine:latest").withExec(["echo", stringArg])
   }
@@ -9,5 +11,27 @@ type Test {
 
   pub printDefault: String! {
     test.containerEcho.stdout
+  }
+
+  # message is a computed field so it can be read back off a self-returned Test.
+  pub getMessage: String! {
+    message
+  }
+
+  # fresh self-calls the module's own constructor (`test`). A self-call yields
+  # the module's own type as it lives in the runtime schema — a Dagger.Test,
+  # which carries a GraphQL id — so the return is declared Dagger.Test! rather
+  # than the bare local Test!. The self-call return travels as the object's
+  # GraphQL ID (a string), which the runtime must load back into a Test object
+  # rather than choke on the raw ID string. This mirrors tui-qa's `stop`, which
+  # returns `tuiQa`.
+  pub fresh: Dagger.Test! {
+    test
+  }
+
+  # selfMessage exercises reading a field back off the self-returned object,
+  # proving the loaded object is usable and not just a bare ID.
+  pub selfMessage: String! {
+    test.fresh.getMessage
   }
 }
