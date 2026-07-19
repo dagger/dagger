@@ -1,0 +1,3 @@
+[imports.Dagger]
+dagger = true
+service = ["./hack/with-dev", "./bin/dagger", "session"]
