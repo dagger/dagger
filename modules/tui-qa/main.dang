@@ -17,22 +17,6 @@
 #     across tool calls within this dagger session)
 #   - hold a small curl client container (bound to that service) as session
 #     state; each interaction tool curls the console over HTTP
-#
-# STATUS: loaded & smoke-tested against a from-source engine (start -> console
-# -> curl -> screen returns real frames; the whole session's service persists
-# across many tool calls). The load-bearing gotcha, now handled: every tool that
-# reads/drives the live console is @cache(policy: FunctionCachePolicy.Never) —
-# without it dagql memoizes the result per (object id + field + args) across
-# tool-call queries and the screen freezes on the first frame. See the NOTE on
-# `screen`. Interactive prompt mode (`dagger shell`, and its `.prompt`/agent
-# REPL) IS now driveable via the console: `start(args: ["shell"])` brings up the
-# live prompt, `typeText` fills the editline, and `key enter` submits — proven
-# end to end. This needed a one-line CLI fix (internal/cmd/dagger/shell.go: go
-# interactive when DAGGER_TUI_CONSOLE is set, since input arrives via injected
-# keys, not a stdin tty). A real LLM turn (`.prompt`/agent) also works: the
-# `.asService` runs with experimentalPrivilegedNesting so the command-under-test
-# shares the outer session and inherits its LLM auth (proven: `.prompt` runs real
-# streamed claude-opus-4 turns). No credential mounting needed.
 
 let defaultWorkdir = "/src"
 let defaultPort = 7777
@@ -261,12 +245,10 @@ type TuiQa {
     - Check for crashes explicitly: grep the screen for "panic:", "fatal error".
     - `stop` when done.
 
-    Interactive prompt mode works too: `start(args: ["shell"])` brings up the
-    live `dagger shell` prompt (wait for the module to load, then the
-    `<module> ⋈` prompt appears). Drive it by `typeText`-ing a line into the
+    Interactive prompt mode works too: `start(args: ["agent"])` brings up the
+    live `dagger agent` prompt. Drive it by `typeText`-ing a line into the
     editline and `key enter` to submit; `key esc` toggles nav/input mode.
-    Switching to `.prompt`/agent mode and submitting a prompt runs a real LLM
-    turn — the runner uses experimentalPrivilegedNesting so it inherits the
-    outer session's LLM auth (no credential setup needed).
+    The runner uses experimentalPrivilegedNesting so it inherits the outer
+    session's LLM auth (no credential setup needed).
   """
 }
