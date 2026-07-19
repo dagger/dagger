@@ -116,6 +116,7 @@ type frontendPretty struct {
 	statusLine      *StatusLine
 	llmCostFn       LLMCostFunc
 	textInput       *tuist.TextInput
+	promptFrame     *PromptFrame
 	completionMenu  *tuist.CompletionMenu
 	keymapBar       *KeymapBar
 	editlineFocused bool
@@ -905,9 +906,10 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 		inFlight:  func() bool { return fe.shellRunning },
 	}
 	fe.tui.RemoveChild(fe.keymapBar)
+	fe.promptFrame = NewPromptFrame(fe.textInput, fe.profile)
 	fe.tui.AddChild(fe.promptErrLabel)
 	fe.tui.AddChild(fe.queuedMsgLabel)
-	fe.tui.AddChild(fe.textInput)
+	fe.tui.AddChild(fe.promptFrame)
 	fe.tui.AddChild(fe.statusLine)
 	fe.tui.AddChild(fe.keymapBar)
 	fe.tui.SetShowHardwareCursor(true)
@@ -936,7 +938,8 @@ func (fe *frontendPretty) stopShell() {
 		fe.statusLine = nil
 	}
 	if fe.textInput != nil {
-		fe.tui.RemoveChild(fe.textInput)
+		fe.tui.RemoveChild(fe.promptFrame)
+		fe.promptFrame = nil
 		fe.textInput = nil
 	}
 	if fe.notificationOverlay != nil {
@@ -3059,7 +3062,12 @@ func (fe *frontendPretty) editlineHeight() int {
 	}
 	// Count newlines in current value + 1 for the input line itself
 	val := fe.textInput.Value()
-	return strings.Count(val, "\n") + 1
+	height := strings.Count(val, "\n") + 1
+	// The framed prompt adds a horizontal rule above and below the input.
+	if fe.promptFrame != nil && fe.promptFrame.enabled {
+		height += 2
+	}
+	return height
 }
 
 // formHeight returns the estimated line count of the form wrap
@@ -4593,6 +4601,17 @@ func (fe *frontendPretty) syncPrompt() {
 		prompt, init := fe.shell.Prompt(ctx, promptOut, fe.promptFg)
 		fe.textInput.Prompt = prompt
 		fe.textInput.Update()
+		// Frame the input (bars + shaded background) when the handler reports LLM
+		// prompt mode, so the live prompt mirrors how a submitted user message is
+		// shaded in scrollback (styleLLMMessageView). Handlers that don't
+		// distinguish modes (plain shell) leave it unframed.
+		if fe.promptFrame != nil {
+			promptMode := false
+			if pm, ok := fe.shell.(interface{ PromptMode() bool }); ok {
+				promptMode = pm.PromptMode()
+			}
+			fe.promptFrame.SetEnabled(promptMode)
+		}
 		if init != nil {
 			fe.runShellAsync(init)
 		}
@@ -5582,7 +5601,7 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 
 	if !fe.finalRender && fe.shell != nil {
 		if focused {
-			fmt.Fprint(out, out.String("> ").Bold())
+			fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
 		} else {
 			fmt.Fprint(out, "  ")
 		}

@@ -533,6 +533,13 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	return h.run(ctx, strings.NewReader(line), "")
 }
 
+// PromptMode reports whether the handler is currently in LLM prompt mode, so
+// the frontend can frame the input to mirror the shaded user-message styling in
+// scrollback. It satisfies the optional interface the pretty frontend probes.
+func (h *shellCallHandler) PromptMode() bool {
+	return h.mode == modePrompt
+}
+
 func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, func()) {
 	sb := new(strings.Builder)
 
@@ -550,24 +557,19 @@ func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg 
 		sb.WriteString(out.String(idtui.ShellPrompt).Bold().Foreground(fg).String())
 		sb.WriteString(out.String(out.String(" ").String()).String())
 	case modePrompt:
-		// initialize LLM session if not already initialized
+		// initialize LLM session if not already initialized. The prompt is empty
+		// in this mode: the framed prompt input (see PromptFrame) frames the input
+		// with over/underline rules and keeps it flush to the edge, and the model
+		// is shown on the status line.
 		llm, err := h.llmMaybe()
 		if err != nil {
 			sb.WriteString(out.String("error").Bold().Foreground(termenv.ANSIRed).String())
 			sb.WriteString(out.String(" ").String())
-			fg = termenv.ANSIRed
-		} else if llm != nil {
-			sb.WriteString(out.String(llm.model).Bold().Foreground(termenv.ANSICyan).String())
-			sb.WriteString(out.String(" ").String())
-		} else {
-			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
-			sb.WriteString(out.String(" ").String())
+		} else if llm == nil {
 			init = func() {
 				h.llm(ctx) //nolint:errcheck
 			}
 		}
-		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
-		sb.WriteString(out.String(out.String(" ").String()).String())
 	}
 
 	return sb.String(), init
