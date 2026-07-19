@@ -6102,6 +6102,20 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		dashed = out.String(gutter)
 	}
 
+	// In shell mode the step title is drawn with a two-cell indent after
+	// fancyIndent (the focus prompt "❯ ", or two spaces when unfocused; see
+	// renderStep). A tool call's output is a separate block beneath the title,
+	// so its gutter has to match that indent to line up under the faint dot
+	// printed in front of the tool name, rather than sitting two columns to its
+	// left. Plain messages (the assistant's reply, thinking, the user's prompt)
+	// render their first line inline on the already-indented title line and
+	// flow their continuation lines through this same gutter, so they must NOT
+	// get the extra indent -- otherwise every line but the first shifts right.
+	shellIndent := ""
+	if !fe.finalRender && fe.shell != nil && span.LLMTool != "" {
+		shellIndent = "  "
+	}
+
 	if row.Depth == -1 {
 		// clear prefix when zoomed
 		logPrefix = prefix
@@ -6110,6 +6124,7 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 		fmt.Fprint(pipeBuf, prefix)
 		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
+		fmt.Fprint(indentOut, shellIndent)
 		fmt.Fprint(indentOut, pipe)
 		if !llmMessage {
 			fmt.Fprint(indentOut, out.String(" "))
@@ -6121,6 +6136,7 @@ func (fe *frontendPretty) logLinePrefixes(out TermOutput, r *renderer, row *dagu
 	fmt.Fprint(trimBuf, prefix)
 	trimOut := NewOutput(trimBuf, termenv.WithProfile(fe.profile))
 	r.fancyIndent(trimOut, row, false, false)
+	fmt.Fprint(trimOut, shellIndent)
 	fmt.Fprint(trimOut, dashed)
 	if !llmMessage {
 		fmt.Fprint(trimOut, out.String(" "))
