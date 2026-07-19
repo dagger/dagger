@@ -79,6 +79,11 @@ type LLMSession struct {
 	autoCompact  bool
 	autoCompactL *sync.Mutex
 
+	// initialLLM is the base LLM to reset to on .clear, e.g. the workspace's
+	// composed agent group as selected on startup (`dagger agent`). When nil,
+	// .clear resets to a plain workspace-bound LLM.
+	initialLLM *dagger.LLM
+
 	// subscriptionLabelCache caches the OAuth subscription label for the status
 	// line, resolved lazily on first use.
 	subscriptionLabelCache string
@@ -165,6 +170,17 @@ func (s *LLMSession) ToggleAutocompact() {
 }
 
 func (s *LLMSession) reset() {
+	// Reset to the initially selected agent group (e.g. `dagger agent`), if any,
+	// so .clear returns to those agents rather than a blank LLM. Preserve the
+	// currently selected model.
+	if s.initialLLM != nil {
+		llm := s.initialLLM
+		if s.model != "" {
+			llm = llm.WithModel(s.model)
+		}
+		s.updateLLM(llm)
+		return
+	}
 	// The LLM binds the current workspace by default (see core.NewLLM), so its
 	// schema and file-editing surface derive from the user's workspace.
 	s.updateLLM(s.dag.LLM(dagger.LLMOpts{Model: s.model}))
