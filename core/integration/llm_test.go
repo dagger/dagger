@@ -606,3 +606,67 @@ func (LLMSuite) TestWithResetWorkspace(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, origHist, reloadedHist)
 }
+
+// TestWithResetWorkspaceStripsNonChangesOverlays verifies that
+// withResetWorkspace drops workspace overlays applied through mutators other
+// than withChanges — e.g. the withNewFile / withNewDirectory calls the built-in
+// filesystem tools use. Previously the reset only peeled a trailing withChanges
+// chain, so a workspace edited via withNewFile stayed pinned with its overlay:
+// the reset LLM still reported the (already-exported) edit as a pending change,
+// which is what made `dagger agent`'s ctrl+s leave a stale "Changes" bubble and
+// re-diff already-saved files as deletions on the next turn.
+func (LLMSuite) TestWithResetWorkspaceStripsNonChangesOverlays(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	llm := c.LLM().
+		WithModel("openai/gpt-4o").
+		WithSystemPrompt("be helpful").
+		WithPrompt("hello").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "hello world"},
+		})
+
+	// Overlay edits via workspace mutators (not withChanges), mimicking the
+	// built-in write tool: currentWorkspace().withNewFile(...).withNewFile(...).
+	edited := llm.WithWorkspace(
+		llm.Workspace().
+			WithNewFile("added.txt", "one").
+			WithNewFile("another.txt", "two"),
+	)
+
+	// Sanity check: before reset the overlay reports the edits as pending.
+	editedEmpty, err := edited.Workspace().Changes().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, editedEmpty, "overlaid workspace should report pending changes")
+
+	reset := edited.WithResetWorkspace()
+
+	// After reset the overlay is gone: the workspace re-roots at its base, so it
+	// reports no pending changes.
+	resetEmpty, err := reset.Workspace().Changes().IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, resetEmpty,
+		"reset workspace must drop overlay edits so no pending changes remain")
+
+	// The re-emitted recipe carries no workspace rebind or mutator: the
+	// currentWorkspace base is dropped so replay re-resolves the live workspace.
+	globalID, err := reset.PortableID(ctx)
+	require.NoError(t, err)
+	gid := new(call.ID)
+	require.NoError(t, gid.Decode(string(globalID)))
+	for cur := gid; cur != nil; cur = cur.Receiver() {
+		require.NotEqual(t, "withResetWorkspace", cur.Field(),
+			"reset must re-emit the recipe, not append to it")
+		require.NotEqual(t, "withWorkspace", cur.Field(),
+			"a currentWorkspace-based binding must be dropped from the recipe")
+		require.NotEqual(t, "withNewFile", cur.Field(),
+			"overlay mutators must be stripped from the reset recipe")
+	}
+
+	// The conversation survives the reset byte-for-byte.
+	origHist, err := edited.Transcript(ctx)
+	require.NoError(t, err)
+	resetHist, err := reset.Transcript(ctx)
+	require.NoError(t, err)
+	require.Equal(t, origHist, resetHist)
+}

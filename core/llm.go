@@ -2120,8 +2120,9 @@ func (llm *LLM) Workspace() dagql.ObjectResult[*Workspace] {
 // WithResetWorkspace returns a new LLM whose recipe is re-emitted as a flat,
 // data-only chain rooted at Query.llm: the conversation, model, config, MCP
 // servers, and tool bindings are replayed as selectors, and the workspace
-// binding is reset to its base — dropping the Changeset overlays accumulated
-// from workspace-mutating tool calls.
+// binding is reset to the first Workspace that was ever bound — dropping every
+// overlay accumulated from workspace-mutating tool calls (Changeset overlays,
+// withNewFile, and any other Workspace→Workspace edit).
 //
 // This exists for session persistence. After the workspace's changes are
 // exported to disk (Workspace.export), the overlay derivations in the LLM's
@@ -2197,28 +2198,21 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 		})
 	}
 
-	// Reset the workspace binding to its base by stripping the trailing
-	// withChanges overlays from the workspace's recipe. If the base is the
-	// bare currentWorkspace call, omit the selector entirely: llm() binds the
-	// current workspace imperatively (see NewLLM), so the re-emitted recipe
-	// re-resolves the live workspace on every replay, exactly like a fresh
-	// session. An explicitly bound workspace stays pinned via its (base) ID.
-	if llm.mcp.workspace.Self() != nil {
-		wsID, err := llm.mcp.workspace.RecipeID(ctx)
-		if err != nil {
-			return res, fmt.Errorf("workspace recipe ID: %w", err)
-		}
-		for wsID.Field() == "withChanges" && wsID.Receiver() != nil {
-			wsID = wsID.Receiver()
-		}
-		if wsID.Field() != "currentWorkspace" || wsID.Receiver() != nil {
-			sels = append(sels, dagql.Selector{
-				Field: "withWorkspace",
-				Args: []dagql.NamedInput{
-					{Name: "workspace", Value: dagql.NewID[*Workspace](wsID)},
-				},
-			})
-		}
+	// Reset the workspace to the first Workspace that was ever bound, dropping
+	// every overlay accumulated on top of it. If no workspace was ever
+	// explicitly bound — the LLM only carries NewLLM's imperative
+	// currentWorkspace default — omit the selector entirely so the re-emitted
+	// recipe simply inherits the live workspace on replay, exactly like a fresh
+	// session.
+	if base, bound, err := baseWorkspaceBinding(ctx, llm.mcp.workspace); err != nil {
+		return res, err
+	} else if bound {
+		sels = append(sels, dagql.Selector{
+			Field: "withWorkspace",
+			Args: []dagql.NamedInput{
+				{Name: "workspace", Value: dagql.NewID[*Workspace](base)},
+			},
+		})
 	}
 
 	// Replay the conversation in message order. Every message shape the engine
@@ -2275,6 +2269,61 @@ func (llm *LLM) WithResetWorkspace(ctx context.Context) (res dagql.ObjectResult[
 		return res, fmt.Errorf("re-emit session recipe: %w", err)
 	}
 	return res, nil
+}
+
+// baseWorkspaceBinding resolves the workspace a reset should restore: the first
+// Workspace that was ever bound, before any overlay edits accumulated on top of
+// it.
+//
+// It walks the bound workspace's recipe back to its base call — the deepest
+// call that still returns a Workspace but whose receiver is not itself a
+// Workspace. Everything above it is a Workspace→Workspace transform (the
+// overlays an agent builds via withChanges, withNewFile, withNewDirectory,
+// withConfigValue, and so on) and is dropped. Walking by receiver type rather
+// than an allowlist of mutator names means every overlay is stripped, including
+// ones added later, instead of silently leaking a stale overlay into the reset.
+//
+// The three results are:
+//   - no workspace bound at all: (zero, false, nil).
+//   - the base is the bare currentWorkspace (NewLLM's imperative default, never
+//     explicitly set): (zero, false, nil) — the caller omits the binding so the
+//     reset re-inherits the live workspace on replay.
+//   - an explicitly bound base (e.g. loadWorkspaceFromID, a git-derived
+//     workspace, or a non-bare currentWorkspace chain): (baseID, true, nil).
+func baseWorkspaceBinding(ctx context.Context, ws dagql.ObjectResult[*Workspace]) (*call.ID, bool, error) {
+	if ws.Self() == nil {
+		return nil, false, nil
+	}
+	wsID, err := ws.RecipeID(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("workspace recipe ID: %w", err)
+	}
+	base := workspaceRecipeBase(wsID)
+	// A bare currentWorkspace base was never explicitly bound, so it is not
+	// carried into the reset recipe: replay re-resolves the live workspace.
+	if base.Field() == "currentWorkspace" && base.Receiver() == nil {
+		return nil, false, nil
+	}
+	return base, true, nil
+}
+
+// workspaceRecipeBase walks a workspace recipe ID back to its base call: the
+// deepest call that still returns a Workspace but whose receiver is not itself a
+// Workspace (e.g. Query.currentWorkspace or Query.loadWorkspaceFromID). Every
+// Workspace→Workspace transform above it — the overlay edits an agent
+// accumulates via withChanges, withNewFile, withNewDirectory, withConfigValue,
+// and so on — is peeled off. Walking by receiver type rather than an allowlist
+// of mutator names strips every overlay, including ones added later.
+func workspaceRecipeBase(wsID *call.ID) *call.ID {
+	const workspaceType = "Workspace"
+	for wsID.Type().NamedType() == workspaceType {
+		recv := wsID.Receiver()
+		if recv == nil || recv.Type().NamedType() != workspaceType {
+			break
+		}
+		wsID = recv
+	}
+	return wsID
 }
 
 // A variable in the LLM environment
