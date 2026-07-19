@@ -1969,6 +1969,7 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				contentType = "text/markdown"
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "💭"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 					attribute.Bool("llm.thinking", true),
 				)
 			case LLMContentToolCall:
@@ -2004,10 +2005,10 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 				contentType = "text/markdown"
 				extraAttrs = append(extraAttrs,
 					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				)
 			}
 			attrs := []attribute.KeyValue{
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
 				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
 			}
 			attrs = append(attrs, extraAttrs...)

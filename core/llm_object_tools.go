@@ -364,6 +364,7 @@ func (m *MCP) toolsForBoundObject(srv *dagql.Server, schema *ast.Schema, b bound
 			ReadOnly:         retType != typeName && retType != "Changeset" && retType != "Workspace",
 			ReturnsChangeset: retType == "Changeset",
 			Call:             m.callObjectMethod(srv, typeName, field),
+			Server:           typeName,
 		})
 	}
 	return tools, nil
