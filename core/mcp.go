@@ -736,6 +736,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	if tool.Server != "" {
 		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
 	}
+	span := trace.SpanFromContext(ctx)
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.LLMToolAttr, toolName),
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
@@ -749,12 +750,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) 
 	if tool.Server != "" {
 		attrs = append(attrs, attribute.String(telemetry.LLMToolServerAttr, tool.Server))
 	}
-	ctx, span := Tracer(ctx).Start(ctx,
-		fmt.Sprintf("%s%s", tool.Name, displayArgs(args)),
-		telemetry.ActorEmoji("🤖"),
-		telemetry.Reveal(),
-		trace.WithAttributes(attrs...),
-	)
+	span.SetAttributes(attrs...)
 
 	var telemetryErr error
 	defer telemetry.EndWithCause(span, &telemetryErr)
