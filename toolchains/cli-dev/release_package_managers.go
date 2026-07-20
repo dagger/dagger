@@ -267,9 +267,9 @@ stdenvNoCC.mkDerivation {
   nativeBuildInputs = [ installShellFiles ];
 
   installPhase = ''
-  	runHook preInstall
+    runHook preInstall
     install -Dm755 dagger $out/bin/dagger
-	runHook postInstall
+    runHook postInstall
   '';
 
   postInstall = ''
