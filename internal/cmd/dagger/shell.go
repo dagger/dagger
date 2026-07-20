@@ -1,11 +1,13 @@
 package daggercmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -457,25 +459,41 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		return nil
 	}
 
+	// shellLine is the shell script actually executed below. In shell mode it
+	// is the line as typed; in prompt mode a "/command" is rewritten to its
+	// builtin equivalent (".command") so it runs through the same path. The
+	// span's content type follows suit so a command renders as a command rather
+	// than as markdown.
+	shellLine := line
+	contentType := h.mode.ContentType()
+
 	// Handle based on mode
 	if h.mode == modePrompt {
-		// NB: no span in this case, just let the LLM APIs create the user/assistant
-		// message spans
+		if cmd, ok := h.slashCommand(line); ok {
+			// A prompt-mode "/command" invokes the matching builtin without
+			// leaving prompt mode, so session commands (e.g. /resume, /clear,
+			// /compact) are available natively in the agent prompt.
+			shellLine = cmd
+			contentType = modeShell.ContentType()
+		} else {
+			// NB: no span in this case, just let the LLM APIs create the user/assistant
+			// message spans
 
-		llm, err := h.llm(ctx)
-		if err != nil {
-			return err
+			llm, err := h.llm(ctx)
+			if err != nil {
+				return err
+			}
+			if h.initialPrompt == "" {
+				h.initialPrompt = line
+			}
+			newLLM, err := llm.WithPrompt(ctx, line)
+			if err != nil {
+				return err
+			}
+			h.llmSession = newLLM
+			h.llmModel = newLLM.model
+			return nil
 		}
-		if h.initialPrompt == "" {
-			h.initialPrompt = line
-		}
-		newLLM, err := llm.WithPrompt(ctx, line)
-		if err != nil {
-			return err
-		}
-		h.llmSession = newLLM
-		h.llmModel = newLLM.model
-		return nil
 	}
 
 	// Ensure we always see new telemetry for shell commands, rather than
@@ -494,7 +512,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	ctx, span = Tracer().Start(ctx, line,
 		telemetry.Reveal(),
 		trace.WithAttributes(
-			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
+			attribute.String(telemetry.ContentTypeAttr, contentType),
 		))
 	var telemetryErr error
 	defer telemetry.EndWithCause(span, &telemetryErr)
@@ -530,7 +548,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	}
 
 	// Run shell command
-	return h.run(ctx, strings.NewReader(line), "")
+	return h.run(ctx, strings.NewReader(shellLine), "")
 }
 
 // PromptMode reports whether the handler is currently in LLM prompt mode, so
@@ -538,6 +556,29 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 // scrollback. It satisfies the optional interface the pretty frontend probes.
 func (h *shellCallHandler) PromptMode() bool {
 	return h.mode == modePrompt
+}
+
+// slashCommand maps a prompt-mode "/command" line to its equivalent ".command"
+// builtin invocation, returning the rewritten line and true when the leading
+// token names a real builtin. This lets agent-prompt users run session
+// commands (e.g. "/resume", "/compact") without switching to shell mode. Lines
+// that don't name a builtin -- including a bare "/" or ordinary prose that just
+// happens to start with a slash -- are left alone for the LLM.
+func (h *shellCallHandler) slashCommand(line string) (string, bool) {
+	name, ok := strings.CutPrefix(line, "/")
+	if !ok {
+		return "", false
+	}
+	if i := strings.IndexAny(name, " \t"); i >= 0 {
+		name = name[:i]
+	}
+	if name == "" {
+		return "", false
+	}
+	if cmd, _ := h.BuiltinCommand("." + name); cmd == nil {
+		return "", false
+	}
+	return "." + line[1:], true
 }
 
 func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, func()) {
@@ -587,6 +628,29 @@ func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.Compl
 		before := input[:cursorPos]
 		wordStart := strings.LastIndexAny(before, " \t\n") + 1
 		word := before[wordStart:]
+		// Slash-command completion: a leading "/" at the very start of the line
+		// offers the session builtins, shown without their "." prefix (e.g.
+		// "/resume"), mirroring how they run in prompt mode.
+		if wordStart == 0 && strings.HasPrefix(word, "/") {
+			prefix := word[1:]
+			var items []tuist.Completion
+			for _, c := range h.Builtins() {
+				name := strings.TrimPrefix(c.Name(), ".")
+				if strings.HasPrefix(name, prefix) {
+					items = append(items, tuist.Completion{
+						Label:  "/" + name,
+						Detail: c.Short(),
+					})
+				}
+			}
+			slices.SortFunc(items, func(a, b tuist.Completion) int {
+				return cmp.Compare(a.Label, b.Label)
+			})
+			return tuist.CompletionResult{
+				Items:       items,
+				ReplaceFrom: wordStart,
+			}
+		}
 		if after, ok := strings.CutPrefix(word, "$"); ok {
 			vars := h.runner.Vars
 			var items []tuist.Completion
