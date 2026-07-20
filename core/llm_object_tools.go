@@ -23,7 +23,7 @@ import (
 
 // llmToolLogsMaxLines caps the print output surfaced from a single tool call
 // (object/Void returns), matching ReadLogs' default page size.
-const llmToolLogsMaxLines = 100
+const llmToolLogsMaxLines = 8
 
 // workspaceTypeName is the object type the engine auto-injects into a module
 // function's arguments from the bound Workspace, so such arguments are hidden
