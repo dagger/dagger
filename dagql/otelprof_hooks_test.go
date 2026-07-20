@@ -120,8 +120,13 @@ func TestEmitHooksProduceLoaderShape(t *testing.T) {
 	if got, _ := attrString(pub, telemetryattrs.WcprofOpKindAttr); got != wcprof.OpKindInternal.String() {
 		t.Fatalf("publishResult op kind = %q, want internal", got)
 	}
-	if pass, ok := attrBool(pub, telemetry.UIPassthroughAttr); !ok || !pass {
-		t.Fatalf("publishResult must be ui.passthrough")
+	// ui.internal, NOT ui.passthrough: publishResult is a childless leaf (nothing
+	// nests under it), so there are no children to promote and Passthrough would be
+	// pointless. Marking it Internal lets the per-client-DB live processor drop its
+	// live double-emit (NewInternalFilteringLiveSpanProcessor). call_exec above
+	// stays passthrough because it DOES parent the resolver's real work.
+	if pass, ok := attrBool(pub, telemetry.UIInternalAttr); !ok || !pass {
+		t.Fatalf("publishResult must be ui.internal")
 	}
 
 	// the caller span (not the like-named call_exec) carries the wait links.
