@@ -415,6 +415,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 				titleLines[i] = highlightANSI(line, s.fe.searchQuery, style)
 			}
 		}
+		titleLines = s.fe.padUserPrompt(row, titleLines)
 		s.selfLineCount += len(titleLines)
 		ctx.Lines(titleLines...)
 	}
@@ -3696,6 +3697,31 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 	return offset
 }
 
+// padUserPrompt wraps a user prompt's rendered lines in a shaded blank line
+// above and below, extending its ANSIBrightBlack block by one row each way so
+// the prompt reads as a padded card set apart from the transcript. Only applies
+// in the live shell view; other rows, the final report, and plain mode are
+// unchanged.
+func (fe *frontendPretty) padUserPrompt(row *dagui.TraceRow, lines []string) []string {
+	if fe.finalRender || fe.shell == nil || row.Span.LLMRole != telemetry.LLMRoleUser {
+		return lines
+	}
+	width := fe.contentWidth
+	if width <= 0 {
+		width = fe.window.Width
+	}
+	if width <= 0 {
+		return lines
+	}
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	shaded := out.String(strings.Repeat(" ", width)).Background(termenv.ANSIBrightBlack).String()
+	padded := make([]string, 0, len(lines)+2)
+	padded = append(padded, shaded)
+	padded = append(padded, lines...)
+	padded = append(padded, shaded)
+	return padded
+}
+
 // renderTreeGap renders the gap line(s) that precede a row in tree rendering,
 // using the tree prefix instead of calling fancyIndent.
 func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPrefix string) []string {
@@ -3705,6 +3731,15 @@ func (fe *frontendPretty) renderTreeGap(_ *renderer, row *dagui.TraceRow, gapPre
 		// trace spans stay attached to their parent/preceding message so an agent
 		// session does not become a double-spaced list of implementation details.
 		if row.Depth == 0 && row.Previous != nil && row.Span.LLMRole == telemetry.LLMRoleUser {
+			return []string{""}
+		}
+		// A tool call that opens a turn carries no leading blank of its own (an
+		// assistant reply does), so it would sit flush beneath the user's prompt
+		// above it. Add a separating blank so the prompt's shaded card stays
+		// distinct -- a gap we deliberately don't add between a reply and its
+		// tools.
+		if row.Span.LLMTool != "" && row.PreviousVisual != nil &&
+			row.PreviousVisual.Span.LLMRole == telemetry.LLMRoleUser {
 			return []string{""}
 		}
 		return nil
@@ -5630,15 +5665,20 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 
 	if !fe.finalRender && fe.shell != nil {
 		switch {
+		case row.Span.LLMRole == telemetry.LLMRoleUser:
+			// The user's prompt sits on a shaded block; its leading gutter -- or
+			// the focus cue ("❯ ") that stands in for it -- must be shaded too so
+			// line 0 matches the continuation lines, which carry the gutter inside
+			// their background (styleLLMMessageView). Otherwise the cue punches an
+			// unshaded hole in the block. The block is padded to the full content
+			// width, so its right edge is clipped and stays flush.
+			cue := out.String("  ")
+			if focused {
+				cue = out.String(LLMPrompt + " ").Bold()
+			}
+			fmt.Fprint(out, cue.Background(termenv.ANSIBrightBlack))
 		case focused:
 			fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
-		case row.Span.LLMRole == telemetry.LLMRoleUser:
-			// The user's prompt sits on a shaded block; its leading gutter must be
-			// shaded too so line 0 matches the continuation lines, which carry the
-			// gutter inside their background (styleLLMMessageView). The block is
-			// padded to the full content width, so its right edge is clipped and
-			// stays flush.
-			fmt.Fprint(out, out.String("  ").Background(termenv.ANSIBrightBlack))
 		default:
 			fmt.Fprint(out, "  ")
 		}

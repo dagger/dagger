@@ -1414,13 +1414,101 @@ func stripANSICodes(s string) string {
 // TestUserPromptLeadingGutterShaded is a regression test for the user's prompt
 // rendering its two-space leading gutter unshaded on the first line, so the
 // shaded block started one gutter-width in while the continuation lines carried
-// the gutter inside their background. The gutter is now shaded on line 0 too, so
-// the block lines up flush at the margin.
+// the gutter inside their background. The gutter -- and, when the row is
+// focused, the "❯ " cue that stands in for it -- is now shaded on line 0 too, so
+// the block lines up flush at the margin without an unshaded hole punched in it.
 func TestUserPromptLeadingGutterShaded(t *testing.T) {
-	db := dagui.NewDB()
 	rootID := prettyTestSpanID(1)
 	userID := prettyTestSpanID(2)
 	asstID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+
+	// promptLine renders the transcript with focusID focused and returns the raw
+	// (ANSI-preserving) line carrying the user's prompt.
+	promptLine := func(t *testing.T, focusID dagui.SpanID) string {
+		db := dagui.NewDB()
+		db.ImportSnapshots([]dagui.SpanSnapshot{
+			{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second), Final: true},
+			{
+				ID: userID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+				Message: "received", LLMRole: "user", ParentID: rootID,
+				StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
+			},
+			{
+				ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
+				Message: "received", LLMRole: "assistant", ParentID: rootID,
+				StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
+			},
+		})
+		db.SetPrimarySpan(rootID)
+
+		term := tuist.NewHeadlessTerminal(120, 60)
+		fe := newWithTerminal(io.Discard, db, term)
+		fe.profile = termenv.ANSI
+		fe.logs.Profile = termenv.ANSI
+		fe.shell = stubShellHandler{}
+		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+
+		setLog := func(id dagui.SpanID, text string) {
+			logs := NewVterm(termenv.ANSI)
+			logs.SetWidth(120)
+			// Write as markdown -- matching how live conversation messages stream --
+			// so redraw omits the gutter prefix on the inline first line (the
+			// terminal path prefixes every line, which would mask the bug).
+			_, _ = logs.WriteMarkdown([]byte(text + "\n"))
+			fe.logs.Logs[id] = logs
+		}
+		setLog(userID, "hello there")
+		setLog(asstID, "here is my reply")
+
+		fe.autoFocus = false
+		fe.FocusedSpan = focusID
+		fe.recalculateViewLocked()
+
+		for _, line := range strings.Split(strings.Join(fe.tui.RenderLines(), "\n"), "\n") {
+			if strings.Contains(stripANSICodes(line), "hello there") {
+				return line
+			}
+		}
+		t.Fatal("user prompt row not rendered")
+		return ""
+	}
+
+	t.Run("unfocused", func(t *testing.T) {
+		// Focus the assistant reply so the prompt renders with its plain gutter.
+		// The line must open with the shaded-background SGR (ANSIBrightBlack bg =
+		// SGR 100): the gutter is shaded rather than two plain spaces before it.
+		line := promptLine(t, asstID)
+		if !strings.HasPrefix(line, "\x1b[100m") {
+			t.Fatalf("user prompt gutter is not shaded; line = %q", visibleEscapes(line))
+		}
+	})
+
+	t.Run("focused", func(t *testing.T) {
+		// The "❯ " cue replaces the gutter, so it must carry the same shaded
+		// background (SGR 100) -- otherwise it punches an unshaded hole in the
+		// block. Check the styling that precedes the cue, independent of SGR order.
+		line := promptLine(t, userID)
+		before, _, found := strings.Cut(line, LLMPrompt)
+		if !found {
+			t.Fatalf("focused user prompt missing its %q cue; line = %q", LLMPrompt, visibleEscapes(line))
+		}
+		if !strings.Contains(before, "100") {
+			t.Fatalf("focused user prompt cue is not shaded; line = %q", visibleEscapes(line))
+		}
+	})
+}
+
+// TestUserPromptPaddedAndSeparatedFromTools verifies the live shell view sets
+// the user's prompt apart: a shaded (ANSIBrightBlack) blank line above and
+// below extends its block into a padded card, and a tool call that opens the
+// turn -- which carries no leading blank of its own -- gets a plain separating
+// blank so it doesn't sit flush beneath the card.
+func TestUserPromptPaddedAndSeparatedFromTools(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	userID := prettyTestSpanID(2)
+	toolID := prettyTestSpanID(3)
 	start := time.Unix(100, 0)
 	db.ImportSnapshots([]dagui.SpanSnapshot{
 		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second), Final: true},
@@ -1430,8 +1518,8 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
 		},
 		{
-			ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
-			Message: "received", LLMRole: "assistant", ParentID: rootID,
+			ID: toolID, TraceID: prettyTestTraceID(), Name: "Find",
+			LLMRole: "assistant", LLMTool: "Find", ParentID: rootID,
 			StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
 		},
 	})
@@ -1443,41 +1531,47 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 	fe.logs.Profile = termenv.ANSI
 	fe.shell = stubShellHandler{}
 	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
-
-	setLog := func(id dagui.SpanID, text string) {
-		logs := NewVterm(termenv.ANSI)
-		logs.SetWidth(120)
-		// Write as markdown -- matching how live conversation messages stream --
-		// so redraw omits the gutter prefix on the inline first line (the terminal
-		// path prefixes every line, which would mask the bug).
-		_, _ = logs.WriteMarkdown([]byte(text + "\n"))
-		fe.logs.Logs[id] = logs
-	}
-	setLog(userID, "hello there")
-	setLog(asstID, "here is my reply")
-
-	// Focus the assistant reply so the user's prompt renders unfocused (a focused
-	// prompt shows the "❯ " cue in place of the gutter instead).
+	// Keep the prompt unfocused.
 	fe.autoFocus = false
-	fe.FocusedSpan = asstID
+	fe.FocusedSpan = toolID
+
+	logs := NewVterm(termenv.ANSI)
+	logs.SetWidth(120)
+	_, _ = logs.WriteMarkdown([]byte("hello there\n"))
+	fe.logs.Logs[userID] = logs
 
 	fe.recalculateViewLocked()
 
-	frame := strings.Join(fe.tui.RenderLines(), "\n")
-	var promptLine string
-	for _, line := range strings.Split(frame, "\n") {
-		if strings.Contains(stripANSICodes(line), "hello there") {
-			promptLine = line
-			break
+	lines := fe.tui.Frame()
+	isShaded := func(l string) bool {
+		return strings.TrimSpace(stripANSICodes(l)) == "" && strings.Contains(l, "\x1b[100m")
+	}
+	contentIdx, toolIdx := -1, -1
+	for i, l := range lines {
+		p := stripANSICodes(l)
+		if contentIdx == -1 && strings.Contains(p, "hello there") {
+			contentIdx = i
+		}
+		if toolIdx == -1 && strings.Contains(p, "Find") {
+			toolIdx = i
 		}
 	}
-	if promptLine == "" {
-		t.Fatalf("user prompt row not rendered:\n%s", visibleEscapes(frame))
+	if contentIdx <= 0 || toolIdx == -1 {
+		t.Fatalf("missing rows (content=%d tool=%d):\n%s", contentIdx, toolIdx, visibleEscapes(strings.Join(lines, "\n")))
 	}
-	// The line must open with the shaded-background SGR (ANSIBrightBlack bg =
-	// SGR 100), i.e. the gutter is shaded rather than two plain spaces before it.
-	if !strings.HasPrefix(promptLine, "\x1b[100m") {
-		t.Fatalf("user prompt gutter is not shaded; line = %q", visibleEscapes(promptLine))
+	// Shaded blank line above and below the prompt content.
+	if !isShaded(lines[contentIdx-1]) {
+		t.Fatalf("expected a shaded blank line above the prompt; got %q", visibleEscapes(lines[contentIdx-1]))
+	}
+	if !isShaded(lines[contentIdx+1]) {
+		t.Fatalf("expected a shaded blank line below the prompt; got %q", visibleEscapes(lines[contentIdx+1]))
+	}
+	// The tool call is separated from the card by a plain (unshaded) blank line.
+	if strings.TrimSpace(stripANSICodes(lines[toolIdx-1])) != "" {
+		t.Fatalf("expected a blank line before the tool call; got %q", visibleEscapes(lines[toolIdx-1]))
+	}
+	if isShaded(lines[toolIdx-1]) {
+		t.Fatalf("separator before the tool should be plain, not shaded; got %q", visibleEscapes(lines[toolIdx-1]))
 	}
 }
 
