@@ -160,20 +160,18 @@ type ElixirSdkDev {
   Sync Elixir image to keep both dev and runtime modules consistent
   """
   pub syncImage: File! {
-    let path = "runtime/main.go"
-    let runtimeMainGo = withBase(source)
+    let path = "runtime/main.dang"
+    let runtimeMainDang = withBase(source)
       .file(path)
 
     # Replace the elixirImage line with the new base image
-    let newRuntimeMainGo = runtimeMainGo.withReplaced(
-      "elixirImage = ",
-      "elixirImage = \"" + baseImage + "\"\n",
-    ).contents
+    let newRuntimeMainDang = runtimeMainDang.contents.replaceMatches(
+      `let elixirImage = ".*"`,
+      with: "let elixirImage = \"" + baseImage + "\"",
+    )
 
-    devContainer
-      .from("golang:1.23-alpine")
-      .withNewFile(path, newRuntimeMainGo)
-      .withExec(["go", "fmt", path])
+    directory
+      .withNewFile(path, newRuntimeMainDang)
       .file(path)
   }
 
