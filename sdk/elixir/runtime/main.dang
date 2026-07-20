@@ -165,6 +165,9 @@ let renderTemplate(text: String!, appName: String!, moduleName: String!): String
 }
 
 let pathJoin(left: String!, right: String!): String! {
+  if (right == "" or right == ".") {
+    return left
+  }
   left.trimRight("/") + "/" + right.trimLeft("/")
 }
 
