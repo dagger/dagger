@@ -102,6 +102,9 @@ func (*WorkspaceSourceDirectory) workspaceSource() {}
 
 type WorkspaceSourceGitRef struct {
 	Ref dagql.Result[*GitRef]
+	// ExplicitCommit distinguishes a workspace requested by immutable commit SHA
+	// from a mutable ref that happens to resolve to the same commit.
+	ExplicitCommit bool
 }
 
 func (*WorkspaceSourceGitRef) workspaceSource() {}
@@ -140,9 +143,10 @@ func NewWorkspaceSourceDirectory(root dagql.ObjectResult[*Directory]) WorkspaceS
 	}
 }
 
-func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef]) WorkspaceSource {
+func NewWorkspaceSourceGitRef(ref dagql.Result[*GitRef], explicitCommit bool) WorkspaceSource {
 	return &WorkspaceSourceGitRef{
-		Ref: ref,
+		Ref:            ref,
+		ExplicitCommit: explicitCommit,
 	}
 }
 
@@ -421,6 +425,7 @@ type persistedWorkspaceSource struct {
 	Kind           string                    `json:"kind"`
 	RootResultID   uint64                    `json:"rootResultID,omitempty"`
 	GitRefResultID uint64                    `json:"gitRefResultID,omitempty"`
+	ExplicitCommit bool                      `json:"explicitCommit,omitempty"`
 	ChangesID      uint64                    `json:"changesID,omitempty"`
 	TouchedPaths   []string                  `json:"touchedPaths,omitempty"`
 	HostPath       string                    `json:"hostPath,omitempty"`
@@ -462,6 +467,7 @@ func encodePersistedWorkspaceSource(cache dagql.PersistedObjectCache, src Worksp
 		return &persistedWorkspaceSource{
 			Kind:           persistedWorkspaceSourceGitRef,
 			GitRefResultID: refID,
+			ExplicitCommit: src.ExplicitCommit,
 		}, nil
 	case *WorkspaceSourceOverlay:
 		payload := &persistedWorkspaceSource{Kind: persistedWorkspaceSourceOverlay}
@@ -523,7 +529,7 @@ func decodePersistedWorkspaceSource(
 		if err != nil {
 			return nil, err
 		}
-		return NewWorkspaceSourceGitRef(ref.Result), nil
+		return NewWorkspaceSourceGitRef(ref.Result, persisted.ExplicitCommit), nil
 	case persistedWorkspaceSourceOverlay:
 		base, err := decodePersistedWorkspaceSource(ctx, dag, persisted.Base, rootfs, hostPath)
 		if err != nil {

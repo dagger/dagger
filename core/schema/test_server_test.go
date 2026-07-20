@@ -160,7 +160,7 @@ func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, s
 
 func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return nil }
 
-func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context) (*workspace.Lock, bool, error) {
+func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context, bool) (*workspace.Lock, bool, error) {
 	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr
 }
 
