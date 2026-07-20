@@ -5629,9 +5629,17 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 	r.fancyIndent(out, row, false, true)
 
 	if !fe.finalRender && fe.shell != nil {
-		if focused {
+		switch {
+		case focused:
 			fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
-		} else {
+		case row.Span.LLMRole == telemetry.LLMRoleUser:
+			// The user's prompt sits on a shaded block; its leading gutter must be
+			// shaded too so line 0 matches the continuation lines, which carry the
+			// gutter inside their background (styleLLMMessageView). The block is
+			// padded to the full content width, so its right edge is clipped and
+			// stays flush.
+			fmt.Fprint(out, out.String("  ").Background(termenv.ANSIBrightBlack))
+		default:
 			fmt.Fprint(out, "  ")
 		}
 	}

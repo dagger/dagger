@@ -1411,6 +1411,76 @@ func stripANSICodes(s string) string {
 	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, "")
 }
 
+// TestUserPromptLeadingGutterShaded is a regression test for the user's prompt
+// rendering its two-space leading gutter unshaded on the first line, so the
+// shaded block started one gutter-width in while the continuation lines carried
+// the gutter inside their background. The gutter is now shaded on line 0 too, so
+// the block lines up flush at the margin.
+func TestUserPromptLeadingGutterShaded(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	userID := prettyTestSpanID(2)
+	asstID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second), Final: true},
+		{
+			ID: userID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			Message: "received", LLMRole: "user", ParentID: rootID,
+			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
+		},
+		{
+			ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
+			Message: "received", LLMRole: "assistant", ParentID: rootID,
+			StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+
+	setLog := func(id dagui.SpanID, text string) {
+		logs := NewVterm(termenv.ANSI)
+		logs.SetWidth(120)
+		// Write as markdown -- matching how live conversation messages stream --
+		// so redraw omits the gutter prefix on the inline first line (the terminal
+		// path prefixes every line, which would mask the bug).
+		_, _ = logs.WriteMarkdown([]byte(text + "\n"))
+		fe.logs.Logs[id] = logs
+	}
+	setLog(userID, "hello there")
+	setLog(asstID, "here is my reply")
+
+	// Focus the assistant reply so the user's prompt renders unfocused (a focused
+	// prompt shows the "❯ " cue in place of the gutter instead).
+	fe.autoFocus = false
+	fe.FocusedSpan = asstID
+
+	fe.recalculateViewLocked()
+
+	frame := strings.Join(fe.tui.RenderLines(), "\n")
+	var promptLine string
+	for _, line := range strings.Split(frame, "\n") {
+		if strings.Contains(stripANSICodes(line), "hello there") {
+			promptLine = line
+			break
+		}
+	}
+	if promptLine == "" {
+		t.Fatalf("user prompt row not rendered:\n%s", visibleEscapes(frame))
+	}
+	// The line must open with the shaded-background SGR (ANSIBrightBlack bg =
+	// SGR 100), i.e. the gutter is shaded rather than two plain spaces before it.
+	if !strings.HasPrefix(promptLine, "\x1b[100m") {
+		t.Fatalf("user prompt gutter is not shaded; line = %q", visibleEscapes(promptLine))
+	}
+}
+
 func containsStyledLine(frame, text, styleSeq string) bool {
 	for _, line := range strings.Split(frame, "\n") {
 		if !strings.Contains(stripANSICodes(line), text) {
