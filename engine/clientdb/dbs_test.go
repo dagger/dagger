@@ -25,7 +25,7 @@ func TestDBRefCount(t *testing.T) {
 	require.Len(t, dbs.open, 1)
 	require.Equal(t, d1a.refCount, 2)
 
-	_, err = d1a.SelectSpansSince(ctx, SelectSpansSinceParams{
+	_, err = d1a.Read().SelectSpansSince(ctx, SelectSpansSinceParams{
 		ID:    1,
 		Limit: 1,
 	})
@@ -33,11 +33,13 @@ func TestDBRefCount(t *testing.T) {
 
 	require.NoError(t, d1a.Close())
 	require.Len(t, dbs.open, 1)
-	require.NotNil(t, d1a.inner)
+	require.NotNil(t, d1a.writer)
+	require.NotNil(t, d1a.reader)
 	require.NotNil(t, d1a.Queries)
+	require.NotNil(t, d1a.readQueries)
 	require.Equal(t, d1a.refCount, 1)
 
-	_, err = d1b.SelectSpansSince(ctx, SelectSpansSinceParams{
+	_, err = d1b.Read().SelectSpansSince(ctx, SelectSpansSinceParams{
 		ID:    1,
 		Limit: 1,
 	})
@@ -51,14 +53,18 @@ func TestDBRefCount(t *testing.T) {
 
 	require.NoError(t, d1b.Close())
 	require.Len(t, dbs.open, 1)
-	require.Nil(t, d1a.inner)
-	require.Nil(t, d1b.inner)
+	require.Nil(t, d1a.writer)
+	require.Nil(t, d1b.writer)
+	require.Nil(t, d1a.reader)
+	require.Nil(t, d1b.reader)
 	require.Nil(t, d1a.Queries)
 	require.Nil(t, d1b.Queries)
+	require.Nil(t, d1a.readQueries)
+	require.Nil(t, d1b.readQueries)
 	require.Equal(t, d1a.refCount, 0)
 	require.Equal(t, d1b.refCount, 0)
 
-	_, err = d2a.SelectSpansSince(ctx, SelectSpansSinceParams{
+	_, err = d2a.Read().SelectSpansSince(ctx, SelectSpansSinceParams{
 		ID:    1,
 		Limit: 1,
 	})
@@ -66,8 +72,10 @@ func TestDBRefCount(t *testing.T) {
 
 	require.NoError(t, d2a.Close())
 	require.Len(t, dbs.open, 0)
-	require.Nil(t, d2a.inner)
+	require.Nil(t, d2a.writer)
+	require.Nil(t, d2a.reader)
 	require.Nil(t, d2a.Queries)
+	require.Nil(t, d2a.readQueries)
 	require.Equal(t, d2a.refCount, 0)
 }
 
