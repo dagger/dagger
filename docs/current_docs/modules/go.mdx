@@ -62,40 +62,32 @@ List the current settings with `dagger settings go`, then change one with
   and `testdata/` directories are already included automatically; use this for
   inputs those patterns miss, such as embedded non-Go assets, generator inputs,
   or fixtures kept outside `testdata/`.
-- **`skipTestFilename`** (default `.dagger-skip-go-test`): the name of the marker
-  file that excludes a module from `test-all`. To skip a module's tests, create
-  an empty file with this name at the module root. The marker also applies to any
-  nested modules, and placing it at the workspace root skips tests everywhere.
-- **`skipLintFilename`** (default `.dagger-skip-go-lint`): the marker filename
-  that excludes a module from `lint-all`, with the same placement rules.
-- **`skipGenerateFilename`** (default `.dagger-skip-go-generate`): the marker
-  filename that excludes a module from `generate-all`, with the same placement
-  rules.
-
-The skip markers work by file presence: the setting only renames the marker file
-the module looks for, which is rarely needed. To exclude a module from a
-workflow, add the marker file; to include it again, delete the file.
+- **`lint`**, **`test`**, and **`generate`** (each defaults to `["**"]`):
+  module-root selector arrays for `lint-all`, `test-all`, and `generate-all`.
+  A bare pattern includes modules, a `!`-prefixed pattern excludes them, and
+  exclusions always win. `"**"` and `"*"` match every module; `"path"` and
+  `"path/**"` match the module at `path` and any modules below it. With no
+  positive pattern, every module is included unless excluded, so `["!**"]`
+  disables that workflow everywhere.
 
 ```bash
 # Pin the Go version for the whole workspace
 dagger settings go version 1.25
-
-# Exclude one module from linting by adding its marker file
-touch ./legacy-service/.dagger-skip-go-lint
 ```
 
-List-valued settings such as `includeExtraFiles` are edited directly in
-`dagger.toml`:
+List-valued settings are edited directly in `dagger.toml`:
 
 ```toml
 [modules.go.settings]
 version = "1.25"
 includeExtraFiles = ["Makefile", "tools/**"]
+lint = ["!**"] # Disable linting for all modules
+test = ["**", "!legacy-service"] # Test all modules except legacy-service and modules below it
 ```
 
 ## Working with other modules
 
 Reach for this module whenever the repo contains one or more Go modules,
 especially when they should share the same Go version and CI checks. To exclude a
-single module from a workflow, add its skip marker file rather than splitting the
-repo into separate check systems.
+single module from a workflow, add a `!`-prefixed module path to the corresponding
+selector array rather than splitting the repo into separate check systems.

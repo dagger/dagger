@@ -919,29 +919,64 @@ func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 	}
 }
 
-func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) (rerr error) {
-	return handleChangesetResponseAt(ctx, dag, response, autoApply, ".")
+func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) error {
+	_, err := handleChangesetResponseAt(ctx, dag, response, autoApply, ".")
+	return err
 }
 
-func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response any, autoApply bool, exportPath string) (rerr error) {
+// handleChangesetResponseAt reports whether it actually applied the changeset,
+// so callers can print follow-up guidance only when files were written (not on
+// a no-op or a declined preview).
+func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response any, autoApply bool, exportPath string) (applied bool, rerr error) {
+	return handleChangesetResponseWithApply(ctx, dag, response, autoApply, func(ctx context.Context, changeset *dagger.Changeset) error {
+		_, err := changeset.Export(ctx, exportPath)
+		return err
+	})
+}
+
+func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, workspace *dagger.Workspace, autoApply bool) (bool, error) {
+	workspace, err := materializeWorkspace(ctx, dag, workspace)
+	if err != nil {
+		return false, err
+	}
+	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(), autoApply, func(ctx context.Context, _ *dagger.Changeset) error {
+		return workspace.Export(ctx)
+	})
+}
+
+func materializeWorkspace(ctx context.Context, dag *dagger.Client, workspace *dagger.Workspace) (*dagger.Workspace, error) {
+	id, err := workspace.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dagger.Ref[*dagger.Workspace](dag, id), nil
+}
+
+func handleChangesetResponseWithApply(
+	ctx context.Context,
+	dag *dagger.Client,
+	response any,
+	autoApply bool,
+	apply func(context.Context, *dagger.Changeset) error,
+) (applied bool, rerr error) {
 	changeset, err := toChangeset(dag, response)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if changeset == nil {
 		slog.Info("no changes to apply")
-		return nil
+		return false, nil
 	}
 
 	analyzeCtx, analyzeSpan := Tracer().Start(ctx, "analyzing changes")
 	entries, err := idtui.PreviewPatch(analyzeCtx, dag, changeset)
 	telemetry.EndWithCause(analyzeSpan, &err)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if len(entries) == 0 {
 		slog.Info("no changes to apply")
-		return nil
+		return false, nil
 	}
 
 	summaryWidth := min(getViewWidth(), 80)
@@ -963,19 +998,19 @@ func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response
 			),
 		)
 		if err := Frontend.HandleForm(ctx, form); err != nil {
-			return err
+			return false, err
 		}
 		if !confirm {
-			return nil
+			return false, nil
 		}
 	}
 
 	ctx, span := Tracer().Start(ctx, "applying changes")
 	defer telemetry.EndWithCause(span, &rerr)
-	if _, err := changeset.Export(ctx, exportPath); err != nil {
-		return err
+	if err := apply(ctx, changeset); err != nil {
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent

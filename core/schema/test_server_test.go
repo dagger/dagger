@@ -53,8 +53,8 @@ func (s *currentTypeDefsTestServer) CurrentWorkspace(context.Context) (*core.Wor
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string) error {
-	return nil
+func (s *currentTypeDefsTestServer) EnsureWorkspaceModules(context.Context, []string, bool) ([]string, error) {
+	return nil, nil
 }
 
 func (s *currentTypeDefsTestServer) CurrentServedDeps(context.Context) (*core.SchemaBuilder, error) {
@@ -140,6 +140,10 @@ func (s *currentTypeDefsTestServer) SecretSalt() []byte { return nil }
 
 func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error {
 	return nil
+}
+
+func (s *currentTypeDefsTestServer) SessionScopedContext(ctx context.Context) (context.Context, error) {
+	return context.WithoutCancel(ctx), nil
 }
 
 func (s *currentTypeDefsTestServer) ClientTelemetry(context.Context, string, string) (*clientdb.DB, error) {

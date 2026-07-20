@@ -131,6 +131,7 @@ module.exports = {
       collapsed: true,
       items: [
         "modules/go",
+        "modules/deno",
         "modules/pytest",
         "modules/jest",
         "modules/vitest",

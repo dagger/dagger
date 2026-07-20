@@ -12,7 +12,6 @@ package version
 
 import (
 	_ "embed"
-	"fmt"
 	"strings"
 
 	"github.com/dagger/go/buildinfo"
@@ -21,9 +20,11 @@ import (
 //go:embed VERSION
 var raw string
 
-// Version is the semantic version of this Dagger build (e.g. "0.21.3"),
-// read from the embedded VERSION file.
-var Version string
+// version is the bare semantic version of this Dagger build (e.g. "0.21.3"),
+// read from the embedded VERSION file with any leading "v" stripped. It is
+// unexported so the "v"-prefix choice is always made explicitly at the call
+// site, via Version's options.
+var version string
 
 // Commit is the VCS commit hash this binary was built from, or "" if unknown.
 var Commit string
@@ -35,7 +36,7 @@ var CommitTime string
 var Dirty bool
 
 func init() {
-	Version = strings.TrimSpace(raw)
+	version = strings.TrimPrefix(strings.TrimSpace(raw), "v")
 
 	info, ok := buildinfo.ReadBuildInfo()
 	if !ok {
@@ -53,21 +54,48 @@ func init() {
 	}
 }
 
-// Canonical returns the canonical build identifier:
+// Opt configures the string returned by Version.
+type Opt func(*options)
+
+type options struct {
+	leadingV bool
+	commit   bool
+}
+
+// WithV prepends a "v" to the version (e.g. "v0.21.3").
+func WithV() Opt { return func(o *options) { o.leadingV = true } }
+
+// WithCommit appends the short VCS commit, plus a ".dirty" marker when the
+// source tree was modified, when the commit is known (e.g.
+// "0.21.3+42424242.dirty"). It is a no-op when the commit is unknown.
+func WithCommit() Opt { return func(o *options) { o.commit = true } }
+
+// Version returns this build's semantic version. By default it is bare
+// ("0.21.3"); options add the "v" prefix and/or commit provenance:
 //
-//	"0.21.3+42424242"        clean build
-//	"0.21.3+42424242.dirty"  dirty build
-//	"0.21.3"                 commit unknown
+//	Version()                     "0.21.3"
+//	Version(WithV())              "v0.21.3"
+//	Version(WithCommit())         "0.21.3+42424242"       (or +…​.dirty)
+//	Version(WithV(), WithCommit()) "v0.21.3+42424242"
 //
-// The commit is truncated to 8 characters for readability; use Commit directly
-// for the full hash.
-func Canonical() string {
-	if Commit == "" {
-		return Version
+// It is the single accessor for the version string; the underlying value is
+// unexported so the "v"-prefix choice is always explicit at the call site.
+// The commit is truncated to 8 characters; use Commit directly for the full
+// hash.
+func Version(opts ...Opt) string {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
 	}
-	out := fmt.Sprintf("%s+%s", Version, ShortCommit())
-	if Dirty {
-		out += ".dirty"
+	out := version
+	if o.leadingV {
+		out = "v" + out
+	}
+	if o.commit && Commit != "" {
+		out += "+" + ShortCommit()
+		if Dirty {
+			out += ".dirty"
+		}
 	}
 	return out
 }

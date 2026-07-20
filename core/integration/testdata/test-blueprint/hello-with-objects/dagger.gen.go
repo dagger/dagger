@@ -235,6 +235,26 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("A generated module for HelloWithObjects functions\n").
+			WithObject(
+				dag.TypeDef().WithObject("HelloWithObjects", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 5, 6)}).
+					WithFunction(
+						dag.Function("SayGreeting",
+							dag.TypeDef().WithObject("Greetings")).
+							WithDescription("Returns a container that echoes whatever string argument is provided").
+							WithSourceMap(dag.SourceMap("main.go", 8, 1)))).
+			WithObject(
+				dag.TypeDef().WithObject("Greetings", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 12, 6)}).
+					WithFunction(
+						dag.Function("Bonjour",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 18, 1))).
+					WithFunction(
+						dag.Function("Hello",
+							dag.TypeDef().WithKind(dagger.TypeDefKindStringKind)).
+							WithSourceMap(dag.SourceMap("main.go", 14, 1)))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

@@ -35,6 +35,13 @@ type CompatWorkspace struct {
 	Config      *modules.ModuleConfig
 	ConfigPath  string
 	ProjectRoot string
+
+	// DiscoveredLocalModule marks a compat workspace that was reached by
+	// following a local toolchain/dependency reference from another migrated
+	// config (rather than being the selected project or a .dagger/modules
+	// glob hit). Such a module is converted in place regardless of a non-root
+	// source, and is never routed to PlanMigration or a parent plan.
+	DiscoveredLocalModule bool
 }
 
 // CompatWorkspaceModule is one workspace-owned module projected out of a

@@ -320,7 +320,14 @@ func engineTelemetryConfig(ctx context.Context) telemetry.Config {
 	}
 	if !skipSharedTelemetryExporters {
 		if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
-			cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, spans)
+			// Wrap the Cloud span exporter in a LARGE-queue live processor instead of
+			// letting telemetry.Init wrap it with the default 2048-slot BSP, so the
+			// CLI→Cloud hop does not silently drop spans on a big burst — a cold engine
+			// build is ~15k spans, live-double-emitted ≈ 30k records. The wcprof
+			// completeness carrier rides at the tail and was the first thing to drop;
+			// this keeps the exported trace complete. (SpanProcessors are prepended to
+			// the pipeline by telemetry.Init, same as a LiveTraceExporter would be.)
+			cfg.SpanProcessors = append(cfg.SpanProcessors, enginetel.NewLargeQueueLiveSpanProcessor(spans))
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
 			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, metrics)
 		}

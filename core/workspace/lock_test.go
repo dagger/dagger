@@ -1,8 +1,10 @@
 package workspace
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -45,6 +47,34 @@ func TestLookupSetValidation(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "invalid lock policy")
+}
+
+func TestLookupConcurrentWrites(t *testing.T) {
+	t.Parallel()
+
+	lock := NewLock()
+	const writes = 100
+	errs := make(chan error, writes)
+	var wg sync.WaitGroup
+	for i := range writes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- lock.SetLookup("", "git.ref", []any{"repo", fmt.Sprint(i)}, LookupResult{
+				Value:  fmt.Sprintf("%040d", i),
+				Policy: PolicyPin,
+			})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	entries, err := lock.Entries()
+	require.NoError(t, err)
+	require.Len(t, entries, writes)
 }
 
 func TestLookupGetValidation(t *testing.T) {

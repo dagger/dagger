@@ -54,7 +54,9 @@
             "core/integration/testdata/services/hello-with-services/",
             "core/integration/testdata/services/port-collision/",
             "core/integration/testdata/services/partial-failure/",
+            "core/integration/testdata/services/container-provider/",
             "core/integration/testdata/services/service-binding/",
+            "core/integration/testdata/services/service-ref-consumer/",
             "toolchains/release/testdata/module/"
           ]
         }
@@ -75,7 +77,7 @@
         },
         {
           "argument": "lint",
-          "default": "!**"
+          "default": ".,engine/distconsts,modules/daggerverse,modules/dev,sdk/go,toolchains/cli-dev,toolchains/docs-dev,toolchains/engine-dev,toolchains/go,toolchains/release,!toolchains/docs-dev/docusaurus,!toolchains/engine-dev/notify,!toolchains/release/apko,!toolchains/release/gh,!toolchains/release/registry-config,!toolchains/release/testdata"
         },
         {
           "argument": "generate",
@@ -116,10 +118,6 @@
     {
       "name": "rust-sdk",
       "source": "toolchains/rust-sdk-dev"
-    },
-    {
-      "name": "sdks",
-      "source": "toolchains/all-sdks"
     },
     {
       "name": "security",

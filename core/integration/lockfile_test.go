@@ -69,24 +69,6 @@ const gitBranchAndTagCommitQuery = `{
 }
 `
 
-const workspaceUpdateQuery = `{
-  currentWorkspace {
-    update {
-      modifiedPaths
-    }
-  }
-}
-`
-
-const workspaceUpdateExportQuery = `{
-  currentWorkspace {
-    update {
-      export(path: ".")
-    }
-  }
-}
-`
-
 func (LockfileSuite) TestFromLockfileDisabledIgnoresEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
@@ -326,66 +308,6 @@ func (LockfileSuite) TestLiveModuleCall(ctx context.Context, t *testctx.T) {
 	lockContentsAfter, err := frozen.File("/work/dagger.lock").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockContents, lockContentsAfter)
-}
-
-func (LockfileSuite) TestWorkspaceUpdate(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "sha256:"+strings.Repeat("0", 64), workspace.PolicyFloat)
-	updateQueryPath := writeQueryDoc(t, workdir, "update.graphql", workspaceUpdateQuery)
-	updateExportQueryPath := writeQueryDoc(t, workdir, "update-export.graphql", workspaceUpdateExportQuery)
-
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", updateQueryPath)
-	require.NoError(t, err)
-	require.Contains(t, string(out), "dagger.lock")
-
-	lockBytes, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
-	require.Equal(t, originalLock, string(lockBytes))
-
-	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", updateExportQueryPath)
-	require.NoError(t, err)
-
-	lockBytes, err = os.ReadFile(lockPath)
-	require.NoError(t, err)
-	require.NotEqual(t, originalLock, string(lockBytes))
-	assertContainerFromLockEntry(t, lockBytes, workspace.PolicyFloat)
-}
-
-func (LockfileSuite) TestWorkspaceUpdateCreatesLockfile(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	updateQueryPath := writeQueryDoc(t, workdir, "update.graphql", `{
-  currentWorkspace {
-    update {
-      addedPaths
-    }
-  }
-}
-`)
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", updateQueryPath)
-	require.NoError(t, err)
-	require.Contains(t, string(out), "dagger.lock")
-}
-
-func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	staleLock := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "sha256:"+strings.Repeat("1", 64), workspace.PolicyFloat)
-	updated := nativeWorkspaceBase(t, c).
-		WithNewFile("dagger.lock", staleLock).
-		WithNewFile("update.graphql", workspaceUpdateExportQuery).
-		With(daggerExec("--silent", "query", "--doc", "update.graphql"))
-
-	_, err := updated.Stdout(ctx)
-	require.NoError(t, err)
-
-	lockContents, err := updated.File("/work/dagger.lock").Contents(ctx)
-	require.NoError(t, err)
-	require.NotEqual(t, staleLock, lockContents)
-	assertContainerFromLockEntry(t, []byte(lockContents), workspace.PolicyFloat)
 }
 
 func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testctx.T) {

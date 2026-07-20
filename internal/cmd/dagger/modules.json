@@ -6,6 +6,12 @@
     "recommend": ["**/go.mod"]
   },
   {
+    "name": "deno",
+    "description": "Test, lint, format, and type-check Deno projects with Dagger",
+    "repo": "github.com/dagger/deno",
+    "recommend": ["**/deno.json", "**/deno.jsonc", "**/deno.lock"]
+  },
+  {
     "name": "eslint",
     "description": "Lint JavaScript and TypeScript with ESLint",
     "repo": "github.com/dagger/eslint",

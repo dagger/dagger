@@ -9,6 +9,15 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
+type perClientCacheScopeKey struct{}
+
+// WithPerClientCacheScope gives PerClientInput calls made with ctx a fresh
+// cache namespace while preserving the real client metadata used by resolvers.
+// Use it when a resolution must be replayed against request-scoped state.
+func WithPerClientCacheScope(ctx context.Context) context.Context {
+	return context.WithValue(ctx, perClientCacheScopeKey{}, identity.NewID())
+}
+
 // PerClientInput scopes a call ID per client by mixing in the client ID as
 // an implicit call input.
 var PerClientInput = ImplicitInput{
@@ -21,7 +30,11 @@ var PerClientInput = ImplicitInput{
 		if clientMD.ClientID == "" {
 			return nil, fmt.Errorf("client ID not found in context")
 		}
-		return NewString(clientMD.ClientID), nil
+		cacheKey := clientMD.ClientID
+		if scope, ok := ctx.Value(perClientCacheScopeKey{}).(string); ok && scope != "" {
+			cacheKey += ":" + scope
+		}
+		return NewString(cacheKey), nil
 	},
 }
 

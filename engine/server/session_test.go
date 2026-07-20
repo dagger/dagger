@@ -942,7 +942,7 @@ func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *test
 	require.Equal(t, extra, client.pendingExtraModules)
 }
 
-func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutWorkspace(t *testing.T) {
+func TestDetectAndLoadWorkspaceCreatesRootlessWorkspaceWithoutInferringModule(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -989,7 +989,10 @@ func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutWorkspace(t *test
 		true,
 	)
 	require.NoError(t, err)
-	require.Nil(t, client.workspace)
+	require.NotNil(t, client.workspace)
+	require.Equal(t, "/tmp/mymod", client.workspace.HostPath())
+	_, ok := client.workspace.Source().(*core.WorkspaceSourceRootlessLocal)
+	require.True(t, ok)
 	require.Empty(t, client.pendingModules)
 }
 
@@ -1364,6 +1367,7 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 
 		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
 			Root:       "/repo",
+			HasGitRoot: true,
 			Cwd:        filepath.Join("services", "payment", "src"),
 			ConfigFile: filepath.Join("services", "payment", workspace.ConfigFileName),
 			LockFile:   filepath.Join("services", "payment", workspace.LockDirName, workspace.LockFileName),
@@ -1380,13 +1384,30 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 		t.Parallel()
 
 		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
-			Root:     "/repo",
-			Cwd:      ".",
-			LockFile: filepath.Join(workspace.LockDirName, workspace.LockFileName),
+			Root:       "/repo",
+			HasGitRoot: true,
+			Cwd:        ".",
+			LockFile:   filepath.Join(workspace.LockDirName, workspace.LockFileName),
 		}, true, dagql.ObjectResult[*core.Directory]{}, nil, "")
 		require.NoError(t, err)
 		require.Empty(t, ws.ConfigFile)
 		require.Equal(t, filepath.Join(workspace.LockDirName, workspace.LockFileName), ws.LockFile)
+	})
+
+	t.Run("local boundary without Git is rootless", func(t *testing.T) {
+		t.Parallel()
+
+		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+			Root:     "/repo",
+			Cwd:      ".",
+			LockFile: workspace.LockFileName,
+		}, true, dagql.ObjectResult[*core.Directory]{}, nil, "")
+		require.NoError(t, err)
+		require.Equal(t, "/repo", ws.HostPath())
+		_, ok := ws.Source().(*core.WorkspaceSourceRootlessLocal)
+		require.True(t, ok)
+		_, err = ws.ExportHostPath()
+		require.ErrorContains(t, err, "requires a local Git workspace")
 	})
 }
 

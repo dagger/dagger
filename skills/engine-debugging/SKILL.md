@@ -8,6 +8,13 @@ description: Run Dagger repo tests and debug Dagger engine, core, dagql, filesyn
 This is the default guide for running Dagger engine/core tests and for debugging
 the failures those tests expose.
 
+## CLI Version Compatibility
+
+> [!IMPORTANT]
+> Commands in this guide use Dagger v1.0 or later. If your installed Dagger
+> version is earlier than v1.0, replace every `dagger api call ...` invocation
+> below with `dagger call ...`.
+
 Start from evidence, not broad guesses.
 
 ## Core Loop
@@ -21,6 +28,8 @@ Start from evidence, not broad guesses.
 Use focused repros, recorded traces, and small log windows. Avoid dumping full
 test output into the conversation.
 
+Use Dagger's default progress UI. Do not pass `--progress=plain`.
+
 Prefer small, high-signal log lines over broad dumps. Good debug logs identify
 the boundary being checked and include the relevant stable IDs, digests, keys,
 hit path, or lifecycle state needed to compare expected and actual behavior.
@@ -32,7 +41,7 @@ Use a tight test repro before adding logs.
 Recommended integration command format:
 
 ```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>'
+dagger api call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>'
 ```
 
 This command rebuilds the dev engine, runs it as an ephemeral service, and then
@@ -46,7 +55,7 @@ runs tests against it. Output includes:
 Capture output to a file under `/tmp` to avoid overwhelming terminal context:
 
 ```bash
-dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>' > /tmp/engine-debug.log 2>&1
+dagger api call engine-dev test --pkg ./core/integration --run='<TestSuiteName>/<SubtestName>' > /tmp/engine-debug.log 2>&1
 rg -n "panic:|--- FAIL:|^FAIL\s" /tmp/engine-debug.log
 ```
 
@@ -93,7 +102,7 @@ stack traces, you are done and do not need to wait for the test hang to end.
 To compare behavior against an engine from another git ref:
 
 ```bash
-dagger --progress=plain call engine-dev --source 'https://github.com/dagger/dagger#main' test --pkg ./core/integration --run='TestSomeSuite/TestSomeSubtestYouWant'
+dagger api call engine-dev --source 'https://github.com/dagger/dagger#main' test --pkg ./core/integration --run='TestSomeSuite/TestSomeSubtestYouWant'
 ```
 
 Do not run multiple suites in parallel unless necessary. Each suite is CPU-heavy
@@ -115,65 +124,24 @@ may provide either a raw trace ID or a command copied from the web UI, such as:
 dagger trace <trace-id>
 ```
 
-Replay that trace locally with plain progress and capture it to a temp file:
+Replay that trace locally and capture it to a temp file:
 
 ```bash
-dagger --progress=plain trace <trace-id> > /tmp/ci-trace-<trace-id>.log 2>&1
+dagger trace <trace-id> > /tmp/ci-trace-<trace-id>.log 2>&1
 ```
 
-This does not rerun the CI job. It fetches and prints the recorded trace in the
-same style as local `--progress=plain` output. Keep the full output in `/tmp`,
-inspect it with `rg`, and avoid dumping the whole trace into the conversation.
+This does not rerun the CI job. It fetches and prints the recorded trace. Keep
+the full output in `/tmp`, inspect it with `rg`, and avoid dumping the whole
+trace into the conversation.
 
-### Finding Trace IDs From GitHub PR Checks
-
-If the user gives a GitHub PR URL instead of a trace ID, first inspect the PR's
-commit statuses and collect the Dagger Cloud target URLs for the checks of
-interest. With GitHub CLI this usually looks like:
+If the user gives a GitHub PR URL instead of a trace ID, start by checking the
+PR status with GitHub CLI:
 
 ```bash
-pr_url='https://github.com/dagger/dagger/pull/13119'
-head_sha="$(gh pr view "$pr_url" --json headRefOid --jq .headRefOid)"
-gh api "repos/dagger/dagger/commits/$head_sha/status" \
-  --jq '.statuses[] | select(.target_url | startswith("https://dagger.cloud/")) | [.state, .context, .target_url] | @tsv'
+gh pr checks <pr-url>
 ```
 
-For failed checks, add `select(.state != "success")`. A Dagger status target URL
-has this shape:
-
-```text
-https://dagger.cloud/{org}/checks/{moduleRef}@{moduleVersion}?check={checkName}
-```
-
-For public repos, the Cloud GraphQL API can map that URL data to check IDs and
-trace IDs without rerunning anything:
-
-```bash
-curl -sS -X POST https://api.dagger.cloud/query \
-  -H 'Content-Type: application/json' \
-  --data '{
-    "query": "query($org:String!,$moduleRef:String!,$moduleVersion:String!){ org(name:$org){ moduleChecks(moduleRef:$moduleRef,moduleVersion:$moduleVersion){ commitSHA checks { id name status traceId spanId moduleRef moduleVersion } } } }",
-    "variables": {
-      "org": "dagger",
-      "moduleRef": "github.com/dagger/dagger",
-      "moduleVersion": "e7600fda40142627a4206ec04de3a5f702be5a45"
-    }
-  }' > /tmp/ci-checks.json
-
-jq -r --arg check 'test-split:test-base' \
-  '.data.org.moduleChecks[].checks[]
-   | select(.name == $check)
-   | [.status, .name, .id, .traceId]
-   | @tsv' /tmp/ci-checks.json
-```
-
-If the Dagger Cloud URL contains `run=<checkID>`, prefer that exact check ID.
-Current GitHub status URLs often only include `check=<name>`, so the lookup is
-"latest matching check for this org/module/version/name"; be careful after
-reruns and prefer the non-success/latest row that matches the status being
-debugged.
-
-Once you have the trace ID, replay it with `dagger --progress=plain trace ...`
+If a failed check points to a Dagger trace, replay it with `dagger trace ...`
 and capture output to `/tmp` as described above.
 
 Start with the usual failure scan:
@@ -191,15 +159,15 @@ sed -n '<start>,<end>p' /tmp/ci-trace-<trace-id>.log
 
 Use the replayed trace to identify the exact failing call, subtest, generated
 command, or engine error. Once the failing surface is clear, decide whether to
-reproduce it locally with a tight `dagger --progress=plain call engine-dev ...`
-command or debug directly from the recorded CI trace.
+reproduce it locally with a tight `dagger api call engine-dev ...` command or
+debug directly from the recorded CI trace.
 
 ## Performance Debugging With Persistent Dev Engine
 
 For most testing/debugging flows, prefer ephemeral engines via:
 
 ```bash
-dagger --progress=plain call engine-dev ...
+dagger api call engine-dev ...
 ```
 
 For performance debugging, such as pprof snapshots, repeated profiling loops, or

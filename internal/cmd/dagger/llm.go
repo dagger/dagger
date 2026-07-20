@@ -3,17 +3,20 @@ package daggercmd
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/google/uuid"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
@@ -24,6 +27,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
@@ -73,6 +77,11 @@ type LLMSession struct {
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
 
+	// onStep, if set, is invoked after every step of a prompt turn. It is used
+	// to auto-save the session so it is preserved even if the process is
+	// interrupted mid-turn.
+	onStep func(*LLMSession)
+
 	beforeFS     *dagger.Directory
 	beforeFSTime time.Time
 	afterFS      *dagger.Directory
@@ -82,6 +91,10 @@ type LLMSession struct {
 
 	autoCompact  bool
 	autoCompactL *sync.Mutex
+
+	// subscriptionLabelCache caches the OAuth subscription label for the status
+	// line, resolved lazily on first use.
+	subscriptionLabelCache string
 }
 
 func NewLLMSession(
@@ -209,8 +222,9 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	prompted := compacted.WithPrompt(input)
 
 	for {
-		// update the sidebar after every step, not after the entire loop
-		prompted, err = prompted.Step(ctx)
+		// update the sidebar after every step, not after the entire loop; step
+		// is lazy, so sync to force it and re-root on the materialized state
+		prompted, err = prompted.Step().Sync(ctx)
 		if err != nil {
 			return s, err
 		}
@@ -223,18 +237,37 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			return s, err
 		}
 
-		hasMore, err := prompted.HasPrompt(s.plumbingCtx)
+		// Auto-save after every step so sessions are preserved even if the
+		// process is interrupted mid-turn.
+		if s.onStep != nil {
+			s.onStep(s)
+		}
+
+		hasMore, err := prompted.HasPending(s.plumbingCtx)
 		if err != nil {
 			return s, err
 		}
+		var queued string
 		if !hasMore {
-			break
+			// Check if the user queued a message while the LLM was running. If
+			// nothing is queued and no prompt is pending, the turn is complete.
+			queued = s.shell.DequeueMessage()
+			if queued == "" {
+				break
+			}
 		}
 
 		// Check if we need to compact in-between steps
 		prompted, err = s.maybeAutoCompact(ctx)
 		if err != nil {
 			return s, fmt.Errorf("auto-compact: %w", err)
+		}
+
+		// Inject any queued message as the next prompt. This must happen after
+		// maybeAutoCompact, which returns the session's LLM rather than
+		// prompted, and would otherwise discard the injected prompt.
+		if queued != "" {
+			prompted = prompted.WithPrompt(queued)
 		}
 	}
 
@@ -277,6 +310,29 @@ func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 		return err
 	}
 	return nil
+}
+
+// subscriptionLabel returns a display label for the OAuth subscription type of
+// the currently active default provider, or empty string if not using OAuth.
+// Cached after first lookup.
+func (s *LLMSession) subscriptionLabel() string {
+	if s.subscriptionLabelCache != "" {
+		return s.subscriptionLabelCache
+	}
+	cfg, err := llmconfig.Load()
+	if err != nil || cfg == nil {
+		return ""
+	}
+	defaultProvider := cfg.LLM.DefaultProvider
+	if defaultProvider == "" {
+		return ""
+	}
+	provider, ok := cfg.LLM.Providers[defaultProvider]
+	if !ok || !provider.IsOAuth() || provider.SubscriptionType == "" {
+		return ""
+	}
+	s.subscriptionLabelCache = llmconfig.SubscriptionLabel(provider.SubscriptionType)
+	return s.subscriptionLabelCache
 }
 
 func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
@@ -358,6 +414,38 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		Title:   "LLM",
 		Content: strings.Join(lines, "\n"),
 	})
+
+	// Drive the compact status line: session token counts for the display and
+	// context %, aggregated cost across all models/sub-agents from the DB.
+	statusData := idtui.StatusLineData{
+		Model:             s.model,
+		SubscriptionLabel: s.subscriptionLabel(),
+		InputTokens:       inputTokens,
+		OutputTokens:      outputTokens,
+		CacheReads:        cacheReads,
+		CacheWrites:       cacheWrites,
+		ContextPercent:    -1, // unknown by default
+		AutoCompact:       s.ShouldAutocompact(),
+	}
+	if llmMetrics := s.frontend.GetLLMTokenMetrics(); llmMetrics != nil {
+		for _, metrics := range llmMetrics.Snapshot() {
+			m := s.models.Lookup(metrics.Model)
+			if m == nil {
+				continue
+			}
+			statusData.TotalCost += m.Pricing.Prompt.Cost(int(metrics.InputTokens))
+			statusData.TotalCost += m.Pricing.Completion.Cost(int(metrics.OutputTokens))
+			statusData.TotalCost += m.Pricing.InputCacheRead.Cost(int(metrics.CachedTokenReads))
+			statusData.TotalCost += m.Pricing.InputCacheWrite.Cost(int(metrics.CachedTokenWrites))
+		}
+	}
+	if m := s.models.Lookup(s.model); m != nil {
+		statusData.ContextWindow = int(m.ContextLength)
+		if inputTokens > 0 && m.ContextLength > 0 {
+			statusData.ContextPercent = float64(inputTokens) / float64(m.ContextLength) * 100
+		}
+	}
+	s.frontend.SetStatusLine(statusData)
 
 	s.afterFS = llm.Env().Workspace()
 
@@ -675,14 +763,12 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 }
 
 func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {
-	history, err := s.llm.History(ctx)
+	transcript, err := s.llm.Transcript(ctx)
 	if err != nil {
 		return s, err
 	}
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	for _, h := range history {
-		fmt.Fprintln(stdio.Stdout, h)
-	}
+	fmt.Fprintln(stdio.Stdout, transcript)
 	return s, nil
 }
 
@@ -695,6 +781,279 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 	}
 	s.model = model
 	return s, nil
+}
+
+//go:embed llm_branch_summary.md
+var branchSummaryPrompt string
+
+// Summarization input budget: fall back to a conservative context window
+// when the model's real one is unknown, and reserve room for the prompt
+// scaffolding and the model's output, estimating ~4 chars per token.
+const (
+	summaryFallbackWindowTokens = 128000
+	summaryReserveTokens        = 16384
+	summaryCharsPerToken        = 4
+)
+
+// trimConversationForSummary drops the oldest serialized messages so the
+// conversation fits the summarization input budget within the model's
+// context window (tokens; 0 or negative uses a conservative fallback),
+// keeping the newest content. The transcript joins messages with blank
+// lines, so trimming happens at those boundaries; a notice marks the
+// omission. Without this, a near-window-sized history would leave the
+// summarization request little or no room to respond.
+func trimConversationForSummary(text string, contextWindow int) string {
+	if contextWindow <= 0 {
+		contextWindow = summaryFallbackWindowTokens
+	}
+	budgetChars := (contextWindow - summaryReserveTokens) * summaryCharsPerToken
+	if budgetChars < summaryReserveTokens*summaryCharsPerToken {
+		// Tiny or reserve-sized windows: keep at least a minimal budget so
+		// the summary sees some conversation.
+		budgetChars = summaryReserveTokens * summaryCharsPerToken
+	}
+	if len(text) <= budgetChars {
+		return text
+	}
+	const notice = "[Earlier conversation omitted to fit the context window.]"
+	parts := strings.Split(text, "\n\n")
+	var kept []string
+	total := 0
+	for i := len(parts) - 1; i >= 0; i-- {
+		total += len(parts[i]) + 2
+		if total > budgetChars {
+			break
+		}
+		kept = append(kept, parts[i])
+	}
+	if len(kept) == 0 {
+		// A single oversized message (e.g. a huge tool result); keep its tail.
+		return notice + "\n\n" + text[len(text)-budgetChars:]
+	}
+	slices.Reverse(kept)
+	return notice + "\n\n" + strings.Join(kept, "\n\n")
+}
+
+// BranchSummary generates a summary of the current conversation branch. It is
+// used when branching to describe what was explored in the branch being
+// abandoned, so the summary can be injected at the branch target.
+//
+// The conversation is serialized to plain text first (so the model treats it
+// as data to summarize, not a conversation to continue), then passed to a
+// fresh lightweight LLM call with a small output budget. If customInstructions
+// is non-empty it is appended to the default prompt.
+func (s *LLMSession) BranchSummary(ctx context.Context, customInstructions string) (_ string, rerr error) {
+	ctx, span := Tracer().Start(ctx, "branch summary", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	conversationText, err := s.llm.Transcript(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize history: %w", err)
+	}
+	// Budget the input to the model's actual context window; unknown models
+	// (e.g. local endpoints) report null (decoded as 0) and get a
+	// conservative fallback.
+	contextWindow, err := s.llm.ContextWindow(ctx)
+	if err != nil {
+		contextWindow = 0
+	}
+	conversationText = trimConversationForSummary(conversationText, contextWindow)
+
+	instructions := branchSummaryPrompt
+	if customInstructions != "" {
+		instructions += "\n\nAdditional focus: " + customInstructions
+	}
+
+	prompt := fmt.Sprintf("<conversation>\n%s\n</conversation>\n\n%s", conversationText, instructions)
+
+	// Use a fresh LLM (no tools, no history) with a small output budget.
+	summaryText, err := s.llm.
+		WithoutMessageHistory().
+		WithoutSystemPrompts().
+		WithSystemPrompt("You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified. Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.").
+		WithPrompt(prompt).
+		Loop(dagger.LLMLoopOpts{MaxSteps: 1, MaxTokens: 2048}).
+		LastReply(ctx)
+	if err != nil {
+		return "", err
+	}
+	return summaryText, nil
+}
+
+// sessionMetadata stores metadata about a saved LLM session.
+type sessionMetadata struct {
+	Name      string `json:"name"`
+	Model     string `json:"model"`
+	CreatedAt string `json:"created_at"`
+	LLMID     string `json:"llm_id"`
+	Branch    string `json:"branch,omitempty"`
+}
+
+// getSessionDir returns the directory where LLM sessions are stored, creating
+// it if necessary.
+func getSessionDir() (string, error) {
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	if stateHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		stateHome = filepath.Join(homeDir, ".local", "state")
+	}
+
+	sessionDir := filepath.Join(stateHome, "dagger", "llm-sessions")
+	if err := os.MkdirAll(sessionDir, 0700); err != nil {
+		return "", fmt.Errorf("failed to create session directory: %w", err)
+	}
+	// Sessions contain prompts and history-bearing LLM IDs; keep the
+	// directory private even if an older version created it more openly.
+	if err := os.Chmod(sessionDir, 0700); err != nil {
+		return "", fmt.Errorf("failed to restrict session directory permissions: %w", err)
+	}
+
+	return sessionDir, nil
+}
+
+// AutoSaveSession saves the session automatically, named after the initial
+// prompt, stored on disk under a UUIDv7 filename for anonymity and time-sorted
+// ordering. If existingUUID is non-empty the same file is updated in-place;
+// otherwise a new UUIDv7 is generated. Returns the UUID used.
+func (s *LLMSession) AutoSaveSession(ctx context.Context, initialPrompt string, existingUUID string) (string, error) {
+	if s.llm == nil {
+		return existingUUID, nil // nothing to save
+	}
+
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return existingUUID, err
+	}
+
+	// Persist the portable, self-contained (recipe-form) ID rather than the
+	// default runtime handle, which is an engine-local reference that cannot be
+	// resolved once this session's engine is gone.
+	llmID, err := s.llm.PortableID(ctx)
+	if err != nil {
+		return existingUUID, fmt.Errorf("failed to get LLM ID: %w", err)
+	}
+
+	sessionID := existingUUID
+	if sessionID == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return "", fmt.Errorf("failed to generate session UUID: %w", err)
+		}
+		sessionID = id.String()
+	}
+
+	metadata := sessionMetadata{
+		Name:      initialPrompt,
+		Model:     s.model,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		LLMID:     string(llmID),
+	}
+
+	jsonData, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return sessionID, fmt.Errorf("failed to marshal session data: %w", err)
+	}
+
+	sessionFile := filepath.Join(sessionDir, sessionID+".json")
+	if err := os.WriteFile(sessionFile, jsonData, 0600); err != nil {
+		return sessionID, fmt.Errorf("failed to write session file: %w", err)
+	}
+	// WriteFile only applies the mode on creation; fix up files written more
+	// openly by an older version.
+	if err := os.Chmod(sessionFile, 0600); err != nil {
+		return sessionID, fmt.Errorf("failed to restrict session file permissions: %w", err)
+	}
+
+	slog.Debug("auto-saved LLM session", "id", sessionID, "name", initialPrompt, "file", sessionFile)
+	return sessionID, nil
+}
+
+// LoadSession loads an LLM session from disk by UUID.
+func (s *LLMSession) LoadSession(ctx context.Context, sessionID string) error {
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return err
+	}
+
+	sessionFile := filepath.Join(sessionDir, sessionID+".json")
+	data, err := os.ReadFile(sessionFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("session %q not found", sessionID)
+		}
+		return fmt.Errorf("failed to read session file: %w", err)
+	}
+
+	var metadata sessionMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return fmt.Errorf("failed to unmarshal session data: %w", err)
+	}
+
+	if metadata.LLMID == "" {
+		return fmt.Errorf("invalid session data: missing LLM ID")
+	}
+
+	loadedLLM := dagger.Ref[*dagger.LLM](s.dag, dagger.ID(metadata.LLMID))
+
+	// Replay the message history to emit telemetry spans so the TUI shows the
+	// conversation in its scrollback.
+	if _, err := loadedLLM.Replay(ctx); err != nil {
+		slog.Warn("failed to replay session history", "error", err)
+	}
+
+	if err := s.updateLLMAndAgentVar(loadedLLM); err != nil {
+		return err
+	}
+	return s.updateSidebar(loadedLLM)
+}
+
+// ListSessions returns saved sessions sorted by creation time (newest first,
+// via UUIDv7 ordering). The returned metadata's LLMID field carries the file
+// UUID (for loading), not the full LLM ID.
+func ListSessions() ([]sessionMetadata, error) {
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read session directory: %w", err)
+	}
+
+	var sessions []sessionMetadata
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(sessionDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var meta sessionMetadata
+		if err := json.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		sessionID := strings.TrimSuffix(entry.Name(), ".json")
+		sessions = append(sessions, sessionMetadata{
+			Name:      meta.Name,
+			Model:     meta.Model,
+			CreatedAt: meta.CreatedAt,
+			LLMID:     sessionID, // repurpose LLMID to carry the file UUID for listing
+			Branch:    meta.Branch,
+		})
+	}
+
+	// Reverse so newest (highest UUIDv7) is first.
+	slices.Reverse(sessions)
+
+	return sessions, nil
 }
 
 func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {

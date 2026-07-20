@@ -65,9 +65,10 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 		// confirm form). The migrate write lands here; the session is closed
 		// before the install session opens so the workspace lock is released.
 		var (
-			recs     []recommendation
-			install  bool
-			migrated bool
+			recs            []recommendation
+			install         bool
+			migrated        bool
+			migratedConfigs []string
 		)
 		if err := func() error {
 			sess, closeSess, err := connect(ctx)
@@ -76,7 +77,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			}
 			defer closeSess()
 			dag := sess.Dagger()
-			migrated, err = setupStepMigrate(ctx, cmd, dag)
+			migrated, migratedConfigs, err = setupStepMigrate(ctx, cmd, dag)
 			if err != nil {
 				return fmt.Errorf("step 2 (migrate): %w", err)
 			}
@@ -103,7 +104,7 @@ func runSetup(cmd *cobra.Command, _ []string) error {
 			// Only a migration writes SDK installs by short name, so scope the
 			// resolution to that case — never rewrite an already-native config.
 			if migrated {
-				if err := setupResolveMigratedSDKs(ctx, cmd, dag); err != nil {
+				if err := setupResolveMigratedSDKs(ctx, cmd, dag, migratedConfigs); err != nil {
 					return fmt.Errorf("step 2 (resolve SDKs): %w", err)
 				}
 			}
@@ -146,9 +147,28 @@ func setupStepLogin(cmd *cobra.Command) error {
 
 // --- Step 2: Migrate ---
 
+// emptyWorkspaceSetupHint is printed when `dagger setup` has nothing to migrate
+// and no workspace config exists yet: the greenfield case, where the useful
+// thing is to show how to get started rather than write an empty dagger.toml.
+const emptyWorkspaceSetupHint = `  No workspace loaded here yet — nothing to migrate.
+
+  To get started:
+
+    • Install a published module as a dependency:
+        dagger install <module>
+
+    • Install an SDK to author your own:
+        dagger sdk install <sdk>        (e.g. dagger sdk install go)
+
+    • Create a new module (after installing an SDK):
+        dagger module init <sdk> <name>
+`
+
 // setupStepMigrate reports whether a migration was needed (and thus a fresh
-// session should resolve SDKs migration may have recorded by short name).
-func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (bool, error) {
+// session should resolve SDKs migration may have recorded by short name) and
+// the workspace-root-relative paths of the dagger.toml configs it wrote — the
+// exact set the SDK resolution pass must scope itself to.
+func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) (bool, []string, error) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "\nStep 2: Workspace migration")
 
@@ -158,30 +178,72 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 
 	changesID, err := changes.ID(ctx)
 	if err != nil {
-		return false, fmt.Errorf("compute migration: %w", err)
+		return false, nil, fmt.Errorf("compute migration: %w", err)
 	}
 	changes = dagger.Ref[*dagger.Changeset](dag, changesID)
 
 	isEmpty, err := changes.IsEmpty(ctx)
 	if err != nil {
-		return false, fmt.Errorf("check migration: %w", err)
+		return false, nil, fmt.Errorf("check migration: %w", err)
 	}
 	if isEmpty {
+		configFile, err := ws.ConfigFile(ctx)
+		if err != nil {
+			return false, nil, fmt.Errorf("check workspace config: %w", err)
+		}
+		if configFile == "" {
+			// Nothing to migrate and no workspace config yet — don't seed an empty
+			// dagger.toml; guide the user to get started instead.
+			if !silent {
+				fmt.Fprint(out, emptyWorkspaceSetupHint)
+			}
+			return false, nil, nil
+		}
 		fmt.Fprintln(out, "  No migration needed.")
-		return false, nil
+		return false, nil, nil
 	}
 
-	exportPath, err := currentWorkspaceExportPath(ctx, ws)
+	configs, err := migratedConfigPaths(ctx, changes)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
-	// handleChangesetResponseAt owns the apply prompt via a huh form when
+
+	// handleWorkspaceResponse owns the apply prompt via a huh form when
 	// autoApply is false — we don't run our own confirm() here, otherwise
 	// the user would face two prompts back-to-back for the same action.
-	if err := handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath); err != nil {
-		return false, err
+	applied, err := handleWorkspaceResponse(ctx, dag, ws.WithChanges(changes), autoApply)
+	if err != nil {
+		return false, nil, err
 	}
-	return true, nil
+	if !applied {
+		// The user declined: the legacy config is left in place, so there is
+		// nothing to resolve and the migrated config files were never written.
+		return false, nil, nil
+	}
+	return true, configs, nil
+}
+
+// migratedConfigPaths returns the workspace-root-relative paths of the
+// dagger.toml files the migration changeset creates or rewrites. Scoping SDK
+// resolution to exactly these files avoids touching pre-existing workspace
+// configs the migration deliberately left alone (it treats them as ownership
+// boundaries).
+func migratedConfigPaths(ctx context.Context, changes *dagger.Changeset) ([]string, error) {
+	added, err := changes.AddedPaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	modified, err := changes.ModifiedPaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var configs []string
+	for _, p := range append(added, modified...) {
+		if filepath.Base(p) == workspace.ConfigFileName {
+			configs = append(configs, p)
+		}
+	}
+	return configs, nil
 }
 
 // setupResolveMigratedSDKs rewrites SDK installs that migration recorded by bare
@@ -190,7 +252,7 @@ func setupStepMigrate(ctx context.Context, cmd *cobra.Command, dag *dagger.Clien
 // being treated as a local path. Runs in a post-migration session where the
 // workspace is native; a no-op when nothing was recorded by short name (and
 // when the user declined migration, leaving the legacy config in place).
-func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagger.Client) error {
+func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, migratedConfigs []string) error {
 	ws := dag.CurrentWorkspace()
 	raw, err := ws.ConfigRead(ctx)
 	if err != nil {
@@ -202,13 +264,74 @@ func setupResolveMigratedSDKs(ctx context.Context, cmd *cobra.Command, dag *dagg
 	}
 
 	out := cmd.OutOrStdout()
-	for _, fix := range planMigratedSDKFixups(cfg) {
-		if _, err := ws.ConfigWrite(ctx, "modules."+fix.ModuleName+".source", fix.Ref); err != nil {
-			return fmt.Errorf("set %s SDK source: %w", fix.SDKName, err)
+	fixes := planMigratedSDKFixups(cfg)
+	if len(fixes) > 0 {
+		updated := ws
+		for _, fix := range fixes {
+			updated = updated.
+				WithConfigValue("modules."+fix.ModuleName+".source", fix.Ref).
+				WithConfigValue("modules."+fix.ModuleName+".as-sdk.name", fix.SDKName)
 		}
-		if _, err := ws.ConfigWrite(ctx, "modules."+fix.ModuleName+".as-sdk.name", fix.SDKName); err != nil {
-			return fmt.Errorf("set %s SDK name: %w", fix.SDKName, err)
+		if err := updated.Export(ctx); err != nil {
+			return err
 		}
+		for _, fix := range fixes {
+			fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
+		}
+	}
+
+	// Migration also writes SDK installs into workspace configs other than the
+	// top-level one it runs in — nested workspace plans and synthesized parents.
+	// The workspace API above only reaches the current workspace, so resolve the
+	// short-name installs those carry directly on disk. The changeset is already
+	// applied in this session, and the paths are scoped to exactly the configs
+	// migration wrote, so pre-existing workspaces are never touched.
+	root, err := currentWorkspaceExportPath(ctx, ws)
+	if err != nil {
+		return err
+	}
+	for _, rel := range migratedConfigs {
+		if filepath.Clean(rel) == workspace.ConfigFileName {
+			// The top-level config is handled through the workspace API above.
+			continue
+		}
+		if err := resolveMigratedSDKsInConfigFile(out, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolveMigratedSDKsInConfigFile(out io.Writer, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	cfg, err := workspace.ParseConfig(data)
+	if err != nil {
+		return err
+	}
+	fixes := planMigratedSDKFixups(cfg)
+	if len(fixes) == 0 {
+		return nil
+	}
+	for _, fix := range fixes {
+		entry := cfg.Modules[fix.ModuleName]
+		entry.Source = fix.Ref
+		if entry.AsSDK == nil {
+			entry.AsSDK = &workspace.ModuleAsSDK{}
+		}
+		entry.AsSDK.Name = fix.SDKName
+		cfg.Modules[fix.ModuleName] = entry
+	}
+	updated, err := workspace.UpdateConfigBytes(data, cfg)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, updated, 0o644); err != nil {
+		return err
+	}
+	for _, fix := range fixes {
 		fmt.Fprintf(out, "  Resolved SDK %q to %s\n", fix.SDKName, fix.Ref)
 	}
 	return nil
@@ -306,10 +429,8 @@ func confirmInstallRecommended(ctx context.Context, cmd *cobra.Command, recs []r
 	return install, nil
 }
 
-// currentWorkspaceExportPath returns the host filesystem path the current
-// workspace should write to when applying a Changeset. Used by the migrate
-// step (was previously in the dedicated migrate.go before that file was
-// removed in the workspace slim-down).
+// currentWorkspaceExportPath derives the local workspace root from its file
+// address and workspace-relative cwd.
 func currentWorkspaceExportPath(ctx context.Context, ws *dagger.Workspace) (string, error) {
 	cwd, err := ws.Cwd(ctx)
 	if err != nil {

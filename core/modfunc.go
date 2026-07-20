@@ -330,6 +330,9 @@ func (udp *UserDefaultPrimitive) Value() (any, error) {
 	case TypeDefKindString:
 		return udp.UserInput, nil
 	case TypeDefKindList:
+		if list, ok := jsonListElements(udp.UserInput); ok {
+			return list, nil
+		}
 		return strings.Split(udp.UserInput, ","), nil
 	case TypeDefKindInteger:
 		v, err := strconv.Atoi(udp.UserInput)
@@ -452,8 +455,20 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 		return nil, fmt.Errorf("access main client: %w", err)
 	}
 	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
-	// Resolve object from user-supplied "address"
-	srv := dagql.CurrentDagqlServer(mainCtx)
+	// Resolve object from user-supplied "address" against the schema served to
+	// the main client, which carries the workspace's installed modules as root
+	// fields. The context-stamped server (dagql.CurrentDagqlServer) may be a
+	// standalone per-module server — e.g. under `dagger check`'s ModTree path —
+	// whose root lacks sibling workspace modules, so module refs like
+	// "pulse:serve" would silently fall through to legacy address decoding.
+	servedDeps, err := query.Server.CurrentServedDeps(mainCtx)
+	if err != nil {
+		return nil, fmt.Errorf("get main client served deps: %w", err)
+	}
+	srv, err := servedDeps.Schema(mainCtx)
+	if err != nil {
+		return nil, fmt.Errorf("get main client schema: %w", err)
+	}
 
 	resolveOne := func(userInput, typename string) (any, error) {
 		var result dagql.AnyObjectResult
@@ -484,7 +499,14 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 	if ud.IsList() {
 		// "Secret" -> "secret", "GitRef" -> "gitRef", etc (from the element type)
 		typename := ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self().ToType().Name()
-		elements := strings.Split(ud.UserInput, ",")
+		var elements []string
+		if list, ok := jsonListElements(ud.UserInput); ok {
+			for _, item := range list {
+				elements = append(elements, fmt.Sprint(item))
+			}
+		} else {
+			elements = strings.Split(ud.UserInput, ",")
+		}
 		ids := make([]any, 0, len(elements))
 		for _, elem := range elements {
 			id, err := resolveOne(strings.TrimSpace(elem), typename)
@@ -1301,6 +1323,21 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
 	}
+}
+
+// jsonListElements parses a JSON array default value into its elements. TOML
+// array settings arrive JSON-encoded (see configValueToString); ok is false
+// for plain strings, which callers split on commas instead.
+func jsonListElements(userInput string) ([]any, bool) {
+	trimmed := strings.TrimSpace(userInput)
+	if !strings.HasPrefix(trimmed, "[") {
+		return nil, false
+	}
+	var list []any
+	if err := json.Unmarshal([]byte(trimmed), &list); err != nil {
+		return nil, false
+	}
+	return list, true
 }
 
 // lookupConfigCaseInsensitive performs a case-insensitive lookup in a workspace

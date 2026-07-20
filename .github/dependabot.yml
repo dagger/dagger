@@ -6,6 +6,7 @@ updates:
       - "/sdk/go"
     exclude-paths:
       - "**/examples/**"
+      - "**/snippets/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -17,7 +18,7 @@ updates:
       - "area/cli"
       - "area/sdk/go"
     ignore:
-        # these are fiddly, we want to do them manually
+      # these are fiddly, we want to do them manually
       - dependency-name: "go.opentelemetry.io/*"
       - dependency-name: "github.com/dagger/*"
       - dependency-name: "github.com/tonistiigi/fsutil"
@@ -34,6 +35,7 @@ updates:
     directory: "/sdk/typescript"
     exclude-paths:
       - "**/examples/**"
+      - "**/snippets/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -52,6 +54,7 @@ updates:
     directory: "/docs"
     exclude-paths:
       - "**/examples/**"
+      - "**/snippets/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -70,6 +73,7 @@ updates:
     directory: "/sdk/python"
     exclude-paths:
       - "**/examples/**"
+      - "**/snippets/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -90,6 +94,7 @@ updates:
       - "/modules/ruff/build"
     exclude-paths:
       - "**/examples/**"
+      - "**/snippets/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -101,7 +106,8 @@ updates:
     ignore:
       # python needs to be manually bumped
       - dependency-name: "python"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+        update-types:
+          ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       sdk-python-docker:
         applies-to: version-updates
@@ -112,6 +118,7 @@ updates:
     directory: "/sdk/java"
     exclude-paths:
       - "**/examples/**"
+      - "**/snippets/**"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -133,6 +140,7 @@ updates:
     directory: "/sdk/elixir"
     exclude-paths:
       - "**/examples/**"
+      - "**/snippets/**"
     schedule:
       interval: "weekly"
       day: "monday"

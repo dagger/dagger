@@ -38,7 +38,7 @@ Use this checklist when asked to regenerate generated files.
 
 1. Run generation and redirect all output to the temp file:
 
-- `dagger --progress=plain call generate layer export --path . >"$tmp_log" 2>&1`
+- `dagger generate -y >"$tmp_log" 2>&1`
 
 1. Search the temp file as needed instead of printing full output.
 
@@ -48,4 +48,4 @@ Use this checklist when asked to regenerate generated files.
 
 Use this checklist when asked to regenerate telemetry golden tests.
 
-1. From the Dagger repo root, run `dagger -c 'engine-dev | test-telemetry --update | export .'`
+1. From the Dagger repo root, run `dagger call engine-dev test-telemetry --update -y`

@@ -54,6 +54,17 @@ class GeneratorGroup extends Client\AbstractObject implements Client\IdAble, Nod
     }
 
     /**
+     * Load failures tolerated while collecting the generators.
+     *
+     * Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
+     */
+    public function loadFailures(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('loadFailures');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'loadFailures');
+    }
+
+    /**
      * Execute all selected generators
      */
     public function run(): GeneratorGroup

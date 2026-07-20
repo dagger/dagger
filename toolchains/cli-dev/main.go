@@ -60,9 +60,6 @@ func New(
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
 	var values []string
-	if version != "" {
-		values = append(values, "github.com/dagger/dagger/engine.Version="+version)
-	}
 	if runnerHost != "" {
 		values = append(values, "main.RunnerHost="+runnerHost)
 	}

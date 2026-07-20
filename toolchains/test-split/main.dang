@@ -42,7 +42,40 @@ type TestSplit {
   """
   pub testBase: Void @check {
     testSkip(
-      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestCachePersistence", "TestLocalCache", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
+      # Keep this list exact so similarly named unit tests outside the integration
+      # package remain in the base shard.
+      skip: [
+        "^TestCLI$",
+        "^TestCachePersistence$",
+        "^TestCall$",
+        "^TestClientGenerator$",
+        "^TestContainer$",
+        "^TestDaggerCMD$",
+        "^TestDockerfile$",
+        "^TestElixir$",
+        "^TestEngine$",
+        "^TestGo$",
+        "^TestInterface$",
+        "^TestJava$",
+        "^TestLLM$",
+        "^TestLocalCache$",
+        "^TestModule$",
+        "^TestModuleConfig$",
+        "^TestModuleLoading$",
+        "^TestPHP$",
+        "^TestProvision$",
+        "^TestPython$",
+        "^TestShell$",
+        "^TestTelemetry$",
+        "^TestTypescript$",
+        "^TestWorkspace$",
+        "^TestWorkspaceAPI$",
+        "^TestWorkspaceCompat$",
+        "^TestWorkspaceLegacyDefaultPath$",
+        "^TestWorkspaceMigration$",
+        "^TestWorkspaceModules$",
+        "^TestWorkspaceSelection$",
+      ],
       pkg: "./...",
       race: true,
     )
@@ -59,14 +92,20 @@ type TestSplit {
   Test Telemetry
   """
   pub testTelemetry: Void @check {
-    testSpecific(["TestTelemetry"], pkg: "./dagql/idtui")
+    testSpecific(["^TestTelemetry$"], pkg: "./dagql/idtui")
+    testSpecific(["^TestTelemetry$"])
+
+    null
   }
 
   """
   Test Call and Shell
   """
   pub testCallAndShell: Void @check {
-    testSpecific(["TestCall", "TestShell", "TestDaggerCMD"])
+    testSpecific(["^TestCall$", "^TestShell$"])
+    testSpecific(["^TestDaggerCMD$"], pkg: "./internal/cmd/dagger")
+
+    null
   }
 
   """

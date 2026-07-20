@@ -630,6 +630,21 @@ func readMissingConfigDefault(tree *toml.Tree, parts []string) (string, bool) {
 
 // WriteConfigValue writes a typed value to config TOML at the given dotted key.
 func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte, error) {
+	return writeConfigValueAtKey(existingData, key, func(parts []string) any {
+		return parseValueString(parts, rawValue)
+	})
+}
+
+// WriteConfigValues writes a string-array value to config TOML at the given
+// dotted key. Elements are stored verbatim, with no comma-splitting or type
+// auto-detection.
+func WriteConfigValues(existingData []byte, key string, values []string) ([]byte, error) {
+	return writeConfigValueAtKey(existingData, key, func([]string) any {
+		return values
+	})
+}
+
+func writeConfigValueAtKey(existingData []byte, key string, valueFor func(parts []string) any) ([]byte, error) {
 	if key == "" {
 		return nil, fmt.Errorf("key is required for writing")
 	}
@@ -637,7 +652,7 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	if err := validateConfigKeyParts(parts, key); err != nil {
+	if err := validateConfigKeyParts(parts, key, "set"); err != nil {
 		return nil, err
 	}
 
@@ -649,12 +664,112 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 		cfg = &Config{}
 	}
 
-	value := parseValueString(parts, rawValue)
-	if err := setConfigValue(cfg, parts, value); err != nil {
+	if err := setConfigValue(cfg, parts, valueFor(parts)); err != nil {
 		return nil, err
 	}
 
 	return UpdateConfigBytes(existingData, cfg)
+}
+
+// DeleteConfigValue removes the value at the given dotted key from config TOML.
+// It errors when the key is not currently set.
+//
+// Deletion works on the TOML document rather than the typed config, so any
+// valid config key is removable without per-field handling; only keys whose
+// removal would break the containing entry are refused.
+func DeleteConfigValue(existingData []byte, key string) ([]byte, error) {
+	if key == "" {
+		return nil, fmt.Errorf("key is required for unsetting")
+	}
+	parts, err := splitConfigPath(key)
+	if err != nil {
+		return nil, err
+	}
+	if len(parts) == 2 && parts[0] == "modules" {
+		return nil, fmt.Errorf("cannot unset %q directly; use dagger uninstall to remove a module", key)
+	}
+	if err := validateConfigKeyParts(parts, key, "unset"); err != nil {
+		return nil, err
+	}
+	if err := refuseProtectedConfigDelete(parts, key); err != nil {
+		return nil, err
+	}
+
+	// Presence is judged on the raw document rather than the parsed config:
+	// explicit zero values (`entrypoint = false`, `ignore = []`) are set keys
+	// even though they parse to Go zero values, matching how configRead sees
+	// them.
+	tree, err := toml.LoadBytes(existingData)
+	if err != nil {
+		return nil, fmt.Errorf("parse existing config: %w", err)
+	}
+	if tree.GetPath(parts) == nil {
+		return nil, fmt.Errorf("key %q is not set", key)
+	}
+
+	collapsed := collapseEmptiedConfigTables(tree, parts)
+
+	if configPathRequiresSerializeFallback(collapsed) {
+		// Same trade-off as writes: document edits can't address quoted or
+		// all-digit path segments, so fall back to a full canonical rewrite.
+		if err := tree.DeletePath(collapsed); err != nil {
+			return nil, fmt.Errorf("delete config path %q: %w", JoinConfigPath(collapsed...), err)
+		}
+		rendered, err := tree.ToTomlString()
+		if err != nil {
+			return nil, fmt.Errorf("render config after delete: %w", err)
+		}
+		cfg, err := ParseConfig([]byte(rendered))
+		if err != nil {
+			return nil, err
+		}
+		return SerializeConfig(cfg), nil
+	}
+
+	return deleteConfigDocumentPath(existingData, parts, collapsed)
+}
+
+// refuseProtectedConfigDelete rejects keys whose removal would break the
+// containing entry rather than merely unset a value.
+func refuseProtectedConfigDelete(parts []string, key string) error {
+	switch {
+	case parts[0] == "ports":
+		return fmt.Errorf("cannot unset %q; edit or remove the [ports.<host>] section in dagger.toml", key)
+	case parts[0] == "modules" && len(parts) >= 3 && parts[2] == "source":
+		return fmt.Errorf("cannot unset %s; module entries require a source", key)
+	case parts[0] == "modules" && len(parts) >= 3 && parts[2] == "as-sdk":
+		return fmt.Errorf("cannot unset %q; SDK state is managed by dagger install", key)
+	}
+	return nil
+}
+
+// collapseEmptiedConfigTables widens the deletion to the topmost table this
+// removal empties, so no dangling section headers are left behind. Module
+// entries and env definitions are never collapsed: removing a module is
+// uninstall's job, and an env must stay defined for --env selection.
+func collapseEmptiedConfigTables(tree *toml.Tree, parts []string) []string {
+	del := parts
+	for len(del) > 2 {
+		parent := del[:len(del)-1]
+		if len(parent) == 2 && (parent[0] == "modules" || parent[0] == "env") {
+			break
+		}
+		sub, ok := tree.GetPath(parent).(*toml.Tree)
+		if !ok || len(sub.Keys()) > 1 {
+			break
+		}
+		del = parent
+	}
+	return del
+}
+
+func configPathRequiresSerializeFallback(parts []string) bool {
+	for _, part := range parts {
+		if pathSegmentUnsafeForDocumentUpdate(part) {
+			return true
+		}
+	}
+	return false
 }
 
 func flattenTOMLTree(prefix string, tree *toml.Tree) string {
@@ -751,11 +866,11 @@ func SplitConfigPath(key string) ([]string, error) {
 	return splitConfigPath(key)
 }
 
-func validateConfigKeyParts(parts []string, key string) error {
+func validateConfigKeyParts(parts []string, key, op string) error {
 	if len(parts) == 0 {
 		return fmt.Errorf("key is required")
 	}
-	return validateKeyAgainstType(parts, reflect.TypeOf(Config{}), key)
+	return validateKeyAgainstType(parts, reflect.TypeOf(Config{}), key, op)
 }
 
 // JoinConfigPath formats logical path segments as a TOML dotted key path.
@@ -1058,7 +1173,7 @@ func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:goc
 	}
 }
 
-func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) error {
+func validateKeyAgainstType(parts []string, t reflect.Type, fullKey, op string) error {
 	if len(parts) == 0 {
 		return nil
 	}
@@ -1078,17 +1193,17 @@ func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) erro
 	switch fieldType.Kind() {
 	case reflect.Map:
 		if len(rest) == 0 {
-			return fmt.Errorf("cannot set %q directly; specify a sub-key", fullKey)
+			return fmt.Errorf("cannot %s %q directly; specify a sub-key", op, fullKey)
 		}
 
 		mapValueRest := rest[1:]
 		elemType := fieldType.Elem()
 		if elemType.Kind() == reflect.Struct {
 			if len(mapValueRest) == 0 {
-				return fmt.Errorf("cannot set %q directly; specify a field like %s.%s",
-					fullKey, fullKey, preferredExampleFieldName(elemType))
+				return fmt.Errorf("cannot %s %q directly; specify a field like %s.%s",
+					op, fullKey, fullKey, preferredExampleFieldName(elemType))
 			}
-			return validateKeyAgainstType(mapValueRest, elemType, fullKey)
+			return validateKeyAgainstType(mapValueRest, elemType, fullKey, op)
 		}
 		if len(mapValueRest) > 0 {
 			return fmt.Errorf("invalid key %q; config keys cannot be nested deeper", fullKey)
@@ -1096,10 +1211,10 @@ func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) erro
 		return nil
 	case reflect.Struct:
 		if len(rest) == 0 {
-			return fmt.Errorf("cannot set %q directly; specify a field like %s.%s",
-				fullKey, fullKey, preferredExampleFieldName(fieldType))
+			return fmt.Errorf("cannot %s %q directly; specify a field like %s.%s",
+				op, fullKey, fullKey, preferredExampleFieldName(fieldType))
 		}
-		return validateKeyAgainstType(rest, fieldType, fullKey)
+		return validateKeyAgainstType(rest, fieldType, fullKey, op)
 	default:
 		if len(rest) > 0 {
 			return fmt.Errorf("invalid key %q; %s does not have sub-keys", fullKey, parts[0])
@@ -1150,9 +1265,7 @@ func preferredExampleFieldName(t reflect.Type) string {
 }
 
 func parseValueString(parts []string, rawValue string) any {
-	leaf := parts[len(parts)-1]
-
-	if leaf == "entrypoint" || leaf == "legacy-default-path" ||
+	if (len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path")) ||
 		(len(parts) == 1 && (parts[0] == "defaults_from_dotenv" || parts[0] == "check-generated")) {
 		return rawValue == "true"
 	}

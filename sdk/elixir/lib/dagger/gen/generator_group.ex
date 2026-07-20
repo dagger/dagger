@@ -82,6 +82,19 @@ defmodule Dagger.GeneratorGroup do
   end
 
   @doc """
+  Load failures tolerated while collecting the generators.
+
+  Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
+  """
+  @spec load_failures(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def load_failures(%__MODULE__{} = generator_group) do
+    query_builder =
+      generator_group.query_builder |> QB.select("loadFailures")
+
+    Client.execute(generator_group.client, query_builder)
+  end
+
+  @doc """
   Execute all selected generators
   """
   @spec run(t()) :: Dagger.GeneratorGroup.t()

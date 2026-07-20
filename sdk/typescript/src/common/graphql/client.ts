@@ -8,6 +8,10 @@ import {
 
 import { isBun, isDeno } from "../utils.js"
 
+type BunRequestInit = RequestInit & {
+  timeout: false
+}
+
 const createFetchWithTimeout =
   (timeout: number) =>
   async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
@@ -31,7 +35,19 @@ const createFetchWithTimeout =
       // extends URLSearchParams, and Bun's non-standard URLSearchParams.prototype.toJSON
       // brand check makes JSON.stringify throw on it, breaking ClientError construction
       // (errors surface as UnknownDaggerError instead of ExecError).
-      if (isDeno() || isBun()) {
+      if (isBun()) {
+        return await fetch(
+          input as RequestInfo,
+          {
+            ...(init as RequestInit),
+            signal: controller.signal,
+            // Dagger queries can run longer than Bun's native five-minute timeout.
+            timeout: false,
+          } as BunRequestInit,
+        )
+      }
+
+      if (isDeno()) {
         return await fetch(input as RequestInfo, {
           ...(init as RequestInit),
           signal: controller.signal,

@@ -1,0 +1,105 @@
+---
+title: "Deno"
+slug: /modules/deno
+description: "Test, lint, format, and type-check Deno projects across a workspace."
+---
+
+# Deno
+
+The Deno module gives a Deno workspace one shared way to test, lint, format, and
+type-check. It scans the workspace for `deno.json`/`deno.jsonc` files, treats
+each as a Deno project, reads the `workspace` array to fan out across members,
+and exposes workspace-level functions that run across all of them — a good fit
+for monorepos and repos where every project should share one Deno version and
+the same CI checks.
+
+Rather than wrapping the `deno` CLI, it models a Deno project as a typed object
+graph and maps Deno's toolchain onto Dagger's first-class verbs, so the same
+checks run locally, in CI, and in Dagger Cloud.
+
+Official module: [dagger/deno](https://github.com/dagger/deno)
+
+## Add it to your workspace
+
+```bash
+dagger install github.com/dagger/deno
+```
+
+## Run the checks
+
+```bash
+dagger check                       # run every check in the workspace
+dagger check deno:test-all         # deno test across every project
+dagger check deno:lint-all         # deno lint across every project
+dagger check deno:type-check-all   # deno check across every project
+dagger check deno:format-check-all # deno fmt --check across every project
+```
+
+The `-all` checks discover every `deno.json`/`deno.jsonc` in the workspace,
+treat each as a Deno project, and run against all of them. Deno permissions come
+from each project's `deno.json` (under `test.permissions` or
+`permissions.default`), not from flags.
+
+To run a check against a single project, call it directly:
+
+```bash
+dagger call deno project --path . test
+dagger call deno project --path apps/api type-check
+```
+
+## Format the source
+
+`format-check` only reports whether files are formatted; `format` rewrites them.
+Because formatting mutates the workspace, `format` returns a changeset: Dagger
+prints the diff and asks before writing. Add `-y` to apply it without prompting:
+
+```bash
+dagger call deno project --path . format      # preview the diff
+dagger -y call deno project --path . format   # apply it
+```
+
+## Compile a binary
+
+`compile` builds a standalone executable from an entrypoint and returns it as a
+file to export:
+
+```bash
+dagger call deno project --path . \
+  compile --entrypoint main.ts --target x86_64-unknown-linux-gnu \
+  export --path ./bin/app
+```
+
+## Configure it
+
+List the current settings with `dagger settings deno`, then change one with
+`dagger settings deno <key> <value>`. They live in `dagger.toml` under
+`[modules.deno.settings]`:
+
+- **`version`** (default `2.9.3`): the Deno version used to build the check
+  containers. Pin this so every project is tested, linted, and formatted against
+  the same Deno release.
+- **`base`**: the base container image Deno runs in (for example
+  `docker.io/denoland/deno:debian`). Override it to control the OS or runtime the
+  toolchain runs on.
+
+`base` and `version` are mutually exclusive: when `base` is set it already pins a
+Deno release, so `version` is ignored.
+
+```bash
+# Pin the Deno version for the whole workspace
+dagger settings deno version 2.9.3
+```
+
+```toml
+[modules.deno.settings]
+version = "2.9.3"
+base = "docker.io/denoland/deno:debian"
+```
+
+## Working with other modules
+
+Reach for this module whenever the repo contains one or more Deno projects,
+especially when they should share the same Deno version and CI checks. It
+composes with the rest of your workspace — the `base` and `install` functions
+expose a Deno-ready container you can hand to other modules, and `version` prints
+the configured toolchain version.

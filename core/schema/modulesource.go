@@ -82,6 +82,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 					`If not set, the module source code is loaded from the root of the directory.`),
 			),
 		dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
+			WithInput(dagql.PerClientInput).
 			Doc(`Load the directory as a Dagger module source`).
 			Args(
 				dagql.Arg("sourceRootPath").Doc(
@@ -237,6 +238,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`The introspection schema JSON file for this module source.`,
 				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
 				`Note: this is in the context of a module, so some core types may be hidden.`),
+		dagql.NodeFunc("clientSchemaIntrospectionJSON", s.moduleSourceClientSchemaIntrospectionJSON).
+			View(AfterVersion("v1.0.0-0")).
+			Doc(`The client-facing introspection schema JSON file for this module source.`,
+				`This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.`),
 
 		dagql.NodeFunc("directory", s.moduleSourceDirectory).
 			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
@@ -2452,6 +2457,20 @@ func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
 	return src.Self().SelfCallsEnabled()
 }
 
+// ignoresGeneratedPath reports whether an ignore entry points at or inside a
+// VCS-generated path, e.g. ignore "/sdk" against generated "sdk/**".
+func ignoresGeneratedPath(ignore string, generated []string) bool {
+	ignore = strings.TrimPrefix(ignore, "/")
+	for _, gen := range generated {
+		gen = strings.TrimPrefix(gen, "/")
+		gen = strings.TrimSuffix(gen, "/**")
+		if ignore == gen || strings.HasPrefix(ignore, gen+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
@@ -2480,8 +2499,6 @@ func (s *moduleSourceSchema) runCodegen(
 	genDirInst := generatedCode.Code
 
 	// update .gitattributes in the generated context directory
-	// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
-	//nolint:dupl
 	if len(generatedCode.VCSGeneratedPaths) > 0 {
 		gitAttrsPath := filepath.Join(srcInst.Self().SourceSubpath, ".gitattributes")
 		var gitAttrsContents []byte
@@ -2534,9 +2551,15 @@ func (s *moduleSourceSchema) runCodegen(
 	if srcInst.Self().CodegenConfig != nil && srcInst.Self().CodegenConfig.AutomaticGitignore != nil {
 		writeGitignore = *srcInst.Self().CodegenConfig.AutomaticGitignore
 	}
-	// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
-	//nolint:dupl
-	if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
+	vcsIgnoredPaths := generatedCode.VCSIgnoredPaths
+	if srcInst.Self().ConfigFilename == modules.Filename {
+		// toml modules build from committed generated files: gitignoring them
+		// would filter them out of the local module context.
+		vcsIgnoredPaths = slices.DeleteFunc(slices.Clone(vcsIgnoredPaths), func(ignore string) bool {
+			return ignoresGeneratedPath(ignore, generatedCode.VCSGeneratedPaths)
+		})
+	}
+	if writeGitignore && len(vcsIgnoredPaths) > 0 {
 		gitIgnorePath := filepath.Join(srcInst.Self().SourceSubpath, ".gitignore")
 		var gitIgnoreContents []byte
 		var gitIgnoreFile dagql.ObjectResult[*core.File]
@@ -2557,7 +2580,7 @@ func (s *moduleSourceSchema) runCodegen(
 				gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
 			}
 		}
-		for _, fileName := range generatedCode.VCSIgnoredPaths {
+		for _, fileName := range vcsIgnoredPaths {
 			if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
 				continue
 			}
@@ -2642,34 +2665,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to add module source required files: %w", err)
 	}
 
-	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
-	if err != nil {
-		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
-	}
-
-	// Build the client-facing schema. Dependencies get normal installation;
-	// the self module (when present) is installed as an entrypoint so its
-	// methods are promoted to Query.
-	codegenDeps := deps
-
-	// If the current module source has sources and its SDK implements the `Runtime` interface,
-	// we can transform it into a module to generate self bindings.
-	if srcInst.Self().SDK != nil {
-		// We must make sure to first check SDK to avoid checking a nil pointer on `SDKImpl`.
-		if _, ok := srcInst.Self().SDKImpl.AsRuntime(); ok {
-			var mod dagql.ObjectResult[*core.Module]
-			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
-				Field: "asModule",
-			})
-			if err != nil {
-				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
-			}
-
-			codegenDeps = codegenDeps.With(core.NewUserMod(mod), core.InstallOpts{Entrypoint: true})
-		}
-	}
-
-	schemaJSONFile, err := codegenDeps.SchemaIntrospectionJSONFileForClient(ctx)
+	schemaJSONFile, err := s.clientSchemaIntrospectionJSONFile(ctx, dag, srcInst)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to get schema for client generation: %w", err)
 	}
@@ -3102,6 +3098,63 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	return file, nil
 }
 
+func (s *moduleSourceSchema) moduleSourceClientSchemaIntrospectionJSON(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (inst dagql.Result[*core.File], rerr error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dag, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	return s.clientSchemaIntrospectionJSONFile(ctx, dag, src)
+}
+
+// clientSchemaIntrospectionJSONFile builds the client-facing introspection
+// schema for srcInst: only the bound module is installed, as a normal
+// namespaced module, so a generated client reaches its functions via
+// `dag.<moduleName>` and never through a promoted Query root. The module's own
+// dependencies are deliberately excluded -- a client is generated for a single
+// module plus core, not for its whole dependency graph. Unlike the
+// module-facing schema, it hides no core types. This is the schema client
+// codegen consumes.
+func (s *moduleSourceSchema) clientSchemaIntrospectionJSONFile(
+	ctx context.Context,
+	dag *dagql.Server,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+) (dagql.Result[*core.File], error) {
+	var inst dagql.Result[*core.File]
+
+	// Start from only the default (core) deps: the module's own dependencies
+	// must not leak into the client schema.
+	codegenDeps, err := s.loadDefaultSchemaBuilder(ctx, srcInst)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load default dependencies: %w", err)
+	}
+
+	// Install the bound module like any dependency: namespaced under its own
+	// name, NOT as an entrypoint. Clients must never promote a module's
+	// functions to the Query root -- they are always reached via dag.<name>.
+	// Transforming the source into a module requires a runtime SDK.
+	if srcInst.Self().SDK != nil {
+		// We must make sure to first check SDK to avoid checking a nil pointer on `SDKImpl`.
+		if _, ok := srcInst.Self().SDKImpl.AsRuntime(); ok {
+			var mod dagql.ObjectResult[*core.Module]
+			if err := dag.Select(ctx, srcInst, &mod, dagql.Selector{Field: "asModule"}); err != nil {
+				return inst, fmt.Errorf("failed to transform module source into module: %w", err)
+			}
+
+			codegenDeps = codegenDeps.With(core.NewUserMod(mod), core.InstallOpts{})
+		}
+	}
+
+	return codegenDeps.SchemaIntrospectionJSONFileForClient(ctx)
+}
+
 // createStubModule creates an empty module definition (no SDK, no blueprints)
 func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) (*core.Module, error) {
 	typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
@@ -3470,6 +3523,28 @@ func (s *moduleSourceSchema) loadDependencyModules(
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
+	deps, err := s.loadDefaultSchemaBuilder(ctx, src)
+	if err != nil {
+		return nil, err
+	}
+	for _, depMod := range depMods {
+		deps = deps.Append(core.NewUserMod(depMod))
+	}
+
+	return deps, nil
+}
+
+// loadDefaultSchemaBuilder returns a SchemaBuilder seeded with only the default
+// (core) dependencies, with the core module pinned to src's engine version
+// view. Callers append the user modules they want to expose.
+func (s *moduleSourceSchema) loadDefaultSchemaBuilder(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (*core.SchemaBuilder, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defaultDeps, err := query.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
@@ -3480,12 +3555,7 @@ func (s *moduleSourceSchema) loadDependencyModules(
 			baseMods[i] = coreMod.WithView(call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion))))
 		}
 	}
-	deps := core.NewSchemaBuilder(query, baseMods)
-	for _, depMod := range depMods {
-		deps = deps.Append(core.NewUserMod(depMod))
-	}
-
-	return deps, nil
+	return core.NewSchemaBuilder(query, baseMods), nil
 }
 
 func (s *moduleSourceSchema) moduleSourceWithClient(

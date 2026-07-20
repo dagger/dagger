@@ -91,6 +91,16 @@ pub struct BuildArg {
     pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct LlmContentBlockInput {
+    pub arguments: Json,
+    pub call_id: String,
+    pub errored: bool,
+    pub kind: LlmContentBlockKind,
+    pub signature: String,
+    pub text: String,
+    pub tool_name: String,
+}
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
     pub name: String,
     pub value: String,
@@ -688,6 +698,24 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type LLMContentBlock
+    pub fn as_llm_content_block(&self) -> LlmContentBlock {
+        let query = self.selection.select("asLLMContentBlock");
+        LlmContentBlock {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type LLMMessage
+    pub fn as_llm_message(&self) -> LlmMessage {
+        let query = self.selection.select("asLLMMessage");
+        LlmMessage {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type Module
     pub fn as_module(&self) -> Module {
         let query = self.selection.select("asModule");
@@ -850,6 +878,15 @@ impl Binding {
     pub fn as_workspace_module_setting(&self) -> WorkspaceModuleSetting {
         let query = self.selection.select("asWorkspaceModuleSetting");
         WorkspaceModuleSetting {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type WorkspaceSDK
+    pub fn as_workspace_sdk(&self) -> WorkspaceSdk {
+        let query = self.selection.select("asWorkspaceSDK");
+        WorkspaceSdk {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -4728,6 +4765,15 @@ impl CurrentModuleAsSdkClient {
         let query = self.selection.select("module");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The resolved module source this client is bound to, including its dependency closure and pinned version.
+    pub fn module_source(&self) -> ModuleSource {
+        let query = self.selection.select("moduleSource");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Workspace-root-relative path of the generated client.
     pub async fn path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("path");
@@ -7820,6 +7866,104 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type LLMContentBlock in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The LLMContentBlock value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_llm_content_block_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMContentBlockInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired LLMContentBlock output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_llm_content_block_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMContentBlockOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type LLMMessage in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The LLMMessage value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_llm_message_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMMessageInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired LLMMessage output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_llm_message_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withLLMMessageOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Sets the main module for this environment (the project being worked on)
     /// Contextual path arguments will be populated using the environment's workspace.
     pub fn with_main_module(&self, module: impl IntoID<Id>) -> Env {
@@ -8783,6 +8927,55 @@ impl Env {
         description: impl Into<String>,
     ) -> Env {
         let mut query = self.selection.select("withWorkspaceOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type WorkspaceSDK in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The WorkspaceSDK value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_workspace_sdk_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withWorkspaceSDKInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired WorkspaceSDK output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_workspace_sdk_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withWorkspaceSDKOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
@@ -10604,6 +10797,12 @@ impl GeneratorGroup {
             })
             .collect())
     }
+    /// Load failures tolerated while collecting the generators.
+    /// Empty unless a workspace module could not be loaded during an unscoped 'dagger generate' (no selector), where load failures are tolerated so the modules that do load still generate. Each entry is a human-readable error message. An explicit selector keeps failing hard instead.
+    pub async fn load_failures(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("loadFailures");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Execute all selected generators
     pub fn run(&self) -> GeneratorGroup {
         let query = self.selection.select("run");
@@ -11805,6 +12004,45 @@ pub struct Llm {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmLoopOpts {
+    /// Cap the number of steps. The loop fails if the cap is reached before the model ends its turn.
+    #[builder(setter(into, strip_option), default)]
+    pub max_steps: Option<isize>,
+    /// Cap the model's output tokens on each step. Defaults to the model's maximum.
+    #[builder(setter(into, strip_option), default)]
+    pub max_tokens: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmStepOpts {
+    /// Cap the model's output tokens for this step. Defaults to the model's maximum.
+    #[builder(setter(into, strip_option), default)]
+    pub max_tokens: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmWithModelOpts<'a> {
+    /// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+    #[builder(setter(into, strip_option), default)]
+    pub provider: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmWithResponseOpts {
+    /// Cached input tokens read
+    #[builder(setter(into, strip_option), default)]
+    pub cached_token_reads: Option<isize>,
+    /// Cached input tokens written
+    #[builder(setter(into, strip_option), default)]
+    pub cached_token_writes: Option<isize>,
+    /// Uncached input tokens sent
+    #[builder(setter(into, strip_option), default)]
+    pub input_tokens: Option<isize>,
+    /// Tokens received from the model, including text and tool calls
+    #[builder(setter(into, strip_option), default)]
+    pub output_tokens: Option<isize>,
+    /// Total tokens consumed by this response
+    #[builder(setter(into, strip_option), default)]
+    pub total_tokens: Option<isize>,
+}
 impl IntoID<Id> for Llm {
     fn into_id(
         self,
@@ -11829,16 +12067,6 @@ impl Loadable for Llm {
     }
 }
 impl Llm {
-    /// create a branch in the LLM's history
-    pub fn attempt(&self, number: isize) -> Llm {
-        let mut query = self.selection.select("attempt");
-        query = query.arg("number", number);
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// returns the type of the current state
     pub fn bind_result(&self, name: impl Into<String>) -> Binding {
         let mut query = self.selection.select("bindResult");
@@ -11849,6 +12077,11 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The model's total context window in tokens, or null if unknown (e.g. a local or uncatalogued model).
+    pub async fn context_window(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("contextWindow");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// return the LLM's current environment
     pub fn env(&self) -> Env {
         let query = self.selection.select("env");
@@ -11858,19 +12091,23 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Indicates whether there are any queued prompts or tool results to send to the model
-    pub async fn has_prompt(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("hasPrompt");
-        query.execute(self.graphql_client.clone()).await
+    /// Fork the conversation, so that otherwise-identical follow-ups evaluate independently instead of deduplicating to a single cached result.
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - A label distinguishing this fork from its siblings, e.g. "attempt-2" when retrying a flaky evaluation.
+    pub fn fork(&self, label: impl Into<String>) -> Llm {
+        let mut query = self.selection.select("fork");
+        query = query.arg("label", label.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
-    /// return the llm message history
-    pub async fn history(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("history");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// return the raw llm message history as json
-    pub async fn history_json(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("historyJSON");
+    /// Report whether anything is queued to send to the model: an unsent prompt or unevaluated tool results. When true, another step will do work; when false, the turn is complete.
+    pub async fn has_pending(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("hasPending");
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this LLM.
@@ -11878,12 +12115,16 @@ impl Llm {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// return the last llm reply from the history
+    /// The text of the model's most recent reply.
     pub async fn last_reply(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("lastReply");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
+    /// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn r#loop(&self) -> Llm {
         let query = self.selection.select("loop");
         Llm {
@@ -11892,19 +12133,60 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// return the model used by the llm
+    /// Send the queued prompt and step the model against the available tools, until it ends its turn: a reply with no tool calls and nothing left queued.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn r#loop_opts(&self, opts: LlmLoopOpts) -> Llm {
+        let mut query = self.selection.select("loop");
+        if let Some(max_steps) = opts.max_steps {
+            query = query.arg("maxSteps", max_steps);
+        }
+        if let Some(max_tokens) = opts.max_tokens {
+            query = query.arg("maxTokens", max_tokens);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The full message history, as structured messages.
+    pub async fn messages(&self) -> Result<Vec<LlmMessage>, DaggerError> {
+        let query = self.selection.select("messages");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| LlmMessage {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("LLMMessage"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// The model the conversation is running against, after resolving any configured default.
     pub async fn model(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("model");
         query.execute(self.graphql_client.clone()).await
     }
-    /// return the provider used by the llm
+    /// A portable, self-contained ID for the conversation that node() can resolve in any session. Unlike id, which may return an engine-local runtime handle valid only within the current session, this returns the recipe form suitable for persisting and later restoring the conversation.
+    pub async fn portable_id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("portableID");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The provider serving the model, e.g. "anthropic", "openai", "google", or "local".
     pub async fn provider(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("provider");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
-    pub async fn step(&self) -> Result<Llm, DaggerError> {
-        let query = self.selection.select("step");
+    /// Re-emit telemetry spans for the full message history, so a loaded conversation displays in the TUI.
+    pub async fn replay(&self) -> Result<Llm, DaggerError> {
+        let query = self.selection.select("replay");
         let id: Id = query.execute(self.graphql_client.clone()).await?;
         Ok(Llm {
             proc: self.proc.clone(),
@@ -11916,7 +12198,36 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         })
     }
-    /// synchronize LLM state
+    /// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn step(&self) -> Llm {
+        let query = self.selection.select("step");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Advance the conversation by a single step: send the queued prompt or tool results to the model, evaluate any tool calls it makes, and queue their results. Use loop to step until the model ends its turn.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn step_opts(&self, opts: LlmStepOpts) -> Llm {
+        let mut query = self.selection.select("step");
+        if let Some(max_tokens) = opts.max_tokens {
+            query = query.arg("maxTokens", max_tokens);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Force evaluation of the conversation's pending operations (prompts, steps, loops) in the engine.
     pub async fn sync(&self) -> Result<Llm, DaggerError> {
         let query = self.selection.select("sync");
         let id: Id = query.execute(self.graphql_client.clone()).await?;
@@ -11930,7 +12241,7 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         })
     }
-    /// returns the token usage of the current state
+    /// The cumulative token usage, summed across every API call in the conversation.
     pub fn token_usage(&self) -> LlmTokenUsage {
         let query = self.selection.select("tokenUsage");
         LlmTokenUsage {
@@ -11939,9 +12250,14 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// print documentation for available tools
+    /// Render documentation for the tools currently exposed to the model.
     pub async fn tools(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("tools");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The message history rendered as a plain-text transcript, suitable for feeding back to an LLM (e.g. for summarization).
+    pub async fn transcript(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("transcript");
         query.execute(self.graphql_client.clone()).await
     }
     /// Return a new LLM with the specified function no longer exposed as a tool
@@ -12004,11 +12320,12 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// swap out the llm model
+    /// Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
     ///
     /// # Arguments
     ///
-    /// * `model` - The model to use
+    /// * `model` - The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4".
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_model(&self, model: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withModel");
         query = query.arg("model", model.into());
@@ -12018,7 +12335,47 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// append a prompt to the llm context
+    /// Change the model for the rest of the conversation. The message history is preserved; the new model takes effect on the next step.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4".
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_model_opts<'a>(&self, model: impl Into<String>, opts: LlmWithModelOpts<'a>) -> Llm {
+        let mut query = self.selection.select("withModel");
+        query = query.arg("model", model.into());
+        if let Some(provider) = opts.provider {
+            query = query.arg("provider", provider);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Track an object so the LLM can reference it in subsequent tool calls.
+    ///
+    /// # Arguments
+    ///
+    /// * `tag` - Arbitrary string tag for the object, typically in TypeName#Number format
+    /// * `object` - The object to track, as a generic ID
+    pub fn with_object(&self, tag: impl Into<String>, object: impl IntoID<Id>) -> Llm {
+        let mut query = self.selection.select("withObject");
+        query = query.arg("tag", tag.into());
+        query = query.arg_lazy(
+            "object",
+            Box::new(move || {
+                let object = object.clone();
+                Box::pin(async move { object.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Queue a user prompt, to be sent to the model on the next step or loop.
     ///
     /// # Arguments
     ///
@@ -12032,7 +12389,7 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// append the contents of a file to the llm context
+    /// Queue a file's contents as a user prompt, like withPrompt.
     ///
     /// # Arguments
     ///
@@ -12052,6 +12409,55 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The response content
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_response(&self, content: Vec<LlmContentBlockInput>) -> Llm {
+        let mut query = self.selection.select("withResponse");
+        query = query.arg("content", content);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append an assistant response to the message history without calling the model, e.g. to reconstruct a conversation from another source.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The response content
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_response_opts(
+        &self,
+        content: Vec<LlmContentBlockInput>,
+        opts: LlmWithResponseOpts,
+    ) -> Llm {
+        let mut query = self.selection.select("withResponse");
+        query = query.arg("content", content);
+        if let Some(input_tokens) = opts.input_tokens {
+            query = query.arg("inputTokens", input_tokens);
+        }
+        if let Some(output_tokens) = opts.output_tokens {
+            query = query.arg("outputTokens", output_tokens);
+        }
+        if let Some(cached_token_reads) = opts.cached_token_reads {
+            query = query.arg("cachedTokenReads", cached_token_reads);
+        }
+        if let Some(cached_token_writes) = opts.cached_token_writes {
+            query = query.arg("cachedTokenWrites", cached_token_writes);
+        }
+        if let Some(total_tokens) = opts.total_tokens {
+            query = query.arg("totalTokens", total_tokens);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
     pub fn with_static_tools(&self) -> Llm {
         let query = self.selection.select("withStaticTools");
@@ -12061,7 +12467,7 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Add a system prompt to the LLM's environment
+    /// Add a system prompt, instructing the model across the whole conversation.
     ///
     /// # Arguments
     ///
@@ -12069,6 +12475,29 @@ impl Llm {
     pub fn with_system_prompt(&self, prompt: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withSystemPrompt");
         query = query.arg("prompt", prompt.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Append the result of a tool call to the message history.
+    ///
+    /// # Arguments
+    ///
+    /// * `call_id` - The ID of the tool call this result responds to
+    /// * `content` - The content returned by the tool
+    /// * `errored` - Whether the tool call resulted in an error
+    pub fn with_tool_result(
+        &self,
+        call_id: impl Into<String>,
+        content: impl Into<String>,
+        errored: bool,
+    ) -> Llm {
+        let mut query = self.selection.select("withToolResult");
+        query = query.arg("callId", call_id.into());
+        query = query.arg("content", content.into());
+        query = query.arg("errored", errored);
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -12084,7 +12513,7 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Clear the message history, leaving only the system prompts
+    /// Clear the message history, keeping only the system prompts.
     pub fn without_message_history(&self) -> Llm {
         let query = self.selection.select("withoutMessageHistory");
         Llm {
@@ -12093,7 +12522,7 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Clear the system prompts, leaving only the default system prompt
+    /// Clear the user-added system prompts, keeping only the default system prompt.
     pub fn without_system_prompts(&self) -> Llm {
         let query = self.selection.select("withoutSystemPrompts");
         Llm {
@@ -12118,6 +12547,158 @@ impl Syncer for Llm {
     }
     fn sync(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("sync");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct LlmContentBlock {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for LlmContentBlock {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmContentBlock {
+    fn graphql_type() -> &'static str {
+        "LLMContentBlock"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmContentBlock {
+    /// The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+    pub async fn arguments(&self) -> Result<Json, DaggerError> {
+        let query = self.selection.select("arguments");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+    pub async fn call_id(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("callId");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the tool call resulted in an error (for TOOL_RESULT kind).
+    pub async fn errored(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("errored");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this LLMContentBlock.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The kind of content block, which determines the other populated fields.
+    pub async fn kind(&self) -> Result<LlmContentBlockKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Provider-specific opaque data (e.g. Anthropic thinking signature). Preserve it when reconstructing a conversation.
+    pub async fn signature(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("signature");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+    pub async fn text(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("text");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the tool called (for TOOL_CALL kind).
+    pub async fn tool_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("toolName");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for LlmContentBlock {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct LlmMessage {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for LlmMessage {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for LlmMessage {
+    fn graphql_type() -> &'static str {
+        "LLMMessage"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl LlmMessage {
+    /// The message's content blocks, in the order the model produced them.
+    pub async fn content(&self) -> Result<Vec<LlmContentBlock>, DaggerError> {
+        let query = self.selection.select("content");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| LlmContentBlock {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("LLMContentBlock"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// A unique identifier for this LLMMessage.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The role that produced this message.
+    pub async fn role(&self) -> Result<LlmMessageRole, DaggerError> {
+        let query = self.selection.select("role");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Token usage reported by the provider for the API call that produced this message; all zeros except on assistant responses.
+    pub fn token_usage(&self) -> LlmTokenUsage {
+        let query = self.selection.select("tokenUsage");
+        LlmTokenUsage {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for LlmMessage {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
         async move { query.execute(graphql_client).await }
     }
@@ -12152,10 +12733,12 @@ impl Loadable for LlmTokenUsage {
     }
 }
 impl LlmTokenUsage {
+    /// Input tokens served from the provider's prompt cache.
     pub async fn cached_token_reads(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("cachedTokenReads");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Input tokens written to the provider's prompt cache.
     pub async fn cached_token_writes(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("cachedTokenWrites");
         query.execute(self.graphql_client.clone()).await
@@ -12165,14 +12748,17 @@ impl LlmTokenUsage {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Uncached input tokens sent to the model.
     pub async fn input_tokens(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("inputTokens");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Tokens received from the model, including text and tool calls.
     pub async fn output_tokens(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("outputTokens");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Total tokens consumed, as reported by the provider.
     pub async fn total_tokens(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("totalTokens");
         query.execute(self.graphql_client.clone()).await
@@ -12830,6 +13416,16 @@ impl ModuleSource {
     pub fn blueprint(&self) -> ModuleSource {
         let query = self.selection.select("blueprint");
         ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The client-facing introspection schema JSON file for this module source.
+    /// This is the schema consumed by client codegen: unlike introspectionSchemaJSON (the module-facing schema), it hides no core types and installs this module (reached via dag.<moduleName>) so a generated client can bind it. The module's dependencies are excluded: a client is generated for a single module plus core, not its dependency graph.
+    pub fn client_schema_introspection_json(&self) -> File {
+        let query = self.selection.select("clientSchemaIntrospectionJSON");
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -13679,12 +14275,12 @@ pub struct QueryHttpOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryLlmOpts<'a> {
-    /// Cap the number of API calls for this LLM
-    #[builder(setter(into, strip_option), default)]
-    pub max_api_calls: Option<isize>,
-    /// Model to use
+    /// The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4". Defaults to the configured default model.
     #[builder(setter(into, strip_option), default)]
     pub model: Option<&'a str>,
+    /// The provider serving the model, e.g. "openai". Overrides the provider otherwise inferred from the model name — useful when the name matches no known pattern (e.g. a fine-tune), or matches the wrong one.
+    #[builder(setter(into, strip_option), default)]
+    pub provider: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
@@ -14230,7 +14826,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Initialize a Large Language Model (LLM)
+    /// Initialize a new LLM conversation.
     ///
     /// # Arguments
     ///
@@ -14243,7 +14839,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Initialize a Large Language Model (LLM)
+    /// Initialize a new LLM conversation.
     ///
     /// # Arguments
     ///
@@ -14253,8 +14849,8 @@ impl Query {
         if let Some(model) = opts.model {
             query = query.arg("model", model);
         }
-        if let Some(max_api_calls) = opts.max_api_calls {
-            query = query.arg("maxAPICalls", max_api_calls);
+        if let Some(provider) = opts.provider {
+            query = query.arg("provider", provider);
         }
         Llm {
             proc: self.proc.clone(),
@@ -16089,24 +16685,10 @@ pub struct WorkspaceChecksOpts<'a> {
     pub skip: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceClientInitOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub args: Option<Json>,
-    /// Write to the workspace config directory at the workspace cwd.
-    #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceConfigReadOpts<'a> {
     /// Dotted key path (e.g. modules.greeter.source). Empty for full config.
     #[builder(setter(into, strip_option), default)]
     pub key: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceConfigWriteOpts {
-    /// Write to the workspace config directory at the workspace cwd.
-    #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceDirectoryOpts<'a> {
@@ -16121,18 +16703,6 @@ pub struct WorkspaceDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceEnvCreateOpts {
-    /// Write to the workspace config directory at the workspace cwd.
-    #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceEnvRemoveOpts {
-    /// Write to the workspace config directory at the workspace cwd.
-    #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceFindUpOpts<'a> {
     /// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
     #[builder(setter(into, strip_option), default)]
@@ -16145,51 +16715,37 @@ pub struct WorkspaceGeneratorsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceInitOpts {
-    /// Create the workspace config directory at the workspace cwd instead of using the default write target.
+pub struct WorkspaceSearchOpts<'a> {
+    /// Allow the . pattern to match newlines in multiline mode.
     #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceInstallOpts<'a> {
-    /// Mark the install as an SDK (writes the `[modules.<name>.as-sdk]` marker that dispatches `dagger module init <sdk>` and `dagger api client init <sdk>`).
+    pub dotall: Option<bool>,
+    /// Only return matching files, not lines and content
     #[builder(setter(into, strip_option), default)]
-    pub as_sdk: Option<bool>,
-    /// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    pub files_only: Option<bool>,
+    /// Glob patterns to match (e.g., "*.md")
     #[builder(setter(into, strip_option), default)]
-    pub as_sdk_name: Option<&'a str>,
-    /// Write to the workspace config directory at the workspace cwd.
+    pub globs: Option<Vec<&'a str>>,
+    /// Enable case-insensitive matching.
     #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-    /// Override name for the installed module entry.
+    pub insensitive: Option<bool>,
+    /// Limit the number of results to return
     #[builder(setter(into, strip_option), default)]
-    pub name: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceModuleInitOpts<'a> {
+    pub limit: Option<isize>,
+    /// Interpret the pattern as a literal string instead of a regular expression.
     #[builder(setter(into, strip_option), default)]
-    pub args: Option<Json>,
-    /// Write to the workspace config directory at the workspace cwd.
+    pub literal: Option<bool>,
+    /// Enable searching across multiple lines.
     #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-    /// Additional include patterns for the module.
+    pub multiline: Option<bool>,
+    /// Directory or file paths to search
     #[builder(setter(into, strip_option), default)]
-    pub include: Option<Vec<&'a str>>,
-    /// Workspace-relative path for the new module. Defaults to ".dagger/modules/<name>"; using the default also installs the module in [modules.<name>].
+    pub paths: Option<Vec<&'a str>>,
+    /// Skip hidden files (files starting with .).
     #[builder(setter(into, strip_option), default)]
-    pub path: Option<&'a str>,
-    /// Workspace SDK name or module entry name to use.
+    pub skip_hidden: Option<bool>,
+    /// Honor .gitignore, .ignore, and .rgignore files.
     #[builder(setter(into, strip_option), default)]
-    pub sdk: Option<&'a str>,
-    /// Source subpath within the new module.
-    #[builder(setter(into, strip_option), default)]
-    pub source: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceModuleListOpts<'a> {
-    /// Optional module alias to inspect.
-    #[builder(setter(into, strip_option), default)]
-    pub module: Option<&'a str>,
+    pub skip_ignored: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceServicesOpts<'a> {
@@ -16198,16 +16754,97 @@ pub struct WorkspaceServicesOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceUninstallOpts {
+pub struct WorkspaceWithConfigEnvOpts {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
     pub here: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithConfigValueOpts<'a> {
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+    /// List value to set. Elements are stored verbatim, with no auto-detection. Mutually exclusive with value.
+    #[builder(setter(into, strip_option), default)]
+    pub values: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithInitClientOpts {
+    /// SDK-specific init arguments.
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Json>,
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithInitModuleOpts<'a> {
+    /// SDK-specific init arguments.
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Json>,
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+    /// Additional include patterns for the module.
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+    /// Workspace-relative path for the new module.
+    #[builder(setter(into, strip_option), default)]
+    pub path: Option<&'a str>,
+    /// Source subpath within the new module.
+    #[builder(setter(into, strip_option), default)]
+    pub source: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithModuleOpts<'a> {
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+    /// Override name for the installed module entry.
+    #[builder(setter(into, strip_option), default)]
+    pub name: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceWithNewFileOpts {
     /// Permissions of the new file.
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithSdkOpts<'a> {
+    /// User-facing SDK name to persist under `[modules.<name>.as-sdk] name = ...`.
+    #[builder(setter(into, strip_option), default)]
+    pub as_sdk_name: Option<&'a str>,
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+    /// Override name for the installed SDK entry.
+    #[builder(setter(into, strip_option), default)]
+    pub name: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithoutConfigEnvOpts {
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithoutConfigValueOpts {
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithoutModuleOpts {
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceWithoutSdkOpts {
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
 }
 impl IntoID<Id> for Workspace {
     fn into_id(
@@ -16238,20 +16875,9 @@ impl Workspace {
         let query = self.selection.select("address");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return the changes from another workspace to this workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `other` - Workspace to compare from.
-    pub fn changes(&self, other: impl IntoID<Id>) -> Changeset {
-        let mut query = self.selection.select("changes");
-        query = query.arg_lazy(
-            "other",
-            Box::new(move || {
-                let other = other.clone();
-                Box::pin(async move { other.into_id().await.unwrap().quote() })
-            }),
-        );
+    /// Return this workspace's pending overlay changes.
+    pub fn changes(&self) -> Changeset {
+        let query = self.selection.select("changes");
         Changeset {
             proc: self.proc.clone(),
             selection: query,
@@ -16296,70 +16922,6 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Regenerate all generated API clients registered in workspace config and return the resulting Changeset.
-    pub fn client_generate(&self) -> Changeset {
-        let query = self.selection.select("clientGenerate");
-        Changeset {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Workspace-relative output directory for the generated client.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn client_init(
-        &self,
-        path: impl Into<String>,
-        sdk: impl Into<String>,
-        module: impl Into<String>,
-    ) -> Changeset {
-        let mut query = self.selection.select("clientInit");
-        query = query.arg("path", path.into());
-        query = query.arg("sdk", sdk.into());
-        query = query.arg("module", module.into());
-        Changeset {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Plan the workspace changes for initializing a generated API client: generated client files at `path` plus a [[modules.<sdk-name>.as-sdk.clients]] entry in dagger.toml. Returns the resulting Changeset for the caller to preview and apply.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Workspace-relative output directory for the generated client.
-    /// * `sdk` - Workspace SDK name or module entry name to use.
-    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn client_init_opts(
-        &self,
-        path: impl Into<String>,
-        sdk: impl Into<String>,
-        module: impl Into<String>,
-        opts: WorkspaceClientInitOpts,
-    ) -> Changeset {
-        let mut query = self.selection.select("clientInit");
-        query = query.arg("path", path.into());
-        query = query.arg("sdk", sdk.into());
-        query = query.arg("module", module.into());
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
-        Changeset {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Selected native workspace config file relative to the workspace root, if any.
     pub async fn config_file(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("configFile");
@@ -16392,44 +16954,6 @@ impl Workspace {
         let mut query = self.selection.select("configRead");
         if let Some(key) = opts.key {
             query = query.arg("key", key);
-        }
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Write a configuration value to dagger.toml.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Dotted key path (e.g. modules.greeter.source).
-    /// * `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn config_write(
-        &self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-    ) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("configWrite");
-        query = query.arg("key", key.into());
-        query = query.arg("value", value.into());
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Write a configuration value to dagger.toml.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Dotted key path (e.g. modules.greeter.source).
-    /// * `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn config_write_opts(
-        &self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-        opts: WorkspaceConfigWriteOpts,
-    ) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("configWrite");
-        query = query.arg("key", key.into());
-        query = query.arg("value", value.into());
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -16485,67 +17009,14 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create a named workspace environment if it does not already exist.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Environment name.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn env_create(&self, name: impl Into<String>) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("envCreate");
-        query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Create a named workspace environment if it does not already exist.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Environment name.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn env_create_opts(
-        &self,
-        name: impl Into<String>,
-        opts: WorkspaceEnvCreateOpts,
-    ) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("envCreate");
-        query = query.arg("name", name.into());
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
-        query.execute(self.graphql_client.clone()).await
-    }
     /// List named environments defined in the workspace configuration.
     pub async fn env_list(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("envList");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Remove a named workspace environment.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Environment name.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn env_remove(&self, name: impl Into<String>) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("envRemove");
-        query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Remove a named workspace environment.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Environment name.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn env_remove_opts(
-        &self,
-        name: impl Into<String>,
-        opts: WorkspaceEnvRemoveOpts,
-    ) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("envRemove");
-        query = query.arg("name", name.into());
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
+    /// Write this workspace's pending changes to its local Git workspace.
+    pub async fn export(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("export");
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns a File from the workspace.
@@ -16636,68 +17107,20 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Returns a list of files and directories that match the given pattern.
+    /// Patterns match paths relative to the workspace root.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - Pattern to match (e.g., "*.md").
+    pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("glob");
+        query = query.arg("pattern", pattern.into());
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this Workspace.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Initialize workspace config, creating dagger.toml.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn init(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("init");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Initialize workspace config, creating dagger.toml.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn init_opts(&self, opts: WorkspaceInitOpts) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("init");
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Install a module into the workspace, writing dagger.toml to the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `r#ref` - Module reference to install.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn install(&self, r#ref: impl Into<String>) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("install");
-        query = query.arg("ref", r#ref.into());
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Install a module into the workspace, writing dagger.toml to the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `r#ref` - Module reference to install.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn install_opts<'a>(
-        &self,
-        r#ref: impl Into<String>,
-        opts: WorkspaceInstallOpts<'a>,
-    ) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("install");
-        query = query.arg("ref", r#ref.into());
-        if let Some(name) = opts.name {
-            query = query.arg("name", name);
-        }
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
-        if let Some(as_sdk) = opts.as_sdk {
-            query = query.arg("asSdk", as_sdk);
-        }
-        if let Some(as_sdk_name) = opts.as_sdk_name {
-            query = query.arg("asSdkName", as_sdk_name);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Plan the explicit migration needed for the current workspace.
@@ -16710,65 +17133,39 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
+    /// Return a module defined in the workspace configuration.
     ///
     /// # Arguments
     ///
-    /// * `name` - Name of the new module.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn module_init(&self, name: impl Into<String>) -> Changeset {
-        let mut query = self.selection.select("moduleInit");
+    /// * `name` - Module name to inspect.
+    pub fn module(&self, name: impl Into<String>) -> WorkspaceModule {
+        let mut query = self.selection.select("module");
         query = query.arg("name", name.into());
-        Changeset {
+        WorkspaceModule {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Plan the workspace changes for initializing a new module: dagger-module.toml + SDK codegen output at `path`, the authoring entry under [[modules.<sdk>.as-sdk.modules]], and (when path defaults) [modules.<name>]. The SDK must already be installed as an SDK. Returns the resulting Changeset for the caller to preview and apply.
+    /// Load a module source from a path within the workspace.
+    /// Relative paths (e.g., "foo") resolve from the workspace cwd; absolute paths (e.g., "/foo") resolve from the workspace root.
+    /// Fails if the path does not point to an initialized module.
     ///
     /// # Arguments
     ///
-    /// * `name` - Name of the new module.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn module_init_opts<'a>(
-        &self,
-        name: impl Into<String>,
-        opts: WorkspaceModuleInitOpts<'a>,
-    ) -> Changeset {
-        let mut query = self.selection.select("moduleInit");
-        query = query.arg("name", name.into());
-        if let Some(sdk) = opts.sdk {
-            query = query.arg("sdk", sdk);
-        }
-        if let Some(path) = opts.path {
-            query = query.arg("path", path);
-        }
-        if let Some(source) = opts.source {
-            query = query.arg("source", source);
-        }
-        if let Some(include) = opts.include {
-            query = query.arg("include", include);
-        }
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
-        Changeset {
+    /// * `path` - Location of the module source to load, relative to the workspace cwd or absolute from the workspace root.
+    pub fn module_source(&self, path: impl Into<String>) -> ModuleSource {
+        let mut query = self.selection.select("moduleSource");
+        query = query.arg("path", path.into());
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
     /// List modules defined in the workspace configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn module_list(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
-        let query = self.selection.select("moduleList");
+    pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
+        let query = self.selection.select("modules");
         let query = query.select("id");
         let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
@@ -16783,29 +17180,120 @@ impl Workspace {
             })
             .collect())
     }
-    /// List modules defined in the workspace configuration.
+    /// An installed SDK, by name.
     ///
     /// # Arguments
     ///
+    /// * `name` - SDK name to look up.
+    pub fn sdk(&self, name: impl Into<String>) -> WorkspaceSdk {
+        let mut query = self.selection.select("sdk");
+        query = query.arg("name", name.into());
+        WorkspaceSdk {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Installed SDKs.
+    pub async fn sdks(&self) -> Result<Vec<WorkspaceSdk>, DaggerError> {
+        let query = self.selection.select("sdks");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceSdk {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceSDK"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Searches for content matching the given regular expression or literal string.
+    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+    /// Runs ripgrep on the client host, falling back to grep if unavailable.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The text to match.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn module_list_opts<'a>(
+    pub async fn search(
         &self,
-        opts: WorkspaceModuleListOpts<'a>,
-    ) -> Result<Vec<WorkspaceModule>, DaggerError> {
-        let mut query = self.selection.select("moduleList");
-        if let Some(module) = opts.module {
-            query = query.arg("module", module);
+        pattern: impl Into<String>,
+    ) -> Result<Vec<SearchResult>, DaggerError> {
+        let mut query = self.selection.select("search");
+        query = query.arg("pattern", pattern.into());
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| SearchResult {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("SearchResult"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// Searches for content matching the given regular expression or literal string.
+    /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+    /// Runs ripgrep on the client host, falling back to grep if unavailable.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The text to match.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn search_opts<'a>(
+        &self,
+        pattern: impl Into<String>,
+        opts: WorkspaceSearchOpts<'a>,
+    ) -> Result<Vec<SearchResult>, DaggerError> {
+        let mut query = self.selection.select("search");
+        query = query.arg("pattern", pattern.into());
+        if let Some(paths) = opts.paths {
+            query = query.arg("paths", paths);
+        }
+        if let Some(globs) = opts.globs {
+            query = query.arg("globs", globs);
+        }
+        if let Some(literal) = opts.literal {
+            query = query.arg("literal", literal);
+        }
+        if let Some(multiline) = opts.multiline {
+            query = query.arg("multiline", multiline);
+        }
+        if let Some(dotall) = opts.dotall {
+            query = query.arg("dotall", dotall);
+        }
+        if let Some(insensitive) = opts.insensitive {
+            query = query.arg("insensitive", insensitive);
+        }
+        if let Some(skip_ignored) = opts.skip_ignored {
+            query = query.arg("skipIgnored", skip_ignored);
+        }
+        if let Some(skip_hidden) = opts.skip_hidden {
+            query = query.arg("skipHidden", skip_hidden);
+        }
+        if let Some(files_only) = opts.files_only {
+            query = query.arg("filesOnly", files_only);
+        }
+        if let Some(limit) = opts.limit {
+            query = query.arg("limit", limit);
         }
         let query = query.select("id");
         let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| WorkspaceModule {
+            .map(|id| SearchResult {
                 proc: self.proc.clone(),
                 selection: crate::querybuilder::query()
                     .select("node")
                     .arg("id", &id.0)
-                    .inline_fragment("WorkspaceModule"),
+                    .inline_fragment("SearchResult"),
                 graphql_client: self.graphql_client.clone(),
             })
             .collect())
@@ -16839,45 +17327,6 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Uninstall a module from the workspace, writing dagger.toml to the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the installed module entry to remove.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn uninstall(&self, name: impl Into<String>) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("uninstall");
-        query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Uninstall a module from the workspace, writing dagger.toml to the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the installed module entry to remove.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn uninstall_opts(
-        &self,
-        name: impl Into<String>,
-        opts: WorkspaceUninstallOpts,
-    ) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("uninstall");
-        query = query.arg("name", name.into());
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Refresh workspace-managed state and return the resulting changeset.
-    /// Currently this refreshes existing lockfile entries only.
-    pub fn update(&self) -> Changeset {
-        let query = self.selection.select("update");
-        Changeset {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Return this workspace with a changeset applied, without mutating the source.
     ///
     /// # Arguments
@@ -16892,6 +17341,237 @@ impl Workspace {
                 Box::pin(async move { changes.into_id().await.unwrap().quote() })
             }),
         );
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a named config environment created.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Environment name.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_config_env(&self, name: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withConfigEnv");
+        query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a named config environment created.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Environment name.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_config_env_opts(
+        &self,
+        name: impl Into<String>,
+        opts: WorkspaceWithConfigEnvOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withConfigEnv");
+        query = query.arg("name", name.into());
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a configuration value written.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Dotted key path.
+    /// * `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_config_value(&self, key: impl Into<String>, value: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withConfigValue");
+        query = query.arg("key", key.into());
+        query = query.arg("value", value.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a configuration value written.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Dotted key path.
+    /// * `value` - Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_config_value_opts<'a>(
+        &self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+        opts: WorkspaceWithConfigValueOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withConfigValue");
+        query = query.arg("key", key.into());
+        query = query.arg("value", value.into());
+        if let Some(values) = opts.values {
+            query = query.arg("values", values);
+        }
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a generated API client initialized.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Workspace-relative output directory for the generated client.
+    /// * `sdk` - Workspace SDK name or module entry name to use.
+    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_init_client(
+        &self,
+        path: impl Into<String>,
+        sdk: impl Into<String>,
+        module: impl Into<String>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withInitClient");
+        query = query.arg("path", path.into());
+        query = query.arg("sdk", sdk.into());
+        query = query.arg("module", module.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a generated API client initialized.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Workspace-relative output directory for the generated client.
+    /// * `sdk` - Workspace SDK name or module entry name to use.
+    /// * `module` - Workspace-relative path or canonical ref for the module the client binds to.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_init_client_opts(
+        &self,
+        path: impl Into<String>,
+        sdk: impl Into<String>,
+        module: impl Into<String>,
+        opts: WorkspaceWithInitClientOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withInitClient");
+        query = query.arg("path", path.into());
+        query = query.arg("sdk", sdk.into());
+        query = query.arg("module", module.into());
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a new module initialized.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the new module.
+    /// * `sdk` - Workspace SDK name or module entry name to use.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_init_module(&self, name: impl Into<String>, sdk: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withInitModule");
+        query = query.arg("name", name.into());
+        query = query.arg("sdk", sdk.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a new module initialized.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the new module.
+    /// * `sdk` - Workspace SDK name or module entry name to use.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_init_module_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        sdk: impl Into<String>,
+        opts: WorkspaceWithInitModuleOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withInitModule");
+        query = query.arg("name", name.into());
+        query = query.arg("sdk", sdk.into());
+        if let Some(path) = opts.path {
+            query = query.arg("path", path);
+        }
+        if let Some(source) = opts.source {
+            query = query.arg("source", source);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a module installed in its config.
+    ///
+    /// # Arguments
+    ///
+    /// * `r#ref` - Module reference to install.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_module(&self, r#ref: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withModule");
+        query = query.arg("ref", r#ref.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a module installed in its config.
+    ///
+    /// # Arguments
+    ///
+    /// * `r#ref` - Module reference to install.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_module_opts<'a>(
+        &self,
+        r#ref: impl Into<String>,
+        opts: WorkspaceWithModuleOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withModule");
+        query = query.arg("ref", r#ref.into());
+        if let Some(name) = opts.name {
+            query = query.arg("name", name);
+        }
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
         Workspace {
             proc: self.proc.clone(),
             selection: query,
@@ -16959,6 +17639,208 @@ impl Workspace {
         query = query.arg("contents", contents.into());
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with an SDK installed in its config.
+    ///
+    /// # Arguments
+    ///
+    /// * `r#ref` - SDK module reference to install.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_sdk(&self, r#ref: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withSDK");
+        query = query.arg("ref", r#ref.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with an SDK installed in its config.
+    ///
+    /// # Arguments
+    ///
+    /// * `r#ref` - SDK module reference to install.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_sdk_opts<'a>(
+        &self,
+        r#ref: impl Into<String>,
+        opts: WorkspaceWithSdkOpts<'a>,
+    ) -> Workspace {
+        let mut query = self.selection.select("withSDK");
+        query = query.arg("ref", r#ref.into());
+        if let Some(name) = opts.name {
+            query = query.arg("name", name);
+        }
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        if let Some(as_sdk_name) = opts.as_sdk_name {
+            query = query.arg("asSdkName", as_sdk_name);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with refreshed lockfile state.
+    pub fn with_updated_lock(&self) -> Workspace {
+        let query = self.selection.select("withUpdatedLock");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a named config environment removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Environment name.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_config_env(&self, name: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutConfigEnv");
+        query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a named config environment removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Environment name.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_config_env_opts(
+        &self,
+        name: impl Into<String>,
+        opts: WorkspaceWithoutConfigEnvOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withoutConfigEnv");
+        query = query.arg("name", name.into());
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a configuration value removed.
+    /// Errors when the key is not currently set.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Dotted key path (e.g. modules.greeter.settings.greeting).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_config_value(&self, key: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutConfigValue");
+        query = query.arg("key", key.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a configuration value removed.
+    /// Errors when the key is not currently set.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - Dotted key path (e.g. modules.greeter.settings.greeting).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_config_value_opts(
+        &self,
+        key: impl Into<String>,
+        opts: WorkspaceWithoutConfigValueOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withoutConfigValue");
+        query = query.arg("key", key.into());
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a module removed from its config.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the installed module entry to remove.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_module(&self, name: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutModule");
+        query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with a module removed from its config.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the installed module entry to remove.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_module_opts(
+        &self,
+        name: impl Into<String>,
+        opts: WorkspaceWithoutModuleOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withoutModule");
+        query = query.arg("name", name.into());
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with an SDK removed from its config.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the installed SDK entry to remove.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_sdk(&self, name: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withoutSDK");
+        query = query.arg("name", name.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return this workspace with an SDK removed from its config.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the installed SDK entry to remove.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_sdk_opts(
+        &self,
+        name: impl Into<String>,
+        opts: WorkspaceWithoutSdkOpts,
+    ) -> Workspace {
+        let mut query = self.selection.select("withoutSDK");
+        query = query.arg("name", name.into());
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
         }
         Workspace {
             proc: self.proc.clone(),
@@ -17286,6 +18168,11 @@ impl WorkspaceModuleSetting {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Whether the setting accepts a list of values.
+    pub async fn is_list(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isList");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The setting key.
     pub async fn key(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("key");
@@ -17298,6 +18185,93 @@ impl WorkspaceModuleSetting {
     }
 }
 impl Node for WorkspaceModuleSetting {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct WorkspaceSdk {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for WorkspaceSdk {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for WorkspaceSdk {
+    fn graphql_type() -> &'static str {
+        "WorkspaceSDK"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl WorkspaceSdk {
+    /// Clients generated with this SDK.
+    pub async fn clients(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
+        let query = self.selection.select("clients");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceModule {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceModule"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// A unique identifier for this WorkspaceSDK.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Modules authored with this SDK.
+    pub async fn modules(&self) -> Result<Vec<WorkspaceModule>, DaggerError> {
+        let query = self.selection.select("modules");
+        let query = query.select("id");
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| WorkspaceModule {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("WorkspaceModule"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
+    }
+    /// The user-facing SDK name.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module reference this SDK was installed from.
+    pub async fn r#ref(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("ref");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+impl Node for WorkspaceSdk {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();
@@ -17402,6 +18376,26 @@ pub enum ImageMediaTypes {
     Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum LlmContentBlockKind {
+    #[serde(rename = "TEXT")]
+    Text,
+    #[serde(rename = "THINKING")]
+    Thinking,
+    #[serde(rename = "TOOL_CALL")]
+    ToolCall,
+    #[serde(rename = "TOOL_RESULT")]
+    ToolResult,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum LlmMessageRole {
+    #[serde(rename = "ASSISTANT")]
+    Assistant,
+    #[serde(rename = "SYSTEM")]
+    System,
+    #[serde(rename = "USER")]
+    User,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceExperimentalFeature {

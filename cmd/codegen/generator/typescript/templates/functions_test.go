@@ -102,3 +102,29 @@ func TestSortInputFields(t *testing.T) {
 		require.Equal(t, want, got)
 	})
 }
+
+func TestToPascalCase(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		// Ordinary names are unaffected.
+		{"networkProtocol", "NetworkProtocol"},
+		{"NetworkProtocol", "NetworkProtocol"},
+		{"moduleSourceKind", "ModuleSourceKind"},
+		{"container", "Container"},
+		// The LLM acronym is preserved rather than title-cased, so type names
+		// and the "llm" field render consistently (matches the schema and the
+		// other SDKs). Regression guard for the recurring acronym-casing bug.
+		{"llm", "LLM"},
+		{"LLM", "LLM"},
+		{"LLMContentBlockKind", "LLMContentBlockKind"},
+		{"LLMMessageRole", "LLMMessageRole"},
+		{"LLMTokenUsage", "LLMTokenUsage"},
+		{"withLlm", "WithLLM"},
+	} {
+		t.Run(tc.in, func(t *testing.T) {
+			require.Equal(t, tc.want, toPascalCase(tc.in))
+		})
+	}
+}

@@ -68,6 +68,24 @@ func (s *Schema) ScrubType(typeName string) {
 	s.Types = filteredTypes
 }
 
+// ScrubField removes a field from a type without removing any types referenced
+// by that field elsewhere in the schema.
+func (s *Schema) ScrubField(typeName, fieldName string) {
+	t := s.Types.Get(typeName)
+	if t == nil {
+		return
+	}
+
+	filteredFields := make([]*Field, 0, len(t.Fields))
+	for _, f := range t.Fields {
+		if f.Name == fieldName {
+			continue
+		}
+		filteredFields = append(filteredFields, f)
+	}
+	t.Fields = filteredFields
+}
+
 type DirectiveDef struct {
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`

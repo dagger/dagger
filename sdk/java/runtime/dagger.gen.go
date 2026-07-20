@@ -300,6 +300,45 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithDescription("Runtime module for the Java SDK\n").
+			WithObject(
+				dag.TypeDef().WithObject("JavaSdk", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 27, 6)}).
+					WithFunction(
+						dag.Function("Codegen",
+							dag.TypeDef().WithObject("GeneratedCode")).
+							WithSourceMap(dag.SourceMap("main.go", 74, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 76, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 77, 2)})).
+					WithFunction(
+						dag.Function("JavaImage",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 478, 1))).
+					WithFunction(
+						dag.Function("MavenImage",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 471, 1))).
+					WithFunction(
+						dag.Function("ModuleRuntime",
+							dag.TypeDef().WithObject("Container")).
+							WithSourceMap(dag.SourceMap("main.go", 296, 1)).
+							WithArg("modSource", dag.TypeDef().WithObject("ModuleSource"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 298, 2)}).
+							WithArg("introspectionJSON", dag.TypeDef().WithObject("File"), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 299, 2)})).
+					WithFunction(
+						dag.Function("WithConfig",
+							dag.TypeDef().WithObject("JavaSdk")).
+							WithSourceMap(dag.SourceMap("main.go", 63, 1)).
+							WithArg("mavenErrors", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 65, 2), DefaultValue: dagger.JSON("false")}).
+							WithArg("mavenDebugLogging", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 67, 2), DefaultValue: dagger.JSON("false")})).
+					WithField("SDKSourceDir", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{SourceMap: dag.SourceMap("main.go", 28, 2)}).
+					WithField("MavenErrors", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "If true, -e flag will be added to the maven command to display execution error messages", SourceMap: dag.SourceMap("main.go", 31, 2)}).
+					WithField("MavenDebugLogging", dag.TypeDef().WithKind(dagger.TypeDefKindBooleanKind), dagger.TypeDefWithFieldOpts{Description: "If true, -X flag will be added to the maven command to enable full debug logging", SourceMap: dag.SourceMap("main.go", 33, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("JavaSdk")).
+							WithSourceMap(dag.SourceMap("main.go", 46, 1)).
+							WithArg("sdkSourceDir", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{Description: "Directory with the Java SDK source code.\ndagger-java-samples is not necessary to build, but as it's referenced in the root pom.xml maven\nwill check if it's there. So we keep the pom.xml to fake it.", SourceMap: dag.SourceMap("main.go", 52, 2), DefaultPath: "/sdk/java", Ignore: []string{"**", "!dagger-codegen-maven-plugin/", "!dagger-java-annotation-processor/", "!dagger-java-sdk/", "!dagger-java-samples/pom.xml", "!LICENSE", "!README.md", "!pom.xml", "**/src/test", "**/target"}}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

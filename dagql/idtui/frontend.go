@@ -113,6 +113,13 @@ type Frontend interface {
 	// Populate the sidebar with content.
 	SetSidebarContent(SidebarSection)
 
+	// SetStatusLine updates the compact status line with LLM
+	// token/cost/context data.
+	SetStatusLine(StatusLineData)
+
+	// GetLLMTokenMetrics returns aggregated LLM token metrics across all spans.
+	GetLLMTokenMetrics() *dagui.LLMTokenMetrics
+
 	prompt.PromptHandler
 }
 
@@ -241,6 +248,16 @@ func (sec SidebarSection) Body(width int) string {
 
 // ShellHandler defines the interface for handling shell interactions.
 // All methods are called on the UI goroutine unless noted otherwise.
+// BranchSummary controls how the conversation is summarized when branching.
+type BranchSummary struct {
+	// Summarize indicates whether to summarize the old conversation.
+	Summarize bool
+	// CustomPrompt is an optional custom summarization prompt. Only used
+	// when Summarize is true. If empty, the default summarization prompt
+	// is used.
+	CustomPrompt string
+}
+
 type ShellHandler interface {
 	// Handle processes submitted shell input.
 	Handle(ctx context.Context, input string) error
@@ -280,6 +297,12 @@ type ShellHandler interface {
 	SaveBeforeHistory()
 	// RestoreAfterHistory restores the mode saved before history navigation.
 	RestoreAfterHistory()
+
+	// BranchFromID branches the LLM conversation from the state identified by
+	// the encoded DAG ID, optionally summarizing the abandoned branch first.
+	// It returns an async function that performs the branch (may be nil), to
+	// be run by the caller in a goroutine.
+	BranchFromID(ctx context.Context, encodedID string, summary BranchSummary) func()
 }
 
 type Dump struct {
@@ -717,13 +740,34 @@ func (r *renderer) renderDuration(out TermOutput, span *dagui.Span, space bool) 
 	if space {
 		fmt.Fprint(out, out.String(" "))
 	}
-	duration := out.String(dagui.FormatDuration(span.Activity.Duration(r.now)))
+	// When a row spent material time provably blocked on other ops, show
+	// the time it actually spent executing, not the wall-clock it was
+	// blocked or dormant for.
+	hb := span.TimeBreakdown(r.now)
+	// "Blocked right now" only means something while the run is still going:
+	// a final render has no "now", and a failed or canceled row's story is
+	// its error, not whatever it was waiting on when things went wrong.
+	var blocked dagui.TimeSegment
+	var blockedNow bool
+	if !r.final && !span.IsFailedOrCausedFailure() && !span.IsCanceled() {
+		blocked, blockedNow = hb.BlockedNow(r.now)
+	}
+	shown := span.Activity.Duration(r.now)
+	if hb.Material || blockedNow {
+		shown = hb.Self
+	}
+	duration := out.String(dagui.FormatDuration(shown))
 	if span.IsRunningOrEffectsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
 		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
+	// While the row is blocked, say on what; once it is done waiting there
+	// is nothing extra to show.
+	if blockedNow && blocked.Label != "" {
+		fmt.Fprint(out, out.String(" ⋯ waiting on "+blocked.Label).Faint())
+	}
 }
 
 var metricsVerbosity = map[string]int{
@@ -989,4 +1033,14 @@ func skipLoggedOutTraceMsg() bool {
 		}
 	}
 	return false
+}
+
+// displayDuration is the duration a row should report: its self time when
+// it spent material time blocked on other ops, its activity time otherwise.
+func displayDuration(span *dagui.Span, now time.Time) time.Duration {
+	hb := span.TimeBreakdown(now)
+	if _, blockedNow := hb.BlockedNow(now); hb.Material || blockedNow {
+		return hb.Self
+	}
+	return span.Activity.Duration(now)
 }

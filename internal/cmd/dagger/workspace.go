@@ -92,18 +92,18 @@ func runWorkspaceDigest(cmd *cobra.Command, _ []string) error {
 		// Modules summary.
 		var res struct {
 			CurrentWorkspace struct {
-				ModuleList []struct {
+				Modules []struct {
 					Name   string
 					Source string
 				}
 			}
 		}
 		if err := dag.Do(ctx, &dagger.Request{
-			Query: `query { currentWorkspace { moduleList { name source } } }`,
+			Query: `query { currentWorkspace { modules { name source } } }`,
 		}, &dagger.Response{Data: &res}); err != nil {
 			return fmt.Errorf("list installed modules: %w", err)
 		}
-		mods := res.CurrentWorkspace.ModuleList
+		mods := res.CurrentWorkspace.Modules
 		if len(mods) == 0 {
 			fmt.Fprintln(out, "modules: (none installed)")
 			return nil
@@ -190,6 +190,7 @@ var workspaceConfigCmd = &cobra.Command{
 With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
 With two arguments, sets the value at the given key.
+With one argument and --unset, removes the value at the given key.
 
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
@@ -224,7 +225,11 @@ var activityCmd = &cobra.Command{
 
 var workspaceActivityAll bool
 
+var workspaceConfigUnset bool
+
 func init() {
+	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigUnset, "unset", "u", false, "Remove the value at the given key")
+
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
@@ -241,11 +246,18 @@ func addWorkspaceHereFlag(cmd *cobra.Command) {
 }
 
 func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
+	if workspaceConfigUnset && len(args) != 1 {
+		return fmt.Errorf("--unset requires a KEY argument")
+	}
 	return withEngine(cmd.Context(), client.Params{
 		SkipWorkspaceModules:           true,
 		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		ws := engineClient.Dagger().CurrentWorkspace()
+
+		if workspaceConfigUnset {
+			return ws.WithoutConfigValue(args[0], dagger.WorkspaceWithoutConfigValueOpts{Here: workspaceHere}).Export(ctx)
+		}
 
 		switch len(args) {
 		case 0:
@@ -276,28 +288,154 @@ func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspa
 }
 
 func writeWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, key, value string) error {
-	_, err := ws.ConfigWrite(ctx, key, value, dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
-	return err
+	return ws.WithConfigValue(key, value, dagger.WorkspaceWithConfigValueOpts{Here: workspaceHere}).Export(ctx)
 }
 
 func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string, here bool) error {
-	msg, err := dag.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: name, Here: here})
+	current := dag.CurrentWorkspace()
+	previousConfig, err := current.ConfigFile(ctx)
 	if err != nil {
 		return err
 	}
-
-	_, err = fmt.Fprintln(out, msg)
+	updated, err := materializeWorkspace(ctx, dag, current.WithModule(ref, dagger.WorkspaceWithModuleOpts{Name: name, Here: here}))
+	if err != nil {
+		return err
+	}
+	resolvedName, err := workspaceInstalledModuleName(ctx, current, updated, ref, name)
+	if err != nil {
+		return err
+	}
+	configPath, err := workspaceConfigHostPath(ctx, updated)
+	if err != nil {
+		return err
+	}
+	updatedConfig, err := updated.ConfigFile(ctx)
+	if err != nil {
+		return err
+	}
+	isEmpty, err := updated.Changes().IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	if isEmpty {
+		_, err = fmt.Fprintf(out, "Module %q is already installed\n", resolvedName)
+		return err
+	}
+	if previousConfig != updatedConfig {
+		if _, err := fmt.Fprintf(out, "Created workspace config in %s\n", filepath.Dir(configPath)); err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(out, "Installed module %q in %s\n", resolvedName, configPath)
 	return err
 }
 
+func workspaceInstalledModuleName(ctx context.Context, current, updated *dagger.Workspace, ref, requestedName string) (string, error) {
+	if requestedName != "" {
+		return requestedName, nil
+	}
+	before, err := current.Modules(ctx)
+	if err != nil {
+		return "", err
+	}
+	beforeNames := make(map[string]struct{}, len(before))
+	for _, module := range before {
+		name, err := module.Name(ctx)
+		if err != nil {
+			return "", err
+		}
+		beforeNames[name] = struct{}{}
+	}
+
+	modules, err := updated.Modules(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, module := range modules {
+		name, err := module.Name(ctx)
+		if err != nil {
+			return "", err
+		}
+		if _, existed := beforeNames[name]; !existed {
+			return name, nil
+		}
+	}
+
+	comparisonRef := ref
+	if !workspacepkg.IsLocalRef(ref, "") {
+		comparisonRef = filepath.ToSlash(ref)
+	} else if !filepath.IsAbs(ref) {
+		cwd, err := current.Cwd(ctx)
+		if err != nil {
+			return "", err
+		}
+		comparisonRef = path.Clean(path.Join(strings.TrimPrefix(filepath.ToSlash(cwd), "/"), filepath.ToSlash(ref)))
+	}
+	for _, module := range modules {
+		source, err := module.Source(ctx)
+		if err != nil {
+			return "", err
+		}
+		if filepath.ToSlash(source) == comparisonRef {
+			return module.Name(ctx)
+		}
+	}
+	refWithoutVersion, _, _ := strings.Cut(ref, "@")
+	name := path.Base(filepath.ToSlash(refWithoutVersion))
+	if name == "." || name == "/" || name == "" {
+		name = ref
+	}
+	return name, nil
+}
+
 func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
-	msg, err := dag.CurrentWorkspace().Uninstall(ctx, name, dagger.WorkspaceUninstallOpts{Here: here})
+	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutModule(name, dagger.WorkspaceWithoutModuleOpts{Here: here}))
 	if err != nil {
 		return err
 	}
-
-	_, err = fmt.Fprintln(out, msg)
+	configPath, err := workspaceConfigHostPath(ctx, updated)
+	if err != nil {
+		return err
+	}
+	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "Uninstalled module %q from %s\n", name, configPath)
 	return err
+}
+
+func uninstallWorkspaceSDK(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
+	updated, err := materializeWorkspace(ctx, dag, dag.CurrentWorkspace().WithoutSDK(name, dagger.WorkspaceWithoutSDKOpts{Here: here}))
+	if err != nil {
+		return err
+	}
+	configPath, err := workspaceConfigHostPath(ctx, updated)
+	if err != nil {
+		return err
+	}
+	if err := updated.Export(ctx); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "Uninstalled SDK %q from %s\n", name, configPath)
+	return err
+}
+
+func workspaceConfigHostPath(ctx context.Context, ws *dagger.Workspace) (string, error) {
+	configFile, err := ws.ConfigFile(ctx)
+	if err != nil {
+		return "", fmt.Errorf("workspace config file: %w", err)
+	}
+	if configFile == "" {
+		return "", fmt.Errorf("workspace config file is not selected")
+	}
+	root, err := currentWorkspaceExportPath(ctx, ws)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, filepath.FromSlash(configFile)), nil
 }
 
 func workspaceRootFromAddress(address, cwd string) (string, error) {

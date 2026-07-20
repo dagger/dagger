@@ -236,6 +236,31 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "":
+		return dag.Module().
+			WithObject(
+				dag.TypeDef().WithObject("Metrics", dagger.TypeDefWithObjectOpts{SourceMap: dag.SourceMap("main.go", 14, 6)}).
+					WithFunction(
+						dag.Function("Grafana",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Grafana container configured with Prometheus & Dagger Engine metrics").
+							WithSourceMap(dag.SourceMap("main.go", 35, 1))).
+					WithFunction(
+						dag.Function("Prometheus",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Prometheus container configured to scrape Dagger Engine metrics").
+							WithSourceMap(dag.SourceMap("main.go", 47, 1))).
+					WithFunction(
+						dag.Function("Run",
+							dag.TypeDef().WithObject("Container")).
+							WithDescription("Grafana configured with Prometheus & Dagger Engine metrics").
+							WithSourceMap(dag.SourceMap("main.go", 29, 1))).
+					WithField("Config", dag.TypeDef().WithObject("Directory"), dagger.TypeDefWithFieldOpts{Description: "Directory with all config files", SourceMap: dag.SourceMap("main.go", 16, 2)}).
+					WithConstructor(
+						dag.Function("New",
+							dag.TypeDef().WithObject("Metrics")).
+							WithSourceMap(dag.SourceMap("main.go", 19, 1)).
+							WithArg("config", dag.TypeDef().WithObject("Directory").WithOptional(true), dagger.FunctionWithArgOpts{SourceMap: dag.SourceMap("main.go", 21, 2), DefaultPath: "./config"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

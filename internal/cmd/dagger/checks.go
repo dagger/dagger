@@ -76,7 +76,7 @@ func runChecksCommand(cmd *cobra.Command, args []string) error {
 			if checksListMode {
 				return listChecks(ctx, dag, checks, cmd)
 			}
-			return runChecks(ctx, dag, checks, cmd)
+			return runChecks(ctx, dag, checks, cmd, args)
 		},
 	)
 }
@@ -214,7 +214,7 @@ func writeCheckList(w io.Writer, checks []*CheckInfo) error {
 }
 
 // 'dagger checks' (runs by default)
-func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, _ *cobra.Command) error {
+func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup, _ *cobra.Command, include []string) error {
 	ctx, zoomSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
 	defer zoomSpan.End()
 	Frontend.SetPrimary(dagui.SpanID{SpanID: zoomSpan.SpanContext().SpanID()})
@@ -254,6 +254,9 @@ func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Check
 	if err != nil {
 		return err
 	}
+	if err := validateCheckSelection(include, len(res.CheckGroup.Run.List)); err != nil {
+		return err
+	}
 
 	var failed int
 	for _, check := range res.CheckGroup.Run.List {
@@ -265,4 +268,19 @@ func runChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Check
 		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("%d checks failed", failed)}
 	}
 	return nil
+}
+
+func validateCheckSelection(include []string, selected int) error {
+	if len(include) == 0 || selected > 0 {
+		return nil
+	}
+	if len(include) == 1 {
+		return fmt.Errorf("no checks matched pattern %q", include[0])
+	}
+
+	patterns := make([]string, 0, len(include))
+	for _, pattern := range include {
+		patterns = append(patterns, fmt.Sprintf("%q", pattern))
+	}
+	return fmt.Errorf("no checks matched any of the patterns: %s", strings.Join(patterns, ", "))
 }

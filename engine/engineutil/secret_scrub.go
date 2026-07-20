@@ -22,6 +22,17 @@ func NewSecretScrubReader(
 	secretEnvs []string,
 	secretFiles []string,
 ) (io.Reader, error) {
+	transformer, err := newSecretCensor(env, secretEnvs, secretFiles)
+	if err != nil {
+		return nil, err
+	}
+	return transform.NewReader(r, transformer), nil
+}
+
+// newSecretCensor builds the trie-backed censoring transformer once from the
+// given secret sources. Shared by NewSecretScrubReader (stdout/stderr streams)
+// and ScrubStrings (exec argv), so both redact the SAME registered-secret set.
+func newSecretCensor(env, secretEnvs, secretFiles []string) (*censor, error) {
 	secrets := loadSecretsToScrubFromEnv(env, secretEnvs)
 
 	fileSecrets, err := loadSecretsToScrubFromFiles(secretFiles)
@@ -46,15 +57,40 @@ func NewSecretScrubReader(
 			trie.Insert(strimmed, scrubString)
 		}
 	}
-	transformer := &censor{
+	return &censor{
 		trieRoot: trie,
 		trie:     trie.Iter(),
 		// NOTE: keep these sizes the same as the default transform sizes
 		srcBuf: make([]byte, 0, 4096),
 		dstBuf: make([]byte, 0, 4096),
-	}
+	}, nil
+}
 
-	return transform.NewReader(r, transformer), nil
+// ScrubStrings redacts the engine's registered session secrets from each input
+// string, returning a new slice (the input is left unchanged). It builds the
+// secret trie ONCE from the same (env, secretEnvs, secretFiles) the stdout/stderr
+// scrubbers use, so a value scrubbed from process output is scrubbed here too. All
+// inputs may be nil/empty: with no registered secrets the strings pass through
+// unchanged (an empty trie matches nothing). Used to redact a user exec's argv
+// before it is emitted to the wcprof profile (native + OTel).
+func ScrubStrings(env, secretEnvs, secretFiles, in []string) ([]string, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	transformer, err := newSecretCensor(env, secretEnvs, secretFiles)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(in))
+	for i, s := range in {
+		transformer.Reset()
+		scrubbed, _, err := transform.String(transformer, s)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = scrubbed
+	}
+	return out, nil
 }
 
 // loadSecretsToScrubFromEnv loads secrets value from env if they are in secretsToScrub.

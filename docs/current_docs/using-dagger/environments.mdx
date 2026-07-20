@@ -16,7 +16,7 @@ Pass `--env` to any command to apply an overlay for that run:
 
 ```shell
 dagger --env staging check
-dagger --env staging call deploy
+dagger --env staging api call deploy
 ```
 
 ## Configure an environment
@@ -39,10 +39,8 @@ Without `--env`, you read and write the base configuration, which every environm
 
 ## Lower-level access
 
-For configuration that isn't a module-declared setting, edit the raw config file:
+`dagger workspace config` is the lower-level key/value interface to `dagger.toml`, and it follows the same `--env` overlay rules. Environment overlays only carry module settings, so the raw key form is:
 
 ```shell
-dagger workspace config env.staging.<some-key> <value>
+dagger workspace config env.staging.modules.<module>.settings.<key> <value>
 ```
-
-`dagger workspace config` is the lower-level key/value interface to `dagger.toml`. It follows the same `--env` overlay rules.

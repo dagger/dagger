@@ -158,6 +158,35 @@ class ImageMediaTypes(Enum):
     OCI = "OCIMediaTypes"
 
 
+class LLMContentBlockKind(Enum):
+    """The kind of content in a message block."""
+
+    TEXT = "TEXT"
+    """Plain text content."""
+
+    THINKING = "THINKING"
+    """Model thinking/reasoning content (e.g. Anthropic extended thinking)."""
+
+    TOOL_CALL = "TOOL_CALL"
+    """A tool/function call from the model."""
+
+    TOOL_RESULT = "TOOL_RESULT"
+    """A tool/function result."""
+
+
+class LLMMessageRole(Enum):
+    """The role that generated a message."""
+
+    ASSISTANT = "ASSISTANT"
+    """A reply from the model."""
+
+    SYSTEM = "SYSTEM"
+    """A system prompt."""
+
+    USER = "USER"
+    """A user prompt or tool response."""
+
+
 class ModuleSourceExperimentalFeature(Enum):
     """Experimental features of a module"""
 
@@ -306,6 +335,33 @@ class BuildArg(Input):
 
     value: str
     """The build argument value."""
+
+
+@typecheck
+@dataclass(slots=True)
+class LLMContentBlockInput(Input):
+    """A content block within an LLM message."""
+
+    kind: LLMContentBlockKind
+    """The kind of content block."""
+
+    arguments: JSON | None = None
+    """The arguments to pass to the tool (for TOOL_CALL kind)."""
+
+    call_id: str | None = ""
+    """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds)."""
+
+    errored: bool | None = False
+    """Whether the tool call resulted in an error (for TOOL_RESULT kind)."""
+
+    signature: str | None = ""
+    """Provider-specific opaque data (e.g. Anthropic thinking signature)."""
+
+    text: str | None = ""
+    """Text content (for TEXT, THINKING, or TOOL_RESULT kinds)."""
+
+    tool_name: str | None = ""
+    """The name of the tool to call (for TOOL_CALL kind)."""
 
 
 @typecheck
@@ -754,6 +810,18 @@ class Binding(Type):
         _ctx = self._select("asJSONValue", _args)
         return JSONValue(_ctx)
 
+    def as_llm_content_block(self) -> "LLMContentBlock":
+        """Retrieve the binding value, as type LLMContentBlock"""
+        _args: list[Arg] = []
+        _ctx = self._select("asLLMContentBlock", _args)
+        return LLMContentBlock(_ctx)
+
+    def as_llm_message(self) -> "LLMMessage":
+        """Retrieve the binding value, as type LLMMessage"""
+        _args: list[Arg] = []
+        _ctx = self._select("asLLMMessage", _args)
+        return LLMMessage(_ctx)
+
     def as_module(self) -> "Module":
         """Retrieve the binding value, as type Module"""
         _args: list[Arg] = []
@@ -882,6 +950,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asWorkspaceModuleSetting", _args)
         return WorkspaceModuleSetting(_ctx)
+
+    def as_workspace_sdk(self) -> "WorkspaceSDK":
+        """Retrieve the binding value, as type WorkspaceSDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceSDK", _args)
+        return WorkspaceSDK(_ctx)
 
     async def digest(self) -> str:
         """Returns the digest of the binding value
@@ -4156,6 +4230,14 @@ class CurrentModuleAsSDKClient(Type):
         _ctx = self._select("module", _args)
         return await _ctx.execute(str)
 
+    def module_source(self) -> "ModuleSource":
+        """The resolved module source this client is bound to, including its
+        dependency closure and pinned version.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("moduleSource", _args)
+        return ModuleSource(_ctx)
+
     async def path(self) -> str:
         """Workspace-root-relative path of the generated client.
 
@@ -7125,6 +7207,91 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
+    def with_llm_content_block_input(
+        self,
+        name: str,
+        value: "LLMContentBlock",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type LLMContentBlock in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The LLMContentBlock value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMContentBlockInput", _args)
+        return Env(_ctx)
+
+    def with_llm_content_block_output(self, name: str, description: str) -> Self:
+        """Declare a desired LLMContentBlock output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMContentBlockOutput", _args)
+        return Env(_ctx)
+
+    def with_llm_message_input(
+        self,
+        name: str,
+        value: "LLMMessage",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type LLMMessage in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The LLMMessage value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMMessageInput", _args)
+        return Env(_ctx)
+
+    def with_llm_message_output(self, name: str, description: str) -> Self:
+        """Declare a desired LLMMessage output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withLLMMessageOutput", _args)
+        return Env(_ctx)
+
     def with_main_module(self, module: "Module") -> Self:
         """Sets the main module for this environment (the project being worked
         on)
@@ -7982,6 +8149,49 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withWorkspaceOutput", _args)
+        return Env(_ctx)
+
+    def with_workspace_sdk_input(
+        self,
+        name: str,
+        value: "WorkspaceSDK",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceSDK in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceSDK value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceSDKInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_sdk_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceSDK output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceSDKOutput", _args)
         return Env(_ctx)
 
     def without_outputs(self) -> Self:
@@ -9949,6 +10159,33 @@ class GeneratorGroup(Type):
         _ctx = self._select("list", _args)
         return await _ctx.execute_object_list(Generator)
 
+    async def load_failures(self) -> list[str]:
+        """Load failures tolerated while collecting the generators.
+
+        Empty unless a workspace module could not be loaded during an unscoped
+        'dagger generate' (no selector), where load failures are tolerated so
+        the modules that do load still generate. Each entry is a human-
+        readable error message. An explicit selector keeps failing hard
+        instead.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("loadFailures", _args)
+        return await _ctx.execute(list[str])
+
     def run(self) -> Self:
         """Execute all selected generators"""
         _args: list[Arg] = []
@@ -11164,13 +11401,8 @@ class JSONValue(Type):
 
 @typecheck
 class LLM(Type):
-    def attempt(self, number: int) -> Self:
-        """create a branch in the LLM's history"""
-        _args = [
-            Arg("number", number),
-        ]
-        _ctx = self._select("attempt", _args)
-        return LLM(_ctx)
+    """A conversation with a large language model (LLM): queue prompts,
+    expose tools, and step the model until it completes its turn."""
 
     def bind_result(self, name: str) -> Binding:
         """returns the type of the current state"""
@@ -11180,15 +11412,54 @@ class LLM(Type):
         _ctx = self._select("bindResult", _args)
         return Binding(_ctx)
 
+    async def context_window(self) -> int | None:
+        """The model's total context window in tokens, or null if unknown (e.g. a
+        local or uncatalogued model).
+
+        Returns
+        -------
+        int | None
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contextWindow", _args)
+        return await _ctx.execute(int | None)
+
     def env(self) -> Env:
         """return the LLM's current environment"""
         _args: list[Arg] = []
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
-    async def has_prompt(self) -> bool:
-        """Indicates whether there are any queued prompts or tool results to send
-        to the model
+    def fork(self, label: str) -> Self:
+        """Fork the conversation, so that otherwise-identical follow-ups evaluate
+        independently instead of deduplicating to a single cached result.
+
+        Parameters
+        ----------
+        label:
+            A label distinguishing this fork from its siblings, e.g.
+            "attempt-2" when retrying a flaky evaluation.
+        """
+        _args = [
+            Arg("label", label),
+        ]
+        _ctx = self._select("fork", _args)
+        return LLM(_ctx)
+
+    async def has_pending(self) -> bool:
+        """Report whether anything is queued to send to the model: an unsent
+        prompt or unevaluated tool results. When true, another step will do
+        work; when false, the turn is complete.
 
         Returns
         -------
@@ -11203,48 +11474,8 @@ class LLM(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("hasPrompt", _args)
+        _ctx = self._select("hasPending", _args)
         return await _ctx.execute(bool)
-
-    async def history(self) -> list[str]:
-        """return the llm message history
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("history", _args)
-        return await _ctx.execute(list[str])
-
-    async def history_json(self) -> JSON:
-        """return the raw llm message history as json
-
-        Returns
-        -------
-        JSON
-            An arbitrary JSON-encoded value.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("historyJSON", _args)
-        return await _ctx.execute(JSON)
 
     async def id(self) -> str:
         """A unique identifier for this LLM.
@@ -11275,7 +11506,7 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     async def last_reply(self) -> str:
-        """return the last llm reply from the history
+        """The text of the model's most recent reply.
 
         Returns
         -------
@@ -11295,16 +11526,41 @@ class LLM(Type):
         _ctx = self._select("lastReply", _args)
         return await _ctx.execute(str)
 
-    def loop(self) -> Self:
-        """Submit the queued prompt, evaluate any tool calls, queue their
-        results, and keep going until the model ends its turn
+    def loop(
+        self,
+        *,
+        max_steps: int | None = None,
+        max_tokens: int | None = None,
+    ) -> Self:
+        """Send the queued prompt and step the model against the available tools,
+        until it ends its turn: a reply with no tool calls and nothing left
+        queued.
+
+        Parameters
+        ----------
+        max_steps:
+            Cap the number of steps. The loop fails if the cap is reached
+            before the model ends its turn.
+        max_tokens:
+            Cap the model's output tokens on each step. Defaults to the
+            model's maximum.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("maxSteps", max_steps, None),
+            Arg("maxTokens", max_tokens, None),
+        ]
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
 
+    async def messages(self) -> list["LLMMessage"]:
+        """The full message history, as structured messages."""
+        _args: list[Arg] = []
+        _ctx = self._select("messages", _args)
+        return await _ctx.execute_object_list(LLMMessage)
+
     async def model(self) -> str:
-        """return the model used by the llm
+        """The model the conversation is running against, after resolving any
+        configured default.
 
         Returns
         -------
@@ -11324,8 +11580,37 @@ class LLM(Type):
         _ctx = self._select("model", _args)
         return await _ctx.execute(str)
 
+    async def portable_id(self) -> str:
+        """A portable, self-contained ID for the conversation that node() can
+        resolve in any session. Unlike id, which may return an engine-local
+        runtime handle valid only within the current session, this returns the
+        recipe form suitable for persisting and later restoring the
+        conversation.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("portableID", _args)
+        return await _ctx.execute(str)
+
     async def provider(self) -> str:
-        """return the provider used by the llm
+        """The provider serving the model, e.g. "anthropic", "openai", "google",
+        or "local".
 
         Returns
         -------
@@ -11345,9 +11630,9 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
-    async def step(self) -> Self:
-        """Submit the queued prompt or tool call results, evaluate any tool
-        calls, and queue their results
+    async def replay(self) -> Self:
+        """Re-emit telemetry spans for the full message history, so a loaded
+        conversation displays in the TUI.
 
         Raises
         ------
@@ -11357,10 +11642,28 @@ class LLM(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        return await self._ctx.execute_sync(self, "step", _args)
+        return await self._ctx.execute_sync(self, "replay", _args)
+
+    def step(self, *, max_tokens: int | None = None) -> Self:
+        """Advance the conversation by a single step: send the queued prompt or
+        tool results to the model, evaluate any tool calls it makes, and queue
+        their results. Use loop to step until the model ends its turn.
+
+        Parameters
+        ----------
+        max_tokens:
+            Cap the model's output tokens for this step. Defaults to the
+            model's maximum.
+        """
+        _args = [
+            Arg("maxTokens", max_tokens, None),
+        ]
+        _ctx = self._select("step", _args)
+        return LLM(_ctx)
 
     async def sync(self) -> Self:
-        """synchronize LLM state
+        """Force evaluation of the conversation's pending operations (prompts,
+        steps, loops) in the engine.
 
         Raises
         ------
@@ -11376,13 +11679,15 @@ class LLM(Type):
         return self.sync().__await__()
 
     def token_usage(self) -> "LLMTokenUsage":
-        """returns the token usage of the current state"""
+        """The cumulative token usage, summed across every API call in the
+        conversation.
+        """
         _args: list[Arg] = []
         _ctx = self._select("tokenUsage", _args)
         return LLMTokenUsage(_ctx)
 
     async def tools(self) -> str:
-        """print documentation for available tools
+        """Render documentation for the tools currently exposed to the model.
 
         Returns
         -------
@@ -11400,6 +11705,28 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("tools", _args)
+        return await _ctx.execute(str)
+
+    async def transcript(self) -> str:
+        """The message history rendered as a plain-text transcript, suitable for
+        feeding back to an LLM (e.g. for summarization).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("transcript", _args)
         return await _ctx.execute(str)
 
     def with_blocked_function(self, type_name: str, function: str) -> Self:
@@ -11446,22 +11773,52 @@ class LLM(Type):
         _ctx = self._select("withMCPServer", _args)
         return LLM(_ctx)
 
-    def with_model(self, model: str) -> Self:
-        """swap out the llm model
+    def with_model(
+        self,
+        model: str,
+        *,
+        provider: str | None = None,
+    ) -> Self:
+        """Change the model for the rest of the conversation. The message history
+        is preserved; the new model takes effect on the next step.
 
         Parameters
         ----------
         model:
-            The model to use
+            The model to use, e.g. "claude-sonnet-4-5" or "gpt-5.4".
+        provider:
+            The provider serving the model, e.g. "openai". Overrides the
+            provider otherwise inferred from the model name — useful when the
+            name matches no known pattern (e.g. a fine-tune), or matches the
+            wrong one.
         """
         _args = [
             Arg("model", model),
+            Arg("provider", provider, None),
         ]
         _ctx = self._select("withModel", _args)
         return LLM(_ctx)
 
+    def with_object(self, tag: str, object: Type) -> Self:
+        """Track an object so the LLM can reference it in subsequent tool calls.
+
+        Parameters
+        ----------
+        tag:
+            Arbitrary string tag for the object, typically in TypeName#Number
+            format
+        object:
+            The object to track, as a generic ID
+        """
+        _args = [
+            Arg("tag", tag),
+            Arg("object", object),
+        ]
+        _ctx = self._select("withObject", _args)
+        return LLM(_ctx)
+
     def with_prompt(self, prompt: str) -> Self:
-        """append a prompt to the llm context
+        """Queue a user prompt, to be sent to the model on the next step or loop.
 
         Parameters
         ----------
@@ -11475,7 +11832,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_prompt_file(self, file: File) -> Self:
-        """append the contents of a file to the llm context
+        """Queue a file's contents as a user prompt, like withPrompt.
 
         Parameters
         ----------
@@ -11488,6 +11845,45 @@ class LLM(Type):
         _ctx = self._select("withPromptFile", _args)
         return LLM(_ctx)
 
+    def with_response(
+        self,
+        content: list[LLMContentBlockInput],
+        *,
+        input_tokens: int | None = 0,
+        output_tokens: int | None = 0,
+        cached_token_reads: int | None = 0,
+        cached_token_writes: int | None = 0,
+        total_tokens: int | None = 0,
+    ) -> Self:
+        """Append an assistant response to the message history without calling
+        the model, e.g. to reconstruct a conversation from another source.
+
+        Parameters
+        ----------
+        content:
+            The response content
+        input_tokens:
+            Uncached input tokens sent
+        output_tokens:
+            Tokens received from the model, including text and tool calls
+        cached_token_reads:
+            Cached input tokens read
+        cached_token_writes:
+            Cached input tokens written
+        total_tokens:
+            Total tokens consumed by this response
+        """
+        _args = [
+            Arg("content", content),
+            Arg("inputTokens", input_tokens, 0),
+            Arg("outputTokens", output_tokens, 0),
+            Arg("cachedTokenReads", cached_token_reads, 0),
+            Arg("cachedTokenWrites", cached_token_writes, 0),
+            Arg("totalTokens", total_tokens, 0),
+        ]
+        _ctx = self._select("withResponse", _args)
+        return LLM(_ctx)
+
     def with_static_tools(self) -> Self:
         """Use a static set of tools for method calls, e.g. for MCP clients that
         do not support dynamic tool registration
@@ -11497,7 +11893,8 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
-        """Add a system prompt to the LLM's environment
+        """Add a system prompt, instructing the model across the whole
+        conversation.
 
         Parameters
         ----------
@@ -11510,6 +11907,31 @@ class LLM(Type):
         _ctx = self._select("withSystemPrompt", _args)
         return LLM(_ctx)
 
+    def with_tool_result(
+        self,
+        call_id: str,
+        content: str,
+        errored: bool,
+    ) -> Self:
+        """Append the result of a tool call to the message history.
+
+        Parameters
+        ----------
+        call_id:
+            The ID of the tool call this result responds to
+        content:
+            The content returned by the tool
+        errored:
+            Whether the tool call resulted in an error
+        """
+        _args = [
+            Arg("callId", call_id),
+            Arg("content", content),
+            Arg("errored", errored),
+        ]
+        _ctx = self._select("withToolResult", _args)
+        return LLM(_ctx)
+
     def without_default_system_prompt(self) -> Self:
         """Disable the default system prompt"""
         _args: list[Arg] = []
@@ -11517,13 +11939,15 @@ class LLM(Type):
         return LLM(_ctx)
 
     def without_message_history(self) -> Self:
-        """Clear the message history, leaving only the system prompts"""
+        """Clear the message history, keeping only the system prompts."""
         _args: list[Arg] = []
         _ctx = self._select("withoutMessageHistory", _args)
         return LLM(_ctx)
 
     def without_system_prompts(self) -> Self:
-        """Clear the system prompts, leaving only the default system prompt"""
+        """Clear the user-added system prompts, keeping only the default system
+        prompt.
+        """
         _args: list[Arg] = []
         _ctx = self._select("withoutSystemPrompts", _args)
         return LLM(_ctx)
@@ -11537,9 +11961,255 @@ class LLM(Type):
 
 
 @typecheck
+class LLMContentBlock(Type):
+    """A single piece of content within an LLM message."""
+
+    async def arguments(self) -> JSON:
+        """The arguments passed to the tool, JSON-encoded (for TOOL_CALL kind).
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("arguments", _args)
+        return await _ctx.execute(JSON)
+
+    async def call_id(self) -> str:
+        """The unique ID of a tool call (for TOOL_CALL or TOOL_RESULT kinds).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("callId", _args)
+        return await _ctx.execute(str)
+
+    async def errored(self) -> bool:
+        """Whether the tool call resulted in an error (for TOOL_RESULT kind).
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("errored", _args)
+        return await _ctx.execute(bool)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMContentBlock.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def kind(self) -> LLMContentBlockKind:
+        """The kind of content block, which determines the other populated
+        fields.
+
+        Returns
+        -------
+        LLMContentBlockKind
+            The kind of content in a message block.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(LLMContentBlockKind)
+
+    async def signature(self) -> str:
+        """Provider-specific opaque data (e.g. Anthropic thinking signature).
+        Preserve it when reconstructing a conversation.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("signature", _args)
+        return await _ctx.execute(str)
+
+    async def text(self) -> str:
+        """Text content (for TEXT, THINKING, or TOOL_RESULT kinds).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("text", _args)
+        return await _ctx.execute(str)
+
+    async def tool_name(self) -> str:
+        """The name of the tool called (for TOOL_CALL kind).
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("toolName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class LLMMessage(Type):
+    """A single message in an LLM conversation."""
+
+    async def content(self) -> list[LLMContentBlock]:
+        """The message's content blocks, in the order the model produced them."""
+        _args: list[Arg] = []
+        _ctx = self._select("content", _args)
+        return await _ctx.execute_object_list(LLMContentBlock)
+
+    async def id(self) -> str:
+        """A unique identifier for this LLMMessage.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def role(self) -> LLMMessageRole:
+        """The role that produced this message.
+
+        Returns
+        -------
+        LLMMessageRole
+            The role that generated a message.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("role", _args)
+        return await _ctx.execute(LLMMessageRole)
+
+    def token_usage(self) -> "LLMTokenUsage":
+        """Token usage reported by the provider for the API call that produced
+        this message; all zeros except on assistant responses.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("tokenUsage", _args)
+        return LLMTokenUsage(_ctx)
+
+
+@typecheck
 class LLMTokenUsage(Type):
+    """A count of tokens consumed by LLM API calls."""
+
     async def cached_token_reads(self) -> int:
-        """Returns
+        """Input tokens served from the provider's prompt cache.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -11558,7 +12228,9 @@ class LLMTokenUsage(Type):
         return await _ctx.execute(int)
 
     async def cached_token_writes(self) -> int:
-        """Returns
+        """Input tokens written to the provider's prompt cache.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -11605,7 +12277,9 @@ class LLMTokenUsage(Type):
         return await _ctx.execute(str)
 
     async def input_tokens(self) -> int:
-        """Returns
+        """Uncached input tokens sent to the model.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -11624,7 +12298,9 @@ class LLMTokenUsage(Type):
         return await _ctx.execute(int)
 
     async def output_tokens(self) -> int:
-        """Returns
+        """Tokens received from the model, including text and tool calls.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -11643,7 +12319,9 @@ class LLMTokenUsage(Type):
         return await _ctx.execute(int)
 
     async def total_tokens(self) -> int:
-        """Returns
+        """Total tokens consumed, as reported by the provider.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -12256,6 +12934,21 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("blueprint", _args)
         return ModuleSource(_ctx)
+
+    def client_schema_introspection_json(self) -> File:
+        """The client-facing introspection schema JSON file for this module
+        source.
+
+        This is the schema consumed by client codegen: unlike
+        introspectionSchemaJSON (the module-facing schema), it hides no core
+        types and installs this module (reached via dag.<moduleName>) so a
+        generated client can bind it. The module's dependencies are excluded:
+        a client is generated for a single module plus core, not its
+        dependency graph.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("clientSchemaIntrospectionJSON", _args)
+        return File(_ctx)
 
     async def clone_ref(self) -> str:
         """The ref to clone the root of the git repo from. Only valid for git
@@ -13789,9 +14482,9 @@ class Query(Root):
         self,
         *,
         model: str | None = None,
-        max_api_calls: int | None = None,
+        provider: str | None = None,
     ) -> LLM:
-        """Initialize a Large Language Model (LLM)
+        """Initialize a new LLM conversation.
 
         .. caution::
             Experimental: LLM support is not yet stabilized
@@ -13799,13 +14492,17 @@ class Query(Root):
         Parameters
         ----------
         model:
-            Model to use
-        max_api_calls:
-            Cap the number of API calls for this LLM
+            The model to converse with, e.g. "claude-sonnet-4-5" or "gpt-5.4".
+            Defaults to the configured default model.
+        provider:
+            The provider serving the model, e.g. "openai". Overrides the
+            provider otherwise inferred from the model name — useful when the
+            name matches no known pattern (e.g. a fine-tune), or matches the
+            wrong one.
         """
         _args = [
             Arg("model", model, None),
-            Arg("maxAPICalls", max_api_calls, None),
+            Arg("provider", provider, None),
         ]
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
@@ -15716,17 +16413,9 @@ class Workspace(Type):
         _ctx = self._select("address", _args)
         return await _ctx.execute(str)
 
-    def changes(self, other: Self) -> Changeset:
-        """Return the changes from another workspace to this workspace.
-
-        Parameters
-        ----------
-        other:
-            Workspace to compare from.
-        """
-        _args = [
-            Arg("other", other),
-        ]
+    def changes(self) -> Changeset:
+        """Return this workspace's pending overlay changes."""
+        _args: list[Arg] = []
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
 
@@ -15761,51 +16450,6 @@ class Workspace(Type):
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
-
-    def client_generate(self) -> Changeset:
-        """Regenerate all generated API clients registered in workspace config
-        and return the resulting Changeset.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("clientGenerate", _args)
-        return Changeset(_ctx)
-
-    def client_init(
-        self,
-        path: str,
-        sdk: str,
-        module: str,
-        *,
-        here: bool | None = False,
-        args: JSON | None = None,
-    ) -> Changeset:
-        """Plan the workspace changes for initializing a generated API client:
-        generated client files at `path` plus a [[modules.<sdk-name>.as-
-        sdk.clients]] entry in dagger.toml. Returns the resulting Changeset
-        for the caller to preview and apply.
-
-        Parameters
-        ----------
-        path:
-            Workspace-relative output directory for the generated client.
-        sdk:
-            Workspace SDK name or module entry name to use.
-        module:
-            Workspace-relative path or canonical ref for the module the client
-            binds to.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-        args:
-        """
-        _args = [
-            Arg("path", path),
-            Arg("sdk", sdk),
-            Arg("module", module),
-            Arg("here", here, False),
-            Arg("args", args, None),
-        ]
-        _ctx = self._select("clientInit", _args)
-        return Changeset(_ctx)
 
     async def config_file(self) -> str:
         """Selected native workspace config file relative to the workspace root,
@@ -15862,47 +16506,6 @@ class Workspace(Type):
             Arg("key", key, ""),
         ]
         _ctx = self._select("configRead", _args)
-        return await _ctx.execute(str)
-
-    async def config_write(
-        self,
-        key: str,
-        value: str,
-        *,
-        here: bool | None = False,
-    ) -> str:
-        """Write a configuration value to dagger.toml.
-
-        Parameters
-        ----------
-        key:
-            Dotted key path (e.g. modules.greeter.source).
-        value:
-            Value to set. Bools, integers, and comma-separated arrays are
-            auto-detected.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("key", key),
-            Arg("value", value),
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("configWrite", _args)
         return await _ctx.execute(str)
 
     async def cwd(self) -> str:
@@ -15967,42 +16570,6 @@ class Workspace(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    async def env_create(
-        self,
-        name: str,
-        *,
-        here: bool | None = False,
-    ) -> str:
-        """Create a named workspace environment if it does not already exist.
-
-        Parameters
-        ----------
-        name:
-            Environment name.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("name", name),
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("envCreate", _args)
-        return await _ctx.execute(str)
-
     async def env_list(self) -> list[str]:
         """List named environments defined in the workspace configuration.
 
@@ -16024,27 +16591,14 @@ class Workspace(Type):
         _ctx = self._select("envList", _args)
         return await _ctx.execute(list[str])
 
-    async def env_remove(
-        self,
-        name: str,
-        *,
-        here: bool | None = False,
-    ) -> str:
-        """Remove a named workspace environment.
-
-        Parameters
-        ----------
-        name:
-            Environment name.
-        here:
-            Write to the workspace config directory at the workspace cwd.
+    async def export(self) -> Void:
+        """Write this workspace's pending changes to its local Git workspace.
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        Void
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
 
         Raises
         ------
@@ -16053,12 +16607,9 @@ class Workspace(Type):
         QueryError
             If the API returns an error.
         """
-        _args = [
-            Arg("name", name),
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("envRemove", _args)
-        return await _ctx.execute(str)
+        _args: list[Arg] = []
+        _ctx = self._select("export", _args)
+        await _ctx.execute()
 
     def file(self, path: str) -> File:
         """Returns a File from the workspace.
@@ -16149,6 +16700,36 @@ class Workspace(Type):
         _ctx = self._select("git", _args)
         return WorkspaceGit(_ctx)
 
+    async def glob(self, pattern: str) -> list[str]:
+        """Returns a list of files and directories that match the given pattern.
+
+        Patterns match paths relative to the workspace root.
+
+        Parameters
+        ----------
+        pattern:
+            Pattern to match (e.g., "*.md").
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("pattern", pattern),
+        ]
+        _ctx = self._select("glob", _args)
+        return await _ctx.execute(list[str])
+
     async def id(self) -> str:
         """A unique identifier for this Workspace.
 
@@ -16177,86 +16758,6 @@ class Workspace(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def init(self, *, here: bool | None = False) -> str:
-        """Initialize workspace config, creating dagger.toml.
-
-        Parameters
-        ----------
-        here:
-            Create the workspace config directory at the workspace cwd instead
-            of using the default write target.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("init", _args)
-        return await _ctx.execute(str)
-
-    async def install(
-        self,
-        ref: str,
-        *,
-        name: str | None = "",
-        here: bool | None = False,
-        as_sdk: bool | None = False,
-        as_sdk_name: str | None = "",
-    ) -> str:
-        """Install a module into the workspace, writing dagger.toml to the host.
-
-        Parameters
-        ----------
-        ref:
-            Module reference to install.
-        name:
-            Override name for the installed module entry.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-        as_sdk:
-            Mark the install as an SDK (writes the `[modules.<name>.as-sdk]`
-            marker that dispatches `dagger module init <sdk>` and `dagger api
-            client init <sdk>`).
-        as_sdk_name:
-            User-facing SDK name to persist under `[modules.<name>.as-sdk]
-            name = ...`.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("ref", ref),
-            Arg("name", name, ""),
-            Arg("here", here, False),
-            Arg("asSdk", as_sdk, False),
-            Arg("asSdkName", as_sdk_name, ""),
-        ]
-        _ctx = self._select("install", _args)
-        return await _ctx.execute(str)
-
     def migrate(self) -> "WorkspaceMigration":
         """Plan the explicit migration needed for the current workspace.
 
@@ -16267,66 +16768,130 @@ class Workspace(Type):
         _ctx = self._select("migrate", _args)
         return WorkspaceMigration(_ctx)
 
-    def module_init(
-        self,
-        name: str,
-        *,
-        sdk: str | None = "",
-        path: str | None = "",
-        source: str | None = "",
-        include: list[str] | None = None,
-        here: bool | None = False,
-        args: JSON | None = None,
-    ) -> Changeset:
-        """Plan the workspace changes for initializing a new module: dagger-
-        module.toml + SDK codegen output at `path`, the authoring entry under
-        [[modules.<sdk>.as-sdk.modules]], and (when path defaults)
-        [modules.<name>]. The SDK must already be installed as an SDK. Returns
-        the resulting Changeset for the caller to preview and apply.
+    def module(self, name: str) -> "WorkspaceModule":
+        """Return a module defined in the workspace configuration.
 
         Parameters
         ----------
         name:
-            Name of the new module.
-        sdk:
-            Workspace SDK name or module entry name to use.
-        path:
-            Workspace-relative path for the new module. Defaults to
-            ".dagger/modules/<name>"; using the default also installs the
-            module in [modules.<name>].
-        source:
-            Source subpath within the new module.
-        include:
-            Additional include patterns for the module.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-        args:
+            Module name to inspect.
         """
         _args = [
             Arg("name", name),
-            Arg("sdk", sdk, ""),
-            Arg("path", path, ""),
-            Arg("source", source, ""),
-            Arg("include", [] if include is None else include, []),
-            Arg("here", here, False),
-            Arg("args", args, None),
         ]
-        _ctx = self._select("moduleInit", _args)
-        return Changeset(_ctx)
+        _ctx = self._select("module", _args)
+        return WorkspaceModule(_ctx)
 
-    async def module_list(self, *, module: str | None = "") -> list["WorkspaceModule"]:
-        """List modules defined in the workspace configuration.
+    def module_source(self, path: str) -> ModuleSource:
+        """Load a module source from a path within the workspace.
+
+        Relative paths (e.g., "foo") resolve from the workspace cwd; absolute
+        paths (e.g., "/foo") resolve from the workspace root.
+
+        Fails if the path does not point to an initialized module.
 
         Parameters
         ----------
-        module:
-            Optional module alias to inspect.
+        path:
+            Location of the module source to load, relative to the workspace
+            cwd or absolute from the workspace root.
         """
         _args = [
-            Arg("module", module, ""),
+            Arg("path", path),
         ]
-        _ctx = self._select("moduleList", _args)
+        _ctx = self._select("moduleSource", _args)
+        return ModuleSource(_ctx)
+
+    async def modules(self) -> list["WorkspaceModule"]:
+        """List modules defined in the workspace configuration."""
+        _args: list[Arg] = []
+        _ctx = self._select("modules", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
+
+    def sdk(self, name: str) -> "WorkspaceSDK":
+        """An installed SDK, by name.
+
+        Parameters
+        ----------
+        name:
+            SDK name to look up.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("sdk", _args)
+        return WorkspaceSDK(_ctx)
+
+    async def sdks(self) -> list["WorkspaceSDK"]:
+        """Installed SDKs."""
+        _args: list[Arg] = []
+        _ctx = self._select("sdks", _args)
+        return await _ctx.execute_object_list(WorkspaceSDK)
+
+    async def search(
+        self,
+        pattern: str,
+        *,
+        paths: list[str] | None = None,
+        globs: list[str] | None = None,
+        literal: bool | None = False,
+        multiline: bool | None = False,
+        dotall: bool | None = False,
+        insensitive: bool | None = False,
+        skip_ignored: bool | None = False,
+        skip_hidden: bool | None = False,
+        files_only: bool | None = False,
+        limit: int | None = None,
+    ) -> list[SearchResult]:
+        """Searches for content matching the given regular expression or literal
+        string.
+
+        Uses Rust regex syntax; escape literal ., [, ], {, }, | with
+        backslashes.
+
+        Runs ripgrep on the client host, falling back to grep if unavailable.
+
+        Parameters
+        ----------
+        pattern:
+            The text to match.
+        paths:
+            Directory or file paths to search
+        globs:
+            Glob patterns to match (e.g., "*.md")
+        literal:
+            Interpret the pattern as a literal string instead of a regular
+            expression.
+        multiline:
+            Enable searching across multiple lines.
+        dotall:
+            Allow the . pattern to match newlines in multiline mode.
+        insensitive:
+            Enable case-insensitive matching.
+        skip_ignored:
+            Honor .gitignore, .ignore, and .rgignore files.
+        skip_hidden:
+            Skip hidden files (files starting with .).
+        files_only:
+            Only return matching files, not lines and content
+        limit:
+            Limit the number of results to return
+        """
+        _args = [
+            Arg("pattern", pattern),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("globs", [] if globs is None else globs, []),
+            Arg("literal", literal, False),
+            Arg("multiline", multiline, False),
+            Arg("dotall", dotall, False),
+            Arg("insensitive", insensitive, False),
+            Arg("skipIgnored", skip_ignored, False),
+            Arg("skipHidden", skip_hidden, False),
+            Arg("filesOnly", files_only, False),
+            Arg("limit", limit, None),
+        ]
+        _ctx = self._select("search", _args)
+        return await _ctx.execute_object_list(SearchResult)
 
     def services(
         self,
@@ -16346,56 +16911,6 @@ class Workspace(Type):
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
 
-    async def uninstall(
-        self,
-        name: str,
-        *,
-        here: bool | None = False,
-    ) -> str:
-        """Uninstall a module from the workspace, writing dagger.toml to the
-        host.
-
-        Parameters
-        ----------
-        name:
-            Name of the installed module entry to remove.
-        here:
-            Write to the workspace config directory at the workspace cwd.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("name", name),
-            Arg("here", here, False),
-        ]
-        _ctx = self._select("uninstall", _args)
-        return await _ctx.execute(str)
-
-    def update(self) -> Changeset:
-        """Refresh workspace-managed state and return the resulting changeset.
-
-        Currently this refreshes existing lockfile entries only.
-
-        .. caution::
-            Experimental: Experimental workspace update API currently
-            refreshes existing lockfile entries only.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("update", _args)
-        return Changeset(_ctx)
-
     def with_changes(self, changes: Changeset) -> Self:
         """Return this workspace with a changeset applied, without mutating the
         source.
@@ -16409,6 +16924,163 @@ class Workspace(Type):
             Arg("changes", changes),
         ]
         _ctx = self._select("withChanges", _args)
+        return Workspace(_ctx)
+
+    def with_config_env(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a named config environment created.
+
+        Parameters
+        ----------
+        name:
+            Environment name.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withConfigEnv", _args)
+        return Workspace(_ctx)
+
+    def with_config_value(
+        self,
+        key: str,
+        value: str,
+        *,
+        values: list[str] | None = None,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a configuration value written.
+
+        Parameters
+        ----------
+        key:
+            Dotted key path.
+        value:
+            Value to set. Bools, integers, and comma-separated arrays are
+            auto-detected.
+        values:
+            List value to set. Elements are stored verbatim, with no auto-
+            detection. Mutually exclusive with value.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("key", key),
+            Arg("value", value),
+            Arg("values", values, None),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withConfigValue", _args)
+        return Workspace(_ctx)
+
+    def with_init_client(
+        self,
+        path: str,
+        sdk: str,
+        module: str,
+        *,
+        args: JSON | None = None,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a generated API client initialized.
+
+        Parameters
+        ----------
+        path:
+            Workspace-relative output directory for the generated client.
+        sdk:
+            Workspace SDK name or module entry name to use.
+        module:
+            Workspace-relative path or canonical ref for the module the client
+            binds to.
+        args:
+            SDK-specific init arguments.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sdk", sdk),
+            Arg("module", module),
+            Arg("args", args, None),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withInitClient", _args)
+        return Workspace(_ctx)
+
+    def with_init_module(
+        self,
+        name: str,
+        sdk: str,
+        *,
+        path: str | None = "",
+        source: str | None = "",
+        include: list[str] | None = None,
+        args: JSON | None = None,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a new module initialized.
+
+        Parameters
+        ----------
+        name:
+            Name of the new module.
+        sdk:
+            Workspace SDK name or module entry name to use.
+        path:
+            Workspace-relative path for the new module.
+        source:
+            Source subpath within the new module.
+        include:
+            Additional include patterns for the module.
+        args:
+            SDK-specific init arguments.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("sdk", sdk),
+            Arg("path", path, ""),
+            Arg("source", source, ""),
+            Arg("include", [] if include is None else include, []),
+            Arg("args", args, None),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withInitModule", _args)
+        return Workspace(_ctx)
+
+    def with_module(
+        self,
+        ref: str,
+        *,
+        name: str | None = "",
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a module installed in its config.
+
+        Parameters
+        ----------
+        ref:
+            Module reference to install.
+        name:
+            Override name for the installed module entry.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("ref", ref),
+            Arg("name", name, ""),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withModule", _args)
         return Workspace(_ctx)
 
     def with_new_directory(self, path: str, source: Directory) -> Self:
@@ -16456,6 +17128,133 @@ class Workspace(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
+        return Workspace(_ctx)
+
+    def with_sdk(
+        self,
+        ref: str,
+        *,
+        name: str | None = "",
+        here: bool | None = False,
+        as_sdk_name: str | None = "",
+    ) -> Self:
+        """Return this workspace with an SDK installed in its config.
+
+        Parameters
+        ----------
+        ref:
+            SDK module reference to install.
+        name:
+            Override name for the installed SDK entry.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        as_sdk_name:
+            User-facing SDK name to persist under `[modules.<name>.as-sdk]
+            name = ...`.
+        """
+        _args = [
+            Arg("ref", ref),
+            Arg("name", name, ""),
+            Arg("here", here, False),
+            Arg("asSdkName", as_sdk_name, ""),
+        ]
+        _ctx = self._select("withSDK", _args)
+        return Workspace(_ctx)
+
+    def with_updated_lock(self) -> Self:
+        """Return this workspace with refreshed lockfile state."""
+        _args: list[Arg] = []
+        _ctx = self._select("withUpdatedLock", _args)
+        return Workspace(_ctx)
+
+    def without_config_env(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a named config environment removed.
+
+        Parameters
+        ----------
+        name:
+            Environment name.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withoutConfigEnv", _args)
+        return Workspace(_ctx)
+
+    def without_config_value(
+        self,
+        key: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a configuration value removed.
+
+        Errors when the key is not currently set.
+
+        Parameters
+        ----------
+        key:
+            Dotted key path (e.g. modules.greeter.settings.greeting).
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("key", key),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withoutConfigValue", _args)
+        return Workspace(_ctx)
+
+    def without_module(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with a module removed from its config.
+
+        Parameters
+        ----------
+        name:
+            Name of the installed module entry to remove.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withoutModule", _args)
+        return Workspace(_ctx)
+
+    def without_sdk(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> Self:
+        """Return this workspace with an SDK removed from its config.
+
+        Parameters
+        ----------
+        name:
+            Name of the installed SDK entry to remove.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("withoutSDK", _args)
         return Workspace(_ctx)
 
     def with_(self, cb: Callable[["Workspace"], "Workspace"]) -> "Workspace":
@@ -16814,6 +17613,25 @@ class WorkspaceModuleSetting(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
+    async def is_list(self) -> bool:
+        """Whether the setting accepts a list of values.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("isList", _args)
+        return await _ctx.execute(bool)
+
     async def key(self) -> str:
         """The setting key.
 
@@ -16855,6 +17673,94 @@ class WorkspaceModuleSetting(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class WorkspaceSDK(Type):
+    """An installed SDK: a module marked for scaffolding other modules and
+    clients."""
+
+    async def clients(self) -> list[WorkspaceModule]:
+        """Clients generated with this SDK."""
+        _args: list[Arg] = []
+        _ctx = self._select("clients", _args)
+        return await _ctx.execute_object_list(WorkspaceModule)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceSDK.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def modules(self) -> list[WorkspaceModule]:
+        """Modules authored with this SDK."""
+        _args: list[Arg] = []
+        _ctx = self._select("modules", _args)
+        return await _ctx.execute_object_list(WorkspaceModule)
+
+    async def name(self) -> str:
+        """The user-facing SDK name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def ref(self) -> str:
+        """The module reference this SDK was installed from.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("ref", _args)
         return await _ctx.execute(str)
 
 
@@ -16926,6 +17832,11 @@ __all__ = [
     "InputTypeDef",
     "InterfaceTypeDef",
     "JSONValue",
+    "LLMContentBlock",
+    "LLMContentBlockInput",
+    "LLMContentBlockKind",
+    "LLMMessage",
+    "LLMMessageRole",
     "LLMTokenUsage",
     "Label",
     "ListTypeDef",
@@ -16968,5 +17879,6 @@ __all__ = [
     "WorkspaceMigrationStep",
     "WorkspaceModule",
     "WorkspaceModuleSetting",
+    "WorkspaceSDK",
     "dag",
 ]
