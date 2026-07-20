@@ -1,10 +1,15 @@
 package core
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func TestSSHFSCommandArgsSecure(t *testing.T) {
@@ -174,4 +179,18 @@ func TestSSHFSSourceForURLRejectsInvalidEndpoint(t *testing.T) {
 			require.ErrorContains(t, err, tc.wantErr)
 		})
 	}
+}
+
+func TestRunSSHFSVolumeCleanupLogsError(t *testing.T) {
+	var logs bytes.Buffer
+	ctx := slog.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&logs, nil)))
+	wantErr := errors.New("cleanup failed")
+
+	err := runSSHFSVolumeCleanup(ctx, func() error {
+		return wantErr
+	})
+
+	require.ErrorIs(t, err, wantErr)
+	require.Contains(t, logs.String(), "failed to clean up SSHFS volume")
+	require.Contains(t, logs.String(), wantErr.Error())
 }

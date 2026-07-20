@@ -20,6 +20,15 @@ func TestParseSSHFSVolumeEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "example.com", hostAlias)
 
+	for _, endpoint := range []string{
+		"sshfs://git:hunter2@example.com/srv/repo",
+		"sshfs://git:@example.com/srv/repo",
+	} {
+		_, _, err := parseSSHFSVolumeEndpoint(endpoint)
+		require.EqualError(t, err, "SSHFS endpoint must not include a password")
+		require.NotContains(t, err.Error(), "hunter2")
+	}
+
 	for _, tc := range []string{
 		"",
 		"ssh://git@example.com/srv/repo",

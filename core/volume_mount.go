@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func prepareExecVolumeMount(cfg *execVolumeMountConfig) (bkcache.Mountable, error) {
@@ -85,7 +86,7 @@ func mountSSHFSVolume(ctx context.Context, readonly bool, cfg *SSHFSVolumeConfig
 	release := releaseService
 	defer func() {
 		if rerr != nil && release != nil {
-			_ = release()
+			_ = runSSHFSVolumeCleanup(ctx, release)
 		}
 	}()
 
@@ -154,11 +155,14 @@ func mountSSHFSVolume(ctx context.Context, readonly bool, cfg *SSHFSVolumeConfig
 	if readonly {
 		bindOptions = append(bindOptions, "ro")
 	}
-	return []ctrdmount.Mount{{
+	mounts := []ctrdmount.Mount{{
 		Type:    "bind",
 		Source:  mountDir,
 		Options: bindOptions,
-	}}, release, nil
+	}}
+	return mounts, func() error {
+		return runSSHFSVolumeCleanup(ctx, release)
+	}, nil
 }
 
 type sshfsCommandConfig struct {
@@ -371,6 +375,16 @@ func callCleanup(cleanup func() error) error {
 		return nil
 	}
 	return cleanup()
+}
+
+// Mount releaser errors are not propagated after an exec completes, so log
+// SSHFS cleanup failures here while still returning them to the caller.
+func runSSHFSVolumeCleanup(ctx context.Context, cleanup func() error) error {
+	err := callCleanup(cleanup)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to clean up SSHFS volume", "error", err)
+	}
+	return err
 }
 
 func formatCommandStderr(stderr []byte) string {

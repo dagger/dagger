@@ -112,6 +112,9 @@ func parseSSHFSVolumeEndpoint(endpoint string) (string, string, error) {
 	if u.User == nil || u.User.Username() == "" {
 		return "", "", fmt.Errorf("SSHFS endpoint must include a user")
 	}
+	if _, hasPassword := u.User.Password(); hasPassword {
+		return "", "", fmt.Errorf("SSHFS endpoint must not include a password")
+	}
 	if u.Path == "" || u.Path[0] != '/' {
 		return "", "", fmt.Errorf("SSHFS endpoint must include an absolute path")
 	}
