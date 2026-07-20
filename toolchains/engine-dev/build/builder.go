@@ -161,7 +161,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	}
 
 	ctr = ctr.
-		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
+		WithSymlink("/usr/bin/dial-stdio", "/usr/bin/buildctl").
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
 
 	if err := eg.Wait(); err != nil {
