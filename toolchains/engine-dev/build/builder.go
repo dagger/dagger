@@ -96,7 +96,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		// for git
 		"git", "openssh-client",
 		// for SSHFS-backed volumes
-		"sshfs", "fuse3",
+		"fuse3", "glib",
 		// for compression/decompression, containerd prefers igzip from the isa-l package as it's fastest
 		"isa-l", "pigz", "xz",
 		// for CNI (use nft variants for compatibility with kernels lacking legacy xtables)
@@ -129,6 +129,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	}
 	bins := []binAndPath{
 		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
+		{path: "/usr/bin/sshfs", file: build.sshfsBin()},
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
@@ -245,6 +246,35 @@ func (build *Builder) runcBin() *dagger.File {
 	return buildCtr.
 		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=" + consts.RuncVersion + " -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
 		File("runc")
+}
+
+func (build *Builder) sshfsBin() *dagger.File {
+	// Wolfi's sshfs package currently lags upstream at 3.7.4, so build the
+	// known-good release from source. Prefer the Wolfi package again once it
+	// catches up.
+	src := dag.
+		Git("https://github.com/libfuse/sshfs.git").
+		Tag("sshfs-" + consts.SSHFSVersion).
+		Tree()
+
+	return dag.
+		Wolfi().
+		Container(dagger.WolfiContainerOpts{
+			Packages: []string{
+				"build-base",
+				"ca-certificates-bundle",
+				"coreutils",
+				"fuse3-dev",
+				"glib-dev",
+				"meson",
+			},
+			Arch: build.platformSpec.Architecture,
+		}).
+		WithMountedDirectory("/src", src).
+		WithWorkdir("/src").
+		WithExec([]string{"meson", "setup", "build", "--buildtype=release"}).
+		WithExec([]string{"meson", "compile", "-C", "build"}).
+		File("/src/build/sshfs")
 }
 
 func (build *Builder) qemuBins(ctx context.Context) ([]*dagger.File, error) {
