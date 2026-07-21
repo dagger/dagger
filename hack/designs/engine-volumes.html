@@ -45,7 +45,7 @@
       .shell { display:block; }
       nav { position:relative; height:auto; border-right:0; border-bottom:1px solid var(--line); padding:1rem 1.2rem; columns:2; }
       nav strong { column-span:all; }
-      main { padding:2.2rem 1.2rem 4rem; }
+      main { padding:2.2rem 1.2rem 4rem; overflow-x:hidden; }
       h1 { font-size:2.15rem; }
       .meta { grid-template-columns:1fr; }
       .flow { grid-template-columns:1fr; }
@@ -74,7 +74,7 @@
       <div class="tag">Design proposal</div>
       <h1>Engine-managed host volumes</h1>
       <p class="lede">Expose an operator-controlled directory beneath the Dagger engine state root as an opaque <code>Volume</code>, then recursively bind-mount it into containers. The feature is deliberately small: Dagger provides naming, safe containment, API plumbing, and mount lifecycle; the engine operator owns the backing storage and its lifecycle.</p>
-      <div class="meta"><div><span>Status</span>Design review draft</div><div><span>Base</span><code>upstream/main@9e860eaa45db</code></div><div><span>Scope</span>Design only; no implementation</div></div>
+      <div class="meta"><div><span>Status</span>Converged; awaiting Erik review</div><div><span>Base</span><code>upstream/main@9e860eaa45db</code></div><div><span>Scope</span>Design only; no implementation</div></div>
       <div class="callout decision"><strong>Decision vocabulary.</strong> “Agreed” marks an explicit decision from the direct Erik discussion. “Recommended” marks an implementation conclusion grounded in current code but not explicitly decided. “Open” is genuinely awaiting a human choice.</div>
     </header>
 
