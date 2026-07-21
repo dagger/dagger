@@ -1334,59 +1334,81 @@ func (srv *Server) getOrInitClient(
 	}
 
 	return client, func() error {
-		if clientID != sess.mainClientCallerID {
-			client.stateMu.Lock()
-			client.activeCount--
-			activeCount := client.activeCount
-			client.stateMu.Unlock()
-
-			if activeCount > 0 {
-				return nil
-			}
-
-			slog.With(
-				"sessionID", sess.sessionID,
-				"clientID", client.clientID,
-			).Info("all client connections closed")
-			return nil
-		}
-
-		// Main client cleanup. Take lifecycleMu BEFORE client.stateMu (matching
-		// getOrInitClient's order) and hold it across the activeCount zero-check
-		// and the teardown decision, so a concurrent getOrInitClient (which bumps
-		// activeCount under lifecycleMu) cannot slip a new connection in between
-		// the check and removeDaggerSession.
-		sess.lifecycleMu.Lock()
-
-		client.stateMu.Lock()
-		client.activeCount--
-		activeCount := client.activeCount
-		client.stateMu.Unlock()
-
-		if activeCount > 0 {
-			sess.lifecycleMu.Unlock()
-			return nil
-		}
-
-		slog.With(
-			"sessionID", sess.sessionID,
-			"clientID", client.clientID,
-		).Info("all client connections closed")
-
-		if sess.state.Load() != sessionStateInitialized {
-			// Already removed, or never fully initialized: nothing to tear down.
-			sess.lifecycleMu.Unlock()
-			return nil
-		}
-
-		err := srv.removeDaggerSession(ctx, sess)
-		sess.lifecycleMu.Unlock()
-		// Drop the tombstone now that teardown is complete and lifecycleMu is
-		// released (pointer-conditional, so a fresh same-id session is never
-		// deleted).
-		srv.deleteSession(sess)
-		return err
+		return srv.releaseClientConnection(ctx, sess, client)
 	}, nil
+}
+
+// releaseClientConnection is the per-request cleanup for a connection obtained
+// via getOrInitClient. When the main client's last connection closes it only
+// SCHEDULES teardown (reapDaggerSession) rather than running it: this cleanup
+// runs in the request handler before the response is flushed — typically the
+// main client's /shutdown POST — and the client enforces a hard budget
+// (default 10s) on that response, while teardown is unbounded (the dagql cache
+// release alone is proportional to the session's cache footprint).
+func (srv *Server) releaseClientConnection(ctx context.Context, sess *daggerSession, client *daggerClient) error {
+	client.stateMu.Lock()
+	client.activeCount--
+	activeCount := client.activeCount
+	client.stateMu.Unlock()
+
+	if activeCount > 0 {
+		return nil
+	}
+
+	slog.With(
+		"sessionID", sess.sessionID,
+		"clientID", client.clientID,
+	).Info("all client connections closed")
+
+	if client.clientID != sess.mainClientCallerID {
+		return nil
+	}
+
+	// The teardown decision itself is (re-)made inside reapDaggerSession under
+	// lifecycleMu, so a concurrent getOrInitClient (which bumps activeCount
+	// under lifecycleMu) either lands before the reap and aborts it, or
+	// observes the removed tombstone and retries against a fresh session.
+	go srv.reapDaggerSession(context.WithoutCancel(ctx), sess, client)
+	return nil
+}
+
+// reapDaggerSession tears down a session in the background after the main
+// client's last connection closed. It re-checks the teardown conditions under
+// lifecycleMu because the session may have changed since the disconnect that
+// scheduled it: a reconnected main client abandons the reap (the next last
+// disconnect schedules a fresh one), and an already-removed session (a
+// concurrent reap or GracefulStop won the race) is left alone.
+func (srv *Server) reapDaggerSession(ctx context.Context, sess *daggerSession, mainClient *daggerClient) {
+	sess.lifecycleMu.Lock()
+
+	if sess.state.Load() != sessionStateInitialized {
+		// Already removed, or never fully initialized: nothing to tear down.
+		sess.lifecycleMu.Unlock()
+		return
+	}
+
+	mainClient.stateMu.RLock()
+	activeCount := mainClient.activeCount
+	mainClient.stateMu.RUnlock()
+	if activeCount > 0 {
+		// The main client reconnected before this reap ran; the session is
+		// live again.
+		sess.lifecycleMu.Unlock()
+		return
+	}
+
+	err := srv.removeDaggerSession(ctx, sess)
+	sess.lifecycleMu.Unlock()
+	// Drop the tombstone now that teardown is complete and lifecycleMu is
+	// released (pointer-conditional, so a fresh same-id session is never
+	// deleted).
+	srv.deleteSession(sess)
+	if err != nil {
+		slog.Error("session teardown failed",
+			"sessionID", sess.sessionID,
+			"error", err,
+		)
+	}
 }
 
 // ServeHTTP serves clients directly hitting the engine API (i.e. main client callers, not nested execs like module functions)
