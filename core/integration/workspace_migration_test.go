@@ -29,12 +29,6 @@ func TestWorkspaceMigration(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceMigrationSuite{})
 }
 
-// materializeModuleFiles runs codegen and exports the module's generated
-// files into the container: TOML modules don't regenerate at runtime.
-func materializeModuleFiles(refString string) dagger.WithContainerFunc {
-	return daggerQuery(`{moduleSource(refString:%q){generatedContextDirectory{export(path:".")}}}`, refString)
-}
-
 // TestWorkspaceMigratePreviewAndApply should cover the main CLI lifecycle:
 // preview via the workspace `migrate` API (non-mutating) and apply via
 // `dagger setup --auto-apply`.
