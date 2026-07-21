@@ -43,13 +43,21 @@
     },
     "EnvModuleOverlay": {
       "properties": {
+        "source": {
+          "type": "string",
+          "description": "Source, when set, installs a module scoped to this environment. It mirrors [modules.\u003cname\u003e.source]: a workspace-relative path or a canonical ref."
+        },
+        "pin": {
+          "type": "string",
+          "description": "Pin is the resolved version for Source, mirroring [modules.\u003cname\u003e.pin]."
+        },
         "settings": {
           "type": "object"
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "EnvModuleOverlay is the environment-specific overlay for one installed module."
+      "description": "EnvModuleOverlay is the environment-specific overlay for one module."
     },
     "EnvOverlay": {
       "properties": {
