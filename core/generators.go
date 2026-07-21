@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -80,6 +81,15 @@ type GeneratorGroup struct {
 	// an unscoped 'dagger generate' (empty when strict, or when every module
 	// loaded). Surfaced on the API so the CLI can warn and honor --require-load.
 	LoadFailures []string `json:"loadFailures,omitempty"`
+	// WorkspaceClientID is the ID of the client that owns the workspace these
+	// generators run for. Running the generators restores this client's context
+	// so the SDK codegen functions receive that workspace: the generator
+	// framework is trusted core code acting on behalf of the workspace owner, and
+	// unlike a user module->dependency call it is allowed to hand the workspace
+	// to the SDK it drives. Without this, a nested run (a module invoking
+	// workspace.generators().run()) would execute in the calling module's runtime
+	// client, where workspace auto-injection is disabled.
+	WorkspaceClientID string `json:"workspaceClientID,omitempty"`
 }
 
 var _ dagql.PersistedObject = (*Generator)(nil)
@@ -101,10 +111,11 @@ type persistedGeneratorObjectPayload struct {
 }
 
 type persistedGeneratorGroupPayload struct {
-	Tree         persistedModTree            `json:"tree"`
-	NodeID       int                         `json:"nodeID,omitempty"`
-	Generators   []persistedGeneratorPayload `json:"generators,omitempty"`
-	LoadFailures []string                    `json:"loadFailures,omitempty"`
+	Tree              persistedModTree            `json:"tree"`
+	NodeID            int                         `json:"nodeID,omitempty"`
+	Generators        []persistedGeneratorPayload `json:"generators,omitempty"`
+	LoadFailures      []string                    `json:"loadFailures,omitempty"`
+	WorkspaceClientID string                      `json:"workspaceClientID,omitempty"`
 }
 
 func NewGeneratorGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*GeneratorGroup, error) {
@@ -140,9 +151,32 @@ func (gg *GeneratorGroup) List(ctx context.Context) []*Generator {
 	return gg.Generators
 }
 
+// withWorkspaceClientContext restores the owning workspace client's metadata so
+// generator runs resolve their workspace against that client rather than an
+// intervening module runtime. It is a no-op when no owning client is recorded.
+func (gg *GeneratorGroup) withWorkspaceClientContext(ctx context.Context) (context.Context, error) {
+	if gg.WorkspaceClientID == "" {
+		return ctx, nil
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	clientMetadata, err := query.SpecificClientMetadata(ctx, gg.WorkspaceClientID)
+	if err != nil {
+		return nil, fmt.Errorf("get workspace client metadata: %w", err)
+	}
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+}
+
 // Run all the generators in the group
 func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 	gg = gg.Clone()
+
+	ctx, err := gg.withWorkspaceClientContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	jobs := parallel.New().WithContextualTracer(true)
 	for _, generator := range gg.Generators {
@@ -343,10 +377,11 @@ func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql
 		generatorPayloads = append(generatorPayloads, generatorPayload)
 	}
 	payload, err := json.Marshal(persistedGeneratorGroupPayload{
-		Tree:         tree.tree,
-		NodeID:       nodeID,
-		Generators:   generatorPayloads,
-		LoadFailures: gg.LoadFailures,
+		Tree:              tree.tree,
+		NodeID:            nodeID,
+		Generators:        generatorPayloads,
+		LoadFailures:      gg.LoadFailures,
+		WorkspaceClientID: gg.WorkspaceClientID,
 	})
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted generator group payload: %w", err)
@@ -386,9 +421,10 @@ func (*GeneratorGroup) DecodePersistedObject(
 		generators = append(generators, generator)
 	}
 	return &GeneratorGroup{
-		Node:         node,
-		Generators:   generators,
-		LoadFailures: persisted.LoadFailures,
+		Node:              node,
+		Generators:        generators,
+		LoadFailures:      persisted.LoadFailures,
+		WorkspaceClientID: persisted.WorkspaceClientID,
 	}, nil
 }
 

@@ -324,12 +324,13 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/rust/",
 			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.RustSDKDev().Release(ctx, tag, cargoRegistryToken, dagger.RustSDKDevReleaseOpts{
-					CargoRegistryIndex: cargoRegistryIndex,
-				})
+				return dag.RustSDKDev(dagger.RustSDKDevOpts{Workspace: r.Workspace}).
+					Release(ctx, tag, cargoRegistryToken, dagger.RustSDKDevReleaseOpts{
+						CargoRegistryIndex: cargoRegistryIndex,
+					})
 			},
 			dryRun: func(ctx context.Context) error {
-				return dag.RustSDKDev().ReleaseDryRun(ctx)
+				return dag.RustSDKDev(dagger.RustSDKDevOpts{Workspace: r.Workspace}).ReleaseDryRun(ctx)
 			},
 		},
 		{
