@@ -1,27 +1,29 @@
-#!/usr/bin/env -S dagger shell -M
+#!/usr/bin/env -S dagger --x-release 1.0.0-beta.7 shell
 
 # hack/build builds the engine and cli from local code, and additionally starts
 # the engine in the host's docker runtime.
-
-# HACK: strip "build" from the script path to get the parent module
-.cd ${0%/build}/..
+#
+# Pinned to a released v1.0 dagger via --x-release so it can drive the v1.0
+# workspace (dagger.toml) regardless of the dagger version installed on the
+# host. Run from the repo root: the workspace is discovered by walking up from
+# the working directory (hack/dev handles this for you).
 
 CONTAINER=${_EXPERIMENTAL_DAGGER_DEV_CONTAINER:-dagger-engine.dev}
 VOLUME=$CONTAINER
 IMAGE=${_EXPERIMENTAL_DAGGER_DEV_IMAGE:-localhost/dagger-engine.dev}
 
-toolchains/cli-dev --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" |\
+cli --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" |\
     dev-binaries --platform=current |\
     export ./bin &
 cli_pid=$!
 
-toolchains/engine-dev |\
+engine-dev |\
     container ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
     as-tarball --forced-compression=gzip |\
     export ./bin/engine.tar &
 engine_pid=$!
 
-toolchains/engine-dev |\
+engine-dev |\
     # HACK: /var/run/docker.sock is a linux default
     load-to-docker ${DOCKER_HOST:-/var/run/docker.sock} \
         ${IMAGE:+--name=${IMAGE-}} \
