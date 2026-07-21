@@ -1,4 +1,6 @@
 type Test {
+  let message: String! = "hello from field"
+
   pub containerEcho(stringArg: String! = "Hello Self Calls"): Container! {
     Dagger.container.from("alpine:latest").withExec(["echo", stringArg])
   }
@@ -9,5 +11,65 @@ type Test {
 
   pub printDefault: String! {
     test.containerEcho.stdout
+  }
+
+  # message is a computed field so it can be read back off a self-returned Test.
+  pub getMessage: String! {
+    message
+  }
+
+  # fresh self-calls the module's own constructor (`test`). A self-call yields
+  # the module's own type as it lives in the runtime schema — a Dagger.Test,
+  # which carries a GraphQL id — so the return is declared Dagger.Test! rather
+  # than the bare local Test!. The self-call return travels as the object's
+  # GraphQL ID (a string), which the runtime must load back into a Test object
+  # rather than choke on the raw ID string. This mirrors tui-qa's `stop`, which
+  # returns `tuiQa`.
+  pub fresh: Dagger.Test! {
+    test
+  }
+
+  # selfMessage exercises reading a field back off the self-returned object,
+  # proving the loaded object is usable and not just a bare ID.
+  pub selfMessage: String! {
+    test.fresh.getMessage
+  }
+
+  # makeWidget constructs a Widget locally and returns the bare local Widget!.
+  # It's a plain function, so it's exposed through the API.
+  pub makeWidget(label: String!): Widget! {
+    Widget(label)
+  }
+
+  # widget self-calls makeWidget *through the API* (test.makeWidget). A self-call
+  # yields the module's own type as it lives in the runtime schema — a namespaced
+  # Dagger.TestWidget carrying a GraphQL id — so the return is annotated
+  # Dagger.TestWidget! rather than the bare local Widget!. Constructing it locally
+  # (Widget(label)) would only produce the bare Widget!; only an actual API call
+  # yields the Dagger.TestWidget. This proves self-call support extends beyond the
+  # module's main type.
+  pub widget(label: String!): Dagger.TestWidget! {
+    test.makeWidget(label: label)
+  }
+
+  # widgetLabel reads a field back off a self-returned secondary object,
+  # proving the loaded Widget is a usable object and not just a bare ID.
+  pub widgetLabel(label: String!): String! {
+    test.widget(label: label).getLabel
+  }
+}
+
+# Widget is a secondary object type (not the module's main type). It exists in
+# the runtime schema under the namespaced name TestWidget.
+type Widget {
+  let label: String! = "default label"
+
+  new(label: String!) {
+    self.label = label
+    self
+  }
+
+  pub getLabel: String! {
+    label
   }
 }

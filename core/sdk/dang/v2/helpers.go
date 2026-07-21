@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/iancoleman/strcase"
+
 	"github.com/dagger/dagger/core"
 	dangshared "github.com/dagger/dagger/core/sdk/dang/shared"
 	"github.com/dagger/dagger/dagql"
@@ -116,6 +119,19 @@ func evalDangSource(
 		var env dang.ValueScope
 		err = modCtx.Self().Mount(ctx, modCtx, func(path string) error {
 			modSrcDir := filepath.Join(path, modSource.Self().SourceSubpath)
+
+			// During the typedef/declaration phase (ModuleTypes) the schema
+			// handed to us is deps-only: it does not yet carry the module's own
+			// object/interface/enum types, because those are exactly what this
+			// pass produces. Self-call fields annotate their return as
+			// Dagger.<T> — the module's own type as it lives in the runtime
+			// schema, carrying a GraphQL id + Node, not the bare local type — so
+			// make every such name resolvable here by parsing the module source
+			// for its declared types. At runtime the served schema already
+			// includes the module's own types (Module.IncludeSelfInDeps), so
+			// this is a no-op then.
+			ensureModuleSelfTypes(intro.Schema, modSource.Self(), modSrcDir)
+
 			env, err = runSource(ctx, modSrcDir)
 			if err != nil {
 				return fmt.Errorf("run dir: %w", err)
@@ -128,6 +144,134 @@ func evalDangSource(
 
 		return withEnv(ctx, env)
 	})
+}
+
+// ensureModuleSelfTypes makes each of the module's own declared object,
+// interface, enum and scalar types resolvable as Dagger.<T> during the
+// deps-only declaration phase (ModuleTypes), where the schema does not yet
+// carry the module's own installed types — those are exactly what that pass
+// produces. Self-call fields declare their return as Dagger.<T> because a
+// self-call (e.g. `tuiQa`, or `test.fresh` returning the module's own type)
+// yields the type as it lives in the runtime schema (carrying a GraphQL id,
+// implementing Node), not the bare local type.
+//
+// The names are namespaced (via core.NamespaceObject) to match what the engine
+// installs and what the runtime schema exposes once Module.IncludeSelfInDeps is
+// in effect: the main object keeps the module's final name, secondary types are
+// module-prefixed (a `type Widget` in module `Test` becomes `TestWidget`).
+//
+// The synthesized types are only ever used for name resolution and typedef
+// references (via `withObject(name:)` / `withInterface(name:)`, which core then
+// namespaces consistently); they are never emitted as TypeDefs, so a minimal
+// shape suffices. Once the served runtime schema already carries the types
+// (Module.IncludeSelfInDeps), this is a no-op.
+func ensureModuleSelfTypes(schema *introspection.Schema, src *core.ModuleSource, modSrcDir string) {
+	if schema == nil || src == nil {
+		return
+	}
+	moduleName := src.ModuleName
+	if moduleName == "" {
+		moduleName = src.ModuleOriginalName
+	}
+	if moduleName == "" {
+		return
+	}
+
+	for _, localName := range moduleDeclaredTypeNames(modSrcDir, moduleName) {
+		schemaName := core.NamespaceObject(localName, moduleName, src.ModuleOriginalName)
+		if schema.Types.Get(schemaName) != nil {
+			continue
+		}
+		schema.Types = append(schema.Types, &introspection.Type{
+			Kind: introspection.TypeKindObject,
+			Name: schemaName,
+			Fields: []*introspection.Field{
+				{
+					Name: "id",
+					TypeRef: &introspection.TypeRef{
+						Kind: introspection.TypeKindNonNull,
+						OfType: &introspection.TypeRef{
+							Kind: introspection.TypeKindScalar,
+							Name: "ID",
+						},
+					},
+				},
+			},
+		})
+	}
+}
+
+// moduleDeclaredTypeNames parses the module's .dang source files and returns the
+// local names of every public top-level type declaration (object, interface,
+// enum, scalar). Only top-level declarations become module types in the schema,
+// so types nested inside a body are intentionally ignored. The main object type
+// — whose local name matches the module name — is always included even if the
+// source can't be parsed, so the common case keeps working. Parsing here is
+// best-effort: it drives name resolution only, and any genuine syntax error
+// surfaces later when the source is actually declared/run.
+func moduleDeclaredTypeNames(modSrcDir, moduleName string) []string {
+	seen := map[string]struct{}{}
+	var names []string
+	add := func(name string) {
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+
+	// The main object's local name matches the module name (capitalized camel
+	// case); NamespaceObject collapses it to the module's final name. Seed it
+	// unconditionally so a self-call returning the main type resolves even if
+	// the rest of the source fails to parse.
+	add(strcase.ToCamel(moduleName))
+
+	entries, err := os.ReadDir(modSrcDir)
+	if err != nil {
+		slog.Debug("ensureModuleSelfTypes: read module dir", "dir", modSrcDir, "error", err)
+		return names
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".dang" {
+			continue
+		}
+		root, err := dang.ParseFile(filepath.Join(modSrcDir, entry.Name()))
+		if err != nil {
+			slog.Debug("ensureModuleSelfTypes: parse module file", "file", entry.Name(), "error", err)
+			continue
+		}
+		file, ok := root.(*dang.FileBlock)
+		if !ok {
+			continue
+		}
+		// Only top-level type declarations become module types in the schema;
+		// types declared inside a body are not hoisted, so iterate the file's
+		// own forms rather than walking the AST recursively.
+		for _, form := range file.Forms {
+			switch decl := form.(type) {
+			case *dang.ObjectDecl:
+				if decl.Visibility >= dang.PublicVisibility && decl.Name != nil {
+					add(decl.Name.Name)
+				}
+			case *dang.InterfaceDecl:
+				if decl.Visibility >= dang.PublicVisibility && decl.Name != nil {
+					add(decl.Name.Name)
+				}
+			case *dang.EnumDecl:
+				if decl.Visibility >= dang.PublicVisibility && decl.Name != nil {
+					add(decl.Name.Name)
+				}
+			case *dang.ScalarDecl:
+				if decl.Visibility >= dang.PublicVisibility && decl.Name != nil {
+					add(decl.Name.Name)
+				}
+			}
+		}
+	}
+	return names
 }
 
 func runDangDirForModuleTypes(ctx context.Context, dirPath string) (dang.ValueScope, error) {
