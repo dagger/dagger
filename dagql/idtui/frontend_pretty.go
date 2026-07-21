@@ -5742,6 +5742,12 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 				cue = out.String(LLMPrompt + " ").Bold()
 			}
 			fmt.Fprint(out, cue.Background(termenv.ANSIBrightBlack))
+		case row.Span.LLMRole == telemetry.LLMRoleAssistant && row.Span.LLMTool == "":
+			// The assistant's reply/thinking opens with a blank separator line and
+			// re-emits its own indent + focus cue on the content line below (see
+			// the LLMRoleAssistant case in the next switch). Emitting the cue here
+			// too would strand a second, lone "❯ " on that blank separator line, so
+			// leave line 0 bare and let the content line carry the sole cue.
 		case focused:
 			fmt.Fprint(out, out.String(LLMPrompt+" ").Bold())
 		default:

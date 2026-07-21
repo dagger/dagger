@@ -1638,6 +1638,67 @@ func TestUserPromptLeadingGutterShaded(t *testing.T) {
 	})
 }
 
+// TestFocusedAssistantMessageSinglePrompt is a regression test for a doubled
+// "❯ " focus cue on a focused assistant message. The assistant's reply/thinking
+// opens with a blank separator line and then renders its content carrying the
+// focus cue; renderStep was emitting the cue twice -- once on that separator
+// line (via the shared shell-mode gutter switch) and again on the content line
+// -- stranding a lone "❯" on the blank line above the message. Only the content
+// line should carry the cue.
+func TestFocusedAssistantMessageSinglePrompt(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	userID := prettyTestSpanID(2)
+	asstID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second), Final: true},
+		{
+			ID: userID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+			Message: "received", LLMRole: "user", ParentID: rootID,
+			StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true,
+		},
+		{
+			ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
+			Message: "received", LLMRole: "assistant", ParentID: rootID,
+			StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	term := tuist.NewHeadlessTerminal(120, 60)
+	fe := newWithTerminal(io.Discard, db, term)
+	fe.profile = termenv.ANSI
+	fe.logs.Profile = termenv.ANSI
+	fe.shell = stubShellHandler{}
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+
+	setLog := func(id dagui.SpanID, text string) {
+		logs := NewVterm(termenv.ANSI)
+		logs.SetWidth(120)
+		_, _ = logs.WriteMarkdown([]byte(text + "\n"))
+		fe.logs.Logs[id] = logs
+	}
+	setLog(userID, "hello there")
+	setLog(asstID, "here is my reply")
+
+	// Focus the assistant reply so it renders with its "❯ " cue; keep the user
+	// prompt unfocused so its own gutter stays plain.
+	fe.autoFocus = false
+	fe.FocusedSpan = asstID
+	fe.recalculateViewLocked()
+
+	lines := strings.Split(strings.Join(fe.tui.RenderLines(), "\n"), "\n")
+	cues := 0
+	for _, l := range lines {
+		cues += strings.Count(stripANSICodes(l), LLMPrompt)
+	}
+	if cues != 1 {
+		t.Fatalf("expected exactly one %q focus cue for the focused assistant message, got %d:\n%s",
+			LLMPrompt, cues, visibleEscapes(strings.Join(lines, "\n")))
+	}
+}
+
 // TestUserPromptPaddedAndSeparatedFromTools verifies the live shell view sets
 // the user's prompt apart: a shaded (ANSIBrightBlack) blank line above and
 // below extends its block into a padded card, and a tool call that opens the
