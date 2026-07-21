@@ -84,7 +84,7 @@
       <p>For the default root, <code>engineVolume("datasets/models", subdir: "llama")</code> mounts <code>/var/lib/dagger/volumes/v1/datasets/models/fs/llama</code>. The engine lazily creates the named volume root through <code>fs</code> with mode <code>0755</code>; an explicitly selected subdirectory must already exist.</p>
       <h3>Concrete scenarios</h3><ul>
         <li><strong>Large local dataset.</strong> An operator bind-mounts a multi-terabyte disk at <code>.../volumes/v1/datasets/fs</code>. Workflows consume it without copying or snapshotting the tree.</li>
-        <li><strong>Grouped operator configuration.</strong> An operator bind-mounts one parent directory at <code>.../volumes/v1/team-a</code>, supplying many volumes such as <code>team-a/models</code> and <code>team-a/cache</code> without configuring a host mount per volume.</li>
+        <li><strong>Grouped operator configuration.</strong> An operator bind-mounts one parent directory at <code>.../volumes/v1/team-a</code>, supplying many volumes such as <code>team-a/models</code> and <code>team-a/cache</code> without configuring a host mount per volume. That parent contains the payload boundaries, for example <code>models/fs</code> and <code>cache/fs</code>.</li>
         <li><strong>Shared mutable tool state.</strong> Several containers mount the same named directory read-write and coordinate, if necessary, using the application’s own mechanisms. Dagger adds no locking.</li>
         <li><strong>Portable module.</strong> A main client constructs the volume and passes the opaque value to a module. The module can mount it but cannot construct an engine volume itself.</li>
       </ul>
@@ -133,8 +133,8 @@ out, err := dag.Container().From("alpine").
     WithExec([]string{"find", "/models", "-maxdepth", "1"}).Stdout(ctx)</code></pre>
       <h3>Address/CLI form <span class="tag open-tag">Recommended</span></h3>
       <pre><code>dagger call consume --data 'engine-volume://datasets/models?subdir=llama'</code></pre>
-      <p><code>Address.volume</code> parses the address for CLI custom <code>Volume</code> arguments, then calls the same constructor semantics. Unknown or repeated scalar query parameters are errors. URL host/path ambiguity must not produce two spellings for the same name; the implementation should define and test one canonical parser. The exact scheme spelling remains an open naming choice.</p>
-      <h3>Module behavior</h3><p>Module introspection omits both <code>Query.engineVolume</code> and the engine-volume branch of <code>Address.volume</code>; runtime resolvers also call <code>RequireMainClient</code>. Modules still receive <code>Volume</code> parameters and call <code>withMountedVolume</code>. This mirrors SSHFS’s product boundary and is explicitly not an authorization boundary.</p>
+      <p><code>Address.volume</code> parses the address for CLI custom <code>Volume</code> arguments, then calls the same constructor semantics. Unknown parameters are errors. Rejecting repeated scalar parameters is a recommendation—stricter than the current SSHFS parser—not an agreed requirement. URL host/path ambiguity must not produce two spellings for the same name; the implementation should define and test one canonical parser. The exact scheme spelling remains an open naming choice.</p>
+      <h3>Module behavior</h3><p>Module introspection scrubbing must add <code>Query.engineVolume</code>; <code>Address.volume</code> is already hidden from module introspection as a whole. The fields still exist in the served DagQL schema, so runtime resolvers also call <code>RequireMainClient</code>. Generated module SDKs omit them. Modules still receive <code>Volume</code> parameters and call <code>withMountedVolume</code>. This mirrors SSHFS’s product boundary and is explicitly not an authorization boundary.</p>
     </section>
 
     <section id="terms"><h2>5. Terminology and precise bind semantics</h2>
@@ -143,39 +143,41 @@ out, err := dag.Container().From("alpine").
       <dt><strong>Name</strong></dt><dd>One or more slash-separated components. Each component uses a conservative portable grammar (recommended: ASCII alphanumeric first, then ASCII alphanumeric, dot, underscore, or hyphen); empty, <code>.</code>, <code>..</code>, and reserved <code>fs</code> components are rejected.</dd>
       <dt><strong>Volume root</strong></dt><dd><code>&lt;namespace-root&gt;/&lt;name&gt;/fs</code>, lazily created if absent with <code>0755</code>.</dd>
       <dt><strong>Selected root</strong></dt><dd>The volume root plus an optional relative <code>subdir</code>. The subdirectory is payload navigation, not part of the volume name, and is never auto-created.</dd></dl>
-      <p>At exec preparation, the selected root becomes a containerd mount with bind type and <code>rbind</code>; <code>ro</code> is appended for a read-only container mount. Recursive bind makes operator-provided nested mount points visible. The engine adds no propagation mode in v1. The bind exists only for the exec/container lifetime; the backing directory persists.</p>
+      <p>At exec preparation, the selected root becomes a containerd mount with bind type and <code>rbind</code>; <code>ro</code> is appended for a read-only container mount. Recursive bind makes operator-provided nested mount points visible. On current Linux/runc semantics, <code>ro</code> applies to the top-level bind but is not recursively imposed on submounts brought in by <code>rbind</code>; those retain their operator-configured read/write state. The recommended v1 behavior is to document that limit rather than require kernel-dependent recursive-read-only machinery. The engine adds no propagation mode in v1. The bind exists only for the exec/container lifetime; the backing directory persists.</p>
+      <p>Engine-created roots are normally <code>root:root 0755</code>. A non-root container user can read them but cannot write until the operator arranges suitable ownership or permissions; Dagger does not infer or rewrite ownership.</p>
     </section>
 
     <section id="trust"><h2>6. Real trust and security boundary</h2>
       <p>The <strong>engine operator</strong> chooses what exists or is mounted beneath <code>volumes/v1</code>. That operator already controls the engine process, its state volume, privileges, and namespace. Dagger intentionally trusts this setup. A <strong>main client</strong> may select only a validated name and subdirectory within that operator-curated tree; it may not submit an arbitrary host path. A <strong>module</strong> cannot construct the capability but may use one passed by its caller.</p>
       <p>With a remote engine, “host” means the engine host/container namespace—not the CLI machine. An operator who exposes sensitive material beneath the namespace makes it selectable by main clients. This feature therefore belongs only on engines whose main clients are trusted for that capability. The module restriction improves product portability and intent; it is not an ACL and must not be described as one.</p>
-      <p>Path validation prevents accidental traversal and uses safe-root symlink resolution so the selected mount source resolves beneath its intended root. Symlinks <em>inside the mounted payload</em> retain ordinary filesystem behavior inside the container. Because the operator is trusted, v1 does not promise protection from an operator concurrently replacing path components between validation and mount; claiming adversarial multi-tenant TOCTOU safety would require descriptor/openat2-based mounting and a broader threat model.</p>
+      <p>Path validation prevents traversal and uses the existing continuity safe-root semantics: symlinks are resolved as if chrooted within the containment root, so absolute targets and <code>..</code> cannot escape it. An apparent outside target is clamped to an in-root path and may then fail as missing or the wrong type; it is not promised to produce a distinct “escape” error. Operators must use bind mounts—not symlinks—to redirect a volume hierarchy to storage outside <code>volumes/v1</code>. Symlinks <em>inside the mounted payload</em> retain ordinary filesystem behavior after the source has been safely selected. Because the operator is trusted, v1 does not promise protection from an operator concurrently replacing path components between validation and mount; claiming adversarial multi-tenant TOCTOU safety would require descriptor/openat2-based mounting and a broader threat model.</p>
+      <p>DagQL cache hits do not necessarily rerun a resolver. With stable identity, a hand-crafted module query matching a previously cached constructor call could receive that cached value without executing <code>RequireMainClient</code>. That is acceptable here precisely because construction hiding is a product boundary, not an authorization boundary.</p>
     </section>
 
     <section id="architecture"><h2>7. End-to-end architecture and flow</h2>
       <div class="flow"><div>Main client / CLI</div><div>DagQL constructor</div><div>Opaque Volume payload</div><div>Exec mount preparation</div><div>BuildKit executor / rbind</div></div>
       <ol><li>The SDK or <code>Address.volume</code> sends canonical <code>name</code> and optional <code>subdir</code>. No caller-host filesync or host service is involved.</li>
-      <li>The schema resolver enforces main-client use, validates canonical path syntax, and returns a persistable <code>Volume</code> whose backend payload contains layout version, name, and subdirectory—not an already-resolved live host path.</li>
+      <li>The schema resolver enforces main-client use, validates canonical path syntax, and returns a <code>Volume</code> that implements persisted-object encoding so it can participate in persistence closures. Its backend payload contains name and subdirectory—not an already-resolved live host path. Recording layout version in that payload is recommended but was not part of the explicit agreement.</li>
       <li><code>withMountedVolume</code> stores the opaque volume as an owned container dependency, exactly as for other volume backends.</li>
       <li>At exec time, <code>prepareExecVolumeMount</code> dispatches to the engine-volume backend. It derives the namespace from the server’s configured root, creates the named root if needed, safely resolves the selected source, verifies it is a directory, and returns a recursive bind mount.</li>
       <li>BuildKit’s gateway/executor mounts it into the exec namespace. Existing exec teardown unmounts the bind. There is no helper process, service, secret material, FUSE mount, or long-lived per-session resource to stop.</li></ol>
       <h3>Lifecycle and cancellation</h3><p>Construction is declarative and performs no mount. Cancellation before exec leaves at most the lazily created empty volume directory. Cancellation, client disconnect, exec failure, or engine shutdown after mounting follows the existing executor mount teardown; unmounting does not remove backing data. A later session can reuse the same recipe/name. Mount cleanup must be idempotent, but there is no backend-specific goroutine or process cleanup.</p>
-      <p>The constructor belongs to the engine/server surface, not the caller-host <code>Host</code> service: session/workspace services identify the caller machine, whereas this source is deliberately tied to the engine installation. Nested non-module main clients see the engine visible to that nested connection; module runtimes remain denied by <code>RequireMainClient</code>.</p>
+      <p>The constructor belongs to the engine/server surface, not the caller-host <code>Host</code> service: session/workspace services identify the caller machine, whereas this source is deliberately tied to the engine installation. <code>RequireMainClient</code> denies every same-session nested client, whether a module runtime or a nested CLI. A client that opens its own separate session is that session’s main client and may construct the volume.</p>
     </section>
 
     <section id="invariants"><h2>8. Ownership and invariants</h2>
       <table><thead><tr><th>Area</th><th>Invariant</th></tr></thead><tbody>
-        <tr><td>Identity</td><td>Canonical <code>name</code> and <code>subdir</code> identify a recipe. Equivalent alternate spellings are rejected, not normalized into aliases.</td></tr>
-        <tr><td>Containment</td><td>Name stays beneath <code>volumes/v1</code>; subdir stays beneath that volume’s <code>fs</code>. Absolute/traversal paths and symlink escapes fail before mount.</td></tr>
-        <tr><td>Creation</td><td>Engine creates namespace/name/<code>fs</code> at <code>0755</code> only if absent; it does not chmod, chown, replace, or repair existing operator objects. Selected subdir must exist and be a directory.</td></tr>
-        <tr><td>Read-only</td><td><code>withMountedVolume(readOnly: true)</code> adds <code>ro</code>. Default is read-write. The operator’s underlying filesystem may independently reject writes.</td></tr>
+        <tr><td>Identity</td><td>Canonical <code>name</code> and <code>subdir</code> identify a recipe. Rejecting rather than normalizing equivalent alternate spellings is the recommendation, not an explicit Erik decision.</td></tr>
+        <tr><td>Containment</td><td>Name stays beneath <code>volumes/v1</code>; subdir stays beneath that volume’s <code>fs</code>. Absolute/traversal syntax fails; symlinks resolve chroot-style within the appropriate containment root and cannot select an outside source.</td></tr>
+        <tr><td>Creation</td><td>Engine creates namespace/name/<code>fs</code> at <code>0755</code> only if absent. Preserving existing operator objects without chmod, chown, replacement, or repair is a recommended architectural consequence of operator ownership. Selected subdir must exist and be a directory.</td></tr>
+        <tr><td>Read-only</td><td><code>withMountedVolume(readOnly: true)</code> adds <code>ro</code>. Default is read-write. Under the recommended v1 semantics, the top-level bind is read-only but nested mounts retain their existing flags; the operator’s underlying filesystem may independently reject writes.</td></tr>
         <tr><td>Propagation</td><td>Mount is recursive; Dagger sets no propagation flag in v1. Nested mounts already visible in the engine namespace appear in the bind. Later mount events follow Linux propagation rules of the operator’s setup.</td></tr>
         <tr><td>Lifetime</td><td>Bind is prepared per exec and released with it. Backing storage is operator-owned and survives cancellation, disconnect, shutdown, and restart.</td></tr>
         <tr><td>Cache</td><td>No content read/hash/watch. Identical exec recipes may return a cached result despite backing mutations; cache-busted/new execs observe current contents. This matches agreed SSHFS semantics.</td></tr>
         <tr><td>Session</td><td>No <code>PerSessionInput</code>: there are no secret/service/caller resources. Persisted payload stores stable configuration, never a resolved mount path.</td></tr>
         <tr><td>Concurrency</td><td>Many execs may mount the same source. Directory creation tolerates already-exists races. Dagger supplies no data locking or serialization.</td></tr>
         <tr><td>Accounting</td><td>Not part of BuildKit snapshot GC or Dagger cache accounting. Resource use is visible to the operator’s filesystem tooling.</td></tr>
-        <tr><td>Platform</td><td>Linux bind-mount semantics are required. Unsupported workers fail clearly rather than silently copying.</td></tr>
+        <tr><td>Platform</td><td>The engine is Linux-only today; v1 relies on Linux bind-mount semantics and defines no copy fallback.</td></tr>
       </tbody></table>
     </section>
 
@@ -202,17 +204,16 @@ out, err := dag.Container().From("alpine").
     <section id="failure"><h2>11. Failure-mode matrix</h2>
       <table><thead><tr><th>Condition</th><th>User-visible result</th><th>Cleanup guarantee</th></tr></thead><tbody>
         <tr><td>Invalid/reserved name or non-canonical subdir</td><td>Constructor/address validation error naming the invalid field.</td><td>No directory or mount created.</td></tr>
-        <tr><td>Module calls constructor</td><td>Field absent from module SDK/schema; runtime attempt denied.</td><td>No side effect.</td></tr>
+        <tr><td>Module calls constructor</td><td>Field omitted from module introspection/generated SDK; an uncached runtime attempt is denied.</td><td>No side effect.</td></tr>
         <tr><td>Named root absent</td><td>Created through <code>fs</code> at <code>0755</code>; mount proceeds.</td><td>Directory persists by design.</td></tr>
         <tr><td>Existing component is wrong type / inaccessible</td><td>Exec preparation error with logical volume identity and underlying cause.</td><td>No active bind; existing object untouched.</td></tr>
         <tr><td>Requested subdir absent or not directory</td><td>Clear “subdir does not exist/is not a directory” error.</td><td>No auto-creation; no bind.</td></tr>
-        <tr><td>Symlink resolves outside allowed root</td><td>Containment error before mount.</td><td>No bind; no target mutation.</td></tr>
-        <tr><td>Read-only write</td><td>Normal filesystem permission/read-only error inside exec.</td><td>Bind released; backing unchanged by rejected write.</td></tr>
+        <tr><td>Symlink text points outside allowed root</td><td>Chroot-style resolution selects only the corresponding in-root path; if it is missing or invalid, that ordinary source error is returned.</td><td>No outside source is bound; no target mutation.</td></tr>
+        <tr><td>Read-only write</td><td>Write to the top-level filesystem fails normally. A nested operator mount may remain writable under the recommended v1 semantics.</td><td>Bind released; backing reflects only writes that its effective mount flags allowed.</td></tr>
         <tr><td>Underlying filesystem rejects write</td><td>Normal filesystem error inside exec.</td><td>Bind released; backing remains operator-owned.</td></tr>
         <tr><td>Cancellation/disconnect/exec failure</td><td>Existing Dagger cancellation or exec error.</td><td>Executor tears down bind; backing persists.</td></tr>
         <tr><td>Engine crashes</td><td>Client observes engine loss.</td><td>Kernel namespace teardown removes active bind; backing persists. No recovery daemon/process exists.</td></tr>
         <tr><td>Concurrent first use</td><td>Both users succeed if permissions permit.</td><td>Idempotent mkdir; neither removes shared directories.</td></tr>
-        <tr><td>Unsupported platform/worker</td><td>Explicit unsupported bind-mount/platform error.</td><td>No copy fallback and no persistent partial mount.</td></tr>
       </tbody></table>
     </section>
 
@@ -224,19 +225,19 @@ out, err := dag.Container().From("alpine").
     <section id="implementation"><h2>13. Detailed implementation map and coarse chunks</h2>
       <h3>Chunk 1 — complete backend behavior</h3>
       <p><strong>Meaningful increment:</strong> a main-client GraphQL call can construct, persist, mount, mutate, remount, and read an engine volume with correct containment and lifecycle.</p>
-      <ul><li><code>core/volume.go</code>: add an engine backend kind/config (layout version, canonical name, optional subdir), persisted encoding/decoding, dependency behavior, and stable identity. Do not add session dependencies.</li>
-      <li><code>core/schema/volume.go</code>: add version-gated <code>engineVolume</code>, validation, docs, and <code>RequireMainClient</code>. Prefer a shared validation helper with table tests.</li>
+      <ul><li><code>core/volume.go</code>: add an engine backend kind/config (canonical name, optional subdir, and recommended explicit layout version), persisted encoding/decoding, dependency behavior, and stable identity. Do not add session dependencies.</li>
+      <li><code>core/schema/volume.go</code>: add version-gated <code>engineVolume</code>, validation, docs, and <code>RequireMainClient</code>. Prefer a shared validation helper with table tests. Add <code>Query.engineVolume</code> to module-introspection scrubbing in <code>core/moddeps.go</code> in this same chunk.</li>
       <li><code>core/query.go</code> and <code>engine/server</code>: expose the configured engine state root through the narrowest core server interface needed; do not hard-code <code>/var/lib/dagger</code>.</li>
       <li><code>core/volume_mount.go</code>: backend dispatch; lazy <code>0755</code> creation; safe-root resolution using the established containerd continuity helper pattern; directory checks; <code>rbind</code> plus optional <code>ro</code>. Return an ordinary mountable whose unmount is owned by the executor.</li>
       <li>Focused <code>core/volume*_test.go</code> and <code>core/schema/volume_test.go</code>: persistence, dependency absence, canonical grammar, reserved <code>fs</code>, traversal/symlink containment, creation races, existing-mode preservation, mount options, and main-client gate.</li></ul>
-      <p><strong>Exit criteria:</strong> focused unit tests pass; an authentic core integration test proves live RW/RO behavior against an operator-mounted test source using the configured engine root; cancellation leaves no active exec mount and never removes payload.</p>
+      <p><strong>Exit criteria:</strong> focused unit tests pass; an authentic core integration test proves live RW/RO behavior—including the documented nested-mount limit—against an operator-mounted test source using the configured engine root; cancellation leaves no active exec mount and never removes payload. Generated SDKs are intentionally stale at this internal checkpoint and must be completed in chunk 2 before the branch is acceptance-ready.</p>
       <h3>Chunk 2 — complete user surfaces and acceptance</h3>
       <p><strong>Meaningful increment:</strong> users can pass the volume by SDK and CLI address, modules can consume but not construct it, and generated public surfaces are complete.</p>
       <ul><li><code>core/schema/address.go</code>, address tests, and <code>internal/cmd/dagger/flags*</code>: canonical engine-volume address parsing and CLI <code>Volume</code> argument behavior.</li>
       <li>Introspection/module filtering tests and test module fixtures: constructor hidden and runtime-denied; received volume usable.</li>
       <li><code>core/integration/volume_test.go</code>: local/dev-engine setup, grouped names, subdir semantics, remote-engine meaning, nested mount visibility, shared mutation, cache-hit versus cache-busted visibility, invalid/missing/symlink cases, concurrent reuse, disconnect/cancel, and unsupported cases where authentic and practical.</li>
       <li>Run <code>dagger generate</code>; commit required SDK/schema/reference outputs. Add concise operator-facing docs only if maintainers want them in the feature PR.</li></ul>
-      <p><strong>Exit criteria:</strong> generated diff is clean/reproducible; canonical focused gates pass; DCO and schema/version-gating checks pass; no mount/process/goroutine leak is observed. A human checkpoint confirms final constructor/address naming and operator UX before generated output is frozen.</p>
+      <p><strong>Exit criteria:</strong> generated diff is clean/reproducible; canonical focused gates pass; DCO and schema/version-gating checks pass; no mount leak is observed. A human checkpoint confirms final constructor/address naming and operator UX before generated output is frozen.</p>
       <h3>Reuse and review readiness</h3><p>Both chunks reuse the merged opaque Volume, container dependency, exec mount, module-filtering, address, and integration-test infrastructure. After chunk 2: rebase on fresh <code>upstream/main</code>, review the full generated diff, run only the canonical affected integration/generation gates first, then required CI. Avoid unrelated cleanup and do not split generated output from the behavior that requires it.</p>
     </section>
 
@@ -244,16 +245,16 @@ out, err := dag.Container().From("alpine").
       <p>Per Dagger’s engine-debugging doctrine, tests run through the dev engine with the default progress UI; raw engine logs and status are preserved before classifying any crash. Focused tests precede broad gates. The integration source must be a real path mounted into the dev engine’s <code>volumes/v1</code>, not a mocked mount list.</p>
       <table><thead><tr><th>Behavior</th><th>Authentic assertion</th></tr></thead><tbody>
         <tr><td>Local vs remote engine</td><td>Local test proves engine-side path. Remote case proves caller’s same-named local path is irrelevant and only operator-mounted engine storage is visible.</td></tr>
-        <tr><td>RW / RO / visibility</td><td>Write through container and observe on operator source; mutate source and observe from cache-busted exec; RO write fails.</td></tr>
-        <tr><td>Nested mounts</td><td>Mount a child filesystem beneath payload before exec and confirm <code>rbind</code> exposes it.</td></tr>
+        <tr><td>RW / RO / visibility</td><td>Write through container and observe on operator source; mutate source and observe from cache-busted exec; RO write to the top-level filesystem fails.</td></tr>
+        <tr><td>Nested mounts</td><td>Mount a child filesystem beneath payload before exec and confirm <code>rbind</code> exposes it; under the recommended v1 choice, verify and document that its own write state is retained.</td></tr>
         <tr><td>Creation/subdir</td><td>Absent named root becomes <code>0755</code>; existing mode remains; absent subdir errors without creation.</td></tr>
-        <tr><td>Path safety</td><td>Table-driven grammar/traversal tests plus engine integration with an escaping symlink; internal payload symlink behavior remains normal.</td></tr>
+        <tr><td>Path safety</td><td>Table-driven grammar/traversal tests plus engine integration proving an apparent escaping symlink is clamped to an in-root lookup; internal payload symlink behavior remains normal after source selection.</td></tr>
         <tr><td>Cache semantics</td><td>Identical exec may return cached old result after external mutation; cache-busted exec reads new data, matching SSHFS precedent.</td></tr>
-        <tr><td>Session/nesting</td><td>Reuse across separate sessions without session-resource handles; module consumes passed volume and cannot construct one; nested main-client behavior documented/tested where harness supports it.</td></tr>
+        <tr><td>Session/nesting</td><td>Reuse across separate sessions without session-resource handles; module consumes a passed volume; all same-session nested clients are denied constructor use where the harness supports an authentic assertion.</td></tr>
         <tr><td>Lifecycle</td><td>Cancel/disconnect an active exec, check mount disappearance, payload persistence, subsequent reuse; engine shutdown is covered at the strongest practical integration level without fragile host-global inspection.</td></tr>
         <tr><td>Concurrency</td><td>Concurrent first-use and concurrent readers/writers complete without engine lock/deadlock; application-level write ordering is not asserted.</td></tr>
       </tbody></table>
-      <p><strong>Likely focused commands (confirm against the implementation diff):</strong> Go unit packages for <code>./core</code>, <code>./core/schema</code>, introspection, and CLI flags; <code>dagger call engine-dev test --pkg ./core/integration --run TestEngineVolume</code>; relevant CLI integration; and <code>dagger call go-sdk generate diff-stats</code> after <code>dagger generate</code>. Required CI remains acceptance; local breadth does not replace it.</p>
+      <p><strong>Likely focused commands (confirm against the implementation diff):</strong> Go unit packages for <code>./core</code>, <code>./core/schema</code>, introspection, and CLI flags; <code>dagger api call engine-dev test --pkg ./core/integration --run 'TestVolume/TestEngineVolume.*'</code>; relevant CLI integration; and <code>dagger call go-sdk generate diff-stats</code> after <code>dagger generate</code>. Required CI remains acceptance; local breadth does not replace it.</p>
     </section>
 
     <section id="rollout"><h2>15. Rollout and PR strategy</h2>
@@ -264,7 +265,9 @@ out, err := dag.Container().From("alpine").
       <div class="callout open"><ol><li><strong>Public name and scheme.</strong> Confirm <code>engineVolume</code> and <code>engine-volume://</code>. Recommendation: use these direct names; alternatives such as “host volume” incorrectly imply the caller host.</li>
       <li><strong>Exact portable component grammar and limits.</strong> Recommendation: <code>[A-Za-z0-9][A-Za-z0-9._-]*</code>, reserve case-sensitive <code>fs</code>, cap each component at 255 bytes and the canonical name at a conservative 4096 bytes/path-limit-derived bound. The discussion agreed “conservative portable grammar” but not this exact regex/length.</li>
       <li><strong><code>subdir</code> grammar.</strong> Recommendation: accept canonical slash-separated relative filesystem components (same traversal bans), but do not reserve <code>fs</code> within payload. This was implied by “subdirectory of the volume,” not explicitly settled.</li>
-      <li><strong>Constructor timing.</strong> Recommendation: validate syntax at construction but create/resolve at exec preparation, preserving lazy Dagger semantics and avoiding a cached object containing a stale path. Erik explicitly chose lazy creation conceptually; exact timing was inferred.</li></ol></div>
+      <li><strong>Constructor timing.</strong> Recommendation: validate syntax at construction but create/resolve at exec preparation, preserving lazy Dagger semantics and avoiding a cached object containing a stale path. The discussion required creation when absent but did not decide timing.</li>
+      <li><strong>Recursive read-only.</strong> Recommendation: document that <code>rbind,ro</code> protects the top-level bind but not nested mounts in v1. Requiring recursive read-only would add <code>mount_setattr</code>/<code>rro</code> and kernel/runtime compatibility work for an operator-controlled edge. Erik should confirm the documented-limit choice.</li>
+      <li><strong>Symlink clamp versus strict rejection.</strong> Recommendation: use existing chroot-style safe-root resolution, which guarantees containment but clamps apparent escapes rather than diagnosing them specially. Strict rejection would be new machinery; Erik should confirm that the existing-helper semantics match his intent.</li></ol></div>
     </section>
 
     <section id="rejected"><h2>17. Rejected alternatives</h2>
@@ -286,10 +289,11 @@ out, err := dag.Container().From("alpine").
         <tr><td>Operator-backed <code>volumes/v1/name/fs</code> — Erik</td><td>Agreed</td><td>§1, §5</td><td>Configured-root integration</td></tr>
         <tr><td>Hierarchical names; parent grouping — Erik</td><td>Agreed</td><td>§1, §5</td><td>Grouped-name/operator bind test</td></tr>
         <tr><td>Portable grammar; ban <code>fs</code> — Erik accepted lead recommendations</td><td>Agreed, exact regex open</td><td>§5, §16</td><td>Validation tables</td></tr>
-        <tr><td>Containment and symlink safety — Erik</td><td>Agreed</td><td>§6, §8</td><td>Traversal + escaping-symlink tests</td></tr>
+        <tr><td>Containment and symlink safety — Erik; exact clamp behavior from current helper</td><td>Containment agreed; clamp recommended</td><td>§6, §8, §16</td><td>Traversal + clamped-symlink tests</td></tr>
         <tr><td>Optional subdir, not auto-created — Erik</td><td>Agreed</td><td>§1, §5</td><td>Existing/missing subdir integration</td></tr>
-        <tr><td>Absent named root created <code>0755</code> — Erik</td><td>Agreed</td><td>§5, §8</td><td>Mode/existing-preservation tests</td></tr>
+        <tr><td>Absent named root created <code>0755</code> — Erik; preserve existing operator objects — architectural inference</td><td>Creation agreed; preservation recommended</td><td>§5, §8</td><td>Mode/existing-preservation tests</td></tr>
         <tr><td>Recursive bind; no propagation policy — Erik</td><td>Agreed</td><td>§5, §8</td><td>Mount options + nested mount integration</td></tr>
+        <tr><td>Top-level <code>ro</code> does not recursively protect nested mounts — current Linux/runc behavior</td><td>Recommended v1 limitation; Erik confirmation open</td><td>§5, §8, §16</td><td>Top-level RO + nested-mount semantics integration</td></tr>
         <tr><td>Main-client constructor; module accepts; not security boundary — Erik</td><td>Agreed</td><td>§4, §6</td><td>Introspection and runtime gate tests</td></tr>
         <tr><td>Operator owns cleanup/pruning/config changes — Erik</td><td>Agreed</td><td>§3, §8</td><td>Persistence after cancel/restart</td></tr>
         <tr><td>No sharing/locking sophistication — Erik</td><td>Agreed</td><td>§3, §8</td><td>Concurrent reuse without ordering assertion</td></tr>
@@ -299,7 +303,7 @@ out, err := dag.Container().From("alpine").
         <tr><td>Address form for CLI — lead proposal accepted generally by Erik</td><td>Direction agreed; spelling open</td><td>§4, §16</td><td>Address/CLI tests</td></tr>
         <tr><td>Stable non-session recipe identity — lead inference from Erik caching decision and current architecture</td><td>Recommended</td><td>§8, §9</td><td>Persistence/dependency and cross-session tests</td></tr>
         <tr><td>Configured root, not hard-coded default — current server architecture</td><td>Required by code reality</td><td>§5, §13</td><td>Non-default-root test</td></tr>
-        <tr><td>Linux-only initial semantics — bind-mount architecture</td><td>Recommended</td><td>§3, §8</td><td>Platform guard/error test</td></tr>
+        <tr><td>Linux-only initial semantics — current engine architecture</td><td>Code reality</td><td>§3, §8</td><td>Documentation; no artificial platform test</td></tr>
       </tbody></table>
     </section>
     <footer>Prepared from the direct Erik design discussion and verified against Dagger <code>upstream/main@9e860eaa45dbcb4d216d85218b562f498fe803b8</code>, including the merged SSHFS implementation at <code>903e58303</code>. This document proposes design only.</footer>
