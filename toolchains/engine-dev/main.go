@@ -25,6 +25,8 @@ func New(
 	// "!.git",
 	// "!dagger.json",
 	// "!**/dagger.json",
+	// "!dagger.toml",
+	// "!**/dagger.toml",
 	// "!**/go.*",
 	// "!**/*.dang",
 	// "!core",
