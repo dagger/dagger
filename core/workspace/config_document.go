@@ -10,46 +10,18 @@ import (
 	neontoml "github.com/neongreen/mono/lib/toml"
 )
 
-// ConstructorArgHint captures a constructor-backed setting hint for a module.
-type ConstructorArgHint struct {
-	Name         string
-	TypeLabel    string
-	IsList       bool
-	Description  string
-	ExampleValue string
-}
-
 // UpdateConfigBytes rewrites config bytes while preserving existing comments
 // and formatting when a prior file exists.
 func UpdateConfigBytes(existingData []byte, cfg *Config) ([]byte, error) {
-	return UpdateConfigBytesWithHints(existingData, cfg, nil)
-}
-
-// UpdateConfigBytesWithHints rewrites config bytes while preserving existing
-// comments and formatting, then injects commented-out setting hints for the
-// specified modules.
-func UpdateConfigBytesWithHints(
-	existingData []byte,
-	cfg *Config,
-	hints map[string][]ConstructorArgHint,
-) ([]byte, error) {
 	if cfg == nil {
 		cfg = &Config{}
 	}
 
 	if len(existingData) == 0 {
-		out := SerializeConfig(cfg)
-		if len(hints) == 0 {
-			return out, nil
-		}
-		return insertWorkspaceSettingHintComments(out, cfg, hints), nil
+		return SerializeConfig(cfg), nil
 	}
 	if configRequiresQuotedPathSegments(cfg) {
-		out := SerializeConfig(cfg)
-		if len(hints) == 0 {
-			return out, nil
-		}
-		return insertWorkspaceSettingHintComments(out, cfg, hints), nil
+		return SerializeConfig(cfg), nil
 	}
 
 	doc, err := neontoml.Parse(existingData)
@@ -62,11 +34,7 @@ func UpdateConfigBytesWithHints(
 		return nil, fmt.Errorf("parse existing config state: %w", err)
 	}
 	if configRequiresQuotedPathSegments(existingCfg) {
-		out := SerializeConfig(cfg)
-		if len(hints) == 0 {
-			return out, nil
-		}
-		return insertWorkspaceSettingHintComments(out, cfg, hints), nil
+		return SerializeConfig(cfg), nil
 	}
 
 	desiredValues := configDocumentMap(cfg)
@@ -91,10 +59,7 @@ func UpdateConfigBytesWithHints(
 	if err != nil {
 		return nil, err
 	}
-	if len(hints) == 0 {
-		return out, nil
-	}
-	return insertWorkspaceSettingHintComments(out, cfg, hints), nil
+	return out, nil
 }
 
 // deleteConfigDocumentPath removes the value at parts from the raw document,
@@ -491,114 +456,6 @@ func pruneUnwantedEmptySections(data []byte, keepEmptySections map[string]bool) 
 		return nil, fmt.Errorf("format pruned config document: %w", err)
 	}
 	return buf.Bytes(), nil
-}
-
-func insertWorkspaceSettingHintComments(data []byte, cfg *Config, hints map[string][]ConstructorArgHint) []byte {
-	moduleNames := make([]string, 0, len(hints))
-	for name := range hints {
-		moduleNames = append(moduleNames, name)
-	}
-	sort.Strings(moduleNames)
-
-	lines := strings.Split(string(data), "\n")
-	for _, moduleName := range moduleNames {
-		moduleHints := hints[moduleName]
-		if len(moduleHints) == 0 {
-			continue
-		}
-
-		insertAfter, hintPrefix := findModuleHintInsertionPoint(lines, moduleName)
-		if insertAfter == -1 {
-			continue
-		}
-
-		existingSettings := map[string]bool{}
-		if entry, ok := cfg.Modules[moduleName]; ok {
-			for key := range entry.Settings {
-				existingSettings[strings.ToLower(key)] = true
-			}
-		}
-
-		commentLines := make([]string, 0, len(moduleHints)*2)
-		for _, hint := range moduleHints {
-			if existingSettings[strings.ToLower(hint.Name)] {
-				continue
-			}
-			for _, desc := range hintDescriptionLines(hint.Description) {
-				commentLines = append(commentLines, "# "+desc)
-			}
-			commentLines = append(commentLines, fmt.Sprintf("# %s%s = %s", hintPrefix, formatConfigPathSegment(hint.Name), hint.ExampleValue))
-		}
-		if len(commentLines) == 0 {
-			continue
-		}
-
-		updated := make([]string, 0, len(lines)+len(commentLines))
-		updated = append(updated, lines[:insertAfter+1]...)
-		updated = append(updated, commentLines...)
-		updated = append(updated, lines[insertAfter+1:]...)
-		lines = updated
-	}
-
-	return []byte(strings.Join(lines, "\n"))
-}
-
-// hintDescriptionLines returns the first paragraph of a setting description,
-// one line per entry. Doc comments wrap mid-sentence, so a single line would
-// truncate the description.
-func hintDescriptionLines(description string) []string {
-	var lines []string
-	for _, line := range strings.Split(description, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			if len(lines) > 0 {
-				break
-			}
-			continue
-		}
-		lines = append(lines, line)
-	}
-	return lines
-}
-
-func findModuleHintInsertionPoint(lines []string, moduleName string) (insertAfter int, hintPrefix string) {
-	formattedModuleName := formatConfigPathSegment(moduleName)
-	settingsSection := "[modules." + formattedModuleName + ".settings]"
-	if idx := findSectionInsertionPoint(lines, settingsSection); idx != -1 {
-		return idx, ""
-	}
-
-	moduleSection := "[modules." + formattedModuleName + "]"
-	if idx := findSectionInsertionPoint(lines, moduleSection); idx != -1 {
-		return idx, "settings."
-	}
-
-	return -1, ""
-}
-
-func findSectionInsertionPoint(lines []string, sectionHeader string) int {
-	inSection := false
-	lastLine := -1
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == sectionHeader {
-			inSection = true
-			lastLine = i
-			continue
-		}
-		if !inSection {
-			continue
-		}
-		if strings.HasPrefix(trimmed, "[") {
-			break
-		}
-		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
-			lastLine = i
-		}
-	}
-
-	return lastLine
 }
 
 // FormatConfigPathSegment formats one TOML dotted-key path segment.

@@ -157,36 +157,6 @@ func (s *workspaceSchema) prepareWorkspaceMigrationPlan(
 		return nil, err
 	}
 	recordWorkspaceMigrationModuleSpans(ctx, compatWorkspace.Modules)
-	cfg, err := workspace.ParseConfig(plan.WorkspaceConfigData)
-	if err != nil {
-		return nil, fmt.Errorf("parse planned workspace config: %w", err)
-	}
-	plannedConfigDir := filepath.Dir(workspace.ConfigFileName)
-	var updatedDir dagql.ObjectResult[*core.Directory]
-	if workspaceConfigUsesMigratedModuleSources(cfg, plannedConfigDir) {
-		if _, preparedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err != nil {
-			return nil, fmt.Errorf("prepare migrated module config: %w", err)
-		} else {
-			updatedDir = preparedDir
-		}
-	}
-	hints, hintWarnings := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plannedConfigDir, plan.ProjectRoot, updatedDir)
-	if len(hintWarnings) > 0 {
-		// Settings hints are pure enrichment (pre-filled [modules.<m>.settings.*]
-		// defaults). When a module can't be loaded to introspect them — e.g. an
-		// SDK source that doesn't resolve as a local path — record the failure as
-		// a migration-report warning instead of aborting. The mechanical
-		// sdk->runtime migration is still valid; the user can fill in settings
-		// later with `dagger settings`.
-		appendWorkspaceMigrationNonGapWarnings(plan, hintWarnings)
-	}
-	if len(hints) > 0 {
-		updated, err := workspace.UpdateConfigBytesWithHints(plan.WorkspaceConfigData, cfg, hints)
-		if err != nil {
-			return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
-		}
-		plan.WorkspaceConfigData = updated
-	}
 	return plan, nil
 }
 

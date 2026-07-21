@@ -238,7 +238,7 @@ func introspectWorkspaceModuleSettings(
 	ws *core.Workspace,
 	configDir string,
 	source string,
-) ([]workspace.ConstructorArgHint, error) {
+) ([]constructorArgHint, error) {
 	if core.FastModuleSourceKindCheck(source, "") != core.ModuleSourceKindLocal {
 		return introspectConstructorArgs(ctx, srv, source)
 	}
