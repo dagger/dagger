@@ -1550,6 +1550,71 @@ func stripANSICodes(s string) string {
 	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(s, "")
 }
 
+func TestReproMarkdownWrapIndent(t *testing.T) {
+	const width = 50
+	run := func(t *testing.T, nested bool) {
+		db := dagui.NewDB()
+		rootID := prettyTestSpanID(1)
+		userID := prettyTestSpanID(2)
+		toolID := prettyTestSpanID(3)
+		asstID := prettyTestSpanID(4)
+		start := time.Unix(100, 0)
+		snaps := []dagui.SpanSnapshot{
+			{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second)},
+			{
+				ID: userID, TraceID: prettyTestTraceID(), Name: "LLM prompt",
+				Message: "received", LLMRole: "user", ParentID: rootID,
+				StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second),
+			},
+		}
+		asstParent := rootID
+		if nested {
+			snaps = append(snaps, dagui.SpanSnapshot{
+				ID: toolID, TraceID: prettyTestTraceID(), Name: "spawn",
+				LLMRole: "assistant", LLMTool: "spawn", ParentID: rootID,
+				StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second),
+			})
+			asstParent = toolID
+		}
+		snaps = append(snaps, dagui.SpanSnapshot{
+			ID: asstID, TraceID: prettyTestTraceID(), Name: "LLM response",
+			Message: "received", LLMRole: "assistant", ParentID: asstParent,
+			StartTime: start.Add(4 * time.Second), EndTime: start.Add(5 * time.Second),
+		})
+		db.ImportSnapshots(snaps)
+		db.SetPrimarySpan(rootID)
+
+		term := tuist.NewHeadlessTerminal(width, 60)
+		fe := newWithTerminal(io.Discard, db, term)
+		fe.shell = stubShellHandler{}
+		fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+		fe.FrontendOpts.ExpandCompleted = true
+
+		setLog := func(id dagui.SpanID, text string) {
+			logs := NewVterm(termenv.Ascii)
+			logs.SetWidth(width)
+			_, _ = logs.WriteMarkdown([]byte(text + "\n"))
+			fe.logs.Logs[id] = logs
+		}
+		setLog(userID, "hi")
+		setLog(asstID, "Added a case to the shell-mode gutter switch that matches assistant messages (`LLMRole == assistant && LLMTool == \"\"`, i.e. replies/thinking but not tool calls) and leaves line 0 bare, since the assistant branch below re-emits the indent + cue on the content line. Tool calls (which have `LLMTool != \"\"` and render inline without a paragraph break) still fall through to `case focused:` and are unaffected.")
+
+		fe.setWindowSizeLocked(windowSize{Width: width, Height: 60})
+		fe.recalculateViewLocked()
+
+		lines := strings.Split(strings.Join(fe.tui.Frame(), "\n"), "\n")
+		for _, l := range lines {
+			p := stripANSICodes(l)
+			if w := len([]rune(strings.TrimRight(p, " "))); w > width {
+				t.Errorf("line exceeds width %d (got %d): %q", width, w, p)
+			}
+		}
+		t.Logf("nested=%v rendered:\n%s", nested, strings.Join(lines, "\n"))
+	}
+	t.Run("toplevel", func(t *testing.T) { run(t, false) })
+	t.Run("nested", func(t *testing.T) { run(t, true) })
+}
+
 // TestUserPromptLeadingGutterShaded is a regression test for the user's prompt
 // rendering its two-space leading gutter unshaded on the first line, so the
 // shaded block started one gutter-width in while the continuation lines carried
