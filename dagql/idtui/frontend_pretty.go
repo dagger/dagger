@@ -3558,6 +3558,34 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	// output scrolls off the top like a normal REPL while the newest lines and
 	// the pinned live region below stay onscreen.
 	if fe.flowingMode() {
+		// While following the newest output (autoFocus) the focus tracks the
+		// bottom, so it's always onscreen and letting the overflow flow into
+		// scrollback is exactly right. But once the user navigates up into the
+		// history (nav mode), the focused item can sit anywhere above the
+		// bottom of the frame -- and since tuist only shows the bottom `height`
+		// lines, it would scroll offscreen. Crop everything below the focused
+		// item so it becomes the bottom of the flowing region (just above the
+		// pinned chrome) and stays onscreen; content above it still scrolls
+		// into scrollback as usual.
+		if !fe.autoFocus && focusLine >= 0 && ctx.ScreenHeight() > 0 {
+			viewportHeight := max(ctx.ScreenHeight()-chromeHeight, 1)
+			// Only crop when the focused item would actually scroll offscreen.
+			// In the uncropped flowing output tuist shows the bottom
+			// viewportHeight lines, so the focus is already fully onscreen while
+			// its header sits within that window (focusLine >=
+			// len-viewportHeight). Cropping then would be jarring -- moving up a
+			// row or two shouldn't suddenly hide the newest output.
+			if focusLine < len(allLines)-viewportHeight {
+				// The focus is above the fold: crop everything below it so it
+				// stays onscreen, reserving a line for the "… N lines below …"
+				// hint so the user can tell content was cropped and notice new
+				// lines arriving while scrolled up. There's always content below
+				// here, since the focus sits more than a viewport above the end.
+				end := flowingCropEnd(fe, focusLine, max(viewportHeight-1, 1), len(allLines))
+				below := len(allLines) - end
+				return append(allLines[:end:end], fe.cropHintLine(below))
+			}
+		}
 		return allLines
 	}
 
@@ -3628,6 +3656,43 @@ func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
 	}
 
 	return end
+}
+
+// flowingCropEnd computes the end index for the flowing (shell/prompt) nav
+// crop: the caller returns allLines[:end] and lets tuist show the bottom of it,
+// so `end` is chosen to pin the focused item to the bottom of the flowing
+// region while its content still fits onscreen. The whole focused subtree is
+// kept when it fits; when it is taller than the viewport its top is anchored so
+// the header survives (its tail overflows into scrollback), matching cropEnd's
+// tall-focus handling.
+func flowingCropEnd(fe *frontendPretty, focusLine, viewportHeight, totalLines int) int {
+	focusHeight := 1
+	if focused, ok := fe.spanTrees[fe.FocusedSpan]; ok {
+		focusHeight = focused.totalLineCount()
+	}
+	end := min(focusLine+focusHeight, totalLines)
+	// Keep the focused header within the bottom viewport window: the visible
+	// region is [end-viewportHeight, end), so cap end so focusLine stays >=
+	// end-viewportHeight.
+	if end > focusLine+viewportHeight {
+		end = focusLine + viewportHeight
+	}
+	return min(end, totalLines)
+}
+
+// cropHintLine renders the faint "… N lines below …" marker shown at the bottom
+// of the flowing region when nav-mode cropping hides newer content below the
+// focused item. It lets the user tell the conversation was cropped -- and, since
+// the count grows as output streams in, notice new lines arriving while they're
+// scrolled up in the history.
+func (fe *frontendPretty) cropHintLine(below int) string {
+	out := NewOutput(io.Discard, termenv.WithProfile(fe.profile))
+	noun := "lines"
+	if below == 1 {
+		noun = "line"
+	}
+	label := fmt.Sprintf("… %d %s below …", below, noun)
+	return "  " + out.String(label).Foreground(termenv.ANSIBrightBlack).Faint().String()
 }
 
 // totalLineCount returns the total number of rendered lines for a SpanTreeView,
