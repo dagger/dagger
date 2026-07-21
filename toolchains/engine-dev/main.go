@@ -18,6 +18,7 @@ import (
 
 // TODO: updating filter for engine restart test, probably go back to original
 func New(
+	ctx context.Context,
 	// +defaultPath="/"
 	// +ignore=[
 	// "*",
@@ -52,23 +53,54 @@ func New(
 	// +optional
 	clientDockerConfig *dagger.Secret,
 
-	// Workspace forwarded to the go/cli-dev toolchains to stamp built
+	// Workspace whose git HEAD commit and dirty state stamp the built
 	// engine/CLI VCS info. Auto-injected when engine-dev is called directly;
-	// when it's a dependency the caller must forward it.
+	// when it's a dependency the caller must forward it. It is resolved to
+	// scalar commit/dirty values here and never stored: keeping a Workspace
+	// field would taint the cache key of every EngineDev method (a
+	// session-scoped resource), which would break disk-cache reuse across
+	// engine restarts.
 	// +optional
 	ws *dagger.Workspace,
 ) *EngineDev {
+	commit, dirty := vcsInfo(ctx, ws)
 	return &EngineDev{
 		Source:             source,
-		Workspace:          ws,
+		VCSCommit:          commit,
+		VCSDirty:           dirty,
 		SubnetNumber:       subnetNumber,
 		ClientDockerConfig: clientDockerConfig,
 	}
 }
 
+// vcsInfo resolves the git HEAD commit and dirty state from the workspace for
+// stamping into built binaries. Errors are swallowed — a build proceeds with
+// whatever we collected (possibly nothing). Only the resolved scalars are
+// threaded onward; the Workspace itself is never stored or passed into a
+// build, which would taint the cache key of everything it touches.
+func vcsInfo(ctx context.Context, ws *dagger.Workspace) (commit string, dirty bool) {
+	if ws == nil {
+		return "", false
+	}
+	git := ws.Git()
+	commit, err := git.Head().Commit(ctx)
+	if err != nil {
+		return "", false
+	}
+	if clean, err := git.Uncommitted().IsEmpty(ctx); err == nil {
+		dirty = !clean
+	}
+	return commit, dirty
+}
+
 type EngineDev struct {
-	Source    *dagger.Directory
-	Workspace *dagger.Workspace // +private
+	Source *dagger.Directory
+
+	// Resolved VCS info stamped into built engine/CLI binaries. Stored as
+	// scalars (not the source Workspace) so EngineDev's methods stay
+	// content-addressed and their build results survive an engine restart.
+	VCSCommit string // +private
+	VCSDirty  bool   // +private
 
 	EngineConfig []string // +private
 	LogLevel     string   // +private
@@ -170,7 +202,7 @@ func (dev *EngineDev) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, dev.Source, version, dev.Workspace)
+	builder, err := build.NewBuilder(ctx, dev.Source, version, dev.VCSCommit, dev.VCSDirty)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +229,7 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version, Ws: dev.Workspace}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -300,7 +332,7 @@ func (dev *EngineDev) InstallClient(
 		WithServiceBinding("dagger-engine", service).
 		// FIXME: retrieve endpoint dynamically?
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Version: version, Ws: dev.Workspace}).Binary()).
+		WithMountedFile(cliPath, dag.DaggerCli(dagger.DaggerCliOpts{Version: version, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithSymlink(cliPath, "/usr/local/bin/dagger")
 	if cfg := dev.ClientDockerConfig; cfg != nil {
@@ -351,7 +383,7 @@ func (dev *EngineDev) GraphqlSchema(
 // Build the `introspect` tool which introspects the engine API
 func (dev *EngineDev) IntrospectionTool() *dagger.File {
 	return dag.
-		Go(dagger.GoOpts{Source: dev.Source, Ws: dev.Workspace}).
+		Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).
 		Binary("./cmd/introspect")
 }
 
@@ -360,7 +392,7 @@ func (dev *EngineDev) IntrospectionTool() *dagger.File {
 func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 	schemaFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".schema.json"
 	// This tool has runtime dependencies on the engine source code itself
-	return dag.Go(dagger.GoOpts{Source: dev.Source, Ws: dev.Workspace}).
+	return dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).
 		Env().
 		WithExec(
 			[]string{"go", "run", "./cmd/json-schema", filename},
@@ -375,8 +407,9 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 	base := dev.Source
 	withGoGenerate := dag.Go(dagger.GoOpts{
-		Source: dev.Source,
-		Ws:     dev.Workspace,
+		Source:    dev.Source,
+		VcsCommit: dev.VCSCommit,
+		VcsDirty:  dev.VCSDirty,
 		ExtraPackages: []string{
 			"clang",
 			"lld",

@@ -317,6 +317,14 @@ type CliDevOpts struct {
 	// (e.g. of release) the caller must forward it.
 	//
 	Ws *Workspace // cli-dev (../../../../toolchains/cli-dev/main.go:56:2)
+	//
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain.
+	//
+	VcsCommit string // cli-dev (../../../../toolchains/cli-dev/main.go:62:2)
+	//
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	//
+	VcsDirty bool // cli-dev (../../../../toolchains/cli-dev/main.go:66:2)
 }
 
 // Develop the Dagger CLI
@@ -342,6 +350,14 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../too
 		// `ws` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ws) {
 			q = q.Arg("ws", opts[i].Ws)
+		}
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+		// `vcsDirty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
+			q = q.Arg("vcsDirty", opts[i].VcsDirty)
 		}
 	}
 

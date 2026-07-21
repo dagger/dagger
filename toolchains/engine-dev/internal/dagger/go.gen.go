@@ -719,6 +719,14 @@ type GoOpts struct {
 	// stamping.
 	//
 	Ws *Workspace // go (../../../../toolchains/go/main.go:95:2)
+	//
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain.
+	//
+	VcsCommit string // go (../../../../toolchains/go/main.go:108:2)
+	//
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	//
+	VcsDirty bool // go (../../../../toolchains/go/main.go:112:2)
 }
 
 // A Go project
@@ -780,6 +788,14 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../toolchains/go/main.g
 		// `ws` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ws) {
 			q = q.Arg("ws", opts[i].Ws)
+		}
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+		// `vcsDirty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
+			q = q.Arg("vcsDirty", opts[i].VcsDirty)
 		}
 	}
 

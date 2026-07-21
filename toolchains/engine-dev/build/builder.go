@@ -24,9 +24,12 @@ var versionAnnotation = distconsts.OCIVersionAnnotation
 type Builder struct {
 	source *dagger.Directory
 
-	// workspace stamps VCS info into the built engine; threaded in from
-	// engine-dev since dependencies don't inherit it.
-	workspace *dagger.Workspace
+	// Resolved VCS info stamped into the built engine, threaded in from
+	// engine-dev as scalars. Storing the source Workspace here instead would
+	// taint the cache key of every build method and break disk-cache reuse
+	// across engine restarts.
+	vcsCommit string
+	vcsDirty  bool
 
 	version string
 
@@ -42,11 +45,13 @@ func NewBuilder(
 	ctx context.Context,
 	source *dagger.Directory,
 	version string,
-	ws *dagger.Workspace,
+	vcsCommit string,
+	vcsDirty bool,
 ) (*Builder, error) {
 	return &Builder{
 		source:       source,
-		workspace:    ws,
+		vcsCommit:    vcsCommit,
+		vcsDirty:     vcsDirty,
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
 		version:      version,
@@ -220,9 +225,10 @@ func (build *Builder) Go(race bool) *dagger.Go {
 
 func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
 	return dag.Go(dagger.GoOpts{
-		Source: source,
-		Ws:     build.workspace,
-		Race:   race,
+		Source:    source,
+		VcsCommit: build.vcsCommit,
+		VcsDirty:  build.vcsDirty,
+		Race:      race,
 		Tags: []string{
 			// The engine uses the dockerfile2llb code from buildkit, which makes use of tags
 			// for enabling features at compile time:
@@ -311,9 +317,9 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 		"./plugins/meta/firewall",
 		"./plugins/ipam/host-local",
 	} {
-		// CNI plugins are third-party; ws is passed only because dependencies
-		// must pass it explicitly (the stamped VCS info is irrelevant here).
-		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.workspace}).Binary(pluginPath, dagger.GoBinaryOpts{
+		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
+		// don't thread any VCS info into their build.
+		bin := dag.Go(dagger.GoOpts{Source: src}).Binary(pluginPath, dagger.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,

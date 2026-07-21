@@ -14,7 +14,7 @@ import (
 
 // List all core engine tests
 func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	return dag.Go(dagger.GoOpts{Source: dev.Source, Ws: dev.Workspace}).Tests(ctx)
+	return dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).Tests(ctx)
 }
 
 // Run core engine tests
@@ -249,7 +249,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	devEngine = devEngine.
 		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
 
-	devBinary := dag.DaggerCli(dagger.DaggerCliOpts{Ws: dev.Workspace}).Binary()
+	devBinary := dag.DaggerCli(dagger.DaggerCliOpts{VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty}).Binary()
 	// This creates an engine.tar container file that can be used by the integration tests.
 	// In particular, it is used by core/integration/remotecache_test.go to create a
 	// dev engine that can be used to test remote caching.
@@ -291,7 +291,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	}
 
 	utilDirPath := "/dagger-dev"
-	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source, Ws: dev.Workspace})
+	goToolchain := dag.Go(dagger.GoOpts{Source: dev.Source, VcsCommit: dev.VCSCommit, VcsDirty: dev.VCSDirty})
 	ldflagValues, err := goToolchain.Values(ctx)
 	if err != nil {
 		return nil, nil, err

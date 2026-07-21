@@ -766,9 +766,13 @@ type EngineDevOpts struct {
 	// A docker config file with credentials to install on clients,
 	// to ensure they can access private registries
 	ClientDockerConfig *Secret
-	// Workspace forwarded to the go/cli-dev toolchains to stamp built
+	// Workspace whose git HEAD commit and dirty state stamp the built
 	// engine/CLI VCS info. Auto-injected when engine-dev is called directly;
-	// when it's a dependency the caller must forward it.
+	// when it's a dependency the caller must forward it. It is resolved to
+	// scalar commit/dirty values here and never stored: keeping a Workspace
+	// field would taint the cache key of every EngineDev method (a
+	// session-scoped resource), which would break disk-cache reuse across
+	// engine restarts.
 	Ws *Workspace
 }
 

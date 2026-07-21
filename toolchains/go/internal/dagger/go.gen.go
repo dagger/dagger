@@ -612,10 +612,17 @@ type GoOpts struct {
 	// binaries as VCS info (see the stamping block in New).
 	//
 	// The engine only auto-injects a Workspace on a *direct* client call;
-	// module-runtime callers (e.g. cli-dev depending on this module) don't
-	// inherit it, so they must forward their own explicitly. Omitted → no
-	// stamping.
+	// module-runtime callers don't inherit it. Rather than forward the
+	// Workspace (a session-scoped resource that would taint this build's cache
+	// key and break disk-cache reuse across engine restarts), parent
+	// toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take
+	// precedence over ws. Omitted → no stamping.
 	Ws *Workspace
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
+	// precedence over ws so the Workspace never enters this build's cache key.
+	VcsCommit string
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	VcsDirty bool
 }
 
 func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../:0:0)
@@ -676,6 +683,14 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../../:0:0)
 		// `ws` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ws) {
 			q = q.Arg("ws", opts[i].Ws)
+		}
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+		// `vcsDirty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
+			q = q.Arg("vcsDirty", opts[i].VcsDirty)
 		}
 	}
 

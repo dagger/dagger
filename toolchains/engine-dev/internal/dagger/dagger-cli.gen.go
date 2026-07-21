@@ -317,6 +317,14 @@ type DaggerCliOpts struct {
 	// (e.g. of release) the caller must forward it.
 	//
 	Ws *Workspace // dagger-cli (../../../../toolchains/cli-dev/main.go:56:2)
+	//
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain.
+	//
+	VcsCommit string // dagger-cli (../../../../toolchains/cli-dev/main.go:62:2)
+	//
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	//
+	VcsDirty bool // dagger-cli (../../../../toolchains/cli-dev/main.go:66:2)
 }
 
 // Develop the Dagger CLI
@@ -342,6 +350,14 @@ func (r *Query) DaggerCli(opts ...DaggerCliOpts) *DaggerCli { // dagger-cli (../
 		// `ws` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ws) {
 			q = q.Arg("ws", opts[i].Ws)
+		}
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+		// `vcsDirty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
+			q = q.Arg("vcsDirty", opts[i].VcsDirty)
 		}
 	}
 

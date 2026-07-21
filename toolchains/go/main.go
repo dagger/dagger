@@ -87,12 +87,23 @@ func New(
 	// binaries as VCS info (see the stamping block in New).
 	//
 	// The engine only auto-injects a Workspace on a *direct* client call;
-	// module-runtime callers (e.g. cli-dev depending on this module) don't
-	// inherit it, so they must forward their own explicitly. Omitted → no
-	// stamping.
+	// module-runtime callers don't inherit it. Rather than forward the
+	// Workspace (a session-scoped resource that would taint this build's cache
+	// key and break disk-cache reuse across engine restarts), parent
+	// toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take
+	// precedence over ws. Omitted → no stamping.
 	//
 	// +optional
 	ws *dagger.Workspace,
+
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
+	// precedence over ws so the Workspace never enters this build's cache key.
+	// +optional
+	vcsCommit string,
+
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	// +optional
+	vcsDirty bool,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
@@ -137,23 +148,29 @@ func New(
 			WithWorkdir("/app")
 	}
 	// Stamp git commit / dirty state into built binaries as VCS info, via
-	// -ldflags into the Dagger buildinfo package's Injected* vars. Errors
-	// are swallowed — the build proceeds with whatever we collected.
-	if ws != nil {
+	// -ldflags into the Dagger buildinfo package's Injected* vars. Prefer the
+	// scalars a parent toolchain resolved for us; otherwise resolve the
+	// auto-injected workspace (a direct call). Errors are swallowed — the
+	// build proceeds with whatever we collected. Only the resolved strings are
+	// ever stamped, never the Workspace itself, so the build stays
+	// content-addressed and its result survives an engine restart.
+	if vcsCommit == "" && ws != nil {
 		git := ws.Git()
 		if commit, err := git.Head().Commit(ctx); err == nil {
-			values = append(values,
-				"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCS=git",
-				"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSRevision="+commit,
-			)
+			vcsCommit = commit
 			if clean, err := git.Uncommitted().IsEmpty(ctx); err == nil {
-				values = append(values,
-					"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSModified="+strconv.FormatBool(!clean),
-				)
+				vcsDirty = !clean
 			}
-			// TODO: also inject InjectedVCSTime once a Workspace.git
-			// commit-time accessor is available.
 		}
+	}
+	if vcsCommit != "" {
+		values = append(values,
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCS=git",
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSRevision="+vcsCommit,
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSModified="+strconv.FormatBool(vcsDirty),
+		)
+		// TODO: also inject InjectedVCSTime once a Workspace.git commit-time
+		// accessor is available.
 	}
 	return &Go{
 		Version:     version,
