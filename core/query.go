@@ -95,9 +95,9 @@ type Server interface {
 	// for operations like generate that may be exactly what repairs the module.
 	EnsureWorkspaceModules(ctx context.Context, include []string, bestEffort bool) (loadFailures []string, _ error)
 
-	// A snapshot of the current workspace lockfile for ambient live locking.
-	// Returns ok=false when lock-backed workspace access is unavailable.
-	CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error)
+	// A snapshot of the current workspace lockfile. When requireWritable is
+	// true, returns ok=false for read-only workspace lock sources.
+	CurrentWorkspaceLock(ctx context.Context, requireWritable bool) (*workspacepkg.Lock, bool, error)
 
 	// Stage a lockfile lookup result for the current workspace's live lock state.
 	SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error

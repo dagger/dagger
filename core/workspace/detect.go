@@ -19,8 +19,8 @@ const (
 
 // Workspace represents a detected workspace boundary and selected files within
 // it. ConfigFile and LockFile are deliberately separate: dagger.toml may be
-// absent or projected from compat dagger.json, while the lockfile is a local
-// writable binding selected from the workspace tree.
+// absent or projected from compat dagger.json, while lockfile read/write
+// capabilities depend on the workspace source.
 type Workspace struct {
 	// Root is the workspace boundary: the detected Git root, or an explicit
 	// boundary supplied for a remote or legacy workspace.

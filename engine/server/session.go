@@ -1992,10 +1992,16 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 	}
 	return a.Pin() == b.Pin()
 }
-func (srv *Server) CurrentWorkspaceLock(ctx context.Context) (*workspace.Lock, bool, error) {
+func (srv *Server) CurrentWorkspaceLock(ctx context.Context, requireWritable bool) (*workspace.Lock, bool, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, false, err
+	}
+	if !requireWritable {
+		lock, ok, err := readImmutableRemoteWorkspaceLock(ctx, client.workspace)
+		if err != nil || ok {
+			return lock, ok, err
+		}
 	}
 
 	ws, key, lockPath, ok, err := srv.currentWorkspaceLockBinding(client)
@@ -2179,6 +2185,65 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 		}
 	}
 
+	lock, err := workspace.ParseLock(data)
+	if err != nil {
+		return nil, fmt.Errorf("parsing lock: %w", err)
+	}
+	return lock, nil
+}
+
+func readImmutableRemoteWorkspaceLock(ctx context.Context, ws *core.Workspace) (*workspace.Lock, bool, error) {
+	if ws == nil || ws.LockFile == "" {
+		return nil, false, nil
+	}
+
+	// The remote loader records whether the original workspace selector was a
+	// commit. A resolved SHA alone is insufficient because branches and tags have
+	// one too.
+	source, ok := ws.Source().(*core.WorkspaceSourceGitRef)
+	if !ok || !source.ExplicitCommit {
+		return nil, false, nil
+	}
+
+	root := ws.Rootfs()
+	if root.Self() == nil {
+		return nil, true, fmt.Errorf("immutable remote Git workspace has no root filesystem")
+	}
+	lock, err := readWorkspaceLockFromRootfs(ctx, root, ws.LockFile)
+	return lock, true, err
+}
+
+func readWorkspaceLockFromRootfs(
+	ctx context.Context,
+	root dagql.ObjectResult[*core.Directory],
+	lockPath string,
+) (*workspace.Lock, error) {
+	lockPath = filepath.ToSlash(lockPath)
+	legacyPath := filepath.ToSlash(workspace.LegacyLockFilePathForCanonical(lockPath))
+	statFS := &core.DirectoryStatFS{Dir: root}
+
+	_, exists, err := core.StatFSExists(ctx, statFS, lockPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading lock: %w", err)
+	}
+	if !exists {
+		lockPath = legacyPath
+		_, exists, err = core.StatFSExists(ctx, statFS, lockPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading legacy lock: %w", err)
+		}
+	}
+	if !exists {
+		return workspace.NewLock(), nil
+	}
+
+	data, err := core.DirectoryReadFile(ctx, root, lockPath)
+	if err != nil {
+		if lockPath == legacyPath {
+			return nil, fmt.Errorf("reading legacy lock: %w", err)
+		}
+		return nil, fmt.Errorf("reading lock: %w", err)
+	}
 	lock, err := workspace.ParseLock(data)
 	if err != nil {
 		return nil, fmt.Errorf("parsing lock: %w", err)

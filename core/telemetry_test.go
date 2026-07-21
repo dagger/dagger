@@ -137,7 +137,7 @@ func (ms *mockServer) SpecificClientAttachableConn(_ context.Context, clientID s
 	return conn, conn != nil, nil
 }
 
-func (ms *mockServer) CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error) {
+func (ms *mockServer) CurrentWorkspaceLock(context.Context, bool) (*workspacepkg.Lock, bool, error) {
 	return nil, false, nil
 }
 
