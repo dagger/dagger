@@ -52,42 +52,6 @@ legacy-default-path = true
 # to ensure they can access private registries
 # settings.clientDockerConfig = "env://MY_SECRET"
 
-[modules.go]
-source = "toolchains/go"
-legacy-default-path = true
-
-# Project source directory
-# settings.source = "./path"
-# Go version
-# settings.version = "1.26"
-# Use a custom base container.
-# The container must have Go installed.
-# settings.base = "alpine:latest"
-# Pass arguments to 'go build -ldflags'
-# settings.ldflags = [""]
-# Pass arguments to 'go build -tags'
-# settings.tags = [""]
-# Add string value definition of the form importpath.name=value
-# Example: "github.com/my/module.Foo=bar"
-# settings.values = [""]
-# Enable CGO
-# settings.cgo = false
-# Enable race detector. Implies cgo=true
-# settings.race = false
-# Enable go experiments https://pkg.go.dev/internal/goexperiment
-# settings.experiment = [""]
-# extra system packages to include in the default base image; only
-# valid if 'base' arg is nil
-# settings.extraPackages = [""]
-# max number of parallel jobs to run for tidy/check tidy/lint/runtime generation
-# settings.limit = 10
-# Git repository for VCS info injection. When non-nil, the HEAD commit
-# and uncommitted state are stamped into the binary via -ldflags
-# against github.com/dagger/go/buildinfo's Injected* package vars so it
-# self-reports VCS info at runtime via runtime/debug.ReadBuildInfo —
-# without needing .git inside the build container.
-# settings.repo = "https://github.com/owner/repo"
-
 [modules.go-sdk]
 source = "toolchains/go-sdk-dev"
 legacy-default-path = true
@@ -281,9 +245,6 @@ path = "toolchains/engine-dev"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = "toolchains/engine-dev/notify"
-
-[[modules.dagger-go-sdk.as-sdk.modules]]
-path = "toolchains/go"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = "toolchains/php-sdk-dev"
