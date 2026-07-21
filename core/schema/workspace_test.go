@@ -17,10 +17,59 @@ import (
 
 func TestWorkspacePrivateSourceFieldsAreNotGraphQLFields(t *testing.T) {
 	typ := reflect.TypeOf(core.Workspace{})
-	for _, name := range []string{"source", "rootfs", "hostPath", "ClientID"} {
+	for _, name := range []string{"source", "rootfs", "references", "hostPath", "ClientID"} {
 		field, ok := typ.FieldByName(name)
 		require.True(t, ok, "missing Workspace field %s", name)
 		require.NotEqual(t, "true", field.Tag.Get("field"), "Workspace.%s must stay private", name)
+	}
+}
+
+func TestReferenceInternalPath(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"foo/bar.txt", "foo/bar.txt", false},
+		{"proj", "proj", false},
+		{"/leading/slash", "leading/slash", false},
+		// escapes are neutralized rather than allowed to climb out
+		{"../escape", "escape", false},
+		{"a/../../b", "b", false},
+		{"", "", true},
+		{".", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := referenceInternalPath(tc.in)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestReferenceRelPath(t *testing.T) {
+	cases := []struct {
+		in    string
+		want  string
+		isRef bool
+	}{
+		{core.WorkspaceReferencePrefix, ".", true},
+		{core.WorkspaceReferencePrefix + "/foo/bar.txt", "foo/bar.txt", true},
+		{"src/main.go", "", false},
+		{".refspoofing/x", "", false},
+		{".", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			got, isRef := referenceRelPath(tc.in)
+			require.Equal(t, tc.isRef, isRef)
+			require.Equal(t, tc.want, got)
+		})
 	}
 }
 

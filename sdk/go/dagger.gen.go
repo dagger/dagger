@@ -16087,6 +16087,34 @@ func (r *Workspace) WithNewFile(path string, contents string, opts ...WorkspaceW
 	}
 }
 
+// Return this workspace with a directory mounted read-only under the reserved references prefix.
+//
+// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+func (r *Workspace) WithReferenceDirectory(path string, source *Directory) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withReferenceDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a file mounted read-only under the reserved references prefix.
+//
+// Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.
+func (r *Workspace) WithReferenceFile(path string, source *File) *Workspace {
+	assertNotNil("source", source)
+	q := r.query.Select("withReferenceFile")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithSDKOpts contains options for Workspace.WithSDK
 type WorkspaceWithSDKOpts struct {
 	// Override name for the installed SDK entry.

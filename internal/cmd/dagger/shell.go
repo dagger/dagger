@@ -667,6 +667,15 @@ func (h *shellCallHandler) AutoComplete(input string, cursorPos int) tuist.Compl
 				ReplaceFrom: wordStart,
 			}
 		}
+		// Path completion: a word starting with "@" references a host path to
+		// hand to the agent (see attachReferences). Complete it against the host
+		// filesystem, expanding a leading "~".
+		if strings.HasPrefix(word, "@") {
+			return tuist.CompletionResult{
+				Items:       completeReferencePath(word[1:]),
+				ReplaceFrom: wordStart,
+			}
+		}
 		return tuist.CompletionResult{}
 	}
 

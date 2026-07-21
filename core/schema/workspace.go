@@ -139,6 +139,22 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
 			),
+		dagql.NodeFunc("withReferenceDirectory", s.withReferenceDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a directory mounted read-only under the reserved references prefix.",
+				"Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.").
+			Args(
+				dagql.Arg("path").Doc("Reference-relative mount path under the reserved references prefix."),
+				dagql.Arg("source").Doc("Directory to mount read-only."),
+			),
+		dagql.NodeFunc("withReferenceFile", s.withReferenceFile).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a file mounted read-only under the reserved references prefix.",
+				"Referenced content is readable through the normal workspace file tools but is excluded from the pending changeset: it never appears in changes and is never exported.").
+			Args(
+				dagql.Arg("path").Doc("Reference-relative mount path under the reserved references prefix."),
+				dagql.Arg("source").Doc("File to mount read-only."),
+			),
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a module installed in its config.").
@@ -580,6 +596,14 @@ func (s *workspaceSchema) resolveRootfs(
 		return inst, err
 	}
 
+	// Reads under the reserved references prefix resolve against the read-only
+	// reference tree, never the host or the overlay changeset.
+	if refsDir, ok := ws.ReferencesDir(); ok {
+		if rel, isRef := referenceRelPath(resolvedPath); isRef {
+			return s.resolveRootfsFromDirectory(ctx, srv, ws, refsDir, rel, filter, gitignore)
+		}
+	}
+
 	if ws.HostPath() != "" && ws.ClientLocalBase() {
 		if changes, ok := ws.OverlayChanges(); ok {
 			return s.resolveHostOverlayRootfs(ctx, srv, ws, changes, resolvedPath, filter, gitignore)
@@ -942,6 +966,9 @@ func (s *workspaceSchema) withNewFile(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	if err := guardReferencePath(parent.Self(), resolvedPath); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -1288,6 +1315,9 @@ func (s *workspaceSchema) withNewDirectory(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	if err := guardReferencePath(parent.Self(), resolvedPath); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -1330,6 +1360,11 @@ func (s *workspaceSchema) withChanges(
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
 	}
+	for _, p := range touched {
+		if err := guardReferencePath(parent.Self(), p); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
 	return s.overlayEdit(ctx, parent, touched, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
 		var updated dagql.ObjectResult[*core.Directory]
 		err := srv.Select(ctx, base, &updated, dagql.Selector{
@@ -1340,6 +1375,138 @@ func (s *workspaceSchema) withChanges(
 		})
 		return updated, err
 	}, nil)
+}
+
+type workspaceWithReferenceDirectoryArgs struct {
+	Path   string
+	Source core.DirectoryID
+}
+
+func (s *workspaceSchema) withReferenceDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithReferenceDirectoryArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	relPath, err := referenceInternalPath(args.Path)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	sourceID, err := args.Source.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return s.addReference(ctx, srv, parent, func(refs dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var updated dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, refs, &updated, dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(relPath)},
+				{Name: "source", Value: dagql.NewID[*core.Directory](sourceID)},
+			},
+		})
+		return updated, err
+	})
+}
+
+type workspaceWithReferenceFileArgs struct {
+	Path   string
+	Source core.FileID
+}
+
+func (s *workspaceSchema) withReferenceFile(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithReferenceFileArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	relPath, err := referenceInternalPath(args.Path)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	sourceID, err := args.Source.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return s.addReference(ctx, srv, parent, func(refs dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var updated dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, refs, &updated, dagql.Selector{
+			Field: "withFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(relPath)},
+				{Name: "source", Value: dagql.NewID[*core.File](sourceID)},
+			},
+		})
+		return updated, err
+	})
+}
+
+// addReference applies an edit to the workspace's read-only reference directory
+// tree (creating it empty if absent) and returns a new workspace carrying the
+// updated tree. References live outside the overlay changeset, so this never
+// touches the source, the pending changes, or the export path.
+func (s *workspaceSchema) addReference(
+	ctx context.Context,
+	srv *dagql.Server,
+	parent dagql.ObjectResult[*core.Workspace],
+	edit func(refs dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error),
+) (dagql.ObjectResult[*core.Workspace], error) {
+	refs, ok := parent.Self().ReferencesDir()
+	if !ok {
+		if err := srv.Select(ctx, srv.Root(), &refs, dagql.Selector{Field: "directory"}); err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
+	updated, err := edit(refs)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	ws := parent.Self().Clone()
+	ws.SetReferencesDir(updated)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+// referenceInternalPath validates and normalizes a caller-supplied mount path
+// (relative to the references root), rejecting escapes and empty paths.
+func referenceInternalPath(p string) (string, error) {
+	clean := strings.TrimPrefix(path.Clean("/"+filepath.ToSlash(p)), "/")
+	if clean == "" || clean == "." {
+		return "", fmt.Errorf("reference path is required")
+	}
+	return clean, nil
+}
+
+// referenceRelPath reports whether a resolved workspace path lands under the
+// reserved references prefix and, if so, returns the path relative to the
+// references root ("." for the prefix itself).
+func referenceRelPath(resolvedPath string) (string, bool) {
+	p := filepath.ToSlash(resolvedPath)
+	if p == core.WorkspaceReferencePrefix {
+		return ".", true
+	}
+	if rel, ok := strings.CutPrefix(p, core.WorkspaceReferencePrefix+"/"); ok {
+		return rel, true
+	}
+	return "", false
+}
+
+// guardReferencePath rejects overlay edits that target the reserved references
+// prefix, keeping referenced content read-only. It is a no-op when the
+// workspace has no references.
+func guardReferencePath(ws *core.Workspace, resolvedPath string) error {
+	if _, ok := ws.ReferencesDir(); !ok {
+		return nil
+	}
+	if _, isRef := referenceRelPath(resolvedPath); isRef {
+		return fmt.Errorf("workspace path %q is a read-only reference and cannot be modified", resolvedPath)
+	}
+	return nil
 }
 
 func (s *workspaceSchema) changes(
