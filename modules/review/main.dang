@@ -1,0 +1,82 @@
+# review: give a Dagger coding agent read-only insight into its own pending
+# changes — the "what have I changed so far?" view a shell agent gets from
+# `git status` / `git diff`.
+#
+# A Dagger-native agent (the `editor` @agent) has no Bash tool, and the mounted
+# Workspace is a plain snapshot with NO .git (see toolchains/ci/bootstrap.dang),
+# so `git diff` isn't an option. Instead we use the Dagger-native Changeset:
+# `Workspace.changes` is the workspace's pending overlay, and its `.diffStats`
+# and `.asPatch` render a per-file summary and a Git-compatible unified patch.
+#
+# Modeled on ./modules/tui-qa (the @agent-tools shape), but stateless: every
+# tool takes the Workspace — auto-filled by the agent from its bound workspace
+# (see core/llm_object_tools.go, which fills Workspace!-typed args and hides
+# them from the model) — and reads its changes. Nothing to start or stop.
+"""
+Read-only self-review of your workspace's pending changes.
+"""
+type Review {
+  """
+  Compose the review tools onto a base LLM.
+  """
+  agent(base: LLM!): LLM! @agent {
+    base
+      .withTools(currentNode)
+      .withSystemPrompt(systemPrompt)
+  }
+
+  """
+  Summarize the workspace's pending changes: one line per changed file — its
+  change kind (A/M/D/R) and added/removed line counts — followed by a totals
+  footer. This is the quick "git status"-style overview; reach for `diff` when
+  you need the actual hunks.
+  """
+  status(source: Workspace!): String! {
+    let stats = source.changes.diffStats.{{kind, addedLines, removedLines, path}}
+    if (stats.isEmpty) {
+      return "No pending changes."
+    }
+    let rows = stats.map { s =>
+      let mark = if (s.kind == DiffStatKind.ADDED) {
+        "A"
+      } else if (s.kind == DiffStatKind.REMOVED) {
+        "D"
+      } else if (s.kind == DiffStatKind.RENAMED) {
+        "R"
+      } else {
+        "M"
+      }
+      `${mark}  +${toString(s.addedLines)}  -${toString(s.removedLines)}  ${s.path}`
+    }
+    let added = stats.reduce(0) { acc, s => acc + s.addedLines }
+    let removed = stats.reduce(0) { acc, s => acc + s.removedLines }
+    let footer = `${toString(stats.length)} files changed, +${toString(added)} -${toString(removed)}`
+    rows.join("\n") + "\n\n" + footer
+  }
+
+  """
+  Show the workspace's pending changes as a Git-compatible unified diff — the
+  full hunks across every changed file. Use `status` first for a compact
+  overview; use this to actually read the edits (e.g. before summarizing your
+  work, or to confirm an edit landed as intended).
+  """
+  diff(source: Workspace!): String! {
+    let changes = source.changes
+    if (changes.isEmpty) {
+      return "No pending changes."
+    }
+    changes.asPatch.contents
+  }
+
+  let systemPrompt: String! = """
+    You can review your own pending workspace edits with the Review tools:
+
+    - `status` — a compact per-file overview (change kind + added/removed line
+      counts, with a totals footer). Start here to see what you've touched.
+    - `diff` — the full Git-style unified patch of those same changes, when you
+      need to read the actual hunks.
+
+    Both read the current state of your workspace, so re-run them after making
+    edits to see updated results. They are read-only and never modify anything.
+  """
+}

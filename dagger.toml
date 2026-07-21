@@ -195,6 +195,28 @@ source = "github.com/dagger/dang-sdk"
 [modules.dagger-go-sdk]
 source = "github.com/dagger/go-sdk"
 
+# Go version used for the default Go base image.
+# settings.version = ""
+# Base image used for Go test, generate, and helper containers.
+# Mutually exclusive with version.
+# settings.base = "alpine:latest"
+# Extra workspace-root include patterns mounted for each module's Go commands.
+# Use this for fixtures, generator inputs, or other files not covered by the
+# built-in Go patterns.
+# settings.includeExtraFiles = [""]
+# Module roots to lint. A bare pattern selects, a "!"-prefixed pattern
+# excludes, and an exclude always wins (order does not matter). With no
+# selecting pattern, every module is linted. Supported patterns: "**" or "*"
+# (all modules), and "X" or "X/**" (module X and any module below it); other
+# glob forms (mid-path "**", single-segment "*") are not interpreted. For
+# example ["**", "!docs"] lints all but docs; ["e2e/**"] lints only e2e;
+# ["!**"] lints nothing.
+# settings.lint = [""]
+# Module roots to test. Same selection rules as `lint`.
+# settings.test = [""]
+# Module roots to run go generate in. Same selection rules as `lint`.
+# settings.generate = [""]
+
 [modules.dagger-dang-sdk.as-sdk]
 name = "dang"
 
@@ -281,3 +303,18 @@ path = "toolchains/release/registry-config"
 
 [[modules.dagger-go-sdk.as-sdk.modules]]
 path = "toolchains/rust-sdk-dev"
+
+[env.dev.modules.go-tools]
+source = "github.com/vito/dagger-go@go-doc"
+
+[env.dev.modules.tui-qa]
+source = "modules/tui-qa"
+
+[env.dev.modules.editor]
+source = "github.com/vito/editor"
+
+[env.dev.modules.delegate]
+source = "modules/delegate"
+
+[env.dev.modules.review]
+source = "modules/review"
