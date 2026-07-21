@@ -960,11 +960,9 @@ func (srv *Server) initializeDaggerClient(
 		// record on the emitting goroutine; with enough concurrent emitters
 		// they all pile up on the DB's write lock (each busy-waiting in a
 		// syscall that pins an OS thread), which can exhaust the runtime's
-		// thread limit.
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(
-			logs,
-			sdklog.WithExportInterval(telemetry.NearlyImmediate),
-		)),
+		// thread limit. Batched with bounded churn settings — see
+		// enginetel.NewLogBatchProcessor.
+		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logs)),
 	}
 
 	const metricReaderInterval = 5 * time.Second
@@ -988,10 +986,7 @@ func (srv *Server) initializeDaggerClient(
 			),
 		))
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			sdklog.NewBatchProcessor(
-				srv.telemetryPubSub.Logs(parent),
-				sdklog.WithExportInterval(telemetry.NearlyImmediate),
-			),
+			enginetel.NewLogBatchProcessor(srv.telemetryPubSub.Logs(parent)),
 		))
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
