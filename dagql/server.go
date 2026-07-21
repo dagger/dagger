@@ -932,6 +932,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
 		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
+			if !typeVisibleInView(t, view) {
+				return
+			}
 			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
 				schema.Query = def
@@ -974,6 +977,22 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 	})
 
 	return s.schemas[view]
+}
+
+type viewFilteredType interface {
+	ViewFilter() ViewFilter
+}
+
+func viewFilterForType(t Type) ViewFilter {
+	if viewFiltered, ok := t.(viewFilteredType); ok {
+		return viewFiltered.ViewFilter()
+	}
+	return nil
+}
+
+func typeVisibleInView(t Type, view call.View) bool {
+	viewFilter := viewFilterForType(t)
+	return viewFilter == nil || viewFilter.Contains(view)
 }
 
 // SchemaDigest returns the digest of the current schema.
