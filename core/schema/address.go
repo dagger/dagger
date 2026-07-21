@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -280,6 +281,10 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("socket", s.socket).
 			WithInput(dagql.PerCallInput).
 			Doc(`Load a local socket from the address.`),
+		dagql.NodeFunc("volume", s.volume).
+			View(AfterVersion("v1.0.0-0")).
+			WithInput(dagql.PerCallInput).
+			Doc(`Load a volume from the address.`),
 	}.Install(srv)
 }
 
@@ -806,6 +811,147 @@ func (s *addressSchema) service(
 	return inst, nil
 }
 
+func (s *addressSchema) volume(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.Address],
+	args struct{},
+) (
+	inst dagql.ObjectResult[*core.Volume],
+	err error,
+) {
+	query, srv, err := currentRootQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := query.RequireMainClient(ctx); err != nil {
+		return inst, err
+	}
+
+	addr := r.Self().Value
+	if matched, err := resolveModuleRef(ctx, addr, &inst); matched {
+		return inst, err
+	}
+
+	parsed, err := parseSSHFSVolumeAddress(addr)
+	if err != nil {
+		return inst, err
+	}
+
+	privateKey, err := loadAddressSecret(ctx, srv, parsed.PrivateKeyAddr)
+	if err != nil {
+		return inst, fmt.Errorf("load volume privateKey secret: %w", err)
+	}
+	privateKeyID, err := privateKey.ID()
+	if err != nil {
+		return inst, fmt.Errorf("get volume privateKey ID: %w", err)
+	}
+
+	argsList := []dagql.NamedInput{
+		{Name: "endpoint", Value: dagql.NewString(parsed.Endpoint)},
+		{Name: "privateKey", Value: dagql.NewID[*core.Secret](privateKeyID)},
+	}
+	if parsed.KnownHostsAddr != "" {
+		knownHosts, err := loadAddressSecret(ctx, srv, parsed.KnownHostsAddr)
+		if err != nil {
+			return inst, fmt.Errorf("load volume knownHosts secret: %w", err)
+		}
+		knownHostsID, err := knownHosts.ID()
+		if err != nil {
+			return inst, fmt.Errorf("get volume knownHosts ID: %w", err)
+		}
+		argsList = append(argsList, dagql.NamedInput{
+			Name:  "knownHosts",
+			Value: dagql.Opt(dagql.NewID[*core.Secret](knownHostsID)),
+		})
+	}
+	if parsed.CacheKey != "" {
+		argsList = append(argsList, dagql.NamedInput{
+			Name:  "cacheKey",
+			Value: dagql.Opt(dagql.NewString(parsed.CacheKey)),
+		})
+	}
+	if parsed.InsecureSkipHostKeyCheck {
+		argsList = append(argsList, dagql.NamedInput{
+			Name:  "insecureSkipHostKeyCheck",
+			Value: dagql.Boolean(true),
+		})
+	}
+
+	err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
+		Field: "sshfsVolume",
+		Args:  argsList,
+	})
+	if err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func currentRootQuery(ctx context.Context) (*core.Query, *dagql.Server, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	query, ok := dagql.UnwrapAs[*core.Query](srv.Root())
+	if !ok {
+		return nil, nil, fmt.Errorf("dagql root is not Query")
+	}
+	return query, srv, nil
+}
+
+type sshfsVolumeAddress struct {
+	Endpoint                 string
+	PrivateKeyAddr           string
+	KnownHostsAddr           string
+	CacheKey                 string
+	InsecureSkipHostKeyCheck bool
+}
+
+func parseSSHFSVolumeAddress(addr string) (sshfsVolumeAddress, error) {
+	var parsed sshfsVolumeAddress
+	u, err := url.Parse(addr)
+	if err != nil {
+		return parsed, fmt.Errorf("parse volume address: %w", err)
+	}
+	if u.Scheme != "sshfs" {
+		return parsed, fmt.Errorf("unsupported volume address %q: must use sshfs://", addr)
+	}
+	if u.Fragment != "" {
+		return parsed, fmt.Errorf("volume address must not include a fragment")
+	}
+	queryVals := u.Query()
+
+	parsed.PrivateKeyAddr = queryVals.Get("privateKey")
+	if parsed.PrivateKeyAddr == "" {
+		return parsed, fmt.Errorf("volume address missing privateKey query parameter")
+	}
+	queryVals.Del("privateKey")
+
+	parsed.KnownHostsAddr = queryVals.Get("knownHosts")
+	queryVals.Del("knownHosts")
+
+	parsed.CacheKey = queryVals.Get("cacheKey")
+	queryVals.Del("cacheKey")
+
+	if raw := queryVals.Get("insecureSkipHostKeyCheck"); raw != "" {
+		parsed.InsecureSkipHostKeyCheck, err = strconv.ParseBool(raw)
+		if err != nil {
+			return parsed, fmt.Errorf("parse insecureSkipHostKeyCheck: %w", err)
+		}
+	}
+	queryVals.Del("insecureSkipHostKeyCheck")
+
+	if len(queryVals) > 0 {
+		return parsed, fmt.Errorf("unsupported volume address query parameter %q", firstQueryKey(queryVals))
+	}
+
+	// Query.sshfsVolume validates the SSHFS endpoint structure after the
+	// address-only query parameters have been stripped.
+	u.RawQuery = ""
+	parsed.Endpoint = u.String()
+	return parsed, nil
+}
+
 func (s *addressSchema) socket(
 	ctx context.Context,
 	r dagql.ObjectResult[*core.Address],
@@ -839,4 +985,34 @@ func (s *addressSchema) socket(
 		return inst, err
 	}
 	return inst, nil
+}
+
+func loadAddressSecret(ctx context.Context, srv *dagql.Server, addr string) (dagql.ObjectResult[*core.Secret], error) {
+	var inst dagql.ObjectResult[*core.Secret]
+	if err := srv.Select(ctx, srv.Root(), &inst,
+		dagql.Selector{
+			Field: "address",
+			Args: []dagql.NamedInput{
+				{Name: "value", Value: dagql.NewString(addr)},
+			},
+		},
+		dagql.Selector{
+			Field: "secret",
+		},
+	); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func firstQueryKey(vals url.Values) string {
+	keys := make([]string, 0, len(vals))
+	for key := range vals {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if len(keys) == 0 {
+		return ""
+	}
+	return keys[0]
 }

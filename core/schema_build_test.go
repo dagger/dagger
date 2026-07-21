@@ -15,13 +15,17 @@ func TestSchemaJSONFileSelectorHiddenFieldsAffectCallIdentity(t *testing.T) {
 	clientSelector := schemaJSONFileSelector("v1.0.0", nil, nil)
 	moduleSelector := schemaJSONFileSelector("v1.0.0", hiddenTypes, hiddenFields)
 
-	require.Equal(t, []string{"Query.currentWorkspace"}, hiddenFields)
+	require.Equal(t, []string{
+		"Query.currentWorkspace",
+		"Query.sshfsVolume",
+		"Address.volume",
+	}, hiddenFields)
 	require.Contains(t, hiddenTypes, "Host")
 	require.NotEqual(t, selectorCallID(clientSelector).Digest(), selectorCallID(moduleSelector).Digest())
 
 	hiddenFieldsInput, ok := dagql.Inputs(moduleSelector.Args).Lookup("hiddenFields")
 	require.True(t, ok)
-	require.Equal(t, `["Query.currentWorkspace"]`, hiddenFieldsInput.ToLiteral().Display())
+	require.Equal(t, `["Query.currentWorkspace","Query.sshfsVolume","Address.volume"]`, hiddenFieldsInput.ToLiteral().Display())
 }
 
 func selectorCallID(selector dagql.Selector) *call.ID {

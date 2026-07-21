@@ -47,6 +47,7 @@ const (
 	Service       string = "Service"
 	PortForward   string = "PortForward"
 	CacheVolume   string = "CacheVolume"
+	Volume        string = "Volume"
 	LLM           string = "LLM"
 	ModuleSource  string = "ModuleSource"
 	Module        string = "Module"
