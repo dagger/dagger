@@ -779,3 +779,57 @@ func (wg *WorkspaceGit) AttachDependencyResults(
 	wg.Workspace = typed
 	return []dagql.AnyResult{typed}, nil
 }
+
+var (
+	_ dagql.PersistedObject        = (*WorkspaceGit)(nil)
+	_ dagql.PersistedObjectDecoder = (*WorkspaceGit)(nil)
+)
+
+// persistedWorkspaceGitPayload is the on-disk encoding of a WorkspaceGit. Its
+// only state is a reference to the Workspace it wraps, which is itself
+// persistable, so persistence reduces to encoding that one ref.
+type persistedWorkspaceGitPayload struct {
+	WorkspaceResultID uint64 `json:"workspaceResultID,omitempty"`
+}
+
+func (wg *WorkspaceGit) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	if wg == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted workspace git: nil workspace git")
+	}
+	var payload persistedWorkspaceGitPayload
+	if wg.Workspace.Self() != nil {
+		wsID, err := encodePersistedObjectRef(cache, wg.Workspace, "workspace git workspace")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		payload.WorkspaceResultID = wsID
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted workspace git payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(payloadBytes), nil
+}
+
+func (*WorkspaceGit) DecodePersistedObject(
+	ctx context.Context,
+	dag *dagql.Server,
+	_ uint64,
+	_ *dagql.ResultCall,
+	payload json.RawMessage,
+) (dagql.Typed, error) {
+	var persisted persistedWorkspaceGitPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted workspace git payload: %w", err)
+	}
+	wg := &WorkspaceGit{}
+	if persisted.WorkspaceResultID != 0 {
+		ws, err := loadPersistedObjectResultByResultID[*Workspace](ctx, dag, persisted.WorkspaceResultID, "workspace git workspace")
+		if err != nil {
+			return nil, err
+		}
+		wg.Workspace = ws
+	}
+	return wg, nil
+}
