@@ -640,6 +640,60 @@ func (s *moduleSourceSchema) localModuleSource(
 	return dagql.NewResultForCurrentCall(ctx, localSrc)
 }
 
+// findGitModuleConfig locates the dagger config file for a git module source,
+// mutating gitSrc's ConfigFilename and SourceRootSubpath as needed. It returns
+// the path to the config file within the context directory and whether one was
+// found. When no config is found and allowNotExists is true it returns
+// ("", false, nil); otherwise a missing config is an error.
+func (s *moduleSourceSchema) findGitModuleConfig(
+	ctx context.Context,
+	gitSrc *core.ModuleSource,
+	doFindUp bool,
+	allowNotExists bool,
+) (configPath string, configFound bool, err error) {
+	statFS := &core.DirectoryStatFS{Dir: gitSrc.ContextDirectory}
+
+	if !doFindUp {
+		configFilename, found, err := moduleConfigInDir(ctx, statFS, filepath.Join("/", gitSrc.SourceRootSubpath))
+		if err != nil {
+			return "", false, fmt.Errorf("failed to find module config: %w", err)
+		}
+		if !found {
+			if !allowNotExists {
+				return "", false, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
+			}
+			return "", false, nil
+		}
+		gitSrc.ConfigFilename = configFilename
+		return filepath.Join(gitSrc.SourceRootSubpath, configFilename), true, nil
+	}
+
+	// first validate the given path exists at all, otherwise weird things like
+	// `dagger -m github.com/dagger/dagger/not/a/real/dir` can succeed because
+	// they find-up to a real module config file
+	if gitSrc.SourceRootSubpath != "" {
+		if _, exists, err := core.StatFSExists(ctx, statFS, gitSrc.SourceRootSubpath); err != nil {
+			return "", false, fmt.Errorf("failed to stat git module source: %w", err)
+		} else if !exists {
+			return "", false, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
+		}
+	}
+
+	configDir, configFilename, found, err := findUpModuleConfig(ctx, statFS, filepath.Join("/", gitSrc.SourceRootSubpath))
+	if err != nil {
+		return "", false, fmt.Errorf("failed to find-up module config: %w", err)
+	}
+	if !found {
+		if !allowNotExists {
+			return "", false, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
+		}
+		return "", false, nil
+	}
+	gitSrc.ConfigFilename = configFilename
+	gitSrc.SourceRootSubpath = strings.TrimPrefix(configDir, "/")
+	return filepath.Join(configDir, configFilename), true, nil
+}
+
 func (s *moduleSourceSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],
@@ -696,51 +750,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 	gitSrc.SourceRootSubpath = strings.TrimPrefix(parsed.RepoRootSubdir, "/")
 	gitSrc.OriginalSubpath = gitSrc.SourceRootSubpath
 
-	var configPath string
-	configFound := true
-	if !doFindUp {
-		statFS := &core.DirectoryStatFS{Dir: gitSrc.ContextDirectory}
-		configFilename, found, err := moduleConfigInDir(ctx, statFS, filepath.Join("/", gitSrc.SourceRootSubpath))
-		if err != nil {
-			return inst, fmt.Errorf("failed to find module config: %w", err)
-		}
-		if !found {
-			if !allowNotExists {
-				return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
-			}
-			configFound = false
-		} else {
-			gitSrc.ConfigFilename = configFilename
-			configPath = filepath.Join(gitSrc.SourceRootSubpath, configFilename)
-		}
-	} else {
-		// first validate the given path exists at all, otherwise weird things like
-		// `dagger -m github.com/dagger/dagger/not/a/real/dir` can succeed because
-		// they find-up to a real module config file
-		statFS := &core.DirectoryStatFS{Dir: gitSrc.ContextDirectory}
-
-		if gitSrc.SourceRootSubpath != "" {
-			if _, exists, err := core.StatFSExists(ctx, statFS, gitSrc.SourceRootSubpath); err != nil {
-				return inst, fmt.Errorf("failed to stat git module source: %w", err)
-			} else if !exists {
-				return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
-			}
-		}
-
-		configDir, configFilename, found, err := findUpModuleConfig(ctx, statFS, filepath.Join("/", gitSrc.SourceRootSubpath))
-		if err != nil {
-			return inst, fmt.Errorf("failed to find-up module config: %w", err)
-		}
-		if !found {
-			if !allowNotExists {
-				return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
-			}
-			configFound = false
-		} else {
-			gitSrc.ConfigFilename = configFilename
-			configPath = filepath.Join(configDir, configFilename)
-			gitSrc.SourceRootSubpath = strings.TrimPrefix(configDir, "/")
-		}
+	configPath, configFound, err := s.findGitModuleConfig(ctx, gitSrc, doFindUp, allowNotExists)
+	if err != nil {
+		return inst, err
 	}
 	if gitSrc.SourceRootSubpath == "" {
 		gitSrc.SourceRootSubpath = "."
