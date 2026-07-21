@@ -1997,7 +1997,11 @@ func (s *workspaceSchema) generators(
 		allGenerators = append(allGenerators, filtered...)
 	}
 
-	return &core.GeneratorGroup{Generators: allGenerators, LoadFailures: loadFailures}, nil
+	return &core.GeneratorGroup{
+		Generators:        allGenerators,
+		LoadFailures:      loadFailures,
+		WorkspaceClientID: parent.ClientID,
+	}, nil
 }
 
 func (s *workspaceSchema) services(
