@@ -1458,7 +1458,7 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 	var lastLogID int64
 
 	for {
-		logs, err := q.SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
+		logs, err := q.Read().SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
 			ID:     lastLogID,
 			SpanID: sql.NullString{Valid: true, String: spanID},
 			Limit:  llmLogsBatchSize,
@@ -1495,7 +1495,7 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 			}
 
 			if log.SpanID.Valid {
-				span, err := q.SelectSpan(ctx, clientdb.SelectSpanParams{
+				span, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
 					TraceID: log.TraceID.String,
 					SpanID:  log.SpanID.String,
 				})

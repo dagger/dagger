@@ -316,40 +316,80 @@ func (client *daggerClient) TelemetryDB(ctx context.Context) (*clientdb.DB, erro
 	return client.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, client.clientID)
 }
 
+// slowDrainOp flags a shutdown-drain operation (a client's provider flush, a
+// session-wide telemetry flush, a workspace lock flush) that ate a meaningful
+// chunk of the drain budget: the CLI allows 10s for the whole shutdown, and a
+// session-level flush covers every client in the session.
+const slowDrainOp = 2 * time.Second
+
+// timedProviderOp times one provider's flush/shutdown within a client-level
+// telemetry flush, so slow flushes can be attributed to the traces vs. logs
+// vs. metrics pipeline.
+func timedProviderOp(ctx context.Context, errs *error, op func(context.Context) error) time.Duration {
+	start := time.Now()
+	*errs = errors.Join(*errs, op(ctx))
+	return time.Since(start)
+}
+
 func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
 	slog := slog.With("client", client.clientID)
+	start := time.Now()
 	var errs error
+	var traceDur, logDur, metricDur time.Duration
 	if client.tracerProvider != nil {
 		slog.ExtraDebug("force flushing client traces")
-		errs = errors.Join(errs, client.tracerProvider.ForceFlush(ctx))
+		traceDur = timedProviderOp(ctx, &errs, client.tracerProvider.ForceFlush)
 	}
 	if client.loggerProvider != nil {
 		slog.ExtraDebug("force flushing client logs")
-		errs = errors.Join(errs, client.loggerProvider.ForceFlush(ctx))
+		logDur = timedProviderOp(ctx, &errs, client.loggerProvider.ForceFlush)
 	}
 	if client.meterProvider != nil {
 		slog.ExtraDebug("force flushing client metrics")
-		errs = errors.Join(errs, client.meterProvider.ForceFlush(ctx))
+		metricDur = timedProviderOp(ctx, &errs, client.meterProvider.ForceFlush)
 	}
+	logClientTelemetryOp(slog, "client telemetry flush", start, traceDur, logDur, metricDur, errs)
 	return errs
 }
 
 func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
 	slog := slog.With("client", client.clientID)
+	start := time.Now()
 	var errs error
+	var traceDur, logDur, metricDur time.Duration
 	if client.tracerProvider != nil {
 		slog.ExtraDebug("force flushing client traces")
-		errs = errors.Join(errs, client.tracerProvider.Shutdown(ctx))
+		traceDur = timedProviderOp(ctx, &errs, client.tracerProvider.Shutdown)
 	}
 	if client.loggerProvider != nil {
 		slog.ExtraDebug("force flushing client logs")
-		errs = errors.Join(errs, client.loggerProvider.Shutdown(ctx))
+		logDur = timedProviderOp(ctx, &errs, client.loggerProvider.Shutdown)
 	}
 	if client.meterProvider != nil {
 		slog.ExtraDebug("force flushing client metrics")
-		errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
+		metricDur = timedProviderOp(ctx, &errs, client.meterProvider.Shutdown)
 	}
+	logClientTelemetryOp(slog, "client telemetry shutdown", start, traceDur, logDur, metricDur, errs)
 	return errs
+}
+
+func logClientTelemetryOp(lg *slog.Logger, what string, start time.Time, traceDur, logDur, metricDur time.Duration, errs error) {
+	total := time.Since(start)
+	lg = lg.With(
+		"duration", total,
+		"traces", traceDur,
+		"logs", logDur,
+		"metrics", metricDur,
+		"error", errs,
+	)
+	switch {
+	case total > slowDrainOp:
+		lg.Warn("slow " + what)
+	case total > 100*time.Millisecond:
+		lg.Debug(what)
+	default:
+		lg.ExtraDebug(what)
+	}
 }
 
 func (client *daggerClient) getMainClientCaller(ctx context.Context) (engineutil.SessionCaller, error) {
@@ -365,16 +405,46 @@ func (sess *daggerSession) StoreTelemetrySeenKey(key string) {
 	sess.seenKeys.Store(key, struct{}{})
 }
 
-func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
-	eg := new(errgroup.Group)
+// inflightSessionTelemetryFlushes counts engine-wide concurrent session-level
+// telemetry flushes. Every flush fans out to every client in its session, so
+// concurrent flushes multiply pressure on the same client DBs; the gauge makes
+// that amplification visible next to each flush's duration.
+var inflightSessionTelemetryFlushes atomic.Int64
+
+func (sess *daggerSession) FlushTelemetry(ctx context.Context, reason string) error {
+	inflight := inflightSessionTelemetryFlushes.Add(1)
+	defer inflightSessionTelemetryFlushes.Add(-1)
+
 	sess.clientMu.Lock()
+	clients := make([]*daggerClient, 0, len(sess.clients))
 	for _, client := range sess.clients {
+		clients = append(clients, client)
+	}
+	sess.clientMu.Unlock()
+
+	lg := slog.With(
+		"sessionID", sess.sessionID,
+		"reason", reason,
+		"clients", len(clients),
+		"inflightSessionFlushes", inflight)
+	lg.Debug("flushing session telemetry")
+
+	start := time.Now()
+	eg := new(errgroup.Group)
+	for _, client := range clients {
 		eg.Go(func() error {
 			return client.FlushTelemetry(ctx)
 		})
 	}
-	sess.clientMu.Unlock()
-	return eg.Wait()
+	err := eg.Wait()
+
+	lg = lg.With("duration", time.Since(start), "error", err)
+	if time.Since(start) > slowDrainOp {
+		lg.Warn("slow session telemetry flush")
+	} else {
+		lg.Debug("session telemetry flush done")
+	}
+	return err
 }
 
 // requires that sess.lifecycleMu is held
@@ -874,8 +944,10 @@ func (srv *Server) initializeDaggerClient(
 		// save to our own client's DB. Large-queue BSP so a big burst (a cold engine
 		// build is ~15k spans, live-double-emitted ≈ 30k records) does not overflow the
 		// default 2048-slot queue and silently drop spans before they reach the DB the
-		// CLI drains toward Cloud (see enginetel.NewLargeQueueLiveSpanProcessor).
-		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(
+		// CLI drains toward Cloud. InternalFiltering: drop the live (OnStart) snapshot
+		// for dagger.io/ui.internal spans — they're hidden from the UI, so their live
+		// double-write is pure SQLite write volume (see NewInternalFilteringLiveSpanProcessor).
+		sdktrace.WithSpanProcessor(enginetel.NewInternalFilteringLiveSpanProcessor(
 			client.spanExporter,
 		)),
 	}
@@ -906,11 +978,12 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	// export to parent client DBs too (same large-queue BSP — nested-client spans
-	// reach Cloud via the parent DB, so this hop must not drop on a burst either).
+	// export to parent client DBs too (same large-queue InternalFiltering BSP —
+	// nested-client spans reach Cloud via the parent DB, so this hop must not drop
+	// on a burst either, and internal spans skip their live double-emit here too).
 	for _, parent := range client.parents {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
-			enginetel.NewLargeQueueLiveSpanProcessor(
+			enginetel.NewInternalFilteringLiveSpanProcessor(
 				srv.telemetryPubSub.Spans(parent),
 			),
 		))
@@ -1851,12 +1924,29 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		"mainClientID", sess.mainClientCallerID)
 
 	slog.Info("client shutdown")
-	defer slog.Debug("client shutdown done")
+	shutdownStart := time.Now()
+	defer func() {
+		slog.Info("client shutdown done", "duration", time.Since(shutdownStart), "error", shutdownErr)
+	}()
+
+	// drainPhase times one shutdown drain phase, logging before and after: the
+	// client enforces a hard deadline on the whole shutdown request, so a
+	// phase that stalls (or wedges forever on an uncancellable context) must
+	// be attributable from the engine log alone.
+	drainPhase := func(name string, fn func() error) error {
+		slog.Debug("shutdown drain phase starting", "phase", name)
+		start := time.Now()
+		err := fn()
+		slog.Info("shutdown drain phase done", "phase", name, "duration", time.Since(start), "error", err)
+		return err
+	}
 
 	if client.clientID == sess.mainClientCallerID {
 		slog.Info("main client is shutting down")
-		flushCtx := context.WithoutCancel(ctx)
-		if err := srv.flushWorkspaceLocks(flushCtx, client); err != nil {
+		err := drainPhase("flush workspace locks", func() error {
+			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
+		})
+		if err != nil {
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush workspace locks: %w", err))
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
@@ -1865,8 +1955,12 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		sess.beginClosing()
 
 		// Stop services, since the main client is going away, and we
-		// want the client to see them stop.
-		sess.services.StopSessionServices(ctx, sess.sessionID)
+		// want the client to see them stop. Stop errors are not surfaced
+		// (matching prior behavior), so the phase always returns nil.
+		_ = drainPhase("stop session services", func() error {
+			sess.services.StopSessionServices(ctx, sess.sessionID)
+			return nil
+		})
 
 		defer func() {
 			// Signal shutdown at the very end, _after_ flushing telemetry/etc.,
@@ -1877,19 +1971,37 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			})
 		}()
 	} else {
-		flushCtx := context.WithoutCancel(ctx)
-		if err := srv.flushWorkspaceLocks(flushCtx, client); err != nil {
+		err := drainPhase("flush workspace locks", func() error {
+			return srv.flushWorkspaceLocks(context.WithoutCancel(ctx), client)
+		})
+		if err != nil {
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush workspace locks: %w", err))
 			slog.Error("failed to flush workspace locks", "error", err)
 		}
 	}
 
-	// Flush telemetry across the entire session so that any child clients will
-	// save telemetry into their parent's DB, including to this client.
-	slog.ExtraDebug("flushing session telemetry")
-	if err := sess.FlushTelemetry(ctx); err != nil {
-		slog.Error("failed to flush telemetry", "error", err)
-		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush session telemetry: %w", err))
+	// Flush telemetry so nested spans land in the DBs the CLI drains. A client's
+	// own providers already export its spans to its own DB *and every ancestor
+	// DB*, so a nested client only needs to flush itself; re-flushing every
+	// sibling on each nested shutdown is redundant and, under a parallel
+	// teardown storm, self-inflicts an O(n^2) burst of concurrent whole-session
+	// flushes that convoy on the per-DB single connection and blow the client's
+	// shutdown budget. The main client (which shuts down last and whose DB the
+	// CLI ultimately drains) still does a session-wide flush to sweep up any
+	// stragglers from clients that hadn't shut down yet.
+	var flushErr error
+	if client.clientID == sess.mainClientCallerID {
+		flushErr = drainPhase("flush session telemetry", func() error {
+			return sess.FlushTelemetry(ctx, "main client shutdown")
+		})
+	} else {
+		flushErr = drainPhase("flush client telemetry", func() error {
+			return client.FlushTelemetry(ctx)
+		})
+	}
+	if flushErr != nil {
+		slog.Error("failed to flush telemetry", "error", flushErr)
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("flush telemetry: %w", flushErr))
 	}
 
 	client.closeShutdownOnce.Do(func() {
@@ -2326,7 +2438,14 @@ func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient
 
 	var flushErr error
 	for _, export := range pending {
+		lg := slog.With("lockPath", export.lockPath, "clientID", client.clientID)
+		// Log before the host roundtrip: it runs on an uncancellable context
+		// against the client's session attachables, so if the client is gone
+		// it can wedge here and this line is the only breadcrumb.
+		lg.Debug("flushing workspace lock")
+		lockStart := time.Now()
 		srv.locker.Lock(export.lockPath)
+		lockWait := time.Since(lockStart)
 
 		workspaceCtx, bk, err := srv.workspaceOwnerAccess(ctx, sess, export.ws)
 		if err == nil {
@@ -2341,6 +2460,13 @@ func (srv *Server) flushWorkspaceLocks(ctx context.Context, client *daggerClient
 		}
 
 		srv.locker.Unlock(export.lockPath)
+
+		lg = lg.With("duration", time.Since(lockStart), "lockWait", lockWait, "error", err)
+		if time.Since(lockStart) > slowDrainOp {
+			lg.Warn("slow workspace lock flush")
+		} else {
+			lg.Debug("workspace lock flush done")
+		}
 
 		if err != nil {
 			flushErr = errors.Join(flushErr, fmt.Errorf("flush workspace lock %s: %w", export.lockPath, err))
@@ -2647,7 +2773,7 @@ func (srv *Server) FlushSessionTelemetry(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return client.daggerSession.FlushTelemetry(ctx)
+	return client.daggerSession.FlushTelemetry(ctx, "FlushSessionTelemetry API")
 }
 
 func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.DB, error) {
@@ -2659,7 +2785,7 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 	// Spans from nested clients may still be buffered in their
 	// BatchSpanProcessor. A session-wide flush ensures the span tree
 	// is complete before captureLogs walks it via SelectLogsBeneathSpan.
-	if err := client.daggerSession.FlushTelemetry(ctx); err != nil {
+	if err := client.daggerSession.FlushTelemetry(ctx, "ClientTelemetry API"); err != nil {
 		return nil, fmt.Errorf("flush telemetry: %w", err)
 	}
 	return client.TelemetryDB(ctx)

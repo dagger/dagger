@@ -42,13 +42,37 @@ func NewDBs(root string) *DBs {
 //go:embed schema.sql
 var Schema string
 
+// slowOpen flags Open calls that spent significant time waiting on the
+// per-DB lock (or on the initial SQLite open): every telemetry export batch
+// re-opens the DB by refcount, so contention here serializes exporters
+// before they even reach the connection pool.
+const slowOpen = 1 * time.Second
+
+// Each client DB uses two connection pools against the same file. SQLite
+// permits exactly one writer, so the write pool is capped at a single
+// connection: extra write connections can't write in parallel, they only lose
+// the BEGIN IMMEDIATE race and busy-wait for the write lock up to busy_timeout
+// (10s, == the client shutdown budget — a cap of 10 was tried and did exactly
+// that, timing out shutdowns). One write connection serializes writers cheaply
+// in database/sql's queue with no SQLite-level busy-waiting. Reads get their
+// own pool so that, under WAL, SSE drains and log reads run concurrently with
+// the writer instead of queuing behind it on a shared connection.
+const (
+	writeMaxConns = 1
+	readMaxConns  = 4
+)
+
 // Open open a database for the given clientID if not open already and
 // runs the schema migration if needed.
 func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 	lg := slog.Default().With("clientID", clientID)
 
+	openStart := time.Now()
 	dbs.perDBLock.Lock(clientID)
 	defer dbs.perDBLock.Unlock(clientID)
+	if waited := time.Since(openStart); waited > slowOpen {
+		lg.Warn("slow client DB open", "waited", waited)
+	}
 
 	dbs.mu.Lock()
 	db, ok := dbs.open[clientID]
@@ -69,7 +93,7 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 		}
 	}()
 
-	if db.inner == nil {
+	if db.writer == nil {
 		lg.ExtraDebug("opening client DB", "clientID", clientID)
 
 		dbPath := db.dbs.path(db.clientID)
@@ -95,36 +119,55 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 				"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
 			}.Encode(),
 		}
-		sqlDB, err := sql.Open("sqlite", connURL.String())
-		if err != nil {
-			return nil, fmt.Errorf("open %s: %w", connURL, err)
-		}
-		// SQLite allows only one writer at a time, and modernc.org/sqlite's
-		// busy handler waits by sleeping in a raw nanosleep syscall, which
-		// pins an OS thread per waiting connection. Cap the pool at a single
-		// connection so concurrent queries queue cheaply in database/sql
-		// instead of busy-waiting against each other in SQLite.
-		sqlDB.SetMaxOpenConns(1)
-		if err := sqlDB.Ping(); err != nil {
-			return nil, fmt.Errorf("ping %s: %w", connURL, err)
-		}
+		dsn := connURL.String()
 
-		db.inner = sqlDB
+		// Writer pool: a single connection (see writeMaxConns). The file is
+		// created and migrated here, before the reader pool opens against it.
+		writer, err := sql.Open("sqlite", dsn)
+		if err != nil {
+			return nil, fmt.Errorf("open writer %s: %w", connURL, err)
+		}
+		writer.SetMaxOpenConns(writeMaxConns)
+		if err := writer.Ping(); err != nil {
+			return nil, fmt.Errorf("ping writer %s: %w", connURL, err)
+		}
+		db.writer = writer
 
 		if !alreadyExists {
-			if _, err := db.inner.Exec(Schema); err != nil {
+			if _, err := db.writer.Exec(Schema); err != nil {
 				return nil, fmt.Errorf("migrate: %w", err)
 			}
 		}
+
+		// Reader pool: separate connections so WAL reads (SSE drains, log
+		// reads) run concurrently with the single writer instead of queuing
+		// behind it. Read-only by convention — only Select* is routed here (via
+		// DB.Read) — so these connections never take the write lock.
+		reader, err := sql.Open("sqlite", dsn)
+		if err != nil {
+			return nil, fmt.Errorf("open reader %s: %w", connURL, err)
+		}
+		reader.SetMaxOpenConns(readMaxConns)
+		if err := reader.Ping(); err != nil {
+			return nil, fmt.Errorf("ping reader %s: %w", connURL, err)
+		}
+		db.reader = reader
 	} else {
 		lg.Trace("reusing open client DB", "clientID", clientID)
 	}
 
 	if db.Queries == nil {
 		var err error
-		db.Queries, err = Prepare(ctx, db.inner)
+		db.Queries, err = Prepare(ctx, db.writer)
 		if err != nil {
-			return nil, fmt.Errorf("prepare queries: %w", err)
+			return nil, fmt.Errorf("prepare write queries: %w", err)
+		}
+	}
+	if db.readQueries == nil {
+		var err error
+		db.readQueries, err = Prepare(ctx, db.reader)
+		if err != nil {
+			return nil, fmt.Errorf("prepare read queries: %w", err)
 		}
 	}
 
@@ -144,15 +187,27 @@ func (dbs *DBs) close(db *DB, lg *slog.Logger) (rerr error) {
 
 	if db.Queries != nil {
 		if cerr := db.Queries.Close(); cerr != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("error closing queries: %w", cerr))
+			rerr = errors.Join(rerr, fmt.Errorf("error closing write queries: %w", cerr))
 		}
 		db.Queries = nil
 	}
-	if db.inner != nil {
-		if cerr := db.inner.Close(); cerr != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("error closing db: %w", cerr))
+	if db.readQueries != nil {
+		if cerr := db.readQueries.Close(); cerr != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("error closing read queries: %w", cerr))
 		}
-		db.inner = nil
+		db.readQueries = nil
+	}
+	if db.writer != nil {
+		if cerr := db.writer.Close(); cerr != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("error closing writer: %w", cerr))
+		}
+		db.writer = nil
+	}
+	if db.reader != nil {
+		if cerr := db.reader.Close(); cerr != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("error closing reader: %w", cerr))
+		}
+		db.reader = nil
 	}
 
 	dbs.mu.Lock()
@@ -218,14 +273,44 @@ type DB struct {
 	dbs      *DBs
 	clientID string
 
-	inner *sql.DB
+	// writer is the single-connection write pool; the embedded *Queries is
+	// prepared against it, so DB's Insert* methods write through it.
+	writer *sql.DB
 	*Queries
+
+	// reader is the multi-connection read pool; readQueries is prepared
+	// against it and reached via Read(), so Select* reads run concurrently
+	// with the writer under WAL.
+	reader      *sql.DB
+	readQueries *Queries
 
 	refCount int
 }
 
+// Read returns the queries bound to the read pool. Route all Select* reads
+// (SSE drains, log reads) through this so they use the reader connections and
+// never contend with writes on the single write connection.
+func (db *DB) Read() *Queries {
+	return db.readQueries
+}
+
 func (db *DB) Begin() (*sql.Tx, error) {
-	return db.inner.Begin()
+	return db.writer.Begin()
+}
+
+// BeginTx starts a write transaction on the write pool bound to ctx. Batched
+// writers use this so a whole export batch runs as one BEGIN IMMEDIATE..COMMIT
+// holding the single write connection once, instead of one auto-commit round
+// trip (and write-lock acquisition) per row.
+func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return db.writer.BeginTx(ctx, opts)
+}
+
+// Stats reports the write pool's counters. It is capped at a single
+// connection, so WaitCount/WaitDuration measure how long writers queued behind
+// it (reads use the separate reader pool and do not show up here).
+func (db *DB) Stats() sql.DBStats {
+	return db.writer.Stats()
 }
 
 func (db *DB) Close() (rerr error) {
