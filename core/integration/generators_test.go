@@ -155,10 +155,7 @@ func (GeneratorsSuite) TestGenerateApplyDisposition(ctx context.Context, t *test
 	})
 
 	t.Run("no apply previews without exporting", func(ctx context.Context, t *testctx.T) {
-		// Plain progress keeps the preview in the process output so this test can
-		// assert it directly. Agent detection still requires the explicit
-		// disposition independently of the selected progress frontend.
-		previewed := agent.With(daggerExec("generate", "generate-files", "--no-apply", "--progress=plain"))
+		previewed := agent.With(daggerExec("generate", "generate-files", "--no-apply"))
 		out, err := previewed.CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "foo")
