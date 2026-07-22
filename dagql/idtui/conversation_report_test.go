@@ -131,6 +131,59 @@ func TestConversationReportNestsSubAgent(t *testing.T) {
 	}
 }
 
+// TestConversationReportWrapsMarkdownForDepth is a regression test for janky
+// Markdown wrapping in the final report: renderMessageNode rendered each message
+// at full width and only *then* prepended the depth indent to every line, so a
+// nested sub-agent's wrapped Markdown overflowed the viewport by two columns per
+// nesting level. The content width handed to the message logs must account for
+// the indentation so no rendered line exceeds the terminal width.
+func TestConversationReportWrapsMarkdownForDepth(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	const width = 80
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	promptID := prettyTestSpanID(2)
+	spawn1ID := prettyTestSpanID(3)
+	spawn2ID := prettyTestSpanID(4)
+	subResponseID := prettyTestSpanID(5)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{ID: rootID, TraceID: prettyTestTraceID(), Name: "shell", StartTime: start, EndTime: start.Add(10 * time.Second), Final: true},
+		{ID: promptID, TraceID: prettyTestTraceID(), Name: "LLM prompt", LLMRole: "user", ParentID: rootID, StartTime: start.Add(time.Second), EndTime: start.Add(2 * time.Second), Final: true},
+		// A sub-agent spawned by a tool call, which itself spawns a deeper
+		// sub-agent: the deepest message nests two levels down in the report.
+		{ID: spawn1ID, TraceID: prettyTestTraceID(), Name: "spawn", LLMRole: "assistant", LLMTool: "spawn", ParentID: rootID, StartTime: start.Add(2 * time.Second), EndTime: start.Add(3 * time.Second), Final: true},
+		{ID: spawn2ID, TraceID: prettyTestTraceID(), Name: "spawn", LLMRole: "assistant", LLMTool: "spawn", ParentID: spawn1ID, StartTime: start.Add(3 * time.Second), EndTime: start.Add(4 * time.Second), Final: true},
+		{ID: subResponseID, TraceID: prettyTestTraceID(), Name: "LLM response", Message: "received", LLMRole: "assistant", ParentID: spawn2ID, StartTime: start.Add(4 * time.Second), EndTime: start.Add(5 * time.Second), Final: true},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.setWindowSizeLocked(windowSize{Width: width, Height: 40})
+
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(width)
+	// Dense single-character "words" pack right up to the wrap boundary, so a
+	// continuation line reaches ~(width - gutter) and the depth indent prepended
+	// afterwards pushes it past the viewport unless the wrap width accounts for
+	// the indentation.
+	_, _ = logs.WriteMarkdown([]byte(strings.TrimSpace(strings.Repeat("x ", 120)) + "\n"))
+	fe.logs.Logs[subResponseID] = logs
+
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.conversationReport(tuist.Context{Width: width}, r, false)
+	if len(lines) == 0 {
+		t.Fatal("conversationReport returned no lines")
+	}
+	for _, l := range lines {
+		if w := len([]rune(strings.TrimRight(l, " "))); w > width {
+			t.Errorf("line exceeds width %d (got %d): %q", width, w, l)
+		}
+	}
+}
+
 // TestConversationReportRendersToolCallArgsAndOutput verifies a tool call in the
 // final report shows both its arguments (the display span's own logs, in full)
 // and the result the LLM saw (the nested exec span's own logs, tail-capped).

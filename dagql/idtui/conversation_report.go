@@ -58,6 +58,16 @@ func (fe *frontendPretty) renderConversationSection(ctx tuist.Context, r *render
 // sub-agent -- the child messages one level under it. It is the message analog
 // of renderCheckNode, and reuses renderStep so the report matches the live tree.
 func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r *renderer, node *dagui.MessageNode, depth int) {
+	indent := strings.Repeat("  ", depth)
+
+	// renderStep / renderMessageLogs wrap this node's logs to the full content
+	// width, but every line is shifted right by len(indent) below so a nested
+	// sub-agent's turns sit under the tool call that spawned them. Shrink the
+	// width used to wrap those logs by the indent first, otherwise the wrapped
+	// Markdown (and log output) overflows the viewport -- two columns further per
+	// nesting level.
+	fe.indentMessageNodeLogs(node.Span, fe.contentWidth-len(indent))
+
 	// Render the message row into a buffer with no tree indentation (a detached
 	// row has no parent chain for fancyIndent to walk), then indent every line by
 	// depth so nested sub-agent turns sit under their tool call.
@@ -74,7 +84,6 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 		fe.renderMessageLogs(rowOut, node.Span)
 	}
 
-	indent := strings.Repeat("  ", depth)
 	for _, line := range strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n") {
 		if line == "" {
 			fmt.Fprintln(out)
@@ -85,6 +94,27 @@ func (fe *frontendPretty) renderMessageNode(ctx tuist.Context, out TermOutput, r
 
 	for _, child := range node.Children {
 		fe.renderMessageNode(ctx, out, r, child, depth+1)
+	}
+}
+
+// indentMessageNodeLogs shrinks the width used to wrap a surfaced message's logs
+// to width so they fit once renderMessageNode shifts the rendered block right by
+// its depth indent. It covers the message/tool-call display span's own logs and,
+// for a tool call, its nested execution span's output. A no-op until the content
+// width is known.
+func (fe *frontendPretty) indentMessageNodeLogs(span *dagui.Span, width int) {
+	if fe.contentWidth <= 0 {
+		return
+	}
+	width = max(width, 1)
+	setWidth := func(id dagui.SpanID) {
+		if vt := fe.logs.Logs[id]; vt != nil {
+			vt.SetWidth(width)
+		}
+	}
+	setWidth(span.ID)
+	if exec := toolCallExecSpan(span); exec != nil {
+		setWidth(exec.ID)
 	}
 }
 
