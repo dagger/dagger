@@ -5632,6 +5632,19 @@ type Query implements Node {
   """The Dagger engine container configuration and state"""
   engine: Engine!
 
+  """
+  Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+  """
+  engineVolume(
+    """
+    Canonical slash-separated volume name beneath the engine volume namespace.
+    """
+    name: String!
+
+    """Optional existing subdirectory within the volume payload to mount."""
+    subdir: String
+  ): Volume!
+
   """Initializes a new environment"""
   env(
     """

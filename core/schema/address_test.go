@@ -30,3 +30,59 @@ func TestParseSSHFSVolumeAddressErrors(t *testing.T) {
 		require.Error(t, err, tc)
 	}
 }
+
+func TestParseEngineVolumeAddress(t *testing.T) {
+	for _, tc := range []struct {
+		address   string
+		name      string
+		subdir    string
+		hasSubdir bool
+	}{
+		{address: "engine-volume://datasets", name: "datasets"},
+		{address: "engine-volume://datasets/models", name: "datasets/models"},
+		{
+			address:   "engine-volume://datasets/models?subdir=llama%2Fweights",
+			name:      "datasets/models",
+			subdir:    "llama/weights",
+			hasSubdir: true,
+		},
+		{
+			address:   "engine-volume://datasets/models?subdir=path%20with%20spaces",
+			name:      "datasets/models",
+			subdir:    "path with spaces",
+			hasSubdir: true,
+		},
+	} {
+		t.Run(tc.address, func(t *testing.T) {
+			parsed, err := parseEngineVolumeAddress(tc.address)
+			require.NoError(t, err)
+			require.Equal(t, tc.name, parsed.Name)
+			require.Equal(t, tc.subdir, parsed.Subdir)
+			require.Equal(t, tc.hasSubdir, parsed.HasSubdir)
+		})
+	}
+}
+
+func TestParseEngineVolumeAddressErrors(t *testing.T) {
+	for _, tc := range []string{
+		"sshfs://datasets/models",
+		"engine-volume:datasets/models",
+		"engine-volume:///datasets/models",
+		"engine-volume://user@datasets/models",
+		"engine-volume://datasets/models/",
+		"engine-volume://datasets//models",
+		"engine-volume://datasets/%6dodels",
+		"engine-volume://datasets/fs",
+		"engine-volume://datasets/models?",
+		"engine-volume://datasets/models?subdir=",
+		"engine-volume://datasets/models?subdir=one&subdir=two",
+		"engine-volume://datasets/models?subdir=../escape",
+		"engine-volume://datasets/models?unknown=x",
+		"engine-volume://datasets/models#fragment",
+	} {
+		t.Run(tc, func(t *testing.T) {
+			_, err := parseEngineVolumeAddress(tc)
+			require.Error(t, err)
+		})
+	}
+}

@@ -14324,6 +14324,30 @@ class Query(Root):
         _ctx = self._select("engine", _args)
         return Engine(_ctx)
 
+    def engine_volume(
+        self,
+        name: str,
+        *,
+        subdir: str | None = None,
+    ) -> "Volume":
+        """Constructs an engine-managed volume backed by operator-provided
+        storage beneath the configured engine state root.
+
+        Parameters
+        ----------
+        name:
+            Canonical slash-separated volume name beneath the engine volume
+            namespace.
+        subdir:
+            Optional existing subdirectory within the volume payload to mount.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("subdir", subdir, None),
+        ]
+        _ctx = self._select("engineVolume", _args)
+        return Volume(_ctx)
+
     def env(
         self,
         *,

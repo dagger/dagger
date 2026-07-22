@@ -14181,6 +14181,28 @@ func (r *Query) Engine() *Engine {
 	}
 }
 
+// EngineVolumeOpts contains options for Query.EngineVolume
+type EngineVolumeOpts struct {
+	// Optional existing subdirectory within the volume payload to mount.
+	Subdir string
+}
+
+// Constructs an engine-managed volume backed by operator-provided storage beneath the configured engine state root.
+func (r *Query) EngineVolume(name string, opts ...EngineVolumeOpts) *Volume {
+	q := r.query.Select("engineVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `subdir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Subdir) {
+			q = q.Arg("subdir", opts[i].Subdir)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Volume{
+		query: q,
+	}
+}
+
 // EnvOpts contains options for Query.Env
 type EnvOpts struct {
 	// Give the environment the same privileges as the caller: core API including host access, current module, and dependencies

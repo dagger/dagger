@@ -197,6 +197,31 @@ func TestAddressVolumeRequiresMainClient(t *testing.T) {
 	require.ErrorContains(t, err, "only the main client")
 }
 
+func TestAddressConstructsEngineVolume(t *testing.T) {
+	ctx, dag := newVolumeSchemaTestDag(t, &engine.ClientMetadata{
+		ClientID:  "main",
+		SessionID: "engine-volume-address-session",
+	})
+
+	var vol dagql.ObjectResult[*core.Volume]
+	err := dag.Select(ctx, dag.Root(), &vol,
+		dagql.Selector{
+			Field: "address",
+			Args: []dagql.NamedInput{
+				{Name: "value", Value: dagql.NewString("engine-volume://datasets/models?subdir=llama%2Fweights")},
+			},
+		},
+		dagql.Selector{Field: "volume"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, core.VolumeBackendKindEngine, vol.Self().Backend)
+	require.Equal(t, &core.EngineVolumeConfig{
+		Name:          "datasets/models",
+		Subdir:        "llama/weights",
+		LayoutVersion: core.EngineVolumeLayoutVersion,
+	}, vol.Self().Engine)
+}
+
 func TestSSHFSVolumeRequiresKnownHostsUnlessInsecure(t *testing.T) {
 	ctx, dag := newVolumeSchemaTestDag(t, &engine.ClientMetadata{
 		ClientID:  "main",
