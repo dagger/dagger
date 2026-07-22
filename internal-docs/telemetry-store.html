@@ -295,7 +295,7 @@ func (s *stream[Row]) Append(rows []Row, size int64) (last int64) {
 <p>The critical section is an ID assignment and a slice append — nanoseconds to microseconds,
 with no I/O. Below the hard cap, a hundred goroutines appending small batches interleave with
 negligible waiting, because nobody holds the lock long enough to queue behind. If a stream tail
-reaches its 64&nbsp;MiB hard cap, <code>Append</code> waits on the condition variable until the
+reaches its 16&nbsp;MiB hard cap, <code>Append</code> waits on the condition variable until the
 spiller drains enough data (and an oversized batch waits until it is physically spilled). The
 <code>beginWait</code> convoy has no equivalent on the normal path — there is no transaction to
 begin and no connection to acquire.</p>
@@ -331,7 +331,7 @@ part of this change.</p>
 <h3>3.4 The spill file: how memory stays bounded</h3>
 
 <p>The tail is a small window, not the history. A background spiller per stream moves the oldest
-tail rows into the file whenever the tail exceeds its budget (a few MiB):</p>
+tail rows into the file whenever the tail exceeds its 1&nbsp;MiB budget:</p>
 
 <ol>
 <li>Take the lock briefly to grab a batch of the oldest tail rows (they're immutable — safe to
@@ -446,7 +446,7 @@ other measured slow-fan-out source — and SSE reads stop competing with writes 
 <tr><td>SSE tail read (the 10Hz poll)</td><td>SQL query on the read pool</td><td>mutex + slice copy</td></tr>
 <tr><td>Resumed/behind reader</td><td>B-tree range scan</td><td>indexed file seek + sequential decode (page-cache-hot for recent data)</td></tr>
 <tr><td>LLM capture queries</td><td>full-table scans (no indexes)</td><td>map lookup / walk + one cursor scan</td></tr>
-<tr><td>Memory</td><td>SQLite page cache lives in the Go heap (modernc is pure Go), per open DB</td><td>tail budget (few MiB/stream) + span maps; file cache is OS page cache, reclaimable</td></tr>
+<tr><td>Memory</td><td>SQLite page cache lives in the Go heap (modernc is pure Go), per open DB</td><td>tail budget (1 MiB/stream) + span maps; file cache is OS page cache, reclaimable</td></tr>
 </table>
 
 <p>The honest core of the argument: the failure we're fixing is lock queueing, and this design
@@ -469,11 +469,12 @@ writer merges first as an interim fix and is later replaced wholesale by this; (
 boundaries confirmed. Proceeding to implementation (phased per §6, review council per phase).
 This doc lives in the repo at <code>internal-docs/telemetry-store.html</code>.</div>
 
-<div class="warn"><b>Round-2 council decision (2026-07-22):</b> keep a 4&nbsp;MiB spill target
-per stream and add a 64&nbsp;MiB blocking hard cap. This leaves measured workloads on the
-microsecond append path while propagating pathological disk pressure into the bounded OTel BSP
-queues instead of allowing unbounded heap growth; a wedged disk may block indefinitely, matching
-the accepted SQLite failure mode.</div>
+<div class="warn"><b>Round-2 council decision and benchmark retune (2026-07-22):</b> the initial
+4&nbsp;MiB spill target and 64&nbsp;MiB blocking hard cap were retuned to 1&nbsp;MiB and
+16&nbsp;MiB after grouped-scale tails hovering near the target cost about 120&nbsp;MiB of
+transient live heap; the SSE hot path needs only about 100&nbsp;ms of data. The re-benchmark must
+confirm via <code>capWaitEngaged</code> that earlier spills keep the smaller cap off the append
+path. A wedged disk may still block indefinitely, matching the accepted SQLite failure mode.</div>
 
 <ol>
 <li><b>Reopen cost.</b> Rebuilding <code>nextID</code>, the sparse index, and the span maps on
