@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/openrouter"
+	"github.com/dagger/dagger/core/modelcatalog"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cmd/dagger/llmconfig"
@@ -62,11 +62,10 @@ type LLMSession struct {
 	frontend idtui.Frontend
 
 	// undo       *LLMSession
-	dag    *dagger.Client
-	llm    *dagger.LLM
-	models openrouter.Models
-	model  string
-	shell  *shellCallHandler
+	dag   *dagger.Client
+	llm   *dagger.LLM
+	model string
+	shell *shellCallHandler
 
 	// onStep, if set, is invoked after every step of a prompt turn. It is used
 	// to auto-save the session so it is preserved even if the process is
@@ -125,39 +124,27 @@ func NewLLMSession(
 		s.plumbingSpan.End()
 	}()
 
-	// TODO: cache this
-	models, err := openrouter.FetchModels(ctx)
-	if err != nil {
-		return nil, err
-	}
-	s.models = models
-
 	// Register a pricing function so the frontend can cost the live metric
 	// rollup (all models + sub-agents) at render time, keeping the status line
-	// current between turns instead of the per-step snapshot.
+	// current between turns instead of the per-step snapshot. Pricing comes
+	// from the embedded catwalk catalog (modelcatalog), the single source of
+	// truth shared with the engine.
 	if sink, ok := frontend.(interface {
 		SetLLMCostFunc(idtui.LLMCostFunc)
 	}); ok {
-		costModels := models
-		sink.SetLLMCostFunc(func(model string, input, output, cacheReads, cacheWrites int64) float64 {
-			m := costModels.Lookup(model)
-			if m == nil {
-				return 0
-			}
-			return m.Pricing.Prompt.Cost(int(input)) +
-				m.Pricing.Completion.Cost(int(output)) +
-				m.Pricing.InputCacheRead.Cost(int(cacheReads)) +
-				m.Pricing.InputCacheWrite.Cost(int(cacheWrites))
+		sink.SetLLMCostFunc(func(provider, model string, input, output, cacheReads, cacheWrites int64) float64 {
+			return modelcatalog.Cost(provider, model, input, output, cacheReads, cacheWrites)
 		})
 	}
 
 	s.reset()
 
 	// Grab the model to check for a valid config
-	s.model, err = s.llm.Model(ctx)
+	model, err := s.llm.Model(ctx)
 	if err != nil {
 		return nil, err
 	}
+	s.model = model
 
 	return s, nil
 }
@@ -396,10 +383,17 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 		ContextPercent:    -1, // unknown by default
 		AutoCompact:       s.ShouldAutocompact(),
 	}
-	if m := s.models.Lookup(s.model); m != nil {
-		statusData.ContextWindow = int(m.ContextLength)
-		if contextTokens > 0 && m.ContextLength > 0 {
-			statusData.ContextPercent = float64(contextTokens) / float64(m.ContextLength) * 100
+	// The engine is the source of truth for the context window (backed by the
+	// shared catwalk catalog); it reports 0 for uncatalogued/local models or an
+	// older engine without the field.
+	contextWindow, err := llm.ContextWindow(s.plumbingCtx)
+	if err != nil {
+		contextWindow = 0
+	}
+	if contextWindow > 0 {
+		statusData.ContextWindow = contextWindow
+		if contextTokens > 0 {
+			statusData.ContextPercent = float64(contextTokens) / float64(contextWindow) * 100
 		}
 	}
 	s.frontend.SetStatusLine(statusData)
@@ -508,16 +502,16 @@ func (s *LLMSession) maybeAutoCompact(ctx context.Context) (_ *dagger.LLM, rerr 
 		return nil, err
 	}
 
-	// Check if we know the model's context length
-	m := s.models.Lookup(s.model)
-	if m == nil || m.ContextLength <= 0 {
-		// Can't determine context length, skip auto-compact
+	// The engine reports the model's context window (shared catwalk catalog);
+	// 0 means uncatalogued/local, so we can't determine a threshold — skip.
+	contextWindow, err := s.llm.ContextWindow(s.plumbingCtx)
+	if err != nil || contextWindow <= 0 {
 		return s.llm, nil
 	}
 
-	threshold := int(m.ContextLength) - autoCompactReserveTokens
+	threshold := contextWindow - autoCompactReserveTokens
 	if threshold <= 0 {
-		threshold = int(float64(m.ContextLength) * 0.80)
+		threshold = int(float64(contextWindow) * 0.80)
 	}
 
 	if contextTokens > threshold {

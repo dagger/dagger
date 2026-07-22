@@ -35,9 +35,9 @@ type StatusLineData struct {
 }
 
 // LLMCostFunc computes the dollar cost of a model's token usage. The CLI
-// registers one (closing over its pricing tables) so the frontend can price the
-// live metric rollup without depending on the pricing package.
-type LLMCostFunc func(model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64
+// registers one (closing over the model catalog) so the frontend can price the
+// live metric rollup without depending on the catalog package.
+type LLMCostFunc func(provider, model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) float64
 
 // StatusLineLive carries the aggregate token/cost rollup across all models and
 // sub-agents, recomputed from live metrics at render time so the status line
@@ -149,6 +149,11 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 		case d.ContextPercent > 70:
 			ctxPart = out.String(ctxPart).Foreground(termenv.ANSIYellow).String()
 		}
+		// Prepend a gauge when the usage is known, so it's obvious at a glance
+		// how close the conversation is to the context limit.
+		if d.ContextPercent >= 0 {
+			ctxPart = renderContextBar(out, d.ContextPercent) + " " + ctxPart
+		}
 		parts = append(parts, ctxPart)
 	}
 
@@ -182,6 +187,41 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 	dimLine := out.String(line).Foreground(termenv.ANSIBrightBlack).String()
 
 	ctx.Lines(dimLine)
+}
+
+// contextBarWidth is the fixed cell width of the status-line context gauge.
+const contextBarWidth = 10
+
+// renderContextBar draws a compact, fixed-width progress bar visualising how
+// much of the model's context window is occupied, making it obvious at a glance
+// when the conversation is nearing the context limit. The fill colour tracks
+// the same thresholds as the percentage text (yellow past 70%, red past 90%),
+// and eighth-block characters give sub-cell resolution. percent may exceed 100
+// (an overflowing context), in which case the bar simply reads full.
+func renderContextBar(out *termenv.Output, percent float64) string {
+	frac := max(min(percent/100, 1), 0)
+	eighths := max(min(int(frac*contextBarWidth*8), contextBarWidth*8), 0)
+	full, rem := eighths/8, eighths%8
+
+	color := termenv.ANSIGreen
+	switch {
+	case percent > 90:
+		color = termenv.ANSIRed
+	case percent > 70:
+		color = termenv.ANSIYellow
+	}
+
+	var sb strings.Builder
+	if full > 0 {
+		sb.WriteString(out.String(strings.Repeat(string(horizontalEighths[8]), full)).Foreground(color).String())
+	}
+	if rem > 0 {
+		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(color).String())
+	}
+	if empty := contextBarWidth - full - min(rem, 1); empty > 0 {
+		sb.WriteString(out.String(strings.Repeat(Block25, empty)).Foreground(termenv.ANSIBrightBlack).String())
+	}
+	return sb.String()
 }
 
 // formatTokenCount formats a token count in a compact human-readable form.
