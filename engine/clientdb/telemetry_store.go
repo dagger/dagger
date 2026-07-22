@@ -20,33 +20,50 @@ type spanLookup struct {
 
 	// The composite key preserves SelectSpan's trace_id + span_id predicate.
 	firstRow map[spanLookupKey]int64
-	// Each nested map is a set, preserving unique child span IDs even though
-	// live, final, and heartbeat snapshots repeat the same span row.
-	children map[string]map[string]struct{}
+	// Duplicate snapshots are suppressed when firstRow is populated, leaving
+	// one copy of each child span ID in its parent's slice.
+	children map[string][]string
 }
 
 func newSpanLookup() *spanLookup {
 	return &spanLookup{
 		firstRow: make(map[spanLookupKey]int64),
-		children: make(map[string]map[string]struct{}),
+		children: make(map[string][]string),
 	}
 }
 
 func (l *spanLookup) add(row Span) {
 	l.mu.Lock()
-	key := spanLookupKey{traceID: row.TraceID, spanID: row.SpanID}
-	if _, exists := l.firstRow[key]; !exists {
-		l.firstRow[key] = row.ID
-	}
-	if row.ParentSpanID.Valid {
-		children := l.children[row.ParentSpanID.String]
-		if children == nil {
-			children = make(map[string]struct{})
-			l.children[row.ParentSpanID.String] = children
-		}
-		children[row.SpanID] = struct{}{}
+	l.addLocked(row)
+	l.mu.Unlock()
+}
+
+func (l *spanLookup) addAll(rows []Span) {
+	l.mu.Lock()
+	for _, row := range rows {
+		l.addLocked(row)
 	}
 	l.mu.Unlock()
+}
+
+func (l *spanLookup) addLocked(row Span) {
+	key := spanLookupKey{traceID: row.TraceID, spanID: row.SpanID}
+	if _, exists := l.firstRow[key]; exists {
+		return
+	}
+	l.firstRow[key] = row.ID
+	if row.ParentSpanID.Valid {
+		children := l.children[row.ParentSpanID.String]
+		// A repeated span ID in another trace is vanishingly rare, but the
+		// children map follows the SQL query's span-ID-only identity and must
+		// remain unique if it happens.
+		for _, child := range children {
+			if child == row.SpanID {
+				return
+			}
+		}
+		l.children[row.ParentSpanID.String] = append(children, row.SpanID)
+	}
 }
 
 func (l *spanLookup) first(traceID, spanID string) (int64, bool) {
@@ -65,10 +82,7 @@ func (l *spanLookup) descendants(root string) map[string]struct{} {
 		queue = queue[1:]
 
 		l.mu.RLock()
-		children := make([]string, 0, len(l.children[parent]))
-		for child := range l.children[parent] {
-			children = append(children, child)
-		}
+		children := append([]string(nil), l.children[parent]...)
 		l.mu.RUnlock()
 
 		for _, child := range children {
@@ -117,7 +131,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 		spanCodec,
 		tailBudget,
 		store.lookup.add,
-		store.lookup.add,
+		store.lookup.addAll,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("open span stream: %w", err)

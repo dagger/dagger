@@ -27,7 +27,7 @@ type logStream[Row any] struct {
 	tailBytes int64
 	budget    int64
 	spill     *spillFile[Row]
-	onAppend  func(Row)
+	onAppend  func([]Row)
 
 	spillReq chan struct{}
 	closeReq chan chan error
@@ -41,7 +41,7 @@ func openLogStream[Row any](
 	codec rowCodec[Row],
 	budget int64,
 	onRecover func(Row),
-	onAppend func(Row),
+	onAppend func([]Row),
 ) (*logStream[Row], error) {
 	spill, err := openSpillFile(ctx, path, codec, onRecover)
 	if err != nil {
@@ -99,9 +99,9 @@ func (s *logStream[Row]) Append(rows []Row) (int64, error) {
 	for i := range rows {
 		s.codec.setID(&rows[i], s.nextID)
 		s.nextID++
-		if s.onAppend != nil {
-			s.onAppend(rows[i])
-		}
+	}
+	if s.onAppend != nil {
+		s.onAppend(rows)
 	}
 	s.tail = append(s.tail, rows...)
 	s.tailSizes = append(s.tailSizes, sizes...)

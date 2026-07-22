@@ -28,11 +28,13 @@ func TestLogStreamConcurrentProperty(t *testing.T) {
 		metricCodec,
 		1024,
 		nil,
-		func(row Metric) {
+		func(rows []Metric) {
 			modelMu.Lock()
-			model[row.ID] = row
+			for _, row := range rows {
+				model[row.ID] = row
+				published.Store(row.ID)
+			}
 			modelMu.Unlock()
-			published.Store(row.ID)
 		},
 	)
 	require.NoError(t, err)
