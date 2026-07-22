@@ -120,8 +120,8 @@ func TestEmitHooksProduceLoaderShape(t *testing.T) {
 	if got, _ := attrString(pub, telemetryattrs.WcprofOpKindAttr); got != wcprof.OpKindInternal.String() {
 		t.Fatalf("publishResult op kind = %q, want internal", got)
 	}
-	// Internal lets the per-client-DB live processor drop the live double-emit;
-	// Passthrough keeps the span hidden in UIs that show internal spans by default.
+	// Internal and Passthrough preserve the UI and loader semantics; live start
+	// emission is uniform for all spans.
 	if internal, ok := attrBool(pub, telemetry.UIInternalAttr); !ok || !internal {
 		t.Fatalf("publishResult must be ui.internal")
 	}

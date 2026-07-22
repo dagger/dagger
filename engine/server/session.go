@@ -233,7 +233,7 @@ type daggerClient struct {
 	dialer                   *net.Dialer
 	engineUtilClient         *engineutil.Client
 
-	// SQLite database storing telemetry + anything else
+	// Append-only per-client telemetry store and its OTel exporters.
 	tracerProvider *sdktrace.TracerProvider
 	spanExporter   sdktrace.SpanExporter
 
@@ -318,6 +318,15 @@ func (client *daggerClient) String() string {
 // NOTE: be sure to defer closing the DB when done with it, otherwise it may leak
 func (client *daggerClient) TelemetryDB(ctx context.Context) (*clientdb.DB, error) {
 	return client.daggerSession.telemetryPubSub.srv.clientDBs.Open(ctx, client.clientID)
+}
+
+// closeKeepAliveTelemetryDB transfers and releases the client's one long-lived
+// store reference. The caller must either hold the session lifecycle lock or
+// be cleaning up a client that was never published into its session.
+func (client *daggerClient) closeKeepAliveTelemetryDB() error {
+	db := client.keepAliveTelemetryDB
+	client.keepAliveTelemetryDB = nil
+	return db.Close()
 }
 
 // slowDrainOp flags a shutdown-drain operation (a client's provider flush, a
@@ -411,7 +420,7 @@ func (sess *daggerSession) StoreTelemetrySeenKey(key string) {
 
 // inflightSessionTelemetryFlushes counts engine-wide concurrent session-level
 // telemetry flushes. Every flush fans out to every client in its session, so
-// concurrent flushes multiply pressure on the same client DBs; the gauge makes
+// concurrent flushes multiply pressure on the same client stores; the gauge makes
 // that amplification visible next to each flush's duration.
 var inflightSessionTelemetryFlushes atomic.Int64
 
@@ -631,8 +640,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 			// Flush all telemetry.
 			errs = errors.Join(errs, client.ShutdownTelemetry(ctx))
 
-			// Close client DB; subscribers may re-open as needed with client.TelemetryDB()
-			errs = errors.Join(errs, client.keepAliveTelemetryDB.Close())
+			// Close the keepalive store reference; subscribers may re-open as
+			// needed with client.TelemetryDB(). Clearing the owned pointer before
+			// Close keeps repeated teardown paths from over-releasing the refcount.
+			errs = errors.Join(errs, client.closeKeepAliveTelemetryDB())
 
 			return errs
 		})
@@ -912,7 +923,7 @@ func (srv *Server) initializeDaggerClient(
 		}
 	}
 
-	// configure OTel providers that export to SQLite
+	// configure OTel providers that export to the per-client telemetry store
 	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	// Raise the per-span link cap well above the SDK default of 128. The wcprof
 	// OTel profiling source emits runtime wait edges as span links attached to
@@ -948,10 +959,9 @@ func (srv *Server) initializeDaggerClient(
 		// save to our own client's DB. Large-queue BSP so a big burst (a cold engine
 		// build is ~15k spans, live-double-emitted ≈ 30k records) does not overflow the
 		// default 2048-slot queue and silently drop spans before they reach the DB the
-		// CLI drains toward Cloud. InternalFiltering: drop the live (OnStart) snapshot
-		// for dagger.io/ui.internal spans — they're hidden from the UI, so their live
-		// double-write is pure SQLite write volume (see NewInternalFilteringLiveSpanProcessor).
-		sdktrace.WithSpanProcessor(enginetel.NewInternalFilteringLiveSpanProcessor(
+		// CLI drains toward Cloud. Emit live start snapshots uniformly: internal spans
+		// can be load-bearing parents of visible progress spans.
+		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(
 			client.spanExporter,
 		)),
 	}
@@ -960,11 +970,9 @@ func (srv *Server) initializeDaggerClient(
 	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		// NOTE: a synchronous processor here would do one SQLite write per
-		// record on the emitting goroutine; with enough concurrent emitters
-		// they all pile up on the DB's write lock (each busy-waiting in a
-		// syscall that pins an OS thread), which can exhaust the runtime's
-		// thread limit. Batched with bounded churn settings — see
+		// NOTE: a synchronous processor here would append every record on its
+		// emitting goroutine and propagate hard-cap backpressure directly into
+		// application work. Keep emitters decoupled with bounded batching — see
 		// enginetel.NewLogBatchProcessor.
 		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logs)),
 	}
@@ -980,12 +988,12 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	// export to parent client DBs too (same large-queue InternalFiltering BSP —
-	// nested-client spans reach Cloud via the parent DB, so this hop must not drop
-	// on a burst either, and internal spans skip their live double-emit here too).
+	// export to parent client DBs too (same large-queue live BSP — nested-client
+	// spans reach Cloud via the parent DB, so this hop must not drop on a burst
+	// either and must emit every live start snapshot uniformly).
 	for _, parent := range client.parents {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
-			enginetel.NewInternalFilteringLiveSpanProcessor(
+			enginetel.NewLargeQueueLiveSpanProcessor(
 				srv.telemetryPubSub.Spans(parent),
 			),
 		))
@@ -1236,8 +1244,8 @@ func (srv *Server) getOrInitClient(
 			clientMetadata: opts.ClientMetadata,
 		}
 
-		// Open the SQLite DB outside clientMu (its busy_timeout is 10s) so a slow
-		// open can never block observers reading the clients map under clientMu.
+		// Open the store outside clientMu because replaying persisted streams can
+		// take time and must not block observers reading the clients map.
 		if db, err := srv.clientDBs.Open(ctx, client.clientID); err != nil {
 			slog.Warn("failed to open client DB; continuing without keepalive",
 				"sessionID", sessionID,
@@ -1246,9 +1254,7 @@ func (srv *Server) getOrInitClient(
 			)
 		} else {
 			client.keepAliveTelemetryDB = db
-			failureCleanups.Add("close client telemetry DB", func() error {
-				return db.Close()
-			})
+			failureCleanups.Add("close client telemetry DB", client.closeKeepAliveTelemetryDB)
 		}
 
 		sess.clientMu.RLock()
@@ -2054,9 +2060,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	// DB*, so a nested client only needs to flush itself; re-flushing every
 	// sibling on each nested shutdown is redundant and, under a parallel
 	// teardown storm, self-inflicts an O(n^2) burst of concurrent whole-session
-	// flushes that convoy on the per-DB single connection and blow the client's
-	// shutdown budget. The main client (which shuts down last and whose DB the
-	// CLI ultimately drains) still does a session-wide flush to sweep up any
+	// flushes, multiplying exporter work and spill pressure enough to blow the
+	// client's shutdown budget. The main client (which shuts down last and whose
+	// DB the CLI ultimately drains) still does a session-wide flush to sweep up any
 	// stragglers from clients that hadn't shut down yet.
 	var flushErr error
 	if client.clientID == sess.mainClientCallerID {

@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/stretchr/testify/require"
@@ -28,6 +29,19 @@ import (
 type fakeSessionCaller struct {
 	id   string
 	conn *grpc.ClientConn
+}
+
+func TestCloseKeepAliveTelemetryDBTransfersOwnership(t *testing.T) {
+	dbs := clientdb.NewDBs(t.TempDir())
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+
+	client := &daggerClient{keepAliveTelemetryDB: db}
+	require.NoError(t, client.closeKeepAliveTelemetryDB())
+	require.Nil(t, client.keepAliveTelemetryDB)
+	// A cleanup and teardown path converging on the same client is a no-op
+	// after the first path transfers the pointer.
+	require.NoError(t, client.closeKeepAliveTelemetryDB())
 }
 
 func (caller *fakeSessionCaller) Supports(string) bool {

@@ -1495,6 +1495,9 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 			}
 
 			if log.SpanID.Valid {
+				if !log.TraceID.Valid {
+					return nil, fmt.Errorf("log %d has a span ID without a trace ID", log.ID)
+				}
 				span, err := q.Read().SelectSpan(ctx, clientdb.SelectSpanParams{
 					TraceID: log.TraceID.String,
 					SpanID:  log.SpanID.String,
