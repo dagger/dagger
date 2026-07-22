@@ -147,6 +147,16 @@ type ClientMetadata struct {
 	// this client. When unset, no environment overlay is applied.
 	WorkspaceEnv *string `json:"workspace_env,omitempty"`
 
+	// WorkspaceModuleScope hints at the workspace module this client's first
+	// schema introspection targets: the leading CLI command token, unresolved
+	// (it may name a module, an entrypoint-proxied function, or a typo). The
+	// engine may use it to defer loading unrelated workspace modules for the
+	// first request whose only full-schema demand is currentTypeDefs. An
+	// unrecognized token falls back to the entrypoint module when one is
+	// configured, else to loading everything; deferred modules load on demand
+	// from later requests.
+	WorkspaceModuleScope string `json:"workspace_module_scope,omitempty"`
+
 	// UseRecipeIDsByDefault asks id() to return recipe-form IDs unless the
 	// request explicitly passes a recipe argument. This is engine-internal
 	// nested-client state and must not be forwarded through client headers.

@@ -942,8 +942,20 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 // caller can surface them (e.g. GeneratorGroup.loadFailures). Genuine engine
 // errors (batch resolution, arbitration, serving) stay fatal regardless.
 func (srv *Server) ensureModulesLoadedMode(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool) (loadFailures []string, _ error) {
+	return srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, bestEffort, nil)
+}
+
+// ensureModulesLoadedModeWithSuccess runs onSuccessLocked after a successful
+// load while modulesMu is still held. Callers use it for state transitions
+// that must be atomic with the load becoming visible to another request.
+func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, client *daggerClient, filter func([]pendingModule) []pendingModule, bestEffort bool, onSuccessLocked func()) (loadFailures []string, rerr error) {
 	client.modulesMu.Lock()
 	defer client.modulesMu.Unlock()
+	defer func() {
+		if rerr == nil && onSuccessLocked != nil {
+			onSuccessLocked()
+		}
+	}()
 
 	if err := srv.ensureExtraModulesLoadedLocked(ctx, client); err != nil {
 		return nil, err
@@ -1341,6 +1353,69 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 		}
 	}
 	return filtered
+}
+
+// filterPendingWorkspaceModulesForScopedRootFields applies the client-declared
+// workspace module scope on top of the root-field demand: when the request's
+// only full-schema demand is currentTypeDefs, the scope replaces its
+// load-everything contribution with the scoped module set. Any other
+// full-schema field keeps loading everything, scope untouched. The second
+// result reports whether the scope was applied, so the caller can consume it.
+func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string, scope string, entrypointServed bool) ([]pendingModule, bool) {
+	if scope == "" || len(mods) == 0 {
+		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+	}
+
+	hasCurrentTypeDefs := false
+	remaining := make([]string, 0, len(rootFields))
+	for _, field := range rootFields {
+		if field == "currentTypeDefs" {
+			hasCurrentTypeDefs = true
+			continue
+		}
+		remaining = append(remaining, field)
+	}
+	if !hasCurrentTypeDefs || rootFieldsRequireFullWorkspaceSchema(remaining) {
+		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+	}
+
+	wanted := make(map[string]struct{})
+	for _, mod := range filterPendingWorkspaceModulesForRootFields(mods, served, remaining) {
+		wanted[moduleProgressName(mod)] = struct{}{}
+	}
+	for _, mod := range resolveWorkspaceModuleScope(mods, served, scope, entrypointServed) {
+		wanted[moduleProgressName(mod)] = struct{}{}
+	}
+	selected := make([]pendingModule, 0, len(wanted))
+	for _, mod := range mods {
+		if _, ok := wanted[moduleProgressName(mod)]; ok {
+			selected = append(selected, mod)
+		}
+	}
+	return selected, true
+}
+
+// resolveWorkspaceModuleScope maps the scope token to the pending modules it
+// demands: the named module plus the pending entrypoint module(s) -- the token
+// may be one of their root-proxied functions, and the command tree wants their
+// Query-root proxies either way. A token naming nothing known demands the
+// entrypoint alone when one is pending, or nothing when it is already served;
+// with no entrypoint to resolve it, everything loads (conservative: the token
+// could be anything).
+func resolveWorkspaceModuleScope(mods []pendingModule, served map[string]struct{}, scope string, entrypointServed bool) []pendingModule {
+	scopeName := canonicalWorkspaceModuleName(scope)
+	_, isModule := knownWorkspaceModuleNames(mods, served)[scopeName]
+
+	selected := make([]pendingModule, 0, len(mods))
+	for _, mod := range mods {
+		if (!entrypointServed && mod.Entrypoint) || (isModule && pendingModuleCliName(mod) == scopeName) {
+			selected = append(selected, mod)
+		}
+	}
+	if !isModule && !entrypointServed && len(selected) == 0 {
+		return mods
+	}
+	return selected
 }
 
 func rootFieldsRequireFullWorkspaceSchema(fields []string) bool {

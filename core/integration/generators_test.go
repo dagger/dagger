@@ -574,6 +574,128 @@ func (GeneratorsSuite) TestWorkspaceUpNarrowsToRequestedModule(ctx context.Conte
 	})
 }
 
+// TestWorkspaceCallNarrowsToRequestedModule mirrors
+// TestWorkspaceGenerateNarrowsToRequestedModule for `dagger api call`:
+// targeting a healthy module's function must not load every workspace module
+// just to build the command tree. The CLI forwards its leading token as the
+// workspace_module_scope client metadata hint and the engine narrows the
+// currentTypeDefs introspection to that module, so an unrelated broken/stale
+// module cannot block the call.
+func (GeneratorsSuite) TestWorkspaceCallNarrowsToRequestedModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generators-broken")
+
+	t.Run("calling a healthy module's function skips the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("api", "call", "good", "verify", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("scoped help skips the broken module", func(ctx context.Context, t *testctx.T) {
+		// --help builds the same command tree without executing, so it
+		// exercises the narrowed introspection on its own.
+		out, err := base.
+			With(daggerExec("api", "call", "good", "--help")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("listing the healthy module's functions skips the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("api", "functions", "good", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("listing all workspace functions still loads the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("api", "functions")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bad")
+	})
+}
+
+// TestWorkspaceCallNarrowsByCliNameAndEntrypoint covers the two demand shapes
+// TestWorkspaceCallNarrowsToRequestedModule cannot see with its single-word
+// module names:
+//
+//   - the CLI targets modules by their kebab-case command name, so a module
+//     declared as "goodMod" is called as `dagger api call good-mod ...` and
+//     the engine must normalize both sides the same way to narrow loading;
+//   - with a workspace entrypoint configured, the first argument may be one of
+//     the entrypoint's root-proxied functions rather than a module name, in
+//     which case the entrypoint module must load — and suffice — to resolve
+//     the call.
+//
+// In both cases the broken sibling module must stay unloaded.
+func (GeneratorsSuite) TestWorkspaceCallNarrowsByCliNameAndEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "call-narrowing")
+
+	t.Run("kebab-case module target skips the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("api", "call", "good-mod", "ping", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "pong from goodMod")
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("entrypoint function target skips the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("api", "call", "greet", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from entrypoint")
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("kebab-case functions listing skips the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("api", "functions", "good-mod", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("kebab-case generate listing skips the broken module", func(ctx context.Context, t *testctx.T) {
+		// The selector resolvers (generate/check/up) match include patterns
+		// kebab-normalized; on-demand loading must normalize the same way.
+		out, err := base.
+			With(daggerExec("generate", "-l", "good-mod")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("listing all workspace functions still loads the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("api", "functions")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bad")
+	})
+
+	t.Run("scope is one-shot within a session", func(ctx context.Context, t *testctx.T) {
+		// Two invocations in one exec share the nested client: the first scoped
+		// introspection narrows; the second, bare listing must widen to every
+		// remaining module and surface the broken one.
+		out, err := base.
+			WithExec([]string{"sh", "-c", "set -e; dagger api call good-mod ping; if dagger api functions >/dev/null 2>&1; then echo BARE_LISTING_PASSED; else echo BARE_LISTING_FAILED; fi"}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "pong from goodMod")
+		require.Contains(t, out, "BARE_LISTING_FAILED")
+	})
+}
+
 func (GeneratorsSuite) TestWorkspaceGenerateSkip(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
