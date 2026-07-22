@@ -32,9 +32,9 @@ func TestStoreRegistryReopenRecoversState(t *testing.T) {
 	for i := 4; i < len(spans); i++ {
 		spans[i] = Span{TraceID: "trace", SpanID: fmt.Sprintf("filler-%d", i)}
 	}
-	lastSpan, err := store.AppendSpans(spans)
+	spanStats, err := store.AppendSpans(spans)
 	require.NoError(t, err)
-	require.Equal(t, int64(600), lastSpan)
+	require.Equal(t, int64(600), spanStats.LastID)
 
 	logs := make([]Log, 600)
 	logs[0] = Log{SpanID: validString("root"), Body: []byte("root excluded")}
@@ -43,17 +43,17 @@ func TestStoreRegistryReopenRecoversState(t *testing.T) {
 	for i := 3; i < len(logs); i++ {
 		logs[i] = Log{SpanID: validString("unrelated"), Body: []byte(fmt.Sprintf("log-%d", i))}
 	}
-	lastLog, err := store.AppendLogs(logs)
+	logStats, err := store.AppendLogs(logs)
 	require.NoError(t, err)
-	require.Equal(t, int64(600), lastLog)
+	require.Equal(t, int64(600), logStats.LastID)
 
 	metrics := make([]Metric, 600)
 	for i := range metrics {
 		metrics[i].Data = []byte(fmt.Sprintf("metric-%d", i+1))
 	}
-	lastMetric, err := store.AppendMetrics(metrics)
+	metricStats, err := store.AppendMetrics(metrics)
 	require.NoError(t, err)
-	require.Equal(t, int64(600), lastMetric)
+	require.Equal(t, int64(600), metricStats.LastID)
 
 	require.NoError(t, store.Close())
 	require.GreaterOrEqual(t, len(store.spans.spill.index), 3)
@@ -70,19 +70,19 @@ func TestStoreRegistryReopenRecoversState(t *testing.T) {
 	require.GreaterOrEqual(t, len(reopened.logs.spill.index), 3)
 	require.GreaterOrEqual(t, len(reopened.metrics.spill.index), 3)
 
-	lastSpan, err = reopened.AppendSpans([]Span{{
+	spanStats, err = reopened.AppendSpans([]Span{{
 		TraceID:      "trace",
 		SpanID:       "new-child",
 		ParentSpanID: validString("child"),
 	}})
 	require.NoError(t, err)
-	require.Equal(t, int64(601), lastSpan)
-	lastLog, err = reopened.AppendLogs([]Log{{SpanID: validString("new-child"), Body: []byte("new child")}})
+	require.Equal(t, int64(601), spanStats.LastID)
+	logStats, err = reopened.AppendLogs([]Log{{SpanID: validString("new-child"), Body: []byte("new child")}})
 	require.NoError(t, err)
-	require.Equal(t, int64(601), lastLog)
-	lastMetric, err = reopened.AppendMetrics([]Metric{{Data: []byte("metric-601")}})
+	require.Equal(t, int64(601), logStats.LastID)
+	metricStats, err = reopened.AppendMetrics([]Metric{{Data: []byte("metric-601")}})
 	require.NoError(t, err)
-	require.Equal(t, int64(601), lastMetric)
+	require.Equal(t, int64(601), metricStats.LastID)
 
 	span, err := reopened.SelectSpan(t.Context(), SelectSpanParams{TraceID: "trace", SpanID: "child"})
 	require.NoError(t, err)

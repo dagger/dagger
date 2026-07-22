@@ -22,9 +22,9 @@ func TestStoreStreamsAndSpanQueries(t *testing.T) {
 		// first-row SelectSpan result.
 		{TraceID: "trace-b", SpanID: "child", Attributes: []byte("other-trace")},
 	}
-	last, err := store.AppendSpans(spans)
+	stats, err := store.AppendSpans(spans)
 	require.NoError(t, err)
-	require.Equal(t, int64(len(spans)), last)
+	require.Equal(t, int64(len(spans)), stats.LastID)
 
 	logs := []Log{
 		{TraceID: validString("trace-a"), SpanID: validString("root"), Body: []byte("root excluded")},
@@ -34,13 +34,13 @@ func TestStoreStreamsAndSpanQueries(t *testing.T) {
 		{TraceID: validString("trace-a"), SpanID: validString("child"), Body: []byte("child two")},
 		{Body: []byte("no span excluded")},
 	}
-	last, err = store.AppendLogs(logs)
+	stats, err = store.AppendLogs(logs)
 	require.NoError(t, err)
-	require.Equal(t, int64(len(logs)), last)
+	require.Equal(t, int64(len(logs)), stats.LastID)
 
-	last, err = store.AppendMetrics([]Metric{{Data: []byte("one")}, {Data: []byte("two")}})
+	stats, err = store.AppendMetrics([]Metric{{Data: []byte("one")}, {Data: []byte("two")}})
 	require.NoError(t, err)
-	require.Equal(t, int64(2), last)
+	require.Equal(t, int64(2), stats.LastID)
 
 	span, err := store.SelectSpan(t.Context(), SelectSpanParams{TraceID: "trace-a", SpanID: "child"})
 	require.NoError(t, err)

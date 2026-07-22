@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -22,6 +23,16 @@ const (
 )
 
 var errStoreClosed = errors.New("telemetry store is closed")
+
+// AppendStats describes the append-side work and the stream backlog visible
+// when an append returns. CapWaitDuration is non-zero only when the hard memory
+// cap applied backpressure to the caller.
+type AppendStats struct {
+	LastID          int64
+	CapWaitDuration time.Duration
+	SpillLagRows    int
+	SpillLagBytes   int64
+}
 
 type logStream[Row any] struct {
 	mu         sync.Mutex
@@ -86,6 +97,11 @@ func openLogStream[Row any](
 // Once it returns, every reader can observe every appended row. Blob slices in
 // rows are immutable after Append; tail reads intentionally share their bytes.
 func (s *logStream[Row]) Append(rows []Row) (int64, error) {
+	stats, err := s.append(rows)
+	return stats.LastID, err
+}
+
+func (s *logStream[Row]) append(rows []Row) (AppendStats, error) {
 	sizes := make([]int64, len(rows))
 	var totalSize int64
 	for i, row := range rows {
@@ -98,30 +114,36 @@ func (s *logStream[Row]) Append(rows []Row) (int64, error) {
 	}
 
 	s.mu.Lock()
+	var capWaitDuration time.Duration
 	if err := s.stateErrLocked(); err != nil {
+		stats := s.appendStatsLocked(capWaitDuration)
 		s.mu.Unlock()
-		return 0, err
+		return stats, err
 	}
 	if len(rows) == 0 {
-		last := s.nextID - 1
+		stats := s.appendStatsLocked(capWaitDuration)
 		s.mu.Unlock()
-		return last, nil
+		return stats, nil
 	}
 
 	oversized := totalSize > s.hardCap
 	for (!oversized && s.tailBytes > s.hardCap-totalSize) || (oversized && s.tailBytes > 0) {
 		s.capWaiters++
 		s.requestSpill()
+		waitStart := time.Now()
 		s.cond.Wait()
+		capWaitDuration += time.Since(waitStart)
 		s.capWaiters--
 		if err := s.stateErrLocked(); err != nil {
+			stats := s.appendStatsLocked(capWaitDuration)
 			s.mu.Unlock()
-			return 0, err
+			return stats, err
 		}
 	}
 	if int64(len(rows)) > maxStreamID-s.nextID {
+		stats := s.appendStatsLocked(capWaitDuration)
 		s.mu.Unlock()
-		return 0, fmt.Errorf("telemetry row ID space exhausted")
+		return stats, fmt.Errorf("telemetry row ID space exhausted")
 	}
 	for i := range rows {
 		s.codec.setID(&rows[i], s.nextID)
@@ -137,7 +159,6 @@ func (s *logStream[Row]) Append(rows []Row) (int64, error) {
 	} else {
 		s.tailBytes += totalSize
 	}
-	last := s.nextID - 1
 	needSpill := s.tailBytes > s.budget
 	if oversized {
 		// The caller already owns an oversized batch's blobs, so admitting it
@@ -146,21 +167,34 @@ func (s *logStream[Row]) Append(rows []Row) (int64, error) {
 		s.capWaiters++
 		s.requestSpill()
 		for s.tailBytes > s.hardCap {
+			waitStart := time.Now()
 			s.cond.Wait()
+			capWaitDuration += time.Since(waitStart)
 			if err := s.stateErrLocked(); err != nil {
 				s.capWaiters--
+				stats := s.appendStatsLocked(capWaitDuration)
 				s.mu.Unlock()
-				return 0, err
+				return stats, err
 			}
 		}
 		s.capWaiters--
 	}
+	stats := s.appendStatsLocked(capWaitDuration)
 	s.mu.Unlock()
 
 	if needSpill {
 		s.requestSpill()
 	}
-	return last, nil
+	return stats, nil
+}
+
+func (s *logStream[Row]) appendStatsLocked(capWaitDuration time.Duration) AppendStats {
+	return AppendStats{
+		LastID:          s.nextID - 1,
+		CapWaitDuration: capWaitDuration,
+		SpillLagRows:    len(s.tail),
+		SpillLagBytes:   s.tailBytes,
+	}
 }
 
 func (s *logStream[Row]) Since(ctx context.Context, id int64, limit int) ([]Row, error) {

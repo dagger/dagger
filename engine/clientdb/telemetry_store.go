@@ -162,28 +162,28 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 	return store, nil
 }
 
-func (s *Store) AppendSpans(rows []Span) (int64, error) {
-	last, err := s.spans.Append(rows)
+func (s *Store) AppendSpans(rows []Span) (AppendStats, error) {
+	stats, err := s.spans.append(rows)
 	if err != nil {
-		return 0, fmt.Errorf("append spans: %w", err)
+		return stats, fmt.Errorf("append spans: %w", err)
 	}
-	return last, nil
+	return stats, nil
 }
 
-func (s *Store) AppendLogs(rows []Log) (int64, error) {
-	last, err := s.logs.Append(rows)
+func (s *Store) AppendLogs(rows []Log) (AppendStats, error) {
+	stats, err := s.logs.append(rows)
 	if err != nil {
-		return 0, fmt.Errorf("append logs: %w", err)
+		return stats, fmt.Errorf("append logs: %w", err)
 	}
-	return last, nil
+	return stats, nil
 }
 
-func (s *Store) AppendMetrics(rows []Metric) (int64, error) {
-	last, err := s.metrics.Append(rows)
+func (s *Store) AppendMetrics(rows []Metric) (AppendStats, error) {
+	stats, err := s.metrics.append(rows)
 	if err != nil {
-		return 0, fmt.Errorf("append metrics: %w", err)
+		return stats, fmt.Errorf("append metrics: %w", err)
 	}
-	return last, nil
+	return stats, nil
 }
 
 // Read mirrors the current DB handle seam. The append-only store needs no

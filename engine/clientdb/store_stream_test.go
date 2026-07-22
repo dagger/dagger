@@ -110,10 +110,14 @@ func TestLogStreamHardCapBlocksUntilSpillDrains(t *testing.T) {
 		t.Fatal("spiller did not reach the write gate")
 	}
 
-	appendDone := make(chan error, 1)
+	type appendOutcome struct {
+		stats AppendStats
+		err   error
+	}
+	appendDone := make(chan appendOutcome, 1)
 	go func() {
-		_, err := stream.Append([]Metric{{Data: bytes.Repeat([]byte("b"), 200)}})
-		appendDone <- err
+		stats, err := stream.append([]Metric{{Data: bytes.Repeat([]byte("b"), 200)}})
+		appendDone <- appendOutcome{stats: stats, err: err}
 	}()
 	require.Eventually(t, func() bool {
 		stream.mu.Lock()
@@ -121,15 +125,19 @@ func TestLogStreamHardCapBlocksUntilSpillDrains(t *testing.T) {
 		return stream.capWaiters == 1
 	}, 5*time.Second, time.Millisecond)
 	select {
-	case err := <-appendDone:
-		t.Fatalf("Append returned before the spiller drained: %v", err)
+	case outcome := <-appendDone:
+		t.Fatalf("Append returned before the spiller drained: %v", outcome.err)
 	case <-time.After(50 * time.Millisecond):
 	}
 
 	close(releaseSpill)
 	select {
-	case err := <-appendDone:
-		require.NoError(t, err)
+	case outcome := <-appendDone:
+		require.NoError(t, outcome.err)
+		require.Equal(t, int64(2), outcome.stats.LastID)
+		require.Positive(t, outcome.stats.CapWaitDuration)
+		require.Positive(t, outcome.stats.SpillLagRows)
+		require.Positive(t, outcome.stats.SpillLagBytes)
 	case <-time.After(5 * time.Second):
 		t.Fatal("Append stayed blocked after the spiller drained")
 	}
