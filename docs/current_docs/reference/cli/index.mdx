@@ -114,6 +114,8 @@ Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
+  dagger agent -r                 # Resume a saved session (interactive picker)
+  dagger agent -r <session>       # Resume a specific saved session
 
 
 ```
@@ -123,7 +125,8 @@ dagger agent [options] [name...]
 ### Options
 
 ```
-  -l, --list   List available agents
+  -l, --list            List available agents
+  -r, --resume string   Resume a saved session (interactive picker if no id given)
 ```
 
 ### Options inherited from parent commands

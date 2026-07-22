@@ -15,6 +15,7 @@ import (
 )
 
 var agentListMode bool
+var agentResume string
 
 var agentCmd = &cobra.Command{
 	Use:   "agent [options] [name...]",
@@ -29,6 +30,8 @@ Examples:
   dagger agent                    # Compose all installed agents and start the prompt
   dagger agent -l                 # List all available agents
   dagger agent editor dagger-go   # Compose only the 'editor' and 'dagger-go' agents
+  dagger agent -r                 # Resume a saved session (interactive picker)
+  dagger agent -r <session>       # Resume a specific saved session
 `,
 	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
@@ -55,14 +58,30 @@ Examples:
 				if err != nil {
 					return err
 				}
-				return startInteractivePromptMode(ctx, dag, llmID)
+				// -r/--resume optionally restores a saved session before the
+				// prompt starts. A bare -r (NoOptDefVal sentinel) opens the
+				// interactive picker; -r <session> resumes that session directly.
+				resume := cmd.Flags().Changed("resume")
+				sessionID := agentResume
+				if sessionID == agentResumePickerSentinel {
+					sessionID = ""
+				}
+				return startInteractivePromptModeWithResume(ctx, dag, llmID, sessionID, resume)
 			},
 		)
 	},
 }
 
+// agentResumePickerSentinel is the value -r resolves to when passed without an
+// argument (via NoOptDefVal), signalling the interactive session picker.
+const agentResumePickerSentinel = "\x00picker"
+
 func init() {
 	agentCmd.Flags().BoolVarP(&agentListMode, "list", "l", false, "List available agents")
+	agentCmd.Flags().StringVarP(&agentResume, "resume", "r", "", "Resume a saved session (interactive picker if no id given)")
+	// A bare -r (no value) resolves to the picker sentinel so it can open the
+	// interactive picker; -r <id> resumes that session directly.
+	agentCmd.Flags().Lookup("resume").NoOptDefVal = agentResumePickerSentinel
 }
 
 // agentIncludeVars maps the positional agent names to the `include` variable of
