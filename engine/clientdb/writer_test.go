@@ -174,6 +174,117 @@ func TestWriteAgentPropagatesBatchError(t *testing.T) {
 	require.Equal(t, succeeded.SpanID, span.SpanID)
 }
 
+func TestWriteAgentCloseWithBlockedProducers(t *testing.T) {
+	const blockedProducers = 4
+
+	dbs := NewDBs(t.TempDir())
+	db, err := dbs.Open(t.Context(), "client")
+	require.NoError(t, err)
+
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWriter := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+
+	var closeOnce sync.Once
+	var closeErr error
+	closeDB := func() {
+		closeOnce.Do(func() { closeErr = db.Close() })
+	}
+
+	t.Cleanup(func() {
+		releaseWriter()
+		closeDB()
+		require.NoError(t, closeErr)
+	})
+
+	writerBlocked := make(chan struct{})
+	blockerErr := make(chan error, 1)
+	go func() {
+		_, err := db.Write(t.Context(), func(context.Context, *Queries) (time.Duration, error) {
+			close(writerBlocked)
+			<-release
+			return 0, nil
+		})
+		blockerErr <- err
+	}()
+	<-writerBlocked
+
+	producerErrs := make(chan error, writeQueueSize+blockedProducers)
+	for range writeQueueSize {
+		go func() {
+			_, err := db.Write(t.Context(), emptyWriteBatch)
+			producerErrs <- err
+		}()
+	}
+	require.Eventually(t, func() bool {
+		return len(db.writeAgent.queue) == writeQueueSize
+	}, 5*time.Second, time.Millisecond)
+
+	// Done is evaluated inside submit's enqueue select, after enqueueMu.RLock
+	// is acquired. Waiting for every signal deterministically establishes that
+	// all overflow producers are blocked on the full queue while holding RLock.
+	for range blockedProducers {
+		ctx := &doneSignalingContext{
+			Context: t.Context(),
+			called:  make(chan struct{}),
+		}
+		go func() {
+			_, err := db.Write(ctx, emptyWriteBatch)
+			producerErrs <- err
+		}()
+		<-ctx.called
+	}
+
+	done := db.writeAgent.done
+	closeResult := make(chan error, 1)
+	go func() {
+		closeDB()
+		closeResult <- closeErr
+	}()
+
+	// Readers alone do not make TryRLock fail. A failure here establishes that
+	// Close is queued for enqueueMu.Lock behind the blocked producers.
+	require.Eventually(t, func() bool {
+		if db.writeAgent.enqueueMu.TryRLock() {
+			db.writeAgent.enqueueMu.RUnlock()
+			return false
+		}
+		return true
+	}, 5*time.Second, time.Millisecond)
+
+	releaseWriter()
+	require.NoError(t, <-blockerErr)
+	for range writeQueueSize + blockedProducers {
+		require.NoError(t, <-producerErrs)
+	}
+	require.NoError(t, <-closeResult)
+	select {
+	case <-done:
+	default:
+		t.Fatal("client DB writer goroutine still running after final close")
+	}
+
+	_, err = db.Write(t.Context(), emptyWriteBatch)
+	require.ErrorIs(t, err, errWriterClosed)
+}
+
+type doneSignalingContext struct {
+	context.Context
+	called chan struct{}
+	once   sync.Once
+}
+
+func (ctx *doneSignalingContext) Done() <-chan struct{} {
+	ctx.once.Do(func() { close(ctx.called) })
+	return ctx.Context.Done()
+}
+
+func emptyWriteBatch(context.Context, *Queries) (time.Duration, error) {
+	return 0, nil
+}
+
 func insertSpanBatch(span InsertSpanParams) WriteBatch {
 	return func(ctx context.Context, q *Queries) (time.Duration, error) {
 		start := time.Now()
