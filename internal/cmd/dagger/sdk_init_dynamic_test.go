@@ -244,6 +244,54 @@ func TestShouldRegisterSDKInitCommands(t *testing.T) {
 	}
 }
 
+func TestUninstalledSDKInitSuggestion(t *testing.T) {
+	newParents := func() (*cobra.Command, *cobra.Command) {
+		return &cobra.Command{Use: "init", Args: cobra.NoArgs},
+			&cobra.Command{Use: "init", Args: cobra.NoArgs}
+	}
+
+	t.Run("known SDK, nothing installed", func(t *testing.T) {
+		moduleParent, clientParent := newParents()
+		registerUninstalledSDKInitSuggestion(moduleParent, clientParent, sdkInitKindModule,
+			[]string{"module", "init", "go", "myapp"}, nil)
+
+		cmd, _, err := moduleParent.Find([]string{"go", "myapp"})
+		require.NoError(t, err)
+		require.Equal(t, "go", cmd.Name())
+		// Must be runnable, otherwise cobra prints help instead of RunE's hint.
+		require.True(t, cmd.Runnable())
+		require.ErrorContains(t, cmd.RunE(cmd, []string{"myapp"}), "dagger sdk install go")
+	})
+
+	t.Run("unknown SDK is left to cobra", func(t *testing.T) {
+		moduleParent, clientParent := newParents()
+		registerUninstalledSDKInitSuggestion(moduleParent, clientParent, sdkInitKindModule,
+			[]string{"module", "init", "definitely-not-an-sdk", "myapp"}, nil)
+		require.Empty(t, moduleParent.Commands())
+	})
+
+	t.Run("installed SDK is left to the real command", func(t *testing.T) {
+		moduleParent, clientParent := newParents()
+		sdks := []configuredSDK{{moduleName: "go", commandName: "go"}}
+		registerUninstalledSDKInitSuggestion(moduleParent, clientParent, sdkInitKindModule,
+			[]string{"module", "init", "go", "myapp"}, sdks)
+		require.Empty(t, moduleParent.Commands())
+	})
+
+	t.Run("client kind registers under the client parent", func(t *testing.T) {
+		moduleParent, clientParent := newParents()
+		registerUninstalledSDKInitSuggestion(moduleParent, clientParent, sdkInitKindClient,
+			[]string{"api", "client", "init", "go", "./client", "."}, nil)
+		require.Empty(t, moduleParent.Commands())
+
+		cmd, _, err := clientParent.Find([]string{"go", "./client", "."})
+		require.NoError(t, err)
+		require.Equal(t, "go", cmd.Name())
+		require.True(t, cmd.Runnable())
+		require.ErrorContains(t, cmd.RunE(cmd, []string{"./client", "."}), "dagger sdk install go")
+	})
+}
+
 func sdkInitArgNames(args []*modFunctionArg) []string {
 	names := make([]string, len(args))
 	for i, arg := range args {

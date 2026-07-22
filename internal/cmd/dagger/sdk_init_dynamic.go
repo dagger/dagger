@@ -41,6 +41,10 @@ func registerInstalledSDKInitCommands(ctx context.Context, args []string) error 
 	if cfg == nil {
 		clearDynamicSDKInitCommands(moduleInitCmd)
 		clearDynamicSDKInitCommands(apiClientInitCmd)
+		// Without a workspace config nothing is installed, so there is no
+		// engine introspection to do; still offer an install hint when the
+		// requested SDK is one the registry knows about.
+		registerUninstalledSDKInitSuggestion(moduleInitCmd, apiClientInitCmd, kind, args, nil)
 		return nil
 	}
 
@@ -79,25 +83,7 @@ func registerSDKInitCommandsFromConfigForKind(
 		return err
 	}
 
-	// A known but uninstalled SDK has no engine-backed init command to register.
-	if sdkName, ok := sdkInitInvocationSDKName(args); ok {
-		installed := false
-		for _, sdk := range sdks {
-			if sdk.commandName == sdkName || sdk.moduleName == sdkName {
-				installed = true
-				break
-			}
-		}
-		if !installed {
-			if _, _, _, resolveErr := sdkResolveInstall(sdkName); resolveErr == nil {
-				parent := moduleParent
-				if kind == sdkInitKindClient {
-					parent = clientParent
-				}
-				parent.AddCommand(newUninstalledSDKInitCommand(kind, sdkName))
-			}
-		}
-	}
+	registerUninstalledSDKInitSuggestion(moduleParent, clientParent, kind, args, sdks)
 
 	for _, sdk := range sdks {
 		sdkRef, err := sdkInitModuleEntrySource(sdk.entry, cfgDir)
@@ -244,21 +230,47 @@ func newModuleInitSDKCommand(sdkName string) *cobra.Command {
 	return cmd
 }
 
+// registerUninstalledSDKInitSuggestion adds a temporary init subcommand for a
+// requested SDK that the embedded registry recognizes but that is not installed
+// in the workspace, so `dagger module init <sdk> ...` explains how to install it
+// instead of failing with a generic unknown-command error. Names the registry
+// doesn't know are left alone so cobra's usual error still applies.
+func registerUninstalledSDKInitSuggestion(moduleParent, clientParent *cobra.Command, kind sdkInitKind, args []string, sdks []configuredSDK) {
+	sdkName, ok := sdkInitInvocationSDKName(args)
+	if !ok {
+		return
+	}
+	for _, sdk := range sdks {
+		if sdk.commandName == sdkName || sdk.moduleName == sdkName {
+			return
+		}
+	}
+	if _, _, _, err := sdkResolveInstall(sdkName); err != nil {
+		return
+	}
+	parent := moduleParent
+	if kind == sdkInitKindClient {
+		parent = clientParent
+	}
+	parent.AddCommand(newUninstalledSDKInitCommand(kind, sdkName))
+}
+
 func newUninstalledSDKInitCommand(kind sdkInitKind, sdkName string) *cobra.Command {
 	use := sdkName + " <name>"
-	want := 1
 	if kind == sdkInitKindClient {
 		use = sdkName + " <path> <module>"
-		want = 2
 	}
 	return &cobra.Command{
-		Use:   use,
-		Short: fmt.Sprintf("Initialize with %s", sdkName),
-		Args: func(cmd *cobra.Command, args []string) error {
-			if err := cobra.ExactArgs(want)(cmd, args); err != nil {
-				return err
-			}
-			return fmt.Errorf("SDK %q is not installed in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
+		Use:                   use,
+		Short:                 fmt.Sprintf("Initialize with the %s SDK (not installed)", sdkName),
+		DisableFlagsInUseLine: true,
+		// The SDK isn't installed, so there's no engine-backed init to run;
+		// accept any args and explain how to install it. The message must come
+		// from RunE, not Args: cobra returns help for a command that isn't
+		// Runnable (no Run/RunE) before it ever validates args.
+		Args: cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return fmt.Errorf("%q is not installed as an SDK in this workspace; run `dagger sdk install %s` first", sdkName, sdkName)
 		},
 		Annotations: map[string]string{
 			dynamicSDKInitCommandAnnotation: "true",

@@ -67,3 +67,21 @@ func (CommandHintsSuite) TestSDKInstallAndClientInitHints(ctx context.Context, t
 	require.NoError(t, err, "%s", string(clientOut))
 	require.Contains(t, string(clientOut), "dagger generate")
 }
+
+// TestUninstalledSDKInitHint verifies that `dagger module init <sdk> <name>`
+// for a registry-known but uninstalled SDK, in a workspace with no dagger.toml,
+// fails with a hint to install the SDK rather than a generic unknown-command
+// error. Names the registry doesn't know keep the generic cobra error.
+func (CommandHintsSuite) TestUninstalledSDKInitHint(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+
+	out, err := hostDaggerExecRaw(ctx, t, workdir, "module", "init", "go", "myapp")
+	require.Error(t, err, "%s", string(out))
+	require.Contains(t, string(out), "dagger sdk install go")
+	require.NotContains(t, string(out), `unknown command "go"`)
+
+	unknownOut, err := hostDaggerExecRaw(ctx, t, workdir, "module", "init", "definitely-not-an-sdk", "myapp")
+	require.Error(t, err, "%s", string(unknownOut))
+	require.Contains(t, string(unknownOut), `unknown command "definitely-not-an-sdk"`)
+}
