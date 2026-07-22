@@ -1915,12 +1915,12 @@ func (s *workspaceSchema) ensureWorkspaceGitDirectory(ctx context.Context, ws *c
 	if err != nil {
 		return fmt.Errorf("workspace git metadata: %w", err)
 	}
-	// Git worktrees use a .git file that points to metadata outside the workspace.
-	if st.FileType == core.FileTypeRegular {
-		return fmt.Errorf("git worktrees are not supported by Workspace.git yet: .git is a file")
-	}
-	if !st.IsDir() {
-		return fmt.Errorf("workspace git metadata .git has type %s, expected directory", st.FileType)
+	// Git worktree and submodule checkouts have a .git *file* pointing at
+	// metadata outside the workspace; that pointer is followed and flattened
+	// when the repository is resolved (see flattenWorkspaceGitPointer), so a
+	// regular .git file is acceptable here.
+	if st.FileType != core.FileTypeRegular && !st.IsDir() {
+		return fmt.Errorf("workspace git metadata .git has type %s, expected directory or pointer file", st.FileType)
 	}
 	return nil
 }
@@ -1945,6 +1945,15 @@ func (s *workspaceSchema) workspaceGitRepository(
 		return inst, fmt.Errorf("workspace git directory: %w", err)
 	}
 
+	// Git worktree and submodule checkouts have a .git *pointer file* at their
+	// root, whose target lives outside the workspace boundary. Follow the
+	// pointer against the host and flatten the real git dir into a standalone
+	// .git directory so the LocalGitRepository sees a plain repository.
+	dir, err = s.flattenWorkspaceGitPointer(ctx, ws, dir)
+	if err != nil {
+		return inst, fmt.Errorf("workspace git directory: %w", err)
+	}
+
 	backend := &core.LocalGitRepository{
 		Directory: dir,
 	}
@@ -1958,6 +1967,65 @@ func (s *workspaceSchema) workspaceGitRepository(
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
+}
+
+// flattenWorkspaceGitPointer resolves a .git pointer file (worktree/submodule
+// checkout) at the workspace root into a standalone .git directory, following
+// the pointer against the workspace's host. A plain .git directory is returned
+// unchanged. A workspace with no host (in-memory rootfs) has nowhere to follow
+// the pointer to, so a pointer file there stays unresolved and downstream git
+// operations report the plain failure.
+func (s *workspaceSchema) flattenWorkspaceGitPointer(
+	ctx context.Context,
+	ws *core.Workspace,
+	dir dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.Directory], error) {
+	if ws.HostPath() == "" {
+		return dir, nil
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dir, err
+	}
+	flattened, err := core.FlattenGitPointer(ctx, srv, dir, ws.HostPath(),
+		func(ctx context.Context, dag *dagql.Server, hostPath string) (dagql.ObjectResult[*core.Directory], error) {
+			return s.loadWorkspaceHostDir(ctx, dag, ws, hostPath)
+		})
+	if errors.Is(err, core.ErrNoGitContext) {
+		// No .git at all: leave the original directory so downstream
+		// callers surface the plain "not a git repository" failure, matching
+		// pre-worktree behavior.
+		return dir, nil
+	}
+	return flattened, err
+}
+
+// loadWorkspaceHostDir loads an absolute host path as a Directory, routed
+// through the workspace's owning client session. Unlike workspace reads this
+// is not bounded to the workspace root: gitfile targets legitimately live
+// outside it (e.g. the main checkout's .git). FlattenGitPointer validates what
+// it loads.
+func (s *workspaceSchema) loadWorkspaceHostDir(
+	ctx context.Context,
+	dag *dagql.Server,
+	ws *core.Workspace,
+	hostPath string,
+) (inst dagql.ObjectResult[*core.Directory], err error) {
+	ctx, err = s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return inst, err
+	}
+	err = dag.Select(ctx, dag.Root(), &inst,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(hostPath)},
+				{Name: "noCache", Value: dagql.Boolean(true)},
+			},
+		},
+	)
+	return inst, err
 }
 
 func (s *workspaceSchema) workspaceGitHead(
