@@ -45,6 +45,8 @@ func (e *rowEncoder) bytes(v []byte) {
 	e.buf = append(e.buf, v...)
 }
 
+// Unlike SQLite's NULL round trip, the codec preserves String when Valid is
+// false; consumers must guard Valid before reading String.
 func (e *rowEncoder) nullString(v sql.NullString) {
 	e.bool(v.Valid)
 	e.string(v.String)
