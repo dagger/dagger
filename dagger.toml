@@ -156,6 +156,18 @@ legacy-default-path = true
 source = "toolchains/security"
 legacy-default-path = true
 
+[modules.security.settings]
+# Paths to exclude from the source tree before scanning.
+ignore = [
+  "bin",
+  ".git",
+  "docs",
+  "sdk/rust/examples",
+  "sdk/rust/crates/dagger-sdk/examples",
+  "core/integration/testdata",
+  "dagql/idtui/viztest",
+]
+
 [modules.shellcheck]
 source = "github.com/dagger/shellcheck@34bcb268f4483fa31ea9e33b6a86aa7892144323"
 legacy-default-path = true
