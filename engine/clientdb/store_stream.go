@@ -9,25 +9,33 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-// Each telemetry stream keeps at most a 4 MiB target window in memory. This
-// leaves enough recent data for SSE's hot polling path while bounding the three
-// tails of an ordinary client to a low-double-digit MiB total. Appends never do
-// I/O, so a sustained producer can temporarily outrun the background spiller.
-const telemetryTailBudget int64 = 4 << 20
+// Each telemetry stream targets a 4 MiB in-memory window and blocks Append at
+// 16x that budget (64 MiB by default) until the spiller makes room. The hard cap
+// propagates backpressure into the bounded OTel BSP queues, which are the
+// effective upstream bound and already account for dropped wcprof telemetry.
+// A disk write that wedges without returning an error can therefore block
+// appends indefinitely, matching SQLite's behavior under the same pathology.
+const (
+	telemetryTailBudget            int64 = 4 << 20
+	telemetryTailHardCapMultiplier int64 = 16
+)
 
 var errStoreClosed = errors.New("telemetry store is closed")
 
 type logStream[Row any] struct {
-	mu        sync.Mutex
-	codec     rowCodec[Row]
-	nextID    int64
-	tail      []Row
-	tailSizes []int64
-	tailBase  int64
-	tailBytes int64
-	budget    int64
-	spill     *spillFile[Row]
-	onAppend  func([]Row)
+	mu         sync.Mutex
+	codec      rowCodec[Row]
+	nextID     int64
+	tail       []Row
+	tailSizes  []int64
+	tailBase   int64
+	tailBytes  int64
+	budget     int64
+	hardCap    int64
+	spill      *spillFile[Row]
+	onAppend   func([]Row)
+	cond       *sync.Cond
+	capWaiters int
 
 	spillReq chan struct{}
 	closeReq chan chan error
@@ -53,16 +61,22 @@ func openLogStream[Row any](
 	if budget <= 0 {
 		budget = telemetryTailBudget
 	}
+	hardCap := maxStreamID
+	if budget <= maxStreamID/telemetryTailHardCapMultiplier {
+		hardCap = budget * telemetryTailHardCapMultiplier
+	}
 	stream := &logStream[Row]{
 		codec:    codec,
 		nextID:   spill.lastID + 1,
 		tailBase: spill.lastID + 1,
 		budget:   budget,
+		hardCap:  hardCap,
 		spill:    spill,
 		onAppend: onAppend,
 		spillReq: make(chan struct{}, 1),
 		closeReq: make(chan chan error),
 	}
+	stream.cond = sync.NewCond(&stream.mu)
 	go stream.runSpiller()
 	return stream, nil
 }
@@ -83,14 +97,26 @@ func (s *logStream[Row]) Append(rows []Row) (int64, error) {
 	}
 
 	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return 0, errStoreClosed
-	}
-	if s.fatalErr != nil {
-		err := s.fatalErr
+	if err := s.stateErrLocked(); err != nil {
 		s.mu.Unlock()
 		return 0, err
+	}
+	if len(rows) == 0 {
+		last := s.nextID - 1
+		s.mu.Unlock()
+		return last, nil
+	}
+
+	oversized := totalSize > s.hardCap
+	for (!oversized && s.tailBytes > s.hardCap-totalSize) || (oversized && s.tailBytes > 0) {
+		s.capWaiters++
+		s.requestSpill()
+		s.cond.Wait()
+		s.capWaiters--
+		if err := s.stateErrLocked(); err != nil {
+			s.mu.Unlock()
+			return 0, err
+		}
 	}
 	if int64(len(rows)) > maxStreamID-s.nextID {
 		s.mu.Unlock()
@@ -112,6 +138,22 @@ func (s *logStream[Row]) Append(rows []Row) (int64, error) {
 	}
 	last := s.nextID - 1
 	needSpill := s.tailBytes > s.budget
+	if oversized {
+		// The caller already owns an oversized batch's blobs, so admitting it
+		// into an empty tail adds only row headers. Keep this Append blocked so
+		// another batch cannot accumulate until the spiller is below the cap.
+		s.capWaiters++
+		s.requestSpill()
+		for s.tailBytes > s.hardCap {
+			s.cond.Wait()
+			if err := s.stateErrLocked(); err != nil {
+				s.capWaiters--
+				s.mu.Unlock()
+				return 0, err
+			}
+		}
+		s.capWaiters--
+	}
 	s.mu.Unlock()
 
 	if needSpill {
@@ -186,6 +228,13 @@ func (s *logStream[Row]) requestSpill() {
 	}
 }
 
+func (s *logStream[Row]) stateErrLocked() error {
+	if s.closed {
+		return errStoreClosed
+	}
+	return s.fatalErr
+}
+
 func (s *logStream[Row]) runSpiller() {
 	for {
 		select {
@@ -219,13 +268,14 @@ func (s *logStream[Row]) spillOnce(force bool) (bool, error) {
 		s.mu.Unlock()
 		return false, err
 	}
-	if len(s.tail) == 0 || (!force && s.tailBytes <= s.budget) {
+	underPressure := s.capWaiters > 0
+	if len(s.tail) == 0 || (!force && !underPressure && s.tailBytes <= s.budget) {
 		s.mu.Unlock()
 		return false, nil
 	}
 
 	n := len(s.tail)
-	if !force {
+	if !force && !underPressure {
 		// Spill down to half the target to amortize wakeups and file flushes.
 		remaining := s.tailBytes
 		n = 0
@@ -259,6 +309,7 @@ func (s *logStream[Row]) spillOnce(force bool) (bool, error) {
 	} else {
 		s.tailBase = s.nextID
 	}
+	s.cond.Broadcast()
 	s.mu.Unlock()
 	return true, nil
 }
@@ -268,6 +319,7 @@ func (s *logStream[Row]) setFatal(err error) {
 	if s.fatalErr == nil {
 		s.fatalErr = fmt.Errorf("spill telemetry stream %s: %w", s.spill.file.Name(), err)
 		slog.Error("client telemetry spill failed", "path", s.spill.file.Name(), "error", err)
+		s.cond.Broadcast()
 	}
 	s.mu.Unlock()
 }
@@ -279,6 +331,7 @@ func (s *logStream[Row]) close() error {
 		return errStoreClosed
 	}
 	s.closed = true
+	s.cond.Broadcast()
 	s.mu.Unlock()
 
 	response := make(chan error, 1)

@@ -3,6 +3,7 @@ package clientdb
 import (
 	"bytes"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -86,4 +87,114 @@ func TestLogStreamRejectsAppendAfterClose(t *testing.T) {
 
 	_, err = stream.Append([]Metric{{Data: []byte("late")}})
 	require.ErrorIs(t, err, errStoreClosed)
+}
+
+func TestLogStreamHardCapBlocksUntilSpillDrains(t *testing.T) {
+	stream, err := openLogStream(
+		t.Context(),
+		filepath.Join(t.TempDir(), "metrics.log"),
+		metricCodec,
+		64,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, int64(1024), stream.hardCap)
+	spillStarted, releaseSpill := blockSpillWrites(stream)
+
+	_, err = stream.Append([]Metric{{Data: bytes.Repeat([]byte("a"), 900)}})
+	require.NoError(t, err)
+	select {
+	case <-spillStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("spiller did not reach the write gate")
+	}
+
+	appendDone := make(chan error, 1)
+	go func() {
+		_, err := stream.Append([]Metric{{Data: bytes.Repeat([]byte("b"), 200)}})
+		appendDone <- err
+	}()
+	require.Eventually(t, func() bool {
+		stream.mu.Lock()
+		defer stream.mu.Unlock()
+		return stream.capWaiters == 1
+	}, 5*time.Second, time.Millisecond)
+	select {
+	case err := <-appendDone:
+		t.Fatalf("Append returned before the spiller drained: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseSpill)
+	select {
+	case err := <-appendDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Append stayed blocked after the spiller drained")
+	}
+	require.NoError(t, stream.close())
+}
+
+func TestLogStreamHardCapWaiterUnblocksOnClose(t *testing.T) {
+	stream, err := openLogStream(
+		t.Context(),
+		filepath.Join(t.TempDir(), "metrics.log"),
+		metricCodec,
+		64,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	spillStarted, releaseSpill := blockSpillWrites(stream)
+
+	_, err = stream.Append([]Metric{{Data: bytes.Repeat([]byte("a"), 900)}})
+	require.NoError(t, err)
+	select {
+	case <-spillStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("spiller did not reach the write gate")
+	}
+
+	appendDone := make(chan error, 1)
+	go func() {
+		_, err := stream.Append([]Metric{{Data: bytes.Repeat([]byte("b"), 200)}})
+		appendDone <- err
+	}()
+	require.Eventually(t, func() bool {
+		stream.mu.Lock()
+		defer stream.mu.Unlock()
+		return stream.capWaiters == 1
+	}, 5*time.Second, time.Millisecond)
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- stream.close()
+	}()
+	select {
+	case err := <-appendDone:
+		require.ErrorIs(t, err, errStoreClosed)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Append stayed blocked after stream close")
+	}
+
+	close(releaseSpill)
+	select {
+	case err := <-closeDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not finish after the spiller resumed")
+	}
+}
+
+func blockSpillWrites(stream *logStream[Metric]) (<-chan struct{}, chan<- struct{}) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	stream.spill.testWriteHook = func(buf []byte) (int, error) {
+		once.Do(func() { close(started) })
+		<-release
+		return stream.spill.file.Write(buf)
+	}
+	return started, release
 }

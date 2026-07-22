@@ -30,6 +30,9 @@ type spillFile[Row any] struct {
 	file   *os.File
 	codec  rowCodec[Row]
 	writer *bufio.Writer
+	// testWriteHook is a fault-injection seam. Tests install it only while the
+	// single spiller is idle; production always leaves it nil.
+	testWriteHook func([]byte) (int, error)
 
 	// The fields below are owned by the single writer.
 	writeOffset int64
@@ -89,8 +92,21 @@ func openSpillFile[Row any](
 	if _, err := file.Seek(spill.writeOffset, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("seek spill writer: %w", err)
 	}
-	spill.writer = bufio.NewWriterSize(file, spillBufferSize)
+	spill.writer = bufio.NewWriterSize(spillWriterFunc(spill.write), spillBufferSize)
 	return spill, nil
+}
+
+type spillWriterFunc func([]byte) (int, error)
+
+func (write spillWriterFunc) Write(buf []byte) (int, error) {
+	return write(buf)
+}
+
+func (s *spillFile[Row]) write(buf []byte) (int, error) {
+	if s.testWriteHook != nil {
+		return s.testWriteHook(buf)
+	}
+	return s.file.Write(buf)
 }
 
 func (s *spillFile[Row]) recover(ctx context.Context, size int64, onRecover func(Row)) error {
