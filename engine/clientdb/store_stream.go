@@ -12,7 +12,8 @@ import (
 // Each telemetry stream targets a 4 MiB in-memory window and blocks Append at
 // 16x that budget (64 MiB by default) until the spiller makes room. The hard cap
 // propagates backpressure into the bounded OTel BSP queues, which are the
-// effective upstream bound and already account for dropped wcprof telemetry.
+// effective upstream bound; the wcprof completeness checksum accounts for
+// dropped spans.
 // A disk write that wedges without returning an error can therefore block
 // appends indefinitely, matching SQLite's behavior under the same pathology.
 const (

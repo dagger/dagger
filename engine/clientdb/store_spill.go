@@ -214,10 +214,10 @@ func (s *spillFile[Row]) append(rows []Row) error {
 
 func (s *spillFile[Row]) rollback(offset int64, writeErr error) error {
 	// Reset discards any bytes still buffered after the failed write.
-	s.writer.Reset(s.file)
+	s.writer.Reset(spillWriterFunc(s.write))
 	truncateErr := s.file.Truncate(offset)
 	_, seekErr := s.file.Seek(offset, io.SeekStart)
-	s.writer.Reset(s.file)
+	s.writer.Reset(spillWriterFunc(s.write))
 	return errors.Join(writeErr, truncateErr, seekErr)
 }
 
