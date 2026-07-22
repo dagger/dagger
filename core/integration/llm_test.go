@@ -254,6 +254,69 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 	}
 }
 
+// TestGeneratorSeesOverlayEdits locks in that the LLM's bound (overlaid)
+// Workspace propagates through a module's `generate` tool into the generator
+// leaves it rolls up and runs. Regression test for the rebase break where an
+// auto-injected Workspace! on a generator leaf — resolved while running inside
+// the module runtime — was rejected by loadWorkspaceArg's
+// callerInModuleFunction guard *before* it consulted the seeded bound
+// workspace, so the generator read stale (frozen) source and the agent's edit
+// had no effect (see hack/designs/workspace-agents.md §4).
+//
+// The gen-agent fixture's generator reads input.txt and writes
+// output.txt = "generated from: <input>". The canned conversation edits
+// input.txt to "B-OVERLAY" via the write tool (overlaying the bound
+// workspace), then calls the generate tool. run returns output.txt, so if the
+// overlay reached the generator it reads "generated from: B-OVERLAY" rather
+// than the frozen "generated from: A".
+func (LLMSuite) TestGeneratorSeesOverlayEdits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srcPath, err := filepath.Abs("./llmtest/gen-agent/")
+	require.NoError(t, err)
+	// The generator is discovered via Workspace.generators, so the fixture
+	// must be a detected workspace: a git root with the dagger.toml the
+	// fixture ships. goGitBase already `git init`s /work; copy the fixture in
+	// (WithDirectory, so the repo's .git survives) and commit it so detection
+	// succeeds.
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		WithDirectory(".", c.Host().Directory(srcPath)).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"})
+
+	// The write tool overlays input.txt=B-OVERLAY onto the bound workspace,
+	// then the generate tool runs the workspace generators against that
+	// overlay. The tool results are placeholders — the real write/generate
+	// tools run during replay and their live results flow through.
+	model := cannedReplayModel(ctx, t, c, c.LLM().
+		WithPrompt("You are an agent operating on a workspace.\n"+
+			"Use the write tool to edit input.txt, then the generate tool to run the workspace generators.\n"+
+			"\n"+
+			"Assignment: set input.txt to B-OVERLAY and regenerate\n").
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Editing input.txt."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_1", ToolName: "write",
+				Arguments: dagger.JSON(`{"content":"B-OVERLAY"}`)},
+		}).
+		WithToolResult("call_1", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Now running the generators."},
+			{Kind: dagger.LLMContentBlockKindToolCall, CallID: "call_2", ToolName: "generate"},
+		}).
+		WithToolResult("call_2", "", false).
+		WithResponse([]dagger.LLMContentBlockInput{
+			{Kind: dagger.LLMContentBlockKindText, Text: "Done: regenerated output.txt from the edited input.txt."},
+		}))
+
+	out, err := ctr.
+		With(daggerCall("gen-agent", "--model="+model, "run", "--assignment", "set input.txt to B-OVERLAY and regenerate")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	// The generator observed the overlay edit, not the frozen "A".
+	require.Contains(t, out, "generated from: B-OVERLAY")
+}
+
 func (LLMSuite) TestStepLimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
