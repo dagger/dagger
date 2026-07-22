@@ -1830,6 +1830,7 @@ Manage this module's dependencies
 * [dagger module deps add](#dagger-module-deps-add)	 - Add one or more dependencies to the module
 * [dagger module deps list](#dagger-module-deps-list)	 - List the current module's dependencies
 * [dagger module deps rm](#dagger-module-deps-rm)	 - Remove one or more dependencies from the module
+* [dagger module deps update](#dagger-module-deps-update)	 - Update one or more module dependencies
 
 ## dagger module deps add
 
@@ -1913,6 +1914,50 @@ dagger module deps rm <name>... [flags]
 
 ```
 dagger module deps rm wolfi
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+      --env string                   Apply the named workspace environment overlay
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+  -E, --no-exit                      Leave the TUI running after completion
+      --org string                   Dagger Cloud org name for Cloud-scoped commands
+      --progress string              Progress output format (auto, plain, tty, dots, logs, report) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
+      --x-release string             Run an experimental release from a Dagger git ref
+```
+
+### SEE ALSO
+
+* [dagger module deps](#dagger-module-deps)	 - Manage this module's dependencies
+
+## dagger module deps update
+
+Update one or more module dependencies
+
+### Synopsis
+
+Update one or more module dependencies.
+
+With no arguments, updates all non-local dependencies.
+
+```
+dagger module deps update [module]... [flags]
+```
+
+### Examples
+
+```
+dagger module deps update wolfi@v0.20.2
 ```
 
 ### Options inherited from parent commands
