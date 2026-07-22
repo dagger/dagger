@@ -10,15 +10,15 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-// Each telemetry stream targets a 1 MiB in-memory window and blocks Append at
-// 16x that budget (16 MiB by default) until the spiller makes room. The hard cap
+// Each telemetry stream targets a 2 MiB in-memory window and blocks Append at
+// 16x that budget (32 MiB by default) until the spiller makes room. The hard cap
 // propagates backpressure into the bounded OTel BSP queues, which are the
 // effective upstream bound; the wcprof completeness checksum accounts for
 // dropped spans.
 // A disk write that wedges without returning an error can therefore block
 // appends indefinitely, matching SQLite's behavior under the same pathology.
 const (
-	telemetryTailBudget            int64 = 1 << 20
+	telemetryTailBudget            int64 = 2 << 20
 	telemetryTailHardCapMultiplier int64 = 16
 )
 
