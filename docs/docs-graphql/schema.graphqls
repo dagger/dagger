@@ -5739,6 +5739,36 @@ type Workspace implements Node {
     permissions: Int = 420
   ): Workspace!
 
+  """
+  Return this workspace with a directory mounted read-only under the reserved references prefix.
+
+  Referenced content is readable through the normal workspace file tools but is
+  excluded from the pending changeset: it never appears in changes and is never
+  exported.
+  """
+  withReferenceDirectory(
+    """Reference-relative mount path under the reserved references prefix."""
+    path: String!
+
+    """Directory to mount read-only."""
+    source: ID! @expectedType(name: "Directory")
+  ): Workspace!
+
+  """
+  Return this workspace with a file mounted read-only under the reserved references prefix.
+
+  Referenced content is readable through the normal workspace file tools but is
+  excluded from the pending changeset: it never appears in changes and is never
+  exported.
+  """
+  withReferenceFile(
+    """Reference-relative mount path under the reserved references prefix."""
+    path: String!
+
+    """File to mount read-only."""
+    source: ID! @expectedType(name: "File")
+  ): Workspace!
+
   """Return this workspace with an SDK installed in its config."""
   withSDK(
     """SDK module reference to install."""
@@ -5779,6 +5809,26 @@ type Workspace implements Node {
 
     """Write to the workspace config directory at the workspace cwd."""
     here: Boolean = false
+  ): Workspace!
+
+  """
+  Return this workspace with a directory removed, without mutating the source.
+  """
+  withoutDirectory(
+    """
+    Path of the directory to remove. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
+  ): Workspace!
+
+  """
+  Return this workspace with a file removed, without mutating the source.
+  """
+  withoutFile(
+    """
+    Path of the file to remove. Relative paths resolve from the workspace cwd.
+    """
+    path: String!
   ): Workspace!
 
   """Return this workspace with a module removed from its config."""
