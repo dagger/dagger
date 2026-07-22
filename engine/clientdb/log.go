@@ -70,6 +70,10 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 			slog.Warn("failed to unmarshal log attributes", "error", err)
 			continue
 		}
+		if !sd.TraceID.Valid || !sd.SpanID.Valid {
+			slog.Error("log record has invalid trace or span ID", "log", sd)
+			continue
+		}
 		tid, err := trace.TraceIDFromHex(sd.TraceID.String)
 		if err != nil {
 			slog.Error("failed to unmarshal trace id", "error", err)

@@ -48,26 +48,28 @@ func TestLogsToPBAllowsSchemalessResources(t *testing.T) {
 	spanID, err := trace.SpanIDFromHex("1112131415161718")
 	require.NoError(t, err)
 
-	logs := LogsToPB([]Log{
-		{
-			TraceID: sql.NullString{
-				String: traceID.String(),
-				Valid:  true,
-			},
-			SpanID: sql.NullString{
-				String: spanID.String(),
-				Valid:  true,
-			},
-			Timestamp:            123,
-			SeverityNumber:       1,
-			SeverityText:         "TRACE",
-			Body:                 body,
-			Attributes:           attrs,
-			InstrumentationScope: scope,
-			Resource:             resource,
-			ResourceSchemaUrl:    "",
+	row := Log{
+		TraceID: sql.NullString{
+			String: traceID.String(),
+			Valid:  true,
 		},
-	})
+		SpanID: sql.NullString{
+			String: spanID.String(),
+			Valid:  true,
+		},
+		Timestamp:            123,
+		SeverityNumber:       1,
+		SeverityText:         "TRACE",
+		Body:                 body,
+		Attributes:           attrs,
+		InstrumentationScope: scope,
+		Resource:             resource,
+		ResourceSchemaUrl:    "",
+	}
+	invalid := row
+	invalid.TraceID.Valid = false
+	invalid.SpanID.Valid = false
+	logs := LogsToPB([]Log{invalid, row})
 
 	require.Len(t, logs, 1)
 	require.Empty(t, logs[0].SchemaUrl)
