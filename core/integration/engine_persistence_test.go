@@ -557,8 +557,15 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 	t.Run("generator group graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-generator-group-state-" + identity.NewID()
-		generatorWorkdir, err := filepath.Abs("testdata/generators/hello-with-generators")
-		require.NoError(t, err)
+		// Copy the fixture out of the repo tree before pointing the client
+		// workdir at it. The repo root now carries its own dagger.toml
+		// workspace, so an in-repo workdir makes workspace detection walk up
+		// and load the dev workspace's generators instead of this fixture,
+		// leaving "generate-files" unresolved. An isolated dir has no ancestor
+		// dagger.toml, so detection falls back to the fixture's own dagger.json
+		// compat workspace.
+		generatorWorkdir := t.TempDir()
+		copyTestdataFixture(ctx, t, generatorWorkdir, "generators", "hello-with-generators")
 		clientOpts := []dagger.ClientOpt{
 			dagger.WithWorkdir(generatorWorkdir),
 			dagger.WithLoadWorkspaceModules(),
