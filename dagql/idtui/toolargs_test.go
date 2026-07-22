@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 
@@ -129,3 +130,44 @@ func TestRenderToolArgsSummary(t *testing.T) {
 	assert.NotContains(t, plain, "rm -rf /")
 }
 
+// tabExpandWidth is what a real terminal advances for s, expanding tabs to
+// 8-column tab stops (ANSI escapes contribute zero width). It's the "truth"
+// the layout must match.
+func tabExpandWidth(s string) int {
+	s = ansi.Strip(s)
+	col := 0
+	for _, r := range s {
+		if r == '\t' {
+			col += 8 - (col % 8)
+		} else {
+			col += ansi.StringWidth(string(r))
+		}
+	}
+	return col
+}
+
+func TestSanitizeSummary(t *testing.T) {
+	// Tabs (source-code indentation, common for Edit old_text/new_text) become
+	// spaces so ansi.StringWidth matches what the terminal renders.
+	assert.Equal(t, "  var x", sanitizeSummary("\t var x"))
+	// Other control characters are dropped entirely.
+	assert.Equal(t, "ab", sanitizeSummary("a\x1b\rb"))
+	// Ordinary text (including the ellipsis firstLine adds) is untouched.
+	assert.Equal(t, "hello …", sanitizeSummary("hello …"))
+}
+
+// TestRenderToolArgsSummaryTabWidth is a regression test for the Edit-tool
+// glitch: a raw tab in the excerpt is zero-width to ansi.StringWidth but
+// expands on the terminal, desyncing the header line (and the overlaid sidebar
+// box) after it. The rendered summary must contain no raw tab and must have a
+// visible width equal to its tab-expanded width.
+func TestRenderToolArgsSummaryTabWidth(t *testing.T) {
+	// Edit tool call whose old/new text is tab-indented source code.
+	got := renderSummary(t, "Edit",
+		[]string{"old_text", "new_text"},
+		[]string{"\tvar selfDigest string\n\t\tif ok {", "\tvar selfDigest string\n\t\tif no {"})
+
+	assert.NotContains(t, got, "\t", "summary must not emit raw tabs")
+	assert.Equal(t, ansi.StringWidth(got), tabExpandWidth(got),
+		"computed width must match terminal-rendered (tab-expanded) width")
+}
