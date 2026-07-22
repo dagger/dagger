@@ -133,6 +133,18 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc("Path of the added directory. Relative paths resolve from the workspace cwd."),
 				dagql.Arg("source").Doc("Directory to add."),
 			),
+		dagql.NodeFunc("withoutFile", s.withoutFile).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a file removed, without mutating the source.").
+			Args(
+				dagql.Arg("path").Doc("Path of the file to remove. Relative paths resolve from the workspace cwd."),
+			),
+		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with a directory removed, without mutating the source.").
+			Args(
+				dagql.Arg("path").Doc("Path of the directory to remove. Relative paths resolve from the workspace cwd."),
+			),
 		dagql.NodeFunc("withChanges", s.withChanges).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a changeset applied, without mutating the source.").
@@ -1333,6 +1345,72 @@ func (s *workspaceSchema) withNewDirectory(
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.NewString(resolvedPath)},
 				{Name: "source", Value: dagql.NewID[*core.Directory](sourceID)},
+			},
+		})
+		return updated, err
+	}, nil)
+}
+
+type workspaceWithoutFileArgs struct {
+	Path string
+}
+
+//nolint:dupl // symmetric with (*workspaceSchema).withoutDirectory; sharing hides the file vs directory semantic
+func (s *workspaceSchema) withoutFile(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithoutFileArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := guardReferencePath(parent.Self(), resolvedPath); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var updated dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, base, &updated, dagql.Selector{
+			Field: "withoutFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(resolvedPath)},
+			},
+		})
+		return updated, err
+	}, nil)
+}
+
+type workspaceWithoutDirectoryArgs struct {
+	Path string
+}
+
+//nolint:dupl // symmetric with (*workspaceSchema).withoutFile; sharing hides the directory vs file semantic
+func (s *workspaceSchema) withoutDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithoutDirectoryArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := guardReferencePath(parent.Self(), resolvedPath); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return s.overlayEdit(ctx, parent, []string{resolvedPath}, func(base dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		var updated dagql.ObjectResult[*core.Directory]
+		err := srv.Select(ctx, base, &updated, dagql.Selector{
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(resolvedPath)},
 			},
 		})
 		return updated, err

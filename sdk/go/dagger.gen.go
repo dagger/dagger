@@ -16204,6 +16204,26 @@ func (r *Workspace) WithoutConfigValue(key string, opts ...WorkspaceWithoutConfi
 	}
 }
 
+// Return this workspace with a directory removed, without mutating the source.
+func (r *Workspace) WithoutDirectory(path string) *Workspace {
+	q := r.query.Select("withoutDirectory")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
+// Return this workspace with a file removed, without mutating the source.
+func (r *Workspace) WithoutFile(path string) *Workspace {
+	q := r.query.Select("withoutFile")
+	q = q.Arg("path", path)
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // WorkspaceWithoutModuleOpts contains options for Workspace.WithoutModule
 type WorkspaceWithoutModuleOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
