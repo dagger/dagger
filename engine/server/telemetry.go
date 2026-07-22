@@ -661,8 +661,8 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 		fetchStart := time.Now()
 		event, hasData, err := fetcher(r.Context(), db, since)
 		if elapsed := time.Since(fetchStart); elapsed > slowTelemetryOp {
-			// The SELECT inside the fetch holds the DB's only connection,
-			// stalling every writer targeting the same client DB.
+			// A slow historical file scan does not hold the stream mutex, but it
+			// can still threaten the terminating subscriber's drain budget.
 			slog.Warn("slow SSE fetch", "duration", elapsed, "hasData", hasData, "error", err)
 		}
 		if err != nil {
@@ -677,7 +677,7 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 			select {
 			case <-time.After(telemetry.NearlyImmediate):
 				// Poll for more data at the same frequency that it's batched and saved.
-				// SQLite should be able to handle aggressive polling just fine.
+				// Tail reads are cheap enough for aggressive polling.
 				// Synchronizing with writes isn't worth the accompanying risk of hangs.
 				//
 				// NB: logging here is a bit too crazy
