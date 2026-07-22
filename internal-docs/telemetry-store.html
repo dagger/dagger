@@ -281,20 +281,23 @@ tail of recent rows, a spill file holding everything older, and a couple of coun
 // reader can see them — same guarantee the SQLite transaction gave.
 func (s *stream[Row]) Append(rows []Row, size int64) (last int64) {
     s.mu.Lock()
+    s.waitBelowHardCap(size)  // cond.Wait releases mu while the spiller drains
     for i := range rows { setID(&amp;rows[i], s.nextID); s.nextID++ }
     s.tail = append(s.tail, rows...)
     s.tailBytes += size
     last = s.nextID - 1
     needSpill := s.tailBytes &gt; tailBudget
     s.mu.Unlock()
-    if needSpill { s.requestSpill() }   // wakes the spiller; never blocks
+    if needSpill { s.requestSpill() }   // wakes the background spiller
     return last
 }</code></pre>
 
 <p>The critical section is an ID assignment and a slice append — nanoseconds to microseconds,
-no I/O, ever. Writer concurrency stops being a topic: a hundred goroutines appending small
-batches interleave with negligible waiting, because nobody holds the lock long enough to queue
-behind. The <code>beginWait</code> phenomenon has no equivalent — there is no transaction to
+with no I/O. Below the hard cap, a hundred goroutines appending small batches interleave with
+negligible waiting, because nobody holds the lock long enough to queue behind. If a stream tail
+reaches its 64&nbsp;MiB hard cap, <code>Append</code> waits on the condition variable until the
+spiller drains enough data (and an oversized batch waits until it is physically spilled). The
+<code>beginWait</code> convoy has no equivalent on the normal path — there is no transaction to
 begin and no connection to acquire.</p>
 
 <p>The exporters simplify accordingly: the row-building code they already have
@@ -465,6 +468,12 @@ ships with phase&nbsp;2; (4) span-map heap accepted — visible and bounded beat
 writer merges first as an interim fix and is later replaced wholesale by this; (8) scope
 boundaries confirmed. Proceeding to implementation (phased per §6, review council per phase).
 This doc lives in the repo at <code>internal-docs/telemetry-store.html</code>.</div>
+
+<div class="warn"><b>Round-2 council decision (2026-07-22):</b> keep a 4&nbsp;MiB spill target
+per stream and add a 64&nbsp;MiB blocking hard cap. This leaves measured workloads on the
+microsecond append path while propagating pathological disk pressure into the bounded OTel BSP
+queues instead of allowing unbounded heap growth; a wedged disk may block indefinitely, matching
+the accepted SQLite failure mode.</div>
 
 <ol>
 <li><b>Reopen cost.</b> Rebuilding <code>nextID</code>, the sparse index, and the span maps on
