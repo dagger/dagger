@@ -959,10 +959,9 @@ func (srv *Server) initializeDaggerClient(
 		// save to our own client's DB. Large-queue BSP so a big burst (a cold engine
 		// build is ~15k spans, live-double-emitted ≈ 30k records) does not overflow the
 		// default 2048-slot queue and silently drop spans before they reach the DB the
-		// CLI drains toward Cloud. InternalFiltering: drop the live (OnStart) snapshot
-		// for dagger.io/ui.internal spans — they're hidden from the UI, so their live
-		// double-write is pure store volume (see NewInternalFilteringLiveSpanProcessor).
-		sdktrace.WithSpanProcessor(enginetel.NewInternalFilteringLiveSpanProcessor(
+		// CLI drains toward Cloud. Emit live start snapshots uniformly: internal spans
+		// can be load-bearing parents of visible progress spans.
+		sdktrace.WithSpanProcessor(enginetel.NewLargeQueueLiveSpanProcessor(
 			client.spanExporter,
 		)),
 	}
@@ -989,12 +988,12 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	// export to parent client DBs too (same large-queue InternalFiltering BSP —
-	// nested-client spans reach Cloud via the parent DB, so this hop must not drop
-	// on a burst either, and internal spans skip their live double-emit here too).
+	// export to parent client DBs too (same large-queue live BSP — nested-client
+	// spans reach Cloud via the parent DB, so this hop must not drop on a burst
+	// either and must emit every live start snapshot uniformly).
 	for _, parent := range client.parents {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
-			enginetel.NewInternalFilteringLiveSpanProcessor(
+			enginetel.NewLargeQueueLiveSpanProcessor(
 				srv.telemetryPubSub.Spans(parent),
 			),
 		))

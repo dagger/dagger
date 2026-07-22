@@ -125,7 +125,8 @@ type Metric struct { ID int64; Data []byte }   // one opaque blob per row</code>
 
 <ol>
 <li><b>The client's own OTel processors</b> — spans (batches up to 2048, every 100ms tick or on
-    flush), logs (batches up to 128, every 250ms), metrics (one row per 5s).</li>
+    flush, with live starts emitted uniformly for internal and visible spans), logs (batches up
+    to 128, every 250ms), metrics (one row per 5s).</li>
 <li><b>One extra set of the same processors per descendant client.</b> A nested client's
     providers export both to its own store and to every ancestor's store. This is the fan-in:
     a session's main store receives writes from every client in the tree.</li>
