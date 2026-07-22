@@ -14,29 +14,32 @@ import (
 	"github.com/moby/locker"
 )
 
-// StoreRegistry owns the refcounted set of open per-client telemetry stores.
+// CollectGarbageAfter is the time after which a store is considered garbage.
+const CollectGarbageAfter = time.Hour
+
+// DBs owns the refcounted set of open per-client telemetry stores.
 // Stream files persist after the final Close and are recovered on the next
 // Open, including their ID sequences and span lookup maps.
-type StoreRegistry struct {
+type DBs struct {
 	Root string
 
-	open map[string]*Store
+	open map[string]*DB
 	mu   sync.RWMutex
 
 	perStoreLock *locker.Locker
 	tailBudget   int64
 }
 
-func NewStoreRegistry(root string) *StoreRegistry {
-	return &StoreRegistry{
+func NewDBs(root string) *DBs {
+	return &DBs{
 		Root:         root,
-		open:         make(map[string]*Store),
+		open:         make(map[string]*DB),
 		perStoreLock: locker.New(),
 		tailBudget:   telemetryTailBudget,
 	}
 }
 
-func (r *StoreRegistry) Open(ctx context.Context, clientID string) (*Store, error) {
+func (r *DBs) Open(ctx context.Context, clientID string) (*DB, error) {
 	r.perStoreLock.Lock(clientID)
 	defer r.perStoreLock.Unlock(clientID)
 
@@ -64,7 +67,7 @@ func (r *StoreRegistry) Open(ctx context.Context, clientID string) (*Store, erro
 
 // close assumes no registry mutex is held. The per-client lock covers the
 // refcount and prevents a reopen from racing the final stream flush.
-func (r *StoreRegistry) close(store *Store) error {
+func (r *DBs) close(store *DB) error {
 	r.perStoreLock.Lock(store.clientID)
 	defer r.perStoreLock.Unlock(store.clientID)
 
@@ -92,7 +95,7 @@ type storeGCGroup struct {
 // GC removes complete client stores whose newest stream (or transitional
 // SQLite sidecar) is older than CollectGarbageAfter. Grouping files by client
 // keeps a recently active stream from being separated from an older sibling.
-func (r *StoreRegistry) GC(keep map[string]bool) error {
+func (r *DBs) GC(keep map[string]bool) error {
 	entries, err := os.ReadDir(r.Root)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

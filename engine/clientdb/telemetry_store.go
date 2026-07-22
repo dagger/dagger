@@ -97,8 +97,8 @@ func (l *spanLookup) descendants(root string) map[string]struct{} {
 	return descendants
 }
 
-// Store is one client's standalone append-only telemetry store.
-type Store struct {
+// DB is one client's standalone append-only telemetry store.
+type DB struct {
 	spans   *logStream[Span]
 	logs    *logStream[Log]
 	metrics *logStream[Metric]
@@ -109,12 +109,12 @@ type Store struct {
 	closeFn  func() error
 }
 
-func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ *Store, rerr error) {
+func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ *DB, rerr error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", root, err)
 	}
 
-	store := &Store{
+	store := &DB{
 		lookup:   newSpanLookup(),
 		clientID: clientID,
 	}
@@ -162,7 +162,7 @@ func openStore(ctx context.Context, root, clientID string, tailBudget int64) (_ 
 	return store, nil
 }
 
-func (s *Store) AppendSpans(rows []Span) (AppendStats, error) {
+func (s *DB) AppendSpans(rows []Span) (AppendStats, error) {
 	stats, err := s.spans.append(rows)
 	if err != nil {
 		return stats, fmt.Errorf("append spans: %w", err)
@@ -170,7 +170,7 @@ func (s *Store) AppendSpans(rows []Span) (AppendStats, error) {
 	return stats, nil
 }
 
-func (s *Store) AppendLogs(rows []Log) (AppendStats, error) {
+func (s *DB) AppendLogs(rows []Log) (AppendStats, error) {
 	stats, err := s.logs.append(rows)
 	if err != nil {
 		return stats, fmt.Errorf("append logs: %w", err)
@@ -178,7 +178,7 @@ func (s *Store) AppendLogs(rows []Log) (AppendStats, error) {
 	return stats, nil
 }
 
-func (s *Store) AppendMetrics(rows []Metric) (AppendStats, error) {
+func (s *DB) AppendMetrics(rows []Metric) (AppendStats, error) {
 	stats, err := s.metrics.append(rows)
 	if err != nil {
 		return stats, fmt.Errorf("append metrics: %w", err)
@@ -188,30 +188,30 @@ func (s *Store) AppendMetrics(rows []Metric) (AppendStats, error) {
 
 // Read mirrors the current DB handle seam. The append-only store needs no
 // separate read pool, so selectors are bound to the same immutable streams.
-func (s *Store) Read() *Store {
+func (s *DB) Read() *DB {
 	return s
 }
 
-func (s *Store) Close() error {
+func (s *DB) Close() error {
 	if s == nil {
 		return nil
 	}
 	return s.closeFn()
 }
 
-func (s *Store) SelectSpansSince(ctx context.Context, arg SelectSpansSinceParams) ([]Span, error) {
+func (s *DB) SelectSpansSince(ctx context.Context, arg SelectSpansSinceParams) ([]Span, error) {
 	return s.spans.Since(ctx, arg.ID, storeLimit(arg.Limit))
 }
 
-func (s *Store) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams) ([]Log, error) {
+func (s *DB) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams) ([]Log, error) {
 	return s.logs.Since(ctx, arg.ID, storeLimit(arg.Limit))
 }
 
-func (s *Store) SelectMetricsSince(ctx context.Context, arg SelectMetricsSinceParams) ([]Metric, error) {
+func (s *DB) SelectMetricsSince(ctx context.Context, arg SelectMetricsSinceParams) ([]Metric, error) {
 	return s.metrics.Since(ctx, arg.ID, storeLimit(arg.Limit))
 }
 
-func (s *Store) SelectSpan(ctx context.Context, arg SelectSpanParams) (Span, error) {
+func (s *DB) SelectSpan(ctx context.Context, arg SelectSpanParams) (Span, error) {
 	id, found := s.lookup.first(arg.TraceID, arg.SpanID)
 	if !found {
 		return Span{}, sql.ErrNoRows
@@ -226,7 +226,7 @@ func (s *Store) SelectSpan(ctx context.Context, arg SelectSpanParams) (Span, err
 	return row, nil
 }
 
-func (s *Store) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {
+func (s *DB) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneathSpanParams) ([]Log, error) {
 	limit := storeLimit(arg.Limit)
 	if limit == 0 || !arg.SpanID.Valid {
 		return nil, nil
@@ -264,7 +264,7 @@ func (s *Store) SelectLogsBeneathSpan(ctx context.Context, arg SelectLogsBeneath
 	return logs, nil
 }
 
-func (s *Store) closeStreams() error {
+func (s *DB) closeStreams() error {
 	streams := []func() error{}
 	if s.spans != nil {
 		streams = append(streams, s.spans.close)

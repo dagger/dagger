@@ -8,7 +8,7 @@ import (
 )
 
 func TestStoreRegistryReopenRecoversState(t *testing.T) {
-	registry := NewStoreRegistry(t.TempDir())
+	registry := NewDBs(t.TempDir())
 	registry.tailBudget = 512
 
 	store, err := registry.Open(t.Context(), "client")

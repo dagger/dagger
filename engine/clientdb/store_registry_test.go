@@ -10,7 +10,7 @@ import (
 )
 
 func TestStoreRegistryRefCount(t *testing.T) {
-	registry := NewStoreRegistry(t.TempDir())
+	registry := NewDBs(t.TempDir())
 
 	d1a, err := registry.Open(t.Context(), "client1")
 	require.NoError(t, err)
@@ -56,7 +56,7 @@ func TestStoreRegistryRefCount(t *testing.T) {
 }
 
 func TestStoreRegistryCloseNil(t *testing.T) {
-	var store *Store
+	var store *DB
 	require.NoError(t, store.Close())
 }
 
@@ -65,7 +65,7 @@ func TestStoreRegistryOpenWithNonDirectoryRoot(t *testing.T) {
 	blocker := filepath.Join(root, "not-a-dir")
 	require.NoError(t, os.WriteFile(blocker, []byte("nope"), 0o600))
 
-	registry := NewStoreRegistry(blocker)
+	registry := NewDBs(blocker)
 	_, err := registry.Open(t.Context(), "client1")
 	require.Error(t, err)
 	require.Empty(t, registry.open)
@@ -73,7 +73,7 @@ func TestStoreRegistryOpenWithNonDirectoryRoot(t *testing.T) {
 
 func TestStoreRegistryGC(t *testing.T) {
 	root := t.TempDir()
-	registry := NewStoreRegistry(root)
+	registry := NewDBs(root)
 	old := time.Now().Add(-CollectGarbageAfter - time.Minute)
 
 	openStore, err := registry.Open(t.Context(), "open")
