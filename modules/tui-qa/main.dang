@@ -90,7 +90,7 @@ type TuiQa {
 
     # run the command under test as a persistent service serving the console
     let svc = runner
-      .asService(args: ["dagger"] + args, experimentalPrivilegedNesting: true)
+      .asService(args: ["dagger"] + args)
       .start
 
     # a tiny client we curl the console from, on every interaction tool
@@ -196,13 +196,14 @@ type TuiQa {
   #   self.client = container
   #   self
   # }
-  """
-  Stop the TUI session and release the underlying service.
-  """
+
   # A self-call (`tuiQa`) yields the module's own type as it lives in the
   # runtime schema — a Dagger.TuiQa, which carries a GraphQL id and implements
   # Node. Declaring the return as Dagger.TuiQa! (rather than the bare local
   # TuiQa!) makes the annotation match what the self-call actually produces.
+  """
+  Stop the TUI session and release the underlying service.
+  """
   stop: Dagger.TuiQa! @cache(policy: FunctionCachePolicy.Never) {
     if (service != null) {
       service.stop
