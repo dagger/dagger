@@ -192,16 +192,16 @@ func (sl *StatusLine) Render(ctx tuist.Context) {
 // contextBarWidth is the fixed cell width of the status-line context gauge.
 const contextBarWidth = 10
 
-// renderContextBar draws a compact, fixed-width progress bar visualising how
-// much of the model's context window is occupied, making it obvious at a glance
-// when the conversation is nearing the context limit. The fill colour tracks
-// the same thresholds as the percentage text (yellow past 70%, red past 90%),
-// and eighth-block characters give sub-cell resolution. percent may exceed 100
-// (an overflowing context), in which case the bar simply reads full.
+// renderContextBar draws a compact, fixed-width gauge visualising how much of
+// the model's context window is occupied, making it obvious at a glance when the
+// conversation is nearing the context limit. The fill colour tracks the same
+// thresholds as the percentage text (yellow past 70%, red past 90%). percent may
+// exceed 100 (an overflowing context), in which case the bar reads full. It
+// reuses the shared progressTrack renderer so it matches the trees' progress
+// bars, gap-free partial cells and all.
 func renderContextBar(out *termenv.Output, percent float64) string {
 	frac := max(min(percent/100, 1), 0)
-	eighths := max(min(int(frac*contextBarWidth*8), contextBarWidth*8), 0)
-	full, rem := eighths/8, eighths%8
+	eighths := int(frac * contextBarWidth * 8)
 
 	color := termenv.ANSIGreen
 	switch {
@@ -211,17 +211,7 @@ func renderContextBar(out *termenv.Output, percent float64) string {
 		color = termenv.ANSIYellow
 	}
 
-	var sb strings.Builder
-	if full > 0 {
-		sb.WriteString(out.String(strings.Repeat(string(horizontalEighths[8]), full)).Foreground(color).String())
-	}
-	if rem > 0 {
-		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(color).String())
-	}
-	if empty := contextBarWidth - full - min(rem, 1); empty > 0 {
-		sb.WriteString(out.String(strings.Repeat(Block25, empty)).Foreground(termenv.ANSIBrightBlack).String())
-	}
-	return sb.String()
+	return progressTrack(out, contextBarWidth, eighths, color, termenv.ANSIBrightBlack)
 }
 
 // formatTokenCount formats a token count in a compact human-readable form.

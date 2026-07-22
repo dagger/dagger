@@ -6009,7 +6009,7 @@ func (fe *frontendPretty) renderProgressBars(out TermOutput, span *dagui.Span) s
 		if sb.Len() > 0 {
 			sb.WriteString(" ")
 		}
-		sb.WriteString(out.String(summary).Faint().String())
+		sb.WriteString(out.String(summary).String())
 	}
 	return sb.String()
 }
@@ -6033,42 +6033,47 @@ func (fe *frontendPretty) renderProgressCells(out TermOutput, sb *strings.Builde
 		case item.Current == 0:
 			color = termenv.ANSIBrightBlack
 		}
-		sb.WriteString(out.String(string(verticalEighths[level])).Foreground(color).Faint().String())
+		sb.WriteString(out.String(string(verticalEighths[level])).Foreground(color).String())
 	}
 	if rest := len(items) - len(shown); rest > 0 {
-		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).Faint().String())
+		sb.WriteString(out.String(fmt.Sprintf("+%d", rest)).String())
 	}
 }
 
 // renderProgressTrack renders a single item as a fixed-width left-to-right
-// track with eighth-cell resolution.
-//
-// The whole track is painted on a solid background color. The filled portion
-// is drawn as foreground blocks over it, and the partial boundary cell draws
-// its eighth-block in the fill color on the same background — so its unfilled
-// remainder blends into the empty track. Drawing the partial block on the
-// terminal's default background instead would leave a variable-width gap
-// (the block's unfilled remainder) between the fill and the empty portion.
+// track with eighth-cell resolution, in yellow (running) or green (complete).
 func (fe *frontendPretty) renderProgressTrack(out TermOutput, sb *strings.Builder, item *dagui.ProgressItem) {
 	eighths := int(item.Current * progressTrackWidth * 8 / item.Total)
-	eighths = max(min(eighths, progressTrackWidth*8), 0)
-	full, rem := eighths/8, eighths%8
 	color := termenv.ANSIYellow
 	if item.Complete() {
 		color = termenv.ANSIGreen
 	}
-	track := termenv.ANSIBrightBlack
+	sb.WriteString(progressTrack(out, progressTrackWidth, eighths, color, termenv.ANSIBrightBlack))
+}
+
+// progressTrack renders a fixed-width, left-to-right progress track with
+// eighth-cell resolution: a track of width cells with eighths of them filled
+// (0..width*8), drawn in the fill color over a solid track background.
+//
+// Painting the whole track as a background is what lets a partial boundary cell
+// sit flush against the empty portion: its eighth-block is drawn in the fill
+// color on the track background, so the block's unfilled remainder blends into
+// the track instead of leaving a variable-width gap. Where color is unavailable
+// the empty portion still renders as ░.
+func progressTrack(out TermOutput, width, eighths int, fill, track termenv.Color) string {
+	eighths = max(min(eighths, width*8), 0)
+	full, rem := eighths/8, eighths%8
+	var sb strings.Builder
 	if full > 0 {
-		sb.WriteString(out.String(strings.Repeat(string(horizontalEighths[8]), full)).Foreground(color).Background(track).Faint().String())
+		sb.WriteString(out.String(strings.Repeat(string(horizontalEighths[8]), full)).Foreground(fill).Background(track).String())
 	}
 	if rem > 0 {
-		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(color).Background(track).Faint().String())
+		sb.WriteString(out.String(string(horizontalEighths[rem])).Foreground(fill).Background(track).String())
 	}
-	if empty := progressTrackWidth - full - min(rem, 1); empty > 0 {
-		// fg == bg so the light-shade dissolves into a solid track in color
-		// mode, while still rendering as ░ where color is unavailable.
-		sb.WriteString(out.String(strings.Repeat("░", empty)).Foreground(track).Background(track).Faint().String())
+	if empty := width - full - min(rem, 1); empty > 0 {
+		sb.WriteString(out.String(strings.Repeat("░", empty)).Foreground(track).Background(track).String())
 	}
+	return sb.String()
 }
 
 // statusIcon returns an icon indicating the span's status, and a bool
