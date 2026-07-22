@@ -1,9 +1,12 @@
 package idtui
 
 import (
+	"context"
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
@@ -82,5 +85,42 @@ func TestStatusLineOmitsContextBarWhenUnknown(t *testing.T) {
 	}
 	if strings.ContainsAny(line, "█░") {
 		t.Fatalf("expected no gauge when usage is unknown, got:\n%q", line)
+	}
+}
+
+// TestStatusLineSeededFromResume reproduces the resume ordering: LoadSession
+// pushes the restored conversation's stats via SetStatusLine before the
+// interactive shell (and thus the status line component) is created. The
+// frontend must retain that data and seed the new status line with it, so a
+// resumed conversation shows its token/context stats immediately instead of
+// waiting for the user to send a message and generate fresh live metrics.
+func TestStatusLineSeededFromResume(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	term := tuist.NewHeadlessTerminal(120, 10)
+	fe := newWithTerminal(io.Discard, dagui.NewDB(), term)
+	// Bring up the TUI without the event loop, then drive it via Step.
+	fe.setupTUI()
+
+	// Resume order: stats arrive before the status line exists.
+	fe.SetStatusLine(StatusLineData{
+		Model:          "claude-opus-4-8",
+		InputTokens:    12000,
+		OutputTokens:   3400,
+		ContextWindow:  200000,
+		ContextPercent: 50,
+	})
+	// Flush the dispatched update; the status line doesn't exist yet, so this
+	// only records the data for later.
+	_ = fe.tui.Step()
+
+	// The shell — and its status line — start after the resume.
+	fe.startShell(context.Background(), stubShellHandler{})
+
+	frame := strings.Join(fe.tui.Step(), "\n")
+	for _, want := range []string{"claude-opus-4-8", "50.0%/200k", "↑12k", "↓3.4k"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("resumed status line missing %q:\n%s", want, frame)
+		}
 	}
 }

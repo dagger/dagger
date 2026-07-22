@@ -114,6 +114,7 @@ type frontendPretty struct {
 	promptErrLabel  *ErrorLabel
 	queuedMsgLabel  *QueuedMessageLabel
 	statusLine      *StatusLine
+	statusLineData  StatusLineData
 	llmCostFn       LLMCostFunc
 	textInput       *tuist.TextInput
 	promptFrame     *PromptFrame
@@ -819,9 +820,15 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 }
 
 // SetStatusLine updates the compact status line with LLM token/cost/context
-// data. No-op if there is no active shell/status line.
+// data. The data is retained and re-applied when a shell (re)starts, so an
+// update pushed before the status line exists — e.g. on resume — isn't lost.
 func (fe *frontendPretty) SetStatusLine(data StatusLineData) {
 	fe.dispatch(func() {
+		// Remember the latest data even when the status line isn't up yet: on
+		// resume, LoadSession pushes the restored conversation's stats before the
+		// shell (and its status line) is created, so startShell seeds the new
+		// status line from here rather than dropping the update.
+		fe.statusLineData = data
 		if fe.statusLine != nil {
 			fe.statusLine.SetData(data)
 			fe.Update()
@@ -903,6 +910,7 @@ func (fe *frontendPretty) startShell(ctx context.Context, handler ShellHandler) 
 	fe.queuedMsgLabel = NewQueuedMessageLabel(fe.profile)
 	fe.statusLine = &StatusLine{
 		profile:   fe.profile,
+		data:      fe.statusLineData, // seed from the last SetStatusLine (e.g. a resumed session)
 		liveStats: fe.llmLiveStats,
 		inFlight:  func() bool { return fe.shellRunning },
 	}
