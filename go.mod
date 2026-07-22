@@ -13,7 +13,7 @@ replace (
 )
 
 require (
-	charm.land/catwalk v0.49.24
+	charm.land/catwalk v0.50.3
 	charm.land/lipgloss/v2 v2.0.2
 	cloud.google.com/go/secretmanager v1.16.0
 	github.com/1password/onepassword-sdk-go v0.3.1
