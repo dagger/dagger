@@ -13,7 +13,7 @@ type Log struct {
 	Attributes           []byte
 	InstrumentationScope []byte
 	Resource             []byte
-	ResourceSchemaUrl    string
+	ResourceSchemaURL    string
 }
 
 type Metric struct {
@@ -42,7 +42,7 @@ type Span struct {
 	StatusMessage          string
 	InstrumentationScope   []byte
 	Resource               []byte
-	ResourceSchemaUrl      string
+	ResourceSchemaURL      string
 }
 
 type SelectLogsBeneathSpanParams struct {

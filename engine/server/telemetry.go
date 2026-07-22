@@ -561,7 +561,7 @@ func logRecordRow(rec *sdklog.Record) (clientdb.Log, error) {
 		Attributes:           attributes,
 		InstrumentationScope: scope,
 		Resource:             resource,
-		ResourceSchemaUrl:    res.SchemaURL(),
+		ResourceSchemaURL:    res.SchemaURL(),
 	}, nil
 }
 

@@ -186,7 +186,7 @@ var spanCodec = rowCodec[Span]{
 func sizeSpan(row Span) int64 {
 	return 8*11 + int64(len(row.TraceID)+len(row.SpanID)+len(row.TraceState)+len(row.ParentSpanID.String)+
 		len(row.Name)+len(row.Kind)+len(row.Attributes)+len(row.Events)+len(row.Links)+
-		len(row.StatusMessage)+len(row.InstrumentationScope)+len(row.Resource)+len(row.ResourceSchemaUrl))
+		len(row.StatusMessage)+len(row.InstrumentationScope)+len(row.Resource)+len(row.ResourceSchemaURL))
 }
 
 func encodeSpan(row Span) []byte {
@@ -211,7 +211,7 @@ func encodeSpan(row Span) []byte {
 	e.string(row.StatusMessage)
 	e.bytes(row.InstrumentationScope)
 	e.bytes(row.Resource)
-	e.string(row.ResourceSchemaUrl)
+	e.string(row.ResourceSchemaURL)
 	return e.buf
 }
 
@@ -279,7 +279,7 @@ func decodeSpan(buf []byte) (Span, error) {
 	if row.Resource, err = d.bytes(); err != nil {
 		return Span{}, err
 	}
-	if row.ResourceSchemaUrl, err = d.string(); err != nil {
+	if row.ResourceSchemaURL, err = d.string(); err != nil {
 		return Span{}, err
 	}
 	return row, d.done()
@@ -295,7 +295,7 @@ var logCodec = rowCodec[Log]{
 
 func sizeLog(row Log) int64 {
 	return 8*4 + int64(len(row.TraceID.String)+len(row.SpanID.String)+len(row.SeverityText)+
-		len(row.Body)+len(row.Attributes)+len(row.InstrumentationScope)+len(row.Resource)+len(row.ResourceSchemaUrl))
+		len(row.Body)+len(row.Attributes)+len(row.InstrumentationScope)+len(row.Resource)+len(row.ResourceSchemaURL))
 }
 
 func encodeLog(row Log) []byte {
@@ -310,7 +310,7 @@ func encodeLog(row Log) []byte {
 	e.bytes(row.Attributes)
 	e.bytes(row.InstrumentationScope)
 	e.bytes(row.Resource)
-	e.string(row.ResourceSchemaUrl)
+	e.string(row.ResourceSchemaURL)
 	return e.buf
 }
 
@@ -348,7 +348,7 @@ func decodeLog(buf []byte) (Log, error) {
 	if row.Resource, err = d.bytes(); err != nil {
 		return Log{}, err
 	}
-	if row.ResourceSchemaUrl, err = d.string(); err != nil {
+	if row.ResourceSchemaURL, err = d.string(); err != nil {
 		return Log{}, err
 	}
 	return row, d.done()

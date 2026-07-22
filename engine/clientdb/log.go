@@ -36,7 +36,7 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 			slog.Error("failed to unmarshal log resource", "error", err, "log", sd)
 			continue
 		} else {
-			res = telemetry.ResourceFromPB(sd.ResourceSchemaUrl, &resPb)
+			res = telemetry.ResourceFromPB(sd.ResourceSchemaURL, &resPb)
 		}
 		var scope instrumentation.Scope
 		var scopePb otlpcommonv1.InstrumentationScope

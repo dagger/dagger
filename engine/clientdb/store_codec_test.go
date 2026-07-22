@@ -31,7 +31,7 @@ func TestStoreCodecRoundTrip(t *testing.T) {
 			StatusMessage:          "status",
 			InstrumentationScope:   []byte("scope"),
 			Resource:               []byte("resource"),
-			ResourceSchemaUrl:      "resource-schema",
+			ResourceSchemaURL:      "resource-schema",
 		}
 		got, err := spanCodec.decode(spanCodec.encode(want))
 		require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestStoreCodecRoundTrip(t *testing.T) {
 			Attributes:           []byte{},
 			InstrumentationScope: []byte("scope"),
 			Resource:             []byte("resource"),
-			ResourceSchemaUrl:    "schema",
+			ResourceSchemaURL:    "schema",
 		}
 		got, err := logCodec.decode(logCodec.encode(want))
 		require.NoError(t, err)

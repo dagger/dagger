@@ -64,7 +64,7 @@ func TestLogsToPBAllowsSchemalessResources(t *testing.T) {
 		Attributes:           attrs,
 		InstrumentationScope: scope,
 		Resource:             resource,
-		ResourceSchemaUrl:    "",
+		ResourceSchemaURL:    "",
 	}
 	invalid := row
 	invalid.TraceID.Valid = false
