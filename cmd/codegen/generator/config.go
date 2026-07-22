@@ -1,6 +1,6 @@
 package generator
 
-import "dagger.io/dagger"
+import "github.com/dagger/dagger/cmd/codegen/internal/bootstrap"
 
 type Config struct {
 	// Lang is the language to generate the module for.
@@ -18,7 +18,7 @@ type Config struct {
 	// A dagger client connected to the engine running the codegen.
 	// This may be nil if the codegen is run outside of a dagger context and should
 	// only be set if introspectionJSON or moduleSourceID are set.
-	Dag *dagger.Client
+	Dag *bootstrap.Client
 
 	// Generate the client in bundle mode.
 	Bundle bool

@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/sdkfs"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dschmidt/go-layerfs"
@@ -125,7 +125,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		// Use the Go SDK's minimum version rather than the codegen runtime version,
 		// so the client go.mod stays compatible with the SDK's requirements.
 		clientGoVersion := goVersion
-		if sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil); err == nil && sdkMod.Go != nil {
+		if sdkMod, err := modfile.Parse("go.mod", sdkfs.GoMod, nil); err == nil && sdkMod.Go != nil {
 			clientGoVersion = sdkMod.Go.Version
 		}
 		clientGoMod.AddGoStmt(clientGoVersion)

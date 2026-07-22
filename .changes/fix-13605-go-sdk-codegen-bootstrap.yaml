@@ -1,0 +1,10 @@
+kind: fix
+body: >-
+  Go SDK codegen no longer depends on its own generated output.
+  Adds a bootstrap client (cmd/codegen/internal/bootstrap) and a
+  standalone sdkfs subpackage (sdk/go/sdkfs) to break the circular
+  dependency that prevented regeneration of sdk/go/dagger.gen.go
+  when the file was missing, empty, or invalid.
+time: 2026-07-22T10:00:00.000000000+05:30
+custom:
+  Issue: "13605"
