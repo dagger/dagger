@@ -210,22 +210,14 @@ const otlpBatchSize = 1000
 // client's shutdown budget (the CLI allows 10s for the whole shutdown drain).
 const slowTelemetryOp = 1 * time.Second
 
-// writeTiming decomposes how a batched client-DB write spent its wall-clock,
-// so "write N rows" is attributable to acquiring the single write connection
-// vs. the INSERTs themselves vs. the WAL commit.
-type writeTiming struct {
-	beginWait time.Duration // acquire the write connection + BEGIN IMMEDIATE
-	maxStmt   time.Duration // slowest single INSERT once the lock is held
-	commit    time.Duration // COMMIT (WAL append)
-}
-
 // logTelemetryWrite records how a client-DB write batch of N rows spent its
-// time. The write pool is a single connection per DB, so beginWait is the time
-// queued behind other writers for that connection (the writer convoy), while
-// maxStmtDuration/commitDuration are the actual SQLite work once it is held.
+// time. beginWait is now bounded-queue backpressure plus time waiting for the
+// per-DB write agent's next coalesced transaction, while maxStmtDuration and
+// commitDuration are the actual SQLite work once that transaction begins.
 // writeDuration is the whole batch write (beginWait + inserts + commit);
-// poolWaitDelta corroborates beginWait from database/sql's own accounting.
-func logTelemetryWrite(clientID, what string, rows int, totalStart, writeStart time.Time, t writeTiming, before, after sql.DBStats, err error) {
+// poolWaitDelta should remain near zero because only the agent acquires the
+// single write connection; it is retained so before/after captures compare.
+func logTelemetryWrite(clientID, what string, rows int, totalStart, writeStart time.Time, t clientdb.WriteTiming, before, after sql.DBStats, err error) {
 	total := time.Since(totalStart)
 	lg := slog.With(
 		"client", clientID,
@@ -233,9 +225,9 @@ func logTelemetryWrite(clientID, what string, rows int, totalStart, writeStart t
 		"rows", rows,
 		"duration", total,
 		"writeDuration", time.Since(writeStart),
-		"beginWait", t.beginWait,
-		"maxStmtDuration", t.maxStmt,
-		"commitDuration", t.commit,
+		"beginWait", t.BeginWait,
+		"maxStmtDuration", t.MaxStmt,
+		"commitDuration", t.Commit,
 		"poolWaitCountDelta", after.WaitCount-before.WaitCount,
 		"poolWaitDelta", after.WaitDuration-before.WaitDuration,
 		"error", err,
@@ -461,38 +453,21 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 
 	statsBefore := db.Stats()
 	writeStart := time.Now()
-	var timing writeTiming
-	// Insert the whole batch under one write transaction so it takes the write
-	// lock once instead of once per row. The write pool is a single connection
-	// separate from the read pool, so holding it for the batch does not block
-	// SSE reads (which is why per-batch batching is safe here but was not on a
-	// shared connection).
-	insertErr := func() (rerr error) {
-		beginStart := time.Now()
-		tx, err := db.BeginTx(ctx, nil)
-		timing.beginWait = time.Since(beginStart)
-		if err != nil {
-			return fmt.Errorf("begin tx: %w", err)
-		}
-		defer func() {
-			if rerr != nil {
-				_ = tx.Rollback()
-			}
-		}()
-		q := db.WithTx(tx)
+	// Every producer targeting this DB submits to the same write agent. It
+	// coalesces pending span/log/metric batches into one transaction, while this
+	// callback preserves this span batch's own rollback and error result.
+	timing, insertErr := db.Write(ctx, func(writeCtx context.Context, q *clientdb.Queries) (time.Duration, error) {
+		var maxStmt time.Duration
 		for _, insert := range inserts {
 			stmtStart := time.Now()
-			_, err := q.InsertSpan(ctx, *insert)
-			timing.maxStmt = max(timing.maxStmt, time.Since(stmtStart))
+			_, err := q.InsertSpan(writeCtx, *insert)
+			maxStmt = max(maxStmt, time.Since(stmtStart))
 			if err != nil {
-				return fmt.Errorf("insert span: %w", err)
+				return maxStmt, fmt.Errorf("insert span: %w", err)
 			}
 		}
-		commitStart := time.Now()
-		err = tx.Commit()
-		timing.commit = time.Since(commitStart)
-		return err
-	}()
+		return maxStmt, nil
+	})
 	logTelemetryWrite(ps.client.clientID, "spans", len(inserts), start, writeStart, timing, statsBefore, db.Stats(), insertErr)
 	if insertErr != nil {
 		return insertErr
@@ -537,35 +512,24 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 	statsBefore := db.Stats()
 	writeStart := time.Now()
-	var timing writeTiming
-	// Batch under one write transaction (see ExportSpans). Individual insert
-	// failures stay best-effort: log and continue rather than abort the batch.
-	beginStart := time.Now()
-	tx, err := db.BeginTx(ctx, nil)
-	timing.beginWait = time.Since(beginStart)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	q := db.WithTx(tx)
-	for _, insert := range inserts {
-		stmtStart := time.Now()
-		_, err := q.InsertLog(ctx, *insert)
-		timing.maxStmt = max(timing.maxStmt, time.Since(stmtStart))
-		if err != nil {
-			slog.Warn("failed to insert log record", "error", err)
-			continue
+	// Individual log insert failures stay best-effort, but queue, transaction,
+	// and commit errors propagate to this exporter after its commit watermark.
+	timing, writeErr := db.Write(ctx, func(writeCtx context.Context, q *clientdb.Queries) (time.Duration, error) {
+		var maxStmt time.Duration
+		for _, insert := range inserts {
+			stmtStart := time.Now()
+			_, err := q.InsertLog(writeCtx, *insert)
+			maxStmt = max(maxStmt, time.Since(stmtStart))
+			if err != nil {
+				slog.Warn("failed to insert log record", "error", err)
+				continue
+			}
 		}
-	}
-	commitStart := time.Now()
-	commitErr := tx.Commit()
-	timing.commit = time.Since(commitStart)
-	if commitErr != nil {
-		_ = tx.Rollback()
-		slog.Warn("failed to commit log records", "error", commitErr)
-	}
-	logTelemetryWrite(ps.client.clientID, "logs", len(inserts), start, writeStart, timing, statsBefore, db.Stats(), commitErr)
+		return maxStmt, nil
+	})
+	logTelemetryWrite(ps.client.clientID, "logs", len(inserts), start, writeStart, timing, statsBefore, db.Stats(), writeErr)
 
-	return nil
+	return writeErr
 }
 
 func (ps clientLogs) ForceFlush(ctx context.Context) error { return nil }
@@ -668,10 +632,12 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 
 	statsBefore := db.Stats()
 	writeStart := time.Now()
-	_, err = db.InsertMetric(ctx, metricsPBBytes)
-	// Single auto-commit insert (not batched); the whole write shows up as
-	// maxStmt, with no separate begin/commit phases.
-	logTelemetryWrite(ps.client.clientID, "metrics", 1, start, writeStart, writeTiming{maxStmt: time.Since(writeStart)}, statsBefore, db.Stats(), err)
+	timing, err := db.Write(ctx, func(writeCtx context.Context, q *clientdb.Queries) (time.Duration, error) {
+		stmtStart := time.Now()
+		_, err := q.InsertMetric(writeCtx, metricsPBBytes)
+		return time.Since(stmtStart), err
+	})
+	logTelemetryWrite(ps.client.clientID, "metrics", 1, start, writeStart, timing, statsBefore, db.Stats(), err)
 	if err != nil {
 		return fmt.Errorf("insert metrics: %w", err)
 	}

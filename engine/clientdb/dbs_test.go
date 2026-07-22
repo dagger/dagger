@@ -35,8 +35,9 @@ func TestDBRefCount(t *testing.T) {
 	require.Len(t, dbs.open, 1)
 	require.NotNil(t, d1a.writer)
 	require.NotNil(t, d1a.reader)
-	require.NotNil(t, d1a.Queries)
+	require.NotNil(t, d1a.writeQueries)
 	require.NotNil(t, d1a.readQueries)
+	require.NotNil(t, d1a.writeAgent)
 	require.Equal(t, d1a.refCount, 1)
 
 	_, err = d1b.Read().SelectSpansSince(ctx, SelectSpansSinceParams{
@@ -57,12 +58,17 @@ func TestDBRefCount(t *testing.T) {
 	require.Nil(t, d1b.writer)
 	require.Nil(t, d1a.reader)
 	require.Nil(t, d1b.reader)
-	require.Nil(t, d1a.Queries)
-	require.Nil(t, d1b.Queries)
+	require.Nil(t, d1a.writeQueries)
+	require.Nil(t, d1b.writeQueries)
 	require.Nil(t, d1a.readQueries)
 	require.Nil(t, d1b.readQueries)
 	require.Equal(t, d1a.refCount, 0)
 	require.Equal(t, d1b.refCount, 0)
+	select {
+	case <-d1a.writeAgent.done:
+	default:
+		t.Fatal("client DB writer goroutine still running after final close")
+	}
 
 	_, err = d2a.Read().SelectSpansSince(ctx, SelectSpansSinceParams{
 		ID:    1,
@@ -74,9 +80,14 @@ func TestDBRefCount(t *testing.T) {
 	require.Len(t, dbs.open, 0)
 	require.Nil(t, d2a.writer)
 	require.Nil(t, d2a.reader)
-	require.Nil(t, d2a.Queries)
+	require.Nil(t, d2a.writeQueries)
 	require.Nil(t, d2a.readQueries)
 	require.Equal(t, d2a.refCount, 0)
+	select {
+	case <-d2a.writeAgent.done:
+	default:
+		t.Fatal("client DB writer goroutine still running after final close")
+	}
 }
 
 func TestDBCloseNil(t *testing.T) {

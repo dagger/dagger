@@ -156,9 +156,9 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 		lg.Trace("reusing open client DB", "clientID", clientID)
 	}
 
-	if db.Queries == nil {
+	if db.writeQueries == nil {
 		var err error
-		db.Queries, err = Prepare(ctx, db.writer)
+		db.writeQueries, err = Prepare(ctx, db.writer)
 		if err != nil {
 			return nil, fmt.Errorf("prepare write queries: %w", err)
 		}
@@ -169,6 +169,9 @@ func (dbs *DBs) Open(ctx context.Context, clientID string) (_ *DB, rerr error) {
 		if err != nil {
 			return nil, fmt.Errorf("prepare read queries: %w", err)
 		}
+	}
+	if db.writeAgent == nil {
+		db.writeAgent = newWriteAgent(db.writer, db.writeQueries)
 	}
 
 	return db, nil
@@ -185,11 +188,14 @@ func (dbs *DBs) close(db *DB, lg *slog.Logger) (rerr error) {
 	}
 	lg.ExtraDebug("closing client DB; no more references")
 
-	if db.Queries != nil {
-		if cerr := db.Queries.Close(); cerr != nil {
+	if db.writeAgent != nil {
+		db.writeAgent.Close()
+	}
+	if db.writeQueries != nil {
+		if cerr := db.writeQueries.Close(); cerr != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("error closing write queries: %w", cerr))
 		}
-		db.Queries = nil
+		db.writeQueries = nil
 	}
 	if db.readQueries != nil {
 		if cerr := db.readQueries.Close(); cerr != nil {
@@ -273,10 +279,11 @@ type DB struct {
 	dbs      *DBs
 	clientID string
 
-	// writer is the single-connection write pool; the embedded *Queries is
-	// prepared against it, so DB's Insert* methods write through it.
-	writer *sql.DB
-	*Queries
+	// writer is the single-connection write pool. Only writeAgent acquires it;
+	// writeQueries is private so callers cannot bypass the fan-in queue.
+	writer       *sql.DB
+	writeQueries *Queries
+	writeAgent   *writeAgent
 
 	// reader is the multi-connection read pool; readQueries is prepared
 	// against it and reached via Read(), so Select* reads run concurrently
@@ -294,21 +301,16 @@ func (db *DB) Read() *Queries {
 	return db.readQueries
 }
 
-func (db *DB) Begin() (*sql.Tx, error) {
-	return db.writer.Begin()
+// Write queues one telemetry batch on this DB's sole writer and blocks until
+// the coalesced transaction containing it commits. This guarantees that a nil
+// return means the batch is already visible through Read().
+func (db *DB) Write(ctx context.Context, write WriteBatch) (WriteTiming, error) {
+	return db.writeAgent.submit(ctx, write)
 }
 
-// BeginTx starts a write transaction on the write pool bound to ctx. Batched
-// writers use this so a whole export batch runs as one BEGIN IMMEDIATE..COMMIT
-// holding the single write connection once, instead of one auto-commit round
-// trip (and write-lock acquisition) per row.
-func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	return db.writer.BeginTx(ctx, opts)
-}
-
-// Stats reports the write pool's counters. It is capped at a single
-// connection, so WaitCount/WaitDuration measure how long writers queued behind
-// it (reads use the separate reader pool and do not show up here).
+// Stats reports the write pool's counters. It is capped at a single connection
+// and only acquired by the write agent, so WaitCount/WaitDuration should stay
+// near zero (reads use the separate reader pool and do not show up here).
 func (db *DB) Stats() sql.DBStats {
 	return db.writer.Stats()
 }
