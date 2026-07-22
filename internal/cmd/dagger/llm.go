@@ -366,11 +366,13 @@ func fmtTokenGrowth(n int) string {
 	}
 }
 
-// updateStatusLine refreshes the compact status line. Token rollups and cost
-// are computed by the frontend from live metrics (all models + sub-agents) at
-// render time, so they stay current between turns; here we supply only the
-// model, subscription label, auto-compact state, and the current context
-// occupancy (top-level conversation) for the context %.
+// updateStatusLine refreshes the compact status line. During a live turn the
+// frontend recomputes the token rollup and cost from live metrics (all models +
+// sub-agents) at render time, so they stay current between turns; here we supply
+// the model, subscription label, auto-compact state, context occupancy, and a
+// token/cost snapshot read from the LLM object itself. That snapshot is the
+// fallback the frontend renders before any metrics arrive — most visibly on
+// load/resume, where the conversation has usage but no live metrics yet.
 func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 	contextTokens, err := llm.ContextTokens(s.plumbingCtx)
 	if err != nil {
@@ -383,6 +385,24 @@ func (s *LLMSession) updateStatusLine(llm *dagger.LLM) error {
 		ContextPercent:    -1, // unknown by default
 		AutoCompact:       s.ShouldAutocompact(),
 	}
+
+	// Seed the cumulative token rollup and cost straight from the LLM object so
+	// the status line is populated immediately on load/resume, before any new
+	// metrics arrive. During a live turn the frontend overrides these with the
+	// live metric rollup (all models + sub-agents); this is the fallback that
+	// keeps a resumed conversation from rendering an empty bar. Best-effort:
+	// stats aren't worth failing a turn over.
+	usage := llm.TokenUsage()
+	statusData.InputTokens, _ = usage.InputTokens(s.plumbingCtx)
+	statusData.OutputTokens, _ = usage.OutputTokens(s.plumbingCtx)
+	statusData.CacheReads, _ = usage.CachedTokenReads(s.plumbingCtx)
+	statusData.CacheWrites, _ = usage.CachedTokenWrites(s.plumbingCtx)
+	if provider, err := llm.Provider(s.plumbingCtx); err == nil {
+		statusData.TotalCost = modelcatalog.Cost(provider, s.model,
+			int64(statusData.InputTokens), int64(statusData.OutputTokens),
+			int64(statusData.CacheReads), int64(statusData.CacheWrites))
+	}
+
 	// The engine is the source of truth for the context window (backed by the
 	// shared catwalk catalog); it reports 0 for uncatalogued/local models or an
 	// older engine without the field.
