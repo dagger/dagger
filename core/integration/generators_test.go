@@ -125,6 +125,64 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 	}
 }
 
+func (GeneratorsSuite) TestGenerateApplyDisposition(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen, err := generatorsTestEnv(t, c)
+	require.NoError(t, err)
+	modGen = modGen.WithWorkdir("hello-with-generators")
+	agent := modGen.WithEnvVariable("CODEX_CI", "1")
+
+	t.Run("agent requires an explicit choice before running", func(ctx context.Context, t *testctx.T) {
+		failed := agent.With(daggerExecFail("generate", "generate-files"))
+		out, err := failed.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "requires an explicit changeset choice")
+		require.Contains(t, out, "-y/--auto-apply")
+		require.Contains(t, out, "--no-apply")
+
+		exists, err := failed.Exists(ctx, "foo")
+		require.NoError(t, err)
+		require.False(t, exists)
+	})
+
+	t.Run("agent list mode does not require a choice", func(ctx context.Context, t *testctx.T) {
+		out, err := agent.
+			With(daggerExec("generate", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "generate-files")
+	})
+
+	t.Run("no apply previews without exporting", func(ctx context.Context, t *testctx.T) {
+		// Plain progress keeps the preview in the process output so this test can
+		// assert it directly. Agent detection still requires the explicit
+		// disposition independently of the selected progress frontend.
+		previewed := agent.With(daggerExec("generate", "generate-files", "--no-apply", "--progress=plain"))
+		out, err := previewed.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "foo")
+		require.Contains(t, out, "Generated changes were not applied (--no-apply).")
+
+		exists, err := previewed.Exists(ctx, "foo")
+		require.NoError(t, err)
+		require.False(t, exists)
+	})
+
+	t.Run("report mode cannot wait for confirmation", func(ctx context.Context, t *testctx.T) {
+		failed := modGen.With(daggerExecFail("generate", "generate-files", "--progress=report"))
+		out, err := failed.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "interactive prompts are unavailable in report mode")
+		require.Contains(t, out, "-y/--auto-apply")
+		require.Contains(t, out, "--no-apply")
+
+		exists, err := failed.Exists(ctx, "foo")
+		require.NoError(t, err)
+		require.False(t, exists)
+	})
+}
+
 // A generator whose changeset evaluates lazily and whose backing exec fails must
 // surface that failure -- the command, its stderr, and its exit code -- to the
 // user of `dagger generate`, rather than a bare "exit code: N" with the detail

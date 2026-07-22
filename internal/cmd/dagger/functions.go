@@ -926,15 +926,41 @@ func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 }
 
 func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) error {
-	_, err := handleChangesetResponseAt(ctx, dag, response, autoApply, ".")
+	_, err := handleChangesetResponseAt(ctx, dag, response, changesetDispositionForAutoApply(autoApply), ".", nil)
+	return err
+}
+
+type changesetDisposition int
+
+const (
+	changesetDispositionPrompt changesetDisposition = iota
+	changesetDispositionApply
+	changesetDispositionNoApply
+)
+
+func changesetDispositionForAutoApply(autoApply bool) changesetDisposition {
+	if autoApply {
+		return changesetDispositionApply
+	}
+	return changesetDispositionPrompt
+}
+
+func handleChangesetResponseWithDisposition(
+	ctx context.Context,
+	dag *dagger.Client,
+	response any,
+	disposition changesetDisposition,
+	previewOut io.Writer,
+) error {
+	_, err := handleChangesetResponseAt(ctx, dag, response, disposition, ".", previewOut)
 	return err
 }
 
 // handleChangesetResponseAt reports whether it actually applied the changeset,
 // so callers can print follow-up guidance only when files were written (not on
 // a no-op or a declined preview).
-func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response any, autoApply bool, exportPath string) (applied bool, rerr error) {
-	return handleChangesetResponseWithApply(ctx, dag, response, autoApply, func(ctx context.Context, changeset *dagger.Changeset) error {
+func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response any, disposition changesetDisposition, exportPath string, previewOut io.Writer) (applied bool, rerr error) {
+	return handleChangesetResponseWithApply(ctx, dag, response, disposition, previewOut, func(ctx context.Context, changeset *dagger.Changeset) error {
 		_, err := changeset.Export(ctx, exportPath)
 		return err
 	})
@@ -945,7 +971,7 @@ func handleWorkspaceResponse(ctx context.Context, dag *dagger.Client, workspace 
 	if err != nil {
 		return false, err
 	}
-	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(), autoApply, func(ctx context.Context, _ *dagger.Changeset) error {
+	return handleChangesetResponseWithApply(ctx, dag, workspace.Changes(), changesetDispositionForAutoApply(autoApply), nil, func(ctx context.Context, _ *dagger.Changeset) error {
 		return workspace.Export(ctx)
 	})
 }
@@ -962,7 +988,8 @@ func handleChangesetResponseWithApply(
 	ctx context.Context,
 	dag *dagger.Client,
 	response any,
-	autoApply bool,
+	disposition changesetDisposition,
+	previewOut io.Writer,
 	apply func(context.Context, *dagger.Changeset) error,
 ) (applied bool, rerr error) {
 	changeset, err := toChangeset(dag, response)
@@ -991,7 +1018,15 @@ func handleChangesetResponseWithApply(
 	patchpreview.Summarize(idtui.NewOutput(&descBuf), entries, summaryWidth)
 	description := descBuf.String()
 
-	if !autoApply {
+	switch disposition {
+	case changesetDispositionNoApply:
+		if previewOut == nil {
+			return false, errors.New("no preview output configured for --no-apply")
+		}
+		fmt.Fprintln(previewOut, description)
+		fmt.Fprintln(previewOut, "Generated changes were not applied (--no-apply).")
+		return false, nil
+	case changesetDispositionPrompt:
 		var confirm bool
 		form := idtui.NewForm(
 			huh.NewGroup(
@@ -1004,11 +1039,18 @@ func handleChangesetResponseWithApply(
 			),
 		)
 		if err := Frontend.HandleForm(ctx, form); err != nil {
+			if errors.Is(err, idtui.ErrNonInteractive) {
+				return false, fmt.Errorf("%w; pass -y/--auto-apply to apply changes without prompting", err)
+			}
 			return false, err
 		}
 		if !confirm {
 			return false, nil
 		}
+	case changesetDispositionApply:
+		// Apply below without prompting.
+	default:
+		return false, fmt.Errorf("unknown changeset disposition %d", disposition)
 	}
 
 	ctx, span := Tracer().Start(ctx, "applying changes")
