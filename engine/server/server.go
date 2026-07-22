@@ -108,18 +108,19 @@ type Server struct {
 	// worker/executor-specific config+state
 	//
 
-	runc             *runc.Runc
-	cgroupParent     string
-	networkProviders map[pb.NetMode]network.Provider
-	processMode      oci.ProcessMode
-	dns              *oci.DNSConfig
-	apparmorProfile  string
-	selinux          bool
-	entitlements     entitlements.Set
-	enabledPlatforms []ocispecs.Platform
-	defaultPlatform  ocispecs.Platform
-	registryHosts    docker.RegistryHosts
-	cleanMntNS       *os.File
+	runc                    *runc.Runc
+	cgroupParent            string
+	networkProviders        map[pb.NetMode]network.Provider
+	processMode             oci.ProcessMode
+	dns                     *oci.DNSConfig
+	apparmorProfile         string
+	selinux                 bool
+	entitlements            entitlements.Set
+	enabledPlatforms        []ocispecs.Platform
+	defaultPlatform         ocispecs.Platform
+	registryHosts           docker.RegistryHosts
+	cleanMntNS              *os.File
+	recursiveReadOnlyMounts bool
 
 	//
 	// telemetry config+state
@@ -368,6 +369,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	)
 
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
+
+	srv.recursiveReadOnlyMounts, err = probeRecursiveReadOnlyMounts()
+	if err != nil {
+		// ENOSYS on old kernels and EPERM under namespace/seccomp restrictions
+		// are expected compatibility cases. Retain false and use rbind,ro.
+		slog.DebugContext(ctx, "recursive read-only mounts unavailable; engine volumes will use top-level read-only fallback", "error", err)
+	}
 
 	hostMntNS, err := os.OpenFile("/proc/self/ns/mnt", os.O_RDONLY, 0)
 	if err != nil {

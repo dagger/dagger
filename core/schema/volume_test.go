@@ -54,6 +54,98 @@ func TestVolumeContentDigestFromCacheKey(t *testing.T) {
 	)
 }
 
+func TestEngineVolumeRequiresMainClient(t *testing.T) {
+	ctx, dag := newVolumeSchemaTestDag(t, &engine.ClientMetadata{
+		ClientID:  "main",
+		SessionID: "engine-volume-gate-session",
+	})
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "nested",
+		SessionID: "engine-volume-gate-session",
+	})
+
+	var vol dagql.ObjectResult[*core.Volume]
+	err := dag.Select(ctx, dag.Root(), &vol, dagql.Selector{
+		Field: "engineVolume",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString("datasets/models")},
+		},
+	})
+	require.ErrorContains(t, err, "only the main client")
+}
+
+func TestEngineVolumeConstructsStableLogicalConfig(t *testing.T) {
+	metadata := &engine.ClientMetadata{
+		ClientID:  "main",
+		SessionID: "engine-volume-constructor-session",
+	}
+	ctx, dag := newVolumeSchemaTestDag(t, metadata)
+
+	var first dagql.ObjectResult[*core.Volume]
+	err := dag.Select(ctx, dag.Root(), &first, dagql.Selector{
+		Field: "engineVolume",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString("datasets/models")},
+			{Name: "subdir", Value: dagql.Optional[dagql.String]{Valid: true, Value: "llama/weights"}},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, core.VolumeBackendKindEngine, first.Self().Backend)
+	require.Equal(t, &core.EngineVolumeConfig{
+		Name:          "datasets/models",
+		Subdir:        "llama/weights",
+		LayoutVersion: core.EngineVolumeLayoutVersion,
+	}, first.Self().Engine)
+
+	firstID, err := first.ID()
+	require.NoError(t, err)
+	secondMetadata := &engine.ClientMetadata{
+		ClientID:  "main-2",
+		SessionID: "engine-volume-constructor-session-2",
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, secondMetadata)
+	root, ok := dag.Root().(dagql.ObjectResult[*core.Query])
+	require.True(t, ok)
+	root.Self().Server.(*currentTypeDefsTestServer).mainClient = secondMetadata
+	var second dagql.ObjectResult[*core.Volume]
+	err = dag.Select(ctx, dag.Root(), &second, dagql.Selector{
+		Field: "engineVolume",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString("datasets/models")},
+			{Name: "subdir", Value: dagql.Optional[dagql.String]{Valid: true, Value: "llama/weights"}},
+		},
+	})
+	require.NoError(t, err)
+	secondID, err := second.ID()
+	require.NoError(t, err)
+	require.Equal(t, firstID, secondID)
+}
+
+func TestEngineVolumeRejectsInvalidPaths(t *testing.T) {
+	ctx, dag := newVolumeSchemaTestDag(t, &engine.ClientMetadata{
+		ClientID:  "main",
+		SessionID: "engine-volume-validation-session",
+	})
+
+	for _, tc := range []struct {
+		name   string
+		subdir dagql.Optional[dagql.String]
+	}{
+		{name: "../escape"},
+		{name: "group/fs"},
+		{name: "group/data", subdir: dagql.Optional[dagql.String]{Valid: true, Value: "../escape"}},
+		{name: "group/data", subdir: dagql.Optional[dagql.String]{Valid: true, Value: ""}},
+	} {
+		args := []dagql.NamedInput{{Name: "name", Value: dagql.NewString(tc.name)}}
+		if tc.subdir.Valid {
+			args = append(args, dagql.NamedInput{Name: "subdir", Value: tc.subdir})
+		}
+		var vol dagql.ObjectResult[*core.Volume]
+		err := dag.Select(ctx, dag.Root(), &vol, dagql.Selector{Field: "engineVolume", Args: args})
+		require.Error(t, err, tc.name)
+	}
+}
+
 func TestSSHFSVolumeRequiresMainClient(t *testing.T) {
 	ctx, dag := newVolumeSchemaTestDag(t, &engine.ClientMetadata{
 		ClientID:  "main",

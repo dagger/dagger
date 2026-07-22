@@ -1,15 +1,17 @@
 package core
 
-// These tests cover opaque filesystem volumes backed by SSHFS. Unit tests cover
-// address parsing and schema hiding; this suite exercises the live engine path.
+// These tests cover opaque filesystem volumes. Unit tests cover validation and
+// schema hiding; this suite exercises live engine paths.
 
 import (
 	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -20,6 +22,197 @@ type VolumeSuite struct{}
 
 func TestVolume(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(VolumeSuite{})
+}
+
+func (VolumeSuite) TestEngineVolumeLiveMount(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	parentData := c.CacheVolume("engine-volume-parent-" + identity.NewID())
+	nestedData := c.CacheVolume("engine-volume-nested-" + identity.NewID())
+
+	_, err := c.Container().From(alpineImage).
+		WithMountedCache("/data", parentData).
+		WithExec([]string{"sh", "-ec", "printf root-v1 > /data/root.txt"}).
+		Sync(ctx)
+	require.NoError(t, err)
+	_, err = c.Container().From(alpineImage).
+		WithMountedCache("/data", nestedData).
+		WithExec([]string{"sh", "-ec", "printf nested-v1 > /data/nested.txt"}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	const (
+		engineRoot = "/engine-state"
+		volumeName = "integration/live"
+	)
+	operatorPath := engineRoot + "/volumes/v1/integration/live/fs"
+	devEngine := devEngineContainer(c,
+		engineWithBkConfig(ctx, t, func(_ context.Context, _ *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.Root = engineRoot
+			return cfg
+		}),
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithMountedCache(operatorPath, parentData).
+				WithMountedCache(operatorPath+"/nested", nestedData)
+		},
+	)
+	tunneledEngine, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	require.NoError(t, err)
+	engineStopped := false
+	t.Cleanup(func() {
+		if !engineStopped {
+			_, _ = tunneledEngine.Stop(context.WithoutCancel(ctx))
+		}
+	})
+
+	endpoint, err := tunneledEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+	nestedClient, err := dagger.Connect(ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
+	)
+	require.NoError(t, err)
+	clientClosed := false
+	t.Cleanup(func() {
+		if !clientClosed {
+			_ = nestedClient.Close()
+		}
+	})
+
+	volumeID, err := queryEngineVolumeID(ctx, nestedClient, volumeName)
+	require.NoError(t, err)
+
+	out, err := execWithEngineVolume(ctx, nestedClient, volumeID, false, []string{
+		"sh", "-ec", "cat /mnt/root.txt; cat /mnt/nested/nested.txt",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "root-v1nested-v1", out)
+
+	_, err = execWithEngineVolume(ctx, nestedClient, volumeID, false, []string{
+		"sh", "-ec", "printf root-v2 > /mnt/root.txt; printf nested-v2 > /mnt/nested/nested.txt",
+	})
+	require.NoError(t, err)
+	out, err = execWithEngineVolume(ctx, nestedClient, volumeID, false, []string{
+		"sh", "-ec", "cat /mnt/root.txt; cat /mnt/nested/nested.txt",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "root-v2nested-v2", out)
+
+	// On the canonical dev-engine kernel, the startup capability probe enables
+	// rbind,rro. Both the volume root and the operator-provided nested mount must
+	// reject writes.
+	out, err = execWithEngineVolume(ctx, nestedClient, volumeID, true, []string{
+		"sh", "-c", "if printf bad > /mnt/root.txt 2>/dev/null; then exit 41; fi; if printf bad > /mnt/nested/nested.txt 2>/dev/null; then exit 42; fi; cat /mnt/root.txt; cat /mnt/nested/nested.txt",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "root-v2nested-v2", out)
+
+	// Cancellation exercises ordinary executor-owned bind teardown. The payload
+	// must remain usable by a later mount in the same engine.
+	cancelCtx, cancel := context.WithCancel(ctx)
+	canceledExec := make(chan error, 1)
+	go func() {
+		_, err := execWithEngineVolume(cancelCtx, nestedClient, volumeID, false, []string{
+			"sh", "-ec", "printf started > /mnt/cancel-started; exec sleep 600",
+		})
+		canceledExec <- err
+	}()
+
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		_, err = execWithEngineVolume(ctx, nestedClient, volumeID, false, []string{
+			"sh", "-ec", "test -f /mnt/cancel-started",
+		})
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for cancellable engine-volume exec to start: %v", err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case err := <-canceledExec:
+		require.Error(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out waiting for canceled engine-volume exec to stop")
+	}
+	out, err = execWithEngineVolume(ctx, nestedClient, volumeID, false, []string{
+		"sh", "-ec", "cat /mnt/cancel-started; printf reused > /mnt/after-cancel; cat /mnt/after-cancel",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "startedreused", out)
+
+	require.NoError(t, nestedClient.Close())
+	clientClosed = true
+	_, err = tunneledEngine.Stop(ctx)
+	require.NoError(t, err)
+	engineStopped = true
+
+	rootContents, err := c.Container().From(alpineImage).
+		WithMountedCache("/data", parentData).
+		WithExec([]string{"cat", "/data/root.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "root-v2", rootContents)
+	nestedContents, err := c.Container().From(alpineImage).
+		WithMountedCache("/data", nestedData).
+		WithExec([]string{"cat", "/data/nested.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "nested-v2", nestedContents)
+}
+
+func queryEngineVolumeID(ctx context.Context, client *dagger.Client, name string) (string, error) {
+	var response struct {
+		EngineVolume struct {
+			ID string
+		}
+	}
+	err := client.Do(ctx, &dagger.Request{
+		Query: `query EngineVolume($name: String!) { engineVolume(name: $name) { id } }`,
+		Variables: map[string]any{
+			"name": name,
+		},
+	}, &dagger.Response{Data: &response})
+	return response.EngineVolume.ID, err
+}
+
+func execWithEngineVolume(ctx context.Context, client *dagger.Client, volumeID string, readonly bool, args []string) (string, error) {
+	var response struct {
+		Container struct {
+			From struct {
+				WithEnvVariable struct {
+					WithMountedVolume struct {
+						WithExec struct {
+							Stdout string
+						}
+					}
+				}
+			}
+		}
+	}
+	err := client.Do(ctx, &dagger.Request{
+		Query: `query EngineVolumeExec($volume: ID!, $readonly: Boolean!, $args: [String!]!, $cacheBuster: String!) {
+  container {
+    from(address: "` + alpineImage + `") {
+      withEnvVariable(name: "ENGINE_VOLUME_TEST_CACHE_BUSTER", value: $cacheBuster) {
+        withMountedVolume(path: "/mnt", volume: $volume, readOnly: $readonly) {
+          withExec(args: $args) { stdout }
+        }
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{
+			"volume":      volumeID,
+			"readonly":    readonly,
+			"args":        args,
+			"cacheBuster": identity.NewID(),
+		},
+	}, &dagger.Response{Data: &response})
+	return response.Container.From.WithEnvVariable.WithMountedVolume.WithExec.Stdout, err
 }
 
 func (VolumeSuite) TestSSHFSVolumeMount(ctx context.Context, t *testctx.T) {

@@ -18,6 +18,7 @@ var TypesToIgnoreForModuleIntrospection = []string{"Host"}
 
 var FieldsToIgnoreForModuleIntrospection = []string{
 	"Query.currentWorkspace",
+	"Query.engineVolume",
 	"Query.sshfsVolume",
 	"Address.volume",
 }

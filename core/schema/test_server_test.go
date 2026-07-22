@@ -142,6 +142,10 @@ func (s *currentTypeDefsTestServer) Locker() *locker.Locker { return nil }
 
 func (s *currentTypeDefsTestServer) SecretSalt() []byte { return nil }
 
+func (s *currentTypeDefsTestServer) EngineVolumeState() core.EngineVolumeState {
+	return core.EngineVolumeState{}
+}
+
 func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error {
 	return nil
 }

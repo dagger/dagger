@@ -2923,6 +2923,13 @@ func (srv *Server) CleanMountNS() *os.File {
 	return srv.cleanMntNS
 }
 
+func (srv *Server) EngineVolumeState() core.EngineVolumeState {
+	return core.EngineVolumeState{
+		RootDir:                    srv.rootDir,
+		RecursiveReadOnlySupported: srv.recursiveReadOnlyMounts,
+	}
+}
+
 type httpError struct {
 	error
 	code int

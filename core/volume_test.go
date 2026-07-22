@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -66,6 +67,83 @@ func TestVolumePersistedObjectRoundTrip(t *testing.T) {
 	require.Equal(t, "private-key", decoded.SSHFS.PrivateKey.Self().NameVal)
 	require.Equal(t, "known-hosts", decoded.SSHFS.KnownHosts.Self().NameVal)
 	require.Equal(t, "ssh.example.test", decoded.SSHFS.ServiceHost.Self().CustomHostname)
+}
+
+func TestEngineVolumePersistedObjectRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	vol := &Volume{
+		Backend: VolumeBackendKindEngine,
+		Engine: &EngineVolumeConfig{
+			Name:          "datasets/models",
+			Subdir:        "llama/weights",
+			LayoutVersion: EngineVolumeLayoutVersion,
+		},
+	}
+	encoded, err := vol.EncodePersistedObject(context.Background(), nil)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded.JSON), "/var/lib/dagger")
+
+	var raw persistedVolumePayload
+	require.NoError(t, json.Unmarshal(encoded.JSON, &raw))
+	require.Equal(t, VolumeBackendKindEngine, raw.Backend)
+	require.Equal(t, "datasets/models", raw.Engine.Name)
+	require.Equal(t, "llama/weights", raw.Engine.Subdir)
+	require.Equal(t, EngineVolumeLayoutVersion, raw.Engine.LayoutVersion)
+
+	decodedTyped, err := (&Volume{}).DecodePersistedObject(context.Background(), nil, 0, nil, encoded.JSON)
+	require.NoError(t, err)
+	decoded, ok := decodedTyped.(*Volume)
+	require.True(t, ok)
+	require.Equal(t, vol, decoded)
+}
+
+func TestEngineVolumeHasNoDependencies(t *testing.T) {
+	t.Parallel()
+
+	vol := &Volume{
+		Backend: VolumeBackendKindEngine,
+		Engine: &EngineVolumeConfig{
+			Name:          "shared/data",
+			LayoutVersion: EngineVolumeLayoutVersion,
+		},
+	}
+	deps, err := vol.AttachDependencyResults(context.Background(), nil, func(dagql.AnyResult) (dagql.AnyResult, error) {
+		t.Fatal("engine volumes must not attach session resources")
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.Empty(t, deps)
+}
+
+func TestValidateEngineVolumeName(t *testing.T) {
+	t.Parallel()
+
+	for _, valid := range []string{"data", "datasets/models-v1", "A/0._-"} {
+		require.NoError(t, ValidateEngineVolumeName(valid), valid)
+	}
+	for _, invalid := range []string{
+		"", "/data", "data/", "data//models", ".", "..", "data/../models",
+		"fs", "data/fs", "-data", "_data", ".data", "data model", "dáta", "data\\model",
+	} {
+		require.Error(t, ValidateEngineVolumeName(invalid), invalid)
+	}
+	require.Error(t, ValidateEngineVolumeName(strings.Repeat("a", engineVolumeMaxNameLength+1)))
+	require.Error(t, ValidateEngineVolumeName(strings.Repeat("a/", engineVolumeMaxPathLength/2)+"a"))
+}
+
+func TestValidateEngineVolumeSubdir(t *testing.T) {
+	t.Parallel()
+
+	for _, valid := range []string{"data", "nested/fs", "spaces are valid", "λ/数据"} {
+		require.NoError(t, ValidateEngineVolumeSubdir(valid), valid)
+	}
+	for _, invalid := range []string{
+		"", "/data", "data/", "data//nested", ".", "..", "data/../nested", "data/./nested", "nul\x00byte",
+	} {
+		require.Error(t, ValidateEngineVolumeSubdir(invalid), invalid)
+	}
+	require.Error(t, ValidateEngineVolumeSubdir(strings.Repeat("a", engineVolumeMaxNameLength+1)))
 }
 
 func TestVolumeAttachDependencyResultsAttachesResources(t *testing.T) {

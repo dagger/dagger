@@ -544,6 +544,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	)))
 
 	for _, mnt := range state.nonRootMounts {
+		mnt, recursiveReadOnly := consumeRecursiveReadOnlyOption(mnt)
 		dstPath, err := fs.RootPath(state.spec.Root.Path, mnt.Target)
 		if err != nil {
 			return fmt.Errorf("mount %s points to invalid target: %w", mnt.Target, err)
@@ -591,7 +592,13 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		overlayIncompatDir := overlay.VolatileIncompatDir(mnt)
 
 		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
-			if err := mount.Unmount(dstPath, 0); err != nil {
+			var err error
+			if slices.Contains(mnt.Options, "rbind") {
+				err = mount.UnmountRecursive(dstPath, 0)
+			} else {
+				err = mount.Unmount(dstPath, 0)
+			}
+			if err != nil {
 				return err
 			}
 			if overlayIncompatDir != "" {
@@ -601,9 +608,36 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 			}
 			return nil
 		})
+
+		if recursiveReadOnly {
+			if err := unix.MountSetattr(unix.AT_FDCWD, dstPath, unix.AT_RECURSIVE, &unix.MountAttr{
+				Attr_set: unix.MOUNT_ATTR_RDONLY,
+			}); err != nil {
+				return fmt.Errorf("make mount %s recursively read-only: %w", mnt.Target, err)
+			}
+		}
 	}
 
 	return nil
+}
+
+// consumeRecursiveReadOnlyOption handles the OCI rro option for mounts Dagger
+// materializes before runc. containerd's mount helper does not interpret rro,
+// so leaving it in Options would pass it to mount(2) as filesystem data.
+func consumeRecursiveReadOnlyOption(mnt mount.Mount) (mount.Mount, bool) {
+	var recursiveReadOnly bool
+	options := make([]string, 0, len(mnt.Options))
+	for _, option := range mnt.Options {
+		if option == "rro" {
+			recursiveReadOnly = true
+			continue
+		}
+		options = append(options, option)
+	}
+	if recursiveReadOnly {
+		mnt.Options = options
+	}
+	return mnt, recursiveReadOnly
 }
 
 func (c *Client) setUserGroup(_ context.Context, state *execState) error {

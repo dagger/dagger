@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
+	"strings"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/hashutil"
@@ -14,13 +16,36 @@ import (
 type VolumeBackendKind string
 
 const (
-	VolumeBackendKindSSHFS VolumeBackendKind = "sshfs"
+	VolumeBackendKindSSHFS  VolumeBackendKind = "sshfs"
+	VolumeBackendKindEngine VolumeBackendKind = "engine"
+
+	EngineVolumeLayoutVersion = 1
+	engineVolumeMaxPathLength = 4096
+	engineVolumeMaxNameLength = 255
 )
 
 // Volume is an opaque filesystem volume that can be mounted into containers.
 type Volume struct {
 	Backend VolumeBackendKind
 	SSHFS   *SSHFSVolumeConfig
+	Engine  *EngineVolumeConfig
+}
+
+// EngineVolumeConfig identifies an operator-managed directory below the
+// configured engine state root. It deliberately contains no resolved host
+// path: resolution happens lazily when an exec mounts the volume.
+type EngineVolumeConfig struct {
+	Name          string
+	Subdir        string
+	LayoutVersion int
+}
+
+// EngineVolumeState is the engine-local state needed to resolve and mount an
+// engine volume. It is supplied by core.Server and is not persisted in a
+// Volume.
+type EngineVolumeState struct {
+	RootDir                    string
+	RecursiveReadOnlySupported bool
 }
 
 type SSHFSVolumeConfig struct {
@@ -49,6 +74,61 @@ func (*Volume) TypeDescription() string {
 // It is deliberately not a session-resource handle.
 func VolumeContentDigestFromCacheKey(cacheKey string) digest.Digest {
 	return hashutil.HashStrings(cacheKey)
+}
+
+func ValidateEngineVolumeName(name string) error {
+	if name == "" {
+		return fmt.Errorf("engine volume name must not be empty")
+	}
+	if len(name) > engineVolumeMaxPathLength {
+		return fmt.Errorf("engine volume name must not exceed %d bytes", engineVolumeMaxPathLength)
+	}
+	for _, component := range strings.Split(name, "/") {
+		if component == "" {
+			return fmt.Errorf("engine volume name must use non-empty slash-separated components")
+		}
+		if len(component) > engineVolumeMaxNameLength {
+			return fmt.Errorf("engine volume name component %q must not exceed %d bytes", component, engineVolumeMaxNameLength)
+		}
+		if component == "fs" {
+			return fmt.Errorf("engine volume name component %q is reserved", component)
+		}
+		for i := range len(component) {
+			char := component[i]
+			valid := char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || char >= '0' && char <= '9'
+			if i > 0 {
+				valid = valid || char == '.' || char == '_' || char == '-'
+			}
+			if !valid {
+				return fmt.Errorf("engine volume name component %q must match [A-Za-z0-9][A-Za-z0-9._-]*", component)
+			}
+		}
+	}
+	return nil
+}
+
+func ValidateEngineVolumeSubdir(subdir string) error {
+	if subdir == "" {
+		return fmt.Errorf("engine volume subdir must not be empty when specified")
+	}
+	if len(subdir) > engineVolumeMaxPathLength {
+		return fmt.Errorf("engine volume subdir must not exceed %d bytes", engineVolumeMaxPathLength)
+	}
+	if strings.HasPrefix(subdir, "/") || path.Clean(subdir) != subdir {
+		return fmt.Errorf("engine volume subdir %q must be a canonical relative path", subdir)
+	}
+	for _, component := range strings.Split(subdir, "/") {
+		if component == "" || component == "." || component == ".." {
+			return fmt.Errorf("engine volume subdir %q must use canonical non-traversing components", subdir)
+		}
+		if len(component) > engineVolumeMaxNameLength {
+			return fmt.Errorf("engine volume subdir component %q must not exceed %d bytes", component, engineVolumeMaxNameLength)
+		}
+		if strings.IndexByte(component, 0) >= 0 {
+			return fmt.Errorf("engine volume subdir contains a NUL byte")
+		}
+	}
+	return nil
 }
 
 func (vol *Volume) AttachDependencyResults(
@@ -101,8 +181,15 @@ func (vol *Volume) AttachDependencyResults(
 }
 
 type persistedVolumePayload struct {
-	Backend VolumeBackendKind            `json:"backend"`
-	SSHFS   *persistedSSHFSVolumePayload `json:"sshfs,omitempty"`
+	Backend VolumeBackendKind             `json:"backend"`
+	SSHFS   *persistedSSHFSVolumePayload  `json:"sshfs,omitempty"`
+	Engine  *persistedEngineVolumePayload `json:"engine,omitempty"`
+}
+
+type persistedEngineVolumePayload struct {
+	Name          string `json:"name"`
+	Subdir        string `json:"subdir,omitempty"`
+	LayoutVersion int    `json:"layoutVersion"`
 }
 
 type persistedSSHFSVolumePayload struct {
@@ -122,6 +209,18 @@ func (vol *Volume) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		Backend: vol.Backend,
 	}
 	switch vol.Backend {
+	case VolumeBackendKindEngine:
+		if vol.Engine == nil {
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted volume: missing engine config")
+		}
+		if err := validateEngineVolumeConfig(vol.Engine); err != nil {
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted volume: %w", err)
+		}
+		payload.Engine = &persistedEngineVolumePayload{
+			Name:          vol.Engine.Name,
+			Subdir:        vol.Engine.Subdir,
+			LayoutVersion: vol.Engine.LayoutVersion,
+		}
 	case VolumeBackendKindSSHFS:
 		if vol.SSHFS == nil {
 			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted volume: missing sshfs config")
@@ -164,6 +263,18 @@ func (*Volume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}
 	vol := &Volume{Backend: persisted.Backend}
 	switch persisted.Backend {
+	case VolumeBackendKindEngine:
+		if persisted.Engine == nil {
+			return nil, fmt.Errorf("decode persisted volume: missing engine payload")
+		}
+		vol.Engine = &EngineVolumeConfig{
+			Name:          persisted.Engine.Name,
+			Subdir:        persisted.Engine.Subdir,
+			LayoutVersion: persisted.Engine.LayoutVersion,
+		}
+		if err := validateEngineVolumeConfig(vol.Engine); err != nil {
+			return nil, fmt.Errorf("decode persisted volume: %w", err)
+		}
 	case VolumeBackendKindSSHFS:
 		if persisted.SSHFS == nil {
 			return nil, fmt.Errorf("decode persisted volume: missing sshfs payload")
@@ -198,4 +309,19 @@ func (*Volume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		return nil, fmt.Errorf("decode persisted volume: unsupported backend %q", persisted.Backend)
 	}
 	return vol, nil
+}
+
+func validateEngineVolumeConfig(cfg *EngineVolumeConfig) error {
+	if cfg.LayoutVersion != EngineVolumeLayoutVersion {
+		return fmt.Errorf("unsupported engine volume layout version %d", cfg.LayoutVersion)
+	}
+	if err := ValidateEngineVolumeName(cfg.Name); err != nil {
+		return err
+	}
+	if cfg.Subdir != "" {
+		if err := ValidateEngineVolumeSubdir(cfg.Subdir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
