@@ -78,15 +78,13 @@ func beginOTelCallExec(callCtx context.Context, callKey, class string) (context.
 // finishes.
 func beginOTelPublishResult(ctx context.Context) trace.Span {
 	_, span := Tracer(ctx).Start(ctx, publishResultSpanName,
-		// Internal, not Passthrough: publishResult is a childless leaf (nothing
-		// runs under its context — initCompletedResult runs under sharedWorkCtx,
-		// i.e. the call_exec span, not this one), so it never has children for the
-		// UI to promote in its place. Marking it Internal instead lets the
-		// per-client-DB live processor drop its live (OnStart) double-emit
-		// (see engine/telemetry NewInternalFilteringLiveSpanProcessor); it is by
-		// far the highest-volume profiling span (~1 per resolver cache miss).
-		// call_exec / exec.run / service.start stay Passthrough — they DO parent
-		// the real work, so their live snapshot must ship.
+		// Internal lets the per-client-DB live processor drop publishResult's
+		// live (OnStart) double-emit; it is a childless leaf and by far the
+		// highest-volume profiling span (~1 per resolver cache miss). Passthrough
+		// separately keeps it hidden in UIs that show internal spans by default.
+		// Both attributes are needed because the live processor only checks
+		// Internal, while UI filtering may only honor Passthrough.
+		telemetry.Passthrough(),
 		telemetry.Internal(),
 		trace.WithAttributes(
 			attribute.String(telemetryattrs.WcprofOpKindAttr, wcprof.OpKindInternal.String()),

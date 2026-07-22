@@ -79,8 +79,8 @@ func attrBool(s sdktrace.ReadOnlySpan, key string) (bool, bool) {
 
 // TestEmitHooksProduceLoaderShape drives the real singleflight emit (one executor
 // caller + call_exec + publishResult + one joiner) and asserts the emitted
-// span/link attributes carry exactly the op-kind, dag.digest, ui.passthrough and
-// wait-edge (purpose/reason/decimal-ns/target) shape the offline analyzer consumes.
+// span/link attributes carry exactly the op-kind, dag.digest, UI hints and wait-edge
+// (purpose/reason/decimal-ns/target) shape the offline analyzer consumes.
 func TestEmitHooksProduceLoaderShape(t *testing.T) {
 	const digest = "xxh3:0123456789abcdef"
 	const class = "Container.stdout"
@@ -120,13 +120,13 @@ func TestEmitHooksProduceLoaderShape(t *testing.T) {
 	if got, _ := attrString(pub, telemetryattrs.WcprofOpKindAttr); got != wcprof.OpKindInternal.String() {
 		t.Fatalf("publishResult op kind = %q, want internal", got)
 	}
-	// ui.internal, NOT ui.passthrough: publishResult is a childless leaf (nothing
-	// nests under it), so there are no children to promote and Passthrough would be
-	// pointless. Marking it Internal lets the per-client-DB live processor drop its
-	// live double-emit (NewInternalFilteringLiveSpanProcessor). call_exec above
-	// stays passthrough because it DOES parent the resolver's real work.
-	if pass, ok := attrBool(pub, telemetry.UIInternalAttr); !ok || !pass {
+	// Internal lets the per-client-DB live processor drop the live double-emit;
+	// Passthrough keeps the span hidden in UIs that show internal spans by default.
+	if internal, ok := attrBool(pub, telemetry.UIInternalAttr); !ok || !internal {
 		t.Fatalf("publishResult must be ui.internal")
+	}
+	if pass, ok := attrBool(pub, telemetry.UIPassthroughAttr); !ok || !pass {
+		t.Fatalf("publishResult must be ui.passthrough")
 	}
 
 	// the caller span (not the like-named call_exec) carries the wait links.
