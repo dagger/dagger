@@ -168,18 +168,19 @@ const (
 // consumer can explain cache non-reuse from recorded facts instead of
 // re-deriving engine internals from span shapes.
 //
-// Wire shape: every value is an OTLP STRING, following the wcprof×OTel
-// precedent above and for the same reason — Cloud ingestion JSON-encodes each
-// attribute value into a ClickHouse Map(String,String) and the read path
-// re-decodes heuristically (bare or quoted true/false become bools,
-// leading-digit values become numbers, quoted strings round-trip as strings).
-// The value tokens below are chosen so that trip is loss-free: enum tokens and
-// digest values (algorithm-prefixed) can never collide with true/false/null or
-// a leading digit; the two boolean facts are emitted as "true" only when true
-// (absent means false) and intentionally decode into real bools; the
-// unknown-input index and the structural-input list are emitted as a
-// decimal-string and a single JSON-array-encoded string (the WcprofExecArgvAttr
-// pattern) whose leading '[' keeps them strings end to end.
+// Wire shape: every value is an OTLP STRING except the structural-input
+// list, which is a native OTLP string ARRAY (StringSliceValue). The string
+// values follow the wcprof×OTel precedent above and for the same reason —
+// Cloud ingestion JSON-encodes each attribute value into a ClickHouse
+// Map(String,String) and the read path re-decodes heuristically (bare or
+// quoted true/false become bools, leading-digit values become numbers,
+// quoted strings round-trip as strings). The value tokens below are chosen
+// so that trip is loss-free: enum tokens and digest values
+// (algorithm-prefixed) can never collide with true/false/null or a leading
+// digit; the two boolean facts are emitted as "true" only when true (absent
+// means false) and intentionally decode into real bools; the unknown-input
+// index is a decimal-string. The array value survives the same trip as a
+// JSON array of strings, which is exactly how consumers read it back.
 //
 // Producer gating: the attributes are stamped by core.AroundFunc's completion
 // callback from a request-only evidence carrier (dagql.CacheDecision) that
@@ -256,11 +257,13 @@ const (
 	// CacheStructuralInputsAttr is the exact ordered structural-input digest
 	// list the engine's equivalence lookup keys on — receiver, reference-valued
 	// arguments in argument order, digest-witnessed strings, then the module
-	// reference — encoded as a single JSON-array-of-strings value (the
-	// WcprofExecArgvAttr pattern). This is the list CacheMissUnknownInputAttr
-	// indexes into. It is a different projection than dagger.io/dag.inputs
-	// (which deduplicates and omits the module), and that attribute is
-	// unchanged.
+	// reference — emitted as a native OTLP string ARRAY (StringSliceValue),
+	// the one non-STRING value in this contract. Order is semantic:
+	// CacheMissUnknownInputAttr indexes into this list. An empty-but-present
+	// array means "structural identity stamped, no structural inputs";
+	// absence means no structural identity was stamped at all. It is a
+	// different projection than dagger.io/dag.inputs (which deduplicates and
+	// omits the module), and that attribute is unchanged.
 	CacheStructuralInputsAttr = "dagger.io/cache.structural_inputs"
 
 	// CachePairingDigestAttr is the self digest computed with implicit inputs

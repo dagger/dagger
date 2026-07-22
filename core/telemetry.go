@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path"
 	"slices"
@@ -213,13 +212,15 @@ func recordCacheEvidence(span trace.Span, ev *dagql.CacheDecision, res dagql.Any
 	}
 	if ev.SelfDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.CacheSelfDigestAttr, ev.SelfDigest.String()))
+		// Native string-slice value: order is the contract (the miss
+		// unknown-input index points into it), and an EMPTY list is a recorded
+		// fact ("this call keys on no structural inputs"), distinct from the
+		// attribute being absent (no structural identity stamped at all).
 		inputs := make([]string, len(ev.StructuralInputs))
 		for i, dig := range ev.StructuralInputs {
 			inputs[i] = dig.String()
 		}
-		if enc, encErr := json.Marshal(inputs); encErr == nil {
-			attrs = append(attrs, attribute.String(telemetryattrs.CacheStructuralInputsAttr, string(enc)))
-		}
+		attrs = append(attrs, attribute.StringSlice(telemetryattrs.CacheStructuralInputsAttr, inputs))
 		if ev.PairingDigest != "" {
 			attrs = append(attrs, attribute.String(telemetryattrs.CachePairingDigestAttr, ev.PairingDigest.String()))
 		}

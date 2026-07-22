@@ -53,9 +53,10 @@ func evidenceTestEndedAttrs(t *testing.T, sr *tracetest.SpanRecorder, span trace
 }
 
 // evidenceTestCacheAttrs filters to the dagger.io/cache.* attributes, asserting
-// the contract's wire-type rule as it goes: every contract attribute must be an
-// OTel STRING value (the scalar-string shape the Cloud ingest round-trips
-// bit-exact), not merely Emit() text that happens to match.
+// the contract's wire-type rule as it goes: every contract attribute is an
+// OTel STRING value except the structural-input list, which must be a native
+// STRINGSLICE (collected via evidenceTestStructuralInputs) — actual value
+// types, not merely Emit() text that happens to match.
 func evidenceTestCacheAttrs(t *testing.T, kvs []attribute.KeyValue) map[string]string {
 	t.Helper()
 	cacheAttrs := map[string]string{}
@@ -64,10 +65,30 @@ func evidenceTestCacheAttrs(t *testing.T, kvs []attribute.KeyValue) map[string]s
 		if !strings.HasPrefix(k, "dagger.io/cache.") {
 			continue
 		}
+		if k == telemetryattrs.CacheStructuralInputsAttr {
+			// The one non-STRING value in the contract: a native ordered
+			// string slice (checked separately via evidenceTestStructuralInputs).
+			assert.Equal(t, attribute.STRINGSLICE, kv.Value.Type(), "contract attribute %s must be STRINGSLICE-typed", k)
+			continue
+		}
 		assert.Equal(t, attribute.STRING, kv.Value.Type(), "contract attribute %s must be STRING-typed", k)
 		cacheAttrs[k] = kv.Value.AsString()
 	}
 	return cacheAttrs
+}
+
+// evidenceTestStructuralInputs extracts the native structural-input slice:
+// (values, present). Present-and-empty and absent are distinct recorded facts.
+func evidenceTestStructuralInputs(t *testing.T, kvs []attribute.KeyValue) ([]string, bool) {
+	t.Helper()
+	for _, kv := range kvs {
+		if string(kv.Key) != telemetryattrs.CacheStructuralInputsAttr {
+			continue
+		}
+		assert.Equal(t, attribute.STRINGSLICE, kv.Value.Type())
+		return kv.Value.AsStringSlice(), true
+	}
+	return nil, false
 }
 
 func TestInitCacheEvidenceGates(t *testing.T) {
@@ -122,16 +143,20 @@ func TestRecordCacheEvidenceMappingHit(t *testing.T) {
 		PairingDigest:         pairDig,
 	}, res)
 
-	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	ended := evidenceTestEndedAttrs(t, sr, span)
+	got := evidenceTestCacheAttrs(t, ended)
 	assert.DeepEqual(t, got, map[string]string{
 		telemetryattrs.CacheContractAttr:            telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:             "hit",
 		telemetryattrs.CacheHitRouteAttr:            "structural",
 		telemetryattrs.CacheSelfDigestAttr:          selfDig.String(),
-		telemetryattrs.CacheStructuralInputsAttr:    `["` + inputA.String() + `","` + inputB.String() + `"]`,
 		telemetryattrs.CachePairingDigestAttr:       pairDig.String(),
 		telemetryattrs.CacheOutputContentDigestAttr: contentDig.String(),
 	})
+	inputs, present := evidenceTestStructuralInputs(t, ended)
+	assert.Assert(t, present)
+	// Exact values in exact order — the miss unknown-input index points here.
+	assert.DeepEqual(t, inputs, []string{inputA.String(), inputB.String()})
 }
 
 func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
@@ -149,7 +174,8 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 		PairingDigest:              selfDig,
 	}, nil)
 
-	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	ended := evidenceTestEndedAttrs(t, sr, span)
+	got := evidenceTestCacheAttrs(t, ended)
 	assert.DeepEqual(t, got, map[string]string{
 		telemetryattrs.CacheContractAttr:                   telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:                    "executed",
@@ -157,9 +183,11 @@ func TestRecordCacheEvidenceMappingExecutedMissFacts(t *testing.T) {
 		telemetryattrs.CacheMissSawExpiredAttr:             "true",
 		telemetryattrs.CacheMissUnknownInputAttr:           "2",
 		telemetryattrs.CacheSelfDigestAttr:                 selfDig.String(),
-		telemetryattrs.CacheStructuralInputsAttr:           "[]",
 		telemetryattrs.CachePairingDigestAttr:              selfDig.String(),
 	})
+	inputs, present := evidenceTestStructuralInputs(t, ended)
+	assert.Assert(t, present)
+	assert.Equal(t, 0, len(inputs), "a nil carrier list records a present-and-empty slice")
 }
 
 func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
@@ -177,14 +205,17 @@ func TestRecordCacheEvidenceMappingJoinedStampsNoMissFacts(t *testing.T) {
 		PairingDigest:              selfDig,
 	}, nil)
 
-	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	ended := evidenceTestEndedAttrs(t, sr, span)
+	got := evidenceTestCacheAttrs(t, ended)
 	assert.DeepEqual(t, got, map[string]string{
-		telemetryattrs.CacheContractAttr:         telemetryattrs.CacheContractV1,
-		telemetryattrs.CacheOutcomeAttr:          "joined",
-		telemetryattrs.CacheSelfDigestAttr:       selfDig.String(),
-		telemetryattrs.CacheStructuralInputsAttr: "[]",
-		telemetryattrs.CachePairingDigestAttr:    selfDig.String(),
+		telemetryattrs.CacheContractAttr:      telemetryattrs.CacheContractV1,
+		telemetryattrs.CacheOutcomeAttr:       "joined",
+		telemetryattrs.CacheSelfDigestAttr:    selfDig.String(),
+		telemetryattrs.CachePairingDigestAttr: selfDig.String(),
 	})
+	inputs, present := evidenceTestStructuralInputs(t, ended)
+	assert.Assert(t, present)
+	assert.Equal(t, 0, len(inputs))
 }
 
 func TestRecordCacheEvidenceMappingUncached(t *testing.T) {
@@ -196,11 +227,15 @@ func TestRecordCacheEvidenceMappingUncached(t *testing.T) {
 		MissUnknownInputIndex: -1,
 	}, nil)
 
-	got := evidenceTestCacheAttrs(t, evidenceTestEndedAttrs(t, sr, span))
+	ended := evidenceTestEndedAttrs(t, sr, span)
+	got := evidenceTestCacheAttrs(t, ended)
 	assert.DeepEqual(t, got, map[string]string{
 		telemetryattrs.CacheContractAttr: telemetryattrs.CacheContractV1,
 		telemetryattrs.CacheOutcomeAttr:  "uncached",
 	})
+	// No structural identity stamped: the slice is ABSENT, not empty.
+	_, present := evidenceTestStructuralInputs(t, ended)
+	assert.Assert(t, !present)
 }
 
 func TestRecordCacheEvidenceMappingUndecidedStampsNothing(t *testing.T) {
