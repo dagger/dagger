@@ -109,7 +109,7 @@ func generateChangesetDisposition(list, apply, noApply, runningInAgent bool) (ch
   pass -y/--auto-apply to apply generated changes
   pass --no-apply to show generated changes without applying them
 
-For an up-to-date check that fails on pending changes, use dagger check --generate.`)
+For an up-to-date check that fails on pending changes, use dagger check --generate`)
 	}
 	return changesetDispositionPrompt, nil
 }
