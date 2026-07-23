@@ -1,34 +1,22 @@
-package dag
+package dag_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
+	"dagger.io/dagger/dag"
 	"github.com/stretchr/testify/require"
 )
 
-func TestMain(m *testing.M) {
-	res := m.Run()
-
-	// close needs to be explicitly called
-	if err := Close(); err != nil {
-		if res == 0 {
-			res = 1
-		}
-	}
-
-	os.Exit(res)
-}
-
 func TestDirectory(t *testing.T) {
 	t.Parallel()
-
 	ctx := context.Background()
 
-	dir := Directory()
+	t.Cleanup(func() {
+		require.NoError(t, dag.Close())
+	})
 
-	contents, err := dir.
+	contents, err := dag.Directory().
 		WithNewFile("/hello.txt", "world").
 		File("/hello.txt").
 		Contents(ctx)

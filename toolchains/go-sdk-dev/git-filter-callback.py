@@ -1,3 +1,9 @@
+if filename.startswith(b"sdk/go/e2e/"):
+    # The client-library e2e harness depends on the Dagger monorepo and uses a
+    # released client as test infrastructure. Do not publish it as part of the
+    # standalone Go client-library repository.
+    return None
+
 tmpfile = os.path.basename(filename)
 if tmpfile != b"go.mod":
     return (filename, mode, blob_id)  # no changes
