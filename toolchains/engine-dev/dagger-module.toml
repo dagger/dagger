@@ -1,5 +1,5 @@
 name = "engine-dev"
-engineVersion = "v0.21.7"
+engineVersion = "v1.0.0-0"
 include = ["../../engine/distconsts/**/*", "../../sdk/typescript/runtime/**/*", "../../go.mod", "../../go.sum", "../../util/parallel"]
 
 [runtime]
