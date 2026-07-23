@@ -438,7 +438,7 @@ source = ".dagger/modules/consumer"
 entrypoint = true
 
 [modules.go-sdk]
-source = "github.com/dagger/go-sdk"
+source = "github.com/dagger/go-sdk@fix-generate" # FIXME: repoint to main
 
 [modules.go-sdk.as-sdk]
 name = "go"
