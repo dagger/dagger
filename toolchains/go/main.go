@@ -129,8 +129,8 @@ func New(
 			// Install protoc for protobug support by default
 			// The specific version is dictated by Dagger's own requirement
 			// FIXME: make this optional with overlay support
-			"protobuf~32", // ADD: brings /usr/bin/protoc and runtime libs
-			"protobuf-dev~32",
+			"protobuf~35", // ADD: brings /usr/bin/protoc and runtime libs
+			"protobuf-dev~35",
 		}
 		if len(extraPackages) > 0 {
 			packages = append(packages, extraPackages...)
