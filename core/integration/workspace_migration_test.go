@@ -125,6 +125,27 @@ type Myapp {
 	})
 }
 
+// Generated SDK files become part of the module source after migration. Setup
+// must therefore remove the ignore rules written for the legacy runtime-codegen
+// model while leaving the user's own rules alone.
+func (WorkspaceMigrationSuite) TestWorkspaceMigrateGeneratedCodeGitignore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := legacySDKOnlyGoSource(t, c, "hello after migration").
+		WithNewFile(".gitignore", "# user-owned rules\n*.log\n").
+		With(materializeModuleFiles(".")).
+		WithExec([]string{"grep", "-Fx", "/dagger.gen.go", ".gitignore"}).
+		With(daggerExec("setup", "--auto-apply"))
+
+	gitignore, err := ctr.File(".gitignore").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "# user-owned rules\n*.log\n/.env\n", gitignore)
+
+	out, err := ctr.With(daggerCallAt(".", "greet")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello after migration", strings.TrimSpace(out))
+}
+
 // TestWorkspaceMigrateOutcomes should cover the main result classes of a
 // migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateOutcomes(ctx context.Context, t *testctx.T) {
