@@ -1365,6 +1365,7 @@ Generate derived files for your project — code, SDKs, types, docs, etc.
 Examples:
   dagger generate                            # Generate all assets
   dagger generate -l                         # List all available generators
+  dagger generate --no-apply                 # Show generated changes without applying them
   dagger generate go:bin                     # Generate by selecting the generator function
   dagger -W github.com/acme/ws generate go:bin  # Generate against explicit workspace
 
@@ -1377,6 +1378,7 @@ dagger generate [options] [pattern...]
 
 ```
   -l, --list           List available generators
+      --no-apply       Compute and show a summary of generated changes without applying them
       --require-load   Fail if any workspace module cannot be loaded (default: report as a warning and generate the rest)
 ```
 

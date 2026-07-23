@@ -61,6 +61,7 @@ var agentEnvVars = []string{
 	"CURSOR_AGENT",         // Cursor CLI
 	"CURSOR_TRACE_ID",      // Cursor
 	"GEMINI_CLI",           // Gemini CLI
+	"CODEX_CI",             // OpenAI Codex
 	"CODEX_SANDBOX",        // OpenAI Codex
 	"CODEX_THREAD_ID",      // OpenAI Codex
 	"ANTIGRAVITY_AGENT",    // Antigravity
@@ -79,13 +80,17 @@ var agentEnvVars = []string{
 // Memoized: the render loop consults it per row per frame, the environment
 // can't change mid-process, and each os.Getenv takes the runtime's env lock.
 var RunningInAgent = sync.OnceValue(func() bool {
+	return runningInAgent(os.Getenv)
+})
+
+func runningInAgent(getenv func(string) string) bool {
 	for _, name := range agentEnvVars {
-		if os.Getenv(name) != "" {
+		if getenv(name) != "" {
 			return true
 		}
 	}
 	return false
-})
+}
 
 var (
 	bgOnce    = &sync.Once{}
