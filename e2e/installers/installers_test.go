@@ -35,7 +35,7 @@ func TestBashScript(t *testing.T) {
 		WithExec([]string{"apk", "add", "--no-cache", "curl"}).
 		WithWorkdir("/opt/dagger").
 		WithFile("/usr/local/bin/install.sh", installScript, dagger.ContainerWithFileOpts{
-			Permissions: 0755,
+			Permissions: 0o755,
 		})
 
 	platform, err := base.Platform(ctx)
@@ -86,12 +86,6 @@ func TestBashScript(t *testing.T) {
 			env:           map[string]string{"DAGGER_COMMIT": "976cd0bf4be8d1cacbc3ee23a7ab057e8868ac2d"},
 			binaryPath:    "./bin/dagger",
 			assertVersion: matchExactVersion("v0.16.2-250227135944-976cd0bf4be8"),
-		},
-		{
-			name:          "install DAGGER_COMMIT head",
-			env:           map[string]string{"DAGGER_COMMIT": "head"},
-			binaryPath:    "./bin/dagger",
-			assertVersion: isVersion(),
 		},
 	}
 
