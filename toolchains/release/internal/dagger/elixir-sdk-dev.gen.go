@@ -281,6 +281,10 @@ type ElixirSDKDevOpts struct {
 	WorkspaceDir *Directory // elixir-sdk-dev (../../../../:0:0)
 
 	SourcePath string // elixir-sdk-dev (../../../../:0:0)
+	//
+	// Workspace
+	//
+	Ws *Workspace // elixir-sdk-dev (../../../../:0:0)
 }
 
 func (r *Query) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev { // elixir-sdk-dev (../../../../:0:0)
@@ -297,6 +301,10 @@ func (r *Query) ElixirSDKDev(opts ...ElixirSDKDevOpts) *ElixirSDKDev { // elixir
 		// `sourcePath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourcePath) {
 			q = q.Arg("sourcePath", opts[i].SourcePath)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

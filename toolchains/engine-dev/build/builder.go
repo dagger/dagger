@@ -39,6 +39,8 @@ type Builder struct {
 	gpuSupport bool
 
 	race bool
+
+	ws *dagger.Workspace
 }
 
 func NewBuilder(
@@ -47,6 +49,7 @@ func NewBuilder(
 	version string,
 	vcsCommit string,
 	vcsDirty bool,
+	ws *dagger.Workspace,
 ) (*Builder, error) {
 	return &Builder{
 		source:       source,
@@ -55,6 +58,7 @@ func NewBuilder(
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
 		version:      version,
+		ws:           ws,
 	}, nil
 }
 
@@ -225,6 +229,7 @@ func (build *Builder) Go(race bool) *dagger.Go {
 
 func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
 	return dag.Go(dagger.GoOpts{
+		Ws:        build.ws,
 		Source:    source,
 		VcsCommit: build.vcsCommit,
 		VcsDirty:  build.vcsDirty,
@@ -319,7 +324,7 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 	} {
 		// CNI plugins are third-party; VCS stamping is irrelevant here, so we
 		// don't thread any VCS info into their build.
-		bin := dag.Go(dagger.GoOpts{Source: src}).Binary(pluginPath, dagger.GoBinaryOpts{
+		bin := dag.Go(dagger.GoOpts{Source: src, Ws: build.ws}).Binary(pluginPath, dagger.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,

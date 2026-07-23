@@ -3,6 +3,11 @@ Test suites to run
 """
 type TestSplit {
   """
+  Workspace
+  """
+  let ws: Workspace!
+
+  """
   Lower-level API for running specific tests
   """
   pub testSpecific(
@@ -11,7 +16,7 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
   ): Void {
-    engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    engineDev(ws: self.ws).test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
   }
 
   let testCliEngineSpecific(
@@ -20,7 +25,7 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
   ): Void {
-    engineDev
+    engineDev(ws: self.ws)
       .withEngineConfig("worker.oci", [
         "minFreeSpace = \"30%\"",
         "maxUsedSpace = \"50%\"",
@@ -34,7 +39,7 @@ type TestSplit {
     pkg: String! = "./core/integration",
     race: Boolean,
   ): Void {
-    engineDev.test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+    engineDev(ws: self.ws).test(race: race, skip: skip.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
   }
 
   """
