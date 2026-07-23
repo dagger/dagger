@@ -2521,6 +2521,27 @@ func ignoresGeneratedPath(ignore string, generated []string) bool {
 	return false
 }
 
+func (s *moduleSourceSchema) runSDKCodegen(
+	ctx context.Context,
+	srcInst dagql.ObjectResult[*core.ModuleSource],
+) (*core.GeneratedCode, error) {
+	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	}
+
+	generatedCodeImpl, ok := srcInst.Self().SDKImpl.AsCodeGenerator()
+	if !ok {
+		return nil, ErrSDKCodegenNotImplemented{SDK: srcInst.Self().SDK.Source}
+	}
+
+	generatedCode, err := generatedCodeImpl.Codegen(ctx, deps, srcInst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate code: %w", err)
+	}
+	return generatedCode, nil
+}
+
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
@@ -2530,21 +2551,10 @@ func (s *moduleSourceSchema) runCodegen(
 		return res, fmt.Errorf("failed to get current dag: %w", err)
 	}
 
-	// load the deps as actual Modules
-	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
-	if err != nil {
-		return res, fmt.Errorf("failed to load dependencies as modules: %w", err)
-	}
-
-	generatedCodeImpl, ok := srcInst.Self().SDKImpl.AsCodeGenerator()
-	if !ok {
-		return res, ErrSDKCodegenNotImplemented{SDK: srcInst.Self().SDK.Source}
-	}
-
 	// run codegen to get the generated context directory
-	generatedCode, err := generatedCodeImpl.Codegen(ctx, deps, srcInst)
+	generatedCode, err := s.runSDKCodegen(ctx, srcInst)
 	if err != nil {
-		return res, fmt.Errorf("failed to generate code: %w", err)
+		return res, err
 	}
 	genDirInst := generatedCode.Code
 
