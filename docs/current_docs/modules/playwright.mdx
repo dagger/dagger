@@ -1,0 +1,163 @@
+---
+title: "Playwright"
+slug: /modules/playwright
+description: "Run Playwright browser tests, wired to the service under test."
+---
+
+# Playwright
+
+The Playwright module runs your [Playwright](https://playwright.dev) browser
+tests in a container whose browsers always match your Playwright version — the
+same way locally, in CI, and in Dagger Cloud. Its distinctive feature is
+first-class [module wiring](../using-dagger/module-wiring.mdx): if another
+module in your workspace serves your app, one line of configuration points
+the tests at it. No glue module, no port juggling.
+
+Official module: [dagger/playwright](https://github.com/dagger/playwright)
+
+## Add it to your workspace
+
+```bash
+dagger install github.com/dagger/playwright
+```
+
+Pin your project's `@playwright/test` version exactly (or commit a lockfile).
+The module runs your tests in the `mcr.microsoft.com/playwright` image
+matching the version installed per `package-lock.json` — or, without a
+lockfile, the version declared in `package.json`, where a floating range like
+`^1.58.2` can install a newer Playwright than the image's browsers.
+
+## Run the check
+
+```bash
+dagger check                  # run every check in the workspace
+dagger check playwright:test  # just the Playwright suite
+```
+
+`playwright:test` finds the directory containing `playwright.config.*`,
+installs your project's dependencies, and runs `npx playwright test`. If your
+config declares a [`webServer`](https://playwright.dev/docs/test-webserver),
+Playwright starts your app inside the container exactly as it does on your
+machine — no further setup needed.
+
+## Wire in the service under test
+
+If another module already serves your app, wire it into the tests instead of
+duplicating that knowledge in `webServer`. Two steps:
+
+**1. Set the `service` setting** to a module reference — the install name of
+another module in your `dagger.toml`, and a function on it that returns a
+`Service`. Run `dagger up -l` to list the candidates in copyable form:
+
+```toml
+[modules.playwright.settings]
+service = "myapp:serve"
+```
+
+**2. Add `PLAYWRIGHT_BASE_URL` to your `playwright.config`.** The module
+binds the service into the test container and communicates its address
+through this environment variable — if your config doesn't read it, your
+tests will ignore the wired service and keep targeting whatever `baseURL`
+hardcodes:
+
+```js
+use: {
+  baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+},
+```
+
+Keep your local URL as the fallback so the same config works on your machine.
+
+By default the service is bound as `frontend`; set `serviceHostname` if your
+tests need a different hostname.
+
+### Secure contexts (service workers, WebCrypto, PWA testing)
+
+Browser APIs that require a secure context don't work against
+`http://frontend:<port>` — only `localhost` or HTTPS origins qualify. If any
+of your tests exercise service workers, WebCrypto, or other secure-context
+APIs, enable the localhost proxy:
+
+```toml
+[modules.playwright.settings]
+service = "myapp:serve"
+localhostProxy = true
+```
+
+Then point those tests at `PLAYWRIGHT_LOCALHOST_BASE_URL`, which the proxy
+sets — for example as the `baseURL` of a dedicated project in your config:
+
+```js
+{
+  name: 'chromium-pwa',
+  use: {
+    ...devices['Desktop Chrome'],
+    baseURL: process.env.PLAYWRIGHT_LOCALHOST_BASE_URL || 'http://localhost:3000',
+  },
+},
+```
+
+## Prepare your config for the container
+
+The module sets `CI=true`, so review what your `playwright.config` keys off
+`process.env.CI` — `retries`, `forbidOnly`, and especially `workers`:
+
+- **Replace a `workers: process.env.CI ? 1 : undefined` clamp with a bounded
+  value like `4`.** The container is isolated, so the usual shared-CI reason
+  to serialize doesn't apply — a `1` clamp can make the suite many times
+  slower. Don't go unbounded either: too many workers starve the browsers
+  and blow test timeouts.
+- **Remove branded-browser projects** (`channel: 'msedge'`,
+  `channel: 'chrome'`) or exclude them with the `args` setting. Those
+  browsers are not present in the Playwright images; the bundled `chromium`
+  covers the same engine.
+
+## Configure it
+
+List the current settings with `dagger settings playwright`, then change one
+with `dagger settings playwright <key> <value>`. They live in `dagger.toml`
+under `[modules.playwright.settings]`:
+
+- **`sourcePath`** (default: discover): workspace path of the Playwright
+  project. Set it when the workspace holds more than one
+  `playwright.config.*`.
+- **`service`**: module reference (`"module:function"`) of the service under
+  test.
+- **`serviceHostname`** (default `frontend`): hostname the service is bound as
+  inside the test container.
+- **`baseImageAddress`** (default: derive): set this to override the derived
+  `mcr.microsoft.com/playwright:v<version>-noble` image.
+- **`baseCtr`**: a full `Container` override — also wireable, e.g.
+  `baseCtr = "base-images:chromium"`.
+- **`packageManager`** (default `npm`): set to `yarn`, `pnpm`, or `bun` to
+  match your project.
+- **`localhostProxy`** (default `false`): see secure contexts above.
+- **`args`** (default `[]`): extra `playwright test` arguments, e.g.
+  `["--project", "chromium"]`.
+- **`shards`** (default `1`): set to shard the check across parallel
+  containers. Shards run concurrently against the same wired service and
+  fail fast on the first failure.
+
+```toml
+[modules.playwright.settings]
+service = "myapp:serve"
+shards = 4
+```
+
+## Get the HTML report
+
+To inspect a failing run, call `report`: it runs the suite tolerating
+failures and returns the HTML report directory. Include the `html` reporter
+in your config, then export the report to your machine:
+
+```bash
+dagger api call playwright report -o ./playwright-report
+```
+
+## Working with other modules
+
+Playwright covers browser-level end-to-end testing; pair it with
+[Jest](./jest.mdx) or [Vitest](./vitest.mdx) for unit tests. Any module whose
+function returns a `Service` can be the app under test — that's the
+[wiring contract](../using-dagger/module-wiring.mdx), not a special
+integration.
