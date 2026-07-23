@@ -1,0 +1,6 @@
+kind: Added
+body: Self-calls support
+time: 2026-04-11T16:23:10.908890976+07:00
+custom:
+    Author: wingyplus
+    PR: "12881"

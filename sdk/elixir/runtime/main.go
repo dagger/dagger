@@ -86,6 +86,38 @@ func (m *ElixirSdk) ModuleRuntime(
 		}), nil
 }
 
+func (m *ElixirSdk) ModuleTypes(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+	outputFilePath string,
+) (*dagger.Container, error) {
+	modName, err := modSource.ModuleName(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subPath, err := modSource.SourceSubpath(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err := m.Common(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctr.
+		WithEnvVariable("DAGGER_MODULE_FILE", outputFilePath).
+		WithExec([]string{"mix", "deps.get", "--only", "prod"}).
+		WithExec([]string{"mix", "deps.compile"}).
+		WithExec([]string{"mix", "compile"}).
+		WithEntrypoint([]string{
+			"mix", "cmd",
+			"--cd", path.Join(ModSourceDirPath, subPath),
+			fmt.Sprintf("mix dagger.entrypoint.invoke register %s", toElixirModuleName(modName)),
+		}), nil
+}
+
 func (m *ElixirSdk) Codegen(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
