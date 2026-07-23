@@ -5846,12 +5846,13 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
-   * Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+   * Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
    *
    * Errors if the current module is not installed as an SDK in this workspace.
+   * @param workspace The workspace to resolve SDK-role data against.
    */
-  asSDK = (): CurrentModuleAsSDK => {
-    const ctx = this._ctx.select("asSDK")
+  asSDK = (workspace: Workspace): CurrentModuleAsSDK => {
+    const ctx = this._ctx.select("asSDK", { workspace })
     return new CurrentModuleAsSDK(ctx)
   }
 

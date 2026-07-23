@@ -1793,12 +1793,15 @@ type Container implements Exportable & Node & Syncer {
 """Reflective module API provided to functions at runtime."""
 type CurrentModule implements Node {
   """
-  Treat the currently executing module as an SDK installed in the active
+  Treat the currently executing module as an SDK installed in the given
   workspace, exposing the modules and clients it manages.
 
   Errors if the current module is not installed as an SDK in this workspace.
   """
-  asSDK: CurrentModuleAsSDK!
+  asSDK(
+    """The workspace to resolve SDK-role data against."""
+    workspace: ID! @expectedType(name: "Workspace")
+  ): CurrentModuleAsSDK!
 
   """The dependencies of the module."""
   dependencies: [Module!]!

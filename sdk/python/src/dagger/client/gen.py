@@ -3996,14 +3996,21 @@ class Container(Type):
 class CurrentModule(Type):
     """Reflective module API provided to functions at runtime."""
 
-    def as_sdk(self) -> "CurrentModuleAsSDK":
-        """Treat the currently executing module as an SDK installed in the active
+    def as_sdk(self, workspace: "Workspace") -> "CurrentModuleAsSDK":
+        """Treat the currently executing module as an SDK installed in the given
         workspace, exposing the modules and clients it manages.
 
         Errors if the current module is not installed as an SDK in this
         workspace.
+
+        Parameters
+        ----------
+        workspace:
+            The workspace to resolve SDK-role data against.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("workspace", workspace),
+        ]
         _ctx = self._select("asSDK", _args)
         return CurrentModuleAsSDK(_ctx)
 

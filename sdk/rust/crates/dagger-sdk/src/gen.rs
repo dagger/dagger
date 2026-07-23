@@ -4582,10 +4582,21 @@ impl Loadable for CurrentModule {
     }
 }
 impl CurrentModule {
-    /// Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.
+    /// Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.
     /// Errors if the current module is not installed as an SDK in this workspace.
-    pub fn as_sdk(&self) -> CurrentModuleAsSdk {
-        let query = self.selection.select("asSDK");
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace` - The workspace to resolve SDK-role data against.
+    pub fn as_sdk(&self, workspace: impl IntoID<Id>) -> CurrentModuleAsSdk {
+        let mut query = self.selection.select("asSDK");
+        query = query.arg_lazy(
+            "workspace",
+            Box::new(move || {
+                let workspace = workspace.clone();
+                Box::pin(async move { workspace.into_id().await.unwrap().quote() })
+            }),
+        );
         CurrentModuleAsSdk {
             proc: self.proc.clone(),
             selection: query,

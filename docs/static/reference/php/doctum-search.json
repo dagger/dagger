@@ -3362,7 +3362,7 @@
 			"t": "M",
 			"n": "Dagger\\CurrentModule::asSDK",
 			"p": "Dagger/CurrentModule.html#method_asSDK",
-			"d": "<p>Treat the currently executing module as an SDK installed in the active workspace, exposing the modules and clients it manages.</p>"
+			"d": "<p>Treat the currently executing module as an SDK installed in the given workspace, exposing the modules and clients it manages.</p>"
 		},
 		{
 			"t": "M",
