@@ -1877,6 +1877,11 @@ func (s *workspaceSchema) generators(
 	parent *core.Workspace,
 	args struct {
 		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		// WithWorkspace runs the discovered generators against this workspace
+		// instead of the client's ambient one — used by
+		// ModuleSource.generateLocalDependencies to hand each dependency's SDK a
+		// scoped/overlaid workspace. Internal: not part of the public schema.
+		WithWorkspace dagql.Optional[dagql.ID[*core.Workspace]] `internal:"true"`
 	},
 ) (*core.GeneratorGroup, error) {
 	if isSyntheticWorkspace(parent) {
@@ -1997,11 +2002,23 @@ func (s *workspaceSchema) generators(
 		allGenerators = append(allGenerators, filtered...)
 	}
 
-	return &core.GeneratorGroup{
+	gg := &core.GeneratorGroup{
 		Generators:        allGenerators,
 		LoadFailures:      loadFailures,
 		WorkspaceClientID: parent.ClientID,
-	}, nil
+	}
+	if args.WithWorkspace.Valid {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		override, err := args.WithWorkspace.Value.Load(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("load workspace override: %w", err)
+		}
+		gg.WorkspaceOverride = override
+	}
+	return gg, nil
 }
 
 func (s *workspaceSchema) services(

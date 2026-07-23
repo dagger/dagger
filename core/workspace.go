@@ -742,6 +742,28 @@ func (ws *Workspace) Clone() *Workspace {
 	return &cp
 }
 
+type workspaceOverrideKey struct{}
+
+// ContextWithWorkspaceOverride marks ws as the workspace to hand to SDK
+// functions that take a Workspace argument, in place of the ambient
+// currentWorkspace. Used by the generator framework (GeneratorGroup.Run) to run
+// a workspace's generators against a scoped/overlaid workspace the engine
+// constructed — e.g. ModuleSource.generateLocalDependencies staging a
+// dependency's codegen before generating the dependent.
+func ContextWithWorkspaceOverride(ctx context.Context, ws dagql.ObjectResult[*Workspace]) context.Context {
+	return context.WithValue(ctx, workspaceOverrideKey{}, ws)
+}
+
+// WorkspaceOverrideFromContext returns the override set by
+// ContextWithWorkspaceOverride, if any.
+func WorkspaceOverrideFromContext(ctx context.Context) (dagql.ObjectResult[*Workspace], bool) {
+	ws, ok := ctx.Value(workspaceOverrideKey{}).(dagql.ObjectResult[*Workspace])
+	if ok && ws.Self() != nil {
+		return ws, true
+	}
+	return dagql.ObjectResult[*Workspace]{}, false
+}
+
 // WorkspaceGit represents the git state associated with a workspace.
 type WorkspaceGit struct {
 	Workspace dagql.ObjectResult[*Workspace]
