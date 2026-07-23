@@ -65,9 +65,10 @@ func (s *moduleSchema) currentModuleAsSDK(
 	}
 	for _, client := range entry.AsSDK.Clients {
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
-			Path:   client.Path,
-			Module: client.Module,
-			Pin:    client.Pin,
+			Path:           client.Path,
+			Module:         client.Module,
+			Pin:            client.Pin,
+			BoundWorkspace: wsResult,
 		})
 	}
 	return result, nil
@@ -117,15 +118,14 @@ func (s *moduleSchema) currentModuleAsSDKClientModuleSource(
 ) (dagql.ObjectResult[*core.ModuleSource], error) {
 	var res dagql.ObjectResult[*core.ModuleSource]
 
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return res, err
+	// Resolve against the workspace asSDK was called on, carried on the client,
+	// rather than the session's ambient workspace: a dependency-driven or overlaid
+	// SDK is handed its workspace explicitly and no longer inherits an ambient one.
+	ws := client.BoundWorkspace.Self()
+	if ws == nil {
+		return res, fmt.Errorf("current module as-sdk client has no bound workspace")
 	}
-	ws, err := query.Server.CurrentWorkspace(ctx)
-	if err != nil {
-		return res, fmt.Errorf("get current workspace: %w", err)
-	}
-	if isSyntheticWorkspace(ws) || ws.ConfigFile == "" {
+	if ws.ConfigFile == "" {
 		return res, fmt.Errorf("current module is not installed as an SDK in this workspace")
 	}
 

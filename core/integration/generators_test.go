@@ -338,7 +338,7 @@ pin = "deadbeef"
 
 [[modules.client-generator-fixture.as-sdk.clients]]
 path = "clients/two"
-module = "."
+module = ".dagger/client-generator-fixture"
 `).
 		WithNewFile(".dagger/client-generator-fixture/dagger.json", `{
   "name": "client-generator-fixture",
@@ -350,6 +350,7 @@ module = "."
 
 import (
 	"context"
+	"strings"
 
 	"dagger/client-generator-fixture/internal/dagger"
 )
@@ -377,7 +378,18 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 		if err != nil {
 			return nil, err
 		}
-		generated = generated.WithNewFile(path+"/generated.txt", module+"\n"+pin+"\n")
+		contents := module + "\n" + pin + "\n"
+		// For a locally-bound client, resolve its module source through the
+		// bound workspace and record it, proving moduleSource resolves against
+		// the workspace asSDK was called on.
+		if strings.HasPrefix(module, ".") {
+			src, err := client.ModuleSource().AsString(ctx)
+			if err != nil {
+				return nil, err
+			}
+			contents += "source=" + src + "\n"
+		}
+		generated = generated.WithNewFile(path+"/generated.txt", contents)
 	}
 
 	return generated.Changes(dag.Directory()), nil
@@ -396,7 +408,7 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 	require.NoError(t, err)
 	require.JSONEq(t, `[
   {"sdk":"fixture","path":"clients/one","module":"github.com/shykes/hello","pin":"deadbeef"},
-  {"sdk":"fixture","path":"clients/two","module":"."}
+  {"sdk":"fixture","path":"clients/two","module":".dagger/client-generator-fixture"}
 ]`, clients)
 
 	generated := base.With(daggerExec("generate", "-y"))
@@ -405,9 +417,14 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger
 	require.NoError(t, err)
 	require.Equal(t, "github.com/shykes/hello\ndeadbeef\n", one)
 
+	// clients/two is locally bound, so the generator additionally resolved its
+	// module source through the bound workspace (see the fixture). A non-empty
+	// source line proves currentModuleAsSDKClientModuleSource resolved against
+	// the workspace asSDK was called on.
 	two, err := generated.File("clients/two/generated.txt").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, ".\n\n", two)
+	require.Contains(t, two, ".dagger/client-generator-fixture\n\nsource=")
+	require.Contains(t, two, "client-generator-fixture")
 }
 
 func (GeneratorsSuite) TestGeneratorGroupChangesSyncWithNestedSDKCodegen(ctx context.Context, t *testctx.T) {
