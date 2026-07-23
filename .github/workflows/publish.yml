@@ -47,6 +47,7 @@ jobs:
         uses: ./.github/actions/call
         with:
           workspace: github.com/${{ github.repository }}@${{ github.sha }}
+          module: ""
           function: |-
             release \
             publish \
