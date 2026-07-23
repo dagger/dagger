@@ -95,7 +95,7 @@ func (s *workspaceSchema) migrate(
 			continue
 		}
 
-		plan, err := s.prepareWorkspaceMigrationPlan(ctx, ws, compatWorkspace)
+		plan, err := s.prepareWorkspaceMigrationPlan(ctx, compatWorkspace)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +149,6 @@ func (s *workspaceSchema) migrate(
 
 func (s *workspaceSchema) prepareWorkspaceMigrationPlan(
 	ctx context.Context,
-	ws *core.Workspace,
 	compatWorkspace *workspace.CompatWorkspace,
 ) (*workspace.MigrationPlan, error) {
 	plan, err := workspace.PlanMigration(compatWorkspace)
@@ -157,36 +156,6 @@ func (s *workspaceSchema) prepareWorkspaceMigrationPlan(
 		return nil, err
 	}
 	recordWorkspaceMigrationModuleSpans(ctx, compatWorkspace.Modules)
-	cfg, err := workspace.ParseConfig(plan.WorkspaceConfigData)
-	if err != nil {
-		return nil, fmt.Errorf("parse planned workspace config: %w", err)
-	}
-	plannedConfigDir := filepath.Dir(workspace.ConfigFileName)
-	var updatedDir dagql.ObjectResult[*core.Directory]
-	if workspaceConfigUsesMigratedModuleSources(cfg, plannedConfigDir) {
-		if _, preparedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err != nil {
-			return nil, fmt.Errorf("prepare migrated module config: %w", err)
-		} else {
-			updatedDir = preparedDir
-		}
-	}
-	hints, hintWarnings := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plannedConfigDir, plan.ProjectRoot, updatedDir)
-	if len(hintWarnings) > 0 {
-		// Settings hints are pure enrichment (pre-filled [modules.<m>.settings.*]
-		// defaults). When a module can't be loaded to introspect them — e.g. an
-		// SDK source that doesn't resolve as a local path — record the failure as
-		// a migration-report warning instead of aborting. The mechanical
-		// sdk->runtime migration is still valid; the user can fill in settings
-		// later with `dagger settings`.
-		appendWorkspaceMigrationNonGapWarnings(plan, hintWarnings)
-	}
-	if len(hints) > 0 {
-		updated, err := workspace.UpdateConfigBytesWithHints(plan.WorkspaceConfigData, cfg, hints)
-		if err != nil {
-			return nil, fmt.Errorf("render planned workspace config with hints: %w", err)
-		}
-		plan.WorkspaceConfigData = updated
-	}
 	return plan, nil
 }
 
@@ -956,35 +925,6 @@ func workspaceMigrationRootPathForProject(ws *core.Workspace, projectRoot string
 	return filepath.Join(projectRootPath, relPath), nil
 }
 
-func (s *workspaceSchema) workspaceMigrationPreparedDirectories(
-	ctx context.Context,
-	ws *core.Workspace,
-	plan *workspace.MigrationPlan,
-) (_ dagql.ObjectResult[*core.Directory], _ dagql.ObjectResult[*core.Directory], rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "prepare migrated workspace directory", workspaceMigrationWrapperSpanOpts(ctx)...)
-	defer telemetry.EndWithCause(span, &rerr)
-
-	baseDir, err := s.workspaceMigrationBaseDirectory(ctx, ws, plan)
-	if err != nil {
-		return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
-	}
-
-	updatedDir := baseDir
-
-	if len(plan.MigratedModuleConfigData) > 0 {
-		if err := validateWorkspaceMigrationTargetPaths(ctx, baseDir, []string{plan.MigratedModuleConfigPath}); err != nil {
-			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
-		}
-
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "move module: "+workspace.LegacyModuleConfigFileName+" -> "+workspaceMigrationDisplayPath(plan.MigratedModuleConfigPath))
-		if err != nil {
-			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
-		}
-	}
-
-	return baseDir, updatedDir, nil
-}
-
 func workspaceMigrationTargetPaths(plan *workspace.MigrationPlan) []string {
 	paths := make([]string, 0, 3)
 	if len(plan.MigratedModuleConfigData) > 0 {
@@ -1087,24 +1027,6 @@ func workspaceMigrationPathExists(
 	return false, err
 }
 
-func (s *workspaceSchema) workspaceMigrationBaseDirectory(
-	ctx context.Context,
-	ws *core.Workspace,
-	plan *workspace.MigrationPlan,
-) (dagql.ObjectResult[*core.Directory], error) {
-	projectRootPath, err := workspaceMigrationProjectRootPath(ws, plan)
-	if err != nil {
-		return dagql.ObjectResult[*core.Directory]{}, err
-	}
-
-	baseDir, err := s.resolveRootfs(ctx, ws, projectRootPath, core.CopyFilter{}, false)
-	if err != nil {
-		return dagql.ObjectResult[*core.Directory]{}, err
-	}
-
-	return baseDir, nil
-}
-
 //nolint:unparam
 func withWorkspaceMigrationFile(
 	ctx context.Context,
@@ -1175,13 +1097,6 @@ func workspaceMigrationChanges(
 		return changes, err
 	}
 	return changes, nil
-}
-
-func workspaceMigrationProjectRootPath(ws *core.Workspace, plan *workspace.MigrationPlan) (string, error) {
-	if plan == nil || plan.ProjectRoot == "" {
-		return "", fmt.Errorf("migration project root is unavailable")
-	}
-	return workspaceMigrationProjectRootRelPath(ws, plan.ProjectRoot)
 }
 
 func workspaceMigrationProjectRootRelPath(ws *core.Workspace, projectRoot string) (string, error) {

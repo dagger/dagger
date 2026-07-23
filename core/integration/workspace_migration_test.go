@@ -29,12 +29,6 @@ func TestWorkspaceMigration(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceMigrationSuite{})
 }
 
-// materializeModuleFiles runs codegen and exports the module's generated
-// files into the container: TOML modules don't regenerate at runtime.
-func materializeModuleFiles(refString string) dagger.WithContainerFunc {
-	return daggerQuery(`{moduleSource(refString:%q){generatedContextDirectory{export(path:".")}}}`, refString)
-}
-
 // TestWorkspaceMigratePreviewAndApply should cover the main CLI lifecycle:
 // preview via the workspace `migrate` API (non-mutating) and apply via
 // `dagger setup --auto-apply`.
@@ -262,14 +256,20 @@ type Myapp {
 		}, "\n"))
 	})
 
-	t.Run("local migrated modules include commented setting hints", func(ctx context.Context, t *testctx.T) {
+	t.Run("migration omits commented settings hints and preserves active settings", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
 
 		ctr := legacyWorkspaceBase(t, c, `{
   "name": "myapp",
   "toolchains": [
-    {"name": "defaults", "source": "./toolchain"}
+    {
+      "name": "defaults",
+      "source": "./toolchain",
+      "customizations": [
+        {"argument": "greeting", "default": "bonjour"}
+      ]
+    }
   ]
 }`, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.WithDirectory("toolchain", c.Host().Directory(toolchainSrc))
@@ -278,96 +278,9 @@ type Myapp {
 		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello"`)
-		require.Contains(t, configOut, `# settings.password = "env://MY_SECRET"`)
-		require.NotContains(t, configOut, `# string`)
-		require.NotContains(t, configOut, `# Secret`)
-	})
-
-	t.Run("settings hints skip args not configurable from workspace settings", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
-
-		ctr := legacyWorkspaceBase(t, c, `{
-  "name": "myapp",
-  "toolchains": [
-    {"name": "defaults", "source": "./toolchain"}
-  ]
-}`, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.
-				WithDirectory("toolchain", c.Host().Directory(toolchainSrc)).
-				WithNewFile("toolchain/main.go", `package main
-
-import "dagger/defaults/internal/dagger"
-
-type Defaults struct{}
-
-func New(
-	// Greeting to use.
-	// +default="hello"
-	greeting string,
-	// Secret reference.
-	// +optional
-	secret *dagger.Secret,
-	// Source directory.
-	// +optional
-	dir *dagger.Directory,
-	// Workspace is injected by Dagger.
-	workspace *dagger.Workspace,
-	// Cache volume cannot be resolved from workspace settings.
-	cache *dagger.CacheVolume,
-) *Defaults {
-	return &Defaults{}
-}
-`)
-		}).With(daggerExec("setup", "--auto-apply"))
-
-		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello"`)
-		require.Contains(t, configOut, `# settings.secret = "env://MY_SECRET"`)
-		require.Contains(t, configOut, `# settings.dir = "./path"`)
-		require.NotContains(t, configOut, `settings.workspace`)
-		require.NotContains(t, configOut, `settings.cache`)
-	})
-
-	t.Run("dot dagger source keeps toolchain and migrated main module hints", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		mainModuleSrc := filepath.Join("testdata", "modules", "go", "defaults", "superconstructor")
-		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
-		legacyConfig := `{
-  "name": "superconstructor",
-  "engineVersion": "v0.20.1",
-  "sdk": {"source": "go"},
-  "source": ".dagger",
-  "codegen": {"automaticGitignore": false},
-  "toolchains": [
-    {"name": "defaults", "source": "./toolchain"}
-  ],
-  "disableDefaultFunctionCaching": true
-}`
-
-		ctr := legacyWorkspaceBase(t, c, legacyConfig, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.
-				WithDirectory(".dagger", c.Host().Directory(mainModuleSrc)).
-				WithDirectory("toolchain", c.Host().Directory(toolchainSrc)).
-				WithNewFile("dagger.json", legacyConfig)
-		},
-			// The fixture's committed generated files predate this engine. The
-			// migrated module is dagger-module.toml and builds from them as-is,
-			// so refresh them with the current engine's codegen.
-			materializeModuleFiles("."),
-		).With(daggerExec("setup", "--auto-apply"))
-
-		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, configOut, `[modules.superconstructor]`)
-		require.Contains(t, configOut, `# settings.count = 42`)
-		require.Contains(t, configOut, `[modules.defaults]`)
-		require.Contains(t, configOut, `# settings.greeting = "hello"`)
-		require.NotContains(t, configOut, `# int`)
-		require.NotContains(t, configOut, `# string`)
+		require.Contains(t, configOut, `[modules.defaults.settings]`)
+		require.Contains(t, configOut, `greeting = "bonjour"`)
+		require.NotContains(t, configOut, `# settings.`)
 	})
 
 	t.Run("dot dagger source remains in place", func(ctx context.Context, t *testctx.T) {
