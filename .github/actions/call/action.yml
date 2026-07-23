@@ -6,6 +6,11 @@ inputs:
     description: "The Dagger function to call"
     required: true
 
+  workspace:
+    description: "The workspace to use in the call"
+    default: ""
+    required: false
+
   module:
     description: "The Dagger module to call"
     default: "."
@@ -79,7 +84,15 @@ runs:
           # Apply GHA-specific .env
           [ -e .env.gha ] && mv .env.gha .env
         fi
-        redirect_logs dagger --cloud -m "${{ inputs.module }}" call ${{ inputs.function }}
+        module_args=()
+        if [[ -n "${{ inputs.module }}" ]]; then
+          module_args=(-m "${{ inputs.module }}")
+        fi
+        workspace_args=()
+        if [[ -n "${{ inputs.workspace }}" ]]; then
+          workspace_args=(-W "${{ inputs.workspace }}")
+        fi
+        redirect_logs dagger --cloud "${module_args[@]}" "${workspace_args[@]}" call ${{ inputs.function }}
       env:
         DAGGER_CLOUD_TOKEN: oidc
 
