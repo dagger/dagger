@@ -5674,6 +5674,10 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// fe.renderVertexTasks(out, span, depth)
 		fe.renderDurationDynamic(ctx, out, r, span, statusHost, !empty)
 
+		// Flag how many tokens a tool call's result added to the model's
+		// context, so an outsized one stands out at a glance.
+		r.renderToolResultTokens(out, span)
+
 		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUpSpans {
 			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)

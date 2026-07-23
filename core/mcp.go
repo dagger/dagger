@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetryattrs"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -805,11 +806,19 @@ func toolCallCtx(ctx context.Context, displays map[string]toolCallDisplay, callI
 }
 
 // endToolCallDisplay ends a tool call's display span once the tool returns,
-// marking it errored if the call failed. No-op when there's no display span.
-func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, errored bool, errMsg string) {
+// marking it errored if the call failed. It also stamps the span with an
+// estimated token count for the result the tool fed back into context, so the
+// TUI can flag tool calls whose output is an outsized driver of context growth.
+// No-op when there's no display span.
+func endToolCallDisplay(displays map[string]toolCallDisplay, callID string, errored bool, result string) {
 	if tc, ok := displays[callID]; ok {
+		if tokens := estimateTextTokens(len(result)); tokens > 0 {
+			tc.Span.SetAttributes(
+				attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
+			)
+		}
 		if errored {
-			tc.Span.SetStatus(codes.Error, errMsg)
+			tc.Span.SetStatus(codes.Error, result)
 		}
 		tc.Span.End()
 	}

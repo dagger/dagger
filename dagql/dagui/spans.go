@@ -318,6 +318,12 @@ type SpanSnapshot struct {
 	LLMToolArgValues []string `json:",omitempty"`
 	LLMCallDigest    string   `json:",omitempty"`
 
+	// LLMToolResultTokens is an estimate of the token size of a tool call's
+	// result (the output it fed back into the model's context). The TUI shows
+	// it on the tool-call row so an outsized, context-bloating result is easy
+	// to spot.
+	LLMToolResultTokens int64 `json:",omitempty"`
+
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
 
@@ -478,6 +484,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetryattrs.LLMCallDigestAttr:
 		snapshot.LLMCallDigest = val.(string)
 
+	case telemetryattrs.LLMToolResultTokensAttr:
+		snapshot.LLMToolResultTokens = asInt64(val)
+
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)
 
@@ -527,6 +536,22 @@ func sliceOf[T any](val any) []T {
 		ts[i] = v.(T)
 	}
 	return ts
+}
+
+// asInt64 coerces an OTel attribute value to int64. The live SDK path yields an
+// int64 directly; the defensive float64 case covers values that round-tripped
+// through a JSON number.
+func asInt64(val any) int64 {
+	switch v := val.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	default:
+		return 0
+	}
 }
 
 // PropagateStatusToParentsAndLinks updates the running and failed state of all

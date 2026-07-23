@@ -444,6 +444,14 @@ func (m *LLMMessage) estimateTokens() int64 {
 		chars += len(b.ToolName)
 		chars += len(b.Arguments)
 	}
+	return estimateTextTokens(chars)
+}
+
+// estimateTextTokens turns a character count into a conservative token estimate
+// using the same chars/4 heuristic as LLMMessage.estimateTokens. It backs the
+// per-tool-call result size the TUI surfaces so an inordinate result is easy to
+// spot even though providers only report usage per API call, not per result.
+func estimateTextTokens(chars int) int64 {
 	if chars == 0 {
 		return 0
 	}
@@ -1606,7 +1614,7 @@ func emitNewMessageSpans(ctx context.Context, messages []*LLMMessage, llmCallDig
 	}
 	slices.Reverse(newMessages)
 	for _, msg := range newMessages {
-		emitMessageSpan(ctx, msg, llmCallDigest)
+		emitMessageSpan(ctx, msg, llmCallDigest, nil)
 	}
 }
 
@@ -1900,13 +1908,16 @@ func (llm *LLM) allowed(ctx context.Context) error {
 
 // emitMessageSpan creates a telemetry span for a single LLM message. This is
 // used both during live step() execution and during replay. callDigest is the
-// DAG digest enabling TUI branching from that point.
-func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+// DAG digest enabling TUI branching from that point. resultTokens maps a tool
+// call's ID to the estimated token size of the result it produced (populated
+// only during replay, where the whole conversation is known up front), so a
+// replayed tool-call span carries the same result-size badge as a live one.
+func emitMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
 	switch msg.Role {
 	case LLMMessageRoleUser, LLMMessageRoleSystem:
 		emitUserMessageSpan(ctx, msg, callDigest)
 	case LLMMessageRoleAssistant:
-		emitAssistantMessageSpan(ctx, msg, callDigest)
+		emitAssistantMessageSpan(ctx, msg, callDigest, resultTokens)
 	}
 }
 
@@ -1935,7 +1946,7 @@ func emitUserMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string
 	fmt.Fprint(stdio.Stdout, msg.TextContent())
 }
 
-func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string) {
+func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest string, resultTokens map[string]int64) {
 	// Each content block gets its own span, matching the provider streaming
 	// behavior: thinking, text (LLM response), and tool calls each appear
 	// separately. Contiguous runs of the same non-tool-call type are grouped.
@@ -2001,6 +2012,14 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 					attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 					attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 				)
+				// Mirror the live tool-call span's result-size badge: the result
+				// itself lives in a later user (tool-result) message, so replay
+				// looks it up by call ID from the pre-scanned conversation.
+				if tokens := resultTokens[block.CallID]; tokens > 0 {
+					extraAttrs = append(extraAttrs,
+						attribute.Int64(telemetryattrs.LLMToolResultTokensAttr, tokens),
+					)
+				}
 			default:
 				name = "LLM response"
 				contentType = "text/markdown"
@@ -2043,10 +2062,21 @@ func emitAssistantMessageSpan(ctx context.Context, msg *LLMMessage, callDigest s
 // Replay re-emits telemetry spans for all messages in the conversation history.
 // This allows the TUI to display the conversation after loading a saved session.
 func (llm *LLM) Replay(ctx context.Context) {
+	// Pre-scan for each tool result's estimated size, keyed by call ID, so a
+	// replayed tool-call span carries the same result-size badge the live path
+	// stamps in endToolCallDisplay (the result lives in a later user message).
+	resultTokens := map[string]int64{}
+	for _, msg := range llm.Messages {
+		for _, block := range msg.Content {
+			if block.Kind == LLMContentToolResult && block.CallID != "" {
+				resultTokens[block.CallID] = estimateTextTokens(len(block.Text))
+			}
+		}
+	}
 	for _, msg := range llm.Messages {
 		// We don't have per-message call digests for replay, so pass empty.
 		// The TUI will still display the messages, just without branch support.
-		emitMessageSpan(ctx, msg, "")
+		emitMessageSpan(ctx, msg, "", resultTokens)
 	}
 }
 

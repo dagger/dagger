@@ -837,6 +837,55 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 	}
 }
 
+// renderToolResultTokens flags, inline on a tool-call row, how many tokens the
+// tool's result added to the model's context. A tool result is usually the
+// biggest driver of context growth, so surfacing its size makes an inordinate
+// one easy to spot while scanning a conversation. The count is an estimate (see
+// LLMToolResultTokensAttr) and is colored by magnitude so large results stand
+// out; small ones stay faint to keep the transcript quiet.
+func (r renderer) renderToolResultTokens(out TermOutput, span *dagui.Span) {
+	if span == nil || span.LLMTool == "" || span.LLMToolResultTokens <= 0 {
+		return
+	}
+	tokens := span.LLMToolResultTokens
+	badge := out.String(fmt.Sprintf("~%s tok", fmtTokens(tokens)))
+	switch color := tokenSizeColor(tokens); color {
+	case faintColor:
+		badge = badge.Foreground(color).Faint()
+	default:
+		badge = badge.Foreground(color)
+	}
+	fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
+	fmt.Fprint(out, badge)
+}
+
+// tokenSizeColor grades a token count so a context-bloating tool result reads as
+// a warning: small results stay faint, a few thousand tokens turn yellow, and
+// tens of thousands turn red.
+func tokenSizeColor(tokens int64) termenv.Color {
+	switch {
+	case tokens >= 10_000:
+		return bigColor
+	case tokens >= 2_000:
+		return mbColor
+	default:
+		return faintColor
+	}
+}
+
+// fmtTokens renders a token count compactly (532, 1.2k, 45.2k, 1.2M) so it fits
+// inline on a row without dominating it.
+func fmtTokens(n int64) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
+}
+
 func (r renderer) renderMetric(
 	out TermOutput,
 	metricsByName map[string][]metricdata.DataPoint[int64],

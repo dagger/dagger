@@ -15,6 +15,64 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 )
 
+// TestConversationReportFlagsToolResultTokens verifies a tool call that fed a
+// large result back into context is flagged inline with an estimated token
+// count, so an outsized, context-bloating result is easy to spot in the report.
+func TestConversationReportFlagsToolResultTokens(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	promptID := prettyTestSpanID(2)
+	toolCallID := prettyTestSpanID(3)
+	start := time.Unix(100, 0)
+	end := start.Add(10 * time.Second)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "shell",
+			StartTime: start,
+			EndTime:   end,
+			Final:     true,
+		},
+		{
+			ID:        promptID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "LLM prompt",
+			LLMRole:   "user",
+			ParentID:  rootID,
+			StartTime: start.Add(time.Second),
+			EndTime:   start.Add(2 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:                  toolCallID,
+			TraceID:             prettyTestTraceID(),
+			Name:                "read_file",
+			LLMRole:             "assistant",
+			LLMTool:             "read_file",
+			LLMToolResultTokens: 12345,
+			ParentID:            rootID,
+			StartTime:           start.Add(2 * time.Second),
+			EndTime:             start.Add(3 * time.Second),
+			Final:               true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.recalculateViewLocked()
+
+	r := newRenderer(fe.db, 0, fe.FrontendOpts, true)
+	lines := fe.conversationReport(tuist.Context{Width: 120}, r, false)
+	joined := strings.Join(lines, "\n")
+
+	// 12345 tokens formats compactly (~12.3k tok) so it fits inline on the row.
+	if !strings.Contains(joined, "~12.3k tok") {
+		t.Fatalf("tool-call row missing result-token badge:\n%s", joined)
+	}
+}
+
 // TestConversationReportNestsSubAgent verifies the final report surfaces the LLM
 // conversation under a CONVERSATION heading, in start-time order, with a
 // sub-agent's turns nested one level under the tool call that spawned them.
