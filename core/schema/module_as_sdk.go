@@ -17,17 +17,26 @@ import (
 func (s *moduleSchema) currentModuleAsSDK(
 	ctx context.Context,
 	curMod *core.CurrentModule,
-	_ struct{},
+	args struct {
+		Workspace dagql.ID[*core.Workspace]
+	},
 ) (*core.CurrentModuleAsSDK, error) {
-	query, err := core.CurrentQuery(ctx)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ws, err := query.Server.CurrentWorkspace(ctx)
+	// The workspace is passed explicitly: a module resolving its SDK role — as a
+	// dependency driven by another module, or as a generator run by the framework
+	// — hands in the workspace it was given rather than inheriting the caller's
+	// ambient one. Config reads route through that workspace's own rootfs/owner
+	// client, so there is no sandbox concern, and a synthetic (value) workspace
+	// that carries config is honored just like a detected one.
+	wsResult, err := args.Workspace.Load(ctx, srv)
 	if err != nil {
-		return nil, fmt.Errorf("get current workspace: %w", err)
+		return nil, fmt.Errorf("load workspace argument: %w", err)
 	}
-	if isSyntheticWorkspace(ws) || ws.ConfigFile == "" {
+	ws := wsResult.Self()
+	if ws.ConfigFile == "" {
 		return nil, fmt.Errorf("current module is not installed as an SDK in this workspace")
 	}
 

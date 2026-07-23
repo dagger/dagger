@@ -357,8 +357,8 @@ import (
 type ClientGeneratorFixture struct{}
 
 // +generate
-func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context) (*dagger.Changeset, error) {
-	clients, err := dag.CurrentModule().AsSDK().Clients(ctx)
+func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context, ws *dagger.Workspace) (*dagger.Changeset, error) {
+	clients, err := dag.CurrentModule().AsSDK(ws).Clients(ctx)
 	if err != nil {
 		return nil, err
 	}
