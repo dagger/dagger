@@ -6114,6 +6114,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::generateLocalDependencies",
+			"p": "Dagger/ModuleSource.html#method_generateLocalDependencies",
+			"d": "<p>Generate this module's transitive local dependency closure, leaf-first, and return the accumulated changeset.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::generatedContextChangeset",
 			"p": "Dagger/ModuleSource.html#method_generatedContextChangeset",
 			"d": "<p>The generated files and directories made on top of the module source's context directory, returned as a Changeset.</p>"

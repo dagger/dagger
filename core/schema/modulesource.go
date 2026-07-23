@@ -2976,7 +2976,10 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 	args struct {
 		Workspace dagql.ID[*core.Workspace]
 	},
-) (res dagql.ObjectResult[*core.Changeset], _ error) {
+) (res dagql.ObjectResult[*core.Changeset], rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "generate local dependencies", telemetry.Reveal())
+	defer telemetry.EndWithCause(span, &rerr)
+
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get dag server: %w", err)
@@ -2986,53 +2989,162 @@ func (s *moduleSourceSchema) moduleSourceGenerateLocalDependencies(
 		return res, fmt.Errorf("failed to load workspace: %w", err)
 	}
 
-	deps := localDepClosureLeafFirst(srcInst)
-
-	empty, err := core.NewEmptyChangeset(ctx)
+	// Restore the workspace owner's client context. This runs nested inside an
+	// SDK module function (whose runtime client can't reach the workspace
+	// filesystem), so module-source loading below — which finds up .env/cwd via
+	// the requester session — must act as the workspace client.
+	ctx, err = withWorkspaceClientContext(ctx, workspace.Self())
 	if err != nil {
-		return res, err
-	}
-	acc, err := dagql.NewObjectResultForCurrentCall(ctx, dag, empty)
-	if err != nil {
-		return res, err
+		return res, fmt.Errorf("restore workspace client context: %w", err)
 	}
 
-	for i, dep := range deps {
-		wsD, err := scopedStagedWorkspace(ctx, dag, workspace, dep.Self().SourceRootSubpath, acc, i > 0)
-		if err != nil {
-			return res, fmt.Errorf("scope workspace for dependency %q: %w", dep.Self().SourceRootSubpath, err)
+	// The receiver may be a module source loaded without a resolved dependency
+	// graph (e.g. the polyfill's synthetic source, whose Dependencies are empty).
+	// Re-resolve it against the workspace so its local dependencies — all this
+	// walk needs — are populated.
+	src := srcInst
+	if srcPath := srcInst.Self().SourceRootSubpath; srcPath != "" && srcPath != "." {
+		if err := dag.Select(ctx, workspace, &src, dagql.Selector{
+			Field: "moduleSource",
+			Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String("/" + srcPath)}},
+		}); err != nil {
+			return res, fmt.Errorf("resolve module source %q dependencies: %w", srcPath, err)
 		}
-		wsDID, err := wsD.ID()
+	}
+
+	deps := localDepClosureLeafFirst(src)
+	slog.ExtraDebug("generateLocalDependencies closure",
+		"module", srcInst.Self().SourceRootSubpath, "deps", len(deps))
+
+	var acc dagql.ObjectResult[*core.Changeset]
+	for i, dep := range deps {
+		depPath := dep.Self().SourceRootSubpath
+		depChanges, err := s.generateOneLocalDependency(ctx, dag, workspace, depPath, acc, i > 0)
+		if err != nil {
+			return res, fmt.Errorf("generate local dependency %q: %w", depPath, err)
+		}
+		if i == 0 {
+			acc = depChanges
+			continue
+		}
+		acc, err = mergeChangesets(ctx, dag, acc, depChanges)
+		if err != nil {
+			return res, fmt.Errorf("merge local dependency %q changes: %w", depPath, err)
+		}
+	}
+
+	if acc.Self() == nil {
+		// No local dependencies: return an empty changeset (attached via return).
+		empty, err := core.NewEmptyChangeset(ctx)
 		if err != nil {
 			return res, err
 		}
-
-		var depChanges dagql.ObjectResult[*core.Changeset]
-		if err := dag.Select(ctx, workspace, &depChanges,
-			dagql.Selector{
-				Field: "generators",
-				Args: []dagql.NamedInput{
-					{Name: "withWorkspace", Value: dagql.NewID[*core.Workspace](wsDID)},
-				},
-			},
-			dagql.Selector{Field: "run"},
-			dagql.Selector{Field: "changes"},
-		); err != nil {
-			return res, fmt.Errorf("generate local dependency %q: %w", dep.Self().SourceRootSubpath, err)
-		}
-
-		acc, err = mergeChangesets(ctx, dag, acc, depChanges)
-		if err != nil {
-			return res, fmt.Errorf("merge local dependency %q changes: %w", dep.Self().SourceRootSubpath, err)
-		}
+		return dagql.NewObjectResultForCurrentCall(ctx, dag, empty)
 	}
 
 	return acc, nil
 }
 
-// localDepClosureLeafFirst returns src's transitive local (LOCAL_SOURCE)
-// dependency closure in leaf-first order (a dependency appears before any module
-// that depends on it), excluding src itself. Modules are deduplicated by their
+// generateOneLocalDependency runs the workspace's SDK generators against a
+// workspace scoped to depPath (as cwd) with acc overlaid, and returns that one
+// dependency's changeset. Wrapped in a revealed span so the per-dependency
+// generation is visible in the trace.
+func (s *moduleSourceSchema) generateOneLocalDependency(
+	ctx context.Context,
+	dag *dagql.Server,
+	workspace dagql.ObjectResult[*core.Workspace],
+	depPath string,
+	acc dagql.ObjectResult[*core.Changeset],
+	overlay bool,
+) (_ dagql.ObjectResult[*core.Changeset], rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "generate local dependency: "+depPath, telemetry.Reveal())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	wsD, err := scopedStagedWorkspace(ctx, dag, workspace, depPath, acc, overlay)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, fmt.Errorf("scope workspace: %w", err)
+	}
+	wsDID, err := wsD.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+
+	var depChanges dagql.ObjectResult[*core.Changeset]
+	if err := dag.Select(ctx, workspace, &depChanges,
+		dagql.Selector{
+			Field: "generators",
+			Args: []dagql.NamedInput{
+				{Name: "withWorkspace", Value: dagql.Opt(dagql.NewID[*core.Workspace](wsDID))},
+			},
+		},
+		dagql.Selector{Field: "run"},
+		dagql.Selector{Field: "changes"},
+	); err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, err
+	}
+	// The generation ran with the dependency as cwd, so its changeset is rooted
+	// at the module (paths like "dagger.gen.go"). Re-root it under the
+	// dependency's workspace path so the accumulated changeset is
+	// workspace-root-relative and overlays at the right location.
+	depChanges, err = rerootChangesetUnder(ctx, dag, depChanges, depPath)
+	if err != nil {
+		return dagql.ObjectResult[*core.Changeset]{}, fmt.Errorf("reroot changeset under %q: %w", depPath, err)
+	}
+	return depChanges, nil
+}
+
+// rerootChangesetUnder returns changes with every path prefixed by dir, turning
+// a changeset rooted at a module (cwd-scoped generation) into a
+// workspace-root-relative one.
+func rerootChangesetUnder(
+	ctx context.Context,
+	dag *dagql.Server,
+	changes dagql.ObjectResult[*core.Changeset],
+	dir string,
+) (dagql.ObjectResult[*core.Changeset], error) {
+	if dir == "" || dir == "." {
+		return changes, nil
+	}
+	nest := func(d dagql.ObjectResult[*core.Directory]) (dagql.ObjectResult[*core.Directory], error) {
+		id, err := d.ID()
+		if err != nil {
+			return d, err
+		}
+		var out dagql.ObjectResult[*core.Directory]
+		err = dag.Select(ctx, dag.Root(), &out,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(dir)},
+				{Name: "source", Value: dagql.NewID[*core.Directory](id)},
+			}},
+		)
+		return out, err
+	}
+	newBefore, err := nest(changes.Self().Before)
+	if err != nil {
+		return changes, err
+	}
+	newAfter, err := nest(changes.Self().After)
+	if err != nil {
+		return changes, err
+	}
+	newBeforeID, err := newBefore.ID()
+	if err != nil {
+		return changes, err
+	}
+	var rerooted dagql.ObjectResult[*core.Changeset]
+	if err := dag.Select(ctx, newAfter, &rerooted, dagql.Selector{
+		Field: "changes",
+		Args:  []dagql.NamedInput{{Name: "from", Value: dagql.NewID[*core.Directory](newBeforeID)}},
+	}); err != nil {
+		return changes, err
+	}
+	return rerooted, nil
+}
+
+// localDepClosureLeafFirst returns src's transitive local (non-git) dependency
+// closure in leaf-first order (a dependency appears before any module that
+// depends on it), excluding src itself. Modules are deduplicated by their
 // workspace-relative source root path.
 func localDepClosureLeafFirst(src dagql.ObjectResult[*core.ModuleSource]) []dagql.ObjectResult[*core.ModuleSource] {
 	visited := map[string]bool{}
@@ -3040,7 +3152,11 @@ func localDepClosureLeafFirst(src dagql.ObjectResult[*core.ModuleSource]) []dagq
 	var visit func(s dagql.ObjectResult[*core.ModuleSource])
 	visit = func(s dagql.ObjectResult[*core.ModuleSource]) {
 		for _, dep := range s.Self().Dependencies {
-			if dep.Self() == nil || dep.Self().Kind != core.ModuleSourceKindLocal {
+			// Skip only remote (git) dependencies — they are committed and pinned.
+			// In-workspace deps may be LOCAL_SOURCE (host-loaded) or DIR_SOURCE
+			// (resolved from the workspace root directory, e.g. via
+			// workspace.moduleSource), and both need regeneration.
+			if dep.Self() == nil || dep.Self().Kind == core.ModuleSourceKindGit {
 				continue
 			}
 			key := dep.Self().SourceRootSubpath
@@ -3067,21 +3183,25 @@ func scopedStagedWorkspace(
 	acc dagql.ObjectResult[*core.Changeset],
 	overlay bool,
 ) (dagql.ObjectResult[*core.Workspace], error) {
-	scoped := base.Self().Clone()
-	scoped.Cwd = cwd
-	scopedInst, err := dagql.NewObjectResultForCurrentCall(ctx, dag, scoped)
-	if err != nil {
-		return scopedInst, err
+	// Build through the withCwd/withChanges fields (not NewObjectResultForCurrentCall)
+	// so the result stays an attached dagql result whose ID resolves when passed
+	// to generators(withWorkspace:).
+	var scoped dagql.ObjectResult[*core.Workspace]
+	if err := dag.Select(ctx, base, &scoped, dagql.Selector{
+		Field: "withCwd",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(cwd)}},
+	}); err != nil {
+		return scoped, err
 	}
 	if !overlay {
-		return scopedInst, nil
+		return scoped, nil
 	}
 	accID, err := acc.ID()
 	if err != nil {
-		return scopedInst, err
+		return scoped, err
 	}
 	var staged dagql.ObjectResult[*core.Workspace]
-	if err := dag.Select(ctx, scopedInst, &staged, dagql.Selector{
+	if err := dag.Select(ctx, scoped, &staged, dagql.Selector{
 		Field: "withChanges",
 		Args: []dagql.NamedInput{
 			{Name: "changes", Value: dagql.NewID[*core.Changeset](accID)},

@@ -138,6 +138,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("changes").Doc("Changes to apply."),
 			),
+		dagql.NodeFunc("withCwd", s.withCwd).
+			View(AfterVersion("v1.0.0-0")).
+			Doc("Return this workspace with its cwd pointed at the given workspace-relative path.").
+			Args(
+				dagql.Arg("path").Doc("Workspace-relative path to use as the cwd."),
+			),
 		dagql.NodeFunc("withModule", s.withModule).
 			View(AfterVersion("v1.0.0-0")).
 			Doc("Return this workspace with a module installed in its config.").
@@ -1111,6 +1117,22 @@ func (s *workspaceSchema) withChanges(
 		})
 		return updated, err
 	}, nil)
+}
+
+func (s *workspaceSchema) withCwd(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Path string
+	},
+) (dagql.ObjectResult[*core.Workspace], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	ws := parent.Self().Clone()
+	ws.Cwd = cleanWorkspaceRelPath(args.Path)
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
 func (s *workspaceSchema) changes(
