@@ -568,7 +568,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 		if m.TrustedSource {
 			// Trust the committed lockfile: fail loudly if it's stale
 			// instead of silently re-resolving.
-			syncArgs = append(syncArgs, "--frozen")
+			syncArgs = append(syncArgs, "--locked")
 		}
 		// While best practice is to sync dependencies first with only pyproject.toml and
 		// uv.lock, user projects can have more required files for a minimally successful

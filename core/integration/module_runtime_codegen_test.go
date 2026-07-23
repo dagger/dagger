@@ -151,6 +151,11 @@ func (RuntimeCodegenSuite) TestPythonTrustedFilesUsed(ctx context.Context, t *te
 	c := connect(ctx, t)
 
 	generated := moduleFixture(t, c, "python/minimal").
+		WithoutFile("dagger.json").
+		WithNewFile("dagger.toml", `[modules.minimal]
+source = "."
+entrypoint = true
+`).
 		With(configFile(".", &modules.ModuleConfig{
 			Name:          "minimal",
 			EngineVersion: modules.EngineVersionLatest,
@@ -170,4 +175,57 @@ func (RuntimeCodegenSuite) TestPythonTrustedFilesUsed(ctx context.Context, t *te
 		Sync(ctx)
 	requireErrOut(t, err, "generated file")
 	requireErrOut(t, err, "run `dagger generate`")
+}
+
+// A trusted Python module must reject project metadata that no longer matches
+// its committed lockfile. Otherwise a dependency added to pyproject.toml can
+// be silently omitted from the runtime environment until codegen is rerun.
+func (RuntimeCodegenSuite) TestPythonTrustedRejectsStaleLockfile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	generated, err := moduleFixture(t, c, "python/minimal").
+		WithoutFile("dagger.json").
+		WithNewFile("dagger.toml", `[modules.minimal]
+source = "."
+entrypoint = true
+`).
+		With(configFile(".", &modules.ModuleConfig{
+			Name:          "minimal",
+			EngineVersion: modules.EngineVersionLatest,
+			SDK:           &modules.SDK{Source: "python"},
+		})).
+		// Existing uv-managed modules already have a lockfile; codegen
+		// refreshes it rather than introducing one into an existing project.
+		WithNewFile("uv.lock", `version = 1
+revision = 3
+requires-python = ">=3.13"
+`).
+		With(daggerQuery(`{moduleSource(refString:"."){generatedContextDirectory{export(path:".")}}}`)).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	lock, err := generated.File("uv.lock").Contents(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, lock, `name = "numpy"`)
+
+	generated = generated.
+		// Deliberately change the project dependencies without regenerating
+		// uv.lock. The committed lockfile still describes only dagger-io.
+		WithNewFile("pyproject.toml", `[project]
+name = "minimal"
+version = "0.0.0"
+requires-python = ">=3.13"
+dependencies = ["dagger-io", "numpy"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
+`)
+
+	_, err = generated.With(daggerCall("hello")).Sync(ctx)
+	requireErrOut(t, err, "lockfile")
+	requireErrOut(t, err, "needs to be updated")
 }
