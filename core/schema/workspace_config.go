@@ -100,32 +100,43 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return readWorkspaceFileBytes(ctx, ws, configFile)
+}
+
+// readWorkspaceFileBytes reads a workspace-root-relative file across every
+// workspace source backing: an in-memory source directory, a host workspace
+// (with any pending overlay edit for that path taking precedence over the host
+// file), or a remote rootfs.
+func readWorkspaceFileBytes(ctx context.Context, ws *core.Workspace, relPath string) ([]byte, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
 
 	if rootfs, ok := ws.SourceDirectory(); ok && rootfs.Self() != nil {
-		data, err := core.DirectoryReadFile(ctx, rootfs, configFile)
+		data, err := core.DirectoryReadFile(ctx, rootfs, relPath)
 		if err != nil {
-			return nil, fmt.Errorf("reading config: %w", err)
+			return nil, fmt.Errorf("reading %s: %w", relPath, err)
 		}
 		return data, nil
 	}
 
 	if ws.HostPath() != "" {
-		// Host overlay edits to the config live only in the changeset's delta
-		// side (host overlays store no full read root — see overlayEdit);
-		// untouched configs read straight from the host file below.
-		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok && ws.OverlayPathTouched(configFile) {
-			data, err := core.DirectoryReadFile(ctx, deltaRoot, configFile)
+		// Host overlay edits live only in the changeset's delta side (host
+		// overlays store no full read root — see overlayEdit); untouched files
+		// read straight from the host file below.
+		if deltaRoot, ok := ws.OverlayDeltaRoot(); ok && ws.OverlayPathTouched(relPath) {
+			data, err := core.DirectoryReadFile(ctx, deltaRoot, relPath)
 			if err != nil {
-				return nil, fmt.Errorf("reading config: %w", err)
+				return nil, fmt.Errorf("reading %s: %w", relPath, err)
 			}
 			return data, nil
 		}
 
-		ctx, err = withWorkspaceClientContext(ctx, ws)
+		ctx, err := withWorkspaceClientContext(ctx, ws)
 		if err != nil {
 			return nil, err
 		}
-		configPath, err := workspaceHostPath(ws, configFile)
+		hostPath, err := workspaceHostPath(ws, relPath)
 		if err != nil {
 			return nil, err
 		}
@@ -134,9 +145,9 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 			return nil, err
 		}
 
-		data, err := bk.ReadCallerHostFile(ctx, configPath)
+		data, err := bk.ReadCallerHostFile(ctx, hostPath)
 		if err != nil {
-			return nil, fmt.Errorf("reading config: %w", err)
+			return nil, fmt.Errorf("reading %s: %w", relPath, err)
 		}
 		return data, nil
 	}
@@ -145,9 +156,9 @@ func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
 	if rootfs.Self() == nil {
 		return nil, fmt.Errorf("workspace has no host path or rootfs")
 	}
-	data, err := core.DirectoryReadFile(ctx, rootfs, configFile)
+	data, err := core.DirectoryReadFile(ctx, rootfs, relPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading config: %w", err)
+		return nil, fmt.Errorf("reading %s: %w", relPath, err)
 	}
 	return data, nil
 }

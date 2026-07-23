@@ -410,6 +410,100 @@ func (m *ClientGeneratorFixture) GenerateClients(ctx context.Context) (*dagger.C
 	require.Equal(t, ".\n\n", two)
 }
 
+// TestSDKGeneratorModulesLeafFirst verifies that currentModule.asSDK.modules is
+// returned leaf-first: a workspace-managed module's locally-managed
+// dependencies come before it, deduplicated, regardless of dagger.toml
+// declaration order. The SDK generator reads asSDK.modules and folds over it in
+// order, so the engine must pre-order the list — no SDK-side sort. Uses a
+// self-contained fixture SDK (no dependency on any production SDK's codegen).
+//
+// Graph (declared a,b,c,d; edges via dagger-module.toml dependencies):
+//
+//	a -> b, a -> c, b -> d, c -> d   (d is a shared diamond dependency)
+//
+// Expected leaf-first output: d, b, c, a (d emitted once, before b and c).
+func (GeneratorsSuite) TestSDKGeneratorModulesLeafFirst(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	managedModule := func(name string, deps ...string) string {
+		toml := "name = \"" + name + "\"\nengineVersion = \"latest\"\nsource = \".\"\n\n[runtime]\nsource = \"go\"\n"
+		for _, dep := range deps {
+			toml += "\n[[dependencies]]\nname = \"" + dep + "\"\nsource = \"../" + dep + "\"\n"
+		}
+		return toml
+	}
+
+	base := goGitBase(t, c).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		With(nonNestedDevEngine(c)).
+		// Declaration order is deliberately NOT leaf-first.
+		WithNewFile("dagger.toml", `[modules.order-fixture]
+source = ".dagger/order-fixture"
+
+[modules.order-fixture.as-sdk]
+name = "fixture"
+
+[[modules.order-fixture.as-sdk.modules]]
+path = ".dagger/modules/a"
+
+[[modules.order-fixture.as-sdk.modules]]
+path = ".dagger/modules/b"
+
+[[modules.order-fixture.as-sdk.modules]]
+path = ".dagger/modules/c"
+
+[[modules.order-fixture.as-sdk.modules]]
+path = ".dagger/modules/d"
+`).
+		WithNewFile(".dagger/modules/a/dagger-module.toml", managedModule("a", "b", "c")).
+		WithNewFile(".dagger/modules/b/dagger-module.toml", managedModule("b", "d")).
+		WithNewFile(".dagger/modules/c/dagger-module.toml", managedModule("c", "d")).
+		WithNewFile(".dagger/modules/d/dagger-module.toml", managedModule("d")).
+		WithNewFile(".dagger/order-fixture/dagger.json", `{
+  "name": "order-fixture",
+  "engineVersion": "latest",
+  "sdk": { "source": "go" },
+  "source": "."
+}`).
+		WithNewFile(".dagger/order-fixture/main.go", `package main
+
+import (
+	"context"
+	"strings"
+
+	"dagger/order-fixture/internal/dagger"
+)
+
+type OrderFixture struct{}
+
+// +generate
+func (m *OrderFixture) GenerateModules(ctx context.Context) (*dagger.Changeset, error) {
+	mods, err := dag.CurrentModule().AsSDK().Modules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	paths := make([]string, 0, len(mods))
+	for _, mod := range mods {
+		path, err := mod.Path(ctx)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+
+	generated := dag.Directory().WithNewFile("order.txt", strings.Join(paths, "\n")+"\n")
+	return generated.Changes(dag.Directory()), nil
+}
+`)
+
+	generated := base.With(daggerExec("generate", "-y"))
+
+	order, err := generated.File("order.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ".dagger/modules/d\n.dagger/modules/b\n.dagger/modules/c\n.dagger/modules/a\n", order)
+}
+
 func (GeneratorsSuite) TestGeneratorGroupChangesSyncWithNestedSDKCodegen(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

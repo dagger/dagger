@@ -3,8 +3,12 @@ package schema
 import (
 	"context"
 	"fmt"
+	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 )
@@ -51,8 +55,12 @@ func (s *moduleSchema) currentModuleAsSDK(
 	}
 
 	result := &core.CurrentModuleAsSDK{Name: sdkName}
-	for _, mod := range entry.AsSDK.Modules {
-		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: mod.Path})
+	orderedModules, err := orderSDKManagedModules(ctx, ws, entry.AsSDK.Modules)
+	if err != nil {
+		return nil, err
+	}
+	for _, modPath := range orderedModules {
+		result.Modules = append(result.Modules, &core.CurrentModuleAsSDKModule{Path: modPath})
 	}
 	for _, client := range entry.AsSDK.Clients {
 		result.Clients = append(result.Clients, &core.CurrentModuleAsSDKClient{
@@ -85,6 +93,46 @@ func (s *moduleSchema) currentModuleAsSDKModules(
 	_ struct{},
 ) ([]*core.CurrentModuleAsSDKModule, error) {
 	return parent.Modules, nil
+}
+
+// orderSDKManagedModules returns the managed module paths ordered leaf-first —
+// a module's locally-managed dependencies before it — so SDK generators that
+// fold over asSDK.modules in list order regenerate dependencies first. It reads
+// each managed module's dagger-module.toml (workspace-root-relative) for its
+// dependency edges; a module whose config can't be read or parsed contributes
+// no edges (treated as a leaf) rather than failing generation for the whole
+// workspace — a genuinely broken config surfaces later at module load.
+func orderSDKManagedModules(
+	ctx context.Context,
+	ws *core.Workspace,
+	managed []workspace.SDKManagedModule,
+) ([]string, error) {
+	nodes := make([]workspace.SDKManagedModuleConfig, 0, len(managed))
+	for _, m := range managed {
+		nodes = append(nodes, workspace.SDKManagedModuleConfig{
+			Path:   m.Path,
+			Config: readManagedModuleConfig(ctx, ws, m.Path),
+		})
+	}
+	return workspace.OrderSDKModulesLeafFirst(nodes)
+}
+
+func readManagedModuleConfig(ctx context.Context, ws *core.Workspace, modPath string) *modules.ModuleConfig {
+	// Boundary guard: never read a config outside the workspace root, so an
+	// absolute or root-escaping managed path degrades to a leaf.
+	cleaned := path.Clean(filepath.ToSlash(modPath))
+	if path.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return nil
+	}
+	data, err := readWorkspaceFileBytes(ctx, ws, path.Join(modPath, modules.Filename))
+	if err != nil {
+		return nil
+	}
+	modCfg, err := modules.ParseModuleConfigForFilename(data, modules.Filename)
+	if err != nil {
+		return nil
+	}
+	return &modCfg.ModuleConfig
 }
 
 func (s *moduleSchema) currentModuleAsSDKClients(
