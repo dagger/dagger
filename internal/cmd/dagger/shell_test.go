@@ -87,6 +87,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 		SetSidebarContentFunc: func(sec idtui.SidebarSection) {
 			sidebarContent[sec.Title] = sec
 		},
+		SetStatusLineFunc: func(idtui.StatusLineData) {},
 	})
 
 	require.NoError(t, handler.Initialize(ctx))

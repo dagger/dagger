@@ -206,12 +206,10 @@ func (h *shellCallHandler) BranchFromID(ctx context.Context, encodedID string, s
 			}
 		}
 
+		// updateLLM also refreshes the status line for the branched-to state.
 		if err := s.updateLLM(loadedLLM); err != nil {
 			slog.Error("failed to update LLM for branch", "error", err)
 			return
-		}
-		if err := s.updateStatusLine(loadedLLM); err != nil {
-			slog.Error("failed to update sidebar for branch", "error", err)
 		}
 		// Branching creates a new session; clear the save identity so the next
 		// prompt generates a fresh save file rather than overwriting the
@@ -778,8 +776,11 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, ev uv.KeyPressEvent
 		}
 	case key.MatchString("ctrl+x"):
 		if h.llmSession != nil {
-			h.llmSession.ToggleAutocompact()
-			return noop
+			// Run async: ToggleAutocompact refreshes the status line, which
+			// makes engine round-trips we don't want on the input goroutine.
+			return func() {
+				h.llmSession.ToggleAutocompact()
+			}
 		}
 	case key.MatchString("ctrl+s"):
 		if h.llmSession != nil {

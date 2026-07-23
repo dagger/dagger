@@ -159,6 +159,14 @@ func (s *LLMSession) ToggleAutocompact() {
 	s.autoCompactL.Lock()
 	s.autoCompact = !s.autoCompact
 	s.autoCompactL.Unlock()
+	// Refresh the status line so its "(auto)" tag reflects the new state.
+	// Done after releasing autoCompactL, since updateStatusLine reads it back
+	// via ShouldAutocompact.
+	if s.llm != nil {
+		if err := s.updateStatusLine(s.llm); err != nil {
+			slog.Error("failed to update status line after toggling auto-compact", "error", err)
+		}
+	}
 }
 
 func (s *LLMSession) reset() {
@@ -222,10 +230,6 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			return s, err
 		}
 
-		if err := s.updateStatusLine(prompted); err != nil {
-			return s, err
-		}
-
 		// In --debug, surface how much this step grew the context, so spikes
 		// (e.g. a tool dumping a huge result) are visible between steps.
 		s.reportContextUsage(ctx, prompted)
@@ -276,7 +280,13 @@ func (s *LLMSession) updateLLM(llm *dagger.LLM) error {
 		return err
 	}
 	s.model = model
-	return nil
+
+	// Refresh the status line (and changes preview) so its token/cost/context
+	// stats stay in sync with the LLM. Routing this through updateLLM means
+	// every operation that swaps the session's LLM -- prompt turns, .clear,
+	// .compact, .model, branching, resuming -- keeps the status line current
+	// without each call site having to remember to refresh it.
+	return s.updateStatusLine(s.llm)
 }
 
 // subscriptionLabel returns a display label for the OAuth subscription type of
@@ -832,10 +842,8 @@ func (s *LLMSession) LoadSession(ctx, replayCtx context.Context, sessionID strin
 		loadedLLM = loadedLLM.WithSystemPrompt(cue)
 	}
 
-	if err := s.updateLLM(loadedLLM); err != nil {
-		return err
-	}
-	return s.updateStatusLine(loadedLLM)
+	// updateLLM refreshes the status line from the restored conversation's stats.
+	return s.updateLLM(loadedLLM)
 }
 
 // conflictMarkerCue reports whether restoring the session left conflict
