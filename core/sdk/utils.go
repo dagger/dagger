@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"golang.org/x/mod/semver"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/sdk/sdkmeta"
@@ -18,10 +20,20 @@ func IsModuleSDKBuiltin(module string) bool {
 }
 
 // useRuntimeCodegen reports whether the runtime may regenerate the module's
-// bindings. Decided by config format alone: dagger.json always (legacy
-// behavior), dagger-module.toml never — it builds from committed files.
+// bindings. dagger.json always does (legacy behavior); dagger-module.toml
+// builds from committed files instead — unless those files predate
+// self-serving bindings: type discovery (getModDef) relies on the generated
+// dispatcher's empty-parentName typedef-registration arm, which bindings
+// generated before v1.0.0-beta.6 don't have, so they cannot answer module
+// loading at all and must be regenerated at runtime. Bindings from any later
+// engine stay trusted as committed — the capability floor is fixed, not
+// relative to the running engine version.
 func useRuntimeCodegen(src dagql.ObjectResult[*core.ModuleSource]) bool {
-	return src.Self().ConfigFilename != modules.Filename
+	if src.Self().ConfigFilename != modules.Filename {
+		// dagger.json: legacy behavior, unconditional runtime codegen.
+		return true
+	}
+	return semver.Compare(src.Self().EngineVersion, engine.MinimumSelfServingBindingsModuleVersion) < 0
 }
 
 func scopeSourceForSDKOperation(
