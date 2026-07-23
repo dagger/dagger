@@ -120,6 +120,14 @@ func (r *TypescriptSDK) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// TypescriptSDKModuleRuntimeOpts contains options for TypescriptSDK.ModuleRuntime
+type TypescriptSDKModuleRuntimeOpts struct {
+	// introspectionJSON is omitted by the engine when the module opts out of
+	// runtime codegen (codegen.automaticGitignore=false). A nil value selects
+	// the no-codegen path: the committed generated files are trusted as-is.
+	IntrospectionJSON *File
+}
+
 // ModuleRuntime implements the `ModuleRuntime` method from the SDK module interface.
 //
 // It returns a ready to call container with the correct node, bun or deno runtime setup.
@@ -128,25 +136,16 @@ func (r *TypescriptSDK) UnmarshalJSON(bs []byte) error {
 //
 // The returned container has the codegen freshly generated and any necessary dependency
 // installed.
-func (r *TypescriptSDK) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
+func (r *TypescriptSDK) ModuleRuntime(modSource *ModuleSource, opts ...TypescriptSDKModuleRuntimeOpts) *Container {
 	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
 	q := r.query.Select("moduleRuntime")
-	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
-
-	return &Container{
-		query: q,
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `introspectionJson` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IntrospectionJSON) {
+			q = q.Arg("introspectionJson", opts[i].IntrospectionJSON)
+		}
 	}
-}
-
-func (r *TypescriptSDK) ModuleTypes(modSource *ModuleSource, introspectionJson *File, outputFilePath string) *Container {
-	assertNotNil("modSource", modSource)
-	assertNotNil("introspectionJson", introspectionJson)
-	q := r.query.Select("moduleTypes")
 	q = q.Arg("modSource", modSource)
-	q = q.Arg("introspectionJson", introspectionJson)
-	q = q.Arg("outputFilePath", outputFilePath)
 
 	return &Container{
 		query: q,

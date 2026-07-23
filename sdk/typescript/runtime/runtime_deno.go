@@ -40,6 +40,10 @@ func NewDenoRuntime(
 }
 
 func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, error) {
+	if d.introspectionJSON == nil {
+		return d.setupContainerWithoutCodegen(ctx)
+	}
+
 	var sdkLibrary *dagger.Directory
 	var denoRuntimeWithDep *DenoRuntime
 	var generatedEntrypoint *dagger.File
@@ -105,6 +109,49 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		// Merge source code directory with current directory
 		WithDirectory(".", d.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, generatedEntrypoint).
+		WithEntrypoint([]string{
+			"deno", "run", "-q", "-A", entrypointPath,
+		})
+
+	if d.cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
+	return ctr, nil
+}
+
+// setupContainerWithoutCodegen builds the runtime container when the module
+// opts out of runtime codegen (introspectionJSON not passed): it trusts the
+// committed generated files (sdk/, __dagger.entrypoint.ts, deno.json), installs
+// dependencies and runs the committed entrypoint — no lib generation, no
+// entrypoint generation, no config rewrite.
+func (d *DenoRuntime) setupContainerWithoutCodegen(ctx context.Context) (*dagger.Container, error) {
+	if err := d.cfg.requireGeneratedFiles(ctx); err != nil {
+		return nil, err
+	}
+	if d.cfg.denoJSONConfig == nil {
+		return nil, fmt.Errorf(
+			"module %q has runtime codegen disabled but no deno.json is committed",
+			d.cfg.name)
+	}
+
+	// Trust the committed deno.json as-is (no rewrite).
+	d.ctr = d.ctr.WithFile("deno.json", d.cfg.source.File("deno.json"))
+
+	denoRuntimeWithDep, err := d.withInstalledDependencies().sync(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entrypointPath := filepath.Join(d.cfg.modulePath(), EntrypointExecutableFile)
+
+	ctr := denoRuntimeWithDep.ctr.
+		WithMountedDirectory("node_modules/@dagger.io/dagger", d.cfg.source.Directory(GenDir)).
+		// Overlay the committed tree (sdk/, __dagger.entrypoint.ts, user sources);
+		// node_modules is reinstalled above (deno install --node-modules-dir=auto).
+		WithDirectory(".", d.cfg.source, dagger.ContainerWithDirectoryOpts{
+			Exclude: []string{NodeModulesDir},
+		}).
 		WithEntrypoint([]string{
 			"deno", "run", "-q", "-A", entrypointPath,
 		})

@@ -72,6 +72,7 @@ function serializeFunction(fn: DaggerFunction | DaggerInterfaceFunction) {
     isCheck: f.isCheck === true,
     isGenerator: f.isGenerator === true,
     isUp: f.isUp === true,
+    location: f.getLocation(),
     returnType: f.returnType ? serializeType(f.returnType) : undefined,
     arguments: Object.values(f.arguments).map(serializeArgument),
   }
@@ -90,6 +91,7 @@ function serializeArgument(arg: DaggerArgument) {
     defaultPath: arg.defaultPath,
     defaultAddress: arg.defaultAddress,
     ignore: arg.ignore,
+    location: arg.getLocation(),
   }
 }
 
@@ -101,6 +103,7 @@ function serializeProperty(prop: DaggerObjectPropertyBase) {
     deprecated: prop.deprecated,
     isExposed: prop.isExposed === true,
     type: prop.type ? serializeType(prop.type) : undefined,
+    location: prop.getLocation(),
   }
 }
 
@@ -108,11 +111,13 @@ function serializeEnum(enum_: DaggerEnumBase) {
   return {
     name: enum_.name,
     description: enum_.description,
+    location: enum_.getLocation(),
     values: mapValues(enum_.values, (v: DaggerEnumBaseValue) => ({
       name: v.name,
       value: v.value,
       description: v.description,
       deprecated: v.deprecated,
+      location: v.getLocation(),
     })),
   }
 }
@@ -121,6 +126,7 @@ function serializeInterface(iface: DaggerInterface) {
   return {
     name: iface.name,
     description: iface.description,
+    location: iface.getLocation(),
     functions: mapValues(iface.functions, serializeFunction),
   }
 }
