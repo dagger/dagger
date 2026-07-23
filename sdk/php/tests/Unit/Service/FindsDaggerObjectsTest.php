@@ -31,8 +31,10 @@ class FindsDaggerObjectsTest extends TestCase
         yield 'test fixtures' => [
             [
                 Fixture\NoDaggerFunctions::getValueObjectEquivalent(),
+                Fixture\DaggerObjectUsingEnums::getValueObjectEquivalent(),
                 Fixture\DaggerObjectWithDaggerFunctions::getValueObjectEquivalent(),
                 Fixture\Module\Field\MyModule::asValueObject(),
+                Fixture\StringBackedEnum::asValueObject(),
             ],
             __DIR__ . '/../Fixture',
         ];

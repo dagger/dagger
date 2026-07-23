@@ -64,7 +64,13 @@ final readonly class DecodesValue
             case TypeDefKind::VOID_KIND:
                 return null;
             case TypeDefKind::ENUM_KIND:
-                return ($type->name)::from($value);
+                // Engine should be sending the backing value, unquoted, as per GQL
+                // However we are receiving the case's name, quoted.
+                return constant(sprintf(
+                    '%s::%s',
+                    $type->name,
+                    json_decode($value),
+                ));
             case TypeDefKind::INTERFACE_KIND:
                 throw new RuntimeException(sprintf(
                     'Currently cannot decode custom interfaces: %s',

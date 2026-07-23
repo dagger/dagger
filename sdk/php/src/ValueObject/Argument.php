@@ -93,9 +93,14 @@ final readonly class Argument
     {
         if ($parameter->isDefaultValueAvailable()) {
             $default = $parameter->getDefaultValue();
-            return new Json(json_encode(
-                $default instanceof IdAble ? (string) $default->id() : $default
-            ));
+
+            $serialisable = match (true) {
+                $default instanceof IdAble => (string) $default->id(),
+                $default instanceof \BackedEnum => $default->name,
+                default => $default,
+            };
+
+            return new Json(json_encode($serialisable));
         }
 
         if ($parameter->allowsNull()) {

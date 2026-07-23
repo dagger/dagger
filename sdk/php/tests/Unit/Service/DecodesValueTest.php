@@ -4,6 +4,7 @@ namespace Dagger\Tests\Unit\Service;
 
 use Dagger\Client;
 use Dagger\Service\DecodesValue;
+use Dagger\Tests\Unit\Fixture;
 use Dagger\ValueObject\ListOfType;
 use Dagger\ValueObject\Type;
 use Generator;
@@ -20,6 +21,7 @@ class DecodesValueTest extends TestCase
     #[Test]
     #[DataProvider('provideScalars')]
     #[DataProvider('provideLists')]
+    #[DataProvider('provideEnums')]
     public function itDecodesScalarsAndLists(
         mixed $expected,
         string $value,
@@ -127,5 +129,21 @@ class DecodesValueTest extends TestCase
             new ListOfType(new Type('string', false), false),
         ];
 
+    }
+
+    /**
+     * @return \Generator<array{string, string, Type}>
+     */
+    public static function provideEnums(): Generator
+    {
+        $stringBackedEnum = new Type(Fixture\StringBackedEnum::class);
+
+        foreach(Fixture\StringBackedEnum::cases() as $case) {
+            yield sprintf('nonsense word: %s', $case->value) => [
+                $case,
+                sprintf('"%s"', $case->name),
+                $stringBackedEnum,
+            ];
+        }
     }
 }
