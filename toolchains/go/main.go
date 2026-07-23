@@ -83,18 +83,27 @@ func New(
 	// +default=10
 	limit int,
 
-	// Git repository for VCS info injection. When non-nil, the HEAD commit
-	// and uncommitted state are stamped into the binary via -ldflags
-	// against github.com/dagger/go/buildinfo's Injected* package vars so it
-	// self-reports VCS info at runtime via runtime/debug.ReadBuildInfo —
-	// without needing .git inside the build container.
+	// Workspace whose git HEAD commit and dirty state are stamped into built
+	// binaries as VCS info (see the stamping block in New).
 	//
-	// TODO: switch to Workspace.git (PR dagger/dagger#13074) once we depend
-	// on Dagger >= 1.0.0-beta.2. Workspace.git is lazier (no full repo
-	// upload), supports nested workspaces, and will expose commit time.
+	// The engine only auto-injects a Workspace on a *direct* client call;
+	// module-runtime callers don't inherit it. Rather than forward the
+	// Workspace (a session-scoped resource that would taint this build's cache
+	// key and break disk-cache reuse across engine restarts), parent
+	// toolchains resolve it to the scalar vcsCommit/vcsDirty below, which take
+	// precedence over ws. Omitted → no stamping.
 	//
 	// +optional
-	repo *dagger.GitRepository,
+	ws *dagger.Workspace,
+
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
+	// precedence over ws so the Workspace never enters this build's cache key.
+	// +optional
+	vcsCommit string,
+
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	// +optional
+	vcsDirty bool,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
@@ -138,7 +147,31 @@ func New(
 			WithMountedCache("/root/.cache/go-build", buildCache).
 			WithWorkdir("/app")
 	}
-	values = appendVCSValues(ctx, values, repo)
+	// Stamp git commit / dirty state into built binaries as VCS info, via
+	// -ldflags into the Dagger buildinfo package's Injected* vars. Prefer the
+	// scalars a parent toolchain resolved for us; otherwise resolve the
+	// auto-injected workspace (a direct call). Errors are swallowed — the
+	// build proceeds with whatever we collected. Only the resolved strings are
+	// ever stamped, never the Workspace itself, so the build stays
+	// content-addressed and its result survives an engine restart.
+	if vcsCommit == "" && ws != nil {
+		git := ws.Git()
+		if commit, err := git.Head().Commit(ctx); err == nil {
+			vcsCommit = commit
+			if clean, err := git.Uncommitted().IsEmpty(ctx); err == nil {
+				vcsDirty = !clean
+			}
+		}
+	}
+	if vcsCommit != "" {
+		values = append(values,
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCS=git",
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSRevision="+vcsCommit,
+			"github.com/dagger/dagger/internal/version/buildinfo.InjectedVCSModified="+strconv.FormatBool(vcsDirty),
+		)
+		// TODO: also inject InjectedVCSTime once a Workspace.git commit-time
+		// accessor is available.
+	}
 	return &Go{
 		Version:     version,
 		Source:      source,
@@ -153,33 +186,6 @@ func New(
 		Experiment:  experiment,
 		Limit:       limit,
 	}
-}
-
-// appendVCSValues appends -X ldflag values that populate
-// github.com/dagger/go/buildinfo's Injected* package vars from the supplied
-// GitRepository, so binaries built by this module self-report VCS info via
-// runtime/debug.ReadBuildInfo. Inspection errors are swallowed silently —
-// builds proceed with whatever VCS info we managed to collect (possibly none).
-func appendVCSValues(ctx context.Context, values []string, repo *dagger.GitRepository) []string {
-	if repo == nil {
-		return values
-	}
-	commit, err := repo.Head().Commit(ctx)
-	if err != nil {
-		return values
-	}
-	values = append(values,
-		"github.com/dagger/go/buildinfo.InjectedVCS=git",
-		"github.com/dagger/go/buildinfo.InjectedVCSRevision="+commit,
-	)
-	clean, err := repo.Uncommitted().IsEmpty(ctx)
-	if err != nil {
-		return values
-	}
-	values = append(values,
-		"github.com/dagger/go/buildinfo.InjectedVCSModified="+strconv.FormatBool(!clean),
-	)
-	return values
 }
 
 // A Go project

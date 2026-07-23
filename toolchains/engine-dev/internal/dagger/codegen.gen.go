@@ -130,6 +130,8 @@ func (r *Env) WithCodegenOutput(name string, description string) *Env { // codeg
 // CodegenOpts contains options for Query.Codegen
 type CodegenOpts struct {
 	Source *Directory // codegen (../../../../:0:0)
+
+	Ws *Workspace // codegen (../../../../:0:0)
 }
 
 func (r *Query) Codegen(opts ...CodegenOpts) *Codegen { // codegen (../../../../:0:0)
@@ -138,6 +140,10 @@ func (r *Query) Codegen(opts ...CodegenOpts) *Codegen { // codegen (../../../../
 		// `source` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Source) {
 			q = q.Arg("source", opts[i].Source)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

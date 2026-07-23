@@ -266,8 +266,16 @@ type CliDevOpts struct {
 	// from the embedded internal/version/VERSION file regardless of what's
 	// passed here; this is for publish-time metadata only.
 	Version string
-	// Git repository for VCS info injection.
-	Repo *GitRepository
+	// Workspace whose git info stamps the CLI's VCS metadata. Auto-injected
+	// when cli-dev is called directly; a parent toolchain (e.g. engine-dev)
+	// instead resolves it to the scalar vcsCommit/vcsDirty below and forwards
+	// those, so the session-scoped Workspace never taints the cached build.
+	Ws *Workspace
+	// Resolved VCS commit to stamp, forwarded by a parent toolchain. Takes
+	// precedence over ws.
+	VcsCommit string
+	// Resolved VCS dirty state to stamp, paired with vcsCommit.
+	VcsDirty bool
 }
 
 func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../:0:0)
@@ -289,9 +297,17 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../:0:
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
 		}
-		// `repo` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Repo) {
-			q = q.Arg("repo", opts[i].Repo)
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
+		}
+		// `vcsCommit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsCommit) {
+			q = q.Arg("vcsCommit", opts[i].VcsCommit)
+		}
+		// `vcsDirty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].VcsDirty) {
+			q = q.Arg("vcsDirty", opts[i].VcsDirty)
 		}
 	}
 

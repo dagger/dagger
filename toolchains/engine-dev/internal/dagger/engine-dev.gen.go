@@ -766,6 +766,14 @@ type EngineDevOpts struct {
 	// A docker config file with credentials to install on clients,
 	// to ensure they can access private registries
 	ClientDockerConfig *Secret
+	// Workspace whose git HEAD commit and dirty state stamp the built
+	// engine/CLI VCS info. Auto-injected when engine-dev is called directly;
+	// when it's a dependency the caller must forward it. It is resolved to
+	// scalar commit/dirty values here and never stored: keeping a Workspace
+	// field would taint the cache key of every EngineDev method (a
+	// session-scoped resource), which would break disk-cache reuse across
+	// engine restarts.
+	Ws *Workspace
 }
 
 func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../../../../:0:0)
@@ -782,6 +790,10 @@ func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../
 		// `clientDockerConfig` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ClientDockerConfig) {
 			q = q.Arg("clientDockerConfig", opts[i].ClientDockerConfig)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

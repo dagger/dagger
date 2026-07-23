@@ -132,6 +132,10 @@ func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...Doc
 type DocsDevReferencesOpts struct {
 	// Dagger version to generate API docs for
 	Version string
+	// Workspace forwarded to engine-dev for VCS stamping (References is the
+	// only docs-dev method that builds). Auto-injected on a direct call;
+	// dependencies don't inherit it.
+	Ws *Workspace
 }
 
 // Regenerate the API schema and CLI reference docs
@@ -141,6 +145,10 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset {
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+		// `ws` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ws) {
+			q = q.Arg("ws", opts[i].Ws)
 		}
 	}
 

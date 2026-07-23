@@ -26,6 +26,7 @@ type PhpSdkDev struct {
 	DoctumConfigPath   string            // +private
 	SourcePath         string            // +private
 	ClientDockerConfig *dagger.Secret    // +private
+	Ws                 *dagger.Workspace // +private
 }
 
 // Develop the Dagger PHP SDK (experimental)
@@ -43,6 +44,9 @@ func New(
 	// A docker config file with credentials to install on clients.
 	// +optional
 	clientDockerConfig *dagger.Secret,
+	// Workspace forwarded to engine-dev for VCS stamping. Auto-injected on a
+	// direct call; dependencies don't inherit it, so callers must forward it.
+	ws *dagger.Workspace,
 ) *PhpSdkDev {
 	return &PhpSdkDev{
 		Workspace:          workspaceDir,
@@ -50,6 +54,7 @@ func New(
 		SourcePath:         sourcePath,
 		DoctumConfigPath:   doctumConfigPath,
 		ClientDockerConfig: clientDockerConfig,
+		Ws:                 ws,
 	}
 }
 
@@ -74,6 +79,7 @@ func (t PhpSdkDev) BaseContainer() *dagger.Container {
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine(dagger.DaggerEngineOpts{
 				ClientDockerConfig: t.ClientDockerConfig,
+				Ws:                 t.Ws,
 			}).InstallClient(c)
 		})
 }
