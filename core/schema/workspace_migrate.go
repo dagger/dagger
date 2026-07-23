@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -24,6 +25,12 @@ type workspaceMigrationPlanBundle struct {
 	WorkspacePlans          []*workspace.MigrationPlan
 	ParentPlans             []workspaceMigrationParentPlan
 	ModuleConfigConversions []workspaceMigrationModuleConfigConversion
+	GitignoreCleanups       []workspaceMigrationGitignoreCleanup
+}
+
+type workspaceMigrationGitignoreCleanup struct {
+	Path    string
+	Entries []string
 }
 
 type workspaceMigrationLegacyLockMove struct {
@@ -114,12 +121,15 @@ func (s *workspaceSchema) migrate(
 	if err != nil {
 		return nil, err
 	}
+	gitignoreCleanups, gitignoreWarnings := s.workspaceMigrationGitignoreCleanups(ctx, ws, compatWorkspaces)
 	planBundle := workspaceMigrationPlanBundle{
 		WorkspacePlans:          plans,
 		ParentPlans:             parentPlans,
 		ModuleConfigConversions: moduleConfigConversions,
+		GitignoreCleanups:       gitignoreCleanups,
 	}
 	warnings := workspaceMigrationPlanBundleWarnings(planBundle)
+	warnings = append(warnings, gitignoreWarnings...)
 	warnings = append(warnings, discoveryWarnings...)
 
 	if planBundle.empty() {
@@ -144,6 +154,94 @@ func (s *workspaceSchema) migrate(
 				Changes:     changes,
 			},
 		},
+	}, nil
+}
+
+func (s *workspaceSchema) workspaceMigrationGitignoreCleanups(
+	ctx context.Context,
+	ws *core.Workspace,
+	compatWorkspaces []*workspace.CompatWorkspace,
+) ([]workspaceMigrationGitignoreCleanup, []string) {
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("could not prepare legacy .gitignore cleanup: %v", err)}
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("could not prepare legacy .gitignore cleanup: %v", err)}
+	}
+
+	cleanups := make([]workspaceMigrationGitignoreCleanup, 0, len(compatWorkspaces))
+	warnings := make([]string, 0)
+	for _, compatWorkspace := range compatWorkspaces {
+		if compatWorkspace == nil || compatWorkspace.Config == nil || compatWorkspace.Config.SDK == nil {
+			continue
+		}
+		cleanup, err := s.workspaceMigrationGitignoreCleanup(ctx, srv, ws, compatWorkspace)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf(
+				"could not clean legacy .gitignore for module %q: %v",
+				compatWorkspace.Config.Name,
+				err,
+			))
+			continue
+		}
+		if cleanup != nil {
+			cleanups = append(cleanups, *cleanup)
+		}
+	}
+	return cleanups, warnings
+}
+
+func (s *workspaceSchema) workspaceMigrationGitignoreCleanup(
+	ctx context.Context,
+	srv *dagql.Server,
+	ws *core.Workspace,
+	compatWorkspace *workspace.CompatWorkspace,
+) (*workspaceMigrationGitignoreCleanup, error) {
+	var source dagql.ObjectResult[*core.ModuleSource]
+	if err := srv.Select(ctx, srv.Root(), &source, dagql.Selector{
+		Field: "moduleSource",
+		Args: []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(compatWorkspace.ProjectRoot)},
+			{Name: "disableFindUp", Value: dagql.Boolean(true)},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("load legacy module source: %w", err)
+	}
+
+	sourceSchema := &moduleSourceSchema{}
+	generatedCode, err := sourceSchema.runSDKCodegen(ctx, source)
+	if err != nil {
+		var missingImpl ErrSDKCodegenNotImplemented
+		if errors.As(err, &missingImpl) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	entries := make([]string, 0, len(generatedCode.VCSIgnoredPaths))
+	for _, ignore := range generatedCode.VCSIgnoredPaths {
+		if ignoresGeneratedPath(ignore, generatedCode.VCSGeneratedPaths) {
+			entries = append(entries, "/"+strings.TrimPrefix(ignore, "/"))
+		}
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	projectRoot, err := workspaceMigrationProjectRootRelPath(ws, compatWorkspace.ProjectRoot)
+	if err != nil {
+		return nil, err
+	}
+	sourcePath := compatWorkspace.Config.Source
+	if sourcePath != "" && !filepath.IsLocal(sourcePath) {
+		return nil, fmt.Errorf("module source path %q escapes its project", sourcePath)
+	}
+
+	return &workspaceMigrationGitignoreCleanup{
+		Path:    filepath.Join(projectRoot, sourcePath, ".gitignore"),
+		Entries: entries,
 	}, nil
 }
 
@@ -615,6 +713,10 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	if err != nil {
 		return nil, err
 	}
+	updatedDir, err = applyWorkspaceMigrationGitignoreCleanups(ctx, updatedDir, plans.GitignoreCleanups)
+	if err != nil {
+		return nil, err
+	}
 	updatedDir, err = applyWorkspaceMigrationWorkspacePlans(ctx, ws, updatedDir, plans.WorkspacePlans)
 	if err != nil {
 		return nil, err
@@ -639,6 +741,62 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, fmt.Errorf("migration changeset: %w", err)
 	}
 	return changes.Self(), nil
+}
+
+func applyWorkspaceMigrationGitignoreCleanups(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	cleanups []workspaceMigrationGitignoreCleanup,
+) (dagql.ObjectResult[*core.Directory], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dir, err
+	}
+	for _, cleanup := range cleanups {
+		stat, err := dir.Self().Stat(ctx, dir, srv, cleanup.Path, true)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return dir, fmt.Errorf("stat legacy gitignore %q: %w", cleanup.Path, err)
+		}
+
+		contents, err := core.DirectoryReadFile(ctx, dir, cleanup.Path)
+		if err != nil {
+			return dir, fmt.Errorf("read legacy gitignore %q: %w", cleanup.Path, err)
+		}
+		updatedContents := removeWorkspaceMigrationGitignoreEntries(contents, cleanup.Entries)
+		if bytes.Equal(contents, updatedContents) {
+			continue
+		}
+
+		dir, err = workspaceMigrationSelectDirectory(ctx, dir, "withNewFile", []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(cleanup.Path)))},
+			{Name: "contents", Value: dagql.String(updatedContents)},
+			{Name: "permissions", Value: dagql.Int(stat.Permissions)},
+		})
+		if err != nil {
+			return dir, fmt.Errorf("rewrite legacy gitignore %q: %w", cleanup.Path, err)
+		}
+	}
+	return dir, nil
+}
+
+func removeWorkspaceMigrationGitignoreEntries(contents []byte, entries []string) []byte {
+	remove := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		remove[entry] = struct{}{}
+	}
+
+	updated := make([]byte, 0, len(contents))
+	for _, line := range bytes.SplitAfter(contents, []byte("\n")) {
+		value := strings.TrimSuffix(strings.TrimSuffix(string(line), "\n"), "\r")
+		if _, ok := remove[value]; ok {
+			continue
+		}
+		updated = append(updated, line...)
+	}
+	return updated
 }
 
 func applyWorkspaceMigrationLegacyLockMoves(
