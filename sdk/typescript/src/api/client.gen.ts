@@ -16307,6 +16307,15 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Return this workspace with its cwd pointed at the given workspace-relative path.
+   * @param path Workspace-relative path to use as the cwd.
+   */
+  withCwd = (path: string): Workspace => {
+    const ctx = this._ctx.select("withCwd", { path })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return this workspace with a generated API client initialized.
    * @param path Workspace-relative output directory for the generated client.
    * @param sdk Workspace SDK name or module entry name to use.

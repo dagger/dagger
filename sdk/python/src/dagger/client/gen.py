@@ -17164,6 +17164,21 @@ class Workspace(Type):
         _ctx = self._select("withConfigValue", _args)
         return Workspace(_ctx)
 
+    def with_cwd(self, path: str) -> Self:
+        """Return this workspace with its cwd pointed at the given workspace-
+        relative path.
+
+        Parameters
+        ----------
+        path:
+            Workspace-relative path to use as the cwd.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withCwd", _args)
+        return Workspace(_ctx)
+
     def with_init_client(
         self,
         path: str,

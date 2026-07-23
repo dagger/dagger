@@ -481,6 +481,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Return this workspace with its cwd pointed at the given workspace-relative path.
+  """
+  @spec with_cwd(t(), String.t()) :: Dagger.Workspace.t()
+  def with_cwd(%__MODULE__{} = workspace, path) do
+    query_builder =
+      workspace.query_builder |> QB.select("withCwd") |> QB.put_arg("path", path)
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Return this workspace with a generated API client initialized.
   """
   @spec with_init_client(t(), String.t(), String.t(), String.t(), [

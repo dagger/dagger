@@ -17712,6 +17712,20 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return this workspace with its cwd pointed at the given workspace-relative path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Workspace-relative path to use as the cwd.
+    pub fn with_cwd(&self, path: impl Into<String>) -> Workspace {
+        let mut query = self.selection.select("withCwd");
+        query = query.arg("path", path.into());
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return this workspace with a generated API client initialized.
     ///
     /// # Arguments

@@ -7164,6 +7164,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::withCwd",
+			"p": "Dagger/Workspace.html#method_withCwd",
+			"d": "<p>Return this workspace with its cwd pointed at the given workspace-relative path.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::withInitClient",
 			"p": "Dagger/Workspace.html#method_withInitClient",
 			"d": "<p>Return this workspace with a generated API client initialized.</p>"
